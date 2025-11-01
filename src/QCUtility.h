@@ -21,11 +21,9 @@ inline bool set(CURL *handle, CURLoption option, const QUrl &parameter) {
     return set(handle, option, parameter.toEncoded().constData());
 }
 
-
-typedef int NetworkError;
-const static NetworkError NetworkNoError = CURLE_OK;
-
-
+// 旧的 typedef 已移除，请使用 QCNetworkError.h 中的 enum class NetworkError
+// typedef int NetworkError;  // DEPRECATED - 使用 #include "QCNetworkError.h"
+// const static NetworkError NetworkNoError = CURLE_OK;  // DEPRECATED - 使用 NetworkError::NoError
 
 } //namespace QCurl
 

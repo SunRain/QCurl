@@ -1,0 +1,20 @@
+{
+  "name": "qcurl-websocket-tests",
+  "version": "2.4.1",
+  "description": "WebSocket test server for QCurl fragmented message testing",
+  "main": "websocket-fragment-server.js",
+  "scripts": {
+    "start": "node websocket-fragment-server.js",
+    "test": "echo \"Run: ctest -R testFragmentedMessage -V\""
+  },
+  "keywords": [
+    "websocket",
+    "test",
+    "qcurl"
+  ],
+  "author": "QCurl Team",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.0.0"
+  }
+}

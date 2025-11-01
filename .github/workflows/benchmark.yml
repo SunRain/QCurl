@@ -1,0 +1,207 @@
+# QCurl 性能基准 CI/CD 工作流
+# 在 PR 和主分支推送时自动运行性能测试，检测性能回归
+
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - '.github/workflows/benchmark.yml'
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+  # 允许手动触发
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Benchmark iterations'
+        required: false
+        default: '100'
+
+env:
+  BUILD_TYPE: Release
+  BENCHMARK_ITERATIONS: ${{ github.event.inputs.iterations || '100' }}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      # HTTP 测试服务器
+      httpbin:
+        image: kennethreitz/httpbin
+        ports:
+          - 8935:80
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 需要完整历史用于基准对比
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          ninja-build \
+          qt6-base-dev \
+          libcurl4-openssl-dev \
+          libssl-dev \
+          zlib1g-dev
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DBUILD_TESTING=OFF \
+          -DBUILD_BENCHMARKS=ON \
+          -DBUILD_EXAMPLES=OFF
+
+    - name: Build benchmarks
+      run: cmake --build build --parallel
+
+    - name: Run benchmarks
+      id: run_benchmarks
+      run: |
+        # 创建结果目录
+        mkdir -p benchmark-results
+
+        # 运行所有基准测试并收集结果
+        for bench in build/benchmarks/benchmark_*; do
+          if [ -x "$bench" ]; then
+            name=$(basename "$bench")
+            echo "Running $name..."
+
+            # 运行基准测试，捕获输出
+            timeout 300 "$bench" -iterations ${{ env.BENCHMARK_ITERATIONS }} \
+              -o benchmark-results/${name}.txt \
+              2>&1 || true
+          fi
+        done
+
+    - name: Parse benchmark results
+      id: parse_results
+      run: |
+        python3 scripts/parse_benchmark_results.py \
+          benchmark-results/ \
+          --output benchmark-results/summary.json
+
+        # 设置输出变量
+        echo "results_file=benchmark-results/summary.json" >> $GITHUB_OUTPUT
+
+    - name: Download baseline (if exists)
+      id: download_baseline
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        name: benchmark-baseline
+        path: benchmark-baseline/
+
+    - name: Compare with baseline
+      id: compare
+      if: steps.download_baseline.outcome == 'success'
+      run: |
+        python3 scripts/compare_benchmarks.py \
+          benchmark-baseline/summary.json \
+          benchmark-results/summary.json \
+          --threshold 10 \
+          --output benchmark-results/comparison.md
+
+        # 检查是否有性能回归
+        if grep -q "REGRESSION DETECTED" benchmark-results/comparison.md; then
+          echo "regression=true" >> $GITHUB_OUTPUT
+        else
+          echo "regression=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: benchmark-results/
+        retention-days: 90
+
+    - name: Update baseline (on main branch)
+      if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-baseline
+        path: benchmark-results/summary.json
+        retention-days: 90
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+
+          let body = '## 📊 性能基准测试结果\n\n';
+
+          // 读取比较结果
+          if (fs.existsSync('benchmark-results/comparison.md')) {
+            body += fs.readFileSync('benchmark-results/comparison.md', 'utf8');
+          } else {
+            body += '> ℹ️ 没有可用的基线数据进行比较（首次运行）\n\n';
+
+            // 读取当前结果摘要
+            if (fs.existsSync('benchmark-results/summary.json')) {
+              const summary = JSON.parse(fs.readFileSync('benchmark-results/summary.json', 'utf8'));
+              body += '### 当前测试结果\n\n';
+              body += '| 基准测试 | 指标 | 值 |\n';
+              body += '|---------|------|----|\n';
+
+              for (const [test, metrics] of Object.entries(summary)) {
+                for (const [metric, value] of Object.entries(metrics)) {
+                  body += `| ${test} | ${metric} | ${value} |\n`;
+                }
+              }
+            }
+          }
+
+          body += '\n---\n';
+          body += `📝 提交: \`${context.sha.substring(0, 7)}\` | `;
+          body += `⚙️ 迭代次数: ${process.env.BENCHMARK_ITERATIONS}`;
+
+          // 创建或更新评论
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComment = comments.find(c =>
+            c.user.type === 'Bot' &&
+            c.body.includes('性能基准测试结果')
+          );
+
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body,
+            });
+          }
+
+    - name: Fail on regression
+      if: steps.compare.outputs.regression == 'true'
+      run: |
+        echo "❌ 检测到性能回归！请查看比较报告。"
+        cat benchmark-results/comparison.md
+        exit 1

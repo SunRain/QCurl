@@ -48,6 +48,11 @@ public:
 
     QSocketNotifier             *errorNotifier;
 
+    // 高级功能成员
+    QCNetworkLogger *logger = nullptr;
+    QList<QCNetworkMiddleware*> middlewares;
+    QCNetworkMockHandler *mockHandler = nullptr;
+    
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 
 private:

@@ -1,0 +1,55 @@
+#ifndef QCURL_CONFIG_H
+#define QCURL_CONFIG_H
+
+// QCurl 版本信息
+#define QCURL_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define QCURL_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define QCURL_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define QCURL_VERSION_STRING "@PROJECT_VERSION@"
+
+// libcurl 版本信息
+#define QCURL_LIBCURL_VERSION "@CURL_VERSION_STRING@"
+
+// 特性开关（由 CMake 配置）
+#cmakedefine QCURL_WEBSOCKET_SUPPORT
+#cmakedefine QCURL_HTTP2_SUPPORT
+
+// 编译期版本检查宏
+#define QCURL_VERSION_CHECK(major, minor, patch) \
+    ((major << 16) | (minor << 8) | (patch))
+
+#define QCURL_VERSION \
+    QCURL_VERSION_CHECK(QCURL_VERSION_MAJOR, QCURL_VERSION_MINOR, QCURL_VERSION_PATCH)
+
+// Qt 版本检查：要求 Qt 6.0 或更高
+#include <QtCore/qglobal.h>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#error "QCurl v2.0 requires Qt 6.0 or later. Please upgrade your Qt installation."
+#endif
+
+// libcurl 版本检查：要求 8.0 或更高
+#include <curl/curlver.h>
+#if LIBCURL_VERSION_NUM < 0x080000
+#error "QCurl v2.0 requires libcurl 8.0 or later. Please upgrade your libcurl installation."
+#endif
+
+// 特性可用性检查宏
+#ifdef QCURL_WEBSOCKET_SUPPORT
+#  define QCURL_HAS_WEBSOCKET 1
+#else
+#  define QCURL_HAS_WEBSOCKET 0
+#endif
+
+#ifdef QCURL_HTTP2_SUPPORT
+#  define QCURL_HAS_HTTP2 1
+#else
+#  define QCURL_HAS_HTTP2 0
+#endif
+
+// 命名空间（保留以备将来使用）
+// #define QCURL_NAMESPACE QCurl
+// #define QCURL_BEGIN_NAMESPACE namespace QCURL_NAMESPACE {
+// #define QCURL_END_NAMESPACE }
+// #define QCURL_USE_NAMESPACE using namespace QCURL_NAMESPACE;
+
+#endif // QCURL_CONFIG_H

@@ -3,6 +3,7 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QFile>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrlQuery>
@@ -10,8 +11,11 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkAsyncReply.h"
-#include "QCNetworkSyncReply.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkError.h"
+// 旧 API（已弃用）：
+// #include "QCNetworkAsyncReply.h"
+// #include "QCNetworkSyncReply.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -51,30 +55,38 @@ void MainWindow::tst_async()
         QCurl::QCNetworkRequest request(u);
         qDebug()<<Q_FUNC_INFO<<"qcnetworkmgr "<<mgr;
         mgr->setCookieFilePath(cookie);
-//        QCurl::QCNetworkAsyncReply *reply = mgr->get(request);
-        QCurl::QCNetworkAsyncReply *reply = mgr->head(request);
-//        reply->request();
+
+        // 使用 sendHead() 获取响应头
+        QCurl::QCNetworkReply *reply = mgr->sendHead(request);
+        // 或者使用 sendGet() 获取完整响应：
+        // QCurl::QCNetworkReply *reply = mgr->sendGet(request);
+
         qDebug()<<Q_FUNC_INFO<<reply->url();
 
-        connect(reply, &QCurl::QCNetworkAsyncReply::finished,
+        connect(reply, &QCurl::QCNetworkReply::finished,
                 [&, reply, f]() {
             qDebug()<<Q_FUNC_INFO<<"--------- finished ";
-            QByteArray ba = reply->readAll();
-            qDebug()<<Q_FUNC_INFO<<" ba size "<<ba.size();
-            f->write(ba);
+            auto data = reply->readAll();
+            if (data) {
+                qDebug()<<Q_FUNC_INFO<<" data size "<<data->size();
+                f->write(*data);
+            }
             f->close();
             reply->deleteLater();
         });
-        connect(reply, &QCurl::QCNetworkAsyncReply::readyRead,
+        connect(reply, &QCurl::QCNetworkReply::readyRead,
                 [&, reply, f]() {
             qDebug()<<Q_FUNC_INFO<<"--------- readyRead ";
-            QByteArray ba = reply->readAll();
-            qDebug()<<Q_FUNC_INFO<<" ba size "<<ba.size();
-            f->write(ba);
+            auto data = reply->readAll();
+            if (data) {
+                qDebug()<<Q_FUNC_INFO<<" data size "<<data->size();
+                f->write(*data);
+            }
 //            f->close();
         });
 
-        reply->perform();
+        // Reply 已自动启动，无需手动调用 perform()
+        // reply->perform();  // 已移除
 
         qDebug()<<Q_FUNC_INFO<<"///////////////////////////////////////////////////////////";
     }
@@ -117,8 +129,10 @@ void MainWindow::tst_sync()
 
         qDebug()<<Q_FUNC_INFO<<"qcnetworkmgr "<<mgr;
         mgr->setCookieFilePath(cookie);
-//        QCurl::QCNetworkReply *reply = mgr->get(request);
-        QCurl::QCNetworkSyncReply *reply = mgr->create(request);
+
+        // 使用 sendGetSync() 进行同步请求
+        // 注意：这是同步阻塞调用，会冻结 UI！
+        QCurl::QCNetworkReply *reply = mgr->sendGetSync(request);
 
 
 //        connect(reply, &QCurl::QCNetworkAsyncReply::finished,
@@ -146,7 +160,7 @@ void MainWindow::tst_sync()
 
         qint64 wpos = 0;
         QByteArray ba;
-        reply->setWriteFunction([&](char *buffer, size_t size) ->size_t {
+        reply->setWriteCallback([&](char *buffer, size_t size) ->size_t {
             qDebug()<<Q_FUNC_INFO<<"write buffer , need "<<size;
 ////            f->seek(wpos);
 //            QByteArray ba (buffer, size);
@@ -171,10 +185,13 @@ void MainWindow::tst_sync()
 //            return size;
 //        });
 
-        reply->perform();
+        // 同步 API 已自动执行，无需手动调用 perform()
+        // reply->perform();  // 已移除
+
         qDebug()<<Q_FUNC_INFO<<"///////////////////////////////////////////////////////////";
-        if (reply->error() == QCurl::NetworkNoError) {
-            qDebug()<<Q_FUNC_INFO<<"---------- no error "<<reply->error()<<"  "<<reply->errorString();
+
+        if (reply->error() == QCurl::NetworkError::NoError) {
+            qDebug()<<Q_FUNC_INFO<<"---------- no error "<<static_cast<int>(reply->error())<<"  "<<reply->errorString();
         }
         qDebug()<<Q_FUNC_INFO<<"ba size "<<ba.size()<< " data  "<<ba;
 //        f->write(ba);

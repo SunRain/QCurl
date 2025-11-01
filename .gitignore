@@ -1,15 +1,13 @@
+# =============================================================================
+# DeckShell 项目 .gitignore 文件
+# =============================================================================
+# 此文件用于忽略不应提交到版本控制的临时文件、编译产物和本地配置
+# 按类别组织以提高可读性和维护性
 
-#backup file
-*~
-#just for Poin
-*.bug
-*.new
-build-*
-*/build
-#chrome extension
-#*.crx
-# C++ objects and libs
-
+# =============================================================================
+# 编译产物 (Build Artifacts)
+# =============================================================================
+# C++ 对象文件和库文件
 *.slo
 *.lo
 *.o
@@ -17,31 +15,117 @@ build-*
 *.la
 *.lai
 *.so
+*.so.*
 *.dll
 *.dylib
 
-# Qt-es
-
-/.qmake.cache
-/.qmake.stash
-*.pro.user
-*.pro.user.*
+# Qt 相关编译产物
+object_script.*.Release
+object_script.*.Debug
+*_plugin_import.cpp
 *.moc
 moc_*.cpp
+moc_*.h
 qrc_*.cpp
 ui_*.h
+*.qmlc
+*.jsc
+*.qm
+*.prl
+
+# Qt 单元测试产物
+target_wrapper.*
+
+# 构建目录和文件
+build*/
+*build-*
 Makefile*
-*-build-*
 
-# QtCreator
-
+# =============================================================================
+# IDE 和编辑器文件 (IDE and Editor Files)
+# =============================================================================
+# Qt Creator
 *.autosave
-
-#QtCtreator Qml
+.qmlls.ini
 *.qmlproject.user
 *.qmlproject.user.*
+*creator.user*
 
-# makefile
-Makefile
-makefile
+# Qt 项目文件
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
 
+# Qt Creator CMake
+CMakeLists.txt.user*
+
+# Qt Creator 编译数据库
+compile_commands.json
+
+# Visual Studio Code
+.vscode/
+qwlroots.code-workspace
+
+# =============================================================================
+# 操作系统文件 (Operating System Files)
+# =============================================================================
+# macOS
+*.DS_Store
+
+# =============================================================================
+# 开发工具和环境 (Development Tools and Environments)
+# =============================================================================
+# CMake
+/.qmake.cache
+/.qmake.stash
+
+# Nix
+.direnv/
+result
+result-*
+
+# Clangd (C/C++ 语言服务器)
+.cache/
+
+# CCLS (C/C++ 语言服务器)
+.ccls-cache
+
+# Debian 包构建
+debian/.debhelper/
+debian/tmp/
+debian/treeland*/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/*.debhelper.log
+obj-*-linux-gnu/
+
+# =============================================================================
+# AI 和代码编辑器工具 (AI and Code Editor Tools)
+# =============================================================================
+# Cursor AI 编辑器
+.cursor
+.specstory
+
+# Kilo Code
+.kilocode/
+
+# Claude - 临时文件和缓存（注意：CLAUDE.md 项目文档应被跟踪）
+claudecode-session-history
+.mcp.json
+dev.db
+.claude/
+.spec-workflow/
+.serena
+
+# AI context and documentation
+.claude/
+.spec-workflow/
+CLAUDE.md
+**/CLAUDE.md
+
+AGENTS.md
+
+*.bak
+tmp/*

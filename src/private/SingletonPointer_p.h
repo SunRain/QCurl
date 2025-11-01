@@ -23,11 +23,8 @@ inline static void qCallOnce(Function func, QBasicAtomicInt& flag)
 {
     using namespace CallOnce;
 
-#if QT_VERSION < 0x050000
-    int protectFlag = flag.fetchAndStoreAcquire(flag);
-#elif QT_VERSION >= 0x050000
-    int protectFlag = flag.fetchAndStoreAcquire(flag.load());
-#endif
+    // Qt6 使用 loadRelaxed() 代替 load()
+    int protectFlag = flag.fetchAndStoreAcquire(flag.loadRelaxed());
 
     if (protectFlag == CO_Finished)
         return;
@@ -76,9 +73,11 @@ private:
 template <class T>
 T* Singleton<T>::instance(CreateInstanceFunction create)
 {
-    Singleton::create.store(create);
+    // Qt6 使用 storeRelaxed() 和 loadRelaxed()
+    // 函数指针需要显式转换为 void*
+    Singleton::create.storeRelaxed(reinterpret_cast<void*>(create));
     qCallOnce(init, flag);
-    return (T*)tptr.load();
+    return (T*)tptr.loadRelaxed();
 }
 
 template <class T>
@@ -86,8 +85,10 @@ void Singleton<T>::init()
 {
     static Singleton singleton;
     if (singleton.inited) {
-        CreateInstanceFunction createFunction = (CreateInstanceFunction)Singleton::create.load();
-        tptr.store(createFunction());
+        // Qt6 使用 loadRelaxed() 和 storeRelaxed()
+        // 需要显式转换函数指针
+        CreateInstanceFunction createFunction = reinterpret_cast<CreateInstanceFunction>(Singleton::create.loadRelaxed());
+        tptr.storeRelaxed(createFunction());
     }
 }
 
@@ -102,7 +103,8 @@ Singleton<T>::~Singleton() {
     if (createdTptr) {
         delete createdTptr;
     }
-    create.store(nullptr);
+    // Qt6 使用 storeRelaxed()
+    create.storeRelaxed(nullptr);
 }
 
 template<class T> QBasicAtomicPointer<void> Singleton<T>::create = Q_BASIC_ATOMIC_INITIALIZER(nullptr);
