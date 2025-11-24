@@ -11,12 +11,12 @@ class QSocketNotifier;
 
 namespace QCurl {
 
-class QCNetworkReply;
+class QCNetworkAsyncReply;
 struct CurlMultiSocket;
 class CurlMultiHandleProcesser : public QObject
 {
     Q_OBJECT
-    friend class QCNetworkReply;
+    friend class QCNetworkAsyncReply;
 
 protected:
     static CurlMultiHandleProcesser *instance();
@@ -26,9 +26,9 @@ private:
     ~CurlMultiHandleProcesser();
 
 protected:
-    void addReply(QCNetworkReply *reply);
+    void addReply(QCNetworkAsyncReply *reply);
 
-    void removeReply(QCNetworkReply *reply);
+    void removeReply(QCNetworkAsyncReply *reply);
 
     void performSocketAction(curl_socket_t socketfd, int eventsBitmask);
 
@@ -51,7 +51,7 @@ private:
     QString                     m_cookieFilePath;
 
 
-    QSet<QCNetworkReply*>       replyList;
+    QSet<QCNetworkAsyncReply*>       replyList;
 
     CURLM                       *curlMultiHandle;
 

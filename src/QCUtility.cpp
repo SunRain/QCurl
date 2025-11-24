@@ -1,4 +1,4 @@
-#include "Utility.h"
+#include "QCUtility.h"
 
 namespace QCurl {
 

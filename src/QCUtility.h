@@ -1,5 +1,5 @@
-#ifndef UTILITY_H
-#define UTILITY_H
+#ifndef QCUTILITY_H
+#define QCUTILITY_H
 
 #include <curl/curl.h>
 
@@ -22,8 +22,11 @@ inline bool set(CURL *handle, CURLoption option, const QUrl &parameter) {
 }
 
 
+typedef int NetworkError;
+const static NetworkError NetworkNoError = CURLE_OK;
+
 
 
 } //namespace QCurl
 
-#endif // UTILITY_H
+#endif // QCUTILITY_H

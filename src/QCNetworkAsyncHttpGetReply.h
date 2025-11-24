@@ -1,9 +1,9 @@
-#ifndef QCNETWORKHTTPGETREPLY_H
-#define QCNETWORKHTTPGETREPLY_H
+#ifndef QCNETWORKASYNCHTTPGETREPLY_H
+#define QCNETWORKASYNCHTTPGETREPLY_H
 
-#include "QCNetworkReply.h"
+#include "QCNetworkAsyncReply.h"
 //#include "qbytedata_p.h"
-#include "QCNetworkHttpHeadReply.h"
+#include "QCNetworkAsyncHttpHeadReply.h"
 
 #include <QFile>
 
@@ -11,12 +11,12 @@
 namespace QCurl {
 
 class QCNetworkHttpGetReplyPrivate;
-class QCNetworkHttpGetReply : public QCNetworkHttpHeadReply
+class QCNetworkAsyncHttpGetReply : public QCNetworkAsyncHttpHeadReply
 {
     Q_OBJECT
 public:
-    QCNetworkHttpGetReply(QObject *parent = Q_NULLPTR);
-    virtual ~QCNetworkHttpGetReply();
+    QCNetworkAsyncHttpGetReply(QObject *parent = Q_NULLPTR);
+    virtual ~QCNetworkAsyncHttpGetReply();
 
 //    QCNetworkHttpGetReplyPrivate *const d_ptr;
 
@@ -31,4 +31,4 @@ protected:
 
 
 } //namespace QCurl
-#endif // QCNETWORKHTTPGETREPLY_H
+#endif // QCNETWORKASYNCHTTPGETREPLY_H

@@ -11,25 +11,38 @@ class QSocketNotifier;
 
 namespace QCurl {
 
-class QCNetworkReply;
+class QCNetworkAsyncReply;
+class QCNetworkSyncReply;
 class QCNetworkRequest;
 class QCNetworkAccessManagerPrivate;
 class QCNetworkAccessManager : public QObject
 {
     Q_OBJECT
-    friend class QCNetworkReply;
+    friend class QCNetworkAsyncReply;
 public:
     explicit QCNetworkAccessManager(QObject *parent = nullptr);
     virtual ~QCNetworkAccessManager();
 
+    enum CookieFileModeFlag {
+        NotOpen = 0x0,
+        ReadOnly = 0x1,
+        WriteOnly = 0x2,
+        ReadWrite = ReadOnly | WriteOnly
+    };
+
     QString cookieFilePath() const;
 
-    void setCookieFilePath(const QString &cookieFilePath);
+    CookieFileModeFlag cookieFileMode() const;
 
-    QCNetworkReply *head(const QCNetworkRequest &request);
+    void setCookieFilePath(const QString &cookieFilePath, CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
-    QCNetworkReply *get(const QCNetworkRequest &request);
+    QCNetworkAsyncReply *head(const QCNetworkRequest &request);
 
+    QCNetworkAsyncReply *get(const QCNetworkRequest &request);
+
+    QCNetworkAsyncReply *post(const QCNetworkRequest &request, const QByteArray &data);
+
+    QCNetworkSyncReply *create(const QCNetworkRequest &request);
 
 signals:
 
@@ -38,6 +51,7 @@ public slots:
 private:
     QCNetworkAccessManagerPrivate *const d_ptr;
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
+    CookieFileModeFlag m_cookieModeFlag;
     QString                     m_cookieFilePath;
 
 

@@ -8,11 +8,11 @@
 
 //#include "CurlGlobalConstructor.h"
 //#include "QCNetworkAccessManager_p.h"
-#include "QCNetworkReply.h"
+#include "QCNetworkAsyncReply.h"
 //#include "QCNetworkReply_p.h"
 //#include "QCNetworkHttpHeadReply.h"
 //#include "QCNetworkHttpGetReply.h"
-#include "Utility.h"
+#include "QCUtility.h"
 
 namespace QCurl {
 
@@ -69,7 +69,7 @@ CurlMultiHandleProcesser::CurlMultiHandleProcesser(QObject *parent)
     timer->setSingleShot(true);
     connect(timer, &QTimer::timeout,
             [&](){
-        qDebug()<<Q_FUNC_INFO<<"----------- "<<CURL_SOCKET_TIMEOUT;
+//        qDebug()<<Q_FUNC_INFO<<"----------- "<<CURL_SOCKET_TIMEOUT;
         performSocketAction(CURL_SOCKET_TIMEOUT, 0);
     });
     //    connect(timer, &QTimer::timeout, this, &QCNetworkAccessManager::timeout);
@@ -82,19 +82,30 @@ CurlMultiHandleProcesser::~CurlMultiHandleProcesser()
 
 }
 
-void CurlMultiHandleProcesser::addReply(QCNetworkReply *reply)
+void CurlMultiHandleProcesser::addReply(QCNetworkAsyncReply *reply)
 {
     replyList.insert(reply);
-    qDebug()<<Q_FUNC_INFO<<"curlMultiHandle "<<curlMultiHandle<<" reply->curlHandle "<<reply->curlHandle
-           <<" reply "<<reply;
-    CURLMcode ret = curl_multi_add_handle(curlMultiHandle, reply->curlHandle);
-    qDebug()<<Q_FUNC_INFO<<" ret "<<ret;
+//    qDebug()<<Q_FUNC_INFO<<"curlMultiHandle "<<curlMultiHandle<<" reply->curlHandle "<<reply->curlHandle
+//           <<" reply "<<reply;
+     const CURLMcode ret = curl_multi_add_handle(curlMultiHandle, reply->curlHandle);
+//    qDebug()<<Q_FUNC_INFO<<" ret "<<ret;
+    //TODO
+    if (ret == CURLM_OK) {
+        reply->m_isProcessing = true;
+    } else {
+        qDebug()<<Q_FUNC_INFO<<"add reply to multi-handle error "<<ret;
+    }
 }
 
-void CurlMultiHandleProcesser::removeReply(QCNetworkReply *reply)
+void CurlMultiHandleProcesser::removeReply(QCNetworkAsyncReply *reply)
 {
     if (replyList.contains(reply)) {
-        curl_multi_remove_handle(curlMultiHandle, reply->curlHandle);
+        const CURLMcode ret = curl_multi_remove_handle(curlMultiHandle, reply->curlHandle);
+        if (ret != CURLM_OK) {
+            qWarning()<<Q_FUNC_INFO<<"try to remove reply from multi-handle error ["<<ret
+                        <<"] but we will still set reply to to running(m_isProcessing) state to finished !!!!";
+        }
+        reply->m_isProcessing = false;
         replyList.remove(reply);
     }
 }
@@ -104,7 +115,7 @@ void CurlMultiHandleProcesser::performSocketAction(curl_socket_t socketfd, int e
     //    Q_D(QCNetworkAccessManager);d->
     qDebug()<<"curl_socket_t "<<socketfd<<" eventsBitmask "<<eventsBitmask;
     //    qDebug()<<Q_FUNC_INFO<<" d "<<d;
-    qDebug()<<Q_FUNC_INFO<<" multi-handle "<<curlMultiHandle;
+//    qDebug()<<Q_FUNC_INFO<<" multi-handle "<<curlMultiHandle;
     int runningHandles = 0;
     CURLMcode rc = curl_multi_socket_action(curlMultiHandle,
                                             socketfd,
@@ -113,7 +124,7 @@ void CurlMultiHandleProcesser::performSocketAction(curl_socket_t socketfd, int e
     if (rc != CURLM_OK) {
         // TODO: Handle global curl errors
     }
-    qDebug()<<Q_FUNC_INFO<<"--------------";
+//    qDebug()<<Q_FUNC_INFO<<"--------------";
     int messagesLeft = 0;
     do {
         CURLMsg *message = curl_multi_info_read(curlMultiHandle, &messagesLeft);
@@ -124,7 +135,7 @@ void CurlMultiHandleProcesser::performSocketAction(curl_socket_t socketfd, int e
         if (!message->easy_handle)
             continue;
 
-        QCNetworkReply *reply = Q_NULLPTR;
+        QCNetworkAsyncReply *reply = Q_NULLPTR;
         curl_easy_getinfo(message->easy_handle, CURLINFO_PRIVATE, &reply);
 
         if (!reply)
@@ -247,10 +258,8 @@ int CurlMultiHandleProcesser::curlTimeFunction(int timeoutMsec)
     //    Q_D(QCNetworkAccessManager);
     qDebug()<<Q_FUNC_INFO<<"------- "<<timeoutMsec<<" -------------";
     if (timeoutMsec >= 0) {
-        qDebug()<<Q_FUNC_INFO<<"aaaaaaaaaa";
         timer->start(timeoutMsec);
     } else {
-        qDebug()<<Q_FUNC_INFO<<"bbbbbbb";
         timer->stop();
     }
     return 0;
@@ -269,12 +278,12 @@ int CurlMultiHandleProcesser::staticCurlSocketFunction(CURL *easy, curl_socket_t
 
 int CurlMultiHandleProcesser::staticCurlTimeFunction(CURLM *multi, long timeout_ms, void *userp)
 {
-    qDebug()<<Q_FUNC_INFO<<"--------------- userp(QCNetworkAccessManager) "<<userp;
-    qDebug()<<Q_FUNC_INFO<<" timeout ms "<<timeout_ms;
+//    qDebug()<<Q_FUNC_INFO<<"--------------- userp(QCNetworkAccessManager) "<<userp;
+//    qDebug()<<Q_FUNC_INFO<<" timeout ms "<<timeout_ms;
     Q_UNUSED(multi);
     CurlMultiHandleProcesser *processer = static_cast<CurlMultiHandleProcesser*>(userp);
 
-        qDebug()<<Q_FUNC_INFO<<" processer "<<processer;
+//        qDebug()<<Q_FUNC_INFO<<" processer "<<processer;
 
     Q_ASSERT(processer != Q_NULLPTR);
 

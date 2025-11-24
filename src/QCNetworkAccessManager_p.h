@@ -11,7 +11,7 @@
 
 namespace QCurl {
 
-class QCNetworkReply;
+class QCNetworkAsyncReply;
 class QCNetworkAccessManagerPrivate
 {
 public:
@@ -34,7 +34,7 @@ public:
     QString                     cookieFilePath;
 
 
-    QSet<QCNetworkReply*>       replyList;
+    QSet<QCNetworkAsyncReply*>       replyList;
 
     CURLM                       *curlMultiHandle;
 

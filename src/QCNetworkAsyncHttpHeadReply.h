@@ -1,17 +1,17 @@
-#ifndef QCNETWORKHEADREPLY_H
-#define QCNETWORKHEADREPLY_H
+#ifndef QCNETWORKASYNCHEADREPLY_H
+#define QCNETWORKASYNCHEADREPLY_H
 
-#include "QCNetworkReply.h"
+#include "QCNetworkAsyncReply.h"
 
 namespace QCurl {
 
 class QCNetworkHttpHeadReplyPrivate;
-class QCNetworkHttpHeadReply : public QCNetworkReply
+class QCNetworkAsyncHttpHeadReply : public QCNetworkAsyncReply
 {
     Q_OBJECT
 public:
-    QCNetworkHttpHeadReply(QObject *parent = Q_NULLPTR);
-    virtual ~QCNetworkHttpHeadReply();
+    explicit QCNetworkAsyncHttpHeadReply(QObject *parent = Q_NULLPTR);
+    virtual ~QCNetworkAsyncHttpHeadReply();
 
 
 //    QScopedPointer<QCNetworkHttpHeadReplyPrivate> d_ptr;
@@ -30,4 +30,4 @@ protected:
 
 
 } //namespace QCurl
-#endif // QCNETWORKHEADREPLY_H
+#endif // QCNETWORKASYNCHEADREPLY_H

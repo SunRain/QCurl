@@ -1,30 +1,41 @@
+
+QMAKE_CXXFLAGS = -fpermissive
+
+LIBS += -lcurl
+
 INCLUDEPATH += $$PWD/
 
 HEADERS += \
     $$PWD/QCNetworkAccessManager.h \
-    $$PWD/SingletonPointer.h \
-    $$PWD/SingletonPointer_p.h \
+    $$PWD/QCUtility.h \
+    $$PWD/private/SingletonPointer.h \
+    $$PWD/private/SingletonPointer_p.h \
     $$PWD/CurlGlobalConstructor.h \
-    $$PWD/QCNetworkReply.h \
     $$PWD/QCNetworkRequest.h \
-    $$PWD/QCNetworkReply_p.h \
     $$PWD/qbytedata_p.h \
     $$PWD/QCNetworkAccessManager_p.h \
-    $$PWD/QCNetworkHttpGetReply.h \
-    $$PWD/QCNetworkHttpHeadReply.h \
-    $$PWD/QCNetworkHttpHeadReply_p.h \
-    $$PWD/QCNetworkHttpGetReply_p.h \
-    $$PWD/Utility.h \
-    $$PWD/CurlMultiHandleProcesser.h
+    $$PWD/CurlMultiHandleProcesser.h \
+    $$PWD/CurlEasyHandleInitializtionClass.h \
+    $$PWD/QCNetworkAsyncReply.h \
+    $$PWD/QCNetworkAsyncHttpGetReply.h \
+    $$PWD/QCNetworkAsyncHttpGetReply_p.h \
+    $$PWD/QCNetworkAsyncHttpHeadReply.h \
+    $$PWD/QCNetworkAsyncHttpHeadReply_p.h \
+    $$PWD/QCNetworkAsyncReply_p.h \
+    $$PWD/QCNetworkSyncReply.h \
+    $$PWD/QCNetworkAsyncDataPostReply.h
 
 SOURCES += \
     $$PWD/QCNetworkAccessManager.cpp \
     $$PWD/CurlGlobalConstructor.cpp \
-    $$PWD/QCNetworkReply.cpp \
     $$PWD/QCNetworkRequest.cpp \
-    $$PWD/QCNetworkHttpGetReply.cpp \
-    $$PWD/QCNetworkHttpHeadReply.cpp \
-    $$PWD/Utility.cpp \
-    $$PWD/CurlMultiHandleProcesser.cpp
+    $$PWD/CurlMultiHandleProcesser.cpp \
+    $$PWD/CurlEasyHandleInitializtionClass.cpp \
+    $$PWD/QCNetworkAsyncHttpGetReply.cpp \
+    $$PWD/QCNetworkAsyncHttpHeadReply.cpp \
+    $$PWD/QCNetworkSyncReply.cpp \
+    $$PWD/QCNetworkAsyncReply.cpp \
+    $$PWD/QCNetworkAsyncDataPostReply.cpp \
+    $$PWD/QCUtility.cpp
 
 

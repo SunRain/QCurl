@@ -26,6 +26,10 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QCurl::QCNetworkAccessManager *mgr;
+
+    void tst_async();
+
+    void tst_sync();
 };
 
 #endif // MAINWINDOW_H
