@@ -72,6 +72,8 @@ if(QCURL_WEBSOCKET_SUPPORT)
 endif()
 
 add_qcurl_test(tst_Integration tst_Integration.cpp)
+# QCurl ↔ libcurl 一致性测试（pytest 驱动用）
+add_qcurl_test(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量

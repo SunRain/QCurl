@@ -246,11 +246,20 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
+    // 连接池配置 (v2.14.0)
+    // ========================================================================
+
+    // 先应用连接池的通用配置（DNS/复用等），再由请求级别配置覆盖（例如 HTTP 版本）。
+    auto *poolManager = QCNetworkConnectionPoolManager::instance();
+    const QString host = request.url().host();
+    poolManager->configureCurlHandle(handle, host);
+
+    // ========================================================================
     // HTTP 版本配置
     // ========================================================================
 
     const QCNetworkHttpVersion httpVer = request.httpVersion();
-    if (httpVer != QCNetworkHttpVersion::Http1_1) {  // 非默认值才设置
+    if (httpVer != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
         long curlVersion = toCurlHttpVersion(httpVer);
         curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, curlVersion);
     }
@@ -371,15 +380,6 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, this);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);  // 启用进度回调
 
-    // ========================================================================
-    // 9. 连接池配置 (v2.14.0)
-    // ========================================================================
-    
-    // 应用连接池配置，启用连接复用以提升性能
-    auto *poolManager = QCNetworkConnectionPoolManager::instance();
-    QString host = request.url().host();
-    poolManager->configureCurlHandle(handle, host);
-
     return true;
 }
 
@@ -400,6 +400,15 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
     if (newState == ReplyState::Finished) {
         // 完成时解析响应头
         parseHeaders();
+
+        // ========================================================================
+        // Cookie jar flush：当启用 COOKIEJAR 时，确保请求完成后立即落盘
+        // ========================================================================
+#ifdef CURLOPT_COOKIELIST
+        if (curlManager.handle() && (cookieMode & 0x2) && !cookieFilePath.isEmpty()) {
+            curl_easy_setopt(curlManager.handle(), CURLOPT_COOKIELIST, "FLUSH");
+        }
+#endif
 
         // ========================================================================
         // 连接池统计 - 记录连接复用情况

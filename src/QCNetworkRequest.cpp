@@ -33,6 +33,7 @@ public:
           proxyConfig(std::nullopt),
           timeoutConfig(QCNetworkTimeoutConfig::defaultConfig()),
           httpVersion(QCNetworkHttpVersion::Http1_1),
+          httpVersionExplicit(false),
           retryPolicy(QCNetworkRetryPolicy::noRetry()),
           requestPriority(QCNetworkRequestPriority::Normal),
           cachePolicy(QCNetworkCachePolicy::PreferCache)
@@ -53,6 +54,7 @@ public:
     std::optional<QCNetworkProxyConfig> proxyConfig;
     QCNetworkTimeoutConfig timeoutConfig;
     QCNetworkHttpVersion httpVersion;
+    bool httpVersionExplicit;
 
     // ========== 重试策略字段 ==========
     QCNetworkRetryPolicy retryPolicy;
@@ -205,12 +207,18 @@ QCNetworkTimeoutConfig QCNetworkRequest::timeoutConfig() const
 QCNetworkRequest& QCNetworkRequest::setHttpVersion(QCNetworkHttpVersion version)
 {
     d.data()->httpVersion = version;
+    d.data()->httpVersionExplicit = true;
     return *this;
 }
 
 QCNetworkHttpVersion QCNetworkRequest::httpVersion() const
 {
     return d.data()->httpVersion;
+}
+
+bool QCNetworkRequest::isHttpVersionExplicit() const noexcept
+{
+    return d.data()->httpVersionExplicit;
 }
 
 QCNetworkRequest& QCNetworkRequest::setRetryPolicy(const QCNetworkRetryPolicy &policy)

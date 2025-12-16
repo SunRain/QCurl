@@ -120,6 +120,7 @@ public:
      */
     QCNetworkRequest& setHttpVersion(QCNetworkHttpVersion version);
     [[nodiscard]] QCNetworkHttpVersion httpVersion() const;
+    [[nodiscard]] bool isHttpVersionExplicit() const noexcept;
 
     /**
      * @brief 设置请求重试策略

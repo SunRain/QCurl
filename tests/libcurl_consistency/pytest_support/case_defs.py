@@ -1,0 +1,217 @@
+"""
+P0/P1 用例清单与参数模板。
+- 供 baseline/QCurl 共同引用，避免分散硬编码。
+- URL/端口需在运行时由 env 填充。
+"""
+
+# P0：下载
+# 参考 curl/tests/http/test_02_download.py test_02_21/test_02_22
+DOWNLOAD_DEFAULTS = {
+    "count": 2,
+    "pause_offset": 100 * 1023,
+    "max_parallel": 5,
+    "proto": "h2",
+    "doc_serial": "data-1m",
+    "doc_parallel": "data-10m",
+}
+
+# P0：上传
+# 参考 curl/tests/http/test_07_upload.py test_07_15/test_07_17
+UPLOAD_DEFAULTS = {
+    "count": 2,
+    "upload_size": 128 * 1024,
+    "proto": "h2",
+}
+
+# P0：WebSocket
+# 参考 curl/tests/http/test_20_websockets.py test_20_02/test_20_04
+WS_DEFAULTS = {
+    "payload_pingpong": 125 * "x",
+    "model": 2,
+}
+
+P0_CASES = {
+    # 下载：串行 + resume
+    "download_serial_resume": {
+        "suite": "p0_download",
+        "case": "test_02_21_lib_serial",
+        "client": "cli_hx_download",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-P",
+            "{pause_offset}",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "count": DOWNLOAD_DEFAULTS["count"],
+            "pause_offset": DOWNLOAD_DEFAULTS["pause_offset"],
+            "proto": DOWNLOAD_DEFAULTS["proto"],
+            "docname": DOWNLOAD_DEFAULTS["doc_serial"],
+            "url": "https://localhost:{https_port}/" + DOWNLOAD_DEFAULTS["doc_serial"],
+        },
+        "baseline_download_count": DOWNLOAD_DEFAULTS["count"],
+        "qcurl_download_count": DOWNLOAD_DEFAULTS["count"],
+    },
+    # 下载：并行 + resume
+    "download_parallel_resume": {
+        "suite": "p0_download",
+        "case": "test_02_22_lib_parallel_resume",
+        "client": "cli_hx_download",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-m",
+            "{max_parallel}",
+            "-P",
+            "{pause_offset}",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "count": DOWNLOAD_DEFAULTS["count"],
+            "max_parallel": DOWNLOAD_DEFAULTS["max_parallel"],
+            "pause_offset": DOWNLOAD_DEFAULTS["pause_offset"],
+            "proto": DOWNLOAD_DEFAULTS["proto"],
+            "docname": DOWNLOAD_DEFAULTS["doc_parallel"],
+            "url": "https://localhost:{https_port}/" + DOWNLOAD_DEFAULTS["doc_parallel"],
+        },
+        "baseline_download_count": DOWNLOAD_DEFAULTS["count"],
+        "qcurl_download_count": DOWNLOAD_DEFAULTS["count"],
+    },
+    # 上传：PUT
+    "upload_put": {
+        "suite": "p0_upload",
+        "case": "test_07_15_hx_put",
+        "client": "cli_hx_upload",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-S",
+            "{upload_size}",
+            "-l",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "count": UPLOAD_DEFAULTS["count"],
+            "upload_size": UPLOAD_DEFAULTS["upload_size"],
+            "proto": UPLOAD_DEFAULTS["proto"],
+            "url": "https://localhost:{https_port}/curltest/put",
+        },
+        "baseline_download_count": UPLOAD_DEFAULTS["count"],
+        "qcurl_download_count": UPLOAD_DEFAULTS["count"],
+    },
+    # 上传：POST + 复用
+    "upload_post_reuse": {
+        "suite": "p0_upload",
+        "case": "test_07_17_hx_post_reuse",
+        "client": "cli_hx_upload",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-M",
+            "POST",
+            "-S",
+            "{upload_size}",
+            "-l",
+            "-R",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "count": UPLOAD_DEFAULTS["count"],
+            "upload_size": UPLOAD_DEFAULTS["upload_size"],
+            "proto": UPLOAD_DEFAULTS["proto"],
+            "url": "https://localhost:{https_port}/curltest/echo",
+        },
+        "baseline_download_count": UPLOAD_DEFAULTS["count"],
+        "qcurl_download_count": UPLOAD_DEFAULTS["count"],
+    },
+    # WebSocket：ping/pong
+    "ws_pingpong_small": {
+        "suite": "p0_ws",
+        "case": "test_20_02_pingpong_small",
+        "client": "cli_ws_pingpong",
+        "args_template": [
+            "{url}",
+            "{payload}",
+        ],
+        "defaults": {
+            "payload": WS_DEFAULTS["payload_pingpong"],
+            "url": "ws://localhost:{ws_port}/",
+        },
+        "qcurl_download_count": 1,
+    },
+    # WebSocket：data frames 小数据
+    "ws_data_small": {
+        "suite": "p0_ws",
+        "case": "test_20_04_data_small",
+        "client": "cli_ws_data",
+        "args_template": [
+            "-{model}",
+            "-m",
+            "1",
+            "-M",
+            "10",
+            "{url}",
+        ],
+        "defaults": {
+            "model": WS_DEFAULTS["model"],
+            "url": "ws://localhost:{ws_port}/",
+        },
+        "qcurl_download_count": 1,
+    },
+
+    # 下载：中断 + Range 续传（P0）
+    "download_range_resume": {
+        "suite": "p0_download",
+        "case": "lc_range_resume",
+        "client": "cli_hx_range_resume",
+        "args_template": [
+            "-A",
+            "{abort_offset}",
+            "-S",
+            "{file_size}",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "proto": DOWNLOAD_DEFAULTS["proto"],
+            "docname": DOWNLOAD_DEFAULTS["doc_parallel"],
+            "abort_offset": 256 * 1024,
+            "file_size": 10 * 1024 * 1024,
+            "url": "https://localhost:{https_port}/" + DOWNLOAD_DEFAULTS["doc_parallel"],
+        },
+        "baseline_download_count": 1,
+        "qcurl_download_count": 1,
+    },
+}
+
+P1_CASES = {
+    # P1：CURLOPT_POSTFIELDS 二进制（含 \0），参考 test1531 的语义
+    "postfields_binary_1531": {
+        "suite": "p1_postfields",
+        "case": "lc_postfields_binary_1531",
+        "client": "cli_postfields_binary",
+        "args_template": [
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "proto": DOWNLOAD_DEFAULTS["proto"],
+            "url": "https://localhost:{https_port}/curltest/echo",
+        },
+        "baseline_download_count": 1,
+        "qcurl_download_count": 1,
+    },
+}
+
+# 后续可在此扩展 P2 清单
