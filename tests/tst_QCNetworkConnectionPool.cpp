@@ -42,12 +42,12 @@ private slots:
     void testConnectionReuse();
     
 private:
-    QCNetworkAccessManager *manager = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
 };
 
 void TestConnectionPool::initTestCase()
 {
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
     
     // 重置统计
     QCNetworkConnectionPoolManager::instance()->resetStatistics();
@@ -55,8 +55,7 @@ void TestConnectionPool::initTestCase()
 
 void TestConnectionPool::cleanupTestCase()
 {
-    delete manager;
-    manager = nullptr;
+    m_manager = nullptr;
 }
 
 // ============================================================================
@@ -113,7 +112,7 @@ void TestConnectionPool::testCustomConfig()
 
 void TestConnectionPool::testConfigPresets()
 {
-    Q_UNUSED(manager);
+    Q_UNUSED(m_manager);
     
     // 测试保守配置
     auto conservative = QCNetworkConnectionPoolConfig::conservative();
@@ -201,7 +200,7 @@ void TestConnectionPool::testConnectionReuse()
     QCNetworkRequest testRequest(testUrl);
     testRequest.setFollowLocation(true);
     
-    auto *testReply = manager->sendGet(testRequest);
+    auto *testReply = m_manager->sendGet(testRequest);
     QSignalSpy testSpy(testReply, &QCNetworkReply::finished);
     
     if (!testSpy.wait(10000)) {
@@ -232,7 +231,7 @@ void TestConnectionPool::testConnectionReuse()
     for (int i = 0; i < requestCount; ++i) {
         QCNetworkRequest request(url);
         request.setFollowLocation(true);
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
         
         // 等待完成
         QSignalSpy spy(reply, &QCNetworkReply::finished);

@@ -3,20 +3,17 @@
 
 #include <QObject>
 
-#include "SingletonPointer.h"
-
 namespace QCurl {
 
 class CurlGlobalConstructor : public QObject
 {
     Q_OBJECT
 public:
-    ~CurlGlobalConstructor();
+    ~CurlGlobalConstructor() override;
     static CurlGlobalConstructor *instance();
 
 private:
-    CurlGlobalConstructor(QObject *parent = Q_NULLPTR);
-    static CurlGlobalConstructor *createInstance();
+    explicit CurlGlobalConstructor(QObject *parent = nullptr);
 
 };
 

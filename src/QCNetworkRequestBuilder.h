@@ -26,8 +26,7 @@ class QCNetworkReply;
  * 
  * @example
  * @code
- * auto *builder = manager->newRequest(url);
- * auto *reply = builder
+ * auto *reply = manager->newRequest(url)
  *     .withFollowLocation(true)
  *     .withHeader("Authorization", "Bearer token")
  *     .withTimeout(30000)
@@ -43,6 +42,11 @@ public:
      * @param url 请求 URL
      */
     QCNetworkRequestBuilder(QCNetworkAccessManager *manager, const QUrl &url);
+
+    QCNetworkRequestBuilder(const QCNetworkRequestBuilder &) = delete;
+    QCNetworkRequestBuilder &operator=(const QCNetworkRequestBuilder &) = delete;
+    QCNetworkRequestBuilder(QCNetworkRequestBuilder &&) noexcept;
+    QCNetworkRequestBuilder &operator=(QCNetworkRequestBuilder &&) noexcept;
     
     /**
      * @brief 析构函数

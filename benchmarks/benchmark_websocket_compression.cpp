@@ -26,6 +26,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QRandomGenerator>
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 #include "QCWebSocket.h"
@@ -140,9 +141,8 @@ QString BenchmarkWebSocketCompression::generateRepeatingText(int sizeKB)
                      "The pattern should compress very well. "
                      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ";
 
-    QString result;
-    int patternBytes = pattern.toUtf8().size();
-    int targetBytes = sizeKB * 1024;
+	QString result;
+	int targetBytes = sizeKB * 1024;
 
     while (result.toUtf8().size() < targetBytes) {
         result += pattern;
@@ -180,14 +180,15 @@ QByteArray BenchmarkWebSocketCompression::generateJsonData(int sizeKB)
 QByteArray BenchmarkWebSocketCompression::generateRandomBinary(int sizeKB)
 {
     // 生成随机二进制数据（低压缩率）
-    QByteArray data;
-    data.resize(sizeKB * 1024);
+	QByteArray data;
+	data.resize(sizeKB * 1024);
 
-    for (int i = 0; i < data.size(); ++i) {
-        data[i] = static_cast<char>(qrand() % 256);
-    }
+	QRandomGenerator *generator = QRandomGenerator::global();
+	for (int i = 0; i < data.size(); ++i) {
+		data[i] = static_cast<char>(generator->bounded(256));
+	}
 
-    return data;
+	return data;
 }
 
 BenchmarkWebSocketCompression::CompressionResult

@@ -31,6 +31,10 @@ QCNetworkRequestBuilder::QCNetworkRequestBuilder(QCNetworkAccessManager *manager
     d_ptr->url = url;
 }
 
+QCNetworkRequestBuilder::QCNetworkRequestBuilder(QCNetworkRequestBuilder &&) noexcept = default;
+
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::operator=(QCNetworkRequestBuilder &&) noexcept = default;
+
 QCNetworkRequestBuilder::~QCNetworkRequestBuilder() = default;
 
 QCNetworkRequestBuilder &QCNetworkRequestBuilder::withHeader(const QString &name, const QString &value)

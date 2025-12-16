@@ -4,6 +4,8 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QUrl>
+#include <QCoreApplication>
+#include <QEvent>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -43,8 +45,8 @@ private slots:
     void testAutoTimeout();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
-    QCNetworkCancelToken *token = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkCancelToken *m_token = nullptr;
 };
 
 void TestQCNetworkCancelToken::initTestCase()
@@ -59,20 +61,21 @@ void TestQCNetworkCancelToken::cleanupTestCase()
 
 void TestQCNetworkCancelToken::init()
 {
-    manager = new QCNetworkAccessManager(this);
-    token = new QCNetworkCancelToken(this);
+    m_manager = new QCNetworkAccessManager(this);
+    m_token = new QCNetworkCancelToken(this);
 }
 
 void TestQCNetworkCancelToken::cleanup()
 {
-    if (token) {
-        delete token;
-        token = nullptr;
+    if (m_token) {
+        m_token->deleteLater();
+        m_token = nullptr;
     }
-    if (manager) {
-        delete manager;
-        manager = nullptr;
+    if (m_manager) {
+        m_manager->deleteLater();
+        m_manager = nullptr;
     }
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 /**
@@ -81,7 +84,7 @@ void TestQCNetworkCancelToken::cleanup()
 void TestQCNetworkCancelToken::testCreateToken()
 {
     // Arrange & Act
-    auto *newToken = new QCNetworkCancelToken();
+    auto *newToken = new QCNetworkCancelToken(this);
 
     // Assert
     QVERIFY(newToken != nullptr);
@@ -89,7 +92,8 @@ void TestQCNetworkCancelToken::testCreateToken()
     QCOMPARE(newToken->isCancelled(), false);
 
     // Cleanup
-    delete newToken;
+    newToken->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 /**
@@ -99,13 +103,13 @@ void TestQCNetworkCancelToken::testAttachReply()
 {
     // Arrange - 创建一个请求（不实际发送）
     QCNetworkRequest request(QUrl("http://example.com"));
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
 
     // Act
-    token->attach(reply);
+    m_token->attach(reply);
 
     // Assert
-    QCOMPARE(token->attachedCount(), 1);
+    QCOMPARE(m_token->attachedCount(), 1);
 
     // Cleanup
     reply->deleteLater();
@@ -118,15 +122,15 @@ void TestQCNetworkCancelToken::testDetachReply()
 {
     // Arrange
     QCNetworkRequest request(QUrl("http://example.com"));
-    auto *reply = manager->sendGet(request);
-    token->attach(reply);
-    QCOMPARE(token->attachedCount(), 1);
+    auto *reply = m_manager->sendGet(request);
+    m_token->attach(reply);
+    QCOMPARE(m_token->attachedCount(), 1);
 
     // Act
-    token->detach(reply);
+    m_token->detach(reply);
 
     // Assert
-    QCOMPARE(token->attachedCount(), 0);
+    QCOMPARE(m_token->attachedCount(), 0);
 
     // Cleanup
     reply->deleteLater();
@@ -142,17 +146,17 @@ void TestQCNetworkCancelToken::testAttachMultiple()
     QCNetworkRequest request2(QUrl("http://example.com/2"));
     QCNetworkRequest request3(QUrl("http://example.com/3"));
 
-    auto *reply1 = manager->sendGet(request1);
-    auto *reply2 = manager->sendGet(request2);
-    auto *reply3 = manager->sendGet(request3);
+    auto *reply1 = m_manager->sendGet(request1);
+    auto *reply2 = m_manager->sendGet(request2);
+    auto *reply3 = m_manager->sendGet(request3);
 
     QList<QCNetworkReply*> replies = {reply1, reply2, reply3};
 
     // Act
-    token->attachMultiple(replies);
+    m_token->attachMultiple(replies);
 
     // Assert
-    QCOMPARE(token->attachedCount(), 3);
+    QCOMPARE(m_token->attachedCount(), 3);
 
     // Cleanup
     reply1->deleteLater();
@@ -166,14 +170,14 @@ void TestQCNetworkCancelToken::testAttachMultiple()
 void TestQCNetworkCancelToken::testCancelSignal()
 {
     // Arrange
-    QSignalSpy spy(token, &QCNetworkCancelToken::cancelled);
+    QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
     // Act
-    token->cancel();
+    m_token->cancel();
 
     // Assert
     QCOMPARE(spy.count(), 1);
-    QCOMPARE(token->isCancelled(), true);
+    QCOMPARE(m_token->isCancelled(), true);
 }
 
 /**
@@ -185,23 +189,23 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
-    auto *reply1 = manager->sendGet(request1);
-    auto *reply2 = manager->sendGet(request2);
+    auto *reply1 = m_manager->sendGet(request1);
+    auto *reply2 = m_manager->sendGet(request2);
 
     QSignalSpy cancelSpy1(reply1, &QCNetworkReply::cancelled);
     QSignalSpy cancelSpy2(reply2, &QCNetworkReply::cancelled);
 
-    token->attach(reply1);
-    token->attach(reply2);
+    m_token->attach(reply1);
+    m_token->attach(reply2);
 
-    QCOMPARE(token->attachedCount(), 2);
+    QCOMPARE(m_token->attachedCount(), 2);
 
     // Act
-    token->cancel();
+    m_token->cancel();
 
     // Assert
-    QCOMPARE(token->isCancelled(), true);
-    QCOMPARE(token->attachedCount(), 0);  // 取消后应该清空
+    QCOMPARE(m_token->isCancelled(), true);
+    QCOMPARE(m_token->attachedCount(), 0);  // 取消后应该清空
 
     // Note: 信号可能需要事件循环才能触发
     // 这里主要验证 token 的状态变化
@@ -220,19 +224,19 @@ void TestQCNetworkCancelToken::testClearReplies()
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
-    auto *reply1 = manager->sendGet(request1);
-    auto *reply2 = manager->sendGet(request2);
+    auto *reply1 = m_manager->sendGet(request1);
+    auto *reply2 = m_manager->sendGet(request2);
 
-    token->attach(reply1);
-    token->attach(reply2);
-    QCOMPARE(token->attachedCount(), 2);
+    m_token->attach(reply1);
+    m_token->attach(reply2);
+    QCOMPARE(m_token->attachedCount(), 2);
 
     // Act
-    token->clear();
+    m_token->clear();
 
     // Assert
-    QCOMPARE(token->attachedCount(), 0);
-    QCOMPARE(token->isCancelled(), false);  // clear 不会标记为已取消
+    QCOMPARE(m_token->attachedCount(), 0);
+    QCOMPARE(m_token->isCancelled(), false);  // clear 不会标记为已取消
 
     // Cleanup
     reply1->deleteLater();
@@ -245,17 +249,17 @@ void TestQCNetworkCancelToken::testClearReplies()
 void TestQCNetworkCancelToken::testAutoTimeout()
 {
     // Arrange
-    QSignalSpy spy(token, &QCNetworkCancelToken::cancelled);
+    QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
     // Act - 设置 100ms 自动超时
-    token->setAutoTimeout(100);
+    m_token->setAutoTimeout(100);
 
     // Wait for timeout
     QTest::qWait(150);
 
     // Assert - 应该已自动取消
     QVERIFY(spy.count() >= 1);
-    QCOMPARE(token->isCancelled(), true);
+    QCOMPARE(m_token->isCancelled(), true);
 
     // Test disabling auto-timeout
     auto *token2 = new QCNetworkCancelToken(this);
@@ -266,7 +270,8 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     QCOMPARE(token2->isCancelled(), false);  // 应该未取消
 
     // Cleanup
-    delete token2;
+    token2->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 QTEST_MAIN(TestQCNetworkCancelToken)

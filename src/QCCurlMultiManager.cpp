@@ -10,19 +10,6 @@
 namespace QCurl {
 
 // ============================================================================
-// SocketInfo 实现
-// ============================================================================
-
-SocketInfo::~SocketInfo()
-{
-    // 注意：不能使用 deleteLater()，因为可能在事件循环外调用
-    // 参考旧代码 CurlMultiHandleProcesser.cpp:200-206
-    // "Because Qt-Doc says do not use deleteLater() when we are not in eventLoop"
-    delete readNotifier;
-    delete writeNotifier;
-}
-
-// ============================================================================
 // QCCurlMultiManager 实现
 // ============================================================================
 
@@ -393,7 +380,19 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
     // 从 libcurl 解除关联
     curl_multi_assign(m_multiHandle, socketfd, nullptr);
 
-    // 删除 SocketInfo（析构函数会清理 notifier）
+    if (info->readNotifier) {
+        info->readNotifier->setEnabled(false);
+        info->readNotifier->deleteLater();
+        info->readNotifier = nullptr;
+    }
+
+    if (info->writeNotifier) {
+        info->writeNotifier->setEnabled(false);
+        info->writeNotifier->deleteLater();
+        info->writeNotifier = nullptr;
+    }
+
+    // 删除 SocketInfo（notifier 由 QObject 生命周期管理）
     delete info;
     m_socketMap.remove(socketfd);
 }

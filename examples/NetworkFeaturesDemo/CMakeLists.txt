@@ -21,6 +21,7 @@ target_link_libraries(NetworkFeaturesDemo
         Qt6::Core
         Qt6::Network
         QCurl
+        CURL::libcurl
 )
 
 # 包含目录

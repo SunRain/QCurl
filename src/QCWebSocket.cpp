@@ -21,11 +21,26 @@ QCWebSocketPrivate::QCWebSocketPrivate(QCWebSocket *parent)
 
 QCWebSocketPrivate::~QCWebSocketPrivate()
 {
+    if (socketReadNotifier) {
+        socketReadNotifier->setEnabled(false);
+        QObject::disconnect(socketReadNotifier, nullptr, q_ptr, nullptr);
+        socketReadNotifier->deleteLater();
+        socketReadNotifier = nullptr;
+    }
+
     // 停止接收定时器
     if (receiveTimer) {
         receiveTimer->stop();
-        delete receiveTimer;
+        QObject::disconnect(receiveTimer, nullptr, q_ptr, nullptr);
+        receiveTimer->deleteLater();
         receiveTimer = nullptr;
+    }
+
+    if (reconnectTimer) {
+        reconnectTimer->stop();
+        QObject::disconnect(reconnectTimer, nullptr, q_ptr, nullptr);
+        reconnectTimer->deleteLater();
+        reconnectTimer = nullptr;
     }
 
     // 清理 curl 资源（QCCurlHandleManager 的 RAII 机制会自动清理）
@@ -193,7 +208,8 @@ void QCWebSocketPrivate::cleanupConnection()
     // 停止并删除 Socket 通知器
     if (socketReadNotifier) {
         socketReadNotifier->setEnabled(false);
-        delete socketReadNotifier;
+        QObject::disconnect(socketReadNotifier, nullptr, q_ptr, nullptr);
+        socketReadNotifier->deleteLater();
         socketReadNotifier = nullptr;
     }
 

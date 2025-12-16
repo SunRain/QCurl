@@ -6,8 +6,9 @@
 
 #include <QObject>
 #include <QList>
+#include <QPointer>
+#include <QScopedPointer>
 #include <QTimer>
-#include <memory>
 #include "QCGlobal.h"
 
 namespace QCurl {
@@ -120,7 +121,7 @@ private slots:
 
 private:
     class Private;
-    std::unique_ptr<Private> d_ptr;
+    QScopedPointer<Private> d_ptr;
 };
 
 } // namespace QCurl

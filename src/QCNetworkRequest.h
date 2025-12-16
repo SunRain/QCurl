@@ -50,9 +50,9 @@ public:
     QCNetworkRequest(const QCNetworkRequest &other);
     virtual ~QCNetworkRequest();
 
-    QCNetworkRequest &operator =(const QCNetworkRequest &other);
-    bool operator ==(const QCNetworkRequest &other);
-    bool operator !=(const QCNetworkRequest &other);
+    QCNetworkRequest &operator=(const QCNetworkRequest &other);
+    bool operator==(const QCNetworkRequest &other) const;
+    bool operator!=(const QCNetworkRequest &other) const;
 
     // ========== 基础配置 ==========
 

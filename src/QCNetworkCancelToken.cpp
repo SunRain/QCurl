@@ -10,14 +10,14 @@ namespace QCurl {
 class QCNetworkCancelToken::Private
 {
 public:
-    QList<QCNetworkReply *> attachedReplies;
+    QList<QPointer<QCNetworkReply>> attachedReplies;
     QTimer *autoTimeoutTimer = nullptr;
     bool cancelled = false;
 };
 
 QCNetworkCancelToken::QCNetworkCancelToken(QObject *parent)
     : QObject(parent)
-    , d_ptr(std::make_unique<Private>())
+    , d_ptr(new Private)
 {
 }
 
@@ -36,6 +36,9 @@ void QCNetworkCancelToken::attach(QCNetworkReply *reply)
     
     // Connect to finished signal
     connect(reply, &QCNetworkReply::finished, this, &QCNetworkCancelToken::onReplyFinished);
+    connect(reply, &QObject::destroyed, this, [this](QObject *obj) {
+        detach(static_cast<QCNetworkReply *>(obj));
+    });
 }
 
 void QCNetworkCancelToken::attachMultiple(const QList<QCNetworkReply *> &replies)
@@ -50,8 +53,14 @@ void QCNetworkCancelToken::detach(QCNetworkReply *reply)
     if (!reply) {
         return;
     }
-    
-    d_ptr->attachedReplies.removeAll(reply);
+
+    for (int i = d_ptr->attachedReplies.size() - 1; i >= 0; --i) {
+        const QPointer<QCNetworkReply> &replyPtr = d_ptr->attachedReplies.at(i);
+        if (!replyPtr || replyPtr.data() == reply) {
+            d_ptr->attachedReplies.removeAt(i);
+        }
+    }
+
     disconnect(reply, nullptr, this, nullptr);
 }
 
@@ -71,8 +80,9 @@ void QCNetworkCancelToken::cancel()
     }
     
     // Cancel all attached replies
-    QList<QCNetworkReply *> repliesToCancel = d_ptr->attachedReplies;
-    for (auto *reply : repliesToCancel) {
+    const QList<QPointer<QCNetworkReply>> repliesToCancel = d_ptr->attachedReplies;
+    for (const QPointer<QCNetworkReply> &replyPtr : repliesToCancel) {
+        QCNetworkReply *reply = replyPtr.data();
         if (reply) {
             reply->cancel();
             detach(reply);
@@ -106,7 +116,13 @@ void QCNetworkCancelToken::setAutoTimeout(int msecs)
 
 int QCNetworkCancelToken::attachedCount() const
 {
-    return d_ptr->attachedReplies.size();
+    int count = 0;
+    for (const QPointer<QCNetworkReply> &replyPtr : d_ptr->attachedReplies) {
+        if (replyPtr) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool QCNetworkCancelToken::isCancelled() const
@@ -116,8 +132,11 @@ bool QCNetworkCancelToken::isCancelled() const
 
 void QCNetworkCancelToken::clear()
 {
-    for (auto *reply : d_ptr->attachedReplies) {
-        disconnect(reply, nullptr, this, nullptr);
+    for (const QPointer<QCNetworkReply> &replyPtr : d_ptr->attachedReplies) {
+        QCNetworkReply *reply = replyPtr.data();
+        if (reply) {
+            disconnect(reply, nullptr, this, nullptr);
+        }
     }
     d_ptr->attachedReplies.clear();
 }

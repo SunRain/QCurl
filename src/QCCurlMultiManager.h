@@ -31,15 +31,7 @@ struct SocketInfo {
     curl_socket_t socketfd = CURL_SOCKET_BAD;  ///< Socket 文件描述符
     QSocketNotifier *readNotifier = nullptr;    ///< 读事件通知器
     QSocketNotifier *writeNotifier = nullptr;   ///< 写事件通知器
-
-    /**
-     * @brief 析构函数
-     *
-     * 自动清理 QSocketNotifier 对象。
-     *
-     * @note 不能使用 deleteLater()，因为可能在事件循环外调用
-     */
-    ~SocketInfo();
+    ~SocketInfo() = default;
 };
 
 /**

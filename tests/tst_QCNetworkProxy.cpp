@@ -44,7 +44,7 @@ private slots:
     void testProxyConnectionFailed();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
     bool waitForReply(QCNetworkReply *reply, int timeout = 5000);
 };
 
@@ -56,13 +56,12 @@ void TestQCNetworkProxy::initTestCase()
     qDebug() << "测试方案：简化版（无需真实代理服务器）";
     qDebug() << "";
 
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
 }
 
 void TestQCNetworkProxy::cleanupTestCase()
 {
-    delete manager;
-    manager = nullptr;
+    m_manager = nullptr;
 }
 
 void TestQCNetworkProxy::init()
@@ -312,7 +311,7 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
     timeoutConfig.totalTimeout = std::chrono::seconds(3);
     request.setTimeoutConfig(timeoutConfig);
 
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply != nullptr);
 
     // 等待请求完成（应该失败）

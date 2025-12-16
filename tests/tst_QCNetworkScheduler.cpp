@@ -49,14 +49,14 @@ private slots:
     void testSchedulerIntegration();
 
 private:
-    QCNetworkAccessManager *manager;
-    QCNetworkRequestScheduler *scheduler;
+    QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkRequestScheduler *m_scheduler = nullptr;
 };
 
 void tst_QCNetworkScheduler::initTestCase()
 {
-    manager = new QCNetworkAccessManager(this);
-    scheduler = QCNetworkRequestScheduler::instance();
+    m_manager = new QCNetworkAccessManager(this);
+    m_scheduler = QCNetworkRequestScheduler::instance();
     
     // 重置配置为测试默认值
     QCNetworkRequestScheduler::Config config;
@@ -64,7 +64,7 @@ void tst_QCNetworkScheduler::initTestCase()
     config.maxRequestsPerHost = 1;     // 限制为 1 以便测试
     config.maxBandwidthBytesPerSec = 0;  // 默认无限制
     config.enableThrottling = true;
-    scheduler->setConfig(config);
+    m_scheduler->setConfig(config);
     
     qDebug() << "Test initialized with config:"
              << "maxConcurrent=" << config.maxConcurrentRequests
@@ -74,8 +74,8 @@ void tst_QCNetworkScheduler::initTestCase()
 void tst_QCNetworkScheduler::cleanupTestCase()
 {
     // 清理所有请求
-    scheduler->cancelAllRequests();
-    delete manager;
+    m_scheduler->cancelAllRequests();
+    m_manager = nullptr;
 }
 
 /**
@@ -84,15 +84,15 @@ void tst_QCNetworkScheduler::cleanupTestCase()
 void tst_QCNetworkScheduler::testSchedulerEnabled()
 {
     // 默认应该是禁用的
-    QVERIFY(!manager->isSchedulerEnabled());
+    QVERIFY(!m_manager->isSchedulerEnabled());
     
     // 启用调度器
-    manager->enableRequestScheduler(true);
-    QVERIFY(manager->isSchedulerEnabled());
+    m_manager->enableRequestScheduler(true);
+    QVERIFY(m_manager->isSchedulerEnabled());
     
     // 禁用调度器
-    manager->enableRequestScheduler(false);
-    QVERIFY(!manager->isSchedulerEnabled());
+    m_manager->enableRequestScheduler(false);
+    QVERIFY(!m_manager->isSchedulerEnabled());
     
     qDebug() << "✅ Test 1 passed: Scheduler enable/disable";
 }
@@ -105,7 +105,7 @@ void tst_QCNetworkScheduler::testSchedulerEnabled()
 void tst_QCNetworkScheduler::testPriorityQueueOrdering()
 {
     // 清理之前的请求
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建不同优先级的请求（使用无效 URL，不会真正执行）
     QCNetworkRequest lowReq(QUrl("http://invalid-test-host-low.local/test"));
@@ -118,21 +118,21 @@ void tst_QCNetworkScheduler::testPriorityQueueOrdering()
     normalReq.setPriority(QCNetworkRequestPriority::Normal);
     
     // 按相反的顺序加入队列（先 Low，后 High）
-    auto *lowReply = scheduler->scheduleRequest(lowReq, HttpMethod::Get, 
+    auto *lowReply = m_scheduler->scheduleRequest(lowReq, HttpMethod::Get, 
                                                  QCNetworkRequestPriority::Low);
-    auto *normalReply = scheduler->scheduleRequest(normalReq, HttpMethod::Get, 
+    auto *normalReply = m_scheduler->scheduleRequest(normalReq, HttpMethod::Get, 
                                                     QCNetworkRequestPriority::Normal);
-    auto *highReply = scheduler->scheduleRequest(highReq, HttpMethod::Get, 
+    auto *highReply = m_scheduler->scheduleRequest(highReq, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::High);
     
     // 获取等待中的请求列表
-    QList<QCNetworkReply*> pending = scheduler->pendingRequests();
+    QList<QCNetworkReply*> pending = m_scheduler->pendingRequests();
     
     // 由于并发限制为 2，应该有 1 个等待中（High 和 Normal 已开始执行）
     QVERIFY(pending.size() >= 1);
     
     // 清理
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     lowReply->deleteLater();
     normalReply->deleteLater();
     highReply->deleteLater();
@@ -145,25 +145,25 @@ void tst_QCNetworkScheduler::testPriorityQueueOrdering()
  */
 void tst_QCNetworkScheduler::testConcurrentRequestLimit()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 配置为最多 2 个并发
-    QCNetworkRequestScheduler::Config config = scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->config();
     config.maxConcurrentRequests = 2;
-    scheduler->setConfig(config);
+    m_scheduler->setConfig(config);
     
     // 创建 5 个请求
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest req(QUrl(QString("http://invalid-host-%1.local/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+        auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::Normal);
         replies.append(reply);
     }
     
     // 获取统计信息
-    auto stats = scheduler->statistics();
+    auto stats = m_scheduler->statistics();
     
     // 运行中的请求应该不超过 2
     QVERIFY(stats.runningRequests <= 2);
@@ -175,7 +175,7 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
              << "Pending:" << stats.pendingRequests;
     
     // 清理
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
     }
@@ -188,26 +188,26 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
  */
 void tst_QCNetworkScheduler::testPerHostLimit()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 配置为每主机最多 1 个并发
-    QCNetworkRequestScheduler::Config config = scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->config();
     config.maxConcurrentRequests = 10;  // 全局足够大
     config.maxRequestsPerHost = 1;      // 每主机限制为 1
-    scheduler->setConfig(config);
+    m_scheduler->setConfig(config);
     
     // 向同一主机发送 3 个请求
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest req(QUrl("http://same-host.local/test"));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+        auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::Normal);
         replies.append(reply);
     }
     
     // 获取运行中的请求
-    auto running = scheduler->runningRequests();
+    auto running = m_scheduler->runningRequests();
     
     // 运行中的请求应该只有 1 个（因为是同一主机）
     QVERIFY(running.size() <= 1);
@@ -215,7 +215,7 @@ void tst_QCNetworkScheduler::testPerHostLimit()
     qDebug() << "Running requests to same host:" << running.size();
     
     // 清理
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
     }
@@ -228,24 +228,24 @@ void tst_QCNetworkScheduler::testPerHostLimit()
  */
 void tst_QCNetworkScheduler::testPauseResume()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建一个请求
     QCNetworkRequest req(QUrl("http://pause-test-host.local/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
-    auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+    auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                               QCNetworkRequestPriority::Normal);
     
-    auto statsBefore = scheduler->statistics();
+    auto statsBefore = m_scheduler->statistics();
     int pendingBefore = statsBefore.pendingRequests + statsBefore.runningRequests;
     
     // 暂停请求
-    scheduler->pauseRequest(reply);
+    m_scheduler->pauseRequest(reply);
     
     // 恢复请求
-    scheduler->resumeRequest(reply);
+    m_scheduler->resumeRequest(reply);
     
-    auto statsAfter = scheduler->statistics();
+    auto statsAfter = m_scheduler->statistics();
     int pendingAfter = statsAfter.pendingRequests + statsAfter.runningRequests;
     
     // 恢复后请求应该重新加入队列
@@ -254,7 +254,7 @@ void tst_QCNetworkScheduler::testPauseResume()
     qDebug() << "Pending before:" << pendingBefore << "after:" << pendingAfter;
     
     // 清理
-    scheduler->cancelRequest(reply);
+    m_scheduler->cancelRequest(reply);
     reply->deleteLater();
     
     qDebug() << "✅ Test 5 passed: Pause/Resume";
@@ -265,19 +265,19 @@ void tst_QCNetworkScheduler::testPauseResume()
  */
 void tst_QCNetworkScheduler::testCancelRequest()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建请求
     QCNetworkRequest req(QUrl("http://cancel-test-host.local/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
-    auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+    auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                               QCNetworkRequestPriority::Normal);
     
     // 监听取消信号
-    QSignalSpy cancelSpy(scheduler, &QCNetworkRequestScheduler::requestCancelled);
+    QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
     
     // 取消请求
-    scheduler->cancelRequest(reply);
+    m_scheduler->cancelRequest(reply);
     
     // 应该收到取消信号
     QVERIFY(cancelSpy.count() >= 1);
@@ -292,27 +292,27 @@ void tst_QCNetworkScheduler::testCancelRequest()
  */
 void tst_QCNetworkScheduler::testCancelAllRequests()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建多个请求
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest req(QUrl(QString("http://cancel-all-host-%1.local/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+        auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::Normal);
         replies.append(reply);
     }
     
-    auto statsBefore = scheduler->statistics();
+    auto statsBefore = m_scheduler->statistics();
     int totalBefore = statsBefore.pendingRequests + statsBefore.runningRequests;
     
     QVERIFY(totalBefore >= 5);
     
     // 取消所有请求
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
-    auto statsAfter = scheduler->statistics();
+    auto statsAfter = m_scheduler->statistics();
     int totalAfter = statsAfter.pendingRequests + statsAfter.runningRequests;
     
     // 所有请求应该被取消
@@ -332,19 +332,19 @@ void tst_QCNetworkScheduler::testCancelAllRequests()
  */
 void tst_QCNetworkScheduler::testChangePriority()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建低优先级请求
     QCNetworkRequest req(QUrl("http://priority-change-host.local/test"));
     req.setPriority(QCNetworkRequestPriority::Low);
-    auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+    auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                               QCNetworkRequestPriority::Low);
     
     // 监听队列信号
-    QSignalSpy queueSpy(scheduler, &QCNetworkRequestScheduler::requestQueued);
+    QSignalSpy queueSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
     
     // 调整优先级为 High
-    scheduler->changePriority(reply, QCNetworkRequestPriority::High);
+    m_scheduler->changePriority(reply, QCNetworkRequestPriority::High);
     
     // 应该收到重新加入队列的信号
     // 注意：可能因为请求已经开始执行而无法调整
@@ -353,7 +353,7 @@ void tst_QCNetworkScheduler::testChangePriority()
     qDebug() << "Priority change signal count:" << queueSpy.count();
     
     // 清理
-    scheduler->cancelRequest(reply);
+    m_scheduler->cancelRequest(reply);
     reply->deleteLater();
     
     qDebug() << "✅ Test 8 passed: Change priority";
@@ -364,20 +364,20 @@ void tst_QCNetworkScheduler::testChangePriority()
  */
 void tst_QCNetworkScheduler::testStatistics()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 创建几个请求
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest req(QUrl(QString("http://stats-host-%1.local/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+        auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::Normal);
         replies.append(reply);
     }
     
     // 获取统计信息
-    auto stats = scheduler->statistics();
+    auto stats = m_scheduler->statistics();
     
     // 验证统计信息
     QVERIFY(stats.pendingRequests + stats.runningRequests >= 3);
@@ -393,7 +393,7 @@ void tst_QCNetworkScheduler::testStatistics()
              << "cancelled=" << stats.cancelledRequests;
     
     // 清理
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
     }
@@ -406,28 +406,28 @@ void tst_QCNetworkScheduler::testStatistics()
  */
 void tst_QCNetworkScheduler::testCriticalPriority()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 先创建一些 Normal 请求填满队列
     QList<QCNetworkReply*> normalReplies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest req(QUrl(QString("http://normal-host-%1.local/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+        auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                                   QCNetworkRequestPriority::Normal);
         normalReplies.append(reply);
     }
     
-    auto statsBefore = scheduler->statistics();
+    auto statsBefore = m_scheduler->statistics();
     int runningBefore = statsBefore.runningRequests;
     
     // 创建 Critical 请求
     QCNetworkRequest criticalReq(QUrl("http://critical-host.local/test"));
     criticalReq.setPriority(QCNetworkRequestPriority::Critical);
-    auto *criticalReply = scheduler->scheduleRequest(criticalReq, HttpMethod::Get, 
+    auto *criticalReply = m_scheduler->scheduleRequest(criticalReq, HttpMethod::Get, 
                                                       QCNetworkRequestPriority::Critical);
     
-    auto statsAfter = scheduler->statistics();
+    auto statsAfter = m_scheduler->statistics();
     int runningAfter = statsAfter.runningRequests;
     
     // Critical 请求应该立即执行（不受并发限制）
@@ -436,7 +436,7 @@ void tst_QCNetworkScheduler::testCriticalPriority()
     qDebug() << "Running before:" << runningBefore << "after:" << runningAfter;
     
     // 清理
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     for (auto *reply : normalReplies) {
         reply->deleteLater();
     }
@@ -450,19 +450,19 @@ void tst_QCNetworkScheduler::testCriticalPriority()
  */
 void tst_QCNetworkScheduler::testQueueEmptySignal()
 {
-    scheduler->cancelAllRequests();
+    m_scheduler->cancelAllRequests();
     
     // 监听队列空信号
-    QSignalSpy emptySpy(scheduler, &QCNetworkRequestScheduler::queueEmpty);
+    QSignalSpy emptySpy(m_scheduler, &QCNetworkRequestScheduler::queueEmpty);
     
     // 创建一个请求
     QCNetworkRequest req(QUrl("http://queue-empty-host.local/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
-    auto *reply = scheduler->scheduleRequest(req, HttpMethod::Get, 
+    auto *reply = m_scheduler->scheduleRequest(req, HttpMethod::Get, 
                                               QCNetworkRequestPriority::Normal);
     
     // 立即取消
-    scheduler->cancelRequest(reply);
+    m_scheduler->cancelRequest(reply);
     
     // 等待信号
     QTest::qWait(100);
@@ -481,27 +481,27 @@ void tst_QCNetworkScheduler::testQueueEmptySignal()
 void tst_QCNetworkScheduler::testSchedulerIntegration()
 {
     // 启用调度器
-    manager->enableRequestScheduler(true);
-    QVERIFY(manager->isSchedulerEnabled());
+    m_manager->enableRequestScheduler(true);
+    QVERIFY(m_manager->isSchedulerEnabled());
     
     // 通过 manager 创建请求
     QCNetworkRequest req(QUrl("http://integration-test-host.local/test"));
     req.setPriority(QCNetworkRequestPriority::High);
     
-    auto *reply = manager->scheduleGet(req);
+    auto *reply = m_manager->scheduleGet(req);
     QVERIFY(reply != nullptr);
     
     // 验证请求已加入调度器
-    auto stats = scheduler->statistics();
+    auto stats = m_scheduler->statistics();
     QVERIFY(stats.pendingRequests + stats.runningRequests >= 1);
     
     // 清理
-    scheduler->cancelRequest(reply);
+    m_scheduler->cancelRequest(reply);
     reply->deleteLater();
     
     // 禁用调度器
-    manager->enableRequestScheduler(false);
-    QVERIFY(!manager->isSchedulerEnabled());
+    m_manager->enableRequestScheduler(false);
+    QVERIFY(!m_manager->isSchedulerEnabled());
     
     qDebug() << "✅ Test 12 passed: Scheduler integration";
 }

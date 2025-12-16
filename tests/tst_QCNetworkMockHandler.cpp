@@ -3,6 +3,8 @@
 
 #include <QtTest>
 #include <QUrl>
+#include <QCoreApplication>
+#include <QEvent>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
@@ -33,8 +35,8 @@ private slots:
     void testMockHandlerIntegration();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
-    QCNetworkMockHandler *mockHandler = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkMockHandler m_mockHandler;
 };
 
 void TestQCNetworkMockHandler::initTestCase()
@@ -49,19 +51,17 @@ void TestQCNetworkMockHandler::cleanupTestCase()
 
 void TestQCNetworkMockHandler::init()
 {
-    manager = new QCNetworkAccessManager(this);
-    mockHandler = new QCNetworkMockHandler();
+    m_manager = new QCNetworkAccessManager(this);
+    m_mockHandler.clear();
 }
 
 void TestQCNetworkMockHandler::cleanup()
 {
-    if (mockHandler) {
-        delete mockHandler;
-        mockHandler = nullptr;
-    }
-    if (manager) {
-        delete manager;
-        manager = nullptr;
+    if (m_manager) {
+        m_manager->setMockHandler(nullptr);
+        m_manager->deleteLater();
+        m_manager = nullptr;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 }
 
@@ -76,20 +76,20 @@ void TestQCNetworkMockHandler::testMockResponse()
     int statusCode = 200;
 
     // Act
-    mockHandler->mockResponse(url, mockData, statusCode);
+    m_mockHandler.mockResponse(url, mockData, statusCode);
 
     // Assert
-    QVERIFY(mockHandler->hasMock(url));
+    QVERIFY(m_mockHandler.hasMock(url));
 
     int retrievedStatus = 0;
-    QByteArray retrievedData = mockHandler->getMockResponse(url, retrievedStatus);
+    QByteArray retrievedData = m_mockHandler.getMockResponse(url, retrievedStatus);
 
     QCOMPARE(retrievedData, mockData);
     QCOMPARE(retrievedStatus, statusCode);
 
     // Test clearing
-    mockHandler->clear();
-    QVERIFY(!mockHandler->hasMock(url));
+    m_mockHandler.clear();
+    QVERIFY(!m_mockHandler.hasMock(url));
 }
 
 /**
@@ -102,18 +102,18 @@ void TestQCNetworkMockHandler::testMockError()
     NetworkError error = NetworkError::NoError;  // 使用实际的错误码
 
     // Act
-    mockHandler->mockError(url, error);
+    m_mockHandler.mockError(url, error);
 
     // Assert
-    QVERIFY(mockHandler->hasMock(url));
+    QVERIFY(m_mockHandler.hasMock(url));
 
-    NetworkError retrievedError = mockHandler->getMockError(url);
+    NetworkError retrievedError = m_mockHandler.getMockError(url);
     QCOMPARE(retrievedError, error);
 
     // Test with different error
-    mockHandler->clear();
-    mockHandler->mockError(url, error);
-    QVERIFY(mockHandler->hasMock(url));
+    m_mockHandler.clear();
+    m_mockHandler.mockError(url, error);
+    QVERIFY(m_mockHandler.hasMock(url));
 }
 
 /**
@@ -122,25 +122,22 @@ void TestQCNetworkMockHandler::testMockError()
 void TestQCNetworkMockHandler::testMockHandlerIntegration()
 {
     // Arrange
-    auto *handler = new QCNetworkMockHandler();
+    QCNetworkMockHandler handler;
     QUrl mockUrl("http://example.com/mock/test");
     QByteArray mockResponse = "Mock Response Data";
 
-    handler->mockResponse(mockUrl, mockResponse, 200);
+    handler.mockResponse(mockUrl, mockResponse, 200);
 
     // Act
-    manager->setMockHandler(handler);
+    m_manager->setMockHandler(&handler);
 
     // Assert
-    QCOMPARE(manager->mockHandler(), handler);
-    QVERIFY(handler->hasMock(mockUrl));
+    QCOMPARE(m_manager->mockHandler(), &handler);
+    QVERIFY(handler.hasMock(mockUrl));
 
     // Test removing mock handler
-    manager->setMockHandler(nullptr);
-    QCOMPARE(manager->mockHandler(), nullptr);
-
-    // Cleanup
-    delete handler;
+    m_manager->setMockHandler(nullptr);
+    QCOMPARE(m_manager->mockHandler(), nullptr);
 }
 
 QTEST_MAIN(TestQCNetworkMockHandler)

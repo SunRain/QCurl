@@ -42,6 +42,7 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
 
 QCNetworkAccessManager::~QCNetworkAccessManager()
 {
+    delete d_ptr;
 }
 
 QString QCNetworkAccessManager::cookieFilePath() const
@@ -582,9 +583,9 @@ QList<QCNetworkMiddleware*> QCNetworkAccessManager::middlewares() const
 // 流式构建器
 // ============================================================================
 
-QCNetworkRequestBuilder* QCNetworkAccessManager::newRequest(const QUrl &url)
+QCNetworkRequestBuilder QCNetworkAccessManager::newRequest(const QUrl &url)
 {
-    return new QCNetworkRequestBuilder(this, url);
+    return QCNetworkRequestBuilder(this, url);
 }
 
 

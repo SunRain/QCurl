@@ -40,6 +40,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QElapsedTimer>
+#include <QMetaMethod>
+#include <QCoreApplication>
+#include <QEvent>
+#include <QVector>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -122,10 +126,10 @@ private slots:
     void testRetryDelayAccuracy();           // 重试延迟准确性
 
 private:
-    QCNetworkAccessManager *manager;
+    QCNetworkAccessManager *m_manager = nullptr;
 
     // 辅助方法
-    bool waitForSignal(QObject *obj, const char *signal, int timeout = 10000);
+    bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
     QJsonObject parseJsonResponse(const QByteArray &data);
 };
 
@@ -133,19 +137,10 @@ private:
 // 辅助方法实现
 // ============================================================================
 
-bool TestIntegration::waitForSignal(QObject *obj, const char *signal, int timeout)
+bool TestIntegration::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-
-    QObject::connect(obj, signal, &loop, SLOT(quit()));
-    QObject::connect(&timer, SIGNAL(timeout()), &loop, SLOT(quit()));
-
-    timer.start(timeout);
-    loop.exec();
-
-    return timer.isActive();  // true = signal received, false = timeout
+    QSignalSpy spy(obj, signal);
+    return spy.wait(timeout);
 }
 
 QJsonObject TestIntegration::parseJsonResponse(const QByteArray &data)
@@ -163,14 +158,23 @@ void TestIntegration::initTestCase()
     qDebug() << "========================================";
     qDebug() << "QCurl 集成测试套件";
     qDebug() << "========================================";
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
+
+    QCNetworkRequest healthCheck(QUrl(HTTPBIN_BASE_URL + "/status/200"));
+    auto *reply = m_manager->sendGet(healthCheck);
+    const bool ok = waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 2000)
+        && reply->error() == NetworkError::NoError;
+    reply->deleteLater();
+
+    if (!ok) {
+        QSKIP("httpbin 服务不可用，跳过集成测试。请启动：docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin");
+    }
 }
 
 void TestIntegration::cleanupTestCase()
 {
     qDebug() << "清理集成测试套件";
-    delete manager;
-    manager = nullptr;
+    m_manager = nullptr;
 }
 
 void TestIntegration::init()
@@ -190,9 +194,9 @@ void TestIntegration::cleanup()
 void TestIntegration::testRealHttpGetRequest()
 {
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get?test=value"));
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -214,9 +218,9 @@ void TestIntegration::testRealHttpPostRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray postData = R"({"name":"QCurl","version":"2.0.0"})";
-    auto *reply = manager->sendPost(request, postData);
+    auto *reply = m_manager->sendPost(request, postData);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -239,9 +243,9 @@ void TestIntegration::testRealHttpPutRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray putData = R"({"action":"update"})";
-    auto *reply = manager->sendPut(request, putData);
+    auto *reply = m_manager->sendPut(request, putData);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -255,9 +259,9 @@ void TestIntegration::testRealHttpPutRequest()
 void TestIntegration::testRealHttpDeleteRequest()
 {
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/delete"));
-    auto *reply = manager->sendDelete(request);
+    auto *reply = m_manager->sendDelete(request);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     qDebug() << "DELETE request successful";
@@ -270,9 +274,9 @@ void TestIntegration::testRealHttpPatchRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray patchData = R"({"field":"patched"})";
-    auto *reply = manager->sendPatch(request, patchData);
+    auto *reply = m_manager->sendPatch(request, patchData);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -293,8 +297,8 @@ void TestIntegration::testCookieSetAndGet()
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/cookies/set?test_cookie=test_value"));
     request.setFollowLocation(true);  // httpbin 会重定向到 /cookies
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -317,19 +321,19 @@ void TestIntegration::testCookiePersistence()
     cookieFile.close();
 
     // 设置 cookie 文件
-    manager->setCookieFilePath(cookiePath);
+    m_manager->setCookieFilePath(cookiePath);
 
     // 第一个请求：设置 cookie
     QCNetworkRequest request1(QUrl(HTTPBIN_BASE_URL + "/cookies/set?session=123"));
     request1.setFollowLocation(true);
-    auto *reply1 = manager->sendGet(request1);
-    QVERIFY(waitForSignal(reply1, SIGNAL(finished()), 10000));
+    auto *reply1 = m_manager->sendGet(request1);
+    QVERIFY(waitForSignal(reply1, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     reply1->deleteLater();
 
     // 第二个请求：验证 cookie 被保存和发送
     QCNetworkRequest request2(QUrl(HTTPBIN_BASE_URL + "/cookies"));
-    auto *reply2 = manager->sendGet(request2);
-    QVERIFY(waitForSignal(reply2, SIGNAL(finished()), 10000));
+    auto *reply2 = m_manager->sendGet(request2);
+    QVERIFY(waitForSignal(reply2, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     auto data = reply2->readAll();
     QVERIFY(data.has_value());
@@ -342,7 +346,7 @@ void TestIntegration::testCookiePersistence()
     reply2->deleteLater();
 
     // 清理
-    manager->setCookieFilePath("");
+    m_manager->setCookieFilePath("");
     QFile::remove(cookiePath);
 }
 
@@ -356,8 +360,8 @@ void TestIntegration::testCustomHeaders()
     request.setRawHeader("X-Custom-Header", "TestValue");
     request.setRawHeader("X-Test-ID", "12345");
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
@@ -376,8 +380,8 @@ void TestIntegration::testUserAgentHeader()
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/user-agent"));
     request.setRawHeader("User-Agent", "QCurl/2.0.0 Integration-Test");
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
@@ -399,8 +403,8 @@ void TestIntegration::testAuthorizationHeader()
     QString credentials = QString("user:passwd").toUtf8().toBase64();
     request.setRawHeader("Authorization", QString("Basic %1").arg(credentials).toUtf8());
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -428,8 +432,8 @@ void TestIntegration::testConnectTimeout()
     timeout.totalTimeout = std::chrono::seconds(3);
     request.setTimeoutConfig(timeout);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 5000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     // 应该超时失败
     QVERIFY(reply->error() != NetworkError::NoError);
@@ -447,8 +451,8 @@ void TestIntegration::testTotalTimeout()
     timeout.totalTimeout = std::chrono::seconds(2);  // 但只允许 2 秒
     request.setTimeoutConfig(timeout);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 5000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     // 应该超时失败
     QVERIFY(reply->error() != NetworkError::NoError);
@@ -466,8 +470,8 @@ void TestIntegration::testDelayedResponse()
     timeout.totalTimeout = std::chrono::seconds(5);  // 给足够的时间
     request.setTimeoutConfig(timeout);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 8000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 8000));
 
     // 应该成功
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -485,8 +489,8 @@ void TestIntegration::testFollowRedirect()
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/redirect/3"));  // 3 次重定向
     request.setFollowLocation(true);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -505,8 +509,8 @@ void TestIntegration::testMaxRedirects()
     request.setFollowLocation(true);
     // libcurl 默认最大重定向次数是 50，这应该成功
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     // 可能成功或失败（取决于 libcurl 配置），但不应该崩溃
     qDebug() << "Max redirects test completed:" << reply->errorString();
@@ -525,8 +529,8 @@ void TestIntegration::testHttpsRequest()
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
     request.setSslConfig(sslConfig);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     // 本地 httpbin 使用 HTTP（无 SSL），应该成功
     // 注意：如使用 HTTPS httpbin，需配置 SSL 证书
@@ -544,8 +548,8 @@ void TestIntegration::testSslConfiguration()
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::insecureConfig();
     request.setSslConfig(sslConfig);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     qDebug() << "SSL insecure config test successful";
@@ -571,8 +575,8 @@ void TestIntegration::testLargeFileDownload()
     timeout.totalTimeout = std::chrono::seconds(120);
     request.setTimeoutConfig(timeout);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 150000));  // 2.5 分钟超时
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 150000));  // 2.5 分钟超时
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
@@ -587,11 +591,11 @@ void TestIntegration::testProgressTracking()
 {
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/bytes/102400"));  // 100KB
 
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 20000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 20000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     // 应该有进度更新
@@ -618,7 +622,7 @@ void TestIntegration::testConcurrentRequests()
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest request(QUrl(QString(HTTPBIN_BASE_URL + "/get?id=%1").arg(i)));
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
         replies.append(reply);
     }
 
@@ -655,9 +659,9 @@ void TestIntegration::testSequentialRequests()
     // 顺序执行 3 个请求
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest request(QUrl(QString(HTTPBIN_BASE_URL + "/get?seq=%1").arg(i)));
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
 
-        QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
         QCOMPARE(reply->error(), NetworkError::NoError);
 
         reply->deleteLater();
@@ -673,9 +677,9 @@ void TestIntegration::testSequentialRequests()
 void TestIntegration::testInvalidHost()
 {
     QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(isCurlError(reply->error()));
 
@@ -692,8 +696,8 @@ void TestIntegration::testConnectionRefused()
     timeout.connectTimeout = std::chrono::seconds(2);
     request.setTimeoutConfig(timeout);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 5000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
     QVERIFY(reply->error() != NetworkError::NoError);
 
     qDebug() << "Connection refused test successful:" << reply->errorString();
@@ -704,8 +708,8 @@ void TestIntegration::testHttpErrorCodes()
 {
     // 测试 HTTP 404
     QCNetworkRequest request404(QUrl(HTTPBIN_BASE_URL + "/status/404"));
-    auto *reply404 = manager->sendGet(request404);
-    QVERIFY(waitForSignal(reply404, SIGNAL(finished()), 10000));
+    auto *reply404 = m_manager->sendGet(request404);
+    QVERIFY(waitForSignal(reply404, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     // 注意：libcurl 的 CURLOPT_FAILONERROR 会将 HTTP 错误转为 curl 错误
     // 所以可能返回 CURLE_HTTP_RETURNED_ERROR
@@ -714,8 +718,8 @@ void TestIntegration::testHttpErrorCodes()
 
     // 测试 HTTP 500
     QCNetworkRequest request500(QUrl(HTTPBIN_BASE_URL + "/status/500"));
-    auto *reply500 = manager->sendGet(request500);
-    QVERIFY(waitForSignal(reply500, SIGNAL(finished()), 10000));
+    auto *reply500 = m_manager->sendGet(request500);
+    QVERIFY(waitForSignal(reply500, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     qDebug() << "HTTP 500 test:" << reply500->errorString();
     reply500->deleteLater();
@@ -733,7 +737,7 @@ void TestIntegration::testRetryWithConcurrentRequests()
 
     // 创建 3 个并发请求，都会触发重试
     QList<QCNetworkReply*> replies;
-    QList<QSignalSpy*> spies;
+    QVector<int> retryCounts(3, 0);
 
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/503"));
@@ -742,28 +746,32 @@ void TestIntegration::testRetryWithConcurrentRequests()
         policy.initialDelay = std::chrono::milliseconds(100);
         request.setRetryPolicy(policy);
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
         replies.append(reply);
-
-        auto *spy = new QSignalSpy(reply, &QCNetworkReply::retryAttempt);
-        spies.append(spy);
+        connect(reply, &QCNetworkReply::retryAttempt, this, [&retryCounts, i]() {
+            retryCounts[i] += 1;
+        });
     }
 
     // 等待所有请求完成
     for (auto *reply : replies) {
         // 并发重试整体耗时可能超过 10s，适当放宽等待窗口
-        QVERIFY(waitForSignal(reply, SIGNAL(finished()), 30000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000));
     }
 
     // 验证每个请求都重试了 2 次
-    for (int i = 0; i < spies.size(); ++i) {
-        qDebug() << "Reply" << i << "retry count:" << spies[i]->count();
-        QCOMPARE(spies[i]->count(), 2);
+    for (int i = 0; i < retryCounts.size(); ++i) {
+        qDebug() << "Reply" << i << "retry count:" << retryCounts[i];
+        QCOMPARE(retryCounts[i], 2);
     }
 
     // 清理
-    qDeleteAll(replies);
-    qDeleteAll(spies);
+    for (auto *reply : replies) {
+        if (reply) {
+            reply->deleteLater();
+        }
+    }
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
     qDebug() << "Concurrent retries test completed";
 }
@@ -788,10 +796,10 @@ void TestIntegration::testRetryOnTimeout()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 5000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     qint64 elapsed = timer.elapsed();
 
@@ -823,10 +831,10 @@ void TestIntegration::testRetryDelayAccuracy()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = manager->sendGet(request);
+    auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     qint64 elapsed = timer.elapsed();
 

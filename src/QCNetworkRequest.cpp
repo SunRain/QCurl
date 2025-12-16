@@ -88,28 +88,32 @@ QCNetworkRequest::~QCNetworkRequest()
 
 // ========== 运算符 ==========
 
-QCNetworkRequest &QCNetworkRequest::operator =(const QCNetworkRequest &other)
+QCNetworkRequest &QCNetworkRequest::operator=(const QCNetworkRequest &other)
 {
-    if (this != &other)
-        d.operator =(other.d);
+    if (this != &other) {
+        d = other.d;
+    }
     return *this;
 }
 
-bool QCNetworkRequest::operator ==(const QCNetworkRequest &other)
+bool QCNetworkRequest::operator==(const QCNetworkRequest &other) const
 {
-    return d.data()->followLocation == other.d.data()->followLocation
-            && d.data()->reqUrl == other.d.data()->reqUrl
-            && d.data()->rawHeaderMap == other.d.data()->rawHeaderMap
-            && d.data()->rangeStart == other.d.data()->rangeStart
-            && d.data()->rangeEnd == other.d.data()->rangeEnd
-            && d.data()->httpVersion == other.d.data()->httpVersion;
-            // Note: sslConfig, proxyConfig, timeoutConfig 不参与比较
-            // 因为它们是请求执行配置而非请求标识
+    const QCNetworkRequestPrivate *lhs = d.constData();
+    const QCNetworkRequestPrivate *rhs = other.d.constData();
+
+    return lhs->followLocation == rhs->followLocation
+            && lhs->reqUrl == rhs->reqUrl
+            && lhs->rawHeaderMap == rhs->rawHeaderMap
+            && lhs->rangeStart == rhs->rangeStart
+            && lhs->rangeEnd == rhs->rangeEnd
+            && lhs->httpVersion == rhs->httpVersion;
+    // Note: sslConfig, proxyConfig, timeoutConfig 不参与比较
+    // 因为它们是请求执行配置而非请求标识
 }
 
-bool QCNetworkRequest::operator !=(const QCNetworkRequest &other)
+bool QCNetworkRequest::operator!=(const QCNetworkRequest &other) const
 {
-    return !operator==(other);
+    return !(*this == other);
 }
 
 // ========== 基础配置 ==========

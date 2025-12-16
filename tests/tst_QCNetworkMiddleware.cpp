@@ -2,8 +2,9 @@
 // Copyright (c) 2025 QCurl Project
 
 #include <QtTest>
-#include <QSignalSpy>
 #include <QUrl>
+#include <QCoreApplication>
+#include <QEvent>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -43,7 +44,7 @@ private slots:
     void testBuiltinMiddlewares();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
 };
 
 void TestQCNetworkMiddleware::initTestCase()
@@ -58,14 +59,16 @@ void TestQCNetworkMiddleware::cleanupTestCase()
 
 void TestQCNetworkMiddleware::init()
 {
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
 }
 
 void TestQCNetworkMiddleware::cleanup()
 {
-    if (manager) {
-        delete manager;
-        manager = nullptr;
+    if (m_manager) {
+        m_manager->clearMiddlewares();
+        m_manager->deleteLater();
+        m_manager = nullptr;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 }
 
@@ -75,17 +78,15 @@ void TestQCNetworkMiddleware::cleanup()
 void TestQCNetworkMiddleware::testAddMiddleware()
 {
     // Arrange
-    auto *middleware = new QCLoggingMiddleware();
+    QCLoggingMiddleware middleware;
 
     // Act
-    manager->addMiddleware(middleware);
+    m_manager->addMiddleware(&middleware);
 
     // Assert
-    QCOMPARE(manager->middlewares().size(), 1);
-    QVERIFY(manager->middlewares().contains(middleware));
-
-    // Cleanup
-    delete middleware;
+    QCOMPARE(m_manager->middlewares().size(), 1);
+    QVERIFY(m_manager->middlewares().contains(&middleware));
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -94,24 +95,21 @@ void TestQCNetworkMiddleware::testAddMiddleware()
 void TestQCNetworkMiddleware::testRemoveMiddleware()
 {
     // Arrange
-    auto *middleware1 = new QCLoggingMiddleware();
-    auto *middleware2 = new QCErrorHandlingMiddleware();
+    QCLoggingMiddleware middleware1;
+    QCErrorHandlingMiddleware middleware2;
 
-    manager->addMiddleware(middleware1);
-    manager->addMiddleware(middleware2);
-    QCOMPARE(manager->middlewares().size(), 2);
+    m_manager->addMiddleware(&middleware1);
+    m_manager->addMiddleware(&middleware2);
+    QCOMPARE(m_manager->middlewares().size(), 2);
 
     // Act
-    manager->removeMiddleware(middleware1);
+    m_manager->removeMiddleware(&middleware1);
 
     // Assert
-    QCOMPARE(manager->middlewares().size(), 1);
-    QVERIFY(!manager->middlewares().contains(middleware1));
-    QVERIFY(manager->middlewares().contains(middleware2));
-
-    // Cleanup
-    delete middleware1;
-    delete middleware2;
+    QCOMPARE(m_manager->middlewares().size(), 1);
+    QVERIFY(!m_manager->middlewares().contains(&middleware1));
+    QVERIFY(m_manager->middlewares().contains(&middleware2));
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -120,23 +118,19 @@ void TestQCNetworkMiddleware::testRemoveMiddleware()
 void TestQCNetworkMiddleware::testClearMiddlewares()
 {
     // Arrange
-    auto *middleware1 = new QCLoggingMiddleware();
-    auto *middleware2 = new QCErrorHandlingMiddleware();
+    QCLoggingMiddleware middleware1;
+    QCErrorHandlingMiddleware middleware2;
 
-    manager->addMiddleware(middleware1);
-    manager->addMiddleware(middleware2);
-    QCOMPARE(manager->middlewares().size(), 2);
+    m_manager->addMiddleware(&middleware1);
+    m_manager->addMiddleware(&middleware2);
+    QCOMPARE(m_manager->middlewares().size(), 2);
 
     // Act
-    manager->clearMiddlewares();
+    m_manager->clearMiddlewares();
 
     // Assert
-    QCOMPARE(manager->middlewares().size(), 0);
-    QVERIFY(manager->middlewares().isEmpty());
-
-    // Cleanup
-    delete middleware1;
-    delete middleware2;
+    QCOMPARE(m_manager->middlewares().size(), 0);
+    QVERIFY(m_manager->middlewares().isEmpty());
 }
 
 /**
@@ -145,23 +139,20 @@ void TestQCNetworkMiddleware::testClearMiddlewares()
 void TestQCNetworkMiddleware::testGetMiddlewares()
 {
     // Arrange
-    auto *middleware1 = new QCLoggingMiddleware();
-    auto *middleware2 = new QCErrorHandlingMiddleware();
+    QCLoggingMiddleware middleware1;
+    QCErrorHandlingMiddleware middleware2;
 
     // Act
-    manager->addMiddleware(middleware1);
-    manager->addMiddleware(middleware2);
+    m_manager->addMiddleware(&middleware1);
+    m_manager->addMiddleware(&middleware2);
 
-    auto middlewareList = manager->middlewares();
+    auto middlewareList = m_manager->middlewares();
 
     // Assert
     QCOMPARE(middlewareList.size(), 2);
-    QCOMPARE(middlewareList.at(0), middleware1);
-    QCOMPARE(middlewareList.at(1), middleware2);
-
-    // Cleanup
-    delete middleware1;
-    delete middleware2;
+    QCOMPARE(middlewareList.at(0), &middleware1);
+    QCOMPARE(middlewareList.at(1), &middleware2);
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -170,22 +161,18 @@ void TestQCNetworkMiddleware::testGetMiddlewares()
 void TestQCNetworkMiddleware::testMultipleMiddlewares()
 {
     // Arrange
-    auto *m1 = new QCLoggingMiddleware();
-    auto *m2 = new QCErrorHandlingMiddleware();
-    auto *m3 = new QCLoggingMiddleware();  // 允许同类型多个实例
+    QCLoggingMiddleware m1;
+    QCErrorHandlingMiddleware m2;
+    QCLoggingMiddleware m3;  // 允许同类型多个实例
 
     // Act
-    manager->addMiddleware(m1);
-    manager->addMiddleware(m2);
-    manager->addMiddleware(m3);
+    m_manager->addMiddleware(&m1);
+    m_manager->addMiddleware(&m2);
+    m_manager->addMiddleware(&m3);
 
     // Assert
-    QCOMPARE(manager->middlewares().size(), 3);
-
-    // Cleanup
-    delete m1;
-    delete m2;
-    delete m3;
+    QCOMPARE(m_manager->middlewares().size(), 3);
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -197,49 +184,52 @@ void TestQCNetworkMiddleware::testMiddlewareOrder()
     class OrderMiddleware : public QCNetworkMiddleware
     {
     public:
-        QStringList &order;
-        QString name;
+        OrderMiddleware(const QString &name, QStringList &order)
+            : m_order(order),
+              m_name(name)
+        {
+        }
 
-        OrderMiddleware(const QString &n, QStringList &o) : name(n), order(o) {}
-
-        void onRequestPreSend(QCNetworkRequest &request) override {
+        void onRequestPreSend(QCNetworkRequest &request) override
+        {
             Q_UNUSED(request);
-            order.append(name + "_request");
+            m_order.append(m_name + QStringLiteral("_request"));
         }
 
-        void onResponseReceived(QCNetworkReply *reply) override {
+        void onResponseReceived(QCNetworkReply *reply) override
+        {
             Q_UNUSED(reply);
-            order.append(name + "_response");
+            m_order.append(m_name + QStringLiteral("_response"));
         }
+
+    private:
+        QStringList &m_order;
+        QString m_name;
     };
 
     // Arrange
     QStringList executionOrder;
-    auto *m1 = new OrderMiddleware("M1", executionOrder);
-    auto *m2 = new OrderMiddleware("M2", executionOrder);
-    auto *m3 = new OrderMiddleware("M3", executionOrder);
+    OrderMiddleware m1(QStringLiteral("M1"), executionOrder);
+    OrderMiddleware m2(QStringLiteral("M2"), executionOrder);
+    OrderMiddleware m3(QStringLiteral("M3"), executionOrder);
 
     // Act
-    manager->addMiddleware(m1);
-    manager->addMiddleware(m2);
-    manager->addMiddleware(m3);
+    m_manager->addMiddleware(&m1);
+    m_manager->addMiddleware(&m2);
+    m_manager->addMiddleware(&m3);
 
     // 手动触发（模拟请求/响应）
     QCNetworkRequest request(QUrl("http://example.com"));
-    m1->onRequestPreSend(request);
-    m2->onRequestPreSend(request);
-    m3->onRequestPreSend(request);
+    m1.onRequestPreSend(request);
+    m2.onRequestPreSend(request);
+    m3.onRequestPreSend(request);
 
     // Assert - 验证执行顺序
     QCOMPARE(executionOrder.size(), 3);
     QCOMPARE(executionOrder.at(0), QString("M1_request"));
     QCOMPARE(executionOrder.at(1), QString("M2_request"));
     QCOMPARE(executionOrder.at(2), QString("M3_request"));
-
-    // Cleanup
-    delete m1;
-    delete m2;
-    delete m3;
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -248,19 +238,17 @@ void TestQCNetworkMiddleware::testMiddlewareOrder()
 void TestQCNetworkMiddleware::testDuplicateMiddleware()
 {
     // Arrange
-    auto *middleware = new QCLoggingMiddleware();
+    QCLoggingMiddleware middleware;
 
     // Act - 多次添加同一实例
-    manager->addMiddleware(middleware);
-    manager->addMiddleware(middleware);  // 应该被忽略
-    manager->addMiddleware(middleware);  // 应该被忽略
+    m_manager->addMiddleware(&middleware);
+    m_manager->addMiddleware(&middleware);  // 应该被忽略
+    m_manager->addMiddleware(&middleware);  // 应该被忽略
 
     // Assert - 只应该有一个
-    QCOMPARE(manager->middlewares().size(), 1);
-    QCOMPARE(manager->middlewares().first(), middleware);
-
-    // Cleanup
-    delete middleware;
+    QCOMPARE(m_manager->middlewares().size(), 1);
+    QCOMPARE(m_manager->middlewares().first(), &middleware);
+    m_manager->clearMiddlewares();
 }
 
 /**
@@ -269,24 +257,19 @@ void TestQCNetworkMiddleware::testDuplicateMiddleware()
 void TestQCNetworkMiddleware::testBuiltinMiddlewares()
 {
     // Test 1: QCLoggingMiddleware
-    auto *loggingMiddleware = new QCLoggingMiddleware();
-    QVERIFY(loggingMiddleware != nullptr);
-    manager->addMiddleware(loggingMiddleware);
-    QCOMPARE(manager->middlewares().size(), 1);
+    QCLoggingMiddleware loggingMiddleware;
+    m_manager->addMiddleware(&loggingMiddleware);
+    QCOMPARE(m_manager->middlewares().size(), 1);
 
     // Test 2: QCErrorHandlingMiddleware
-    auto *errorMiddleware = new QCErrorHandlingMiddleware();
-    QVERIFY(errorMiddleware != nullptr);
-    manager->addMiddleware(errorMiddleware);
-    QCOMPARE(manager->middlewares().size(), 2);
+    QCErrorHandlingMiddleware errorMiddleware;
+    m_manager->addMiddleware(&errorMiddleware);
+    QCOMPARE(m_manager->middlewares().size(), 2);
 
     // 验证所有中间件都在列表中
-    QVERIFY(manager->middlewares().contains(loggingMiddleware));
-    QVERIFY(manager->middlewares().contains(errorMiddleware));
-
-    // Cleanup
-    delete loggingMiddleware;
-    delete errorMiddleware;
+    QVERIFY(m_manager->middlewares().contains(&loggingMiddleware));
+    QVERIFY(m_manager->middlewares().contains(&errorMiddleware));
+    m_manager->clearMiddlewares();
 }
 
 QTEST_MAIN(TestQCNetworkMiddleware)

@@ -16,20 +16,23 @@ class QCNetworkAccessManagerPrivate
 {
 public:
     QCNetworkAccessManagerPrivate(QCNetworkAccessManager *self)
-        : q_ptr(self),
-          curlMultiHandle(Q_NULLPTR),
-          timer(Q_NULLPTR),
+        : cookieFilePath(),
+          replyList(),
+          curlMultiHandle(nullptr),
+          timer(nullptr),
           socketDescriptor(CURL_SOCKET_BAD),
-          readNotifier(Q_NULLPTR),
-          writeNotifier(Q_NULLPTR),
-          errorNotifier(Q_NULLPTR)
+          readNotifier(nullptr),
+          writeNotifier(nullptr),
+          errorNotifier(nullptr),
+          logger(nullptr),
+          middlewares(),
+          mockHandler(nullptr),
+          q_ptr(self)
     {
 
     }
 
-    ~QCNetworkAccessManagerPrivate() {
-        //TODO delete ptr
-    }
+    ~QCNetworkAccessManagerPrivate() = default;
 
     QString                     cookieFilePath;
 
@@ -49,9 +52,9 @@ public:
     QSocketNotifier             *errorNotifier;
 
     // 高级功能成员
-    QCNetworkLogger *logger = nullptr;
+    QCNetworkLogger *logger;
     QList<QCNetworkMiddleware*> middlewares;
-    QCNetworkMockHandler *mockHandler = nullptr;
+    QCNetworkMockHandler *mockHandler;
     
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 

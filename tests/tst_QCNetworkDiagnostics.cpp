@@ -10,6 +10,7 @@
 #include "QCNetworkDiagnostics.h"
 #include <QUrl>
 #include <QDateTime>
+#include <QHostInfo>
 
 using namespace QCurl;
 
@@ -89,9 +90,17 @@ void tst_QCNetworkDiagnostics::cleanupTestCase()
 
 bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
 {
-    // 简单测试：尝试解析 localhost
-    auto result = QCNetworkDiagnostics::resolveDNS("localhost", 1000);
-    return result.success;
+    static bool cached = false;
+    static bool initialized = false;
+    if (initialized) {
+        return cached;
+    }
+
+    // 使用外部域名进行探测，避免 localhost 导致“永远有网络”的误判
+    const QHostInfo info = QHostInfo::fromName(QStringLiteral("example.com"));
+    cached = (info.error() == QHostInfo::NoError) && !info.addresses().isEmpty();
+    initialized = true;
+    return cached;
 }
 
 // ============================================================================

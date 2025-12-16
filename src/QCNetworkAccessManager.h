@@ -8,6 +8,8 @@
 #include <QJsonObject>
 #include <QMap>
 
+#include "QCNetworkRequestBuilder.h"
+
 class QTimer;
 class QSocketNotifier;
 
@@ -21,7 +23,6 @@ class QCMultipartFormData;
 class QCNetworkCache;
 class QCNetworkLogger;
 class QCNetworkMiddleware;
-class QCNetworkRequestBuilder;
 class QCNetworkMockHandler;
 class QCNetworkAccessManager : public QObject
 {
@@ -161,9 +162,9 @@ public:
     /**
      * @brief 创建流式请求构建器
      * @param url 请求 URL
-     * @return 请求构建器对象（调用者拥有所有权，需要 delete）
+     * @return 请求构建器对象（值语义，可链式调用）
      */
-    QCNetworkRequestBuilder* newRequest(const QUrl &url);
+    QCNetworkRequestBuilder newRequest(const QUrl &url);
 
     /**
      * @brief 发送 JSON POST 请求
@@ -543,4 +544,3 @@ private:
 
 } //namespace QCurl
 #endif // QCNETWORKACCESSMANAGER_H
-

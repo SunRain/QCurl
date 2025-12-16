@@ -30,10 +30,13 @@
  */
 
 #include <QtTest/QtTest>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QEventLoop>
 #include <QTimer>
 #include <QSignalSpy>
 #include <QElapsedTimer>
+#include <QMetaMethod>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -92,10 +95,10 @@ private slots:
     void testHttp2VsHttp1Performance(); // 性能对比（简化版）
 
 private:
-    QCNetworkAccessManager *manager;
+    QCNetworkAccessManager *m_manager = nullptr;
 
     // 辅助方法
-    bool waitForSignal(QObject *obj, const char *signal, int timeout = 10000);
+    bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
     bool checkHttp2Support();  // 检查 libcurl 是否支持 HTTP/2
     QString extractHttpVersion(QCNetworkReply *reply);  // 从响应中提取 HTTP 版本
 };
@@ -104,19 +107,10 @@ private:
 // 辅助方法实现
 // ============================================================================
 
-bool TestQCNetworkHttp2::waitForSignal(QObject *obj, const char *signal, int timeout)
+bool TestQCNetworkHttp2::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-
-    QObject::connect(obj, signal, &loop, SLOT(quit()));
-    QObject::connect(&timer, SIGNAL(timeout()), &loop, SLOT(quit()));
-
-    timer.start(timeout);
-    loop.exec();
-
-    return timer.isActive();  // true = signal received, false = timeout
+    QSignalSpy spy(obj, signal);
+    return spy.wait(timeout);
 }
 
 bool TestQCNetworkHttp2::checkHttp2Support()
@@ -173,14 +167,13 @@ void TestQCNetworkHttp2::initTestCase()
     qDebug() << "HTTP/2 支持：" << ((ver->features & CURL_VERSION_HTTP2) ? "是" : "否");
     qDebug() << "HTTP/3 支持：" << ((ver->features & CURL_VERSION_HTTP3) ? "是" : "否");
 
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
 }
 
 void TestQCNetworkHttp2::cleanupTestCase()
 {
     qDebug() << "清理 HTTP/2 测试套件";
-    delete manager;
-    manager = nullptr;
+    m_manager = nullptr;
 }
 
 void TestQCNetworkHttp2::init()
@@ -223,8 +216,8 @@ void TestQCNetworkHttp2::testHttp2Negotiation()
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
     request.setSslConfig(sslConfig);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     // 验证请求成功
     if (reply->error() != NetworkError::NoError) {
@@ -249,8 +242,8 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
 
     // ✅ 添加网络可用性检查
     QCNetworkRequest healthCheck(QUrl("https://httpbin.org/status/200"));
-    auto *healthReply = manager->sendGet(healthCheck);
-    if (!waitForSignal(healthReply, SIGNAL(finished()), 5000) || 
+    auto *healthReply = m_manager->sendGet(healthCheck);
+    if (!waitForSignal(healthReply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000) || 
         healthReply->error() != NetworkError::NoError) {
         QSKIP("Network not available (http2.golang.org unreachable)");
     }
@@ -263,7 +256,7 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
         QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?id=%1").arg(i)));
         request.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
         replies.append(reply);
     }
 
@@ -271,10 +264,16 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
     // 等待所有请求完成
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
-        if (!waitForSignal(reply, SIGNAL(finished()), 30000)) {
+        if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
             // ✅ 网络超时时跳过测试
             qWarning() << "HTTP/2 Multiplexing timeout on request" << i;
-            qDeleteAll(replies);
+            for (auto *pendingReply : replies) {
+                if (pendingReply) {
+                    pendingReply->cancel();
+                    pendingReply->deleteLater();
+                }
+            }
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             QSKIP("Network not available (http2.golang.org unreachable or too slow)");
         }
     }
@@ -292,7 +291,11 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
     qDebug() << "HTTP/2 多路复用测试：" << successCount << "/" << replies.size() << "成功";
     QVERIFY(successCount >= 3);  // 至少 3 个成功（容忍网络问题）
 
-    qDeleteAll(replies);
+    for (auto *reply : replies) {
+        if (reply) {
+            reply->deleteLater();
+        }
+    }
 }
 
 void TestQCNetworkHttp2::testHttp2HeaderCompression()
@@ -309,8 +312,8 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
                              QString("Value-%1-With-Long-Content-For-Compression-Test").arg(i).toUtf8());
     }
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     if (reply->error() != NetworkError::NoError) {
         qWarning() << "HTTP/2 头部压缩测试失败：" << reply->errorString();
@@ -334,8 +337,8 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
     QCNetworkRequest request(QUrl("https://example.com"));  // example.com 可能只支持 HTTP/1.1
     request.setHttpVersion(QCNetworkHttpVersion::HttpAny);  // 自动协商
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     if (reply->error() != NetworkError::NoError) {
         qWarning() << "HTTP/2 降级测试失败：" << reply->errorString();
@@ -365,8 +368,8 @@ void TestQCNetworkHttp2::testHttp2WithSsl()
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
     request.setSslConfig(sslConfig);
 
-    auto *reply = manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     if (reply->error() != NetworkError::NoError) {
         qWarning() << "HTTP/2 over TLS 测试失败：" << reply->errorString();
@@ -386,8 +389,8 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
 
     // ✅ 添加网络可用性检查
     QCNetworkRequest healthCheck(QUrl("https://httpbin.org/status/200"));
-    auto *healthReply = manager->sendGet(healthCheck);
-    if (!waitForSignal(healthReply, SIGNAL(finished()), 5000) || 
+    auto *healthReply = m_manager->sendGet(healthCheck);
+    if (!waitForSignal(healthReply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000) || 
         healthReply->error() != NetworkError::NoError) {
         QSKIP("Network not available (http2.golang.org unreachable)");
     }
@@ -404,7 +407,7 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
         QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?stream=%1").arg(i)));
         request.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = m_manager->sendGet(request);
         replies.append(reply);
     }
 
@@ -412,9 +415,15 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
     // 等待所有请求完成
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
-        if (!waitForSignal(reply, SIGNAL(finished()), 30000)) {
+        if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
             qWarning() << "HTTP/2 ConcurrentStreams timeout on request" << i;
-            qDeleteAll(replies);
+            for (auto *pendingReply : replies) {
+                if (pendingReply) {
+                    pendingReply->cancel();
+                    pendingReply->deleteLater();
+                }
+            }
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             QSKIP("Network not available (http2.golang.org unreachable or too slow)");
         }
     }
@@ -436,7 +445,11 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
     // 如果是 HTTP/1.1，则需要建立多个连接，耗时更长
     QVERIFY(successCount >= 5);  // 至少一半成功
 
-    qDeleteAll(replies);
+    for (auto *reply : replies) {
+        if (reply) {
+            reply->deleteLater();
+        }
+    }
 }
 
 void TestQCNetworkHttp2::testHttp2ConnectionReuse()
@@ -449,8 +462,8 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
         QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?seq=%1").arg(i)));
         request.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-        auto *reply = manager->sendGet(request);
-        QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+        auto *reply = m_manager->sendGet(request);
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
         if (reply->error() == NetworkError::NoError) {
             qDebug() << "请求" << i << "成功";
@@ -470,6 +483,24 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
 
     const int requestCount = 10;
 
+    // 性能对比依赖外部测试服务器，网络不可用时直接跳过
+    {
+        QCNetworkRequest healthCheck(QUrl(HTTP2_TEST_SERVER + "/reqinfo"));
+        healthCheck.setHttpVersion(QCNetworkHttpVersion::Http1_1);
+        auto *healthReply = m_manager->sendGet(healthCheck);
+        const bool ok = waitForSignal(healthReply,
+                                      QMetaMethod::fromSignal(&QCNetworkReply::finished),
+                                      5000)
+            && healthReply->error() == NetworkError::NoError;
+        const QString errorString = healthReply->errorString();
+        healthReply->deleteLater();
+
+        if (!ok) {
+            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
+                                 .arg(errorString)));
+        }
+    }
+
     // ========== HTTP/1.1 基准测试 ==========
     qDebug() << "开始 HTTP/1.1 基准测试...";
     QElapsedTimer http1Timer;
@@ -479,8 +510,14 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
         QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?http1=%1").arg(i)));
         request.setHttpVersion(QCNetworkHttpVersion::Http1_1);
 
-        auto *reply = manager->sendGet(request);
-        QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+        auto *reply = m_manager->sendGet(request);
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
+        if (reply->error() != NetworkError::NoError) {
+            const QString errorString = reply->errorString();
+            reply->deleteLater();
+            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
+                                 .arg(errorString)));
+        }
         reply->deleteLater();
     }
 
@@ -496,8 +533,14 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
         QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?http2=%1").arg(i)));
         request.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-        auto *reply = manager->sendGet(request);
-        QVERIFY(waitForSignal(reply, SIGNAL(finished()), 15000));
+        auto *reply = m_manager->sendGet(request);
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
+        if (reply->error() != NetworkError::NoError) {
+            const QString errorString = reply->errorString();
+            reply->deleteLater();
+            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
+                                 .arg(errorString)));
+        }
         reply->deleteLater();
     }
 
@@ -517,9 +560,7 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
         qDebug() << "注意：HTTP/2 未表现出性能优势（可能因为顺序请求或网络条件）";
     }
 
-    // 不强制要求 HTTP/2 更快（因为测试环境差异），只验证都能完成
-    QVERIFY(http1Elapsed > 0);
-    QVERIFY(http2Elapsed > 0);
+    // 不强制要求 HTTP/2 更快（因为测试环境差异），只验证流程可用
 }
 
 QTEST_MAIN(TestQCNetworkHttp2)

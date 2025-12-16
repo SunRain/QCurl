@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
 
     qDebug() << "=== QCurl RequestBuilder 流式API演示 ===\n";
 
-    auto *manager = new QCNetworkAccessManager();
+    auto *manager = new QCNetworkAccessManager(&app);
 
     // ========================================================================
     // 示例 1: 基础 GET 请求
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     qDebug() << ">>> 示例 1: 基础 GET 请求";
 
     auto *reply1 = manager->newRequest(QUrl("https://httpbin.org/get"))
-        ->withHeader("User-Agent", "QCurl/2.16.0")
+        .withHeader("User-Agent", "QCurl/2.16.0")
         .withTimeout(30000)
         .sendGet();
 
@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     QByteArray jsonData = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
     auto *reply2 = manager->newRequest(QUrl("https://httpbin.org/post"))
-        ->withHeader("Content-Type", "application/json")
+        .withHeader("Content-Type", "application/json")
         .withHeader("User-Agent", "QCurl/2.16.0")
         .withTimeout(30000)
         .sendPost(jsonData);
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 3: 复杂请求构建";
 
     auto *reply3 = manager->newRequest(QUrl("https://httpbin.org/get"))
-        ->withQueryParam("page", "1")
+        .withQueryParam("page", "1")
         .withQueryParam("limit", "20")
         .withQueryParam("sort", "desc")
         .withHeader("Authorization", "Bearer fake-token-123")
@@ -138,8 +138,6 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n=== 演示完成 ===";
     qDebug() << "\n💡 提示：流式 API 可以大幅简化代码，提高可读性";
-
-    delete manager;
 
     return 0;
 }

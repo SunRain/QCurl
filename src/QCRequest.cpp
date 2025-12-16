@@ -204,8 +204,8 @@ QCNetworkReply* QCRequest::send(std::function<void(QCNetworkReply*)> callback)
 QCNetworkAccessManager* QCRequest::defaultManager()
 {
     // 使用函数级静态变量确保全局唯一实例
-    static QCNetworkAccessManager *s_manager = new QCNetworkAccessManager();
-    return s_manager;
+    static QCNetworkAccessManager s_manager;
+    return &s_manager;
 }
 
 QCNetworkReply* QCRequest::sendInternal(QCNetworkAccessManager *manager)
@@ -227,11 +227,6 @@ QCNetworkReply* QCRequest::sendInternal(QCNetworkAccessManager *manager)
     } else {
         qWarning() << "[QCRequest] Unsupported HTTP method:" << m_method;
         return nullptr;
-    }
-
-    if (reply) {
-        // 自动调用 execute() 开始请求
-        reply->execute();
     }
 
     return reply;

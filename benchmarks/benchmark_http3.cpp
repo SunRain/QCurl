@@ -160,42 +160,45 @@ BenchmarkHttp3::BenchmarkResult BenchmarkHttp3::downloadFile(const QUrl &url, QC
     QCNetworkRequest request(url);
     request.setHttpVersion(httpVersion);
 
-    QElapsedTimer timer;
-    timer.start();
+	QElapsedTimer timer;
+	timer.start();
 
-    QCNetworkReply *reply = m_manager->get(request);
-    QEventLoop loop;
-    connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+	QCNetworkReply *reply = m_manager->sendGet(request);
+	QEventLoop loop;
+	connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
 
-    reply->execute();
-    loop.exec();
+	loop.exec();
 
-    result.totalTime = timer.elapsed();
+	result.totalTime = timer.elapsed();
 
-    if (reply->error() == NetworkError::NoError) {
-        result.success = true;
-        result.bytesDownloaded = reply->bytesAvailable();
+	if (reply->error() == NetworkError::NoError) {
+		result.success = true;
+		result.bytesDownloaded = reply->bytesReceived();
 
-        // 计算吞吐量 (MB/s)
-        double seconds = result.totalTime / 1000.0;
-        double megabytes = result.bytesDownloaded / (1024.0 * 1024.0);
-        result.throughput = megabytes / seconds;
-    } else {
-        result.errorString = reply->errorString();
-    }
+		// 计算吞吐量 (MB/s)
+		if (result.totalTime > 0) {
+			double seconds = result.totalTime / 1000.0;
+			double megabytes = result.bytesDownloaded / (1024.0 * 1024.0);
+			result.throughput = megabytes / seconds;
+		}
+	} else {
+		result.errorString = reply->errorString();
+	}
 
     reply->deleteLater();
     return result;
 }
 
 BenchmarkHttp3::BenchmarkResult BenchmarkHttp3::downloadMultipleFiles(
-    const QList<QUrl> &urls, QCNetworkHttpVersion httpVersion, int concurrency)
+	const QList<QUrl> &urls, QCNetworkHttpVersion httpVersion, int concurrency)
 {
-    BenchmarkResult result;
-    result.success = true;
-    result.totalTime = 0;
-    result.bytesDownloaded = 0;
-    result.throughput = 0.0;
+	Q_UNUSED(concurrency)
+
+	BenchmarkResult result;
+	result.success = true;
+	result.totalTime = 0;
+	result.bytesDownloaded = 0;
+	result.throughput = 0.0;
 
     QElapsedTimer timer;
     timer.start();
@@ -224,18 +227,17 @@ BenchmarkHttp3::BenchmarkResult BenchmarkHttp3::downloadMultipleFiles(
 
 qint64 BenchmarkHttp3::measureConnectionSetup(const QUrl &url, QCNetworkHttpVersion httpVersion)
 {
-    QCNetworkRequest request(url);
-    request.setHttpVersion(httpVersion);
+	QCNetworkRequest request(url);
+	request.setHttpVersion(httpVersion);
 
-    QElapsedTimer timer;
-    timer.start();
+	QElapsedTimer timer;
+	timer.start();
 
-    QCNetworkReply *reply = m_manager->head(request);
-    QEventLoop loop;
-    connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+	QCNetworkReply *reply = m_manager->sendHead(request);
+	QEventLoop loop;
+	connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
 
-    reply->execute();
-    loop.exec();
+	loop.exec();
 
     qint64 elapsed = timer.elapsed();
     reply->deleteLater();

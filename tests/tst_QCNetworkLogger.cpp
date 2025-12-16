@@ -2,10 +2,9 @@
 // Copyright (c) 2025 QCurl Project
 
 #include <QtTest>
-#include <QSignalSpy>
 #include <QUrl>
-#include <QFile>
-#include <QTemporaryFile>
+#include <QCoreApplication>
+#include <QEvent>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -45,7 +44,7 @@ private slots:
     void testCustomLogger();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
 };
 
 void TestQCNetworkLogger::initTestCase()
@@ -63,15 +62,17 @@ void TestQCNetworkLogger::cleanupTestCase()
 void TestQCNetworkLogger::init()
 {
     // 每个测试用例前初始化
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
 }
 
 void TestQCNetworkLogger::cleanup()
 {
     // 每个测试用例后清理
-    if (manager) {
-        delete manager;
-        manager = nullptr;
+    if (m_manager) {
+        m_manager->setLogger(nullptr);
+        m_manager->deleteLater();
+        m_manager = nullptr;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 }
 
@@ -81,18 +82,15 @@ void TestQCNetworkLogger::cleanup()
 void TestQCNetworkLogger::testDefaultLogger()
 {
     // Arrange
-    auto *logger = new QCNetworkDefaultLogger();
-    QVERIFY(logger != nullptr);
+    QCNetworkDefaultLogger logger;
 
     // Act
-    manager->setLogger(logger);
-    auto *retrievedLogger = manager->logger();
+    m_manager->setLogger(&logger);
+    auto *retrievedLogger = m_manager->logger();
 
     // Assert
-    QCOMPARE(retrievedLogger, logger);
-
-    // Cleanup
-    delete logger;
+    QCOMPARE(retrievedLogger, &logger);
+    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -101,20 +99,17 @@ void TestQCNetworkLogger::testDefaultLogger()
 void TestQCNetworkLogger::testSetAndGetLogger()
 {
     // Arrange
-    auto *logger1 = new QCNetworkDefaultLogger();
-    auto *logger2 = new QCNetworkDefaultLogger();
+    QCNetworkDefaultLogger logger1;
+    QCNetworkDefaultLogger logger2;
 
     // Act - 设置第一个 logger
-    manager->setLogger(logger1);
-    QCOMPARE(manager->logger(), logger1);
+    m_manager->setLogger(&logger1);
+    QCOMPARE(m_manager->logger(), &logger1);
 
     // Act - 替换为第二个 logger
-    manager->setLogger(logger2);
-    QCOMPARE(manager->logger(), logger2);
-
-    // Cleanup
-    delete logger1;
-    delete logger2;
+    m_manager->setLogger(&logger2);
+    QCOMPARE(m_manager->logger(), &logger2);
+    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -123,17 +118,14 @@ void TestQCNetworkLogger::testSetAndGetLogger()
 void TestQCNetworkLogger::testLoggerNullptr()
 {
     // Arrange
-    auto *logger = new QCNetworkDefaultLogger();
-    manager->setLogger(logger);
+    QCNetworkDefaultLogger logger;
+    m_manager->setLogger(&logger);
 
     // Act - 设置为 nullptr
-    manager->setLogger(nullptr);
+    m_manager->setLogger(nullptr);
 
     // Assert
-    QCOMPARE(manager->logger(), nullptr);
-
-    // Cleanup
-    delete logger;
+    QCOMPARE(m_manager->logger(), nullptr);
 }
 
 /**
@@ -145,23 +137,24 @@ void TestQCNetworkLogger::testMultipleLoggers()
     auto *manager1 = new QCNetworkAccessManager(this);
     auto *manager2 = new QCNetworkAccessManager(this);
 
-    auto *logger1 = new QCNetworkDefaultLogger();
-    auto *logger2 = new QCNetworkDefaultLogger();
+    QCNetworkDefaultLogger logger1;
+    QCNetworkDefaultLogger logger2;
 
     // Act
-    manager1->setLogger(logger1);
-    manager2->setLogger(logger2);
+    manager1->setLogger(&logger1);
+    manager2->setLogger(&logger2);
 
     // Assert - 验证 Logger 独立
-    QCOMPARE(manager1->logger(), logger1);
-    QCOMPARE(manager2->logger(), logger2);
+    QCOMPARE(manager1->logger(), &logger1);
+    QCOMPARE(manager2->logger(), &logger2);
     QVERIFY(manager1->logger() != manager2->logger());
 
     // Cleanup
-    delete manager1;
-    delete manager2;
-    delete logger1;
-    delete logger2;
+    manager1->setLogger(nullptr);
+    manager2->setLogger(nullptr);
+    manager1->deleteLater();
+    manager2->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 /**
@@ -170,21 +163,19 @@ void TestQCNetworkLogger::testMultipleLoggers()
 void TestQCNetworkLogger::testRequestLogging()
 {
     // Arrange
-    auto *logger = new QCNetworkDefaultLogger();
-    manager->setLogger(logger);
+    QCNetworkDefaultLogger logger;
+    m_manager->setLogger(&logger);
 
     // Act - 创建请求（不实际发送）
     QCNetworkRequest request(QUrl("http://example.com/test"));
     request.setRawHeader("User-Agent", "QCurl Test");
 
     // Assert - Logger 已设置
-    QVERIFY(manager->logger() != nullptr);
+    QVERIFY(m_manager->logger() != nullptr);
 
     // Note: 实际的日志记录会在请求发送时触发
     // 这里只验证 Logger 可以被正确设置和获取
-
-    // Cleanup
-    delete logger;
+    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -193,17 +184,15 @@ void TestQCNetworkLogger::testRequestLogging()
 void TestQCNetworkLogger::testResponseLogging()
 {
     // Arrange
-    auto *logger = new QCNetworkDefaultLogger();
-    manager->setLogger(logger);
+    QCNetworkDefaultLogger logger;
+    m_manager->setLogger(&logger);
 
     // Assert - Logger 已设置，可以记录响应
-    QVERIFY(manager->logger() != nullptr);
+    QVERIFY(m_manager->logger() != nullptr);
 
     // Note: 实际的响应日志记录需要真实网络请求
     // 这里只验证基础设置功能
-
-    // Cleanup
-    delete logger;
+    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -212,17 +201,15 @@ void TestQCNetworkLogger::testResponseLogging()
 void TestQCNetworkLogger::testErrorLogging()
 {
     // Arrange
-    auto *logger = new QCNetworkDefaultLogger();
-    manager->setLogger(logger);
+    QCNetworkDefaultLogger logger;
+    m_manager->setLogger(&logger);
 
     // Assert - Logger 可以记录错误
-    QVERIFY(manager->logger() != nullptr);
+    QVERIFY(m_manager->logger() != nullptr);
 
     // Note: 错误日志记录需要触发实际错误
     // 这里验证基础设置功能
-
-    // Cleanup
-    delete logger;
+    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -234,17 +221,17 @@ void TestQCNetworkLogger::testCustomLogger()
     class TestLogger : public QCNetworkLogger
     {
     public:
-        int logCount = 0;
+        int m_logCount = 0;
         NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
-        QString lastCategory;
-        QString lastMessage;
+        QString m_lastCategory;
+        QString m_lastMessage;
 
         // 实现纯虚函数
         void log(NetworkLogLevel level, const QString &category, const QString &message) override {
             Q_UNUSED(level);
-            logCount++;
-            lastCategory = category;
-            lastMessage = message;
+            m_logCount++;
+            m_lastCategory = category;
+            m_lastMessage = message;
         }
 
         void setMinLogLevel(NetworkLogLevel level) override {
@@ -257,31 +244,29 @@ void TestQCNetworkLogger::testCustomLogger()
     };
 
     // Arrange
-    auto *customLogger = new TestLogger();
+    TestLogger customLogger;
 
     // Act
-    manager->setLogger(customLogger);
+    m_manager->setLogger(&customLogger);
 
     // Assert
-    QCOMPARE(manager->logger(), customLogger);
-    QCOMPARE(customLogger->logCount, 0);
+    QCOMPARE(m_manager->logger(), &customLogger);
+    QCOMPARE(customLogger.m_logCount, 0);
 
     // 手动调用 log 方法
-    customLogger->log(NetworkLogLevel::Info, "Test", "Message 1");
-    QCOMPARE(customLogger->logCount, 1);
-    QCOMPARE(customLogger->lastCategory, QString("Test"));
-    QCOMPARE(customLogger->lastMessage, QString("Message 1"));
+    customLogger.log(NetworkLogLevel::Info, "Test", "Message 1");
+    QCOMPARE(customLogger.m_logCount, 1);
+    QCOMPARE(customLogger.m_lastCategory, QString("Test"));
+    QCOMPARE(customLogger.m_lastMessage, QString("Message 1"));
 
-    customLogger->log(NetworkLogLevel::Error, "Error", "Message 2");
-    QCOMPARE(customLogger->logCount, 2);
-    QCOMPARE(customLogger->lastCategory, QString("Error"));
+    customLogger.log(NetworkLogLevel::Error, "Error", "Message 2");
+    QCOMPARE(customLogger.m_logCount, 2);
+    QCOMPARE(customLogger.m_lastCategory, QString("Error"));
 
     // Test log level
-    customLogger->setMinLogLevel(NetworkLogLevel::Warning);
-    QCOMPARE(customLogger->minLogLevel(), NetworkLogLevel::Warning);
-
-    // Cleanup
-    delete customLogger;
+    customLogger.setMinLogLevel(NetworkLogLevel::Warning);
+    QCOMPARE(customLogger.minLogLevel(), NetworkLogLevel::Warning);
+    m_manager->setLogger(nullptr);
 }
 
 QTEST_MAIN(TestQCNetworkLogger)

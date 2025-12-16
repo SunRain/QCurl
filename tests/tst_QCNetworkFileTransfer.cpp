@@ -33,7 +33,7 @@ private slots:
     void testDownloadFileResumableContinuesFromPartialFile();
 
 private:
-    QCNetworkAccessManager *manager = nullptr;
+    QCNetworkAccessManager *m_manager = nullptr;
 
     // ✅ 增加超时时间到 40 秒 (之前是 20 秒)
     bool waitForFinished(QCNetworkReply *reply, int timeout = 40000);
@@ -47,10 +47,10 @@ void TestQCNetworkFileTransfer::initTestCase()
     qDebug() << "需要本地 httpbin (docker run -p 8935:80 kennethreitz/httpbin)";
     qDebug() << "========================================";
 
-    manager = new QCNetworkAccessManager(this);
+    m_manager = new QCNetworkAccessManager(this);
 
     QCNetworkRequest healthCheck(QUrl(HTTPBIN_BASE_URL + "/status/200"));
-    auto *reply = manager->sendGet(healthCheck);
+    auto *reply = m_manager->sendGet(healthCheck);
     QVERIFY(waitForFinished(reply, 5000));
     if (reply->error() != NetworkError::NoError) {
         const QString message = QStringLiteral("无法连接 httpbin 服务: %1").arg(reply->errorString());
@@ -62,8 +62,7 @@ void TestQCNetworkFileTransfer::initTestCase()
 
 void TestQCNetworkFileTransfer::cleanupTestCase()
 {
-    delete manager;
-    manager = nullptr;
+    m_manager = nullptr;
 }
 
 bool TestQCNetworkFileTransfer::waitForFinished(QCNetworkReply *reply, int timeout)
@@ -90,7 +89,7 @@ void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
     const int expectedBytes = 4096;
     QUrl url(HTTPBIN_BASE_URL + QStringLiteral("/bytes/%1?seed=42").arg(expectedBytes));
 
-    auto *reply = manager->downloadToDevice(url, &buffer);
+    auto *reply = m_manager->downloadToDevice(url, &buffer);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -113,7 +112,7 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QUrl url(HTTPBIN_BASE_URL + "/post");
-    auto *reply = manager->uploadFromDevice(url,
+    auto *reply = m_manager->uploadFromDevice(url,
                                             QStringLiteral("file"),
                                             &buffer,
                                             QStringLiteral("payload.bin"),
@@ -159,7 +158,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     const int totalBytes = 8192;
     QUrl url(HTTPBIN_BASE_URL + QStringLiteral("/range/%1").arg(totalBytes));
 
-    auto *firstAttempt = manager->downloadFileResumable(url, savePath);
+    auto *firstAttempt = m_manager->downloadFileResumable(url, savePath);
     QVERIFY(firstAttempt);
 
     bool cancelled = false;
@@ -195,7 +194,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     qDebug() << "Cancelled download at:" << cancelledAt 
              << "bytes, file size:" << partialSize;
 
-    auto *resumeReply = manager->downloadFileResumable(url, savePath);
+    auto *resumeReply = m_manager->downloadFileResumable(url, savePath);
     QVERIFY(waitForFinished(resumeReply));
     QCOMPARE(resumeReply->error(), NetworkError::NoError);
     resumeReply->deleteLater();
@@ -206,7 +205,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     QCOMPARE(finalData.size(), totalBytes);
 
     QCNetworkRequest verifyRequest(url);
-    auto *verifyReply = manager->sendGet(verifyRequest);
+    auto *verifyReply = m_manager->sendGet(verifyRequest);
     QVERIFY(waitForFinished(verifyReply));
     QCOMPARE(verifyReply->error(), NetworkError::NoError);
     auto expectedData = verifyReply->readAll();

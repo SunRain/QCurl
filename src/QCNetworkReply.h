@@ -98,18 +98,16 @@ using ProgressFunction = std::function<void(qint64 dltotal, qint64 dlnow,
  * auto *mgr = new QCNetworkAccessManager();
  * QCNetworkRequest request(QUrl("https://example.com/api"));
  *
- * QCNetworkReply *reply = mgr->get(request);
+ * QCNetworkReply *reply = mgr->sendGet(request);
  *
  * connect(reply, &QCNetworkReply::finished, [reply]() {
- *     if (reply->error() == NetworkNoError) {
+ *     if (reply->error() == NetworkError::NoError) {
  *         if (auto data = reply->readAll()) {
  *             qDebug() << "Downloaded:" << data->size() << "bytes";
  *         }
  *     }
  *     reply->deleteLater();
  * });
- *
- * reply->execute();
  * @endcode
  *
  */

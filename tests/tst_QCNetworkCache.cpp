@@ -49,18 +49,16 @@ private slots:
     void testExpiresHeader();
 
 private:
-    QTemporaryDir *m_tempDir;
+    QTemporaryDir m_tempDir;
 };
 
 void TestQCNetworkCache::initTestCase()
 {
-    m_tempDir = new QTemporaryDir();
-    QVERIFY(m_tempDir->isValid());
+    QVERIFY(m_tempDir.isValid());
 }
 
 void TestQCNetworkCache::cleanupTestCase()
 {
-    delete m_tempDir;
 }
 
 // ============================================================================
@@ -152,7 +150,7 @@ void TestQCNetworkCache::testMemoryCacheExpiration()
 void TestQCNetworkCache::testDiskCacheInsertAndRetrieve()
 {
     QCNetworkDiskCache cache;
-    cache.setCacheDirectory(m_tempDir->path());
+    cache.setCacheDirectory(m_tempDir.path());
 
     QUrl url("https://example.com/test");
     QByteArray data("Disk cache test");
@@ -174,7 +172,7 @@ void TestQCNetworkCache::testDiskCachePersistence()
 
     {
         QCNetworkDiskCache cache;
-        cache.setCacheDirectory(m_tempDir->path());
+        cache.setCacheDirectory(m_tempDir.path());
 
         QCNetworkCacheMetadata meta;
         meta.url = url;
@@ -184,7 +182,7 @@ void TestQCNetworkCache::testDiskCachePersistence()
     // 创建新实例，数据应该仍然存在
     {
         QCNetworkDiskCache cache;
-        cache.setCacheDirectory(m_tempDir->path());
+        cache.setCacheDirectory(m_tempDir.path());
 
         QByteArray retrieved = cache.data(url);
         QCOMPARE(retrieved, data);
@@ -194,7 +192,7 @@ void TestQCNetworkCache::testDiskCachePersistence()
 void TestQCNetworkCache::testDiskCacheRemove()
 {
     QCNetworkDiskCache cache;
-    cache.setCacheDirectory(m_tempDir->path());
+    cache.setCacheDirectory(m_tempDir.path());
 
     QUrl url("https://example.com/remove");
     QByteArray data("To be removed");
@@ -212,7 +210,7 @@ void TestQCNetworkCache::testDiskCacheRemove()
 void TestQCNetworkCache::testDiskCacheClear()
 {
     QCNetworkDiskCache cache;
-    cache.setCacheDirectory(m_tempDir->path());
+    cache.setCacheDirectory(m_tempDir.path());
 
     cache.insert(QUrl("https://example.com/1"), "data1", QCNetworkCacheMetadata());
     cache.insert(QUrl("https://example.com/2"), "data2", QCNetworkCacheMetadata());
@@ -226,7 +224,7 @@ void TestQCNetworkCache::testDiskCacheClear()
 void TestQCNetworkCache::testDiskCacheSizeLimit()
 {
     QCNetworkDiskCache cache;
-    cache.setCacheDirectory(m_tempDir->path());
+    cache.setCacheDirectory(m_tempDir.path());
     cache.setMaxCacheSize(100);  // 100 字节
 
     QByteArray largeData(200, 'Y');

@@ -21,15 +21,13 @@ function(add_qcurl_benchmark test_name source_file)
             Qt6::Network
             Qt6::Test
             QCurl
+            CURL::libcurl
     )
     
     # 设置输出目录
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
     )
-    
-    # 添加到测试（不作为必须通过的测试）
-    add_test(NAME ${test_name} COMMAND ${test_name})
     
     message(STATUS "  ✅ ${test_name} 已配置")
 endfunction()
@@ -65,4 +63,4 @@ message(STATUS "✅ 性能基准测试已配置")
 message(STATUS "")
 message(STATUS "运行基准测试:")
 message(STATUS "  单独运行: ./build/benchmarks/benchmark_websocket_pool")
-message(STATUS "  或通过 ctest: cd build && ctest -R benchmark")
+message(STATUS "  注意: 基准测试不纳入默认 ctest，用于性能评估请手动运行")

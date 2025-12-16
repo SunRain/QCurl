@@ -11,8 +11,13 @@
 #define QCURL_LIBCURL_VERSION "@CURL_VERSION_STRING@"
 
 // 特性开关（由 CMake 配置）
+#ifndef QCURL_WEBSOCKET_SUPPORT
 #cmakedefine QCURL_WEBSOCKET_SUPPORT
+#endif
+
+#ifndef QCURL_HTTP2_SUPPORT
 #cmakedefine QCURL_HTTP2_SUPPORT
+#endif
 
 // 编译期版本检查宏
 #define QCURL_VERSION_CHECK(major, minor, patch) \

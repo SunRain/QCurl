@@ -60,8 +60,41 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
     QElapsedTimer timer;
     timer.start();
     
-    // 使用 QHostInfo 进行解析
-    QHostInfo info = QHostInfo::fromName(hostname);
+    QHostInfo info;
+    bool lookupCompleted = false;
+
+    if (timeout > 0) {
+        QEventLoop loop;
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        QObject context;
+        const int lookupId = QHostInfo::lookupHost(hostname, &context,
+                                                   [&](const QHostInfo &resolvedInfo) {
+            info = resolvedInfo;
+            lookupCompleted = true;
+            loop.quit();
+        });
+
+        timeoutTimer.start(timeout);
+        loop.exec();
+
+        if (!lookupCompleted) {
+            QHostInfo::abortHostLookup(lookupId);
+            result.durationMs = timer.elapsed();
+            result.success = false;
+            result.summary = QString("DNS 解析超时: %1").arg(hostname);
+            result.errorString = QStringLiteral("Timeout");
+            result.details["hostname"] = hostname;
+            result.details["timeoutMs"] = timeout;
+            return result;
+        }
+    } else {
+        // 兼容：timeout <= 0 时沿用阻塞式解析
+        info = QHostInfo::fromName(hostname);
+        lookupCompleted = true;
+    }
     
     result.durationMs = timer.elapsed();
     
@@ -99,7 +132,41 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
     QElapsedTimer timer;
     timer.start();
     
-    QHostInfo info = QHostInfo::fromName(ip);
+    QHostInfo info;
+    bool lookupCompleted = false;
+
+    if (timeout > 0) {
+        QEventLoop loop;
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        QObject context;
+        const int lookupId = QHostInfo::lookupHost(ip, &context,
+                                                   [&](const QHostInfo &resolvedInfo) {
+            info = resolvedInfo;
+            lookupCompleted = true;
+            loop.quit();
+        });
+
+        timeoutTimer.start(timeout);
+        loop.exec();
+
+        if (!lookupCompleted) {
+            QHostInfo::abortHostLookup(lookupId);
+            result.durationMs = timer.elapsed();
+            result.success = false;
+            result.summary = QString("反向 DNS 解析超时: %1").arg(ip);
+            result.errorString = QStringLiteral("Timeout");
+            result.details["ip"] = ip;
+            result.details["timeoutMs"] = timeout;
+            return result;
+        }
+    } else {
+        // 兼容：timeout <= 0 时沿用阻塞式解析
+        info = QHostInfo::fromName(ip);
+        lookupCompleted = true;
+    }
     
     result.durationMs = timer.elapsed();
     result.details["ip"] = ip;
