@@ -21,7 +21,7 @@
 - 命名规范（`m_`、`s_`、`k` 前缀）
 - 代码格式（4 空格缩进、单语句必须加括号）
 - Qt 6 专属约定（新式信号槽、`QStringLiteral`、`Q_OBJECT` 宏）
-- 禁止项（异常、RTTI、`dynamic_cast`、裸 `new`/`delete`、C 风格转换）
+- 禁止项（异常、RTTI、`dynamic_cast`、默认禁止裸 `new`/`delete`（`QObject` 派生允许裸 `new`，但必须父子树或 `deleteLater()`；禁止手动 `delete` `QObject`）、C 风格转换）
 
 **示例**：
 ```cpp
@@ -95,19 +95,25 @@ bool getColor(QColor *outColor) {
 ```
 开始生成代码
     ↓
-是否违反"强制规范"？
+是否违反 强制规范？
     ├─ 是 → ❌ 拒绝生成，提供符合规范的替代方案
     └─ 否 → 继续
          ↓
-    是新代码还是维护旧代码？
-         ├─ 新代码 → 优先使用"可选推荐"的现代写法
-         └─ 旧代码 → 保持原有风格
-              ↓
-         用户是否明确要求特定写法？
-              ├─ 是 → 尊重用户选择（不违反强制规范即可）
-              └─ 否 → 使用推荐写法
-                   ↓
-              生成代码完成
+涉及对象生命周期管理？
+         ├─ 否 → 继续
+         └─ 是 → 先判断是否为 QObject 派生
+                ├─ 是 → 优先 new T(parent)，必要时 deleteLater()，禁止手动 delete
+                └─ 否 → 使用 RAII/智能指针，禁止裸 new/delete
+                     ↓
+是新代码还是维护旧代码？
+    ├─ 新代码 → 优先使用 可选推荐 的现代写法
+    └─ 旧代码 → 保持原有风格
+          ↓
+用户是否明确要求特定写法？
+    ├─ 是 → 尊重用户选择（不违反强制规范即可）
+    └─ 否 → 使用推荐写法
+         ↓
+生成代码完成
 ```
 
 ---
@@ -233,37 +239,39 @@ QPair<QMap<QString, int>::iterator, bool> insertValue(
 ### 场景 4：用户要求违反强制规范
 
 **用户请求**：
-> "用裸指针创建一个 QWidget，我会手动管理内存"
+> "用裸 new 创建一个 QWidget，然后我会在合适时机 delete 它"
 
 **AI 决策过程**：
-1. ❌ 违反强制规范（禁止裸 `new`）
-2. ⚠️ 必须拒绝并提供替代方案
+1. ❌ 违反强制规范（对 `QObject` 派生对象手动 `delete`）  
+2. ✅ 允许裸 `new`，但必须用父子树或 `deleteLater()` 释放  
 
 **AI 响应**：
 > ⚠️ **无法按原需求生成代码**
 >
-> 根据项目编码规范（`Qt6_CPP17_Coding_Style.md` 和 `CLAUDE.md`），严格禁止使用裸 `new`/`delete`。
+> 根据项目编码规范：`QObject` 派生对象允许裸 `new`，但**禁止手动 `delete`**；应使用父子对象树或 `deleteLater()` 做事件循环安全析构。
 >
 > **推荐替代方案**：
 >
-> **方案 1：使用 Qt 父子树管理**（推荐）
+> **方案 1：使用 Qt 父子树管理**（优先）
 > ```cpp
-> void createWidget() {
->     // 指定父对象，自动管理内存
->     auto *widget = new QWidget(this);
+> void createWidget(QWidget *parent) {
+>     auto *widget = new QWidget(parent);
 >     widget->setObjectName(QStringLiteral("myWidget"));
 > }
 > ```
 >
-> **方案 2：使用 Qt 智能指针**
+> **方案 2：无 parent 且涉及异步/事件循环时，用 deleteLater()**
 > ```cpp
 > void createWidget() {
->     m_widget = QSharedPointer<QWidget>::create();
->     m_widget->setObjectName(QStringLiteral("myWidget"));
+>     auto *widget = new QWidget();
+>     widget->setObjectName(QStringLiteral("myWidget"));
+> 
+>     // 事件循环析构，避免手动 delete
+>     widget->deleteLater();
 > }
 > ```
 >
-> 如果确实需要手动管理生命周期，请使用方案 2 的智能指针。您希望使用哪种方案？
+> 如果你确实需要“立即释放”，请说明为何不能走事件循环析构，我可以帮你调整为更安全的生命周期设计（例如明确 owner、改为非 QObject 资源走 RAII 等）。
 
 ---
 

@@ -16,7 +16,7 @@
 - 标准：C++17 (`set(CMAKE_CXX_STANDARD 17)`)
 - 警告：`-Wall -Wextra -Wpedantic` 全开，**零警告提交**
 - 格式化：项目根放置 `.clang-format`（见文末），提交前 `git clang-format`
-- 禁止：异常、RTTI、dynamic_cast、裸 new、单语句无 braces、64-bit enum
+- 禁止：异常、RTTI、dynamic_cast、裸 new（`QObject` 派生为明确例外，见第 6 章）、单语句无 braces、64-bit enum
 - Use templates wisely, not just because you can（明智地使用模板，不仅仅是因为你可以）
 - Avoid C casts, prefer C++ casts (static_cast, const_cast, reinterpret_cast)
 - Don't use dynamic_cast, use qobject_cast for QObjects or refactor your design, for example by introducing a type() method (see QListWidgetItem)
@@ -144,9 +144,17 @@ if (longCondition1 &&
 | 信号槽连接 | `connect(sender, &Sender::valueChanged, receiver, &Receiver::update);` | `SIGNAL/SLOT` 字符串 |
 | 字符串字面量 | `QStringLiteral("hello")` 或 `u"hello"_qs` | `QString("hello")` |
 | 线程耗时 | `QtConcurrent::run(&Worker::doWork)` | 手动 `new Thread` |
-| 内存管理 | 父子树 或 智能指针 | 裸 `new` + `delete` |
+| 内存管理 | 父子树（优先）/ `deleteLater()` / RAII | 裸 `new` + 手动 `delete` |
 
 - 对于智能指针，优先使用Qt自带的智能指针（`QScopedPointer`、`QSharedPointer`、`QWeakPointer`、`QPointer`）
+- **QObject 生命周期（例外规则）**：
+  - 默认：仍然**禁止裸 `new`**。
+  - 例外：`QObject` 派生对象允许裸 `new`，但释放必须满足其一：
+    - ✅ **父子对象树（优先）**：`new T(parent)`，由父对象析构自动释放
+    - ✅ **事件循环安全析构**：无 parent 且涉及事件循环/异步/queued connection/跨线程场景时，用 `obj->deleteLater()`
+  - ❌ 禁止：对 `QObject` 派生对象手动 `delete`
+  - 非 `QObject`：使用 RAII 与智能指针（如 `std::unique_ptr`/`QScopedPointer`）管理资源
+  - 谨慎：对 `QObject` 使用 `std::unique_ptr`/`std::shared_ptr`/`QScopedPointer` 容易与 `deleteLater()` 或线程/事件循环时序冲突；需要防悬挂引用时优先 `QPointer`
 
 ---
 
@@ -244,7 +252,7 @@ HeaderFilterRegex: '.*'
 - [ ] 单语句 if/for/while 加 braces
 - [ ] 枚举尾逗号
 - [ ] QStringLiteral / u""_qs
-- [ ] 父子树或 std::unique_ptr，无裸 delete
+- [ ] `QObject` 用父子树/`deleteLater()`，禁止手动 `delete`；非 `QObject` 用 `std::unique_ptr`/RAII
 - [ ] 线程耗时任务用 QtConcurrent
 ```
 

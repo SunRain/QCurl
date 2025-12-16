@@ -1337,9 +1337,9 @@ private:
     CURL* m_handle;
 };
 
-// 正确: 使用智能指针
-std::unique_ptr<QCNetworkCache> cache(new QCNetworkMemoryCache());
-manager->setCache(cache.release());  // 转移所有权
+// 正确: QCNetworkCache 是 QObject，使用父子树管理生命周期
+auto *cache = new QCNetworkMemoryCache(manager);
+manager->setCache(cache);  // cache 由 manager 析构自动释放
 ```
 
 ### 错误处理
