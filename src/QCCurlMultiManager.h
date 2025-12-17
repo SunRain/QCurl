@@ -249,6 +249,8 @@ private:
 
     std::atomic<int> m_runningRequests{0};                   ///< 运行中的请求计数（原子）
 
+    std::atomic<bool> m_isShuttingDown{false};               ///< 析构中标记（避免回调重入导致死锁）
+
     QTimer *m_socketTimer;                                   ///< socket 超时定时器
 
     QHash<curl_socket_t, SocketInfo*> m_socketMap;           ///< socket 信息映射
