@@ -59,7 +59,20 @@ def run_qt_test(
         run_env.update(case_env)
     run_env.setdefault("QCURL_LC_OUT_DIR", str(run_dir))
 
-    proc = subprocess.run(cmd, cwd=str(run_dir), env=run_env, capture_output=True, text=True)
+    timeout_s = float(run_env.get("QCURL_LC_QTTEST_TIMEOUT", getattr(env, "test_timeout", 60.0)))
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(run_dir),
+            env=run_env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Qt Test timeout after {timeout_s}s: {cmd}\n{(exc.stdout or '')}\n{(exc.stderr or '')}"
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(f"Qt Test failed ({proc.returncode}): {cmd}\n{proc.stdout}\n{proc.stderr}")
 

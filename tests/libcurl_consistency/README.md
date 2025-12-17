@@ -121,9 +121,13 @@ QCurl 当前网络请求实现会直接设置/依赖下列 libcurl 选项（示�
 
 pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位对应的服务端观测记录，并在写回 `artifacts` 前剔除 `id`（避免对比噪声）。
 
+如需在失败时自动收集服务端日志用于 debug，可设置环境变量：
+
+- `QCURL_LC_COLLECT_LOGS=1`：当某个 case 断言失败/异常时，将 `httpd/nghttpx/ws` 的关键日志复制到对应目录 `curl/tests/http/gen/artifacts/<suite>/<case>/service_logs/`，并写出 `meta.json`（包含 baseline/qcurl 的 req_id）。
+
 ### 6.2 HTTP/3 覆盖的前置条件
 
-即使 curl 构建启用了 HTTP/3，`env.have_h3()` 仍依赖 **h3-capable 的 nghttpx**（需要 ngtcp2/nghttp3）。若系统 `nghttpx --version` 未包含 ngtcp2，则 P0 只覆盖 http/1.1 + h2（h3 变体会自动跳过）。
+即使 curl 构建启用了 HTTP/3，`env.have_h3()` 仍依赖 **h3-capable 的 nghttpx**（需要 ngtcp2/nghttp3）。本仓库默认在构建 `tst_LibcurlConsistency` 时通过 `qcurl_nghttpx_h3` 从源码构建并安装 `build/libcurl_consistency/nghttpx-h3/bin/nghttpx`，并在 `curl/tests/http/config.ini` 中指向该路径；若未构建该 target，则 P0 只覆盖 http/1.1 + h2（h3 变体会自动跳过）。
 
 ### 6.3 复现命令（本仓库默认路径）
 
@@ -133,6 +137,16 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
   - `cmake -S curl -B curl/build && cmake --build curl/build --target libtests -j"$(nproc)"`
 - 运行（P0）：
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest tests/libcurl_consistency/test_p0_consistency.py`
+
+#### Gate 入口（推荐）
+
+为了把 P0 变成“真正可靠的 Gate”，提供统一入口脚本（输出 JUnit XML + JSON）：
+
+- `python tests/libcurl_consistency/run_gate.py --suite p0 --build`
+
+说明：
+- 默认会设置 `QCURL_LC_COLLECT_LOGS=1`，失败时自动把 `httpd/nghttpx/ws` 关键日志复制到 `curl/tests/http/gen/artifacts/<suite>/<case>/service_logs/`。
+- 在本次 Codex CLI sandbox 环境下，运行需要 `sandbox_permissions=require_escalated`（否则端口分配/服务启动会被拒绝）。
 
 说明：
 - `tests/libcurl_consistency/conftest.py` 会默认注入 `CURL_BUILD_DIR=curl/build`、`CURL=curl/build/src/curl`、`CURLINFO=curl/build/src/curlinfo`；如需自定义可在环境变量覆盖。

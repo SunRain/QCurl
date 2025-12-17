@@ -21,10 +21,13 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QSignalSpy>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QVector>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
@@ -67,6 +70,32 @@ QUrl withRequestId(const QUrl &url, const QString &requestId)
     query.addQueryItem(QStringLiteral("id"), requestId);
     out.setQuery(query);
     return out;
+}
+
+bool writeWsEventsToFile(const QString &filePath, const QVector<QPair<QByteArray, QByteArray>> &events)
+{
+    QFile f(filePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    for (const auto &e : events) {
+        const QByteArray &name = e.first;
+        const QByteArray &payload = e.second;
+        QByteArray line;
+        line.reserve(name.size() + 1 + 20 + 1 + (payload.size() * 2) + 1);
+        line.append(name);
+        line.append(' ');
+        line.append(QByteArray::number(payload.size()));
+        line.append(' ');
+        line.append(payload.toHex());
+        line.append('\n');
+        if (f.write(line) != line.size()) {
+            f.close();
+            return false;
+        }
+    }
+    f.close();
+    return true;
 }
 
 bool writeAllToFile(const QString &filePath, const QByteArray &data, QIODevice::OpenMode mode)
@@ -241,6 +270,104 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("ext_multi_get4_h2") ||
+        caseId == QStringLiteral("ext_multi_get4_h3")) {
+        QVERIFY(!docname.isEmpty());
+        QVERIFY(httpsPort > 0);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        QVector<NetworkError> errors;
+        errors.resize(count);
+        int remaining = count;
+
+        for (int i = 0; i < count; ++i) {
+            const QString suffix = QStringLiteral("%1").arg(i + 1, 4, 10, QLatin1Char('0'));
+            const QUrl url = withRequestId(
+                QUrl(QStringLiteral("https://localhost:%1/%2%3").arg(httpsPort).arg(docname).arg(suffix)),
+                requestId);
+
+            QCNetworkRequest req(url);
+            req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkReply *reply = manager.sendGet(req);
+            QVERIFY(reply);
+            connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
+                const QString outFile = QStringLiteral("download_%1.data").arg(i);
+                const std::optional<QByteArray> data = reply->readAll();
+                QVERIFY(data.has_value());
+                QVERIFY(writeAllToFile(outFile, *data, QIODevice::WriteOnly | QIODevice::Truncate));
+                errors[i] = reply->error();
+                reply->deleteLater();
+
+                --remaining;
+                if (remaining == 0) {
+                    loop.quit();
+                }
+            });
+        }
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for multi-get4 downloads");
+        for (int i = 0; i < errors.size(); ++i) {
+            QCOMPARE(errors[i], NetworkError::NoError);
+        }
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_download_parallel_stress")) {
+        QVERIFY(!docname.isEmpty());
+        QVERIFY(httpsPort > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/%2").arg(httpsPort).arg(docname)),
+            requestId);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        QVector<NetworkError> errors;
+        errors.resize(count);
+
+        int remaining = count;
+        for (int i = 0; i < count; ++i) {
+            QCNetworkRequest req(url);
+            req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkReply *reply = manager.sendGet(req);
+            QVERIFY(reply);
+            connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
+                const QString outFile = QStringLiteral("download_%1.data").arg(i);
+                const std::optional<QByteArray> data = reply->readAll();
+                QVERIFY(data.has_value());
+                QVERIFY(writeAllToFile(outFile, *data, QIODevice::WriteOnly | QIODevice::Truncate));
+                errors[i] = reply->error();
+                reply->deleteLater();
+
+                --remaining;
+                if (remaining == 0) {
+                    loop.quit();
+                }
+            });
+        }
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for parallel downloads");
+        for (int i = 0; i < errors.size(); ++i) {
+            QCOMPARE(errors[i], NetworkError::NoError);
+        }
+        return;
+    }
+
     if (caseId == QStringLiteral("upload_put")) {
         const QUrl url = withRequestId(
             QUrl(QStringLiteral("https://localhost:%1/curltest/put").arg(httpsPort)),
@@ -371,6 +498,102 @@ void TestLibcurlConsistency::testCase()
         QCOMPARE(received, expected);
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), received, QIODevice::WriteOnly | QIODevice::Truncate));
         ws.close();
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_ws_ping_2301")) {
+        QVERIFY(wsPort > 0);
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("ws://localhost:%1/?scenario=lc_ping").arg(wsPort)),
+            requestId);
+
+        QCWebSocket ws(url);
+        ws.setAutoPongEnabled(false);
+        QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
+        QSignalSpy pingSpy(&ws, &QCWebSocket::pingReceived);
+        QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
+
+        ws.open();
+        QVERIFY(connectedSpy.wait(5000));
+
+        QVERIFY(pingSpy.wait(5000));
+        const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
+        QCOMPARE(pingPayload.size(), 0);
+        ws.pong(pingPayload);
+
+        QVERIFY(closeSpy.wait(5000));
+        const QList<QVariant> closeArgs = closeSpy.takeFirst();
+        const int closeCode = closeArgs.at(0).toInt();
+        const QString closeReason = closeArgs.at(1).toString();
+        QCOMPARE(closeCode, 1000);
+        QCOMPARE(closeReason, QStringLiteral("done"));
+
+        QByteArray closePayload;
+        closePayload.append(static_cast<char>((closeCode >> 8) & 0xFF));
+        closePayload.append(static_cast<char>(closeCode & 0xFF));
+        closePayload.append(closeReason.toUtf8());
+
+        QVector<QPair<QByteArray, QByteArray>> events;
+        events.append({QByteArrayLiteral("PING"), pingPayload});
+        events.append({QByteArrayLiteral("CLOSE"), closePayload});
+        QVERIFY(writeWsEventsToFile(QStringLiteral("download_0.data"), events));
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_ws_frame_types_2700")) {
+        QVERIFY(wsPort > 0);
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("ws://localhost:%1/?scenario=lc_frame_types").arg(wsPort)),
+            requestId);
+
+        QCWebSocket ws(url);
+        ws.setAutoPongEnabled(false);
+        QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
+        QSignalSpy textSpy(&ws, &QCWebSocket::textMessageReceived);
+        QSignalSpy binSpy(&ws, &QCWebSocket::binaryMessageReceived);
+        QSignalSpy pingSpy(&ws, &QCWebSocket::pingReceived);
+        QSignalSpy pongSpy(&ws, &QCWebSocket::pongReceived);
+        QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
+
+        ws.open();
+        QVERIFY(connectedSpy.wait(5000));
+
+        QVERIFY(textSpy.wait(5000));
+        const QString text = textSpy.takeFirst().at(0).toString();
+        QCOMPARE(text, QStringLiteral("txt"));
+
+        QVERIFY(binSpy.wait(5000));
+        const QByteArray bin = binSpy.takeFirst().at(0).toByteArray();
+        QCOMPARE(bin, QByteArrayLiteral("bin"));
+
+        QVERIFY(pingSpy.wait(5000));
+        const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
+        QCOMPARE(pingPayload, QByteArrayLiteral("ping"));
+        ws.pong(pingPayload);
+
+        QVERIFY(pongSpy.wait(5000));
+        const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();
+        QCOMPARE(pongPayload, QByteArrayLiteral("pong"));
+
+        QVERIFY(closeSpy.wait(5000));
+        const QList<QVariant> closeArgs = closeSpy.takeFirst();
+        const int closeCode = closeArgs.at(0).toInt();
+        const QString closeReason = closeArgs.at(1).toString();
+        QCOMPARE(closeCode, 1000);
+        QCOMPARE(closeReason, QStringLiteral("close"));
+
+        QByteArray closePayload;
+        closePayload.append(static_cast<char>((closeCode >> 8) & 0xFF));
+        closePayload.append(static_cast<char>(closeCode & 0xFF));
+        closePayload.append(closeReason.toUtf8());
+
+        QVector<QPair<QByteArray, QByteArray>> events;
+        events.append({QByteArrayLiteral("TEXT"), text.toUtf8()});
+        events.append({QByteArrayLiteral("BINARY"), bin});
+        events.append({QByteArrayLiteral("PING"), pingPayload});
+        events.append({QByteArrayLiteral("PONG"), pongPayload});
+        events.append({QByteArrayLiteral("CLOSE"), closePayload});
+        QVERIFY(writeWsEventsToFile(QStringLiteral("download_0.data"), events));
         return;
     }
 

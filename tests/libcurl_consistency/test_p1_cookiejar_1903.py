@@ -21,6 +21,7 @@ from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -73,6 +74,7 @@ def test_p1_cookiejar_1903(env, lc_services, lc_logs, tmp_path):
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
         pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+    collect_logs = should_collect_service_logs()
 
     proto = "http/1.1"
     trace_base = f"lc_{uuid.uuid4().hex[:8]}_cookiejar_1903"
@@ -104,70 +106,87 @@ def test_p1_cookiejar_1903(env, lc_services, lc_logs, tmp_path):
     case_variant = "lc_cookiejar_1903_http_1.1"
 
     try:
-        baseline = run_libtest_case(
+        try:
+            baseline = run_libtest_case(
+                env=env,
+                suite=suite,
+                case=case_variant,
+                client_name="lib1903",
+                args=[baseline_url, str(baseline_cookie), str(baseline_cookie)],
+                request_meta=req_meta,
+                response_meta=resp_meta,
+            )
+        except FileNotFoundError as exc:
+            pytest.skip(f"libtests 未构建: {exc}")
+
+        access_log = Path(lc_logs["httpd_access_log"])
+        obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
+        assert obs.http_version == proto
+        baseline["payload"]["request"]["method"] = obs.method
+        baseline["payload"]["request"]["url"] = obs.url
+        baseline["payload"]["request"]["headers"] = obs.headers
+        baseline["payload"]["response"]["status"] = obs.status
+        baseline["payload"]["response"]["http_version"] = obs.http_version
+        baseline_records = _normalize_cookiejar(baseline_cookie)
+        baseline["payload"]["cookiejar"] = _cookiejar_payload(baseline_records)
+        write_json(baseline["path"], baseline["payload"])
+
+        case_env = {
+            "QCURL_LC_CASE_ID": "cookiejar_1903",
+            "QCURL_LC_PROTO": proto,
+            "QCURL_LC_HTTP_PORT": str(env.http_port),
+            "QCURL_LC_HTTPS_PORT": str(env.https_port),
+            "QCURL_LC_WS_PORT": str(env.ws_port),
+            "QCURL_LC_COUNT": "1",
+            "QCURL_LC_DOCNAME": "",
+            "QCURL_LC_UPLOAD_SIZE": "0",
+            "QCURL_LC_ABORT_OFFSET": "0",
+            "QCURL_LC_FILE_SIZE": "0",
+            "QCURL_LC_REQ_ID": qcurl_req_id,
+            "QCURL_LC_COOKIE_PATH": str(qcurl_cookie),
+        }
+
+        qcurl = run_qt_test(
             env=env,
             suite=suite,
             case=case_variant,
-            client_name="lib1903",
-            args=[baseline_url, str(baseline_cookie), str(baseline_cookie)],
+            qt_executable=qt_path,
+            args=[],
             request_meta=req_meta,
             response_meta=resp_meta,
+            download_files=None,
+            download_count=None,
+            case_env=case_env,
         )
-    except FileNotFoundError as exc:
-        pytest.skip(f"libtests 未构建: {exc}")
 
-    access_log = Path(lc_logs["httpd_access_log"])
-    obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
-    assert obs.http_version == proto
-    baseline["payload"]["request"]["method"] = obs.method
-    baseline["payload"]["request"]["url"] = obs.url
-    baseline["payload"]["request"]["headers"] = obs.headers
-    baseline["payload"]["response"]["status"] = obs.status
-    baseline["payload"]["response"]["http_version"] = obs.http_version
-    baseline_records = _normalize_cookiejar(baseline_cookie)
-    baseline["payload"]["cookiejar"] = _cookiejar_payload(baseline_records)
-    write_json(baseline["path"], baseline["payload"])
+        obs = httpd_observed_for_id(access_log, qcurl_req_id, require_range=False)
+        assert obs.http_version == proto
+        qcurl["payload"]["request"]["method"] = obs.method
+        qcurl["payload"]["request"]["url"] = obs.url
+        qcurl["payload"]["request"]["headers"] = obs.headers
+        qcurl["payload"]["response"]["status"] = obs.status
+        qcurl["payload"]["response"]["http_version"] = obs.http_version
+        qcurl_records = _normalize_cookiejar(qcurl_cookie)
+        qcurl["payload"]["cookiejar"] = _cookiejar_payload(qcurl_records)
+        write_json(qcurl["path"], qcurl["payload"])
 
-    case_env = {
-        "QCURL_LC_CASE_ID": "cookiejar_1903",
-        "QCURL_LC_PROTO": proto,
-        "QCURL_LC_HTTP_PORT": str(env.http_port),
-        "QCURL_LC_HTTPS_PORT": str(env.https_port),
-        "QCURL_LC_WS_PORT": str(env.ws_port),
-        "QCURL_LC_COUNT": "1",
-        "QCURL_LC_DOCNAME": "",
-        "QCURL_LC_UPLOAD_SIZE": "0",
-        "QCURL_LC_ABORT_OFFSET": "0",
-        "QCURL_LC_FILE_SIZE": "0",
-        "QCURL_LC_REQ_ID": qcurl_req_id,
-        "QCURL_LC_COOKIE_PATH": str(qcurl_cookie),
-    }
+        assert len(baseline_records) == 2
+        assert set(baseline_records) == set(qcurl_records)
 
-    qcurl = run_qt_test(
-        env=env,
-        suite=suite,
-        case=case_variant,
-        qt_executable=qt_path,
-        args=[],
-        request_meta=req_meta,
-        response_meta=resp_meta,
-        download_files=None,
-        download_count=None,
-        case_env=case_env,
-    )
-
-    obs = httpd_observed_for_id(access_log, qcurl_req_id, require_range=False)
-    assert obs.http_version == proto
-    qcurl["payload"]["request"]["method"] = obs.method
-    qcurl["payload"]["request"]["url"] = obs.url
-    qcurl["payload"]["request"]["headers"] = obs.headers
-    qcurl["payload"]["response"]["status"] = obs.status
-    qcurl["payload"]["response"]["http_version"] = obs.http_version
-    qcurl_records = _normalize_cookiejar(qcurl_cookie)
-    qcurl["payload"]["cookiejar"] = _cookiejar_payload(qcurl_records)
-    write_json(qcurl["path"], qcurl["payload"])
-
-    assert len(baseline_records) == 2
-    assert set(baseline_records) == set(qcurl_records)
-
-    assert_artifacts_match(baseline["path"], qcurl["path"])
+        assert_artifacts_match(baseline["path"], qcurl["path"])
+    except Exception:
+        if collect_logs:
+            collect_service_logs_for_case(
+                env,
+                suite=suite,
+                case=case_variant,
+                logs=lc_logs,
+                meta={
+                    "case_id": "cookiejar_1903",
+                    "case_variant": case_variant,
+                    "proto": proto,
+                    "baseline_req_id": baseline_req_id,
+                    "qcurl_req_id": qcurl_req_id,
+                },
+            )
+        raise

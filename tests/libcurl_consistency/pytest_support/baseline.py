@@ -1,11 +1,15 @@
 """
 libcurl baseline 运行器（LC-3）：
-- 复用 LocalClient(name='cli_*') 执行 libtests。
+- 默认复用 LocalClient(name='cli_*') 执行 libtests。
+- 少量用例使用 repo 内置 baseline 可执行（与 QCURL_QTTEST 同目录），避免修改 curl/ 目录。
 - 生成 baseline artifacts（JSON）并落盘。
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -24,6 +28,45 @@ def _collect_download_files(client: LocalClient, count: int) -> list[Path]:
     """按 LocalClient 约定命名收集 download_* 文件。"""
     return [Path(client.download_file(i)) for i in range(count)]
 
+def _default_range_resume_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_range_resume_baseline")
+    return Path("qcurl_lc_range_resume_baseline")
+
+
+def _default_postfields_binary_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_postfields_binary_baseline")
+    return Path("qcurl_lc_postfields_binary_baseline")
+
+def _default_multi_get4_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_multi_get4_baseline")
+    return Path("qcurl_lc_multi_get4_baseline")
+
+
+def _run_standalone_baseline(env: Env, *, executable: Path, args: List[str], cwd: Path) -> tuple[List[str], List[str], int]:
+    started = time.monotonic()
+    proc = subprocess.run(
+        [str(executable), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=float(getattr(env, "test_timeout", 60.0)),
+        check=False,
+    )
+    duration_ms = int((time.monotonic() - started) * 1000)
+    stdout_lines = proc.stdout.splitlines(keepends=True) if proc.stdout else []
+    stderr_lines = proc.stderr.splitlines(keepends=True) if proc.stderr else []
+    if proc.returncode != 0:
+        raise AssertionError(
+            f"baseline failed ({proc.returncode}): {executable} {args}\n"
+            f"{proc.stdout}\n{proc.stderr}"
+        )
+    return stdout_lines, stderr_lines, duration_ms
 
 def run_libtest_case(
     env: Env,
@@ -46,11 +89,63 @@ def run_libtest_case(
     - download_count：如未传 download_files，可按 LocalClient 规则自动收集 download_{i}.data
     """
     client = LocalClient(env=env, name=client_name)
-    if not client.exists():
-        raise FileNotFoundError(f"LocalClient not built: {client_name}")
     cmd_args = args or []
-    result = client.run(args=cmd_args)
-    result.check_exit_code(0)
+
+    baseline_executable = None
+    stdout_lines: List[str] = []
+    stderr_lines: List[str] = []
+    duration_ms = 0
+
+    if client_name == "cli_hx_range_resume":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_RANGE_RESUME_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_RANGE_RESUME_BASELINE")
+            else _default_range_resume_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"range resume baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+        )
+    elif client_name == "cli_postfields_binary":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_POSTFIELDS_BINARY_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_POSTFIELDS_BINARY_BASELINE")
+            else _default_postfields_binary_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"postfields binary baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+        )
+    elif client_name == "cli_hx_multi_get4":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_MULTI_GET4_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_MULTI_GET4_BASELINE")
+            else _default_multi_get4_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"multi-get4 baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+        )
+    else:
+        if not client.exists():
+            raise FileNotFoundError(f"LocalClient not built: {client_name}")
+        result = client.run(args=cmd_args)
+        result.check_exit_code(0)
+        stdout_lines = result.stdout
+        stderr_lines = result.stderr
+        duration_ms = int(result.duration.total_seconds() * 1000)
 
     req_semantic = None
     if request_meta:
@@ -77,11 +172,12 @@ def run_libtest_case(
         "runner": "libcurl",
         "client": client_name,
         "args": cmd_args,
+        "baseline_executable": str(baseline_executable) if baseline_executable else None,
         "request": req_semantic,
         "response": resp_summary,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "duration_ms": int(result.duration.total_seconds() * 1000),
+        "stdout": stdout_lines,
+        "stderr": stderr_lines,
+        "duration_ms": duration_ms,
     }
     root = artifacts_root(env)
     path = artifact_path(root, suite=suite, case=case, flavor="baseline")
