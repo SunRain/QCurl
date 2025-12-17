@@ -4,6 +4,7 @@
 #include "QCNetworkRetryPolicy.h"
 
 #include <QDebug>
+#include <QList>
 #include <QMutexLocker>
 #include <QTimer>
 
@@ -72,30 +73,54 @@ QCCurlMultiManager::~QCCurlMultiManager()
 {
     qDebug() << "QCCurlMultiManager: Destroying instance";
 
-    QMutexLocker locker(&m_mutex);
+    m_isShuttingDown.store(true, std::memory_order_relaxed);
+
+    // 先禁用 libcurl 回调，避免在清理过程中重入导致死锁
+    if (m_multiHandle) {
+        curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETDATA, nullptr);
+        curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETFUNCTION, nullptr);
+        curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERDATA, nullptr);
+        curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, nullptr);
+    }
 
     // 停止定时器
     if (m_socketTimer) {
         m_socketTimer->stop();
     }
 
-    // 清理所有活动请求
-    if (!m_activeReplies.isEmpty()) {
-        qWarning() << "QCCurlMultiManager: Destroying with" << m_activeReplies.size()
-                   << "active requests";
-
-        for (auto it = m_activeReplies.begin(); it != m_activeReplies.end(); ++it) {
-            CURL *easy = it.key();
-            curl_multi_remove_handle(m_multiHandle, easy);
-        }
+    QList<CURL*> activeHandles;
+    QList<SocketInfo*> sockets;
+    {
+        QMutexLocker locker(&m_mutex);
+        activeHandles = m_activeReplies.keys();
+        sockets = m_socketMap.values();
         m_activeReplies.clear();
+        m_socketMap.clear();
     }
 
-    // 清理所有 socket
-    for (auto it = m_socketMap.begin(); it != m_socketMap.end(); ++it) {
-        delete it.value();
+    if (!activeHandles.isEmpty()) {
+        qWarning() << "QCCurlMultiManager: Destroying with" << activeHandles.size()
+                   << "active requests";
     }
-    m_socketMap.clear();
+    for (CURL *easy : activeHandles) {
+        if (!easy || !m_multiHandle) {
+            continue;
+        }
+        curl_multi_remove_handle(m_multiHandle, easy);
+    }
+
+    for (SocketInfo *info : sockets) {
+        if (!info) {
+            continue;
+        }
+        if (info->readNotifier) {
+            info->readNotifier->setEnabled(false);
+        }
+        if (info->writeNotifier) {
+            info->writeNotifier->setEnabled(false);
+        }
+        delete info;
+    }
 
     // 清理 multi handle
     if (m_multiHandle) {
@@ -110,6 +135,11 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
 {
     if (!reply) {
         qWarning() << "QCCurlMultiManager::addReply: reply is null";
+        return;
+    }
+
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        qWarning() << "QCCurlMultiManager::addReply: manager is shutting down";
         return;
     }
 
@@ -256,6 +286,10 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
         return;
     }
 
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     QMutexLocker locker(&m_mutex);
 
     CURL *easy = reply->d_func()->curlManager.handle();
@@ -289,6 +323,10 @@ int QCCurlMultiManager::runningRequestsCount() const noexcept
 
 void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBitmask)
 {
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     qDebug() << "QCCurlMultiManager::handleSocketAction: socketfd=" << socketfd
              << "events=" << eventsBitmask;
 
@@ -308,6 +346,10 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
 
 void QCCurlMultiManager::checkMultiInfo()
 {
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     int messagesLeft = 0;
 
     do {
@@ -399,6 +441,10 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
 
 int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, SocketInfo *socketInfo)
 {
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return 0;
+    }
+
     qDebug() << "QCCurlMultiManager::manageSocketNotifiers: socketfd=" << socketfd
              << "what=" << what;
 
@@ -491,6 +537,10 @@ int QCCurlMultiManager::curlTimerCallback(CURLM *multi, long timeout_ms, void *u
     if (!manager) {
         qCritical() << "QCCurlMultiManager::curlTimerCallback: Invalid manager pointer";
         return -1;
+    }
+
+    if (manager->m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return 0;
     }
 
     // 转换为 int（避免溢出）
