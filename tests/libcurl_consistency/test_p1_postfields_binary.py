@@ -1,7 +1,7 @@
 """
 P1：CURLOPT_POSTFIELDS 二进制（含 \\0）一致性（LC-9）。
 
-基线：curl/tests/libtest/libtests 的 cli_postfields_binary（自定义 cli_*，对齐 test1531 语义）
+基线：repo 内置 `qcurl_lc_postfields_binary_baseline`（对齐 test1531 语义）
 QCurl：tst_LibcurlConsistency 通过 QCURL_LC_CASE_ID 执行相同 payload
 """
 
@@ -18,8 +18,9 @@ from tests.libcurl_consistency.pytest_support.artifacts import write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.case_defs import P1_CASES
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
-from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id
+from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id, nghttpx_observed_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
 def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
@@ -43,6 +44,7 @@ def _postfields_binary_payload() -> bytes:
 @pytest.mark.parametrize("case_id", sorted(P1_CASES.keys()))
 def test_p1_postfields_binary(case_id, env, lc_services, lc_logs, tmp_path):
     case = P1_CASES[case_id]
+    collect_logs = should_collect_service_logs()
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -95,50 +97,75 @@ def test_p1_postfields_binary(case_id, env, lc_services, lc_logs, tmp_path):
         }
 
         try:
-            baseline = run_libtest_case(
+            try:
+                baseline = run_libtest_case(
+                    env=env,
+                    suite=case["suite"],
+                    case=case_variant,
+                    client_name=case["client"],
+                    args=args,
+                    request_meta=req_meta,
+                    response_meta=resp_meta,
+                    download_count=case.get("baseline_download_count"),
+                )
+            except FileNotFoundError as exc:
+                pytest.skip(f"libtests 未构建: {exc}")
+
+            if proto == "h3":
+                access_log = Path(lc_logs["nghttpx_access_log"])
+                obs = nghttpx_observed_for_id(access_log, baseline_req_id, require_range=False)
+            else:
+                access_log = Path(lc_logs["httpd_access_log"])
+                obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
+            assert obs.http_version == proto
+            baseline["payload"]["request"]["method"] = obs.method
+            baseline["payload"]["request"]["url"] = obs.url
+            baseline["payload"]["request"]["headers"] = obs.headers
+            baseline["payload"]["response"]["status"] = obs.status
+            baseline["payload"]["response"]["http_version"] = obs.http_version
+            write_json(baseline["path"], baseline["payload"])
+
+            qcurl = run_qt_test(
                 env=env,
                 suite=case["suite"],
                 case=case_variant,
-                client_name=case["client"],
-                args=args,
+                qt_executable=qt_path,
+                args=[],
                 request_meta=req_meta,
                 response_meta=resp_meta,
-                download_count=case.get("baseline_download_count"),
+                download_files=None,
+                download_count=case.get("qcurl_download_count"),
+                case_env=case_env,
             )
-        except FileNotFoundError as exc:
-            pytest.skip(f"libtests 未构建: {exc}")
 
-        access_log = Path(lc_logs["httpd_access_log"])
-        obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
-        assert obs.http_version == proto
-        baseline["payload"]["request"]["method"] = obs.method
-        baseline["payload"]["request"]["url"] = obs.url
-        baseline["payload"]["request"]["headers"] = obs.headers
-        baseline["payload"]["response"]["status"] = obs.status
-        baseline["payload"]["response"]["http_version"] = obs.http_version
-        write_json(baseline["path"], baseline["payload"])
+            if proto == "h3":
+                access_log = Path(lc_logs["nghttpx_access_log"])
+                obs = nghttpx_observed_for_id(access_log, qcurl_req_id, require_range=False)
+            else:
+                access_log = Path(lc_logs["httpd_access_log"])
+                obs = httpd_observed_for_id(access_log, qcurl_req_id, require_range=False)
+            assert obs.http_version == proto
+            qcurl["payload"]["request"]["method"] = obs.method
+            qcurl["payload"]["request"]["url"] = obs.url
+            qcurl["payload"]["request"]["headers"] = obs.headers
+            qcurl["payload"]["response"]["status"] = obs.status
+            qcurl["payload"]["response"]["http_version"] = obs.http_version
+            write_json(qcurl["path"], qcurl["payload"])
 
-        qcurl = run_qt_test(
-            env=env,
-            suite=case["suite"],
-            case=case_variant,
-            qt_executable=qt_path,
-            args=[],
-            request_meta=req_meta,
-            response_meta=resp_meta,
-            download_files=None,
-            download_count=case.get("qcurl_download_count"),
-            case_env=case_env,
-        )
-
-        obs = httpd_observed_for_id(access_log, qcurl_req_id, require_range=False)
-        assert obs.http_version == proto
-        qcurl["payload"]["request"]["method"] = obs.method
-        qcurl["payload"]["request"]["url"] = obs.url
-        qcurl["payload"]["request"]["headers"] = obs.headers
-        qcurl["payload"]["response"]["status"] = obs.status
-        qcurl["payload"]["response"]["http_version"] = obs.http_version
-        write_json(qcurl["path"], qcurl["payload"])
-
-        assert_artifacts_match(baseline["path"], qcurl["path"])
-
+            assert_artifacts_match(baseline["path"], qcurl["path"])
+        except Exception:
+            if collect_logs:
+                collect_service_logs_for_case(
+                    env,
+                    suite=case["suite"],
+                    case=case_variant,
+                    logs=lc_logs,
+                    meta={
+                        "case_id": case_id,
+                        "case_variant": case_variant,
+                        "proto": proto,
+                        "baseline_req_id": baseline_req_id,
+                        "qcurl_req_id": qcurl_req_id,
+                    },
+                )
+            raise

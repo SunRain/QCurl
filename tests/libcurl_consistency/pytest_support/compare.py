@@ -23,6 +23,18 @@ def _cmp_dict(lhs: Dict, rhs: Dict, fields: List[str]) -> List[str]:
     return diffs
 
 
+def _cmp_list_dict(lhs_list: List[Dict], rhs_list: List[Dict], fields: List[str], label: str) -> List[str]:
+    diffs: List[str] = []
+    if len(lhs_list) != len(rhs_list):
+        diffs.append(f"{label} length mismatch: {len(lhs_list)} != {len(rhs_list)}")
+        return diffs
+    for idx, (lhs, rhs) in enumerate(zip(lhs_list, rhs_list)):
+        for f in fields:
+            if lhs.get(f) != rhs.get(f):
+                diffs.append(f"{label}[{idx}].{f} mismatch: {lhs.get(f)} != {rhs.get(f)}")
+    return diffs
+
+
 def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List[str]]:
     """
     比较 baseline 与 QCurl artifacts。返回 (是否一致, 差异列表)。
@@ -33,14 +45,40 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
     diffs: List[str] = []
 
     # 请求语义摘要（P0 必做）
-    b_req = base.get("request")
-    q_req = qc.get("request")
-    if not b_req or not q_req:
-        diffs.append("request missing in one side")
+    b_reqs = base.get("requests")
+    q_reqs = qc.get("requests")
+    if b_reqs is not None or q_reqs is not None:
+        if not b_reqs or not q_reqs:
+            diffs.append("requests missing in one side")
+        else:
+            diffs.extend(_cmp_list_dict(
+                b_reqs,
+                q_reqs,
+                ["method", "url", "headers", "body_len", "body_sha256"],
+                "requests",
+            ))
     else:
-        diffs.extend(_cmp_dict(b_req, q_req, ["method", "url", "headers", "body_len", "body_sha256"]))
+        b_req = base.get("request")
+        q_req = qc.get("request")
+        if not b_req or not q_req:
+            diffs.append("request missing in one side")
+        else:
+            diffs.extend(_cmp_dict(b_req, q_req, ["method", "url", "headers", "body_len", "body_sha256"]))
 
     # 响应摘要（或下载文件摘要）
+    b_resps = base.get("responses")
+    q_resps = qc.get("responses")
+    if b_resps is not None or q_resps is not None:
+        if not b_resps or not q_resps:
+            diffs.append("responses missing in one side")
+        else:
+            diffs.extend(_cmp_list_dict(
+                b_resps,
+                q_resps,
+                ["status", "http_version", "headers", "body_len", "body_sha256"],
+                "responses",
+            ))
+
     b_resp = base.get("response")
     q_resp = qc.get("response")
     if not b_resp or not q_resp:

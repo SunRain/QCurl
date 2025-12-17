@@ -214,4 +214,107 @@ P1_CASES = {
     },
 }
 
-# 后续可在此扩展 P2 清单
+# 可选扩展：默认不跑（由 pytest driver 控制），避免引入与数据无关的波动点（LC-11）
+EXT_CASES = {
+    # 并发下载压力（仅用于 h2/h3 的 multiplexing/调度路径观测）
+    "ext_download_parallel_stress": {
+        "suite": "ext_download",
+        "case": "lc_ext_download_parallel_stress",
+        "client": "cli_hx_download",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-m",
+            "{max_parallel}",
+            "-V",
+            "{proto}",
+            "{url}",
+        ],
+        "defaults": {
+            "count": 10,
+            "max_parallel": 10,
+            "proto": "h2",
+            "docname": DOWNLOAD_DEFAULTS["doc_serial"],
+            "url": "https://localhost:{https_port}/" + DOWNLOAD_DEFAULTS["doc_serial"],
+        },
+        "baseline_download_count": 10,
+        "qcurl_download_count": 10,
+    },
+
+    # 多资源 GET（test2402 风格：HTTP/2 multi）
+    "ext_multi_get4_h2": {
+        "suite": "ext_multi",
+        "case": "lc_ext_multi_get4_2402",
+        "client": "cli_hx_multi_get4",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-I",
+            "{req_id}",
+            "-V",
+            "{proto}",
+            "{url_prefix}",
+        ],
+        "defaults": {
+            "count": 4,
+            "proto": "h2",
+            "docname": "path/2402",
+            "url_prefix": "https://localhost:{https_port}/path/2402",
+        },
+        "protos": ["h2"],
+        "baseline_download_count": 4,
+        "qcurl_download_count": 4,
+        "expected_requests": 4,
+    },
+
+    # 多资源 GET（test2502 风格：HTTP/3 multi）
+    "ext_multi_get4_h3": {
+        "suite": "ext_multi",
+        "case": "lc_ext_multi_get4_2502",
+        "client": "cli_hx_multi_get4",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-I",
+            "{req_id}",
+            "-V",
+            "{proto}",
+            "{url_prefix}",
+        ],
+        "defaults": {
+            "count": 4,
+            "proto": "h3",
+            "docname": "path/2502",
+            "url_prefix": "https://localhost:{https_port}/path/2502",
+        },
+        "protos": ["h3"],
+        "baseline_download_count": 4,
+        "qcurl_download_count": 4,
+        "expected_requests": 4,
+    },
+}
+
+# 可选扩展：WebSocket 低层帧语义（LC-19/LC-20）
+# - 默认不跑（由 QCURL_LC_EXT=1 控制）
+# - 基线客户端与服务端场景由 libcurl_consistency 自建，不依赖 curl/tests/http/testenv 的 ws_echo_server
+EXT_WS_CASES = {
+    # LC-19：服务端 Ping → 客户端手动 Pong（对齐 test2301 的 ping→pong 语义）
+    "ext_ws_ping_2301": {
+        "suite": "ext_ws",
+        "case": "lc_ext_ws_ping_2301",
+        "scenario": "lc_ping",
+        "url": "ws://localhost:{ws_port}/?scenario=lc_ping",
+        "qcurl_download_count": 1,
+    },
+
+    # LC-20：服务端发送 text/binary/ping/pong/close（对齐 test2700 的帧类型覆盖）
+    "ext_ws_frame_types_2700": {
+        "suite": "ext_ws",
+        "case": "lc_ext_ws_frame_types_2700",
+        "scenario": "lc_frame_types",
+        "url": "ws://localhost:{ws_port}/?scenario=lc_frame_types",
+        "qcurl_download_count": 1,
+    },
+}
+
+# 后续可在此扩展更高阶清单
