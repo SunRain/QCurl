@@ -88,6 +88,9 @@ public:
     /// 最后一次关闭的状态码（用于判断是否可重连）
     int lastCloseCode = 0;
 
+    /// 是否启用自动 Pong（默认 true；false 时使用 CURLWS_NOAUTOPONG）
+    bool autoPongEnabled = true;
+
     /// 重连定时器（用于延迟重连）
     QTimer *reconnectTimer = nullptr;
 

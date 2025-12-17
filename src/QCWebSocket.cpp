@@ -89,18 +89,13 @@ void QCWebSocketPrivate::processIncomingData()
         return;
     }
 
-    // 没有接收到数据
-    if (received == 0) {
-        return;
-    }
-
-    QByteArray data(buffer, static_cast<int>(received));
-
     // 检查帧元数据
     if (!meta) {
         qWarning() << "QCWebSocket: Received data but no metadata";
         return;
     }
+
+    QByteArray data(buffer, static_cast<int>(received));
 
     // 如果压缩已协商，解压缩数据（仅对 TEXT 和 BINARY 帧）
     if (compressionNegotiated && (meta->flags & (CURLWS_TEXT | CURLWS_BINARY))) {
@@ -174,22 +169,27 @@ void QCWebSocketPrivate::processIncomingData()
     }
     // 处理 Close 帧
     else if (meta->flags & CURLWS_CLOSE) {
+        QString closeReason;
         // 从 Close 帧中提取关闭状态码
         // libcurl 会将状态码放在前 2 个字节（大端序）
         if (received >= 2) {
             lastCloseCode = (static_cast<unsigned char>(buffer[0]) << 8) | 
                            static_cast<unsigned char>(buffer[1]);
+            if (received > 2) {
+                closeReason = QString::fromUtf8(buffer + 2, static_cast<int>(received - 2));
+            }
         } else {
             lastCloseCode = 1006;  // AbnormalClosure
         }
         
         qDebug() << "QCWebSocket: Received Close frame, code:" << lastCloseCode;
+        emit q->closeReceived(lastCloseCode, closeReason);
         setState(QCWebSocket::State::Closing);
         cleanupConnection();
     }
     // 处理 Ping 帧（通常 libcurl 会自动响应 Pong）
     else if (meta->flags & CURLWS_PING) {
-        // libcurl 通常会自动发送 Pong 响应
+        emit q->pingReceived(data);
         qDebug() << "QCWebSocket: Received Ping frame";
     }
 }
@@ -329,6 +329,11 @@ void QCWebSocket::open()
         // 使用 CONNECT_ONLY 模式建立 WebSocket 连接
         // 2L 表示 WebSocket 模式（libcurl 7.86.0+）
         curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);
+
+        // WebSocket 选项：自动 Pong 开关
+        if (!d->autoPongEnabled) {
+            curl_easy_setopt(curl, CURLOPT_WS_OPTIONS, CURLWS_NOAUTOPONG);
+        }
 
         // 设置连接超时（10 秒）
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
@@ -541,6 +546,49 @@ void QCWebSocket::ping(const QByteArray &payload)
     if (res != CURLE_OK) {
         qWarning() << "QCWebSocket: Failed to send ping:" << curl_easy_strerror(res);
     }
+}
+
+void QCWebSocket::pong(const QByteArray &payload)
+{
+    Q_D(QCWebSocket);
+
+    if (d->state != State::Connected) {
+        qWarning() << "QCWebSocket: Cannot send pong, not connected";
+        return;
+    }
+
+    QByteArray data = payload;
+    if (data.size() > 125) {
+        data = data.left(125);
+    }
+
+    size_t sent = 0;
+    CURLcode res = curl_ws_send(d->curlManager.handle(),
+                                data.constData(),
+                                data.size(),
+                                &sent,
+                                0,
+                                CURLWS_PONG);
+
+    if (res != CURLE_OK) {
+        qWarning() << "QCWebSocket: Failed to send pong:" << curl_easy_strerror(res);
+    }
+}
+
+void QCWebSocket::setAutoPongEnabled(bool enabled)
+{
+    Q_D(QCWebSocket);
+    d->autoPongEnabled = enabled;
+
+    if (d->state != State::Unconnected) {
+        qWarning() << "QCWebSocket::setAutoPongEnabled: 必须在 open() 之前设置";
+    }
+}
+
+bool QCWebSocket::isAutoPongEnabled() const
+{
+    Q_D(const QCWebSocket);
+    return d->autoPongEnabled;
 }
 
 QCWebSocket::State QCWebSocket::state() const

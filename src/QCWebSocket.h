@@ -245,6 +245,32 @@ public:
      */
     void ping(const QByteArray &payload = QByteArray());
 
+    /**
+     * @brief 发送 Pong 帧
+     *
+     * 当启用 NOAUTOPONG（setAutoPongEnabled(false)）时，可用于手动响应服务端的 Ping。
+     *
+     * @param payload 可选的载荷数据（最大 125 字节）
+     *
+     * @see pingReceived()
+     */
+    void pong(const QByteArray &payload = QByteArray());
+
+    /**
+     * @brief 设置是否启用自动 Pong
+     *
+     * - enabled=true（默认）：由 libcurl 自动处理 Ping→Pong
+     * - enabled=false：禁用自动 Pong（CURLWS_NOAUTOPONG），应用需在 pingReceived() 中自行回复 pong()
+     *
+     * @note 必须在 open() 之前设置，连接建立后修改无效
+     */
+    void setAutoPongEnabled(bool enabled);
+
+    /**
+     * @brief 查询是否启用自动 Pong
+     */
+    [[nodiscard]] bool isAutoPongEnabled() const;
+
     // ========================================================================
     // 自动重连配置（v2.4.0）
     // ========================================================================
@@ -476,6 +502,23 @@ Q_SIGNALS:
      * 通常是对之前发送的 Ping 的响应。
      */
     void pongReceived(const QByteArray &payload);
+
+    /**
+     * @brief 接收到 Ping 帧信号
+     *
+     * @param payload Ping 帧载荷数据
+     *
+     * @note 当禁用自动 Pong（setAutoPongEnabled(false)）时，应用需显式调用 pong() 回复
+     */
+    void pingReceived(const QByteArray &payload);
+
+    /**
+     * @brief 接收到 Close 帧信号
+     *
+     * @param closeCode 关闭状态码（RFC 6455）
+     * @param reason 关闭原因（UTF-8）
+     */
+    void closeReceived(int closeCode, const QString &reason);
 
     /**
      * @brief 错误发生信号
