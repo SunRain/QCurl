@@ -150,24 +150,22 @@ public:
     );
     
     /**
-     * @brief 暂停请求
-     * 
-     * 暂停等待中的请求，将其从队列中移除但不释放对象。
-     * 
-     * @param reply 要暂停的响应对象
-     * 
-     * @note 只能暂停等待中的请求，无法暂停正在执行的请求
+     * @brief 延后调度请求（非传输级暂停）
+     *
+     * - pending：从队列移除并进入 deferred 列表（不触发传输级 pause）。
+     * - running：为释放并发槽位允许停止执行并转入 deferred；当前实现使用 cancel 终止执行，
+     *   因此 undefer 后一般会从头重新请求。
+     *
+     * @param reply 要延后的响应对象
      */
-    void pauseRequest(QCNetworkReply *reply);
+    void deferRequest(QCNetworkReply *reply);
     
     /**
-     * @brief 恢复请求
-     * 
-     * 将暂停的请求重新加入队列。
-     * 
-     * @param reply 要恢复的响应对象
+     * @brief 恢复调度请求（从 deferred 列表重新入队）
+     *
+     * @param reply 要恢复调度的响应对象
      */
-    void resumeRequest(QCNetworkReply *reply);
+    void undeferRequest(QCNetworkReply *reply);
     
     /**
      * @brief 取消请求
@@ -289,8 +287,8 @@ private:
     QList<QPointer<QCNetworkReply>> m_runningRequests;
     QHash<QString, int> m_hostConnectionCount;  ///< 主机连接计数
     
-    // 暂停的请求
-    QList<QPointer<QCNetworkReply>> m_pausedRequests;
+    // 延后调度的请求（非传输级 pause）
+    QList<QPointer<QCNetworkReply>> m_deferredRequests;
     
     // 统计信息
     Statistics m_stats;
