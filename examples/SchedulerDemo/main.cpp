@@ -104,8 +104,8 @@ private slots:
 
     void demo3_PauseResume()
     {
-        qInfo() << "\n--- 演示 3：暂停/恢复 ---";
-        qInfo() << "创建请求，2秒后暂停，再2秒后恢复...\n";
+        qInfo() << "\n--- 演示 3：延后/恢复调度（非传输级 pause/resume） ---";
+        qInfo() << "创建请求，2秒后 defer，再2秒后 undefer...\n";
 
         QCNetworkRequest request(QUrl("https://httpbin.org/delay/2"));
         request.setPriority(QCNetworkRequestPriority::High);
@@ -121,16 +121,16 @@ private slots:
         // 2 秒后暂停
         QTimer::singleShot(2000, this, [this]() {
             if (pauseResumeDemo) {
-                qInfo() << "⏸️  暂停请求...";
-                scheduler->pauseRequest(pauseResumeDemo);
+                qInfo() << "⏸️  deferRequest...";
+                scheduler->deferRequest(pauseResumeDemo);
             }
         });
 
         // 4 秒后恢复
         QTimer::singleShot(4000, this, [this]() {
             if (pauseResumeDemo) {
-                qInfo() << "▶️  恢复请求...";
-                scheduler->resumeRequest(pauseResumeDemo);
+                qInfo() << "▶️  undeferRequest...";
+                scheduler->undeferRequest(pauseResumeDemo);
             }
         });
     }

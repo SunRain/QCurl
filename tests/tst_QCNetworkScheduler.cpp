@@ -20,7 +20,7 @@ using namespace QCurl;
  * 测试覆盖：
  * 1. 优先级排序
  * 2. 并发限制（全局 + 每主机）
- * 3. 请求管理（暂停/恢复/取消）
+ * 3. 请求管理（延后/恢复调度/取消）
  * 4. 动态优先级调整
  * 5. 带宽限制
  * 6. 统计信息
@@ -39,7 +39,7 @@ private slots:
     void testPriorityQueueOrdering();
     void testConcurrentRequestLimit();
     void testPerHostLimit();
-    void testPauseResume();
+    void testDeferUndefer();
     void testCancelRequest();
     void testCancelAllRequests();
     void testChangePriority();
@@ -224,9 +224,9 @@ void tst_QCNetworkScheduler::testPerHostLimit()
 }
 
 /**
- * @brief 测试 5：验证暂停/恢复功能
+ * @brief 测试 5：验证延后/恢复调度功能
  */
-void tst_QCNetworkScheduler::testPauseResume()
+void tst_QCNetworkScheduler::testDeferUndefer()
 {
     m_scheduler->cancelAllRequests();
     
@@ -239,11 +239,11 @@ void tst_QCNetworkScheduler::testPauseResume()
     auto statsBefore = m_scheduler->statistics();
     int pendingBefore = statsBefore.pendingRequests + statsBefore.runningRequests;
     
-    // 暂停请求
-    m_scheduler->pauseRequest(reply);
+    // 延后请求（调度层语义，非传输级 pause）
+    m_scheduler->deferRequest(reply);
     
-    // 恢复请求
-    m_scheduler->resumeRequest(reply);
+    // 恢复调度
+    m_scheduler->undeferRequest(reply);
     
     auto statsAfter = m_scheduler->statistics();
     int pendingAfter = statsAfter.pendingRequests + statsAfter.runningRequests;
@@ -257,7 +257,7 @@ void tst_QCNetworkScheduler::testPauseResume()
     m_scheduler->cancelRequest(reply);
     reply->deleteLater();
     
-    qDebug() << "✅ Test 5 passed: Pause/Resume";
+    qDebug() << "✅ Test 5 passed: Defer/Undefer";
 }
 
 /**

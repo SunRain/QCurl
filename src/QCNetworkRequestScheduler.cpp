@@ -207,7 +207,7 @@ void QCNetworkRequestScheduler::startRequest(const QueuedRequest &req)
     req.reply->execute();
 }
 
-void QCNetworkRequestScheduler::pauseRequest(QCNetworkReply *reply)
+void QCNetworkRequestScheduler::deferRequest(QCNetworkReply *reply)
 {
     if (!reply) {
         return;
@@ -217,7 +217,8 @@ void QCNetworkRequestScheduler::pauseRequest(QCNetworkReply *reply)
     
     // 检查是否在运行列表中
     if (m_runningRequests.contains(reply)) {
-        // 暂停执行中的请求（注意：libcurl 可能不支持暂停正在传输的请求）
+        // 延后执行中的请求：为释放并发槽位，当前实现选择终止执行并转入 deferred
+        // 注意：这不是传输级暂停，undefer 后一般会从头重新请求
         reply->cancel();  // 使用 cancel 停止请求
         
         m_runningRequests.removeOne(reply);
@@ -234,8 +235,8 @@ void QCNetworkRequestScheduler::pauseRequest(QCNetworkReply *reply)
             }
         }
         
-        // 添加到暂停列表
-        m_pausedRequests.append(reply);
+        // 添加到 deferred 列表
+        m_deferredRequests.append(reply);
         
         // 处理队列（释放的槽位可以给新请求）
         processQueue();
@@ -244,12 +245,12 @@ void QCNetworkRequestScheduler::pauseRequest(QCNetworkReply *reply)
     
     // 检查是否在队列中
     if (removeFromQueue(reply)) {
-        m_pausedRequests.append(reply);
+        m_deferredRequests.append(reply);
         m_stats.pendingRequests--;
     }
 }
 
-void QCNetworkRequestScheduler::resumeRequest(QCNetworkReply *reply)
+void QCNetworkRequestScheduler::undeferRequest(QCNetworkReply *reply)
 {
     if (!reply) {
         return;
@@ -257,11 +258,11 @@ void QCNetworkRequestScheduler::resumeRequest(QCNetworkReply *reply)
     
     QMutexLocker locker(&m_mutex);
     
-    if (!m_pausedRequests.contains(reply)) {
+    if (!m_deferredRequests.contains(reply)) {
         return;
     }
     
-    m_pausedRequests.removeOne(reply);
+    m_deferredRequests.removeOne(reply);
     
     // 重新加入队列（使用 Normal 优先级，因为无法从 reply 获取原优先级）
     QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal;
@@ -312,9 +313,9 @@ void QCNetworkRequestScheduler::cancelRequest(QCNetworkReply *reply)
         return;
     }
     
-    // 从暂停列表中移除
-    if (m_pausedRequests.contains(reply)) {
-        m_pausedRequests.removeOne(reply);
+    // 从 deferred 列表中移除
+    if (m_deferredRequests.contains(reply)) {
+        m_deferredRequests.removeOne(reply);
         m_stats.cancelledRequests++;
         emit requestCancelled(reply);
         return;
@@ -345,14 +346,14 @@ void QCNetworkRequestScheduler::cancelAllRequests()
     m_stats.runningRequests = 0;
     m_hostConnectionCount.clear();
     
-    // 取消所有暂停的请求
-    for (auto reply : m_pausedRequests) {
+    // 取消所有 deferred 的请求
+    for (auto reply : m_deferredRequests) {
         if (reply) {
             m_stats.cancelledRequests++;
             emit requestCancelled(reply);
         }
     }
-    m_pausedRequests.clear();
+    m_deferredRequests.clear();
     
     // 取消所有队列中的请求
     for (auto &queue : m_pendingQueue) {
