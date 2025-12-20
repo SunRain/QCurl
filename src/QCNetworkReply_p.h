@@ -93,7 +93,7 @@ public:
     // 状态管理
     // ========================================================================
 
-    ReplyState state;           ///< 当前状态（Idle/Running/Finished等）
+    ReplyState state;           ///< 当前状态（Idle/Running/Paused/Finished等）
     NetworkError errorCode;     ///< 错误码（NetworkNoError = 0）
     QString errorMessage;       ///< 错误描述信息
 

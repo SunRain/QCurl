@@ -47,11 +47,21 @@ enum class ExecutionMode {
 };
 
 /**
+ * @brief 传输级暂停模式（映射 libcurl CURLPAUSE_*）
+ */
+enum class PauseMode {
+    Recv, ///< 暂停接收（CURLPAUSE_RECV）
+    Send, ///< 暂停发送（CURLPAUSE_SEND）
+    All   ///< 暂停收发（CURLPAUSE_ALL）
+};
+
+/**
  * @brief 请求状态
  */
 enum class ReplyState {
     Idle,      ///< 空闲（未开始）
     Running,   ///< 运行中
+    Paused,    ///< 已暂停（仅异步传输级 pause/resume）
     Finished,  ///< 已完成
     Cancelled, ///< 已取消
     Error      ///< 错误
@@ -153,6 +163,7 @@ public:
     void execute();
     void cancel();
     void pause();
+    void pause(PauseMode mode);
     void resume();
 
     // ========================================================================
@@ -175,6 +186,7 @@ public:
     [[nodiscard]] QString errorString() const;
     [[nodiscard]] bool isFinished() const noexcept;
     [[nodiscard]] bool isRunning() const noexcept;
+    [[nodiscard]] bool isPaused() const noexcept;
     [[nodiscard]] qint64 bytesReceived() const noexcept;
     [[nodiscard]] qint64 bytesTotal() const noexcept;
 

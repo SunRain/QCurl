@@ -2,7 +2,7 @@
 #define QCCURLMULTIMANAGER_H
 
 #include <QObject>
-#include <QMutex>
+#include <QRecursiveMutex>
 #include <QPointer>
 #include <QHash>
 #include <QTimer>
@@ -111,6 +111,16 @@ public:
      * @note 线程安全（原子操作）
      */
     [[nodiscard]] int runningRequestsCount() const noexcept;
+
+    /**
+     * @brief 触发一次 multi 推进/唤醒
+     *
+     * 用于处理“resume 后缺少 socket/timer 事件导致不推进”的边缘态。
+     * 该方法会确保在管理器线程内触发一次等价的 multi 驱动动作。
+     *
+     * @note 线程安全：可从任意线程调用；必要时会 marshal 到管理器线程。
+     */
+    void wakeup();
 
 Q_SIGNALS:
     /**
@@ -243,7 +253,7 @@ private:
 
     CURLM *m_multiHandle;                                    ///< libcurl multi handle
 
-    QMutex m_mutex;                                          ///< 保护共享资源的互斥锁
+    QRecursiveMutex m_mutex;                                   ///< 保护共享资源的互斥锁（允许 libcurl 回调重入）
 
     QHash<CURL*, QPointer<QCNetworkReply>> m_activeReplies; ///< 活动请求（键：easy handle）
 

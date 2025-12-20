@@ -52,7 +52,9 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
     // 如果正在运行（异步模式），从多句柄管理器移除
     // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理
     // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理
-    if (executionMode == ExecutionMode::Async && state == ReplyState::Running && q_ptr) {
+    if (executionMode == ExecutionMode::Async
+        && (state == ReplyState::Running || state == ReplyState::Paused)
+        && q_ptr) {
         QCCurlMultiManager::instance()->removeReply(q_ptr);
     }
 }
@@ -645,7 +647,7 @@ QCNetworkReply::~QCNetworkReply()
     Q_D(QCNetworkReply);
 
     // 如果正在运行，先取消
-    if (d->state == ReplyState::Running) {
+    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         cancel();
     }
 
@@ -661,7 +663,7 @@ void QCNetworkReply::execute()
 {
     Q_D(QCNetworkReply);
 
-    if (d->state == ReplyState::Running) {
+    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         qWarning() << "QCNetworkReply::execute() called while already running";
         return;
     }
@@ -837,8 +839,9 @@ void QCNetworkReply::cancel()
         return;
     }
 
-    // 异步模式：从多句柄管理器移除（仅在 Running 状态）
-    if (d->executionMode == ExecutionMode::Async && d->state == ReplyState::Running) {
+    // 异步模式：从多句柄管理器移除（Running/Paused 状态）
+    if (d->executionMode == ExecutionMode::Async
+        && (d->state == ReplyState::Running || d->state == ReplyState::Paused)) {
         QCCurlMultiManager::instance()->removeReply(this);
     }
     // 同步模式：无法真正取消阻塞的 curl_easy_perform()
@@ -850,7 +853,22 @@ void QCNetworkReply::cancel()
 
 void QCNetworkReply::pause()
 {
+    pause(PauseMode::All);
+}
+
+void QCNetworkReply::pause(PauseMode mode)
+{
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, mode]() { pause(mode); }, Qt::QueuedConnection);
+        return;
+    }
+
     Q_D(QCNetworkReply);
+
+    if (d->executionMode == ExecutionMode::Sync) {
+        qWarning() << "QCNetworkReply::pause: Sync mode does not support transfer pause/resume";
+        return;
+    }
 
     if (d->state != ReplyState::Running) {
         return;
@@ -858,17 +876,79 @@ void QCNetworkReply::pause()
 
     CURL *handle = d->curlManager.handle();
     if (handle) {
-        curl_easy_pause(handle, CURLPAUSE_ALL);
+        int flags = CURLPAUSE_ALL;
+        switch (mode) {
+        case PauseMode::Recv:
+            flags = CURLPAUSE_RECV;
+            break;
+        case PauseMode::Send:
+            flags = CURLPAUSE_SEND;
+            break;
+        case PauseMode::All:
+            flags = CURLPAUSE_ALL;
+            break;
+        }
+
+        auto *multiManager = QCCurlMultiManager::instance();
+        CURLcode result = CURLE_OK;
+        if (QThread::currentThread() == multiManager->thread()) {
+            result = curl_easy_pause(handle, flags);
+        } else {
+            QMetaObject::invokeMethod(
+                multiManager,
+                [handle, flags, &result]() { result = curl_easy_pause(handle, flags); },
+                Qt::BlockingQueuedConnection);
+        }
+
+        if (result != CURLE_OK) {
+            qWarning() << "QCNetworkReply::pause: curl_easy_pause failed:"
+                       << curl_easy_strerror(result);
+            return;
+        }
+
+        d->setState(ReplyState::Paused);
     }
 }
 
 void QCNetworkReply::resume()
 {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this]() { resume(); }, Qt::QueuedConnection);
+        return;
+    }
+
     Q_D(QCNetworkReply);
+
+    if (d->executionMode == ExecutionMode::Sync) {
+        qWarning() << "QCNetworkReply::resume: Sync mode does not support transfer pause/resume";
+        return;
+    }
+
+    if (d->state != ReplyState::Paused) {
+        return;
+    }
 
     CURL *handle = d->curlManager.handle();
     if (handle) {
-        curl_easy_pause(handle, CURLPAUSE_CONT);
+        auto *multiManager = QCCurlMultiManager::instance();
+        CURLcode result = CURLE_OK;
+        if (QThread::currentThread() == multiManager->thread()) {
+            result = curl_easy_pause(handle, CURLPAUSE_CONT);
+        } else {
+            QMetaObject::invokeMethod(
+                multiManager,
+                [handle, &result]() { result = curl_easy_pause(handle, CURLPAUSE_CONT); },
+                Qt::BlockingQueuedConnection);
+        }
+
+        if (result != CURLE_OK) {
+            qWarning() << "QCNetworkReply::resume: curl_easy_pause failed:"
+                       << curl_easy_strerror(result);
+            return;
+        }
+
+        d->setState(ReplyState::Running);
+        multiManager->wakeup();
     }
 }
 
@@ -977,6 +1057,12 @@ bool QCNetworkReply::isRunning() const noexcept
 {
     Q_D(const QCNetworkReply);
     return d->state == ReplyState::Running;
+}
+
+bool QCNetworkReply::isPaused() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->state == ReplyState::Paused;
 }
 
 qint64 QCNetworkReply::bytesReceived() const noexcept

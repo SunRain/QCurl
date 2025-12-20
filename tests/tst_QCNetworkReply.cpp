@@ -17,7 +17,13 @@
 #include <QTimer>
 #include <QSignalSpy>
 #include <QMetaMethod>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QHostAddress>
+#include <QElapsedTimer>
+#include <algorithm>
 #include <chrono>
+#include <thread>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -56,6 +62,8 @@ private slots:
     void testStateTransitionIdleToFinished();
     void testStateTransitionIdleToError();
     void testStateCancellation();
+    void testSyncPauseResumeNoOp();
+    void testAsyncTransferPauseResumeCrossThread();
 
     // ========== 数据访问测试 ==========
     void testReadAll();
@@ -439,6 +447,143 @@ void TestQCNetworkReply::testStateCancellation()
     // QCOMPARE(reply->state(), ReplyState::Cancelled);
 
     reply->deleteLater();
+}
+
+void TestQCNetworkReply::testSyncPauseResumeNoOp()
+{
+    QCNetworkRequest request(QUrl("http://example.com"));
+    QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
+
+    QTest::ignoreMessage(QtWarningMsg,
+                         "QCNetworkReply::pause: Sync mode does not support transfer pause/resume");
+    reply.pause(PauseMode::All);
+    QCOMPARE(reply.state(), ReplyState::Idle);
+
+    QTest::ignoreMessage(QtWarningMsg,
+                         "QCNetworkReply::resume: Sync mode does not support transfer pause/resume");
+    reply.resume();
+    QCOMPARE(reply.state(), ReplyState::Idle);
+}
+
+void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
+{
+    constexpr qsizetype kPayloadSize = 256 * 1024;
+    constexpr qsizetype kChunkSize = 4096;
+    constexpr int kChunkIntervalMs = 5;
+    constexpr qint64 kPauseAfterBytes = 32 * 1024;
+
+    const QByteArray payload(kPayloadSize, 'x');
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    const quint16 port = server.serverPort();
+
+    QPointer<QTcpSocket> clientSocket;
+    QTimer sendTimer;
+    sendTimer.setInterval(kChunkIntervalMs);
+
+    qsizetype bytesSent = 0;
+
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        clientSocket = server.nextPendingConnection();
+        if (!clientSocket) {
+            return;
+        }
+
+        const QByteArray header =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+
+        clientSocket->write(header);
+        clientSocket->flush();
+        sendTimer.start();
+    });
+
+    connect(&sendTimer, &QTimer::timeout, this, [&]() {
+        if (!clientSocket) {
+            sendTimer.stop();
+            return;
+        }
+
+        if (bytesSent >= payload.size()) {
+            sendTimer.stop();
+            clientSocket->disconnectFromHost();
+            clientSocket->deleteLater();
+            clientSocket = nullptr;
+            return;
+        }
+
+        const qsizetype remaining = payload.size() - bytesSent;
+        const qsizetype toSend = std::min(kChunkSize, remaining);
+
+        const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
+        if (written > 0) {
+            bytesSent += static_cast<qsizetype>(written);
+            clientSocket->flush();
+        }
+    });
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/test").arg(port)));
+    auto *reply = m_manager->sendGet(request);
+
+    QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+    qint64 bytesAtPause = -1;
+    QElapsedTimer progressTimer;
+    progressTimer.start();
+    while (progressTimer.elapsed() < 5000 && bytesAtPause < kPauseAfterBytes) {
+        if (!progressSpy.wait(500)) {
+            continue;
+        }
+
+        const auto args = progressSpy.takeLast();
+        bytesAtPause = args.at(0).toLongLong();
+    }
+    QVERIFY(bytesAtPause >= kPauseAfterBytes);
+
+    std::thread pauseThread([reply]() { reply->pause(PauseMode::Recv); });
+    pauseThread.join();
+
+    QElapsedTimer pauseTimer;
+    pauseTimer.start();
+    while (pauseTimer.elapsed() < 3000 && reply->state() != ReplyState::Paused) {
+        QTest::qWait(10);
+    }
+    QCOMPARE(reply->state(), ReplyState::Paused);
+
+    const qint64 pausedBytes = reply->bytesReceived();
+    QTest::qWait(200);
+    const qint64 pausedBytesAfterWait = reply->bytesReceived();
+    QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
+
+    std::thread resumeThread([reply]() { reply->resume(); });
+    resumeThread.join();
+
+    QElapsedTimer resumeTimer;
+    resumeTimer.start();
+    while (resumeTimer.elapsed() < 3000 && reply->state() != ReplyState::Running) {
+        if (reply->state() == ReplyState::Finished) {
+            break;
+        }
+        QTest::qWait(10);
+    }
+    QVERIFY(reply->state() == ReplyState::Running || reply->state() == ReplyState::Finished);
+
+    QVERIFY(finishedSpy.wait(10000));
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->bytesReceived(), static_cast<qint64>(payload.size()));
+
+    const auto dataOpt = reply->readAll();
+    QVERIFY(dataOpt.has_value());
+    QCOMPARE(dataOpt->size(), payload.size());
+    QCOMPARE(*dataOpt, payload);
+
+    reply->deleteLater();
+    server.close();
 }
 
 // ============================================================================

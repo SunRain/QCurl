@@ -6,6 +6,7 @@
 #include <QDebug>
 #include <QList>
 #include <QMutexLocker>
+#include <QThread>
 #include <QTimer>
 
 namespace QCurl {
@@ -319,6 +320,31 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
 int QCCurlMultiManager::runningRequestsCount() const noexcept
 {
     return m_runningRequests.load(std::memory_order_relaxed);
+}
+
+void QCCurlMultiManager::wakeup()
+{
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this]() { wakeup(); }, Qt::QueuedConnection);
+        return;
+    }
+
+    if (!m_multiHandle) {
+        return;
+    }
+
+#if defined(LIBCURL_VERSION_NUM) && (LIBCURL_VERSION_NUM >= 0x074400)
+    const CURLMcode wakeupCode = curl_multi_wakeup(m_multiHandle);
+    if (wakeupCode != CURLM_OK) {
+        qWarning() << "QCCurlMultiManager::wakeup: curl_multi_wakeup failed:" << wakeupCode;
+    }
+#endif
+
+    QTimer::singleShot(0, this, [this]() { handleSocketAction(CURL_SOCKET_TIMEOUT, 0); });
 }
 
 void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBitmask)
