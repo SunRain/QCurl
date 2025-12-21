@@ -95,6 +95,15 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
         else:
             diffs.extend(_cmp_dict(b_cookiejar, q_cookiejar, ["records", "sha256"]))
 
+    # 可选：错误归一化输出一致性（P2）
+    b_err = base.get("error")
+    q_err = qc.get("error")
+    if b_err is not None or q_err is not None:
+        if b_err is None or q_err is None:
+            diffs.append("error missing in one side")
+        else:
+            diffs.extend(_cmp_dict(b_err, q_err, ["kind", "http_status"]))
+
     return (len(diffs) == 0, diffs)
 
 

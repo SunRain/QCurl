@@ -86,10 +86,13 @@ private slots:
 private:
     QCNetworkAccessManager *m_manager = nullptr;
     bool m_isHttpbinReachable = false;
+    static const QString HTTPBIN_BASE_URL;
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 5000);
 };
+
+const QString TestQCNetworkReply::HTTPBIN_BASE_URL = QStringLiteral("http://localhost:8935");
 
 // ============================================================================
 // 辅助方法实现
@@ -110,7 +113,9 @@ void TestQCNetworkReply::initTestCase()
     qDebug() << "初始化 QCNetworkReply 测试套件";
     m_manager = new QCNetworkAccessManager(this);
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/status/200"));
+    qDebug() << "httpbin 服务地址:" << HTTPBIN_BASE_URL;
+
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/200"));
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
 
@@ -119,7 +124,8 @@ void TestQCNetworkReply::initTestCase()
     if (finishedSpy.wait(4000) && reply->error() == NetworkError::NoError) {
         m_isHttpbinReachable = true;
     } else {
-        qWarning() << "Network not available, httpbin.org unreachable:" << reply->errorString();
+        qWarning() << "httpbin 服务不可用:" << reply->errorString();
+        qWarning() << "请先启动服务：docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin";
     }
     reply->deleteLater();
 }
@@ -146,7 +152,7 @@ void TestQCNetworkReply::cleanup()
 
 void TestQCNetworkReply::testConstructor()
 {
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
 
     QCOMPARE(reply.state(), ReplyState::Idle);
@@ -158,7 +164,7 @@ void TestQCNetworkReply::testConstructor()
 
 void TestQCNetworkReply::testConstructorWithDifferentMethods()
 {
-    QCNetworkRequest request(QUrl("https://httpbin.org/post"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
 
     // 测试各种 HTTP 方法
     QCNetworkReply replyHead(request, HttpMethod::Head, ExecutionMode::Async);
@@ -180,10 +186,10 @@ void TestQCNetworkReply::testConstructorWithDifferentMethods()
 void TestQCNetworkReply::testSyncGetRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     QVERIFY(reply != nullptr);
@@ -201,10 +207,10 @@ void TestQCNetworkReply::testSyncGetRequest()
 void TestQCNetworkReply::testSyncPostRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/post"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
     QByteArray postData = "{\"test\": \"data\"}";
 
     auto *reply = m_manager->sendPostSync(request, postData);
@@ -223,10 +229,10 @@ void TestQCNetworkReply::testSyncPostRequest()
 void TestQCNetworkReply::testSyncHeadRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     QCNetworkReply reply(request, HttpMethod::Head, ExecutionMode::Sync);
 
     reply.execute();
@@ -270,10 +276,10 @@ void TestQCNetworkReply::testSyncInvalidUrl()
 void TestQCNetworkReply::testAsyncGetRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -300,10 +306,10 @@ void TestQCNetworkReply::testAsyncGetRequest()
 void TestQCNetworkReply::testAsyncPostRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/post"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
     QByteArray postData = "{\"async\": \"test\"}";
 
     auto *reply = m_manager->sendPost(request, postData);
@@ -323,10 +329,10 @@ void TestQCNetworkReply::testAsyncPostRequest()
 void TestQCNetworkReply::testAsyncHeadRequest()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendHead(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -347,13 +353,13 @@ void TestQCNetworkReply::testAsyncHeadRequest()
 void TestQCNetworkReply::testAsyncMultipleRequests()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
     // 测试并发请求
-    auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl("https://httpbin.org/get")));
-    auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl("https://httpbin.org/delay/1")));
-    auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl("https://httpbin.org/uuid")));
+    auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/get")));
+    auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/delay/1")));
+    auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/uuid")));
 
     QList<QCNetworkReply*> replies{reply1, reply2, reply3};
 
@@ -393,10 +399,10 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
 void TestQCNetworkReply::testStateTransitionIdleToFinished()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
@@ -430,10 +436,10 @@ void TestQCNetworkReply::testStateCancellation()
 {
     // 注意：取消功能可能尚未实现，此测试可能失败
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/delay/5"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/delay/5"));
     auto *reply = m_manager->sendGet(request);
 
     QTest::qWait(100);  // 等待请求开始
@@ -593,16 +599,16 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 void TestQCNetworkReply::testReadAll()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
     QVERIFY(data->size() > 0);
-    QVERIFY(data->contains("httpbin"));
+    QVERIFY(data->contains("\"url\""));
 
     reply->deleteLater();
 }
@@ -610,10 +616,10 @@ void TestQCNetworkReply::testReadAll()
 void TestQCNetworkReply::testReadBody()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto body = reply->readBody();
@@ -626,10 +632,10 @@ void TestQCNetworkReply::testReadBody()
 void TestQCNetworkReply::testRawHeaders()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto headers = reply->rawHeaders();
@@ -652,10 +658,10 @@ void TestQCNetworkReply::testRawHeaders()
 void TestQCNetworkReply::testBytesAvailable()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     qint64 available = reply->bytesAvailable();
@@ -698,10 +704,10 @@ void TestQCNetworkReply::testNetworkError()
 void TestQCNetworkReply::testHttpError404()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/status/404"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/404"));
     auto *reply = m_manager->sendGetSync(request);
 
     // 注意：libcurl 的 CURLOPT_FAILONERROR 会将 HTTP 错误转为 curl 错误
@@ -730,10 +736,10 @@ void TestQCNetworkReply::testErrorString()
 void TestQCNetworkReply::testFinishedSignal()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy spy(reply, &QCNetworkReply::finished);
@@ -764,10 +770,10 @@ void TestQCNetworkReply::testErrorSignal()
 void TestQCNetworkReply::testProgressSignal()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/bytes/10240"));  // 下载 10KB
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/bytes/10240"));  // 下载 10KB
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
@@ -791,10 +797,10 @@ void TestQCNetworkReply::testProgressSignal()
 void TestQCNetworkReply::testStateChangedSignal()
 {
     if (!m_isHttpbinReachable) {
-        QSKIP("Network not available (httpbin.org unreachable)");
+        QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl("https://httpbin.org/get"));
+    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);

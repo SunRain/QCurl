@@ -28,6 +28,20 @@ class WsObserved:
     url: str  # path(+query) with correlation id stripped
     headers: Dict[str, str]
 
+@dataclass(frozen=True)
+class ProxyObserved:
+    method: str
+    url: str  # absolute URL (HTTP proxy) or authority (CONNECT)
+    headers: Dict[str, str]
+
+@dataclass(frozen=True)
+class ObserveHttpObserved:
+    method: str
+    url: str  # path(+query) with correlation id stripped
+    status: int
+    headers: Dict[str, str]
+    response_headers: Dict[str, str]
+
 
 def _strip_query_id(url: str) -> str:
     parts = urlsplit(url)
@@ -35,6 +49,13 @@ def _strip_query_id(url: str) -> str:
     q.pop("id", None)
     query = urlencode(q, doseq=True)
     return urlunsplit(("", "", parts.path, query, ""))
+
+def _strip_query_id_keep_origin(url: str) -> str:
+    parts = urlsplit(url)
+    q = parse_qs(parts.query, keep_blank_values=True)
+    q.pop("id", None)
+    query = urlencode(q, doseq=True)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
 
 
 def _normalize_http_proto(proto: str) -> str:
@@ -304,3 +325,119 @@ def ws_observed_for_id(handshake_log: Path, req_id: str) -> WsObserved:
         url=_strip_query_id(path),
         headers=headers,
     )
+
+
+def parse_proxy_log(path: Path) -> List[Dict]:
+    if not path.exists():
+        return []
+    out: List[Dict] = []
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not raw.strip():
+            continue
+        try:
+            out.append(json.loads(raw))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def proxy_observed_for_log(proxy_log: Path, *, method: str) -> ProxyObserved:
+    entries = parse_proxy_log(proxy_log)
+    want = method.upper()
+    for e in entries:
+        if str(e.get("method") or "").upper() != want:
+            continue
+        if not bool(e.get("auth_ok")):
+            continue
+        target = str(e.get("target") or "")
+        headers_in = e.get("headers") or {}
+        headers = {str(k).lower(): str(v) for k, v in headers_in.items()}
+        headers_allowlist = {}
+        for name in ("proxy-authorization", "proxy-connection"):
+            v = headers.get(name)
+            if v:
+                headers_allowlist[name] = v
+        url = target
+        if want != "CONNECT":
+            url = _strip_query_id_keep_origin(target)
+        return ProxyObserved(
+            method=want,
+            url=url,
+            headers=headers_allowlist,
+        )
+    raise AssertionError(f"proxy log 无匹配记录：method={want}, file={proxy_log}")
+
+
+def parse_observe_http_log(path: Path) -> List[Dict]:
+    if not path.exists():
+        return []
+    out: List[Dict] = []
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not raw.strip():
+            continue
+        try:
+            out.append(json.loads(raw))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def observe_http_observed_for_id(observe_log: Path, req_id: str) -> ObserveHttpObserved:
+    entries = parse_observe_http_log(observe_log)
+    matches = [e for e in entries if (e.get("id") or "") == req_id]
+    if not matches:
+        raise AssertionError(f"observe http log 无匹配记录：id={req_id}")
+    e = matches[0]
+    headers_in = e.get("headers") or {}
+    headers = {str(k).lower(): str(v) for k, v in headers_in.items()}
+    resp_headers_in = e.get("response_headers") or {}
+    resp_headers = {str(k).lower(): str(v) for k, v in resp_headers_in.items()}
+    if "location" in resp_headers:
+        loc = resp_headers.get("location") or ""
+        if loc.startswith("http://") or loc.startswith("https://"):
+            resp_headers["location"] = _strip_query_id_keep_origin(loc)
+        else:
+            resp_headers["location"] = _strip_query_id(loc)
+    return ObserveHttpObserved(
+        method=str(e.get("method") or "").upper(),
+        url=_strip_query_id(str(e.get("path") or "")),
+        status=int(e.get("status") or "0"),
+        headers=headers,
+        response_headers=resp_headers,
+    )
+
+def observe_http_observed_list_for_id(observe_log: Path,
+                                     req_id: str,
+                                     *,
+                                     expected_count: int) -> List[ObserveHttpObserved]:
+    """
+    返回同一 correlation id 下的所有 HTTP 观测记录（来自 http_observe_server.py JSONL）。
+    - 保留写入顺序（用于重定向/登录态等“序列语义”场景）
+    """
+    entries = parse_observe_http_log(observe_log)
+    matches = [e for e in entries if (e.get("id") or "") == req_id]
+    if not matches:
+        raise AssertionError(f"observe http log 无匹配记录：id={req_id}")
+    if expected_count > 0 and len(matches) != expected_count:
+        raise AssertionError(f"observe http log 记录数不匹配：id={req_id}, got={len(matches)}, expected={expected_count}")
+
+    out: List[ObserveHttpObserved] = []
+    for e in matches:
+        headers_in = e.get("headers") or {}
+        headers = {str(k).lower(): str(v) for k, v in headers_in.items()}
+        resp_headers_in = e.get("response_headers") or {}
+        resp_headers = {str(k).lower(): str(v) for k, v in resp_headers_in.items()}
+        if "location" in resp_headers:
+            loc = resp_headers.get("location") or ""
+            if loc.startswith("http://") or loc.startswith("https://"):
+                resp_headers["location"] = _strip_query_id_keep_origin(loc)
+            else:
+                resp_headers["location"] = _strip_query_id(loc)
+        out.append(ObserveHttpObserved(
+            method=str(e.get("method") or "").upper(),
+            url=_strip_query_id(str(e.get("path") or "")),
+            status=int(e.get("status") or "0"),
+            headers=headers,
+            response_headers=resp_headers,
+        ))
+    return out

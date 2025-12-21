@@ -95,6 +95,10 @@ def _build_targets(cfg: GateConfig) -> None:
     if rc.returncode != 0:
         raise RuntimeError(f"build qcurl_lc_postfields_binary_baseline failed:\n{rc.stdout}\n{rc.stderr}")
 
+    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_http_baseline", "-j", jobs])
+    if rc.returncode != 0:
+        raise RuntimeError(f"build qcurl_lc_http_baseline failed:\n{rc.stdout}\n{rc.stderr}")
+
     if cfg.with_ext:
         rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_ws_baseline", "-j", jobs])
         if rc.returncode != 0:
@@ -114,8 +118,16 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
     ]
     if cfg.suite in ("p1", "all"):
         base.extend([
+            "tests/libcurl_consistency/test_p1_proxy.py",
+            "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py",
             "tests/libcurl_consistency/test_p1_postfields_binary.py",
             "tests/libcurl_consistency/test_p1_cookiejar_1903.py",
+        ])
+    if cfg.suite == "all":
+        base.extend([
+            "tests/libcurl_consistency/test_p2_tls_verify.py",
+            "tests/libcurl_consistency/test_p2_cookie_request_header.py",
+            "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
         ])
     if cfg.with_ext:
         base.extend([

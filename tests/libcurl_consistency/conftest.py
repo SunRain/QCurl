@@ -249,6 +249,10 @@ def lc_seed_http_docs(env, httpd):
     cookie_dir.mkdir(parents=True, exist_ok=True)
     (cookie_dir / "1903").write_text("cookie-1903\n", encoding="utf-8")
 
+    proxy_dir = Path(indir) / "proxy"
+    proxy_dir.mkdir(parents=True, exist_ok=True)
+    (proxy_dir / "ok.txt").write_text("proxy-ok\n", encoding="utf-8")
+
     # ext：多资源 GET（test2402/test2502 风格）
     path_dir = Path(indir) / "path"
     path_dir.mkdir(parents=True, exist_ok=True)
@@ -269,6 +273,17 @@ def _check_ws_alive(env: Env, port: int, timeout: int) -> bool:
         if res.exit_code == 0:
             return True
         time.sleep(0.1)
+    return False
+
+
+def _check_tcp_alive(port: int, timeout: int) -> bool:
+    end = datetime.now() + timedelta(seconds=timeout)
+    while datetime.now() < end:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.05)
     return False
 
 
@@ -330,6 +345,188 @@ def lc_ws_echo(env: Env) -> Generator[Dict[str, int], None, None]:
             if proc:
                 proc.terminate()
 
+
+@pytest.fixture(scope="function")
+def lc_http_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动本地 HTTP proxy（Basic auth + CONNECT），供 P1 proxy 一致性用例使用。
+    - 每个测试函数单独启动，避免跨 case 的日志混淆
+    - 输出 JSONL 日志用于“请求语义摘要”对齐
+    """
+    run_dir = Path(env.gen_dir) / f"lc_http_proxy_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_proxy_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "proxy_requests.jsonl"
+
+    username = "lcuser"
+    password = "lcpass"
+
+    proc = None
+    proxy_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, proxy_port
+            log_file.write_text("", encoding="utf-8")
+            proxy_port = int(ports["proxy"])
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(ports["proxy"]),
+                "--log-file",
+                str(log_file),
+                "--username",
+                username,
+                "--password",
+                password,
+            ]
+            log.info("start http proxy: %s", args)
+            proc = subprocess.Popen(
+                args=args,
+                cwd=str(run_dir),
+                stderr=cerr,
+                stdout=cerr,
+            )
+            if _check_tcp_alive(ports["proxy"], Env.SERVER_TIMEOUT):
+                return True
+            log.error("http proxy failed to start")
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"proxy": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("http proxy server did not start")
+        try:
+            yield {
+                "port": proxy_port,
+                "log_file": str(log_file),
+                "username": username,
+                "password": password,
+            }
+        finally:
+            if proc:
+                proc.terminate()
+
+
+@pytest.fixture(scope="function")
+def lc_observe_http(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动最小 HTTP/1.1 观测服务端（/cookie、/status/<code>）。
+    - 每个测试函数单独启动，避免跨 case 的日志混淆
+    """
+    run_dir = Path(env.gen_dir) / f"lc_observe_http_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_observe_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "observe_http.jsonl"
+
+    proc = None
+    http_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, http_port
+            http_port = int(ports["http"])
+            log_file.write_text("", encoding="utf-8")
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(http_port),
+                "--log-file",
+                str(log_file),
+            ]
+            log.info("start observe http: %s", args)
+            proc = subprocess.Popen(
+                args=args,
+                cwd=str(run_dir),
+                stderr=cerr,
+                stdout=cerr,
+            )
+            if _check_tcp_alive(http_port, Env.SERVER_TIMEOUT):
+                return True
+            log.error("observe http failed to start")
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"http": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("observe http server did not start")
+        try:
+            yield {
+                "port": http_port,
+                "log_file": str(log_file),
+            }
+        finally:
+            if proc:
+                proc.terminate()
+
+
+@pytest.fixture(scope="function")
+def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动最小 HTTPS 观测服务端（自签 CA + localhost 证书），用于 TLS 校验一致性。
+    - 证书与 CA 复用 curl testenv 生成物（避免引入 openssl 生成过程）
+    """
+    ca_dir = _REPO_ROOT / "curl" / "tests" / "http" / "gen" / "ca"
+    ca_cert = ca_dir / "ca.pem"
+    cert = ca_dir / "one.http.curl.se.rsa2048.cert.pem"
+    key = ca_dir / "one.http.curl.se.rsa2048.pkey.pem"
+    if not (ca_cert.exists() and cert.exists() and key.exists()):
+        pytest.skip("TLS 观测服务端证书/CA 不存在（需要先跑一次 curl testenv 生成 ca/）")
+
+    run_dir = Path(env.gen_dir) / f"lc_observe_https_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_observe_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "observe_https.jsonl"
+
+    proc = None
+    https_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, https_port
+            https_port = int(ports["https"])
+            log_file.write_text("", encoding="utf-8")
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(https_port),
+                "--log-file",
+                str(log_file),
+                "--tls-cert",
+                str(cert),
+                "--tls-key",
+                str(key),
+            ]
+            log.info("start observe https: %s", args)
+            proc = subprocess.Popen(
+                args=args,
+                cwd=str(run_dir),
+                stderr=cerr,
+                stdout=cerr,
+            )
+            if _check_tcp_alive(https_port, Env.SERVER_TIMEOUT):
+                return True
+            log.error("observe https failed to start")
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"https": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("observe https server did not start")
+        try:
+            yield {
+                "port": https_port,
+                "log_file": str(log_file),
+                "ca_cert": str(ca_cert),
+                "cert": str(cert),
+                "key": str(key),
+            }
+        finally:
+            if proc:
+                proc.terminate()
 
 @pytest.fixture(scope="session")
 def lc_services(env, httpd, nghttpx, lc_ws_echo):

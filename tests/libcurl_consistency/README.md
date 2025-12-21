@@ -41,6 +41,7 @@
     - `test_07_15_hx_put`（PUT 上传，回显/长度校验）
     - `test_07_17_hx_post_reuse`（POST 复用连接路径）
   - 说明：基线客户端为 `LocalClient(name='cli_hx_upload')`，底层使用 libcurl multi + upload/read callback/mime 等路径（源码在 `curl/tests/libtest/cli_hx_upload.c`）。
+  - 注：`test_07_17_hx_post_reuse` 在 http/1.1 路径下基线可能走 chunked（无 `Content-Length`），而 QCurl（`POSTFIELDS+SIZE`）会显式带 `Content-Length`；该头字段不作为默认一致性断言，仍以“请求体字节 + 回显字节”对齐为准。
 
 - **WebSocket 收发一致（覆盖 ws 基础收发与 ping/pong）**
   - `curl/tests/http/test_20_websockets.py`：
@@ -59,6 +60,20 @@
 - **Cookie 文件读写一致性（`COOKIEFILE/COOKIEJAR`）**
   - `curl/tests/data/test1903`
   - 说明：验证 cookiefile → reset → 再 set，并校验最终输出 cookiejar 文件内容。
+
+### P1（补充：业务常用链路的一致性断言）
+
+> 这些用例不直接来自上游 `curl/tests/data/`，而是以 `tests/libcurl_consistency/` 自建服务端的方式补齐“可观测数据层面”的关键缺口。
+
+- **重定向（`CURLOPT_FOLLOWLOCATION`）一致性**
+  - 覆盖：多跳 302 的请求序列一致、最终落点一致、`Location` 响应头一致（已归一化去掉关联用的 query `id`）。
+- **模拟 HTTP 登录态（`Set-Cookie` → `Cookie`）一致性**
+  - 覆盖：登录响应 `Set-Cookie`、后续请求携带 `Cookie`、最终响应字节一致。
+
+### P2（低优先级：安全语义对齐）
+
+- **TLS 校验语义（成功/失败路径）**
+  - 覆盖：verifyPeer/verifyHost + 自定义 CA（`caCertPath/CAINFO`）下的成功路径，以及缺少 CA 时的证书错误路径。
 
 ---
 

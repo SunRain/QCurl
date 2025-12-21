@@ -32,6 +32,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
@@ -246,6 +247,14 @@ void TestLibcurlConsistency::testCase()
     const QString requestId = qEnvironmentVariable("QCURL_LC_REQ_ID");
     const int httpPort = qEnvironmentVariableIntValue("QCURL_LC_HTTP_PORT");
     const QString cookiePath = qEnvironmentVariable("QCURL_LC_COOKIE_PATH");
+    const int proxyPort = qEnvironmentVariableIntValue("QCURL_LC_PROXY_PORT");
+    const QString proxyUser = qEnvironmentVariable("QCURL_LC_PROXY_USER");
+    const QString proxyPass = qEnvironmentVariable("QCURL_LC_PROXY_PASS");
+    const QString proxyTargetUrl = qEnvironmentVariable("QCURL_LC_PROXY_TARGET_URL");
+    const int observeHttpPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTP_PORT");
+    const int observeStatusCode = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
+    const int observeHttpsPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
+    const QString caCertPath = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
 
     const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
     if (!outDir.isEmpty()) {
@@ -255,6 +264,179 @@ void TestLibcurlConsistency::testCase()
 
     QCNetworkAccessManager manager;
     const QCNetworkHttpVersion httpVersion = toHttpVersion(proto);
+
+    if (caseId == QStringLiteral("p2_tls_verify_success")) {
+        QVERIFY(observeHttpsPort > 0);
+        QVERIFY(!caCertPath.isEmpty());
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+        ssl.caCertPath = caCertPath;
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
+            requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_tls_verify_fail_no_ca")) {
+        QVERIFY(observeHttpsPort > 0);
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
+            requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::SslHandshakeFailed);
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_redirect_nofollow") ||
+        caseId == QStringLiteral("p1_redirect_follow")) {
+        QVERIFY(observeHttpPort > 0);
+        const bool follow = (caseId == QStringLiteral("p1_redirect_follow"));
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir/3").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(follow);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const QString outFile = QStringLiteral("download_0.data");
+        if (follow) {
+            const auto dataOpt = reply->readAll();
+            QVERIFY(dataOpt.has_value());
+            QVERIFY(writeAllToFile(outFile, *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        } else {
+            // 302 且 Content-Length:0 时，QCNetworkReply::readAll() 会返回 std::nullopt，这里显式落盘空文件
+            QVERIFY(writeAllToFile(outFile, QByteArray(), QIODevice::WriteOnly | QIODevice::Truncate));
+        }
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_login_cookie_flow")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(!cookiePath.isEmpty());
+
+        manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/login").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_cookie_request_header")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(!cookiePath.isEmpty());
+
+        manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadOnly);
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/cookie").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_fixed_http_error")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(observeStatusCode > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/status/%2").arg(observeHttpPort).arg(observeStatusCode)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QVERIFY(reply->error() != NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("proxy_http_basic_auth") ||
+        caseId == QStringLiteral("proxy_https_connect_basic_auth")) {
+        QVERIFY(proxyPort > 0);
+        QVERIFY(!proxyUser.isEmpty());
+        QVERIFY(!proxyPass.isEmpty());
+        QVERIFY(!proxyTargetUrl.isEmpty());
+
+        QCNetworkRequest req{QUrl(proxyTargetUrl)};
+        req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+        req.setHttpVersion(httpVersion);
+
+        QCNetworkProxyConfig proxy;
+        proxy.type = QCNetworkProxyConfig::ProxyType::Http;
+        proxy.hostName = QStringLiteral("localhost");
+        proxy.port = proxyPort;
+        proxy.userName = proxyUser;
+        proxy.password = proxyPass;
+        req.setProxyConfig(proxy);
+
+        const QString outFile = QStringLiteral("download_0.data");
+        QFile out(outFile);
+        QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+
+        QCNetworkReply reply(req, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), &manager);
+        reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
+            const qint64 want = static_cast<qint64>(size);
+            const qint64 w = out.write(buffer, want);
+            if (w != want) {
+                return 0;
+            }
+            return size;
+        });
+        reply.execute();
+        out.close();
+
+        QCOMPARE(reply.error(), NetworkError::NoError);
+        QFile f(outFile);
+        QVERIFY(f.exists());
+        QVERIFY(f.size() > 0);
+        return;
+    }
 
     if (caseId == QStringLiteral("download_serial_resume") ||
         caseId == QStringLiteral("download_parallel_resume")) {

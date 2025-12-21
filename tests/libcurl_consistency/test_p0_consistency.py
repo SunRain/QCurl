@@ -172,8 +172,10 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
                 baseline["payload"]["request"]["headers"] = obs.headers
             else:
                 require_range = case_id == "download_range_resume"
-                include_content_length = case_id != "upload_post_reuse"
                 expected_proto = str(resolved_defaults.get("proto", "h2"))
+                # upload_post_reuse：基线（cli_hx_upload）在 http/1.1 路径下可能走 chunked（无 Content-Length），
+                # 而 QCurl（POSTFIELDS+SIZE）会显式带 Content-Length；两者在“请求体字节”层面可对齐，但头字段不可稳定对齐。
+                include_content_length = case_id != "upload_post_reuse"
                 if expected_proto == "h3":
                     access_log = Path(lc_logs["nghttpx_access_log"])
                     obs = nghttpx_observed_for_id(
@@ -220,8 +222,8 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
                 qcurl["payload"]["request"]["headers"] = obs.headers
             else:
                 require_range = case_id == "download_range_resume"
-                include_content_length = case_id != "upload_post_reuse"
                 expected_proto = str(resolved_defaults.get("proto", "h2"))
+                include_content_length = case_id != "upload_post_reuse"
                 if expected_proto == "h3":
                     access_log = Path(lc_logs["nghttpx_access_log"])
                     obs = nghttpx_observed_for_id(

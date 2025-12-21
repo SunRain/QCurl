@@ -214,6 +214,53 @@ P1_CASES = {
     },
 }
 
+P1_PROXY_CASES = {
+    # P1：HTTP proxy（Basic auth），观测 proxy 收到的绝对形式请求行 + Proxy-* 头
+    "proxy_http_basic_auth": {
+        "suite": "p1_proxy",
+        "case": "lc_proxy_http_basic_auth",
+        "client": "cli_lc_http",
+        "args_template": [
+            "-V",
+            "http/1.1",
+            "--proxy",
+            "{proxy_url}",
+            "--proxy-user",
+            "{proxy_user}",
+            "--proxy-pass",
+            "{proxy_pass}",
+            "{url}",
+        ],
+        "defaults": {
+            "url": "http://localhost:{http_port}/proxy/ok.txt",
+        },
+        "baseline_download_count": 1,
+        "qcurl_download_count": 1,
+    },
+    # P1：HTTPS over proxy（CONNECT + Basic auth），观测 CONNECT 目标与 Proxy-* 头
+    "proxy_https_connect_basic_auth": {
+        "suite": "p1_proxy",
+        "case": "lc_proxy_https_connect_basic_auth",
+        "client": "cli_lc_http",
+        "args_template": [
+            "-V",
+            "h2",
+            "--proxy",
+            "{proxy_url}",
+            "--proxy-user",
+            "{proxy_user}",
+            "--proxy-pass",
+            "{proxy_pass}",
+            "{url}",
+        ],
+        "defaults": {
+            "url": "https://localhost:{https_port}/proxy/ok.txt",
+        },
+        "baseline_download_count": 1,
+        "qcurl_download_count": 1,
+    },
+}
+
 # 可选扩展：默认不跑（由 pytest driver 控制），避免引入与数据无关的波动点（LC-11）
 EXT_CASES = {
     # 并发下载压力（仅用于 h2/h3 的 multiplexing/调度路径观测）
