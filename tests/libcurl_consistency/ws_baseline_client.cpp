@@ -142,7 +142,16 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
     curl_easy_setopt(curl, CURLOPT_WS_OPTIONS, CURLWS_NOAUTOPONG);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout.count()));
 
+    struct curl_slist *headers = nullptr;
+    if (scenario == "lc_ping_deflate") {
+        headers = curl_slist_append(headers, "Sec-WebSocket-Extensions: permessage-deflate");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+
     res = curl_easy_perform(curl);
+    if (headers) {
+        curl_slist_free_all(headers);
+    }
     if (res != CURLE_OK) {
         std::cerr << "curl_easy_perform failed: " << curl_easy_strerror(res) << "\n";
         curl_easy_cleanup(curl);
@@ -204,7 +213,7 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
         }
 
         if (!buffered.has_value()) {
-            buffered = BufferedMessage{meta->flags, {}};
+            buffered = BufferedMessage{static_cast<unsigned int>(meta->flags), {}};
         }
         buffered->data.insert(buffered->data.end(), buf, buf + nread);
 
@@ -227,7 +236,7 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
         return 5;
     }
 
-    if (scenario == "lc_ping") {
+    if (scenario == "lc_ping" || scenario == "lc_ping_deflate") {
         if (events.size() != 2) {
             return 6;
         }
@@ -294,4 +303,3 @@ int main(int argc, char **argv)
 
     return runScenario(scenario, url, outFile, timeout);
 }
-

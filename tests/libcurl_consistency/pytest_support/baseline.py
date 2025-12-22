@@ -53,6 +53,12 @@ def _default_http_baseline_binary() -> Path:
         return Path(qt_bin).resolve().with_name("qcurl_lc_http_baseline")
     return Path("qcurl_lc_http_baseline")
 
+def _default_pause_resume_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_pause_resume_baseline")
+    return Path("qcurl_lc_pause_resume_baseline")
+
 
 def _run_standalone_baseline(env: Env,
                              *,
@@ -170,14 +176,33 @@ def run_libtest_case(
             cwd=client.run_dir,
             allowed_exit_codes=allowed,
         )
+    elif client_name == "cli_lc_pause_resume":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_PAUSE_RESUME_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_PAUSE_RESUME_BASELINE")
+            else _default_pause_resume_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"pause/resume baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+            allowed_exit_codes=allowed,
+        )
     else:
         if not client.exists():
             raise FileNotFoundError(f"LocalClient not built: {client_name}")
         result = client.run(args=cmd_args)
         if result.exit_code not in allowed:
             raise AssertionError(f"LocalClient failed ({result.exit_code}): {client_name} {cmd_args}")
-        stdout_lines = result.stdout
-        stderr_lines = result.stderr
+        # testenv.ExecResult 的 stdout/stderr 属性是拼接后的字符串；为保持 artifacts 一致性，这里统一写为“行列表”。
+        stdout_lines = result.stdout.splitlines(keepends=True) if result.stdout else []
+        try:
+            stderr_lines = list(result.trace_lines)
+        except Exception:
+            stderr_lines = result.stderr.splitlines(keepends=True) if result.stderr else []
         duration_ms = int(result.duration.total_seconds() * 1000)
         exit_code = int(result.exit_code)
 

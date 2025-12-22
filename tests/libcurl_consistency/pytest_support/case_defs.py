@@ -354,6 +354,15 @@ EXT_WS_CASES = {
         "qcurl_download_count": 1,
     },
 
+    # LC-34：握手扩展协商（permessage-deflate），仅对齐可观测握手头（不依赖数据帧压缩）
+    "ext_ws_deflate_ping": {
+        "suite": "ext_ws",
+        "case": "lc_ext_ws_deflate_ping",
+        "scenario": "lc_ping_deflate",
+        "url": "ws://localhost:{ws_port}/?scenario=lc_ping",
+        "qcurl_download_count": 1,
+    },
+
     # LC-20：服务端发送 text/binary/ping/pong/close（对齐 test2700 的帧类型覆盖）
     "ext_ws_frame_types_2700": {
         "suite": "ext_ws",
