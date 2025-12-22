@@ -11,7 +11,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from testenv import Env, LocalClient  # type: ignore
 
@@ -47,8 +47,19 @@ def _default_multi_get4_baseline_binary() -> Path:
         return Path(qt_bin).resolve().with_name("qcurl_lc_multi_get4_baseline")
     return Path("qcurl_lc_multi_get4_baseline")
 
+def _default_http_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_http_baseline")
+    return Path("qcurl_lc_http_baseline")
 
-def _run_standalone_baseline(env: Env, *, executable: Path, args: List[str], cwd: Path) -> tuple[List[str], List[str], int]:
+
+def _run_standalone_baseline(env: Env,
+                             *,
+                             executable: Path,
+                             args: List[str],
+                             cwd: Path,
+                             allowed_exit_codes: Set[int]) -> tuple[List[str], List[str], int, int]:
     started = time.monotonic()
     proc = subprocess.run(
         [str(executable), *args],
@@ -61,12 +72,12 @@ def _run_standalone_baseline(env: Env, *, executable: Path, args: List[str], cwd
     duration_ms = int((time.monotonic() - started) * 1000)
     stdout_lines = proc.stdout.splitlines(keepends=True) if proc.stdout else []
     stderr_lines = proc.stderr.splitlines(keepends=True) if proc.stderr else []
-    if proc.returncode != 0:
+    if proc.returncode not in allowed_exit_codes:
         raise AssertionError(
             f"baseline failed ({proc.returncode}): {executable} {args}\n"
             f"{proc.stdout}\n{proc.stderr}"
         )
-    return stdout_lines, stderr_lines, duration_ms
+    return stdout_lines, stderr_lines, duration_ms, int(proc.returncode)
 
 def run_libtest_case(
     env: Env,
@@ -78,6 +89,7 @@ def run_libtest_case(
     response_meta: Optional[Dict] = None,
     download_files: Optional[List[Path]] = None,
     download_count: Optional[int] = None,
+    allowed_exit_codes: Optional[Set[int]] = None,
 ) -> Dict:
     """
     运行 libcurl baseline 用例并返回 artifacts 结构。
@@ -95,6 +107,8 @@ def run_libtest_case(
     stdout_lines: List[str] = []
     stderr_lines: List[str] = []
     duration_ms = 0
+    exit_code = 0
+    allowed = allowed_exit_codes or {0}
 
     if client_name == "cli_hx_range_resume":
         baseline_executable = (
@@ -104,11 +118,12 @@ def run_libtest_case(
         )
         if not baseline_executable.exists():
             raise FileNotFoundError(f"range resume baseline 可执行不存在：{baseline_executable}")
-        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
             env,
             executable=baseline_executable,
             args=cmd_args,
             cwd=client.run_dir,
+            allowed_exit_codes=allowed,
         )
     elif client_name == "cli_postfields_binary":
         baseline_executable = (
@@ -118,11 +133,12 @@ def run_libtest_case(
         )
         if not baseline_executable.exists():
             raise FileNotFoundError(f"postfields binary baseline 可执行不存在：{baseline_executable}")
-        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
             env,
             executable=baseline_executable,
             args=cmd_args,
             cwd=client.run_dir,
+            allowed_exit_codes=allowed,
         )
     elif client_name == "cli_hx_multi_get4":
         baseline_executable = (
@@ -132,20 +148,38 @@ def run_libtest_case(
         )
         if not baseline_executable.exists():
             raise FileNotFoundError(f"multi-get4 baseline 可执行不存在：{baseline_executable}")
-        stdout_lines, stderr_lines, duration_ms = _run_standalone_baseline(
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
             env,
             executable=baseline_executable,
             args=cmd_args,
             cwd=client.run_dir,
+            allowed_exit_codes=allowed,
+        )
+    elif client_name == "cli_lc_http":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_HTTP_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_HTTP_BASELINE")
+            else _default_http_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"http baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+            allowed_exit_codes=allowed,
         )
     else:
         if not client.exists():
             raise FileNotFoundError(f"LocalClient not built: {client_name}")
         result = client.run(args=cmd_args)
-        result.check_exit_code(0)
+        if result.exit_code not in allowed:
+            raise AssertionError(f"LocalClient failed ({result.exit_code}): {client_name} {cmd_args}")
         stdout_lines = result.stdout
         stderr_lines = result.stderr
         duration_ms = int(result.duration.total_seconds() * 1000)
+        exit_code = int(result.exit_code)
 
     req_semantic = None
     if request_meta:
@@ -173,6 +207,7 @@ def run_libtest_case(
         "client": client_name,
         "args": cmd_args,
         "baseline_executable": str(baseline_executable) if baseline_executable else None,
+        "exit_code": exit_code,
         "request": req_semantic,
         "response": resp_summary,
         "stdout": stdout_lines,

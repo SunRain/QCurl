@@ -98,6 +98,12 @@ target_link_libraries(qcurl_lc_multi_get4_baseline PRIVATE CURL::libcurl)
 set_target_properties(qcurl_lc_multi_get4_baseline PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
+# libcurl_consistency：baseline HTTP 客户端（非 Qt Test，供 P1/P2 自建服务端场景使用）
+add_executable(qcurl_lc_http_baseline libcurl_consistency/http_baseline_client.cpp)
+target_link_libraries(qcurl_lc_http_baseline PRIVATE CURL::libcurl)
+set_target_properties(qcurl_lc_http_baseline PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
 # libcurl_consistency：从源码构建 h3-capable nghttpx（安装到 build/ 下，供 curl testenv 使用）
 add_subdirectory(libcurl_consistency/nghttpx_from_source)
 add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
