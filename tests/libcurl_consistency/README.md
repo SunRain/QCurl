@@ -8,16 +8,102 @@
 
 ## 1. 一致性定义（本候选集覆盖范围）
 
-本候选集聚焦“对外可观测的数据一致性”，包括：
+本候选集的唯一判定核心：在不依赖实现细节的前提下，仅比较 **外部可观测结果** 是否一致。
 
-- **请求侧**：方法/URL/关键头（如 `Host`、`Range`、`Cookie`、`Proxy-*`、`Content-Length`）以及请求体字节（包含二进制与 `\\0` 的情况）。
-- **响应侧**：响应体字节、关键状态（如 2xx/4xx）与基本协议路径（HTTP/2/HTTP/3）。
-- **WebSocket**：握手成功与帧收发路径（ping/pong、data frames）的可观测结果。
+### 1.1 可观测数据（定义与边界）
 
-不覆盖（或不作为一致性基准）：
+“可观测数据”指可在测试/使用方视角 **稳定采集且可复现** 的输出，来源包括：
 
-- libcurl 内部状态机/资源释放顺序、调试日志格式、计时信息等“非数据层”行为。
-- QCurl 当前未暴露/未采用的 libcurl 高级选项（如 `CURLU` URL API、`CURLOPT_COOKIELIST`、`CURLOPT_SHARE`、HTTP trailers、`CURLOPT_AWS_SIGV4` 等）。
+- **客户端 API 输出（QCurl）**：`QCNetworkReply`/`QCWebSocket` 的信号序列、`error()`/`errorString()`、`readAll()`/`rawHeaderData()` 等。
+- **客户端 API 输出（libcurl）**：`curl_easy_perform` 的 `CURLcode`、`curl_easy_getinfo`（如 `CURLINFO_RESPONSE_CODE`）、write/header/xferinfo 回调的事件序列与参数。
+- **服务端观测**：服务端日志中可稳定提取的 `method/path/query/status/协议族` 与白名单请求头（见 6.1）。
+- **运行器产物**：`artifacts` JSON 与 `download_*.data` 等落盘文件（见 6.4）。
+
+为保证可复现性，本候选集将可观测数据分为：
+
+- **主断言（默认 Gate）**：请求语义摘要（服务端观测）+ 响应字节（hash/len）+ 状态码/协议族；（WS 场景）增加帧/事件序列。
+- **在范围内但当前未完全覆盖**：HTTP 回调/信号序列（细粒度）、并发/多路复用的时序指标、multipart/form-data 等；对应缺口已在覆盖矩阵与 `tasks.md` 中列出。
+
+### 1.2 术语（本候选集约定）
+
+- **可观测一致性**：对齐可观测输出，而不是对齐内部实现/资源释放顺序。
+- **请求语义摘要**：以服务端观测为准的 `{method, url, headers_allowlist, body_len, body_sha256}`；其中 `url` 会剔除用于关联的 query `id`。
+- **对比器**：`tests/libcurl_consistency/pytest_support/compare.py`；默认比较 `request(s)`/`response(s)` 以及可选 `cookiejar`/`error` 字段（见 6.4）。
+- **baseline / QCurl**：同一用例在 libcurl baseline 与 QCurl 侧执行器（`tests/tst_LibcurlConsistency.cpp`）下生成的 artifacts。
+
+### 1.3 覆盖范围与非目标
+
+当前已落地的主断言覆盖：
+
+- **请求侧**：方法/URL（去除关联用 query `id`）/关键头白名单（如 `Host`、`Range`、`Cookie`、`Proxy-*`、`Content-Length`）以及请求体字节（包含二进制与 `\\0` 的情况）。
+- **响应侧**：响应体字节、关键状态（如 2xx/4xx）与基本协议路径（`http/1.1|h2|h3`）。
+- **WebSocket**：握手语义（头白名单）与帧收发/事件序列的可观测结果。
+
+明确不做/不作为 Gate 判据：
+
+- **不依赖内部实现细节**：不比较 libcurl 内部状态机、内存/句柄释放顺序、线程调度等。
+- **不比较不可稳定复现的数据**：如 `Date`、`Server`、随机 token、精确耗时数值（但 **超时/取消的触发结果与终态** 已在 `test_p1_timeouts.py`/`test_p1_cancel.py` 覆盖）。
+- **不覆盖 QCurl 未暴露的 libcurl 选项**：如 `CURLU` URL API、`CURLOPT_SHARE`、HTTP trailers、`CURLOPT_AWS_SIGV4` 等（除非后续明确纳入并补齐观测与对比）。
+
+### 1.4 覆盖矩阵（按协议层/功能点/错误路径/时序语义）
+
+> 说明：此处仅统计“QCurl ↔ libcurl 可观测一致性”的对比测试；`tests/` 下的 QCurl 单侧单元/集成测试不计入一致性覆盖。
+
+#### 协议层 / 传输层
+
+| 分类 | 可观测点 | 覆盖结论 | 证据（测试/代码位置） | 缺口任务 |
+|---|---|---|---|---|
+| HTTP/1.1 | 请求语义摘要 + 响应字节一致 | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（P0，含 http/1.1） | - |
+| HTTP/2 | 请求语义摘要 + 响应字节一致 | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（P0，h2） | - |
+| HTTP/3 | 请求语义摘要 + 响应字节一致 | 部分覆盖（依赖 `env.have_h3()`） | `tests/libcurl_consistency/conftest.py`（nghttpx-h3 注入）+ `tests/libcurl_consistency/test_p0_consistency.py`（h3 变体） | - |
+| TLS 校验 | verifyPeer/verifyHost + CA 路径的成功/失败语义 | 已覆盖 | `tests/libcurl_consistency/test_p2_tls_verify.py` | - |
+| WebSocket | 握手语义 + 帧/事件序列 | 已覆盖（基础 + ext） | `tests/libcurl_consistency/test_p0_consistency.py`（ws_*）+ `tests/libcurl_consistency/test_ext_ws_suite.py` | - |
+
+#### 功能点
+
+| 分类 | 可观测点 | 覆盖结论 | 证据（测试/代码位置） | 缺口任务 |
+|---|---|---|---|---|
+| 下载 | 文件字节一致（含并发与 Range 续传） | 已覆盖 | `tests/libcurl_consistency/pytest_support/case_defs.py`（download_*）+ `tests/tst_LibcurlConsistency.cpp`（download_*） | - |
+| 上传 | 回显字节一致（PUT/POST） | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（upload_*） | - |
+| 二进制请求体 | `\\0` 字节一致（POSTFIELDS） | 已覆盖 | `tests/libcurl_consistency/test_p1_postfields_binary.py` | - |
+| Cookie 持久化 | cookiejar 文件内容一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_cookiejar_1903.py` | - |
+| Cookie 发送 | 服务端看到的 `Cookie:` 一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_cookie_request_header.py` | - |
+| 重定向 | 多跳 302 序列与最终落点一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
+| Proxy | proxy 视角（GET absolute-form / CONNECT authority）一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_proxy.py` | - |
+| 响应头 | `Location/Set-Cookie/WWW-Authenticate`（白名单）一致 | 部分覆盖 | `tests/libcurl_consistency/http_observe_server.py` + `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
+| 响应头字节级 | 原始响应头字节/重复头一致性 | 已覆盖（跳过 `Date/Server`） | `tests/libcurl_consistency/test_p1_resp_headers.py` + `src/QCNetworkReply.cpp`（`rawHeaderData()`） | - |
+| HTTP 方法面 | HEAD/DELETE/PATCH 的可观测语义对齐 | 已覆盖（HEAD/PATCH） | `tests/libcurl_consistency/test_p1_http_methods.py` + `tests/tst_LibcurlConsistency.cpp` | - |
+| Multipart | multipart/form-data 请求体字节/边界一致 | 缺失 | `src/QCMultipartFormData.*` | （待新增任务） |
+
+#### 错误路径
+
+| 分类 | 可观测点 | 覆盖结论 | 证据（测试/代码位置） | 缺口任务 |
+|---|---|---|---|---|
+| HTTP 错误码 | 4xx/5xx：status + body + 错误归一化一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_fixed_http_errors.py` | - |
+| TLS 错误 | 证书校验失败：错误归一化一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_tls_verify.py` | - |
+| 连接拒绝 | `CURLE_COULDNT_CONNECT` ↔ `NetworkError::ConnectionRefused` | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py` + `src/QCNetworkError.cpp`（映射） | - |
+| 超时 | `CURLE_OPERATION_TIMEDOUT` ↔ `NetworkError::ConnectionTimeout` | 已覆盖 | `tests/libcurl_consistency/test_p1_timeouts.py` + `tests/libcurl_consistency/http_observe_server.py` | - |
+| 取消 | `CURLE_ABORTED_BY_CALLBACK` ↔ `NetworkError::OperationCancelled` | 已覆盖（基础） | `tests/libcurl_consistency/test_p1_cancel.py` + `src/QCNetworkReply.cpp`（cancel） | - |
+| Proxy 认证失败 | 407/认证缺失/错误凭据的可观测语义 | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py` + `tests/libcurl_consistency/http_proxy_server.py` | - |
+| URL 非法 | `CURLE_URL_MALFORMAT` ↔ `NetworkError::InvalidRequest` | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py` + `src/QCNetworkError.cpp`（映射） | - |
+
+#### 时序语义 / 生命周期
+
+| 分类 | 可观测点 | 覆盖结论 | 证据（测试/代码位置） | 缺口任务 |
+|---|---|---|---|---|
+| 重定向序列 | 多跳请求序列一致（顺序敏感） | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
+| 并发多请求 | 多请求集合等价（按 URL 稳定排序）+ keep-alive 复用统计（ext） | 部分覆盖 | `tests/libcurl_consistency/test_ext_suite.py`（ext_multi_get4_* + ext_reuse_keepalive_http_1_1） | - |
+| WS 事件序列 | 帧类型/顺序一致 | 已覆盖（ext） | `tests/libcurl_consistency/test_ext_ws_suite.py` | - |
+| HTTP 回调/信号序列 | `readyRead/finished/error/cancelled/progress` 的序列与约束 | 部分覆盖（取消后无事件约束 + 进度稳定摘要） | `tests/libcurl_consistency/test_p1_cancel.py` + `tests/libcurl_consistency/test_p1_progress.py` | LC-15 |
+| 空 body 语义 | `readAll()` 的 `nullopt`/空字节一致性规则 | 已覆盖 | `tests/libcurl_consistency/test_p1_empty_body.py` + `src/QCNetworkReply.cpp`（readAll） | - |
+
+### 1.5 风险点（看似一致但在可观测层面可被区分）
+
+- **响应头重复项/多值头**：`QCNetworkReply::rawHeaders()` 由 `QMap` 构建（见 `src/QCNetworkReply.cpp` 的 `parseHeaders()`/`rawHeaders()`），会丢失重复头；因此一致性对比以 `rawHeaderData()` 为准，并在 `tests/libcurl_consistency/test_p1_resp_headers.py` 中对齐 header 行集合（跳过 `Date/Server`），写入并比较 `response.headers_raw_*` 字段。
+- **空响应体与 `readAll()` 语义**：已修复 `readAll()` 在“终态且 body 为空”时返回 empty QByteArray（不再是 `std::nullopt`），并通过 `tests/libcurl_consistency/test_p1_empty_body.py` 覆盖 `200 + Content-Length: 0` 与 `204 No Content`；`p1_redirect_nofollow` 不再需要绕过逻辑。
+- **chunked vs `Content-Length`**：`test_07_17_hx_post_reuse` 的 baseline 在 http/1.1 路径下可能走 chunked（无 `Content-Length`），而 QCurl（`POSTFIELDS+SIZE`）会显式带 `Content-Length`；当前已将该头从默认断言中排除（`tests/libcurl_consistency/test_p0_consistency.py` 的 `include_content_length`），如需 header 严格对齐需单独任务补齐。
+- **并发多请求“顺序语义”**：ext_multi 用例采用集合等价（按 URL 排序）而不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
+- **HTTP/3 覆盖的可见盲区**：h3 变体会在 `env.have_h3()` 为 False 时自动跳过；需在 Gate 报告/产物中显式呈现“是否覆盖 h3”，避免误以为已覆盖（见 6.3 的 gate 输出）。
 
 ---
 
@@ -35,6 +121,10 @@
     - `test_02_22_lib_parallel_resume`（并发下载 + resume）
   - 说明：基线客户端为 `LocalClient(name='cli_hx_download')`，其实际执行的二进制是 `tests/libtest/libtests`（libcurl API 客户端），并对下载文件做逐字节对比（见 `curl/tests/http/testenv/client.py`）。
   - 注：P0 要求“最终文件字节一致”并覆盖“中断 + Range 续传（resume）”；不要求 QCurl 对齐 in-flight pause/resume（`-P`）语义。
+
+- **中断 + Range 续传一致（覆盖 http/1.1 + h2 + h3）**
+  - `tests/libcurl_consistency`：`download_range_resume`（P0 自建补充）
+  - 覆盖：服务端观测到“首段非 Range + 续传 Range”两次请求；最终文件字节一致。
 
 - **上传/回显一致（覆盖 http/1.1 + h2 + h3）**
   - `curl/tests/http/test_07_upload.py`：
@@ -69,11 +159,17 @@
   - 覆盖：多跳 302 的请求序列一致、最终落点一致、`Location` 响应头一致（已归一化去掉关联用的 query `id`）。
 - **模拟 HTTP 登录态（`Set-Cookie` → `Cookie`）一致性**
   - 覆盖：登录响应 `Set-Cookie`、后续请求携带 `Cookie`、最终响应字节一致。
+- **HTTP proxy（含 HTTPS CONNECT）一致性**
+  - 覆盖：proxy 视角 `GET` absolute-form / `CONNECT` authority + `Proxy-Authorization`；HTTPS 场景同时对齐 origin 侧请求语义摘要与响应字节。
 
-### P2（低优先级：安全语义对齐）
+### P2（低优先级：错误/安全语义对齐）
 
 - **TLS 校验语义（成功/失败路径）**
   - 覆盖：verifyPeer/verifyHost + 自定义 CA（`caCertPath/CAINFO`）下的成功路径，以及缺少 CA 时的证书错误路径。
+- **Cookie 请求头可观测一致性（与 cookiejar 文件落盘解耦）**
+  - 覆盖：相同 cookiefile 输入下，服务端看到的 `Cookie:` 值一致（做稳定归一化）。
+- **固定 HTTP 错误码一致性（404/401/503）**
+  - 覆盖：状态码/响应 body 字节一致，并输出统一的错误归一化字段（`kind/http_status`）。
 
 ---
 
@@ -124,6 +220,28 @@ QCurl 当前网络请求实现会直接设置/依赖下列 libcurl 选项（示�
 - **执行模型**：pytest 负责拉起 `curl/tests/http/testenv` 的服务端环境（http/1.1 + h2 + h3 + ws），运行 libcurl baseline（`LocalClient(name='cli_*')` → `curl/tests/libtest/libtests`），再调用 Qt Test 生成 QCurl `artifacts`，最后在 pytest 侧做对比与报告输出。
 - **任务拆分**：见 `tests/libcurl_consistency/tasks.md`。
 
+### 6.0 端到端结构（源码结构/关键数据流/可观测输出）
+
+- 源码结构（与一致性直接相关）：
+  - HTTP：`src/QCNetworkAccessManager.*` / `src/QCNetworkRequest.*` / `src/QCNetworkReply.*`
+  - 并发/调度/连接池：`src/QCCurlMultiManager.*`、`src/QCNetworkRequestScheduler.*`、`src/QCNetworkConnectionPoolManager.*`
+  - WebSocket：`src/QCWebSocket.*`
+  - Multipart：`src/QCMultipartFormData.*`（当前未纳入一致性用例：待新增任务）
+- 一致性测试结构：
+  - QCurl 执行器：`tests/tst_LibcurlConsistency.cpp`（通过环境变量选择 case，落盘 `download_*.data`）
+  - pytest 驱动与对比器：`tests/libcurl_consistency/pytest_support/*`
+  - baseline：
+    - 上游 baseline：`curl/build/tests/libtest/libtests`（`LocalClient(name='cli_*')`）
+    - repo 内置 baseline：`qcurl_lc_http_baseline`/`qcurl_lc_postfields_binary_baseline`/`qcurl_lc_range_resume_baseline`（ext 另有 `qcurl_lc_ws_baseline`/`qcurl_lc_multi_get4_baseline`）
+  - 服务端：
+    - 上游 `curl/tests/http/testenv`：httpd（h1/h2）+ nghttpx（h3）+ ws_echo_server（握手观测）
+    - repo 自建：`tests/libcurl_consistency/http_observe_server.py`、`tests/libcurl_consistency/http_proxy_server.py`、`tests/libcurl_consistency/ws_scenario_server.py`
+- 数据流（每个 case）：
+  1. pytest 分配端口并启动服务端
+  2. baseline 执行并生成 `baseline.json` + 下载文件
+  3. QCurl 执行器运行并生成 `qcurl.json` + 下载文件
+  4. pytest 基于服务端日志回填“观测值”，再执行对比器断言
+
 ### 6.1 观测机制（P0 Gate 关键）
 
 为避免“构造出来的语义摘要”导致伪通过，P0 的关键语义字段改为 **服务端观测值**：
@@ -131,8 +249,11 @@ QCurl 当前网络请求实现会直接设置/依赖下列 libcurl 选项（示�
 - **HTTP(S)**：从 httpd 的 `access_log` 提取 `method/url/status/协议族(http/1.1|h2)` 以及关键请求头白名单（`Range`、`Content-Length`）。
   - 日志位置：`curl/tests/http/gen/apache/logs/access_log`
   - LogFormat 由 `curl/tests/http/testenv/httpd.py` 生成。
+- **HTTP/3**：从 nghttpx-quic 的 `access_log` 提取 `alpn/method/path/status` 与关键请求头白名单（`Range`、`Content-Length`）。
+  - 日志位置：`curl/tests/http/gen/nghttpx/access_log`
 - **WebSocket**：ws echo server 在握手时写出 JSONL（path + 头白名单），用于提取 WS 的 `url` 与握手语义（不记录随机/不可比的 header）。
   - 日志位置：`curl/tests/http/gen/ws_echo_server/ws_handshake.jsonl`
+- **自建观测服务（HTTP/Proxy）**：`http_observe_server.py`/`http_proxy_server.py` 输出 JSONL（请求/响应头白名单），用于 redirect/login/cookie/header/error/proxy 等用例；失败时会随 `QCURL_LC_COLLECT_LOGS=1` 自动复制到对应 case 的 `service_logs/`。
 
 pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位对应的服务端观测记录，并在写回 `artifacts` 前剔除 `id`（避免对比噪声）。
 
@@ -146,12 +267,21 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
 
 ### 6.3 复现命令（本仓库默认路径）
 
+- 前置条件（最小集合）：
+  - Qt6 + CMake + C++17 编译器
+  - Python3 + `pytest`（以及 WS 场景的 `websockets`）
+  - 可运行的 `curl/tests/http/testenv`（httpd/nghttpx/ws）
 - 构建 QCurl Qt Test：
   - `cmake -S . -B build && cmake --build build --target tst_LibcurlConsistency -j"$(nproc)"`
 - 构建 curl baseline（libtests）：
   - `cmake -S curl -B curl/build && cmake --build curl/build --target libtests -j"$(nproc)"`
 - 运行（P0）：
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest tests/libcurl_consistency/test_p0_consistency.py`
+- 运行（P1/all）：
+  - `python tests/libcurl_consistency/run_gate.py --suite p1 --build`
+  - `python tests/libcurl_consistency/run_gate.py --suite all --build`
+- 运行（含 ext，可选）：
+  - `python tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
 
 #### Gate 入口（推荐）
 
@@ -167,6 +297,34 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
 - `tests/libcurl_consistency/conftest.py` 会默认注入 `CURL_BUILD_DIR=curl/build`、`CURL=curl/build/src/curl`、`CURLINFO=curl/build/src/curlinfo`；如需自定义可在环境变量覆盖。
 - 在本次 Codex CLI sandbox（socket 受限）环境下，启动 testenv/httpd/nghttpx/ws 需要 escalated 权限，否则会遇到 `PermissionError: Operation not permitted`。
 
+### 6.4 可观测产物与目录结构（对比/定位入口）
+
+- artifacts 根目录：`curl/tests/http/gen/artifacts/`
+  - `<suite>/<case>/baseline.json`：baseline 侧 artifacts
+  - `<suite>/<case>/qcurl.json`：QCurl 侧 artifacts
+  - `<suite>/<case>/qcurl_run/download_*.data`：QCurl 侧落盘的 body/事件序列
+  - `<suite>/<case>/service_logs/`：失败时收集的服务端日志（需 `QCURL_LC_COLLECT_LOGS=1`）
+  - `<suite>/<case>/meta.json`：日志关联信息（包含 baseline/qcurl 的 req_id 等）
+- baseline 下载文件：
+  - 上游 `LocalClient(name='cli_*')`：`curl/tests/http/gen/<client_name>/download_*.data`
+  - repo 内置 baseline（如 `qcurl_lc_http_baseline`）：同样落在对应 `LocalClient.run_dir`
+- Gate 报告：
+  - `build/libcurl_consistency/reports/junit_<suite>.xml`
+  - `build/libcurl_consistency/reports/gate_<suite>.json`
+
+### 6.5 如何判定一致/不一致、失败示例与定位路径
+
+- 判定口径：以 `tests/libcurl_consistency/pytest_support/compare.py` 的字段对比为准（`request(s)`/`response(s)` 及可选 `cookiejar`/`error`/`response.headers_raw_*`）。
+- 一致：主断言字段均一致（请求语义摘要 + 响应 hash/len + 状态码/协议族；WS 额外含事件序列）。
+- 不一致：任一主断言字段不一致（包括缺失字段）；对比器会输出具体 diff 字段路径。
+- 失败示例（对比器输出片段）：
+  - `requests[0].headers mismatch: {...} != {...}`
+  - `response.body_sha256 mismatch: <base> != <qcurl>`
+- 定位路径（最小复现）：
+  - 打开对应 case 的 `baseline.json` 与 `qcurl.json`（见 6.4）并对照 diff 字段
+  - 校验双方 `download_*.data`（是否为空/是否部分写入/hash 是否一致）
+  - 如需服务端证据：设置 `QCURL_LC_COLLECT_LOGS=1` 重跑，查看 `<suite>/<case>/service_logs/`（含 httpd/nghttpx/ws/proxy/observe 的日志）
+
 ### Q&A（关键决策）
 
 - **`artifacts` 是否必须记录“服务端看到的请求字节”？**
@@ -179,3 +337,13 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
   - 说明：P0 建议只对“最终下载文件字节一致”做强断言；`-P` 场景可用于增加流控扰动，但不强制 QCurl 具备 in-flight pause/resume 语义。
   - 注：P0 已包含“中断 + Range 续传（resume）”的一致性断言。
   - 若产品确实要求对齐 `-P`，建议作为独立用例/更高阶 suite（见 `tasks.md` 的 LC-15）；断点续传（“中断 + Range 续传”）由 P0 覆盖。
+
+### 6.6 常见陷阱与已知限制
+
+- **HTTP/3 跳过不等于覆盖**：未构建 `qcurl_nghttpx_h3` 或 `env.have_h3()` 为 False 时，h3 变体会 skip；请在 Gate 报告中确认是否覆盖到 h3。
+- **受限环境的端口/进程限制**：在 sandbox/容器中可能无法分配端口或启动 httpd/nghttpx/ws，需要相应权限或在宿主环境运行。
+- **TLS 观测服务端依赖 CA 生成物**：`lc_observe_https` 复用 `curl/tests/http/gen/ca` 证书产物；首次需要跑一次 curl testenv 以生成 CA/证书（见 `tests/libcurl_consistency/conftest.py` 的 skip 条件）。
+- **Header 归一化是白名单**：默认只比较少量关键头；如果某个头被视为产品契约，请先把它加入观测白名单并在 `tasks.md` 补齐一致性用例。
+- **并发多请求默认集合对比**：ext_multi 默认按 URL 排序比较（集合等价），不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
+- **Sync 模式连接复用差异**：QCurl Sync（`sendGetSync`/`sendPostSync`）基于 `curl_easy_perform` 的 per-request handle 执行，单次调用不可跨请求复用连接；如需对齐 keep-alive/multiplex 复用行为，应使用 Async（multi）路径并定义可观测统计口径（见 `tasks.md` 的 LC-31）。
+- **WS 握手头白名单**：默认不记录 `Sec-WebSocket-Key` 等随机头；已通过扩展 allowlist + ext 用例覆盖 `permessage-deflate` 请求头一致性（见 `tasks.md` 的 LC-34）。
