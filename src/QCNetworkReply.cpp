@@ -517,6 +517,12 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size,
 
     const size_t totalSize = size * nmemb;
 
+    if (d->state == ReplyState::Cancelled) {
+        // 取消后禁止继续产生可观测数据事件（readyRead 等）；
+        // 返回 totalSize 以避免触发额外的 libcurl 错误路径。
+        return totalSize;
+    }
+
     if (d->executionMode == ExecutionMode::Async) {
         // 异步模式：累积数据到缓冲区
         d->bodyBuffer.append(QByteArray(ptr, static_cast<int>(totalSize)));
@@ -597,6 +603,11 @@ int QCNetworkReplyPrivate::curlProgressCallback(void *userdata,
     auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
     if (!d || !d->q_ptr) {
         return 1;  // 对象已销毁，中止传输
+    }
+
+    if (d->state == ReplyState::Cancelled) {
+        // 取消后禁止继续产生可观测事件（downloadProgress/uploadProgress）。
+        return 0;
     }
 
     // 更新进度数据
@@ -835,16 +846,33 @@ void QCNetworkReply::cancel()
     Q_D(QCNetworkReply);
 
     // 如果已经取消或已完成，不需要再操作
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished) {
+    if (d->state == ReplyState::Cancelled
+        || d->state == ReplyState::Finished
+        || d->state == ReplyState::Error) {
         return;
     }
 
     // 异步模式：从多句柄管理器移除（Running/Paused 状态）
     if (d->executionMode == ExecutionMode::Async
         && (d->state == ReplyState::Running || d->state == ReplyState::Paused)) {
-        QCCurlMultiManager::instance()->removeReply(this);
+        // ⚠️ cancel 可能在 libcurl 回调栈内触发（例如在 downloadProgress 槽函数中）。
+        // 直接调用 curl_multi_remove_handle 会引入重入风险，并可能触发 CURLM_BAD_EASY_HANDLE。
+        // 这里延迟到事件循环中移除，避免与 curl_multi_socket_action 重叠。
+        auto *multiManager = QCCurlMultiManager::instance();
+        QPointer<QCNetworkReply> safeThis(this);
+        QMetaObject::invokeMethod(
+            multiManager,
+            [multiManager, safeThis]() {
+                if (safeThis) {
+                    multiManager->removeReply(safeThis.data());
+                }
+            },
+            Qt::QueuedConnection);
     }
     // 同步模式：无法真正取消阻塞的 curl_easy_perform()
+
+    // 取消属于可观测错误语义：外部应能稳定区分“用户取消”与“空 body / 尚无数据”等情况
+    d->setError(NetworkError::OperationCancelled, QCurl::errorString(NetworkError::OperationCancelled));
 
     // 设置取消状态（这会发射 cancelled 信号）
     // 注意：即使在 Idle 状态（重试延迟期间）也允许取消
@@ -961,6 +989,13 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     Q_D(const QCNetworkReply);
 
     if (d->bodyBuffer.isEmpty()) {
+        // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是 std::nullopt），
+        // 否则会把“空 body”与“尚无数据可读”混为一谈，导致可观测层面不可区分。
+        if (d->state == ReplyState::Finished
+            || d->state == ReplyState::Error
+            || d->state == ReplyState::Cancelled) {
+            return QByteArray();
+        }
         return std::nullopt;
     }
 
