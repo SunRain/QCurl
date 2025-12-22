@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-import re
 
 import pytest
 
@@ -56,13 +55,15 @@ def _responses_from_observed(*, observed_list, final_response, proto: str) -> li
     return items
 
 
-_REDIR_RE = re.compile(r"^/redir/(\\d+)$")
-
-
 def _order_redir_chain(observed_list):
     def key(o) -> int:
-        m = _REDIR_RE.match(str(o.url))
-        return int(m.group(1)) if m else -1
+        s = str(o.url)
+        if not s.startswith("/redir/"):
+            return -1
+        try:
+            return int(s.split("/", 2)[2])
+        except Exception:
+            return -1
     return sorted(observed_list, key=key, reverse=True)
 
 

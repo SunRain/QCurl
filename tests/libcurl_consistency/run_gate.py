@@ -120,6 +120,12 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
         base.extend([
             "tests/libcurl_consistency/test_p1_proxy.py",
             "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py",
+            "tests/libcurl_consistency/test_p1_empty_body.py",
+            "tests/libcurl_consistency/test_p1_resp_headers.py",
+            "tests/libcurl_consistency/test_p1_progress.py",
+            "tests/libcurl_consistency/test_p1_http_methods.py",
+            "tests/libcurl_consistency/test_p1_timeouts.py",
+            "tests/libcurl_consistency/test_p1_cancel.py",
             "tests/libcurl_consistency/test_p1_postfields_binary.py",
             "tests/libcurl_consistency/test_p1_cookiejar_1903.py",
         ])
@@ -128,6 +134,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_tls_verify.py",
             "tests/libcurl_consistency/test_p2_cookie_request_header.py",
             "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
+            "tests/libcurl_consistency/test_p2_error_paths.py",
         ])
     if cfg.with_ext:
         base.extend([

@@ -122,6 +122,7 @@ async def handler(websocket):
             "upgrade",
             "connection",
             "sec-websocket-version",
+            "sec-websocket-extensions",
             "host",
         ]
         headers = {}

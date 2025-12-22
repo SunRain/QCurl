@@ -86,6 +86,16 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
     else:
         diffs.extend(_cmp_dict(b_resp, q_resp, ["status", "http_version", "headers", "body_len", "body_sha256"]))
 
+        # 可选：原始响应头观测（LC-26）
+        for opt in ("headers_raw_len", "headers_raw_sha256", "headers_raw_lines"):
+            b_has = opt in b_resp
+            q_has = opt in q_resp
+            if b_has != q_has:
+                diffs.append(f"response.{opt} missing in one side")
+                continue
+            if b_has and q_has and b_resp.get(opt) != q_resp.get(opt):
+                diffs.append(f"response.{opt} mismatch: {b_resp.get(opt)} != {q_resp.get(opt)}")
+
     # 可选：cookie jar 输出一致性（P1）
     b_cookiejar = base.get("cookiejar")
     q_cookiejar = qc.get("cookiejar")
@@ -102,7 +112,42 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
         if b_err is None or q_err is None:
             diffs.append("error missing in one side")
         else:
-            diffs.extend(_cmp_dict(b_err, q_err, ["kind", "http_status"]))
+            fields = ["kind", "http_status"]
+            for opt in ("curlcode", "http_code"):
+                b_has = opt in b_err
+                q_has = opt in q_err
+                if b_has != q_has:
+                    diffs.append(f"error.{opt} missing in one side")
+                    continue
+                if b_has and q_has:
+                    fields.append(opt)
+            diffs.extend(_cmp_dict(b_err, q_err, fields))
+
+    # 可选：进度摘要一致性（LC-30）
+    b_prog = base.get("progress_summary")
+    q_prog = qc.get("progress_summary")
+    if b_prog is not None or q_prog is not None:
+        if b_prog is None or q_prog is None:
+            diffs.append("progress_summary missing in one side")
+        else:
+            for lane in ("download", "upload"):
+                b_lane = b_prog.get(lane)
+                q_lane = q_prog.get(lane)
+                if b_lane is None and q_lane is None:
+                    continue
+                if b_lane is None or q_lane is None:
+                    diffs.append(f"progress_summary.{lane} missing in one side")
+                    continue
+                diffs.extend(_cmp_dict(b_lane, q_lane, ["monotonic", "now_max", "total_max"]))
+
+    # 可选：连接复用/多路复用的可观测一致性（LC-31）
+    b_conn = base.get("connection_observed")
+    q_conn = qc.get("connection_observed")
+    if b_conn is not None or q_conn is not None:
+        if b_conn is None or q_conn is None:
+            diffs.append("connection_observed missing in one side")
+        else:
+            diffs.extend(_cmp_dict(b_conn, q_conn, ["request_count", "unique_connections", "conn_seq"]))
 
     return (len(diffs) == 0, diffs)
 
