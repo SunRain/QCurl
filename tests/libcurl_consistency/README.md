@@ -22,7 +22,7 @@
 为保证可复现性，本候选集将可观测数据分为：
 
 - **主断言（默认 Gate）**：请求语义摘要（服务端观测）+ 响应字节（hash/len）+ 状态码/协议族；（WS 场景）增加帧/事件序列。
-- **在范围内但当前未完全覆盖**：HTTP 回调/信号序列（细粒度）、并发/多路复用的时序指标、multipart/form-data 的“字节级编码细节”对齐等；对应缺口已在覆盖矩阵与 `tasks.md` 中列出。
+- **在范围内但存在明确限制/取舍**：HTTP/3 覆盖依赖 `env.have_h3()`；并发/多路复用默认只做集合等价与复用统计（不比较完成顺序）；multipart/form-data 仅对齐 parts 语义摘要（不比较 boundary/原始 body 字节）；这些限制已在覆盖矩阵、风险点与 `tasks.md` 中明确记录。
 
 ### 1.2 术语（本候选集约定）
 
@@ -72,7 +72,7 @@
 | Proxy | proxy 视角（GET absolute-form / CONNECT authority）一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_proxy.py` | - |
 | 响应头 | `Location/Set-Cookie/WWW-Authenticate`（白名单）一致 | 部分覆盖 | `tests/libcurl_consistency/http_observe_server.py` + `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
 | 响应头字节级 | 原始响应头字节/重复头一致性 | 已覆盖（跳过 `Date/Server`） | `tests/libcurl_consistency/test_p1_resp_headers.py` + `src/QCNetworkReply.cpp`（`rawHeaderData()`） | - |
-| HTTP 方法面 | HEAD/DELETE/PATCH 的可观测语义对齐 | 已覆盖（HEAD/PATCH） | `tests/libcurl_consistency/test_p1_http_methods.py` + `tests/tst_LibcurlConsistency.cpp` | - |
+| HTTP 方法面 | HEAD/PATCH/DELETE（无 body）的可观测语义对齐 | 已覆盖（HEAD/PATCH/DELETE） | `tests/libcurl_consistency/test_p1_http_methods.py` + `tests/tst_LibcurlConsistency.cpp` | - |
 | Multipart | multipart/form-data parts 语义一致（name/filename/type/size/sha256；不比较 boundary/原始 body） | 已覆盖（语义级） | `tests/libcurl_consistency/test_p1_multipart_formdata.py` + `src/QCMultipartFormData.*` | - |
 
 #### 错误路径
@@ -233,7 +233,7 @@ QCurl 当前网络请求实现会直接设置/依赖下列 libcurl 选项（示�
   - pytest 驱动与对比器：`tests/libcurl_consistency/pytest_support/*`
   - baseline：
     - 上游 baseline：`curl/build/tests/libtest/libtests`（`LocalClient(name='cli_*')`）
-    - repo 内置 baseline：`qcurl_lc_http_baseline`/`qcurl_lc_postfields_binary_baseline`/`qcurl_lc_range_resume_baseline`（ext 另有 `qcurl_lc_ws_baseline`/`qcurl_lc_multi_get4_baseline`）
+    - repo 内置 baseline：`qcurl_lc_http_baseline`/`qcurl_lc_postfields_binary_baseline`/`qcurl_lc_range_resume_baseline`/`qcurl_lc_pause_resume_baseline`（ext 另有 `qcurl_lc_ws_baseline`/`qcurl_lc_multi_get4_baseline`）
   - 服务端：
     - 上游 `curl/tests/http/testenv`：httpd（h1/h2）+ nghttpx（h3）+ ws_echo_server（握手观测）
     - repo 自建：`tests/libcurl_consistency/http_observe_server.py`、`tests/libcurl_consistency/http_proxy_server.py`、`tests/libcurl_consistency/ws_scenario_server.py`
@@ -348,7 +348,6 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
 - **Header 归一化是白名单**：默认只比较少量关键头；如果某个头被视为产品契约，请先把它加入观测白名单并在 `tasks.md` 补齐一致性用例。
 - **multipart boundary 不可比**：multipart 的 boundary/Content-Length 不稳定；当前只对齐服务端可解析出的 parts 语义摘要，避免把编码实现差异误判为不一致（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
 - **并发多请求默认集合对比**：ext_multi 默认按 URL 排序比较（集合等价），不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
-- **`cli_hx_download -P` 的打点不等于 pause window**：`PAUSE/RESUMED` 为 stderr 文本打点，且 `RESUMED` 打点可能晚于恢复调用，从而出现“打点区间内仍有 RECV 日志”的现象；因此门禁用例（LC-15a）不比较 pause window 内的数据/进度事件计数，强过程一致性需按 LC-15b 另行定义结构化事件边界。
 - **`cli_hx_download -P` 的打点不等于 pause window**：`PAUSE/RESUMED` 为 stderr 文本打点，且 `RESUMED` 打点可能晚于恢复调用，从而出现“打点区间内仍有 RECV 日志”的现象；因此 LC-15a 不比较 pause window 内的数据/进度事件计数。LC-15b 通过 repo 内可控 baseline + 结构化事件边界定义 PauseEffective（语义合同边界），从而在不依赖 stderr 窗口的前提下实现强判据对比。
 - **Sync 模式连接复用差异**：QCurl Sync（`sendGetSync`/`sendPostSync`）基于 `curl_easy_perform` 的 per-request handle 执行，单次调用不可跨请求复用连接；如需对齐 keep-alive/multiplex 复用行为，应使用 Async（multi）路径并定义可观测统计口径（见 `tasks.md` 的 LC-31）。
 - **WS 握手头白名单**：默认不记录 `Sec-WebSocket-Key` 等随机头；已通过扩展 allowlist + ext 用例覆盖 `permessage-deflate` 请求头一致性（见 `tasks.md` 的 LC-34）。

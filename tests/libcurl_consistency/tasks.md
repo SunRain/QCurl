@@ -39,7 +39,7 @@
 | LC-30 | 补齐：进度与统计信息一致性（libcurl xferinfo ↔ QCurl progress signals），仅比较稳定摘要（单调性/终值/总量）。 | 中 | LC-28 | 已完成 | 2025-12-22：baseline `qcurl_lc_http_baseline` 支持 `--progress-out`（xferinfo 稳定摘要：monotonic/now_max/total_max）；Qt 执行器新增 `p1_progress_download`/`p1_progress_upload` 并写出 `progress_summary.json`；pytest 新增 `tests/libcurl_consistency/test_p1_progress.py` 合并并对比 `progress_summary`；对比器 `pytest_support/compare.py` 增加可选 `progress_summary.{download,upload}` 对比；回归：`pytest tests/libcurl_consistency/test_p1_progress.py` 通过（2 passed，需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
 | LC-31 | 补齐：连接复用/多路复用的可观测一致性（服务端连接观测或 getinfo 统计）与可比规则。 | 低 | LC-30 | 已完成 | 2025-12-22：观测服务端 `http_observe_server.py` 日志新增 `peer_port`；ext 新增用例 `test_ext_suite.py::test_ext_reuse_keepalive_http_1_1` 统计 `unique_connections/conn_seq` 并写入 `connection_observed`；对比器 `pytest_support/compare.py` 增加可选 `connection_observed` 对比；Qt 执行器新增 `ext_reuse_keepalive`（⚠️ 采用 Async 顺序请求以复用 multi 连接池；Sync 模式使用 `curl_easy_perform` 的 per-request handle，不具备跨请求连接复用能力）；回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_suite.py -k reuse_keepalive` 通过（需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
 | LC-32 | 补齐：错误路径一致性（连接拒绝、代理 407、非法 URL）与归一化字段扩展（curlcode/http_code）。 | 中 | LC-28 | 已完成 | 2025-12-22：Qt 执行器新增 `p2_error_refused`/`p2_error_malformat`/`p2_error_proxy_407`（分别覆盖连接拒绝、URL malformat、proxy 407）；pytest 新增 `tests/libcurl_consistency/test_p2_error_paths.py`，统一输出 `error.kind/http_status/curlcode/http_code` 并对比；回归：`run_gate.py --suite all` 通过。 |
-| LC-33 | 补齐：HTTP 方法面一致性（HEAD/DELETE/PATCH）：method/请求体/响应体/错误语义对齐。 | 低 | LC-27 | 已完成 | 2025-12-22：观测服务端新增 `/head`（HEAD 无 body）与 `/method`（PATCH/DELETE 回显请求体）；Qt 执行器新增 `p1_method_head`/`p1_method_patch`；pytest 新增 `tests/libcurl_consistency/test_p1_http_methods.py`（HEAD=0 字节、PATCH=echo + Content-Length）；回归：`pytest tests/libcurl_consistency/test_p1_http_methods.py` 通过（2 passed，需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
+| LC-33 | 补齐：HTTP 方法面一致性（HEAD/PATCH/DELETE（无 body））：method/请求体/响应体/错误语义对齐。 | 低 | LC-27 | 已完成 | 2025-12-22：观测服务端新增 `/head`（HEAD 无 body）与 `/method`（PATCH 回显请求体）；Qt 执行器新增 `p1_method_head`/`p1_method_patch`；pytest 新增 `tests/libcurl_consistency/test_p1_http_methods.py`（HEAD=0 字节、PATCH=echo + Content-Length）；回归：`pytest tests/libcurl_consistency/test_p1_http_methods.py` 通过（2 passed，需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。<br>2025-12-23：追加 `DELETE /method`（无 body，响应 0 字节）一致性用例：Qt 执行器新增 `p1_method_delete`；pytest 同步新增 `test_p1_method_delete_http_1_1`；回归：`QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p1_http_methods.py` 通过（3 passed，需 escalated）。 |
 | LC-34 | 可选：WebSocket 压缩/fragment/close 细节一致性（握手扩展协商 + 帧事件）。 | 低 | LC-20 | 已完成 | 2025-12-22：WS 场景服务端握手观测新增 `Sec-WebSocket-Extensions`；baseline WS 客户端新增 `lc_ping_deflate`（请求 `permessage-deflate`）；Qt 执行器新增 `ext_ws_deflate_ping`（`setCompressionConfig(defaultConfig)`）；扩展清单 `EXT_WS_CASES` 增加 `ext_ws_deflate_ping` 并纳入 `test_ext_ws_suite.py`；回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_ws_suite.py -k deflate` 通过（需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
 | LC-35 | 补齐：multipart/form-data 语义一致性（parts 语义对齐；不比较 boundary/原始 body 字节）。 | 中 | LC-0、LC-5a | 已完成 | 2025-12-22：观测服务端新增 `/multipart`（返回 parts 语义摘要 JSON）；baseline `qcurl_lc_http_baseline` 新增 `--multipart-demo`（curl_mime_*）；Qt 执行器新增 `p1_multipart_formdata`（`QCMultipartFormData`）；pytest 新增 `tests/libcurl_consistency/test_p1_multipart_formdata.py` 并接入 `run_gate.py`；回归：`run_gate.py --suite all --with-ext --build` 通过（需 escalated）。 |
 
@@ -49,12 +49,13 @@
 
 > 说明：以下任务以“可观测数据层面一致性”为唯一验收核心。每项任务都必须：
 > 1) 可复现（本地可跑、无外网依赖）；2) 可对比（baseline/QCurl 同一输入）；3) 可追踪（ID、产物路径、断言字段明确）。
+> 注：截至本仓库当前版本（见表格“状态”列），本文件内任务均已完成；下文保留“任务定义与验收口径”，用于回归维护与后续扩展。
 
 ## LC-15：pause/resume 一致性（in-flight）
 
 > 说明：LC-15 分两步推进：
 > - **LC-15a（弱判据）**：保证 pause/resume 路径可用 + 终态文件字节一致（门禁可稳定运行）。
-> - **LC-15b（强判据）**：对齐 `cli_hx_download -P` 的过程一致性（pause window、回调边界等），需额外前置与更强埋点。
+> - **LC-15b（强判据）**：以“语义合同测试”定义 PauseEffective（结构化事件边界 + 可控 baseline），并强制 PauseEffective→ResumeReq 期间交付/写盘增量 Δ=0（不依赖 `cli_hx_download -P` 的 stderr 打点窗口）。
 
 ### LC-15a：pause/resume 弱判据门禁（已完成）
 
@@ -99,12 +100,12 @@
 - 完成判据：
   - 强判据用例连续运行 10 次无偶发失败；并在 README 中写清楚“PauseEffective/暂停窗口”的事件定义与对比规则（已达成）
 - 最小可复现步骤：
-  - `python tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
-  - 或：`QCURL_LC_EXT=1 QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p2_pause_resume_strict.py`
+  - `python tests/libcurl_consistency/run_gate.py --suite all --build`
+  - 或：`QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p2_pause_resume_strict.py`
 
 ## LC-26：响应头“字节级/多值头”一致性（`rawHeaderData`/重复头/顺序）
 
-- 背景：当前一致性主要依赖“服务端观测白名单头”，未覆盖“客户端侧可读到的原始响应头字节”。同时 `QCNetworkReply::rawHeaders()` 由 `QMap` 构建，天然会丢失重复头（例如多条 `Set-Cookie`）。
+- 背景（落地前）：一致性主要依赖“服务端观测白名单头”，缺少“客户端侧可读到的原始响应头字节”可比口径；同时 `QCNetworkReply::rawHeaders()` 由 `QMap` 构建会丢失重复头（例如多条 `Set-Cookie`）。现已以 `rawHeaderData()` 为主断言补齐（见 `tests/libcurl_consistency/test_p1_resp_headers.py`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`CURLOPT_HEADERFUNCTION`（采集原始 header bytes）、`CURLINFO_RESPONSE_CODE`
   - QCurl：`QCNetworkReply::rawHeaderData()`、`QCNetworkReply::rawHeaders()`
@@ -117,7 +118,7 @@
   - baseline 与 QCurl 的“原始 header bytes”对齐（至少对齐 header 行集合；如能稳定，对齐顺序与大小写）
   - 明确 `rawHeaders()` 对重复头的处理口径（例如：不作为严格一致性基准，仅验证 `rawHeaderData()`；或改为保留多值结构并对齐）
 - 对比方式：
-  - artifacts 扩展字段（建议）：`response_headers_raw`（hex 或 sha256/len）与 `response_headers_multi`（list of header lines）
+  - artifacts 扩展字段（已落地）：写入到 `response.headers_raw_lines`（header 行集合，已跳过 `Date/Server`）、`response.headers_raw_len`、`response.headers_raw_sha256`
   - 对比器扩展：仅比较确定性字段；跳过 `Date/Server` 等不可比头
 - 边界条件：
   - 不比较动态头（`Date` 等）；不依赖 curl debug 输出
@@ -132,7 +133,7 @@
 
 ## LC-27：空响应体与 `readAll()`（`nullopt` vs 空字节）一致性
 
-- 背景：`QCNetworkReply::readAll()` 在 bodyBuffer 为空时返回 `std::nullopt`，导致“空 body”与“未读取到 body”在可观测层面不可区分，已在 `p1_redirect_nofollow` 通过“显式写空文件”绕过。
+- 背景（落地前）：`QCNetworkReply::readAll()` 在 bodyBuffer 为空时返回 `std::nullopt`，导致“终态空 body”与“尚无数据可读”在可观测层面不可区分；此前在 `p1_redirect_nofollow` 通过“显式写空文件”临时绕过。现已修复：终态且响应体为空时返回 empty QByteArray，并补齐用例（见 `tests/libcurl_consistency/test_p1_empty_body.py`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`CURLOPT_WRITEFUNCTION`（写入 0 字节的行为）、`CURLINFO_CONTENT_LENGTH_DOWNLOAD_T`、`CURLINFO_RESPONSE_CODE`
   - QCurl：`QCNetworkReply::readAll()`、`QCNetworkReply::bytesAvailable()`、`QCNetworkReply::finished`（终态）
@@ -141,10 +142,10 @@
     - `200 + Content-Length: 0`
     - `204 No Content`
     - `302 + Content-Length: 0`（follow 关闭）
-    - （可选）HEAD：`HEAD /cookie`（与 LC-33 关联）
+    - （可选）HEAD：`HEAD /head`（与 LC-33 关联）
 - 期望可观测输出：
   - 对于“请求已完成且 body 长度为 0”的场景：QCurl 与 baseline 都应产出 `body_len=0` 且 `body_sha256` 为同一空内容 hash
-  - 明确 `readAll()` 的一致性口径：若继续保留 `nullopt`，需在 artifacts/对比器中做显式归一化并在 README 记录（但不应掩盖“状态未完成”误用）
+  - 明确 `readAll()` 的一致性口径：非终态且 bodyBuffer 为空→返回 `std::nullopt`；终态且响应体为空→返回 empty QByteArray（在 artifacts 中体现为 `body_len=0` 与空内容 hash）
 - 对比方式：
   - 以 `download_*.data` 落盘结果作为主断言（空文件）
   - response/status +（可选）`Content-Length`（服务端观测）作为辅助断言
@@ -160,14 +161,14 @@
 
 ## LC-28：超时语义一致性（connect/total/low-speed）
 
-- 背景：QCurl 已实现 `QCNetworkTimeoutConfig`（映射到 `CURLOPT_CONNECTTIMEOUT_MS`/`CURLOPT_TIMEOUT_MS`/`CURLOPT_LOW_SPEED_*`），但当前一致性候选集未覆盖超时的可观测语义（错误码/终态/事件约束）。
+- 背景（落地前）：QCurl 已实现 `QCNetworkTimeoutConfig`（映射到 `CURLOPT_CONNECTTIMEOUT_MS`/`CURLOPT_TIMEOUT_MS`/`CURLOPT_LOW_SPEED_*`），但候选集缺少对齐超时可观测语义（错误归一化/终态/事件约束）。现已通过 `tests/libcurl_consistency/test_p1_timeouts.py` 补齐（/delay_headers + /stall_body）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`CURLOPT_CONNECTTIMEOUT_MS`、`CURLOPT_TIMEOUT_MS`、`CURLOPT_LOW_SPEED_TIME`、`CURLOPT_LOW_SPEED_LIMIT`、`CURLE_OPERATION_TIMEDOUT(28)`
   - QCurl：`QCNetworkTimeoutConfig`、`QCNetworkError::ConnectionTimeout`、终态信号（error/finished 或 cancelled）
 - 输入场景：
   - 扩展 `http_observe_server.py` 增加可控延迟端点（示例）：
     - `/delay_headers/<ms>`：延迟后再发送响应头
-    - `/slow_body/<total>/<chunk>/<sleep_ms>`：分块慢速发送 body（用于 low-speed）
+    - `/stall_body/<total>/<stall_ms>`：先发送响应头（`Content-Length=total`），再延迟 stall_ms 后发送 body（用于 low-speed）
   - 设置超时参数使其必然触发（例如 totalTimeout=200ms，服务端 delay=1000ms）
 - 期望可观测输出：
   - baseline：`curlcode=28`（或等价错误），http_code 可能为 0（未收到响应头）或为 200（收到头但 body 超时）——需明确记录与归一化策略
@@ -188,18 +189,18 @@
 
 ## LC-29：取消语义一致性（async cancel：事件序列与终态约束）
 
-- 背景：取消是典型“时序可观测语义”，但当前一致性用例仅覆盖最终字节，不覆盖取消后的事件序列、终态信号以及错误码映射。
+- 背景（落地前）：取消是典型“时序可观测语义”，需要对齐取消后的终态与可观测输出（错误码、落盘字节），并对 QCurl 施加“取消后无 data/progress 事件”的门禁约束。现已通过 `tests/libcurl_consistency/test_p1_cancel.py` 与 Qt 执行器断言落地。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：通过 `CURLOPT_XFERINFOFUNCTION` 返回非 0 或 write 回调中止来触发 `CURLE_ABORTED_BY_CALLBACK(42)`（需明确选择一种以稳定复现）
   - QCurl：`QCNetworkReply::cancel()`、`cancelled`/`error`/`finished` 信号与其序列约束
 - 输入场景：
-  - `http_observe_server.py` 提供可控流式 body（可与 LC-28 的 `/slow_body/...` 复用）
+  - `http_observe_server.py` 提供可控流式 body（本用例使用 `/slow_body/...`；与 LC-28 的 `/stall_body/...` 同属“先发响应头后 stall”的可控路径）
   - baseline 与 QCurl 均在“下载到达 N 字节阈值”时取消
 - 期望可观测输出：
   - 事件序列满足约束：取消发生后不再产生 data/progress；终态信号仅出现一次且口径一致（例如：只发 `cancelled`，不发 `finished`；或明确规定应发 `error+finished`）
   - 错误码归一化一致：`kind="cancel"`，并可选记录 `curlcode=42`
 - 对比方式：
-  - artifacts 增加 `events`（只记录关键事件点：`DATA`/`PROGRESS`/`CANCEL`/`TERMINAL`），并定义“序列等价”规则（忽略非确定性频率，保留顺序约束）
+  - artifacts 对比 `error`（`kind/http_status/curlcode/http_code`）与 `download_0.data`（len/sha256）一致；其中“取消后无 `readyRead/downloadProgress` 事件”由 Qt 执行器在用例内直接断言（`postCancelReadyRead==0 && postCancelProgress==0`）
 - 边界条件：
   - 禁止通过“sleep 固定时间后 cancel”触发（易受环境波动）；必须以“可观测阈值（字节数）”触发
 - 优先级：高
@@ -212,7 +213,7 @@
 
 ## LC-30：进度与统计信息一致性（稳定摘要）
 
-- 背景：libcurl 与 QCurl 均提供进度信息，但事件频率受 chunking/调度影响，直接对齐序列容易引入不稳定；需要定义“稳定摘要”来对齐。
+- 背景（落地前）：libcurl 与 QCurl 均提供进度信息，但事件频率受 chunking/调度影响，直接对齐序列容易引入不稳定；需要定义“稳定摘要”来对齐。现已落地 `progress_summary` 并接入对比器。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`CURLOPT_XFERINFOFUNCTION`（dlnow/dltotal/ulnow/ultotal）
   - QCurl：`downloadProgress`/`uploadProgress` 信号、`bytesReceived()/bytesTotal()`
@@ -222,7 +223,7 @@
   - 进度单调性：`now` 非递减
   - 终值一致：最后一次 `dlnow == body_len`；`dltotal` 与 `Content-Length` 一致（若可得）
 - 对比方式：
-  - artifacts 写入 `progress_summary`（例如：`first/last/total/events_count`），对比器只比较摘要字段
+  - artifacts 写入 `progress_summary.{download,upload}`（字段：`monotonic/now_max/total_max/events_count`）；对比器只比较 `monotonic/now_max/total_max`（`events_count` 仅作诊断）
 - 边界条件：
   - 不比较事件次数/时间戳；不比较瞬时速率
 - 优先级：中
@@ -234,7 +235,7 @@
 
 ## LC-31：连接复用/多路复用的可观测一致性（可比规则先行）
 
-- 背景：当前用例覆盖了“连接复用路径”（如 `upload_post_reuse`），但未对齐任何可观测的复用指标，存在“字节一致但复用/多路复用行为可区分”的风险。
+- 背景（落地前）：用例覆盖了“连接复用路径”（如 `upload_post_reuse`），但缺少可观测的复用指标对齐，存在“字节一致但复用/多路复用行为可区分”的风险。现已在 ext 用例中基于服务端 `peer_port` 归一化输出 `connection_observed` 并对比（见 `tests/libcurl_consistency/test_ext_suite.py`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - 方案 A（服务端观测）：记录 `client_address`（源端口）/连接标识，推断复用
   - 方案 B（libcurl getinfo）：`CURLINFO_NUM_CONNECTS`、`CURLINFO_LOCAL_PORT`（需要 QCurl 暴露等价可观测输出或通过测试执行器采集）
@@ -244,7 +245,7 @@
 - 期望可观测输出：
   - 在可控条件下（HTTP/1.1 keep-alive 或 HTTP/2 multiplexing），baseline 与 QCurl 的“连接复用指标”一致（例如：连接数相同）
 - 对比方式：
-  - artifacts 增加 `connection_observed`（例如：`unique_connections`、`per_request_conn_id`），对比器比较这些确定性统计
+  - artifacts 增加 `connection_observed`（字段：`request_count/unique_connections/conn_seq`），对比器比较这些确定性统计（`conn_seq` 由服务端 `peer_port` 序列归一化得到）
 - 边界条件：
   - 明确哪些因素会使连接不复用（`Connection: close`、代理、不同 SslConfig、不同 HTTP 版本等），并在用例中固定这些变量
 - 优先级：低
@@ -257,7 +258,7 @@
 
 ## LC-32：错误路径一致性（连接拒绝/代理 407/非法 URL）
 
-- 背景：错误映射是可观测一致性的核心（用户依赖 error code/HTTP code）；当前仅覆盖少量 HTTP 错误与 TLS 错误，缺少连接级错误与 proxy auth 失败等常见路径。
+- 背景（落地前）：错误映射是可观测一致性的核心（用户依赖 error code/HTTP code）；候选集缺少连接级错误、URL 非法与 proxy 407 等常见路径。现已通过 `tests/libcurl_consistency/test_p2_error_paths.py` 补齐，并统一归一化字段（`error.kind/http_status/curlcode/http_code`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`CURLE_COULDNT_CONNECT(7)`、`CURLE_URL_MALFORMAT(3)`、（proxy）HTTP 407 + `CURLINFO_RESPONSE_CODE`
   - QCurl：`NetworkError::ConnectionRefused`、`NetworkError::InvalidRequest`、HTTP>=400 的错误归一化（`kind/http_status`）
@@ -280,33 +281,33 @@
   - `python tests/libcurl_consistency/run_gate.py --suite all --build`
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_*.py -k \"refused or 407 or malformat\"`
 
-## LC-33：HTTP 方法面一致性（HEAD/DELETE/PATCH）
+## LC-33：HTTP 方法面一致性（HEAD/PATCH/DELETE（无 body））
 
-- 背景：QCurl 已实现多种 HTTP method 的 libcurl option 映射（见 `src/QCNetworkReply.cpp` 的 method 分支），但一致性候选集目前只覆盖 GET/PUT/POST。
+- 背景（落地前）：QCurl 已实现多种 HTTP method 的 libcurl option 映射（见 `src/QCNetworkReply.cpp` 的 method 分支），但候选集缺少方法面覆盖。现已补齐 HEAD/PATCH/DELETE（无 body）（见 `tests/libcurl_consistency/test_p1_http_methods.py`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
-  - libcurl：`CURLOPT_NOBODY`（HEAD）、`CURLOPT_CUSTOMREQUEST`（DELETE/PATCH）、`CURLOPT_POSTFIELDS`（PATCH body）
-  - QCurl：`HttpMethod::Head/Delete/Patch` 与请求体/响应体语义
+  - libcurl：`CURLOPT_NOBODY`（HEAD）、`CURLOPT_CUSTOMREQUEST`（PATCH/DELETE）、`CURLOPT_POSTFIELDS`（PATCH body）
+  - QCurl：`sendHead/sendPatch/sendDelete` 与请求体/响应体语义（注：当前一致性仅覆盖 DELETE 无 body；DELETE with body 不在本候选集范围内）
 - 输入场景：
   - 自建 `http_observe_server.py` 增加端点：
-    - `/method`：回显 method 与 body len（DELETE/PATCH）
-    - 对 HEAD：返回确定性 header（Content-Length 固定）且 body 为空
+    - `/head`：HEAD 返回确定性 header（Content-Length 固定）且 body 为空
+    - `/method`：回显请求体（PATCH/DELETE）
 - 期望可观测输出：
-  - 服务端观测 method 一致；PATCH/DELETE 的请求体 len/hash 一致（如有）
-  - HEAD 响应体为空且对齐（`body_len=0`）
+  - 服务端观测 method 一致；PATCH 的请求体 len/hash 一致；DELETE 无请求体
+  - HEAD/DELETE 响应体为空且对齐（`body_len=0`）；PATCH 响应体按字节一致（echo）
 - 对比方式：
   - 以服务端观测的 method/body_len + 客户端落盘的 body/hash 对齐
 - 边界条件：
-  - 对 PATCH/DELETE 的响应体可按字节一致断言；避免依赖自动重定向等副作用
+  - 对 PATCH 的响应体按字节一致断言；避免依赖自动重定向等副作用
 - 优先级：低
 - 完成判据：
-  - 新增至少 2 个方法用例（HEAD + PATCH 或 DELETE），并加入 `run_gate.py --suite all`（可选 gate 级别视稳定性决定）
+  - 新增至少 3 个方法用例（HEAD + PATCH + DELETE（无 body）），并加入 `run_gate.py --suite all`（可选 gate 级别视稳定性决定）
 - 最小可复现步骤：
   - `python tests/libcurl_consistency/run_gate.py --suite all --build`
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_*.py -k \"head or patch or delete\"`
 
 ## LC-34：可选 WebSocket 细节一致性（压缩/fragment/close）
 
-- 背景：当前 WS 一致性覆盖主要集中在 ping/pong 与基本 data frames；对压缩协商、fragment、close 码/原因等细节缺少对齐。
+- 背景（落地前）：WS 一致性覆盖主要集中在 ping/pong 与基本 data frames；压缩协商与 close 帧细节缺少对齐。现已通过 ext 用例补齐握手扩展协商（permessage-deflate）与帧类型覆盖（含 close）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：WS 相关 API（如 `curl_ws_send/recv`）、握手扩展头（`Sec-WebSocket-Extensions`）
   - QCurl：`QCWebSocketCompressionConfig`、`closeReceived`、fragment 相关事件（若暴露）
@@ -328,7 +329,7 @@
 
 ## LC-35：multipart/form-data 语义一致性（parts 语义对齐）
 
-- 背景：multipart/form-data 的 boundary 与编码细节属于实现差异；字节级对齐会引入不稳定与误报。但在“可观测层面”，服务端能解析到的 **parts 语义**（字段名/文件名/类型/内容 hash）应一致。
+- 背景（落地前）：multipart/form-data 的 boundary 与编码细节属于实现差异；字节级对齐会引入不稳定与误报。但在“可观测层面”，服务端能解析到的 **parts 语义**（字段名/文件名/类型/内容 hash）应一致。现已通过观测服务端 `/multipart` + JSON 稳定输出补齐（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`curl_mime_*`（`curl_mime_init/addpart/name/filename/type/data`）
   - QCurl：`QCMultipartFormData`（`addTextField`/`addFileField`/`contentType`/`toByteArray`）
