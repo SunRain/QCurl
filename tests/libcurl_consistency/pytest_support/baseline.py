@@ -53,6 +53,12 @@ def _default_http_baseline_binary() -> Path:
         return Path(qt_bin).resolve().with_name("qcurl_lc_http_baseline")
     return Path("qcurl_lc_http_baseline")
 
+def _default_pause_resume_baseline_binary() -> Path:
+    qt_bin = os.environ.get("QCURL_QTTEST", "").strip()
+    if qt_bin:
+        return Path(qt_bin).resolve().with_name("qcurl_lc_pause_resume_baseline")
+    return Path("qcurl_lc_pause_resume_baseline")
+
 
 def _run_standalone_baseline(env: Env,
                              *,
@@ -163,6 +169,21 @@ def run_libtest_case(
         )
         if not baseline_executable.exists():
             raise FileNotFoundError(f"http baseline 可执行不存在：{baseline_executable}")
+        stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
+            env,
+            executable=baseline_executable,
+            args=cmd_args,
+            cwd=client.run_dir,
+            allowed_exit_codes=allowed,
+        )
+    elif client_name == "cli_lc_pause_resume":
+        baseline_executable = (
+            Path(os.environ.get("QCURL_LC_PAUSE_RESUME_BASELINE", "")).resolve()
+            if os.environ.get("QCURL_LC_PAUSE_RESUME_BASELINE")
+            else _default_pause_resume_baseline_binary()
+        )
+        if not baseline_executable.exists():
+            raise FileNotFoundError(f"pause/resume baseline 可执行不存在：{baseline_executable}")
         stdout_lines, stderr_lines, duration_ms, exit_code = _run_standalone_baseline(
             env,
             executable=baseline_executable,

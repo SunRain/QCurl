@@ -21,7 +21,7 @@
 | LC-12 | 可选：补充“服务端视角”观测：在可行的协议/服务端上记录语义摘要或原始报文片段，用于 debug（不作为默认 Gate/P0 断言）。 | 低 | LC-2、LC-5 | 已完成 | 2025-12-17：新增失败时可选日志收集机制：`QCURL_LC_COLLECT_LOGS=1` 时，P0/P1/ext 用例在断言失败/异常时会将 `httpd/nghttpx/ws` 关键日志复制到 `curl/tests/http/gen/artifacts/<suite>/<case>/service_logs/`，并写出 `meta.json`（含 baseline/qcurl req_id）；实现位于 `tests/libcurl_consistency/pytest_support/service_logs.py`，不记录“服务端看到的原始请求字节”。 |
 | LC-13 | 落地 P0：下载“中断 + Range 续传”一致性（不包含 `cli_hx_download -P` 的 in-flight pause/resume）；断言最终文件字节一致 + Range 偏移/边界正确，并强制校验请求语义摘要一致。 | 高 | LC-6 | 已完成 | 2025-12-16：实现 `download_range_resume`（第二段用 Range start-end），并在对比侧要求服务端观测到“首段非 Range + 次段 Range”。<br>2025-12-17：全量 Gate 回归发现 curl `libtests` 中不存在 `cli_hx_range_resume`（baseline 失败：Test not found）；为避免依赖/改动 `curl/tests/...`，在 QCurl 侧新增 baseline 可执行 `qcurl_lc_range_resume_baseline`（libcurl easy API，两段请求输出 `download_0.data`），并在 `pytest_support/baseline.py` 对 `cli_hx_range_resume` 做特判调用该可执行；待回归验证。 |
 | LC-14 | 文档化与复现：补齐 `README.md` 的运行方式（如何构建 curl 的 `libtests`、如何跑 pytest driver/Qt Test、失败定位路径与日志位置）。 | 中 | LC-6、LC-7、LC-8、LC-13 | 已完成 | 2025-12-16 23:39:50：更新 `tests/libcurl_consistency/README.md`：补充“服务端观测机制”（httpd access_log + ws handshake JSONL）、HTTP/3 前置条件说明，以及 P0 复现命令与默认环境变量注入。 |
-| LC-15 | P2：pause/resume 一致性（LC-15a 弱判据门禁已落地；LC-15b 对齐 `cli_hx_download -P` 的过程一致性待补齐）。 | 低 | LC-13 | 部分完成 | 2025-12-23：落地 `test_p2_pause_resume.py`（弱判据：事件存在性/顺序 + 最终文件字节一致），并将对比器对 `pause_resume` 的断言限定为 `pause_offset/pause_count/resume_count/event_seq`，避免把 `cli_hx_download -P` 的 stderr 打点顺序差异误判为不一致；用例接入 `run_gate.py --suite all`。 |
+| LC-15 | P2：pause/resume 一致性（LC-15a 弱判据门禁 + LC-15b 强判据语义合同）。 | 低 | LC-13 | 已完成 | 2025-12-23：落地 `test_p2_pause_resume.py`（弱判据：事件存在性/顺序 + 最终文件字节一致），并将对比器对 `pause_resume` 的断言限定为 `pause_offset/pause_count/resume_count/event_seq`，避免把 `cli_hx_download -P` 的 stderr 打点顺序差异误判为不一致；用例接入 `run_gate.py --suite all`。<br>2025-12-23：落地 `test_p2_pause_resume_strict.py`（LC-15b：可控 baseline + 结构化事件边界；强判据：PauseEffective→ResumeReq 期间 bytes_delivered_total/bytes_written_total Δ=0；允许 PauseReq→PauseEffective 的收尾交付/写盘）；稳定性验证：单测连续运行 10 次无偶发失败，并接入 `run_gate.py --suite all`。 |
 | LC-16 | 固化 P0 Gate 入口：提供统一脚本/target 完成“构建依赖 + 运行 pytest + 输出 JUnit/JSON”，并默认开启失败日志收集（`QCURL_LC_COLLECT_LOGS=1`）。 | 高 | LC-6、LC-7、LC-8、LC-13 | 已完成 | 2025-12-17：新增 Gate 脚本 `tests/libcurl_consistency/run_gate.py`（支持 `--suite p0|p1|all`、`--build`、`--with-ext`；输出 `build/libcurl_consistency/reports/junit_*.xml` 与 `gate_*.json`），并在 README 增加 Gate 使用说明。<br>2025-12-17：require_escalated 下回归验证：`python tests/libcurl_consistency/run_gate.py --suite p0 --build` 通过（`7 passed`），生成 `build/libcurl_consistency/reports/junit_p0.xml` 与 `build/libcurl_consistency/reports/gate_p0.json`。<br>2025-12-17：全量回归：`python tests/libcurl_consistency/run_gate.py --suite all --build --with-ext` 通过（`12 passed`），生成 `build/libcurl_consistency/reports/junit_all.xml` 与 `build/libcurl_consistency/reports/gate_all.json`。<br>2025-12-17：再次全量回归（含 ext WS）：`python tests/libcurl_consistency/run_gate.py --suite all --build --with-ext` 通过（`14 passed`），报告输出到 `build/libcurl_consistency/reports/junit_all.xml` 与 `build/libcurl_consistency/reports/gate_all.json`。 |
 | LC-17 | 扩展 ext：落地 `test2402` 语义（HTTP/2 multi 多资源 GET）：新增 baseline libcurl client + QCurl 用例 + 观测/对比（多请求语义摘要 + 多文件字节）。 | 中 | LC-5a、LC-11 | 已完成 | 2025-12-17：新增 baseline client：`curl/tests/libtest/cli_hx_multi_get4.c`（multi + MAXCONNECTS=1，写出 `download_*.data`），并更新 `curl/tests/libtest/Makefile.inc` 触发 `libtests.c` 生成。<br>2025-12-17：新增 ext cases：`tests/libcurl_consistency/pytest_support/case_defs.py`（`ext_multi_get4_h2`），Qt 执行分支：`tests/tst_LibcurlConsistency.cpp`（并发 GET `/path/2402{0001..}` 落盘）。<br>2025-12-17：扩展观测/对比以支持“同一 case 多请求”：`tests/libcurl_consistency/pytest_support/observed.py` 增加 `*_observed_list_for_id`；`tests/libcurl_consistency/pytest_support/compare.py` 增加 `requests[]/responses[]` 对比；`tests/libcurl_consistency/test_ext_suite.py` 写入多请求语义摘要与逐文件 sha256/len。<br>2025-12-17：问题与修复：curl `libtests` 首次编译失败（static 函数名冲突 `write_cb`、使用了不存在的 `TEST_ERR_*` 常量、`abort_on_test_timeout()` 需要 `test_cleanup:` 标签、usage 字符串误用 `%04d`）；已通过函数/变量唯一前缀、改用已有 `TEST_ERR_*`、统一 `test_cleanup:` 标签、修正 usage 文案解决。<br>2025-12-17：回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_suite.py` 通过（需 escalated）。<br>2025-12-17：为遵守“不修改 curl/ 目录”，新增 repo 内置 baseline 可执行 `qcurl_lc_multi_get4_baseline` 并在 pytest baseline runner 中对 `cli_hx_multi_get4` 特判；全量 Gate（`--with-ext`）通过（14 passed）。 |
 | LC-18 | 扩展 ext：落地 `test2502` 语义（HTTP/3 multi 多资源 GET）：新增 baseline libcurl client + QCurl 用例 + 观测/对比（多请求语义摘要 + 多文件字节）。 | 中 | LC-2、LC-17 | 已完成 | 2025-12-17：复用 `cli_hx_multi_get4` 与 QCurl 分支，新增 `ext_multi_get4_h3`（请求 `/path/2502{0001..}`，强制 `proto=h3`，仅在 `env.have_h3()` 时启用）。回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_suite.py` 通过（3 passed，需 escalated）。<br>2025-12-17：同 LC-17，multi-get4 baseline 统一使用 repo 内置 `qcurl_lc_multi_get4_baseline`（支持 h3），并通过全量 Gate（14 passed）。 |
@@ -78,17 +78,29 @@
   - `python tests/libcurl_consistency/run_gate.py --suite all --build`
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p2_pause_resume.py`
 
-### LC-15b：对齐 `cli_hx_download -P` 的过程一致性（未开始）
+### LC-15b：强判据（语义合同测试）：可控 baseline + 结构化事件边界（已完成）
 
 - 背景：若产品/业务把“暂停点/恢复点/回调边界/暂停窗口内交付增量”为可观测契约（例如计费/合规/用户体验承诺），需要补齐强判据一致性用例。
-- 前置条件（否则测试不可稳定/易误判）：
-  - baseline 可控：提供 repo 内 baseline（libcurl easy API）输出结构化事件边界（`PAUSE_REQ/PAUSED_EFFECTIVE/RESUME_REQ/RESUMED_EFFECTIVE`）并支持 `resume_delay_ms`，避免依赖 stderr 打点顺序。
-  - QCurl 可控：具备 callback 边界 pause 能力（可先作为测试专用 hook），以对齐 `CURL_WRITEFUNC_PAUSE` 的确定性暂停点（见 `docs/TRANSPORT_PAUSE_RESUME_PLAN.md`）。
-- 期望可观测输出（强判据示例）：
-  - pause 生效后到 resume 请求前：应用层交付增量为 0（readyRead/write-to-file/progress 口径一致）
-  - 事件序列严格对齐：`Running → Paused → Running → Finished`，且终态只出现一次
+- 口径与边界（语义合同）：
+  - **PauseReq**：调用方发起暂停请求的时刻（可能仍有已交付数据的收尾事件）。
+  - **PauseEffective**：暂停语义生效边界。从该事件开始，库承诺“应用层交付/写盘累计”不再增长，直到 **ResumeReq**。
+  - **ResumeReq**：调用方发起恢复请求的时刻；从该事件之后允许继续交付/写盘。
+  - 合同条款（强判据）：
+    - **PauseEffective → ResumeReq**：`bytes_delivered_total` 与 `bytes_written_total` 严格不变（Δ=0）
+    - **PauseReq → PauseEffective**：允许一次性“收尾交付/写盘”（通过 PauseEffective 的事件边界吸收）
+- 实现要点（可控 baseline + 结构化事件边界）：
+  - baseline：repo 内置 `qcurl_lc_pause_resume_baseline`（libcurl easy+multi），输出 `pause_resume_events.json`（schema：`qcurl-lc/pause-resume@v1`）。
+  - QCurl：`tst_LibcurlConsistency` case `p2_pause_resume_strict` 输出同构 `pause_resume_events.json`；PauseEffective 以“进入 Paused 状态 + bytesAvailable=0 + 连续两个 event loop tick 内写盘累计不再增长”定义，以吸收 PauseReq→PauseEffective 的尾部交付并降低跨平台波动。
+  - pytest：`tests/libcurl_consistency/test_p2_pause_resume_strict.py` 注入相同参数（`pause_offset/resume_delay_ms`），并在对比器中执行合同断言（见 `tests/libcurl_consistency/pytest_support/compare.py` 的 `pause_resume_strict`）。
+- 期望可观测输出（强判据）：
+  - 结构化事件边界存在且顺序正确：`start → pause_req → pause_effective → resume_req → finished`
+  - PauseEffective 之后到 ResumeReq 之前：应用层交付/写盘累计严格不变（Δ=0）
+  - 终态下载文件字节一致（len/sha256）
 - 完成判据：
-  - 强判据用例连续运行 10 次无偶发失败，并在 README 中写清楚“pause window”的事件定义与对比规则
+  - 强判据用例连续运行 10 次无偶发失败；并在 README 中写清楚“PauseEffective/暂停窗口”的事件定义与对比规则（已达成）
+- 最小可复现步骤：
+  - `python tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
+  - 或：`QCURL_LC_EXT=1 QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p2_pause_resume_strict.py`
 
 ## LC-26：响应头“字节级/多值头”一致性（`rawHeaderData`/重复头/顺序）
 

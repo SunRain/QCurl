@@ -104,6 +104,12 @@ target_link_libraries(qcurl_lc_http_baseline PRIVATE CURL::libcurl)
 set_target_properties(qcurl_lc_http_baseline PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
+# libcurl_consistency：baseline pause/resume 结构化事件客户端（LC-15b）
+add_executable(qcurl_lc_pause_resume_baseline libcurl_consistency/pause_resume_baseline_client.cpp)
+target_link_libraries(qcurl_lc_pause_resume_baseline PRIVATE CURL::libcurl)
+set_target_properties(qcurl_lc_pause_resume_baseline PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
 # libcurl_consistency：从源码构建 h3-capable nghttpx（安装到 build/ 下，供 curl testenv 使用）
 add_subdirectory(libcurl_consistency/nghttpx_from_source)
 add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
