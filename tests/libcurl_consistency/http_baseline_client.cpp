@@ -21,6 +21,7 @@ struct Args {
     std::string cookieFile;
     std::string cookieJar;
     std::string caInfo;
+    bool multipartDemo = false;
     bool followLocation = false;
     long maxRedirs = 10;
     bool verifyPeer = false;
@@ -168,6 +169,11 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.method = toUpperAscii(argv[++i]);
             continue;
         }
+        if (arg == "--multipart-demo") {
+            out.multipartDemo = true;
+            out.method = "POST";
+            continue;
+        }
         if (arg == "--out" && i + 1 < argc) {
             out.outFile = argv[++i];
             continue;
@@ -294,6 +300,7 @@ int printUsage()
     std::cerr
         << "Usage: qcurl_lc_http_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
         << "  [--method <GET|HEAD|POST|PUT|PATCH|DELETE>] [--data-size <n>]\n"
+        << "  [--multipart-demo]\n"
         << "  [--header-out <file>]\n"
         << "  [--progress-out <file>] [--repeat <n>]\n"
         << "  [--proxy <proxy_url> --proxy-user <user> --proxy-pass <pass>]\n"
@@ -341,6 +348,16 @@ bool writeProgressJson(const std::string &path, const TransferSummary &s)
     return fp.good();
 }
 
+std::string makeMultipartDemoBinary()
+{
+    std::string out;
+    out.resize(256);
+    for (int i = 0; i < 256; ++i) {
+        out[static_cast<std::size_t>(i)] = static_cast<char>(i);
+    }
+    return out;
+}
+
 }  // namespace
 
 int main(int argc, char **argv)
@@ -354,6 +371,9 @@ int main(int argc, char **argv)
         return printUsage();
     }
     if (args.repeat < 1) {
+        return printUsage();
+    }
+    if (args.multipartDemo && args.dataSize > 0) {
         return printUsage();
     }
     if ((args.method == "GET" || args.method == "HEAD") && args.dataSize > 0) {
@@ -401,9 +421,38 @@ int main(int argc, char **argv)
         body.assign(static_cast<std::size_t>(args.dataSize), 'x');
     }
 
+    curl_mime *mime = nullptr;
+    std::string multipartBinary;
+    if (args.multipartDemo) {
+        multipartBinary = makeMultipartDemoBinary();
+        mime = curl_mime_init(curl);
+        if (!mime) {
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            std::cerr << "curl_mime_init failed\n";
+            return 5;
+        }
+
+        curl_mimepart *p1 = curl_mime_addpart(mime);
+        curl_mime_name(p1, "alpha");
+        curl_mime_data(p1, "hello", CURL_ZERO_TERMINATED);
+
+        curl_mimepart *p2 = curl_mime_addpart(mime);
+        curl_mime_name(p2, "beta");
+        curl_mime_data(p2, "world", CURL_ZERO_TERMINATED);
+
+        curl_mimepart *p3 = curl_mime_addpart(mime);
+        curl_mime_name(p3, "file");
+        curl_mime_filename(p3, "a.bin");
+        curl_mime_type(p3, "application/octet-stream");
+        curl_mime_data(p3, multipartBinary.data(), multipartBinary.size());
+
+        curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    }
+
     if (args.method == "HEAD") {
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    } else if (args.method == "POST") {
+    } else if (args.method == "POST" && !args.multipartDemo) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     } else if (args.method == "PUT" || args.method == "PATCH" || args.method == "DELETE") {
@@ -491,6 +540,10 @@ int main(int argc, char **argv)
         }
     }
 
+    if (mime) {
+        curl_mime_free(mime);
+        mime = nullptr;
+    }
     curl_easy_cleanup(curl);
 
     std::cerr << "curlcode=" << static_cast<int>(rc) << " http_code=" << httpCode << "\n";

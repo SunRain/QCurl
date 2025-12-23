@@ -41,6 +41,7 @@
 | LC-32 | 补齐：错误路径一致性（连接拒绝、代理 407、非法 URL）与归一化字段扩展（curlcode/http_code）。 | 中 | LC-28 | 已完成 | 2025-12-22：Qt 执行器新增 `p2_error_refused`/`p2_error_malformat`/`p2_error_proxy_407`（分别覆盖连接拒绝、URL malformat、proxy 407）；pytest 新增 `tests/libcurl_consistency/test_p2_error_paths.py`，统一输出 `error.kind/http_status/curlcode/http_code` 并对比；回归：`run_gate.py --suite all` 通过。 |
 | LC-33 | 补齐：HTTP 方法面一致性（HEAD/DELETE/PATCH）：method/请求体/响应体/错误语义对齐。 | 低 | LC-27 | 已完成 | 2025-12-22：观测服务端新增 `/head`（HEAD 无 body）与 `/method`（PATCH/DELETE 回显请求体）；Qt 执行器新增 `p1_method_head`/`p1_method_patch`；pytest 新增 `tests/libcurl_consistency/test_p1_http_methods.py`（HEAD=0 字节、PATCH=echo + Content-Length）；回归：`pytest tests/libcurl_consistency/test_p1_http_methods.py` 通过（2 passed，需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
 | LC-34 | 可选：WebSocket 压缩/fragment/close 细节一致性（握手扩展协商 + 帧事件）。 | 低 | LC-20 | 已完成 | 2025-12-22：WS 场景服务端握手观测新增 `Sec-WebSocket-Extensions`；baseline WS 客户端新增 `lc_ping_deflate`（请求 `permessage-deflate`）；Qt 执行器新增 `ext_ws_deflate_ping`（`setCompressionConfig(defaultConfig)`）；扩展清单 `EXT_WS_CASES` 增加 `ext_ws_deflate_ping` 并纳入 `test_ext_ws_suite.py`；回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_ws_suite.py -k deflate` 通过（需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
+| LC-35 | 补齐：multipart/form-data 语义一致性（parts 语义对齐；不比较 boundary/原始 body 字节）。 | 中 | LC-0、LC-5a | 已完成 | 2025-12-22：观测服务端新增 `/multipart`（返回 parts 语义摘要 JSON）；baseline `qcurl_lc_http_baseline` 新增 `--multipart-demo`（curl_mime_*）；Qt 执行器新增 `p1_multipart_formdata`（`QCMultipartFormData`）；pytest 新增 `tests/libcurl_consistency/test_p1_multipart_formdata.py` 并接入 `run_gate.py`；回归：`run_gate.py --suite all --with-ext --build` 通过（需 escalated）。 |
 
 ---
 
@@ -298,3 +299,29 @@
 - 最小可复现步骤：
   - `QCURL_LC_EXT=1 python tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_ext_ws_suite.py -k deflate`
+
+## LC-35：multipart/form-data 语义一致性（parts 语义对齐）
+
+- 背景：multipart/form-data 的 boundary 与编码细节属于实现差异；字节级对齐会引入不稳定与误报。但在“可观测层面”，服务端能解析到的 **parts 语义**（字段名/文件名/类型/内容 hash）应一致。
+- 覆盖点（libcurl API / QCurl 行为点）：
+  - libcurl：`curl_mime_*`（`curl_mime_init/addpart/name/filename/type/data`）
+  - QCurl：`QCMultipartFormData`（`addTextField`/`addFileField`/`contentType`/`toByteArray`）
+- 输入场景：
+  - 自建 `http_observe_server.py` 新增 `/multipart`：解析 multipart/form-data 并返回稳定 JSON
+  - baseline 与 QCurl 发送相同 parts（2 个文本字段 + 1 个二进制文件字段，二进制包含 `\\0`）
+- 期望可观测输出：
+  - HTTP 状态码：200
+  - 响应体（JSON）一致：`parts[].{name,filename,content_type,size,sha256}`（不包含 boundary）
+- 对比方式：
+  - 以响应体字节（hash/len）作为主断言（JSON 由服务端排序 key 后输出，稳定可比）
+  - 请求侧仅比较：method/path（服务端观测）；**忽略** `Content-Length` 与 `Content-Type(boundary=...)`
+- 边界条件：
+  - 不把 boundary/Content-Length 作为一致性判据；如需对齐编码字节，应单独定义“可比的 canonicalization 规则”再纳入（当前不做）
+  - 仅覆盖 HTTP/1.1（观测服务端为最小 HTTP/1.1）；如需覆盖 h2/h3，应迁移到 curl testenv 的 TLS/h2/h3 服务端并实现等价解析
+- 优先级：中
+- 完成判据：
+  - 新增用例加入 `run_gate.py --suite all`，并在本地连续运行 10 次无偶发失败
+  - README 覆盖矩阵将 Multipart 从“缺失”更新为“语义级已覆盖”，并记录已知限制（boundary 不可比）
+- 最小可复现步骤：
+  - `python tests/libcurl_consistency/run_gate.py --suite all --build`
+  - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p1_multipart_formdata.py`

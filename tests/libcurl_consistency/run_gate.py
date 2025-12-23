@@ -124,6 +124,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p1_resp_headers.py",
             "tests/libcurl_consistency/test_p1_progress.py",
             "tests/libcurl_consistency/test_p1_http_methods.py",
+            "tests/libcurl_consistency/test_p1_multipart_formdata.py",
             "tests/libcurl_consistency/test_p1_timeouts.py",
             "tests/libcurl_consistency/test_p1_cancel.py",
             "tests/libcurl_consistency/test_p1_postfields_binary.py",

@@ -39,6 +39,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
+#include "QCMultipartFormData.h"
 #include "QCWebSocket.h"
 #include "QCWebSocketCompressionConfig.h"
 
@@ -623,6 +624,53 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QCOMPARE(*dataOpt, body);
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_multipart_formdata")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/multipart").arg(observeHttpPort)),
+            requestId);
+
+        QCMultipartFormData formData;
+        formData.addTextField(QStringLiteral("alpha"), QStringLiteral("hello"));
+        formData.addTextField(QStringLiteral("beta"), QStringLiteral("world"));
+
+        QByteArray binary;
+        binary.resize(256);
+        for (int i = 0; i < 256; ++i) {
+            binary[i] = static_cast<char>(i);
+        }
+        formData.addFileField(QStringLiteral("file"),
+                              QStringLiteral("a.bin"),
+                              binary,
+                              QStringLiteral("application/octet-stream"));
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setRawHeader(QByteArrayLiteral("Content-Type"), formData.contentType().toUtf8());
+
+        QCNetworkReply *reply = manager.sendPost(req, formData.toByteArray());
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(20000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for multipart request");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
 
         reply->deleteLater();

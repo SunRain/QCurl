@@ -18,12 +18,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import ssl
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from email.parser import BytesParser
+from email.policy import default as email_default_policy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Optional
@@ -49,6 +52,60 @@ def _strip_query_id(path_or_url: str) -> str:
     query = urlencode(q, doseq=True)
     # path_or_url 可能是相对路径或绝对 URL；两者都能用 urlunsplit 复原
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+def _multipart_semantic_summary(content_type: str, body: bytes) -> Dict[str, object]:
+    """
+    解析 multipart/form-data，并返回“可比的语义摘要”（不包含 boundary）。
+
+    说明：
+    - 不比较原始请求体字节（boundary 可能不同）；改为比较服务端可解析出的 parts 语义。
+    - 返回字段稳定：按收到顺序输出 parts，不包含随机/不可比字段。
+    """
+    ct = (content_type or "").strip()
+    if not ct.lower().startswith("multipart/form-data"):
+        raise ValueError(f"unsupported content-type: {ct!r}")
+    if not body:
+        raise ValueError("empty multipart body")
+
+    # email 解析器需要完整头部；multipart/form-data 与 MIME multipart 的结构一致
+    header = f"Content-Type: {ct}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+    msg = BytesParser(policy=email_default_policy).parsebytes(header + body)
+    if not msg.is_multipart():
+        raise ValueError("not a multipart message")
+
+    parts = []
+    for p in msg.iter_parts():
+        name = p.get_param("name", header="content-disposition") or ""
+        filename = p.get_filename() or (p.get_param("filename", header="content-disposition") or "")
+        part_ct = p.get_content_type() or ""
+
+        payload = p.get_payload(decode=True)
+        if payload is None:
+            raw = p.get_payload()
+            if isinstance(raw, bytes):
+                payload_bytes = raw
+            elif isinstance(raw, str):
+                payload_bytes = raw.encode("utf-8", errors="replace")
+            else:
+                payload_bytes = b""
+        else:
+            payload_bytes = payload
+
+        parts.append({
+            "name": str(name),
+            "filename": str(filename),
+            "content_type": str(part_ct),
+            "size": int(len(payload_bytes)),
+            "sha256": _sha256_hex(payload_bytes) if payload_bytes else "",
+        })
+
+    return {
+        "kind": "multipart/form-data",
+        "parts": parts,
+    }
 
 
 def _append_jsonl(path: Path, payload: Dict[str, object]) -> None:
@@ -145,6 +202,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             self._write_log(200, {})
             return
+
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        self._write_log(404, {})
+
+    def do_POST(self) -> None:
+        if self.path.startswith("/multipart"):
+            body = self._read_body()
+            ct = str(self.headers.get("content-type") or "")
+            try:
+                summary = _multipart_semantic_summary(ct, body)
+                resp = json.dumps(summary, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+                self._write_log(200, {})
+                return
+            except Exception as exc:
+                payload = {
+                    "kind": "error",
+                    "error": str(exc),
+                }
+                resp = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+                self._write_log(400, {})
+                return
 
         self.send_response(404)
         self.send_header("Content-Length", "0")

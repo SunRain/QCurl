@@ -22,7 +22,7 @@
 为保证可复现性，本候选集将可观测数据分为：
 
 - **主断言（默认 Gate）**：请求语义摘要（服务端观测）+ 响应字节（hash/len）+ 状态码/协议族；（WS 场景）增加帧/事件序列。
-- **在范围内但当前未完全覆盖**：HTTP 回调/信号序列（细粒度）、并发/多路复用的时序指标、multipart/form-data 等；对应缺口已在覆盖矩阵与 `tasks.md` 中列出。
+- **在范围内但当前未完全覆盖**：HTTP 回调/信号序列（细粒度）、并发/多路复用的时序指标、multipart/form-data 的“字节级编码细节”对齐等；对应缺口已在覆盖矩阵与 `tasks.md` 中列出。
 
 ### 1.2 术语（本候选集约定）
 
@@ -73,7 +73,7 @@
 | 响应头 | `Location/Set-Cookie/WWW-Authenticate`（白名单）一致 | 部分覆盖 | `tests/libcurl_consistency/http_observe_server.py` + `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
 | 响应头字节级 | 原始响应头字节/重复头一致性 | 已覆盖（跳过 `Date/Server`） | `tests/libcurl_consistency/test_p1_resp_headers.py` + `src/QCNetworkReply.cpp`（`rawHeaderData()`） | - |
 | HTTP 方法面 | HEAD/DELETE/PATCH 的可观测语义对齐 | 已覆盖（HEAD/PATCH） | `tests/libcurl_consistency/test_p1_http_methods.py` + `tests/tst_LibcurlConsistency.cpp` | - |
-| Multipart | multipart/form-data 请求体字节/边界一致 | 缺失 | `src/QCMultipartFormData.*` | （待新增任务） |
+| Multipart | multipart/form-data parts 语义一致（name/filename/type/size/sha256；不比较 boundary/原始 body） | 已覆盖（语义级） | `tests/libcurl_consistency/test_p1_multipart_formdata.py` + `src/QCMultipartFormData.*` | - |
 
 #### 错误路径
 
@@ -102,6 +102,7 @@
 - **响应头重复项/多值头**：`QCNetworkReply::rawHeaders()` 由 `QMap` 构建（见 `src/QCNetworkReply.cpp` 的 `parseHeaders()`/`rawHeaders()`），会丢失重复头；因此一致性对比以 `rawHeaderData()` 为准，并在 `tests/libcurl_consistency/test_p1_resp_headers.py` 中对齐 header 行集合（跳过 `Date/Server`），写入并比较 `response.headers_raw_*` 字段。
 - **空响应体与 `readAll()` 语义**：已修复 `readAll()` 在“终态且 body 为空”时返回 empty QByteArray（不再是 `std::nullopt`），并通过 `tests/libcurl_consistency/test_p1_empty_body.py` 覆盖 `200 + Content-Length: 0` 与 `204 No Content`；`p1_redirect_nofollow` 不再需要绕过逻辑。
 - **chunked vs `Content-Length`**：`test_07_17_hx_post_reuse` 的 baseline 在 http/1.1 路径下可能走 chunked（无 `Content-Length`），而 QCurl（`POSTFIELDS+SIZE`）会显式带 `Content-Length`；当前已将该头从默认断言中排除（`tests/libcurl_consistency/test_p0_consistency.py` 的 `include_content_length`），如需 header 严格对齐需单独任务补齐。
+- **multipart 编码细节差异**：boundary 字符串与 `Content-Type: multipart/form-data; boundary=...`、`Content-Length` 等属于实现细节，可在可观测层面被区分但并非稳定契约；当前一致性用例以“服务端可解析 parts 语义摘要”对齐，明确不比较 boundary/原始请求体字节（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
 - **并发多请求“顺序语义”**：ext_multi 用例采用集合等价（按 URL 排序）而不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
 - **HTTP/3 覆盖的可见盲区**：h3 变体会在 `env.have_h3()` 为 False 时自动跳过；需在 Gate 报告/产物中显式呈现“是否覆盖 h3”，避免误以为已覆盖（见 6.3 的 gate 输出）。
 
@@ -226,7 +227,7 @@ QCurl 当前网络请求实现会直接设置/依赖下列 libcurl 选项（示�
   - HTTP：`src/QCNetworkAccessManager.*` / `src/QCNetworkRequest.*` / `src/QCNetworkReply.*`
   - 并发/调度/连接池：`src/QCCurlMultiManager.*`、`src/QCNetworkRequestScheduler.*`、`src/QCNetworkConnectionPoolManager.*`
   - WebSocket：`src/QCWebSocket.*`
-  - Multipart：`src/QCMultipartFormData.*`（当前未纳入一致性用例：待新增任务）
+  - Multipart：`src/QCMultipartFormData.*`（已纳入：语义级一致性，见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）
 - 一致性测试结构：
   - QCurl 执行器：`tests/tst_LibcurlConsistency.cpp`（通过环境变量选择 case，落盘 `download_*.data`）
   - pytest 驱动与对比器：`tests/libcurl_consistency/pytest_support/*`
@@ -344,6 +345,7 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
 - **受限环境的端口/进程限制**：在 sandbox/容器中可能无法分配端口或启动 httpd/nghttpx/ws，需要相应权限或在宿主环境运行。
 - **TLS 观测服务端依赖 CA 生成物**：`lc_observe_https` 复用 `curl/tests/http/gen/ca` 证书产物；首次需要跑一次 curl testenv 以生成 CA/证书（见 `tests/libcurl_consistency/conftest.py` 的 skip 条件）。
 - **Header 归一化是白名单**：默认只比较少量关键头；如果某个头被视为产品契约，请先把它加入观测白名单并在 `tasks.md` 补齐一致性用例。
+- **multipart boundary 不可比**：multipart 的 boundary/Content-Length 不稳定；当前只对齐服务端可解析出的 parts 语义摘要，避免把编码实现差异误判为不一致（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
 - **并发多请求默认集合对比**：ext_multi 默认按 URL 排序比较（集合等价），不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
 - **Sync 模式连接复用差异**：QCurl Sync（`sendGetSync`/`sendPostSync`）基于 `curl_easy_perform` 的 per-request handle 执行，单次调用不可跨请求复用连接；如需对齐 keep-alive/multiplex 复用行为，应使用 Async（multi）路径并定义可观测统计口径（见 `tasks.md` 的 LC-31）。
 - **WS 握手头白名单**：默认不记录 `Sec-WebSocket-Key` 等随机头；已通过扩展 allowlist + ext 用例覆盖 `permessage-deflate` 请求头一致性（见 `tasks.md` 的 LC-34）。
