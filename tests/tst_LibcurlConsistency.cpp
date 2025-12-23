@@ -634,6 +634,39 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("p1_method_delete")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/method").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+
+        QCNetworkReply *reply = manager.sendDelete(req);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(20000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for delete request");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(dataOpt->isEmpty());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
+        return;
+    }
+
     if (caseId == QStringLiteral("p1_multipart_formdata")) {
         QVERIFY(observeHttpPort > 0);
 
