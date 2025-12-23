@@ -149,6 +149,21 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
         else:
             diffs.extend(_cmp_dict(b_conn, q_conn, ["request_count", "unique_connections", "conn_seq"]))
 
+    # 可选：pause/resume 弱判据一致性（LC-15a）
+    # 说明：`cli_hx_download -P` 的 stderr 打点顺序不足以稳定定义“pause window”，
+    # 因此这里只比较“事件存在性/顺序”（pause/resume/finished）与 offset/count，不比较 pause 期间数据事件。
+    b_pr = base.get("pause_resume")
+    q_pr = qc.get("pause_resume")
+    if b_pr is not None or q_pr is not None:
+        if b_pr is None or q_pr is None:
+            diffs.append("pause_resume missing in one side")
+        else:
+            diffs.extend(_cmp_dict(
+                b_pr,
+                q_pr,
+                ["pause_offset", "pause_count", "resume_count", "event_seq"],
+            ))
+
     return (len(diffs) == 0, diffs)
 
 

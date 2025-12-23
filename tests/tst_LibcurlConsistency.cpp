@@ -15,6 +15,7 @@
  * - QCURL_LC_UPLOAD_SIZE: 上传字节数（默认 0）
  * - QCURL_LC_ABORT_OFFSET: 中断点（Range 续传用，默认 0）
  * - QCURL_LC_FILE_SIZE: 资源总长度（Range 续传用，默认 0）
+ * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
  */
 
 #include <QtTest/QtTest>
@@ -23,8 +24,10 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTimer>
 #include <QUrl>
@@ -290,6 +293,7 @@ void TestLibcurlConsistency::testCase()
     const int uploadSize = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_UPLOAD_SIZE"));
     const int abortOffset = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_ABORT_OFFSET"));
     const int fileSize = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_FILE_SIZE"));
+    const int pauseOffset = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_PAUSE_OFFSET"));
     const QString requestId = qEnvironmentVariable("QCURL_LC_REQ_ID");
     const int httpPort = qEnvironmentVariableIntValue("QCURL_LC_HTTP_PORT");
     const QString cookiePath = qEnvironmentVariable("QCURL_LC_COOKIE_PATH");
@@ -796,6 +800,126 @@ void TestLibcurlConsistency::testCase()
         }
 
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), received, QIODevice::WriteOnly | QIODevice::Truncate));
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_pause_resume")) {
+        QVERIFY(!docname.isEmpty());
+        QVERIFY(httpsPort > 0);
+        QVERIFY(pauseOffset > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/%2").arg(httpsPort).arg(docname)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+        req.setHttpVersion(httpVersion);
+
+        QFile out(QStringLiteral("download_0.data"));
+        QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+
+        QCNetworkReply *reply = manager.sendGet(req);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        bool pauseRequested = false;
+        bool pausedActive = false;
+        bool resumeSeen = false;
+        int pauseCount = 0;
+        int resumeCount = 0;
+        int pausedDataEvents = 0;
+        int pausedProgressIncreaseEvents = 0;
+        qint64 lastBytesReceived = 0;
+        qint64 pausedBytesReceived = -1;
+        QJsonArray eventSeq;
+
+        QPointer<QCNetworkReply> safeReply(reply);
+        bool resumeScheduled = false;
+
+        connect(reply, &QCNetworkReply::stateChanged, this, [&](ReplyState newState) {
+            if (newState == ReplyState::Paused) {
+                ++pauseCount;
+                pausedActive = true;
+                pausedBytesReceived = lastBytesReceived;
+                eventSeq.append(QStringLiteral("pause"));
+                if (!resumeScheduled) {
+                    resumeScheduled = true;
+                    QTimer::singleShot(50, this, [safeReply]() {
+                        if (safeReply) {
+                            safeReply->resume();
+                        }
+                    });
+                }
+                return;
+            }
+            if (newState == ReplyState::Running) {
+                if (pauseCount > 0 && !resumeSeen) {
+                    resumeSeen = true;
+                    pausedActive = false;
+                    ++resumeCount;
+                    eventSeq.append(QStringLiteral("resume"));
+                }
+                return;
+            }
+        });
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (pausedActive && !resumeSeen && dataOpt.has_value() && !dataOpt->isEmpty()) {
+                ++pausedDataEvents;
+            }
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                const qint64 w = out.write(*dataOpt);
+                QVERIFY(w == dataOpt->size());
+            }
+        });
+
+        connect(reply, &QCNetworkReply::downloadProgress, this, [&](qint64 bytesReceived, qint64 /*bytesTotal*/) {
+            lastBytesReceived = bytesReceived;
+            if (pausedActive && !resumeSeen) {
+                if (pausedBytesReceived >= 0 && bytesReceived > pausedBytesReceived) {
+                    ++pausedProgressIncreaseEvents;
+                    pausedBytesReceived = bytesReceived;
+                }
+            }
+            if (!pauseRequested && bytesReceived >= pauseOffset) {
+                pauseRequested = true;
+                reply->pause(PauseMode::Recv);
+            }
+        });
+
+        connect(reply, &QCNetworkReply::finished, this, [&]() {
+            eventSeq.append(QStringLiteral("finished"));
+            loop.quit();
+        });
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for pause/resume download");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            const qint64 w = out.write(*tailOpt);
+            QVERIFY(w == tailOpt->size());
+        }
+        out.close();
+
+        QJsonObject pr;
+        pr.insert(QStringLiteral("pause_offset"), pauseOffset);
+        pr.insert(QStringLiteral("pause_count"), pauseCount);
+        pr.insert(QStringLiteral("resume_count"), resumeCount);
+        pr.insert(QStringLiteral("paused_data_events"), pausedDataEvents);
+        pr.insert(QStringLiteral("paused_progress_events"), pausedProgressIncreaseEvents);
+        pr.insert(QStringLiteral("event_seq"), eventSeq);
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("pause_resume.json"), pr));
+
         reply->deleteLater();
         return;
     }
