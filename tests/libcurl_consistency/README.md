@@ -94,7 +94,7 @@
 | 重定向序列 | 多跳请求序列一致（顺序敏感） | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
 | 并发多请求 | 多请求集合等价（按 URL 稳定排序）+ keep-alive 复用统计（ext） | 部分覆盖 | `tests/libcurl_consistency/test_ext_suite.py`（ext_multi_get4_* + ext_reuse_keepalive_http_1_1） | - |
 | WS 事件序列 | 帧类型/顺序一致 | 已覆盖（ext） | `tests/libcurl_consistency/test_ext_ws_suite.py` | - |
-| HTTP 回调/信号序列 | `readyRead/finished/error/cancelled/progress` 的序列与约束 | 部分覆盖（取消后无事件约束 + 进度稳定摘要） | `tests/libcurl_consistency/test_p1_cancel.py` + `tests/libcurl_consistency/test_p1_progress.py` | LC-15 |
+| HTTP 回调/信号序列 | `readyRead/finished/error/cancelled/progress` 的序列与约束 | 部分覆盖（取消后无事件约束 + 进度稳定摘要 + pause/resume 弱判据） | `tests/libcurl_consistency/test_p1_cancel.py` + `tests/libcurl_consistency/test_p1_progress.py` + `tests/libcurl_consistency/test_p2_pause_resume.py` | LC-15b |
 | 空 body 语义 | `readAll()` 的 `nullopt`/空字节一致性规则 | 已覆盖 | `tests/libcurl_consistency/test_p1_empty_body.py` + `src/QCNetworkReply.cpp`（readAll） | - |
 
 ### 1.5 风险点（看似一致但在可观测层面可被区分）
@@ -337,7 +337,8 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
   - 结论：不必须（不作为 P0 必选）。
   - 说明：P0 建议只对“最终下载文件字节一致”做强断言；`-P` 场景可用于增加流控扰动，但不强制 QCurl 具备 in-flight pause/resume 语义。
   - 注：P0 已包含“中断 + Range 续传（resume）”的一致性断言。
-  - 若产品确实要求对齐 `-P`，建议作为独立用例/更高阶 suite（见 `tasks.md` 的 LC-15）；断点续传（“中断 + Range 续传”）由 P0 覆盖。
+  - 现状：已落地 P2 的 pause/resume **弱判据**（事件存在性/顺序 + 终态文件字节一致，见 `tests/libcurl_consistency/test_p2_pause_resume.py` 与 `tasks.md` 的 LC-15a）。
+  - 若产品确实要求对齐 `-P` 的**过程一致性**（pause window、回调边界、暂停点偏差等），需按 `tasks.md` 的 **LC-15b** 单独补齐（不建议直接纳入 P0）。
 
 ### 6.6 常见陷阱与已知限制
 
@@ -347,5 +348,6 @@ pytest driver 会为 baseline/QCurl 各自注入独立的 query `id` 以定位�
 - **Header 归一化是白名单**：默认只比较少量关键头；如果某个头被视为产品契约，请先把它加入观测白名单并在 `tasks.md` 补齐一致性用例。
 - **multipart boundary 不可比**：multipart 的 boundary/Content-Length 不稳定；当前只对齐服务端可解析出的 parts 语义摘要，避免把编码实现差异误判为不一致（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
 - **并发多请求默认集合对比**：ext_multi 默认按 URL 排序比较（集合等价），不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
+- **`cli_hx_download -P` 的打点不等于 pause window**：`PAUSE/RESUMED` 为 stderr 文本打点，且 `RESUMED` 打点可能晚于恢复调用，从而出现“打点区间内仍有 RECV 日志”的现象；因此门禁用例（LC-15a）不比较 pause window 内的数据/进度事件计数，强过程一致性需按 LC-15b 另行定义结构化事件边界。
 - **Sync 模式连接复用差异**：QCurl Sync（`sendGetSync`/`sendPostSync`）基于 `curl_easy_perform` 的 per-request handle 执行，单次调用不可跨请求复用连接；如需对齐 keep-alive/multiplex 复用行为，应使用 Async（multi）路径并定义可观测统计口径（见 `tasks.md` 的 LC-31）。
 - **WS 握手头白名单**：默认不记录 `Sec-WebSocket-Key` 等随机头；已通过扩展 allowlist + ext 用例覆盖 `permessage-deflate` 请求头一致性（见 `tasks.md` 的 LC-34）。
