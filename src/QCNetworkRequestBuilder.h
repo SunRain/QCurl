@@ -136,9 +136,10 @@ public:
     
     /**
      * @brief 发送 DELETE 请求
+     * @param body 请求体数据（可选）。若为空且已通过 withBody 设置过 body，则使用 withBody 中的值。
      * @return 网络响应对象
      */
-    QCNetworkReply *sendDelete();
+    QCNetworkReply *sendDelete(const QByteArray &body = QByteArray());
     
     /**
      * @brief 发送 PUT 请求

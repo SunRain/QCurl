@@ -219,7 +219,7 @@ QCNetworkReply* QCRequest::sendInternal(QCNetworkAccessManager *manager)
     } else if (m_method == "PUT") {
         reply = manager->sendPut(m_request, m_postData);
     } else if (m_method == "DELETE") {
-        reply = manager->sendDelete(m_request);
+        reply = manager->sendDelete(m_request, m_postData);
     } else if (m_method == "PATCH") {
         reply = manager->sendPatch(m_request, m_postData);
     } else if (m_method == "HEAD") {

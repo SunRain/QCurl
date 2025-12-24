@@ -121,6 +121,12 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         case HttpMethod::Delete:
             // DELETE 请求：删除资源
             curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "DELETE");
+            // 支持 DELETE 携带请求体（RFC 允许，部分服务端依赖该语义）
+            if (!requestBody.isEmpty()) {
+                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
+                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE,
+                               static_cast<long>(requestBody.size()));
+            }
             break;
 
         case HttpMethod::Patch:

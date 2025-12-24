@@ -189,7 +189,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendHead()
     return d_ptr->manager->sendHead(request);
 }
 
-QCNetworkReply *QCNetworkRequestBuilder::sendDelete()
+QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
 {
     QUrl finalUrl = d_ptr->url;
     
@@ -214,7 +214,8 @@ QCNetworkReply *QCNetworkRequestBuilder::sendDelete()
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
     }
     
-    return d_ptr->manager->sendDelete(request);
+    QByteArray finalBody = body.isEmpty() ? d_ptr->body : body;
+    return d_ptr->manager->sendDelete(request, finalBody);
 }
 
 QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)

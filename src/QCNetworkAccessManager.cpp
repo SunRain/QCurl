@@ -139,10 +139,15 @@ QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
 
 QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request)
 {
+    return sendDelete(request, QByteArray());
+}
+
+QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request, const QByteArray &data)
+{
     auto *reply = new QCNetworkReply(request,
                                       HttpMethod::Delete,
                                       ExecutionMode::Async,
-                                      QByteArray(),
+                                      data,
                                       this);
 
     // Cookie 配置传递
