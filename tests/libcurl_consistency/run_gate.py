@@ -140,6 +140,8 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_cookie_request_header.py",
             "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
             "tests/libcurl_consistency/test_p2_error_paths.py",
+            "tests/libcurl_consistency/test_p2_socks5_proxy_fail.py",
+            "tests/libcurl_consistency/test_p2_expect_100_continue.py",
             "tests/libcurl_consistency/test_p2_pause_resume.py",
             "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
         ])

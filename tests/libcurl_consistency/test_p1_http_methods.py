@@ -8,7 +8,7 @@ P1：HTTP 方法面一致性（LC-33：HEAD/PATCH/DELETE）。
   - 响应体字节（HEAD=0 字节、PATCH=echo、DELETE=0 字节）一致
 
 服务端：repo 内置 http_observe_server.py
-- /head：HEAD 响应（无 body，Content-Length 固定）
+- /head_with_body：HEAD 响应（服务端故意写 body；客户端必须忽略）
 - /method：回显请求体（PATCH/DELETE）
 
 基线：repo 内置 qcurl_lc_http_baseline（libcurl easy）
@@ -36,7 +36,7 @@ def _append_req_id(url: str, req_id: str) -> str:
     return f"{url}{sep}id={req_id}"
 
 
-def test_p1_method_head_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
+def test_p1_method_head_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -55,7 +55,7 @@ def test_p1_method_head_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
     baseline_req_id = f"{trace_base}__baseline"
     qcurl_req_id = f"{trace_base}__qcurl"
 
-    base_url = f"http://localhost:{port}/head"
+    base_url = f"http://localhost:{port}/head_with_body"
     baseline_url = _append_req_id(base_url, baseline_req_id)
     qcurl_url = _append_req_id(base_url, qcurl_req_id)
     resp_meta = {"status": 200, "http_version": proto, "headers": {}, "body": None}
@@ -118,7 +118,7 @@ def test_p1_method_head_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
                 env,
                 suite=suite,
                 case=case_variant,
-                logs=lc_logs,
+                logs={"observe_http_log": observe_log},
                 meta={
                     "case_id": case_id,
                     "case_variant": case_variant,
@@ -131,7 +131,7 @@ def test_p1_method_head_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
         raise
 
 
-def test_p1_method_patch_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
+def test_p1_method_patch_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -223,7 +223,7 @@ def test_p1_method_patch_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
                 env,
                 suite=suite,
                 case=case_variant,
-                logs=lc_logs,
+                logs={"observe_http_log": observe_log},
                 meta={
                     "case_id": case_id,
                     "case_variant": case_variant,
@@ -237,7 +237,7 @@ def test_p1_method_patch_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
         raise
 
 
-def test_p1_method_delete_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
+def test_p1_method_delete_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -319,7 +319,7 @@ def test_p1_method_delete_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
                 env,
                 suite=suite,
                 case=case_variant,
-                logs=lc_logs,
+                logs={"observe_http_log": observe_log},
                 meta={
                     "case_id": case_id,
                     "case_variant": case_variant,

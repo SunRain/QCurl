@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -382,9 +383,35 @@ def parse_observe_http_log(path: Path) -> List[Dict]:
     return out
 
 
+def _wait_for_observe_http_matches(observe_log: Path,
+                                  req_id: str,
+                                  *,
+                                  expected_count: int,
+                                  timeout_s: float = 1.0) -> List[Dict]:
+    """
+    等待 observe_http.jsonl 写入完成，避免“服务端线程写 log”与“测试线程读 log”之间的竞态导致偶发空读。
+    - expected_count > 0：等待匹配条数恰好等于 expected_count
+    - expected_count <= 0：等待至少出现 1 条匹配记录
+    """
+    end = time.monotonic() + max(0.0, float(timeout_s))
+    last: List[Dict] = []
+    while True:
+        entries = parse_observe_http_log(observe_log)
+        last = [e for e in entries if (e.get("id") or "") == req_id]
+        if expected_count > 0:
+            if len(last) == expected_count:
+                return last
+        else:
+            if last:
+                return last
+
+        if time.monotonic() >= end:
+            return last
+        time.sleep(0.01)
+
+
 def observe_http_observed_for_id(observe_log: Path, req_id: str) -> ObserveHttpObserved:
-    entries = parse_observe_http_log(observe_log)
-    matches = [e for e in entries if (e.get("id") or "") == req_id]
+    matches = _wait_for_observe_http_matches(observe_log, req_id, expected_count=0)
     if not matches:
         raise AssertionError(f"observe http log 无匹配记录：id={req_id}")
     e = matches[0]
@@ -414,8 +441,7 @@ def observe_http_observed_list_for_id(observe_log: Path,
     返回同一 correlation id 下的所有 HTTP 观测记录（来自 http_observe_server.py JSONL）。
     - 保留写入顺序（用于重定向/登录态等“序列语义”场景）
     """
-    entries = parse_observe_http_log(observe_log)
-    matches = [e for e in entries if (e.get("id") or "") == req_id]
+    matches = _wait_for_observe_http_matches(observe_log, req_id, expected_count=expected_count)
     if not matches:
         raise AssertionError(f"observe http log 无匹配记录：id={req_id}")
     if expected_count > 0 and len(matches) != expected_count:

@@ -42,6 +42,7 @@ private slots:
     // 请求发送测试
     void testSendGet();
     void testSendPost();
+    void testSendDeleteWithBody();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -217,6 +218,32 @@ void TestQCNetworkRequestBuilder::testSendPost()
 
     // Cleanup
     reply->deleteLater();
+}
+
+/**
+ * @brief 测试 sendDelete（携带 body）
+ */
+void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
+{
+    // Arrange
+    auto builder = m_manager->newRequest(QUrl("http://example.com/delete"));
+    QByteArray body = "test=data";
+    builder.withBody(body);
+
+    // Act（使用 withBody 中的 body）
+    auto *reply = builder.sendDelete();
+
+    // Assert
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->url().toString(), QString("http://example.com/delete"));
+    reply->deleteLater();
+
+    // Act（显式传入 body）
+    auto builder2 = m_manager->newRequest(QUrl("http://example.com/delete2"));
+    auto *reply2 = builder2.sendDelete(body);
+    QVERIFY(reply2 != nullptr);
+    QCOMPARE(reply2->url().toString(), QString("http://example.com/delete2"));
+    reply2->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkRequestBuilder)

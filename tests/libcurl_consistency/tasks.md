@@ -42,6 +42,11 @@
 | LC-33 | 补齐：HTTP 方法面一致性（HEAD/PATCH/DELETE（无 body））：method/请求体/响应体/错误语义对齐。 | 低 | LC-27 | 已完成 | 2025-12-22：观测服务端新增 `/head`（HEAD 无 body）与 `/method`（PATCH 回显请求体）；Qt 执行器新增 `p1_method_head`/`p1_method_patch`；pytest 新增 `tests/libcurl_consistency/test_p1_http_methods.py`（HEAD=0 字节、PATCH=echo + Content-Length）；回归：`pytest tests/libcurl_consistency/test_p1_http_methods.py` 通过（2 passed，需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。<br>2025-12-23：追加 `DELETE /method`（无 body，响应 0 字节）一致性用例：Qt 执行器新增 `p1_method_delete`；pytest 同步新增 `test_p1_method_delete_http_1_1`；回归：`QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p1_http_methods.py` 通过（3 passed，需 escalated）。 |
 | LC-34 | 可选：WebSocket 压缩/fragment/close 细节一致性（握手扩展协商 + 帧事件）。 | 低 | LC-20 | 已完成 | 2025-12-22：WS 场景服务端握手观测新增 `Sec-WebSocket-Extensions`；baseline WS 客户端新增 `lc_ping_deflate`（请求 `permessage-deflate`）；Qt 执行器新增 `ext_ws_deflate_ping`（`setCompressionConfig(defaultConfig)`）；扩展清单 `EXT_WS_CASES` 增加 `ext_ws_deflate_ping` 并纳入 `test_ext_ws_suite.py`；回归：`QCURL_LC_EXT=1 pytest tests/libcurl_consistency/test_ext_ws_suite.py -k deflate` 通过（需 escalated）；`run_gate.py --suite all --with-ext --build` 通过（40 passed）。 |
 | LC-35 | 补齐：multipart/form-data 语义一致性（parts 语义对齐；不比较 boundary/原始 body 字节）。 | 中 | LC-0、LC-5a | 已完成 | 2025-12-22：观测服务端新增 `/multipart`（返回 parts 语义摘要 JSON）；baseline `qcurl_lc_http_baseline` 新增 `--multipart-demo`（curl_mime_*）；Qt 执行器新增 `p1_multipart_formdata`（`QCMultipartFormData`）；pytest 新增 `tests/libcurl_consistency/test_p1_multipart_formdata.py` 并接入 `run_gate.py`；回归：`run_gate.py --suite all --with-ext --build` 通过（需 escalated）。 |
+| LC-36 | 补齐：HEAD 忽略响应 body（服务端违规返回 body 时客户端必须忽略），参考 `curl/tests/data/test1484`。 | 中 | LC-33、LC-5a | 已完成 | 2025-12-24：观测服务端新增 `/head_with_body`（HEAD 中故意写 body + Connection: close）；Qt 执行器 `p1_method_head` 改为请求该端点并断言 `readAll()==0`；pytest `tests/libcurl_consistency/test_p1_http_methods.py` 同步切换并回归通过（需 escalated）。 |
+| LC-37 | 补齐：重定向方法重写语义（POST 301 → GET，序列敏感），参考 `curl/tests/data/test1011`。 | 中 | LC-24、LC-5a | 已完成 | 2025-12-24：观测服务端新增 `POST /redir_post_301 -> 301 Location:/final_post_301`（并消费请求体以避免残留字节污染后续请求）；Qt 执行器新增 `p1_redirect_post_301_to_get`；pytest 新增 `test_p1_redirect_post_301_to_get` 断言请求序列 `POST->GET`，回归通过（需 escalated）。 |
+| LC-38 | 补齐：重定向链 + Cookie Path 匹配发送（只在 path 匹配时带 Cookie），参考 `curl/tests/data/test1024`。 | 中 | LC-24、LC-10、LC-5a | 已完成 | 2025-12-24：观测服务端新增 `/login_path -> /a/step -> /b/final`（Set-Cookie Path=/a；/a 必须带 cookie；/b 必须不带）；Qt 执行器新增 `p1_cookie_path_match_redirect`；pytest 新增 `test_p1_cookie_path_match_redirect_chain`，回归通过（需 escalated）。 |
+| LC-39 | 可选：SOCKS5 proxy 失败语义一致性（终态/错误归一化），参考 `curl/tests/data/test703`。 | 低 | LC-21、LC-32 | 已完成 | 2025-12-24：新增 SOCKS5 stub `tests/libcurl_consistency/socks5_proxy_server.py`（固定失败 REP=1）；pytest 增加 fixture `lc_socks5_proxy` 与用例 `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`；baseline `qcurl_lc_http_baseline` 支持 `--proxy-type socks5`；Qt 执行器新增 `p2_socks5_proxy_connect_fail` 并断言 `fromCurlCode(CURLE_PROXY)`；`run_gate.py --suite all` 已纳入该用例。 |
+| LC-40 | 可选：Expect: 100-continue（417→重试）一致性，参考 `curl/tests/data/test357`。 | 低 | LC-5a、LC-32 | 已完成 | 2025-12-24：修正为“依赖 libcurl 自动注入阈值（>1MB）触发 exp100 状态机”，避免手工设置 Expect 导致不重试；观测服务端支持 PUT/POST `/expect_417`；Qt 执行器 `p2_expect_100_continue` 改为 `sendPut` 且不显式设置 Expect；pytest `tests/libcurl_consistency/test_p2_expect_100_continue.py` 对齐并回归；`run_gate.py --suite all` 已纳入该用例。 |
 
 ---
 
@@ -49,7 +54,7 @@
 
 > 说明：以下任务以“可观测数据层面一致性”为唯一验收核心。每项任务都必须：
 > 1) 可复现（本地可跑、无外网依赖）；2) 可对比（baseline/QCurl 同一输入）；3) 可追踪（ID、产物路径、断言字段明确）。
-> 注：截至本仓库当前版本（见表格“状态”列），本文件内任务均已完成；下文保留“任务定义与验收口径”，用于回归维护与后续扩展。
+> 注：LC-0..LC-40 已完成；其中 LC-39/LC-40 属于“可选扩展维度”，已按离线可复现的方式补齐（SOCKS5 stub + Expect 自动注入阈值触发）。
 
 ## LC-15：pause/resume 一致性（in-flight）
 
@@ -352,3 +357,102 @@
 - 最小可复现步骤：
   - `python tests/libcurl_consistency/run_gate.py --suite all --build`
   - `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q tests/libcurl_consistency/test_p1_multipart_formdata.py`
+
+## LC-36：HEAD 忽略响应 body（参考 upstream `curl/tests/data/test1484`）（已完成）
+
+- 背景：当前仅覆盖 `HEAD` 在“服务端不返回 body”的理想路径（`/head`）。但实践中服务端可能违规返回 body，客户端仍应保证 **可观测响应体为空**；否则会出现 “HEAD 被当成 GET” 的可观测偏差。
+- 覆盖点（可观测维度）：
+  - 响应体字节：`body_len=0` 且 `body_sha256` 对齐空串
+  - 状态码一致（通常 200）
+  - 可选：服务端观测 method=HEAD 一致
+执行过程：
+- 新增观测端点 `HEAD /head_with_body`：服务端故意写入非空 body，并强制 `Connection: close`，用于验证客户端忽略行为（避免连接复用被残留字节污染）。
+- 将 Qt 执行器 `p1_method_head` 与 pytest 用例统一切换到该端点，保持断言口径为 `body_len==0`。
+
+结果：
+- baseline 与 QCurl 在该端点下均产生 `body_len=0`，并通过 artifacts 对比。
+
+回归：
+- `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q "tests/libcurl_consistency/test_p1_http_methods.py"`（需 escalated）
+
+## LC-37：重定向方法重写语义（POST 301 → GET，参考 upstream `curl/tests/data/test1011`）（已完成）
+
+- 背景：当前重定向用例覆盖“多跳 302 序列与最终 URL”，但缺少“POST 遇到 301/302/303 跟随时 method 重写规则”的可观测断言（顺序敏感、易被封装层误改）。
+- 覆盖点（可观测维度）：
+  - 服务端观测请求序列：`POST -> GET`（顺序敏感）
+  - 重定向链一致（每跳 URL 归一化一致）、最终生效 URL 一致
+  - 最终响应体字节一致
+执行过程：
+- 新增 `POST /redir_post_301`：返回 `301 Location: /final_post_301?id=<req_id>`，并在服务端侧 **先消费请求体**（否则会导致同一连接后续请求被残留 body 字节污染，触发 `501 Unsupported method('xxxxGET')`）。
+- 新增 `GET /final_post_301`：返回稳定 body（用于字节对比）。
+- 新增 pytest 用例 `test_p1_redirect_post_301_to_get`：断言服务端观测的请求序列为 `POST -> GET`，并对齐最终响应字节；Qt 执行器新增对应 case `p1_redirect_post_301_to_get`。
+
+问题与解决：
+- 问题：初版未消费 POST body，导致重定向后续 GET 复用连接时被残留字节污染，请求行解析失败并返回 501。
+- 解决：在 `POST /redir_post_301` 处理逻辑中调用 `_read_body()` 读尽 `Content-Length`。
+
+回归：
+- `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py" -k "post_301_to_get"`（需 escalated）
+
+## LC-38：重定向链 + Cookie Path 匹配（参考 upstream `curl/tests/data/test1024`）（已完成）
+
+- 背景：当前登录态用例的 cookie `Path=/`，无法覆盖“仅在 path 匹配时发送 Cookie”这一可观测规则；该规则在封装层自建 cookiejar/多 jar 合并时容易出错。
+- 覆盖点（可观测维度）：
+  - 重定向链路每跳 URL 一致（顺序敏感）
+  - 服务端观测 `Cookie:`：只在 path 匹配时发送；不匹配时必须不发送（或发送集合等价为空）
+  - 最终响应体字节一致
+执行过程：
+- 新增 redirect 链路：
+  - `GET /login_path`：返回 `302 + Set-Cookie(sid=...; Path=/a)`，跳转到 `/a/step`
+  - `GET /a/step`：强制要求携带 sid cookie（Path=/a 必须匹配），再跳转到 `/b/final`
+  - `GET /b/final`：强制要求 **不携带** sid cookie（Path=/a 不匹配），最终返回 200 + 稳定 body
+- 新增 Qt case `p1_cookie_path_match_redirect` 与 pytest 用例 `test_p1_cookie_path_match_redirect_chain`，并在用例内额外断言 baseline 的 cookie 发送/不发送行为满足预期（防止用例退化为“只比对两边相等”）。
+
+结果：
+- baseline 与 QCurl 在 `/a/step` 看到 `Cookie: sid=...`，在 `/b/final` 不携带该 cookie；最终响应字节一致并通过 artifacts 对比。
+
+回归：
+- `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py" -k "cookie_path_match"`（需 escalated）
+
+## LC-39：SOCKS5 proxy 失败语义一致性（参考 upstream `curl/tests/data/test703`）（已完成）
+
+- 背景：当前 Gate 已覆盖 HTTP proxy（absolute-form/CONNECT），但 SOCKS5 的选项/握手/错误码链路完全不同；且成功链路容易受外网与 DNS 影响，因此这里选择“稳定失败语义”作为最小门禁。
+- 覆盖点（可观测维度）：
+  - 失败终态一致：`error.kind="proxy"`（归一化）
+  - curlcode 一致：`CURLE_PROXY=97`（同一构建下）
+  - 落盘响应体为空：`download_0.data` len/hash 一致
+执行过程：
+- 新增 `tests/libcurl_consistency/socks5_proxy_server.py`：实现最小 SOCKS5 无认证握手，并对任何 CONNECT 固定返回 `REP=0x01`（general failure），确保稳定触发 `CURLE_PROXY(97)`；同时输出 JSONL 观测日志用于确认客户端确实走了 SOCKS5 路径。
+- `tests/libcurl_consistency/conftest.py`：新增 fixture `lc_socks5_proxy`，每个测试函数独立启动 socks5 stub，避免日志混淆。
+- baseline：`tests/libcurl_consistency/http_baseline_client.cpp` 新增 `--proxy-type`（支持 `socks5/socks5h/...`），在用例中以 `--proxy-type socks5` 强制走 SOCKS5。
+- QCurl：`tests/tst_LibcurlConsistency.cpp` 新增 case `p2_socks5_proxy_connect_fail`，通过 `QCNetworkProxyConfig::ProxyType::Socks5` 配置代理，并断言 `reply->error()==fromCurlCode(CURLE_PROXY)`。
+- pytest：新增 `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`，解析 baseline stderr 的 `curlcode/http_code` 并写入统一 `error` 字段；同时要求 socks5 stub 日志非空，避免“未走代理但错误碰巧一致”的伪通过。
+
+结果：
+- baseline 与 QCurl 均稳定触发 `curlcode=97`，并在 artifacts 对比中通过（请求摘要 + 空响应体 + error 字段一致）。
+
+回归：
+- `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q "tests/libcurl_consistency/test_p2_socks5_proxy_fail.py"`（需 escalated）
+
+## LC-40：Expect: 100-continue（417→重试）一致性（参考 upstream `curl/tests/data/test357`）（已完成）
+
+- 背景：该维度的可观测差异来自 “Expect 头是否由 libcurl 自动注入” 与 “417 后是否自动 retry 且移除 Expect”；封装层若手工改写 header 或上传路径，容易破坏 libcurl 的 exp100 状态机。
+- 覆盖点（可观测维度）：
+  - 服务端观测到两次请求：第一次带 `Expect: 100-continue`，第二次不带
+  - 状态链一致：`417 -> 200`
+  - 最终响应体字节一致（服务端回显）
+执行过程：
+- 关键修正：不再显式设置 `Expect: 100-continue`。原因：手工添加该头会绕开 libcurl 的 `http_exp100_*` 选择逻辑（`http_exp100_is_selected()`），导致 417→重试不发生；同时上传体必须 **> 1MB** 才会触发 libcurl 自动注入（`EXPECT_100_THRESHOLD=1MB`）。
+- `tests/libcurl_consistency/http_observe_server.py`：将 `/expect_417` 抽象为 `_handle_expect_417()`，并同时支持 `PUT/POST`；遇 `Expect: 100-continue` 立即返回 417（保持连接可复用以触发 libcurl 自动重试），否则回显 body 返回 200。
+- QCurl：`tests/tst_LibcurlConsistency.cpp` 中 `p2_expect_100_continue` 改为 `sendPut`，移除手工 `Expect` 头。
+- pytest：`tests/libcurl_consistency/test_p2_expect_100_continue.py` 改为 `PUT` + `upload_size=1053700`，断言观测序列 `PUT(Present Expect)->PUT(No Expect)` 与状态链一致；并在 artifacts 中写入 `requests/responses` 序列，且仅在“无 Expect 的第二次请求”写入 request body（与语义一致）。
+
+问题与解决：
+- 问题：417 响应若带 `Connection: close`，libcurl 会将连接标记为关闭（`conn->bits.close`），从而跳过 417→重试分支，导致观测仅有一次请求。
+- 解决：417 响应仅返回 `Content-Length: 0`，不主动关闭连接，确保 libcurl 能触发“禁用 Expect 并重试一次”的内建逻辑。
+
+结果：
+- baseline 与 QCurl 的请求序列、Expect 头存在性与最终响应字节一致，并通过 artifacts 对比。
+
+回归：
+- `QCURL_QTTEST="build/tests/tst_LibcurlConsistency" pytest -q "tests/libcurl_consistency/test_p2_expect_100_continue.py"`（需 escalated）

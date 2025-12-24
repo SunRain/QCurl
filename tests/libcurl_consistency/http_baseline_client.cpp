@@ -16,6 +16,7 @@ struct Args {
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
     std::string proxy;
+    std::string proxyType = "http";
     std::string proxyUser;
     std::string proxyPass;
     std::string cookieFile;
@@ -33,6 +34,7 @@ struct Args {
     long abortAfterBytes = -1;
     long dataSize = -1;
     int repeat = 1;
+    bool expect100Continue = false;
 };
 
 struct TransferSummary {
@@ -190,6 +192,10 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.proxy = argv[++i];
             continue;
         }
+        if (arg == "--proxy-type" && i + 1 < argc) {
+            out.proxyType = argv[++i];
+            continue;
+        }
         if (arg == "--proxy-user" && i + 1 < argc) {
             out.proxyUser = argv[++i];
             continue;
@@ -258,6 +264,10 @@ std::optional<Args> parseArgs(int argc, char **argv)
             }
             continue;
         }
+        if (arg == "--expect100") {
+            out.expect100Continue = true;
+            continue;
+        }
         if (arg == "--repeat" && i + 1 < argc) {
             try {
                 out.repeat = std::stoi(argv[++i]);
@@ -300,10 +310,11 @@ int printUsage()
     std::cerr
         << "Usage: qcurl_lc_http_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
         << "  [--method <GET|HEAD|POST|PUT|PATCH|DELETE>] [--data-size <n>]\n"
+        << "  [--expect100]\n"
         << "  [--multipart-demo]\n"
         << "  [--header-out <file>]\n"
         << "  [--progress-out <file>] [--repeat <n>]\n"
-        << "  [--proxy <proxy_url> --proxy-user <user> --proxy-pass <pass>]\n"
+        << "  [--proxy <proxy_url> [--proxy-type <http|https|socks4|socks4a|socks5|socks5h>] --proxy-user <user> --proxy-pass <pass>]\n"
         << "  [--cookiefile <path>] [--cookiejar <path>]\n"
         << "  [--follow] [--max-redirs <n>]\n"
         << "  [--secure] [--cainfo <path>]\n"
@@ -422,6 +433,7 @@ int main(int argc, char **argv)
     }
 
     curl_mime *mime = nullptr;
+    curl_slist *headers = nullptr;
     std::string multipartBinary;
     if (args.multipartDemo) {
         multipartBinary = makeMultipartDemoBinary();
@@ -448,6 +460,20 @@ int main(int argc, char **argv)
         curl_mime_data(p3, multipartBinary.data(), multipartBinary.size());
 
         curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    }
+
+    if (args.expect100Continue) {
+        headers = curl_slist_append(headers, "Expect: 100-continue");
+        if (!headers) {
+            if (mime) {
+                curl_mime_free(mime);
+            }
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            std::cerr << "curl_slist_append failed\n";
+            return 5;
+        }
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
 
     if (args.method == "HEAD") {
@@ -492,6 +518,33 @@ int main(int argc, char **argv)
 
     if (!args.proxy.empty()) {
         curl_easy_setopt(curl, CURLOPT_PROXY, args.proxy.c_str());
+        long proxyType = CURLPROXY_HTTP;
+        if (args.proxyType == "http") {
+            proxyType = CURLPROXY_HTTP;
+        } else if (args.proxyType == "https") {
+#ifdef CURLPROXY_HTTPS
+            proxyType = CURLPROXY_HTTPS;
+#else
+            std::cerr << "unsupported proxy type (no CURLPROXY_HTTPS): " << args.proxyType << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+#endif
+        } else if (args.proxyType == "socks4") {
+            proxyType = CURLPROXY_SOCKS4;
+        } else if (args.proxyType == "socks4a") {
+            proxyType = CURLPROXY_SOCKS4A;
+        } else if (args.proxyType == "socks5") {
+            proxyType = CURLPROXY_SOCKS5;
+        } else if (args.proxyType == "socks5h" || args.proxyType == "socks5-hostname" || args.proxyType == "socks5_hostname") {
+            proxyType = CURLPROXY_SOCKS5_HOSTNAME;
+        } else {
+            std::cerr << "unsupported proxy type: " << args.proxyType << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        curl_easy_setopt(curl, CURLOPT_PROXYTYPE, proxyType);
         if (!args.proxyUser.empty()) {
             curl_easy_setopt(curl, CURLOPT_PROXYUSERNAME, args.proxyUser.c_str());
         }
@@ -543,6 +596,10 @@ int main(int argc, char **argv)
     if (mime) {
         curl_mime_free(mime);
         mime = nullptr;
+    }
+    if (headers) {
+        curl_slist_free_all(headers);
+        headers = nullptr;
     }
     curl_easy_cleanup(curl);
 

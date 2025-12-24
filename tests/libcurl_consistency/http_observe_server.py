@@ -11,6 +11,9 @@
 - /slow_body/<total>/<chunk>/<sleep_ms>：分块发送响应体，并在块间 sleep_ms（用于 cancel/慢速传输）
 - /redir/<n>：多跳 302 重定向（用于 FOLLOWLOCATION 一致性）
 - /login：返回 302 + Set-Cookie，并跳转到 /home（用于“登录态 cookie 链路”一致性）
+- /login_path：返回 302 + Set-Cookie(Path=/a) 并跳转到 /a/step（用于“Cookie Path 匹配”一致性）
+- /a/step：要求携带 Cookie（Path=/a 应匹配），并 302 跳转到 /b/final
+- /b/final：要求不携带 Cookie（Path=/a 不匹配），最终 200
 - /home：需要 Cookie: sid=lc123，否则 401
 - 观测输出：JSONL（method/path/status/关键请求头）
 """
@@ -150,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         req_id = q.get("id", [""])[0]
         headers_allowlist = {}
-        for name in ("cookie", "authorization", "content-length", "host"):
+        for name in ("cookie", "authorization", "content-length", "host", "expect"):
             v = self.headers.get(name)
             if v is not None:
                 headers_allowlist[name] = str(v)
@@ -177,7 +180,54 @@ class Handler(BaseHTTPRequestHandler):
         )
         _append_jsonl(LOG_FILE, asdict(entry))
 
+    def _handle_expect_417(self) -> bool:
+        """
+        Expect: 100-continue（417→重试）语义探针（参考 curl/tests/data/test357）。
+
+        语义：
+        - 当请求头包含 `Expect: 100-continue` 时：立即返回 417（保持连接可复用以触发 libcurl 的 417→重试路径）
+        - 否则：读取请求体并 200 回显
+        """
+        if not self.path.startswith("/expect_417"):
+            return False
+
+        expect = str(self.headers.get("expect") or "")
+        if "100-continue" in expect.lower():
+            self.send_response(417)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(417, {})
+            return True
+
+        body = self._read_body()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+        self._write_log(200, {})
+        return True
+
     def do_HEAD(self) -> None:
+        if self.path.startswith("/head_with_body"):
+            # 语义合同：服务端“违规”在 HEAD 中写 body；客户端必须忽略（可观测 body_len=0）。
+            # 为避免连接复用时残留字节污染后续请求，这里显式关闭连接。
+            body = b"head-body-should-be-ignored\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+                self.wfile.flush()
+            except BrokenPipeError:
+                pass
+            self._write_log(200, {})
+            self.close_connection = True
+            return
+
         if self.path.startswith("/head"):
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -208,7 +258,46 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self._write_log(404, {})
 
+    def do_PUT(self) -> None:
+        if self._handle_expect_417():
+            return
+
+        if self.path.startswith("/method"):
+            body = self._read_body()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+            self._write_log(200, {})
+            return
+
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        self._write_log(404, {})
+
     def do_POST(self) -> None:
+        if self._handle_expect_417():
+            return
+
+        # POST 301 → follow 后应变为 GET（参考 curl/tests/data/test1011）
+        if self.path.startswith("/redir_post_301"):
+            # 必须消费请求体，否则同一连接上的后续请求会被残留 body 字节污染（导致 501/解析异常）。
+            _ = self._read_body()
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            next_path = "/final_post_301"
+            if req_id:
+                next_path = f"{next_path}?id={req_id}"
+            self.send_response(301)
+            self.send_header("Location", next_path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(301, {"Location": next_path})
+            return
+
         if self.path.startswith("/multipart"):
             body = self._read_body()
             ct = str(self.headers.get("content-type") or "")
@@ -259,6 +348,16 @@ class Handler(BaseHTTPRequestHandler):
         self._write_log(404, {})
 
     def do_GET(self) -> None:
+        if self.path.startswith("/final_post_301"):
+            body = b"post-301-ok\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            self._write_log(200, {})
+            return
+
         if self.path.startswith("/resp_headers"):
             # 返回确定性响应头集合（用于 LC-26：重复头/大小写/顺序）
             self.send_response(200)
@@ -406,6 +505,71 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # 登录模拟：/login -> 302(/home) + Set-Cookie
+        if self.path.startswith("/login_path"):
+            # 语义合同：Set-Cookie(Path=/a)，并通过 redirect 链验证：
+            # - /a/step：Cookie 必须发送
+            # - /b/final：Cookie 必须不发送（Path 不匹配）
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            next_path = "/a/step"
+            if req_id:
+                next_path = f"{next_path}?id={req_id}"
+            cookie_value = f"sid={_COOKIE_SID}; Path=/a; HttpOnly"
+            self.send_response(302)
+            self.send_header("Location", next_path)
+            self.send_header("Set-Cookie", cookie_value)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(302, {"Location": next_path, "Set-Cookie": cookie_value})
+            return
+
+        if self.path.startswith("/a/step"):
+            # Path=/a 必须匹配：服务端必须看到 sid cookie
+            cookie = str(self.headers.get("cookie") or "")
+            if f"sid={_COOKIE_SID}" not in cookie:
+                body = b"missing cookie (path should match)\n"
+                self.send_response(401)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                self._write_log(401, {})
+                return
+
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            next_path = "/b/final"
+            if req_id:
+                next_path = f"{next_path}?id={req_id}"
+            self.send_response(302)
+            self.send_header("Location", next_path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(302, {"Location": next_path})
+            return
+
+        if self.path.startswith("/b/final"):
+            # Path=/a 不应匹配：服务端不应看到 sid cookie
+            cookie = str(self.headers.get("cookie") or "")
+            if f"sid={_COOKIE_SID}" in cookie:
+                body = b"unexpected cookie (path should NOT match)\n"
+                self.send_response(400)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                self._write_log(400, {})
+                return
+
+            body = b"cookie-path-ok\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            self._write_log(200, {})
+            return
+
         if self.path.startswith("/login"):
             q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             req_id = q.get("id", [""])[0]

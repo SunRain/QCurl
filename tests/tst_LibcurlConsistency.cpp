@@ -301,6 +301,7 @@ void TestLibcurlConsistency::testCase()
     const QString proxyUser = qEnvironmentVariable("QCURL_LC_PROXY_USER");
     const QString proxyPass = qEnvironmentVariable("QCURL_LC_PROXY_PASS");
     const QString proxyTargetUrl = qEnvironmentVariable("QCURL_LC_PROXY_TARGET_URL");
+    const int socks5Port = qEnvironmentVariableIntValue("QCURL_LC_SOCKS5_PORT");
     const int observeHttpPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTP_PORT");
     const int observeStatusCode = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
     const int observeHttpsPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
@@ -387,6 +388,29 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("p2_socks5_proxy_connect_fail")) {
+        QVERIFY(!targetUrl.isEmpty());
+        QVERIFY(socks5Port > 0);
+
+        QCNetworkProxyConfig proxy;
+        proxy.type = QCNetworkProxyConfig::ProxyType::Socks5;
+        proxy.hostName = QStringLiteral("127.0.0.1");
+        proxy.port = static_cast<quint16>(socks5Port);
+
+        QCNetworkRequest req{QUrl(targetUrl)};
+        req.setHttpVersion(httpVersion);
+        req.setProxyConfig(proxy);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), fromCurlCode(CURLE_PROXY));
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
     if (caseId == QStringLiteral("p1_redirect_nofollow") ||
         caseId == QStringLiteral("p1_redirect_follow")) {
         QVERIFY(observeHttpPort > 0);
@@ -406,6 +430,41 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
         delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_redirect_post_301_to_get")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(uploadSize > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir_post_301").arg(observeHttpPort)),
+            requestId);
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+
+        QCNetworkReply *reply = manager.sendPost(req, body);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(20000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for post redirect request");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
         return;
     }
 
@@ -570,7 +629,7 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(observeHttpPort > 0);
 
         const QUrl url = withRequestId(
-            QUrl(QStringLiteral("http://localhost:%1/head").arg(observeHttpPort)),
+            QUrl(QStringLiteral("http://localhost:%1/head_with_body").arg(observeHttpPort)),
             requestId);
 
         QCNetworkRequest req(url);
@@ -661,6 +720,40 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(dataOpt->isEmpty());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_expect_100_continue")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(uploadSize > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/expect_417").arg(observeHttpPort)),
+            requestId);
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        QCNetworkReply *reply = manager.sendPut(req, body);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for expect-100-continue case");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QCOMPARE(*dataOpt, body);
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
 
         reply->deleteLater();
@@ -1150,6 +1243,27 @@ void TestLibcurlConsistency::testCase()
         manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
         QCNetworkRequest req(withRequestId(
             QUrl(QStringLiteral("http://localhost:%1/login").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_cookie_path_match_redirect")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(!cookiePath.isEmpty());
+
+        manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/login_path").arg(observeHttpPort)),
             requestId));
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);

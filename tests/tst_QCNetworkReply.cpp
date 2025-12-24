@@ -55,6 +55,7 @@ private slots:
     // ========== 异步请求测试 ==========
     void testAsyncGetRequest();
     void testAsyncPostRequest();
+    void testAsyncDeleteWithBody();
     void testAsyncHeadRequest();
     void testAsyncMultipleRequests();
 
@@ -322,6 +323,128 @@ void TestQCNetworkReply::testAsyncPostRequest()
     auto data = reply->readAll();
     QVERIFY(data.has_value());
     QVERIFY(data->contains("async"));
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkReply::testAsyncDeleteWithBody()
+{
+    const QByteArray body = QByteArrayLiteral("delete-body=test&x=1");
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    const quint16 port = server.serverPort();
+
+    QByteArray recvBuf;
+    QByteArray receivedMethod;
+    QByteArray receivedPath;
+    QByteArray receivedBody;
+    qint64 receivedContentLength = -1;
+    bool requestHandled = false;
+    bool continueSent = false;
+
+    QPointer<QTcpSocket> clientSocket;
+
+    auto tryHandleRequest = [&]() {
+        if (!clientSocket) {
+            return;
+        }
+
+        recvBuf.append(clientSocket->readAll());
+        const int headerEnd = recvBuf.indexOf("\r\n\r\n");
+        if (headerEnd < 0) {
+            return;
+        }
+
+        const QByteArray headerBytes = recvBuf.left(headerEnd);
+        const QList<QByteArray> lines = headerBytes.split('\n');
+        if (lines.isEmpty()) {
+            return;
+        }
+
+        const QList<QByteArray> requestLineParts = lines[0].trimmed().split(' ');
+        if (requestLineParts.size() >= 2) {
+            receivedMethod = requestLineParts[0].trimmed();
+            receivedPath = requestLineParts[1].trimmed();
+        }
+
+        qint64 contentLength = 0;
+        bool hasContentLength = false;
+        bool expectContinue = false;
+        for (int i = 1; i < lines.size(); ++i) {
+            const QByteArray line = lines[i].trimmed();
+            const QByteArray lower = line.toLower();
+            if (lower.startsWith("content-length:")) {
+                const QByteArray v = line.mid(static_cast<int>(QByteArray("Content-Length:").size())).trimmed();
+                bool ok = false;
+                const qint64 parsed = v.toLongLong(&ok);
+                if (ok && parsed >= 0) {
+                    contentLength = parsed;
+                    hasContentLength = true;
+                }
+            } else if (lower.startsWith("expect:") && lower.contains("100-continue")) {
+                expectContinue = true;
+            }
+        }
+
+        if (expectContinue && !continueSent) {
+            continueSent = true;
+            clientSocket->write("HTTP/1.1 100 Continue\r\n\r\n");
+            clientSocket->flush();
+        }
+
+        if (!hasContentLength) {
+            return;
+        }
+
+        const int bodyOffset = headerEnd + 4;
+        const int need = bodyOffset + static_cast<int>(contentLength);
+        if (recvBuf.size() < need) {
+            return;
+        }
+
+        receivedBody = recvBuf.mid(bodyOffset, contentLength);
+        receivedContentLength = contentLength;
+        requestHandled = true;
+
+        const QByteArray resp =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Content-Length: " + QByteArray::number(receivedBody.size()) + "\r\n"
+            "Connection: close\r\n"
+            "\r\n" + receivedBody;
+
+        clientSocket->write(resp);
+        clientSocket->flush();
+        clientSocket->disconnectFromHost();
+    };
+
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        clientSocket = server.nextPendingConnection();
+        QVERIFY(clientSocket);
+        connect(clientSocket, &QTcpSocket::readyRead, this, tryHandleRequest);
+        tryHandleRequest();
+    });
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/echo").arg(port)));
+    request.setConnectTimeout(std::chrono::milliseconds(2000));
+    request.setTimeout(std::chrono::milliseconds(5000));
+
+    auto *reply = m_manager->sendDelete(request, body);
+    QVERIFY(reply != nullptr);
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QVERIFY(finishedSpy.wait(5000));
+
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    const auto dataOpt = reply->readAll();
+    QVERIFY(dataOpt.has_value());
+    QCOMPARE(*dataOpt, body);
+
+    QVERIFY(requestHandled);
+    QCOMPARE(receivedMethod, QByteArrayLiteral("DELETE"));
+    QCOMPARE(receivedBody, body);
+    QCOMPARE(receivedContentLength, static_cast<qint64>(body.size()));
 
     reply->deleteLater();
 }

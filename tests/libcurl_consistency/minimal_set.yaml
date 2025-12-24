@@ -1,0 +1,437 @@
+# QCurl ↔ libcurl 可观测一致性最小回归集合（基于 upstream curl/tests）
+#
+# 设计目标：
+# - 以“外部可观测数据”为唯一对齐对象，不比较内部实现/性能/资源释放细节
+# - 在 CI 中长期稳定运行：离线优先、避免 flaky、按能力自动降级（capability-gated）
+# - 以最小集合覆盖最容易产生 API 行为差异的维度（方法/重定向/cookie/上传/超时/TLS/代理等）
+#
+# 用法（建议）：
+# - 该文件是“选择结果/契约规范”的机器可读定义；具体 runner 可据此映射到：
+#   - 上游 curl tests：`perl curl/tests/runtests.pl <testnum>` 或 `pytest curl/tests/http/...`
+#   - 本仓库一致性 Gate：`python3 tests/libcurl_consistency/run_gate.py --suite p0|p1|all`
+#
+# 备注：
+# - 对于 pytest 参数化用例，本集合仅选择其中“代表性参数”；若 runner 无法筛选单参数，
+#   可临时退化为跑该用例的全部参数，但需要在 CI 报告中显式标注“退化原因”。
+
+schema_version: 1
+
+set:
+  id: qcurl-libcurl-observable-minimal-v1
+  title: QCurl ↔ libcurl 可观测一致性最小回归集合
+  upstream_root: curl/tests
+  last_updated: "2025-12-24"
+  ci_properties:
+    offline_first: true
+    flaky_excluded: true
+    capability_gated: true
+
+observability_contract:
+  scope:
+    - 仅比较外部可观测数据（请求/响应/错误/状态/TLS/代理等）
+    - 不比较内部实现细节（状态机/句柄复用实现/内存分配/线程调度）
+    - 不比较性能指标（吞吐/延迟/CPU/内存），但比较“超时/取消”终态语义
+  strict_match:
+    request:
+      - method
+      - url_normalized
+      - body_len
+      - body_sha256
+      - headers_selected
+    response:
+      - status
+      - body_len
+      - body_sha256
+      - http_version_when_explicit
+    error:
+      - kind_normalized
+      - curlcode_when_available
+  allowed_differences:
+    url:
+      - host 大小写不敏感
+      - percent-encoding 大小写不敏感（但语义需等价）
+    headers:
+      - 默认不比较头字段顺序
+      - 默认不比较头字段大小写（键名按 lower 归一化）
+      - 除 Set-Cookie 外，默认按“键值集合”比较（不保留重复头）
+      - Set-Cookie 若纳入对比，需保留多条与出现顺序（否则应从断言中剔除）
+    transfer:
+      - 默认不强制 Content-Length vs Transfer-Encoding: chunked（除非用例明确要求）
+    timing:
+      - 不比较精确耗时数值；只比较超时/取消的终态与错误类别
+  normalization:
+    url:
+      strip_query_keys: ["id"]
+      drop_default_ports: true
+    headers:
+      key_case: lower
+      trim_ows: true
+
+cases:
+  # ---------------------------------------------------------------------------
+  # HTTP(S) 下载/上传（上游 http/testenv，本仓库已有对应 baseline 客户端）
+  # ---------------------------------------------------------------------------
+  - id: http_download_serial_resume
+    source:
+      type: pytest
+      nodeid: "curl/tests/http/test_02_download.py::TestDownload::test_02_21_lib_serial"
+    selection:
+      parameters:
+        pause_offset:
+          required: [102300] # 100*1023，上游覆盖里最具代表性的非零 pause
+          fallback_if_param_filter_unavailable: [0, 10240, 102300, 640000]
+        proto:
+          required: ["http/1.1", "h2"]
+          optional: ["h3"]
+    dimensions:
+      - http_method:get
+      - https
+      - url_parsing
+      - response_body_bytes
+      - http_version:h1_h2_h3
+      - pause_resume_disturbance
+    observation_points:
+      - 服务端观测 method/url/status/http_version 一致
+      - 关键请求头白名单（Range/Content-Length）一致
+      - 下载文件 body_len/body_sha256 一致
+    minimality_reason:
+      - 核心下载通路 + 协议族分歧（h1/h2/h3）是最高价值的差异捕获点
+      - pause/resume 为数据通路引入扰动，能放大边界问题但相对稳定
+    prerequisites:
+      - "curl/tests/http/testenv 可运行（httpd + nghttpx；h3 需 QUIC nghttpx）"
+      - "LocalClient(cli_hx_download) 已构建"
+    stability_notes:
+      - "h3 仅在 have_h3() 时执行；否则应在报告中标记 skip"
+
+  - id: http_upload_put
+    source:
+      type: pytest
+      nodeid: "curl/tests/http/test_07_upload.py::TestUpload::test_07_15_hx_put"
+    selection:
+      parameters:
+        proto:
+          required: ["http/1.1", "h2"]
+          optional: ["h3"]
+    dimensions:
+      - http_method:put
+      - request_body_bytes
+      - content_length
+      - response_body_bytes
+      - http_version:h1_h2_h3
+    observation_points:
+      - 服务端观测 method/url/status/http_version 一致
+      - Content-Length 一致（该用例要求）
+      - 响应回显/长度语义一致（body_len/body_sha256）
+    minimality_reason:
+      - PUT 上传常走 CUSTOMREQUEST/POSTFIELDS 映射，最容易出现 body/长度差异
+    prerequisites:
+      - "curl/tests/http/testenv 可运行（https 端口可用）"
+      - "LocalClient(cli_hx_upload) 已构建"
+    stability_notes:
+      - "h3 仅在 have_h3() 时执行；否则应在报告中标记 skip"
+
+  - id: http_upload_post_reuse
+    source:
+      type: pytest
+      nodeid: "curl/tests/http/test_07_upload.py::TestUpload::test_07_17_hx_post_reuse"
+    selection:
+      parameters:
+        proto:
+          required: ["http/1.1", "h2"]
+          optional: ["h3"]
+    dimensions:
+      - http_method:post
+      - request_body_bytes
+      - connection_reuse_only_if_observable
+      - http_version:h1_h2_h3
+    observation_points:
+      - 服务端观测 method/url/status/http_version 一致（多次请求集合等价）
+      - 响应体字节一致（回显）
+    minimality_reason:
+      - 覆盖“多次请求 + 复用路径”在可观测层面的潜在差异（仅在导致差异时纳入）
+    prerequisites:
+      - "curl/tests/http/testenv 可运行（https 端口可用）"
+      - "LocalClient(cli_hx_upload) 已构建"
+    stability_notes:
+      - "http/1.1 下基线可能走 chunked（无 Content-Length）；对比应以 body 字节为主"
+
+  # ---------------------------------------------------------------------------
+  # 请求体/Expect/重定向/Cookie（上游 data/testNNNN）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test1531_postfields_binary
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1531"
+      test_number: 1531
+    capability_gates:
+      - http
+    dimensions:
+      - postfields_binary_with_nul
+      - content_length
+      - request_body_bytes
+    observation_points:
+      - 请求体 body_len/body_sha256 严格一致（包含 \\0）
+      - Content-Length 严格一致
+    minimality_reason:
+      - 最典型的“封装层错误把二进制当 C 字符串”回归探针
+    prerequisites:
+      - "curl tests 的 libtests 已构建（工具 lib1531 可用）"
+      - "本地 http 测试 server 可用"
+
+  - id: curl_data_test357_expect_100_continue
+    source:
+      type: curl_data
+      path: "curl/tests/data/test357"
+      test_number: 357
+    capability_gates:
+      - http
+    dimensions:
+      - expect_100_continue
+      - retry_without_expect
+      - upload_put
+    observation_points:
+      - 服务端观测两次 PUT：第一次带 Expect，第二次不带 Expect
+      - 状态链 417 -> 200 一致
+      - 最终请求体字节一致
+    minimality_reason:
+      - Expect/417/重试是封装层最易产生可观测差异的路径之一
+    prerequisites:
+      - "本地 http 测试 server 支持 no-expect 行为"
+      - "允许约 1MB 上传"
+
+  - id: curl_data_test1011_redirect_post_301_to_get
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1011"
+      test_number: 1011
+    capability_gates:
+      - http
+    dimensions:
+      - followlocation
+      - redirect_chain
+      - method_rewrite_post_to_get
+    observation_points:
+      - 服务端观测请求序列 method 为 POST -> GET
+      - 最终落点 URL（经规范化）一致
+      - 响应体字节一致
+    minimality_reason:
+      - 这是最小成本覆盖“重定向时方法语义”的高价值用例
+
+  - id: curl_data_test1024_redirect_with_cookies_path_match
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1024"
+      test_number: 1024
+    capability_gates:
+      - http
+      - cookies
+    dimensions:
+      - followlocation
+      - redirect_chain
+      - cookie_receive_send
+      - cookie_path_match
+    observation_points:
+      - 重定向链路每跳 URL 一致
+      - 仅在 path 匹配时发送 Cookie（服务端观测 Cookie 头）
+      - 最终响应体字节一致
+    minimality_reason:
+      - 用一个用例同时覆盖“重定向 + cookie 基本行为”，且相对稳定
+    prerequisites:
+      - "启用 cookies（COOKIEFILE/COOKIEJAR 可写）"
+
+  - id: curl_data_test1903_cookiefile_reset_set_again
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1903"
+      test_number: 1903
+    capability_gates:
+      - http
+      - cookies
+    dimensions:
+      - cookiefile
+      - cookiejar
+      - reset_semantics
+    observation_points:
+      - 输出 cookiejar 文件（归一化后）记录集合一致
+    minimality_reason:
+      - 最小覆盖“COOKIEFILE/COOKIEJAR + reset”这一类封装层易出错语义
+    prerequisites:
+      - "curl tests 的 libtests 已构建（工具 lib1903 可用）"
+      - "临时目录可写"
+
+  # ---------------------------------------------------------------------------
+  # TLS：证书校验成功/失败（上游 data/testNNNN）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test310_https_verify_ok
+    source:
+      type: curl_data
+      path: "curl/tests/data/test310"
+      test_number: 310
+    capability_gates:
+      - ssl
+      - local_https
+    dimensions:
+      - tls_verify_ok
+      - ca_bundle
+      - https_get
+    observation_points:
+      - 请求成功（error.kind_normalized=ok）
+      - 状态码/响应体字节一致
+    minimality_reason:
+      - 仅成功路径才能验证 CA/verify 映射正确
+    prerequisites:
+      - "本地 https server（test-localhost.pem）与 test-ca.crt 可用"
+
+  - id: curl_data_test312_https_verify_fail
+    source:
+      type: curl_data
+      path: "curl/tests/data/test312"
+      test_number: 312
+    capability_gates:
+      - ssl
+      - local_https
+    dimensions:
+      - tls_verify_fail
+      - expected_curlcode_60
+    observation_points:
+      - 失败终态一致（error.kind_normalized=tls_error）
+      - 同一构建下 curlcode=60（若可取）一致
+    minimality_reason:
+      - 封装层最常见回归：TLS 错误被泛化/误映射
+
+  # ---------------------------------------------------------------------------
+  # 代理：SOCKS（HTTP/HTTPS-proxy 上游用例不纳入，见 excluded）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test703_socks5_connect_fail
+    source:
+      type: curl_data
+      path: "curl/tests/data/test703"
+      test_number: 703
+    capability_gates:
+      - proxy
+      - socks5
+    dimensions:
+      - socks5_proxy
+      - error_mapping_proxy_error
+    observation_points:
+      - 失败终态一致（error.kind_normalized=proxy_error）
+      - curlcode（常见 97）在同一构建下应一致
+    minimality_reason:
+      - SOCKS 代理与 HTTP 代理选项/错误码完全不同，最易出现映射错误
+
+  # ---------------------------------------------------------------------------
+  # 错误/超时/取消语义（可观测终态）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test29_total_timeout
+    source:
+      type: curl_data
+      path: "curl/tests/data/test29"
+      test_number: 29
+    capability_gates:
+      - http
+    dimensions:
+      - timeout_total
+      - error_mapping_timeout
+    observation_points:
+      - 失败终态一致（error.kind_normalized=timeout）
+      - curlcode=28（若可取）一致
+    minimality_reason:
+      - 超时语义是业务面最常回归的外部可观测行为之一
+    stability_notes:
+      - "该用例包含 wait 10，CI 需确保时间预算（默认仍较短）"
+
+  - id: curl_data_test19_connect_to_non_listen
+    source:
+      type: curl_data
+      path: "curl/tests/data/test19"
+      test_number: 19
+    capability_gates:
+      - http
+    dimensions:
+      - connect_fail
+      - error_mapping_connect_error
+    observation_points:
+      - 失败终态一致（error.kind_normalized=connect_error）
+      - curlcode=7（若可取）一致
+    minimality_reason:
+      - 最小成本覆盖“连接失败”与“超时/代理失败”的可观测区分
+
+  - id: curl_data_test1513_abort_by_progress_callback
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1513"
+      test_number: 1513
+    capability_gates:
+      - http
+    dimensions:
+      - cancel_semantics
+      - aborted_by_callback
+    observation_points:
+      - 失败终态一致（error.kind_normalized=cancel 或 aborted）
+      - curlcode=42（若可取）一致
+      - 至少一次 progress 可观测事件（若 runner 采集）
+    minimality_reason:
+      - “用户主动中断”在封装层的错误归一化最易产生偏差
+
+  # ---------------------------------------------------------------------------
+  # 方法语义：HEAD/DELETE（Basic auth 上游用例不纳入，见 excluded）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test1484_head_ignore_body
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1484"
+      test_number: 1484
+    capability_gates:
+      - http
+    dimensions:
+      - http_method:head
+      - response_body_must_be_empty
+    observation_points:
+      - 响应体必须为空（body_len=0/body_sha256 对齐空串）
+      - 状态码一致
+    minimality_reason:
+      - HEAD 被错误当 GET 的回归在封装层非常常见
+
+  - id: curl_data_test13_custom_method_delete
+    source:
+      type: curl_data
+      path: "curl/tests/data/test13"
+      test_number: 13
+    capability_gates:
+      - http
+    dimensions:
+      - http_method:delete
+      - customrequest
+    observation_points:
+      - 服务端观测 method=DELETE 一致
+      - 响应体字节一致
+    minimality_reason:
+      - 最小覆盖 CUSTOMREQUEST 类方法映射
+
+excluded:
+  # ---------------------------------------------------------------------------
+  # 明确排除（与 tests/libcurl_consistency/README.md:225 口径一致）
+  # ---------------------------------------------------------------------------
+  - id: curl_data_test264_http_proxy_basic_from_proxy_url
+    source:
+      type: curl_data
+      path: "curl/tests/data/test264"
+      test_number: 264
+    reason:
+      - "curl tool CLI 解析语义（proxy URL 内嵌 user:pass 的解析/解码）非 QCurl 公共 API 契约"
+
+  - id: curl_data_test1630_https_proxy_basic
+    source:
+      type: curl_data
+      path: "curl/tests/data/test1630"
+      test_number: 1630
+    reason:
+      - "HTTPS-proxy 与 proxy TLS 选项（--proxy-insecure / CURLOPT_PROXY_SSL_*）QCurl 未暴露"
+
+  - id: curl_data_test2_basic_auth
+    source:
+      type: curl_data
+      path: "curl/tests/data/test2"
+      test_number: 2
+    reason:
+      - "curl tool CLI 解析语义（-u/HTTPAUTH）非 QCurl 公共 API 契约"

@@ -55,6 +55,7 @@ private slots:
     void testToByteArray();
     void testContentType();
     void testBoundary();
+    void testCustomBoundary();
     void testSize();
 
     // ========== 边界情况测试（3 个）==========
@@ -426,6 +427,29 @@ void TestQCMultipartFormData::testBoundary()
     // 验证唯一性（多次创建应该生成不同的 boundary）
     QCMultipartFormData form2;
     QVERIFY(form.boundary() != form2.boundary());
+}
+
+void TestQCMultipartFormData::testCustomBoundary()
+{
+    QCMultipartFormData form;
+
+    const QString fixedBoundary = QStringLiteral("----QCurlBoundaryFixed0123456789");
+    QVERIFY(form.setBoundary(fixedBoundary));
+    QCOMPARE(form.boundary(), fixedBoundary);
+
+    form.addTextField("name", "alice");
+    QByteArray encoded = form.toByteArray();
+    QVERIFY(encoded.contains(fixedBoundary.toUtf8()));
+
+    QString contentType = form.contentType();
+    QVERIFY(contentType.startsWith("multipart/form-data; boundary="));
+    QVERIFY(contentType.contains(fixedBoundary));
+
+    // 非法 boundary：空、包含 CR/LF、包含空白
+    QVERIFY(!form.setBoundary(QString()));
+    QVERIFY(!form.setBoundary(QStringLiteral("bad\r\nboundary")));
+    QVERIFY(!form.setBoundary(QStringLiteral("bad boundary")));
+    QCOMPARE(form.boundary(), fixedBoundary);
 }
 
 void TestQCMultipartFormData::testSize()

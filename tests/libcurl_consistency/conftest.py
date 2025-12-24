@@ -410,6 +410,60 @@ def lc_http_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
 
 
 @pytest.fixture(scope="function")
+def lc_socks5_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动最小 SOCKS5 stub proxy（固定返回失败），供 LC-39（SOCKS5 失败语义）使用。
+    - 该 stub 不依赖外网，也不需要真实目标服务端
+    - 通过 JSONL 日志可确认客户端确实走了 SOCKS5 握手路径
+    """
+    run_dir = Path(env.gen_dir) / f"lc_socks5_proxy_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "socks5_proxy_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "socks5_requests.jsonl"
+
+    proc = None
+    socks_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, socks_port
+            log_file.write_text("", encoding="utf-8")
+            socks_port = int(ports["socks"])
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(socks_port),
+                "--log-file",
+                str(log_file),
+            ]
+            log.info("start socks5 stub: %s", args)
+            proc = subprocess.Popen(
+                args=args,
+                cwd=str(run_dir),
+                stderr=cerr,
+                stdout=cerr,
+            )
+            if _check_tcp_alive(socks_port, Env.SERVER_TIMEOUT):
+                return True
+            log.error("socks5 stub failed to start")
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"socks": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("socks5 stub proxy did not start")
+        try:
+            yield {
+                "port": socks_port,
+                "log_file": str(log_file),
+            }
+        finally:
+            if proc:
+                proc.terminate()
+
+
+@pytest.fixture(scope="function")
 def lc_observe_http(env: Env) -> Generator[Dict[str, object], None, None]:
     """
     启动最小 HTTP/1.1 观测服务端（/cookie、/status/<code>）。

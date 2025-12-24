@@ -110,6 +110,40 @@
 
 ## 2. 推荐最小回归集（建议作为 Gate）
 
+> 从 2025-12-24 起，上游用例“最小回归集合”的选择结果与可观测契约以
+> `tests/libcurl_consistency/minimal_set.yaml` 为准（机器可读清单）。
+>
+> 本 README 继续按 Gate 分层（P0/P1/P2/ext）说明“本仓库如何落地与验证”；
+> 当你需要追溯“为什么选择某个 upstream 用例/它覆盖什么可观测维度/前置条件是什么”，应优先查阅 manifest。
+
+### 2.1 上游用例映射（minimal_set.yaml → 本仓库 Gate/任务）
+
+> 说明：
+> - `curl/tests/http/test_*.py` 为 pytest 场景测试，通常依赖 `LocalClient(name='cli_*')`（libcurl API 客户端）。
+> - `curl/tests/data/testNNNN` 多为 **curl tool（命令行）** 的 data-driven 用例；本仓库仅借用其“语义定义/断言要点”，并不直接复用 `runtests.pl` 跑 curl CLI 输出。
+
+| minimal_set case_id | upstream 用例 | 关键可观测维度（摘要） | 覆盖状态 | 对应实现/任务 |
+|---|---|---|---|---|
+| http_download_serial_resume | `curl/tests/http/test_02_download.py::...::test_02_21_lib_serial` | 下载字节一致 + pause/resume 扰动 + 协议族(h1/h2/h3) | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（case：`download_serial_resume`） |
+| http_upload_put | `curl/tests/http/test_07_upload.py::...::test_07_15_hx_put` | PUT 上传：Content-Length + body 字节一致 | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（case：`upload_put`） |
+| http_upload_post_reuse | `curl/tests/http/test_07_upload.py::...::test_07_17_hx_post_reuse` | POST 上传：body 字节一致（连接复用仅在可观测差异时纳入） | 已覆盖 | `tests/libcurl_consistency/test_p0_consistency.py`（case：`upload_post_reuse`） |
+| curl_data_test1531_postfields_binary | `curl/tests/data/test1531` | POSTFIELDS 二进制（含 `\\0`）+ Content-Length | 已覆盖 | `tests/libcurl_consistency/test_p1_postfields_binary.py`（LC-9） |
+| curl_data_test1903_cookiefile_reset_set_again | `curl/tests/data/test1903` | cookiefile/cookiejar：reset→再 set→落盘一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_cookiejar_1903.py`（LC-10） |
+| curl_data_test310_https_verify_ok | `curl/tests/data/test310` | TLS 校验成功路径（CA/verify 映射） | 已覆盖 | `tests/libcurl_consistency/test_p2_tls_verify.py`（LC-25） |
+| curl_data_test312_https_verify_fail | `curl/tests/data/test312` | TLS 校验失败路径（证书错误归一化） | 已覆盖 | `tests/libcurl_consistency/test_p2_tls_verify.py`（LC-25） |
+| curl_data_test29_total_timeout | `curl/tests/data/test29` | 总超时语义（终态 + 错误归一化） | 已覆盖 | `tests/libcurl_consistency/test_p1_timeouts.py`（LC-28） |
+| curl_data_test19_connect_to_non_listen | `curl/tests/data/test19` | 连接失败语义（与超时/代理失败区分） | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py`（LC-32） |
+| curl_data_test1513_abort_by_progress_callback | `curl/tests/data/test1513` | 取消/中断语义（终态 + curlcode=42 归一化） | 已覆盖 | `tests/libcurl_consistency/test_p1_cancel.py`（LC-29） |
+| curl_data_test13_custom_method_delete | `curl/tests/data/test13` | DELETE 方法映射（CUSTOMREQUEST） | 已覆盖 | `tests/libcurl_consistency/test_p1_http_methods.py`（LC-33） |
+| curl_data_test1484_head_ignore_body | `curl/tests/data/test1484` | HEAD：忽略响应 body（必须为 0 字节） | 已覆盖 | `tests/libcurl_consistency/test_p1_http_methods.py`（LC-36） |
+| curl_data_test1011_redirect_post_301_to_get | `curl/tests/data/test1011` | 重定向：POST 301 跟随 → GET（序列敏感） | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py`（LC-37） |
+| curl_data_test1024_redirect_with_cookies_path_match | `curl/tests/data/test1024` | 重定向链 + Cookie Path 匹配发送 | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py`（LC-38） |
+| curl_data_test703_socks5_connect_fail | `curl/tests/data/test703` | SOCKS5：失败终态/错误归一化 | 已覆盖 | `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`（LC-39） |
+| curl_data_test357_expect_100_continue | `curl/tests/data/test357` | Expect: 100-continue（417→重试） | 已覆盖 | `tests/libcurl_consistency/test_p2_expect_100_continue.py`（LC-40） |
+| curl_data_test264_http_proxy_basic_from_proxy_url | `curl/tests/data/test264` | proxy URL 内嵌 user:pass 的解析/解码 | 不纳入（非 QCurl 公共 API 契约） | 已由 `tests/libcurl_consistency/test_p1_proxy.py` 覆盖 proxy 语义（不含该 CLI 解析分支） |
+| curl_data_test1630_https_proxy_basic | `curl/tests/data/test1630` | HTTPS-proxy + `--proxy-insecure` | 不纳入（QCurl 未暴露对应选项） | - |
+| curl_data_test2_basic_auth | `curl/tests/data/test2` | Basic auth（curl CLI `-u`/HTTPAUTH） | 不纳入（QCurl 未暴露对应选项） | - |
+
 ### P0（最小 Gate：强数据断言，优先级最高）
 
 这些用例直接断言“文件/回显内容”或“WS 收发成功”，最适合作为 QCurl↔libcurl 的数据一致性回归基线：
@@ -195,6 +229,10 @@
 - **URL API / `CURLU`**：例如 `curl/tests/data/test1567`
 - **共享 cookie / 手工注入 cookie list**：例如 `curl/tests/data/test506`、`curl/tests/data/test3103`
 - **`curl_easy_reset`/handle 复用清理语义**：例如 `curl/tests/data/test598`、`curl/tests/data/test676`
+- **curl tool CLI 解析语义（非 QCurl 公共 API 契约）**
+  - 例如 `curl/tests/data/test2`（`-u`/HTTPAUTH）、`curl/tests/data/test264`（proxy URL 内嵌 user:pass 的解析/解码）
+- **HTTPS-proxy 与 proxy TLS 选项（QCurl 未暴露）**
+  - 例如 `curl/tests/data/test1630`（`--proxy-insecure`/`CURLOPT_PROXY_SSL_*`）
 - **HTTP trailers / AWS_SIGV4 / keep-sending-on-error 等 QCurl 未暴露选项**
   - 例如 `curl/tests/data/test1598`（trailers）、`curl/tests/data/test1937`（AWS_SIGV4）、`curl/tests/data/test1533`（KEEP_SENDING_ON_ERROR）
 

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import write_json
+from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
@@ -72,9 +72,19 @@ def _order_login_chain(observed_list):
     order = {"/login": 0, "/home": 1}
     return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
 
+def _order_post_301_chain(observed_list):
+    # 预期顺序：/redir_post_301(POST) -> /final_post_301(GET)
+    order = {"/redir_post_301": 0, "/final_post_301": 1}
+    return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
+
+def _order_cookie_path_chain(observed_list):
+    # 预期顺序：/login_path -> /a/step -> /b/final
+    order = {"/login_path": 0, "/a/step": 1, "/b/final": 2}
+    return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
+
 
 @pytest.mark.parametrize("follow", [False, True])
-def test_p1_redirect_followlocation(follow: bool, env, lc_logs, lc_observe_http):
+def test_p1_redirect_followlocation(follow: bool, env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -190,7 +200,7 @@ def test_p1_redirect_followlocation(follow: bool, env, lc_logs, lc_observe_http)
                 env,
                 suite=suite,
                 case=case_variant,
-                logs=lc_logs,
+                logs={"observe_http_log": observe_log},
                 meta={
                     "case_id": "p1_redirect_followlocation",
                     "case_variant": case_variant,
@@ -204,7 +214,289 @@ def test_p1_redirect_followlocation(follow: bool, env, lc_logs, lc_observe_http)
         raise
 
 
-def test_p1_login_cookie_state_flow(env, lc_logs, lc_observe_http, tmp_path):
+def test_p1_redirect_post_301_to_get(env, lc_observe_http):
+    """
+    LC-37：重定向方法重写语义（POST 301 → GET，参考 curl/tests/data/test1011）。
+    - 断言服务端观测到的请求序列为 POST -> GET（顺序敏感）
+    - 最终响应体字节一致
+    """
+    qt_bin = os.environ.get("QCURL_QTTEST")
+    qt_path = Path(qt_bin).resolve() if qt_bin else None
+    if not qt_path or not qt_path.exists():
+        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+
+    collect_logs = should_collect_service_logs()
+    port = int(lc_observe_http["port"])
+    observe_log = Path(str(lc_observe_http["log_file"]))
+
+    suite = "p1_redirect"
+    proto = "http/1.1"
+    case_id = "p1_redirect_post_301_to_get"
+    case_variant = "lc_redirect_post_301_to_get_http_1.1"
+
+    upload_size = 16
+    body = b"x" * upload_size
+
+    trace_base = f"lc_{uuid.uuid4().hex[:8]}_post301"
+    baseline_req_id = f"{trace_base}__baseline"
+    qcurl_req_id = f"{trace_base}__qcurl"
+
+    url = f"http://localhost:{port}/redir_post_301"
+    baseline_url = _append_req_id(url, baseline_req_id)
+
+    req_meta = {"method": "POST", "url": baseline_url, "headers": {}, "body": body}
+    resp_meta = {"status": 200, "http_version": proto, "headers": {}, "body": None}
+
+    try:
+        observe_log.write_text("", encoding="utf-8")
+        baseline = run_libtest_case(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            client_name="cli_lc_http",
+            args=[
+                "-V",
+                proto,
+                "--follow",
+                "--max-redirs",
+                "10",
+                "--method",
+                "POST",
+                "--data-size",
+                str(upload_size),
+                baseline_url,
+            ],
+            request_meta=req_meta,
+            response_meta=resp_meta,
+            download_count=1,
+        )
+
+        obs_list = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=2)
+        obs_list = _order_post_301_chain(obs_list)
+        assert [o.method for o in obs_list] == ["POST", "GET"]
+        assert [int(o.status) for o in obs_list] == [301, 200]
+
+        baseline["payload"]["requests"] = [
+            build_request_semantic(obs.method, obs.url, obs.headers, body if obs.method == "POST" else b"")
+            for obs in obs_list
+        ]
+        baseline["payload"]["responses"] = _responses_from_observed(
+            observed_list=obs_list,
+            final_response=baseline["payload"]["response"],
+            proto=proto,
+        )
+        baseline["payload"]["request"]["method"] = obs_list[0].method
+        baseline["payload"]["request"]["url"] = obs_list[0].url
+        baseline["payload"]["request"]["headers"] = obs_list[0].headers
+        baseline["payload"]["response"]["status"] = obs_list[-1].status
+        baseline["payload"]["response"]["http_version"] = proto
+        baseline["payload"]["response"]["headers"] = obs_list[-1].response_headers
+        write_json(baseline["path"], baseline["payload"])
+
+        observe_log.write_text("", encoding="utf-8")
+        qcurl_url = _append_req_id(url, qcurl_req_id)
+        qcurl = run_qt_test(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            qt_executable=qt_path,
+            args=[],
+            request_meta={"method": "POST", "url": qcurl_url, "headers": {}, "body": body},
+            response_meta=resp_meta,
+            download_count=1,
+            case_env={
+                "QCURL_LC_CASE_ID": case_id,
+                "QCURL_LC_PROTO": proto,
+                "QCURL_LC_REQ_ID": qcurl_req_id,
+                "QCURL_LC_UPLOAD_SIZE": str(upload_size),
+                "QCURL_LC_OBSERVE_HTTP_PORT": str(port),
+            },
+        )
+
+        obs_list = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=2)
+        obs_list = _order_post_301_chain(obs_list)
+        qcurl["payload"]["requests"] = [
+            build_request_semantic(obs.method, obs.url, obs.headers, body if obs.method == "POST" else b"")
+            for obs in obs_list
+        ]
+        qcurl["payload"]["responses"] = _responses_from_observed(
+            observed_list=obs_list,
+            final_response=qcurl["payload"]["response"],
+            proto=proto,
+        )
+        qcurl["payload"]["request"]["method"] = obs_list[0].method
+        qcurl["payload"]["request"]["url"] = obs_list[0].url
+        qcurl["payload"]["request"]["headers"] = obs_list[0].headers
+        qcurl["payload"]["response"]["status"] = obs_list[-1].status
+        qcurl["payload"]["response"]["http_version"] = proto
+        qcurl["payload"]["response"]["headers"] = obs_list[-1].response_headers
+        write_json(qcurl["path"], qcurl["payload"])
+
+        assert_artifacts_match(baseline["path"], qcurl["path"])
+    except Exception:
+        if collect_logs:
+            collect_service_logs_for_case(
+                env,
+                suite=suite,
+                case=case_variant,
+                logs={"observe_http_log": observe_log},
+                meta={
+                    "case_id": case_id,
+                    "case_variant": case_variant,
+                    "proto": proto,
+                    "baseline_req_id": baseline_req_id,
+                    "qcurl_req_id": qcurl_req_id,
+                    "observe_port": port,
+                    "upload_size": upload_size,
+                },
+            )
+        raise
+
+
+def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
+    """
+    LC-38：重定向链 + Cookie Path 匹配发送（参考 curl/tests/data/test1024）。
+    - /login_path：Set-Cookie(Path=/a) 并跳转到 /a/step
+    - /a/step：必须发送 Cookie（Path 匹配），再跳转到 /b/final
+    - /b/final：必须不发送 Cookie（Path 不匹配），最终 200
+    """
+    qt_bin = os.environ.get("QCURL_QTTEST")
+    qt_path = Path(qt_bin).resolve() if qt_bin else None
+    if not qt_path or not qt_path.exists():
+        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+
+    collect_logs = should_collect_service_logs()
+    port = int(lc_observe_http["port"])
+    observe_log = Path(str(lc_observe_http["log_file"]))
+
+    suite = "p1_cookie_path"
+    proto = "http/1.1"
+    case_id = "p1_cookie_path_match_redirect"
+    case_variant = "lc_cookie_path_match_redirect_http_1.1"
+
+    trace_base = f"lc_{uuid.uuid4().hex[:8]}_cookie_path"
+    baseline_req_id = f"{trace_base}__baseline"
+    qcurl_req_id = f"{trace_base}__qcurl"
+
+    url = f"http://localhost:{port}/login_path"
+    baseline_url = _append_req_id(url, baseline_req_id)
+
+    baseline_cookie = tmp_path / "baseline.cookies"
+    qcurl_cookie = tmp_path / "qcurl.cookies"
+    baseline_cookie.write_text("", encoding="utf-8")
+    qcurl_cookie.write_text("", encoding="utf-8")
+
+    req_meta = {"method": "GET", "url": baseline_url, "headers": {}, "body": b""}
+    resp_meta = {"status": 200, "http_version": proto, "headers": {}, "body": None}
+
+    try:
+        observe_log.write_text("", encoding="utf-8")
+        baseline = run_libtest_case(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            client_name="cli_lc_http",
+            args=[
+                "-V",
+                proto,
+                "--follow",
+                "--max-redirs",
+                "10",
+                "--cookiefile",
+                str(baseline_cookie),
+                "--cookiejar",
+                str(baseline_cookie),
+                baseline_url,
+            ],
+            request_meta=req_meta,
+            response_meta=resp_meta,
+            download_count=1,
+        )
+
+        obs_list = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=3)
+        obs_list = _order_cookie_path_chain(obs_list)
+        assert [o.method for o in obs_list] == ["GET", "GET", "GET"]
+        assert [int(o.status) for o in obs_list] == [302, 302, 200]
+        assert "sid=lc123" in str(obs_list[1].headers.get("cookie") or "")
+        assert "sid=lc123" not in str(obs_list[2].headers.get("cookie") or "")
+
+        baseline["payload"]["requests"] = [
+            build_request_semantic(obs.method, obs.url, obs.headers, b"")
+            for obs in obs_list
+        ]
+        baseline["payload"]["responses"] = _responses_from_observed(
+            observed_list=obs_list,
+            final_response=baseline["payload"]["response"],
+            proto=proto,
+        )
+        baseline["payload"]["request"]["method"] = obs_list[0].method
+        baseline["payload"]["request"]["url"] = obs_list[0].url
+        baseline["payload"]["request"]["headers"] = obs_list[0].headers
+        baseline["payload"]["response"]["status"] = obs_list[-1].status
+        baseline["payload"]["response"]["http_version"] = proto
+        baseline["payload"]["response"]["headers"] = obs_list[-1].response_headers
+        write_json(baseline["path"], baseline["payload"])
+
+        observe_log.write_text("", encoding="utf-8")
+        qcurl_url = _append_req_id(url, qcurl_req_id)
+        qcurl = run_qt_test(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            qt_executable=qt_path,
+            args=[],
+            request_meta={"method": "GET", "url": qcurl_url, "headers": {}, "body": b""},
+            response_meta=resp_meta,
+            download_count=1,
+            case_env={
+                "QCURL_LC_CASE_ID": case_id,
+                "QCURL_LC_PROTO": proto,
+                "QCURL_LC_REQ_ID": qcurl_req_id,
+                "QCURL_LC_COOKIE_PATH": str(qcurl_cookie),
+                "QCURL_LC_OBSERVE_HTTP_PORT": str(port),
+            },
+        )
+
+        obs_list = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=3)
+        obs_list = _order_cookie_path_chain(obs_list)
+        qcurl["payload"]["requests"] = [
+            build_request_semantic(obs.method, obs.url, obs.headers, b"")
+            for obs in obs_list
+        ]
+        qcurl["payload"]["responses"] = _responses_from_observed(
+            observed_list=obs_list,
+            final_response=qcurl["payload"]["response"],
+            proto=proto,
+        )
+        qcurl["payload"]["request"]["method"] = obs_list[0].method
+        qcurl["payload"]["request"]["url"] = obs_list[0].url
+        qcurl["payload"]["request"]["headers"] = obs_list[0].headers
+        qcurl["payload"]["response"]["status"] = obs_list[-1].status
+        qcurl["payload"]["response"]["http_version"] = proto
+        qcurl["payload"]["response"]["headers"] = obs_list[-1].response_headers
+        write_json(qcurl["path"], qcurl["payload"])
+
+        assert_artifacts_match(baseline["path"], qcurl["path"])
+    except Exception:
+        if collect_logs:
+            collect_service_logs_for_case(
+                env,
+                suite=suite,
+                case=case_variant,
+                logs={"observe_http_log": observe_log},
+                meta={
+                    "case_id": case_id,
+                    "case_variant": case_variant,
+                    "proto": proto,
+                    "baseline_req_id": baseline_req_id,
+                    "qcurl_req_id": qcurl_req_id,
+                    "observe_port": port,
+                },
+            )
+        raise
+
+
+def test_p1_login_cookie_state_flow(env, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -328,7 +620,7 @@ def test_p1_login_cookie_state_flow(env, lc_logs, lc_observe_http, tmp_path):
                 env,
                 suite=suite,
                 case=case_variant,
-                logs=lc_logs,
+                logs={"observe_http_log": observe_log},
                 meta={
                     "case_id": "p1_login_cookie_flow",
                     "case_variant": case_variant,
