@@ -169,6 +169,35 @@ QString QCMultipartFormData::boundary() const
     return m_boundary;
 }
 
+bool QCMultipartFormData::setBoundary(const QString &boundary)
+{
+    if (boundary.isEmpty()) {
+        qWarning() << "QCMultipartFormData: boundary cannot be empty";
+        return false;
+    }
+    if (boundary.size() > 70) {
+        qWarning() << "QCMultipartFormData: boundary too long:" << boundary.size();
+        return false;
+    }
+    if (boundary.contains('\r') || boundary.contains('\n')) {
+        qWarning() << "QCMultipartFormData: boundary contains CR/LF";
+        return false;
+    }
+    if (boundary.contains(' ') || boundary.contains('\t')) {
+        qWarning() << "QCMultipartFormData: boundary contains whitespace";
+        return false;
+    }
+
+    if (boundary == m_boundary) {
+        return true;
+    }
+
+    m_boundary = boundary;
+    m_cachedData.clear();
+    m_dirty = true;
+    return true;
+}
+
 qint64 QCMultipartFormData::size() const
 {
     qint64 totalSize = 0;

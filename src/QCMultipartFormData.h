@@ -161,6 +161,19 @@ public:
     QString boundary() const;
 
     /**
+     * @brief 设置 boundary 字符串（用于可复现/可控的 multipart 编码）
+     *
+     * @param boundary boundary 字符串（不包含前导 "--"）
+     * @return 设置成功返回 true；参数非法返回 false（保持原 boundary 不变）
+     *
+     * @note 约束（最小必要校验）：
+     * - 不允许为空
+     * - 不允许包含 CR/LF 或空白字符（否则会破坏 Content-Type 头格式）
+     * - 长度不超过 70（RFC 2046 建议上限）
+     */
+    bool setBoundary(const QString &boundary);
+
+    /**
      * @brief 计算编码后的总大小（字节）
      *
      * @return 请求体的总大小
