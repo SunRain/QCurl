@@ -91,6 +91,15 @@ public:
     QCNetworkReply* sendDelete(const QCNetworkRequest &request);
 
     /**
+     * @brief 发送 DELETE 请求（异步，可携带请求体）
+     * @param request 请求配置
+     * @param data 请求体数据
+     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
+     * @note 请求会自动启动（已调用 execute()）
+     */
+    QCNetworkReply* sendDelete(const QCNetworkRequest &request, const QByteArray &data);
+
+    /**
      * @brief 发送 PATCH 请求（异步）
      * @param request 请求配置
      * @param data 请求体数据

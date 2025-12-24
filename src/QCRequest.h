@@ -243,7 +243,7 @@ private:
 private:
     QCNetworkRequest m_request;   ///< 内部的 QCNetworkRequest 对象
     QString m_method;             ///< HTTP 方法("GET", "POST", ...)
-    QByteArray m_postData;        ///< POST/PUT/PATCH 的请求体数据
+    QByteArray m_postData;        ///< POST/PUT/PATCH/DELETE 的请求体数据
 };
 
 } // namespace QCurl
