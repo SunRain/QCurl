@@ -67,6 +67,9 @@ compile_commands.json
 .vscode/
 qwlroots.code-workspace
 
+# Kate / KWrite swap files
+*.kate-swp
+
 # =============================================================================
 # 操作系统文件 (Operating System Files)
 # =============================================================================
