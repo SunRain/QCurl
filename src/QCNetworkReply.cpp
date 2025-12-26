@@ -149,8 +149,13 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 3. 自定义 HTTP Headers
     // ========================================================================
 
+    bool hasExplicitAuthorizationHeader = false;
     QList<QByteArray> headerNames = request.rawHeaderList();
     for (const QByteArray &headerName : headerNames) {
+        if (!hasExplicitAuthorizationHeader
+            && headerName.trimmed().toLower() == QByteArray("authorization")) {
+            hasExplicitAuthorizationHeader = true;
+        }
         QByteArray headerValue = request.rawHeader(headerName);
         // 格式化为 "Name: Value" 格式
         QString headerLine = QString::fromUtf8(headerName) + ": " + QString::fromUtf8(headerValue);
@@ -163,7 +168,51 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
-    // 4. Range 请求配置
+    // 4. HTTP 认证（Authorization: Basic / HTTPAUTH）
+    // ========================================================================
+
+    if (const auto httpAuthOpt = request.httpAuth(); httpAuthOpt.has_value()) {
+        const auto &cfg = httpAuthOpt.value();
+
+        // Basic over HTTP 风险提示（不阻断）
+        if (cfg.method == QCNetworkHttpAuthMethod::Basic
+            && cfg.warnIfBasicOverHttp
+            && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
+            qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider HTTPS. url="
+                       << request.url().toString();
+        }
+
+        // 重定向跨 host/port 发送凭据/认证头：默认关闭（防泄露）
+        if (cfg.allowUnrestrictedAuth && request.followLocation()) {
+            curl_easy_setopt(handle, CURLOPT_UNRESTRICTED_AUTH, 1L);
+        }
+
+        // 显式 Authorization header 优先：存在时不启用 libcurl 自动认证（避免重复/覆盖不确定性）
+        if (!hasExplicitAuthorizationHeader) {
+            httpAuthUserBytes = cfg.userName.toUtf8();
+            httpAuthPasswordBytes = cfg.password.toUtf8();
+
+            curl_easy_setopt(handle, CURLOPT_USERNAME, httpAuthUserBytes.constData());
+            curl_easy_setopt(handle, CURLOPT_PASSWORD, httpAuthPasswordBytes.constData());
+
+            unsigned long httpAuth = CURLAUTH_BASIC;
+            switch (cfg.method) {
+            case QCNetworkHttpAuthMethod::Basic:
+                httpAuth = CURLAUTH_BASIC;
+                break;
+            case QCNetworkHttpAuthMethod::Any:
+                httpAuth = CURLAUTH_ANY;
+                break;
+            case QCNetworkHttpAuthMethod::AnySafe:
+                httpAuth = CURLAUTH_ANYSAFE;
+                break;
+            }
+            curl_easy_setopt(handle, CURLOPT_HTTPAUTH, httpAuth);
+        }
+    }
+
+    // ========================================================================
+    // 5. Range 请求配置
     // ========================================================================
 
     if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
@@ -175,7 +224,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
-    // 5. 代理配置
+    // 6. 代理配置
     // ========================================================================
 
     if (const auto proxyConfigOpt = request.proxyConfig(); proxyConfigOpt.has_value()) {
@@ -273,7 +322,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
-    // 6. SSL 配置（基于 QCNetworkSslConfig）
+    // 7. SSL 配置（基于 QCNetworkSslConfig）
     // ========================================================================
 
     const QCNetworkSslConfig sslConfig = request.sslConfig();
@@ -336,7 +385,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
-    // 7. 超时配置
+    // 8. 超时配置
     // ========================================================================
 
     QCNetworkTimeoutConfig timeout = request.timeoutConfig();
@@ -365,7 +414,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     // ========================================================================
-    // 8. 回调函数配置
+    // 9. 回调函数配置
     // ========================================================================
 
     // 响应体写回调

@@ -22,6 +22,31 @@ enum class QCNetworkRequestPriority;
 enum class QCNetworkCachePolicy;
 
 /**
+ * @brief HTTP 认证方式（对外抽象，不暴露 libcurl 宏）
+ */
+enum class QCNetworkHttpAuthMethod {
+    Basic,      ///< Basic（可预发送；仅建议在 HTTPS 下使用）
+    Any,        ///< 允许任意方法（可能触发挑战/协商，存在额外往返）
+    AnySafe     ///< 允许任意“非 Basic”方法（可能触发挑战/协商，存在额外往返）
+};
+
+/**
+ * @brief HTTP 认证配置（请求级）
+ *
+ * 说明：
+ * - 认证凭据由 libcurl 负责生成 `Authorization` 头（除非用户显式设置了 `Authorization` header）
+ * - Basic 仅建议在 HTTPS 下使用；如在 HTTP 下使用，可选择仅告警不阻断
+ * - `allowUnrestrictedAuth` 仅在 followLocation=true 时有意义（跨 host/port 重定向携带凭据）
+ */
+struct QCNetworkHttpAuthConfig {
+    QString userName;                                ///< 用户名
+    QString password;                                ///< 密码
+    QCNetworkHttpAuthMethod method = QCNetworkHttpAuthMethod::Basic;
+    bool allowUnrestrictedAuth = false;              ///< 映射到 CURLOPT_UNRESTRICTED_AUTH
+    bool warnIfBasicOverHttp = true;                 ///< Basic + http:// 时输出 Warning（不阻断）
+};
+
+/**
  * @brief HTTP 请求配置类
  *
  * QCNetworkRequest 封装了 HTTP 请求的所有配置选项，包括：
@@ -134,6 +159,24 @@ public:
      * @return 重试策略对象
      */
     [[nodiscard]] QCNetworkRetryPolicy retryPolicy() const;
+
+    // ========== HTTP 认证 ==========
+
+    /**
+     * @brief 设置请求级 HTTP 认证（用户名/密码 + 认证策略）
+     * @note 若请求中存在显式 `Authorization` header（大小写不敏感），则以该 header 为准，自动认证会被忽略
+     */
+    QCNetworkRequest& setHttpAuth(const QCNetworkHttpAuthConfig &config);
+
+    /**
+     * @brief 获取请求级 HTTP 认证配置
+     */
+    [[nodiscard]] std::optional<QCNetworkHttpAuthConfig> httpAuth() const;
+
+    /**
+     * @brief 清除请求级 HTTP 认证配置
+     */
+    QCNetworkRequest& clearHttpAuth();
 
     // ========== 便捷方法 ==========
 

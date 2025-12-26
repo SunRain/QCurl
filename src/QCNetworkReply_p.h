@@ -138,6 +138,9 @@ public:
     QByteArray proxyUserBytes;       ///< 代理用户名缓存
     QByteArray proxyPasswordBytes;   ///< 代理密码缓存
 
+    QByteArray httpAuthUserBytes;    ///< HTTP 认证用户名缓存
+    QByteArray httpAuthPasswordBytes;///< HTTP 认证密码缓存
+
     QByteArray sslCaCertPathBytes;        ///< CA 证书路径缓存
     QByteArray sslClientCertPathBytes;    ///< 客户端证书路径缓存
     QByteArray sslClientKeyPathBytes;     ///< 客户端私钥路径缓存

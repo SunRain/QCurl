@@ -15,6 +15,7 @@ public:
     QCNetworkAccessManager *manager = nullptr;
     QUrl url;
     QList<QPair<QString, QString>> headers;
+    std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
     QList<QPair<QString, QString>> queryParams;
     QByteArray body;
     int timeout = -1;
@@ -40,6 +41,22 @@ QCNetworkRequestBuilder::~QCNetworkRequestBuilder() = default;
 QCNetworkRequestBuilder &QCNetworkRequestBuilder::withHeader(const QString &name, const QString &value)
 {
     d_ptr->headers.append(qMakePair(name, value));
+    return *this;
+}
+
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withBasicAuth(const QString &userName, const QString &password)
+{
+    QCNetworkHttpAuthConfig cfg;
+    cfg.userName = userName;
+    cfg.password = password;
+    cfg.method = QCNetworkHttpAuthMethod::Basic;
+    d_ptr->httpAuthConfig = cfg;
+    return *this;
+}
+
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withHttpAuth(const QCNetworkHttpAuthConfig &config)
+{
+    d_ptr->httpAuthConfig = config;
     return *this;
 }
 
@@ -114,6 +131,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendGet()
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
     }
+    if (d_ptr->httpAuthConfig.has_value()) {
+        request.setHttpAuth(d_ptr->httpAuthConfig.value());
+    }
     
     // Apply settings
     if (d_ptr->timeout > 0) {
@@ -145,6 +165,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
+    }
+    if (d_ptr->httpAuthConfig.has_value()) {
+        request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
     
     // Apply settings
@@ -179,6 +202,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendHead()
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
     }
+    if (d_ptr->httpAuthConfig.has_value()) {
+        request.setHttpAuth(d_ptr->httpAuthConfig.value());
+    }
     
     // Apply settings
     if (d_ptr->timeout > 0) {
@@ -208,6 +234,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
     }
+    if (d_ptr->httpAuthConfig.has_value()) {
+        request.setHttpAuth(d_ptr->httpAuthConfig.value());
+    }
     
     // Apply settings
     if (d_ptr->timeout > 0) {
@@ -236,6 +265,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
+    }
+    if (d_ptr->httpAuthConfig.has_value()) {
+        request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
     
     // Apply settings

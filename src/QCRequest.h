@@ -113,6 +113,18 @@ public:
     QCRequest& withHeader(const QString &key, const QString &value);
 
     /**
+     * @brief 设置 HTTP Basic 认证（请求级，libcurl 生成 Authorization 头）
+     * @note Basic 仅建议在 HTTPS 下使用
+     */
+    QCRequest& withBasicAuth(const QString &userName, const QString &password);
+
+    /**
+     * @brief 设置请求级 HTTP 认证（用户名/密码 + 认证策略）
+     * @note 若同时显式设置了 `Authorization` header，则以 header 为准
+     */
+    QCRequest& withHttpAuth(const QCNetworkHttpAuthConfig &config);
+
+    /**
      * @brief 添加 URL 查询参数
      * @param key 参数名
      * @param value 参数值

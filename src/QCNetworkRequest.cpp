@@ -35,6 +35,7 @@ public:
           httpVersion(QCNetworkHttpVersion::Http1_1),
           httpVersionExplicit(false),
           retryPolicy(QCNetworkRetryPolicy::noRetry()),
+          httpAuthConfig(std::nullopt),
           requestPriority(QCNetworkRequestPriority::Normal),
           cachePolicy(QCNetworkCachePolicy::PreferCache)
     {
@@ -58,6 +59,9 @@ public:
 
     // ========== 重试策略字段 ==========
     QCNetworkRetryPolicy retryPolicy;
+
+    // ========== HTTP 认证（请求级） ==========
+    std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
 
     // ========== 请求优先级字段 ==========
     QCNetworkRequestPriority requestPriority;
@@ -230,6 +234,25 @@ QCNetworkRequest& QCNetworkRequest::setRetryPolicy(const QCNetworkRetryPolicy &p
 QCNetworkRetryPolicy QCNetworkRequest::retryPolicy() const
 {
     return d.data()->retryPolicy;
+}
+
+// ========== HTTP 认证 ==========
+
+QCNetworkRequest& QCNetworkRequest::setHttpAuth(const QCNetworkHttpAuthConfig &config)
+{
+    d.data()->httpAuthConfig = config;
+    return *this;
+}
+
+std::optional<QCNetworkHttpAuthConfig> QCNetworkRequest::httpAuth() const
+{
+    return d.data()->httpAuthConfig;
+}
+
+QCNetworkRequest& QCNetworkRequest::clearHttpAuth()
+{
+    d.data()->httpAuthConfig.reset();
+    return *this;
 }
 
 // ========== 便捷方法 ==========

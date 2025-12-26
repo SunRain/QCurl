@@ -16,6 +16,7 @@ namespace QCurl {
 class QCNetworkAccessManager;
 class QCNetworkRequest;
 class QCNetworkReply;
+struct QCNetworkHttpAuthConfig;
 
 /**
  * @brief 流式请求构建器
@@ -59,6 +60,18 @@ public:
      * @param value Header 值
      */
     QCNetworkRequestBuilder &withHeader(const QString &name, const QString &value);
+
+    /**
+     * @brief 设置 HTTP Basic 认证（请求级，libcurl 生成 Authorization 头）
+     * @note Basic 仅建议在 HTTPS 下使用
+     */
+    QCNetworkRequestBuilder &withBasicAuth(const QString &userName, const QString &password);
+
+    /**
+     * @brief 设置请求级 HTTP 认证（用户名/密码 + 认证策略）
+     * @note 若同时显式设置了 `Authorization` header，则以 header 为准
+     */
+    QCNetworkRequestBuilder &withHttpAuth(const QCNetworkHttpAuthConfig &config);
     
     /**
      * @brief 设置 Content-Type

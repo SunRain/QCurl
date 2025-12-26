@@ -88,6 +88,22 @@ QCRequest& QCRequest::withHeader(const QString &key, const QString &value)
     return *this;
 }
 
+QCRequest& QCRequest::withBasicAuth(const QString &userName, const QString &password)
+{
+    QCNetworkHttpAuthConfig cfg;
+    cfg.userName = userName;
+    cfg.password = password;
+    cfg.method = QCNetworkHttpAuthMethod::Basic;
+    m_request.setHttpAuth(cfg);
+    return *this;
+}
+
+QCRequest& QCRequest::withHttpAuth(const QCNetworkHttpAuthConfig &config)
+{
+    m_request.setHttpAuth(config);
+    return *this;
+}
+
 QCRequest& QCRequest::withQueryParam(const QString &key, const QString &value)
 {
     QUrl url = m_request.url();
