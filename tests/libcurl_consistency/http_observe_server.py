@@ -348,6 +348,83 @@ class Handler(BaseHTTPRequestHandler):
         self._write_log(404, {})
 
     def do_GET(self) -> None:
+        if self.path.startswith("/auth/basic"):
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("basic "):
+                body = b"basic-ok\n"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            # 触发 libcurl 的 401 挑战路径（Content-Length=0，避免污染最终下载文件）
+            self.send_response(401)
+            v = "Basic realm=\"qcurl_lc\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
+        if self.path.startswith("/auth/digest"):
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("digest "):
+                body = b"digest-ok\n"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            # KISS：仅提供最小 Digest challenge，不校验响应（只校验 scheme）
+            self.send_response(401)
+            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
+        if self.path.startswith("/redir_abs"):
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            try:
+                to_port = int(q.get("to_port", ["0"])[0])
+            except Exception:
+                to_port = 0
+            if to_port <= 0:
+                body = b"missing to_port\n"
+                self.send_response(400)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                self._write_log(400, {})
+                return
+
+            loc = f"http://localhost:{to_port}/abs_target"
+            if req_id:
+                loc = f"{loc}?id={req_id}"
+            self.send_response(302)
+            self.send_header("Location", loc)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(302, {"Location": loc})
+            return
+
+        if self.path.startswith("/abs_target"):
+            body = b"abs-target-ok\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            self._write_log(200, {})
+            return
+
         if self.path.startswith("/final_post_301"):
             body = b"post-301-ok\n"
             self.send_response(200)

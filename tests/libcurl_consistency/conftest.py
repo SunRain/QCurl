@@ -517,6 +517,96 @@ def lc_observe_http(env: Env) -> Generator[Dict[str, object], None, None]:
 
 
 @pytest.fixture(scope="function")
+def lc_observe_http_pair(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动两套最小 HTTP/1.1 观测服务端（不同端口/不同 JSONL），用于“跨 host/port”可观测一致性场景。
+    - 每个测试函数单独启动，避免跨 case 的日志混淆
+    """
+    run_dir = Path(env.gen_dir) / f"lc_observe_http_pair_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_observe_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    a_dir = run_dir / "a"
+    b_dir = run_dir / "b"
+    a_dir.mkdir(parents=True, exist_ok=True)
+    b_dir.mkdir(parents=True, exist_ok=True)
+    log_a = a_dir / "observe_http_a.jsonl"
+    log_b = b_dir / "observe_http_b.jsonl"
+
+    proc_a = None
+    proc_b = None
+    port_a = 0
+    port_b = 0
+
+    with open(a_dir / "stderr", "w") as cerr_a, open(b_dir / "stderr", "w") as cerr_b:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc_a, proc_b, port_a, port_b
+            port_a = int(ports["a"])
+            port_b = int(ports["b"])
+
+            log_a.write_text("", encoding="utf-8")
+            log_b.write_text("", encoding="utf-8")
+
+            args_a = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(port_a),
+                "--log-file",
+                str(log_a),
+            ]
+            args_b = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(port_b),
+                "--log-file",
+                str(log_b),
+            ]
+            log.info("start observe http a: %s", args_a)
+            log.info("start observe http b: %s", args_b)
+
+            proc_a = subprocess.Popen(
+                args=args_a,
+                cwd=str(a_dir),
+                stderr=cerr_a,
+                stdout=cerr_a,
+            )
+            proc_b = subprocess.Popen(
+                args=args_b,
+                cwd=str(b_dir),
+                stderr=cerr_b,
+                stdout=cerr_b,
+            )
+
+            if _check_tcp_alive(port_a, Env.SERVER_TIMEOUT) and _check_tcp_alive(port_b, Env.SERVER_TIMEOUT):
+                return True
+
+            log.error("observe http pair failed to start")
+            if proc_a:
+                proc_a.terminate()
+                proc_a = None
+            if proc_b:
+                proc_b.terminate()
+                proc_b = None
+            return False
+
+        ok = alloc_ports_and_do({"a": socket.SOCK_STREAM, "b": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc_a is None or proc_b is None:
+            pytest.skip("observe http pair server did not start")
+        try:
+            yield {
+                "a": {"port": port_a, "log_file": str(log_a)},
+                "b": {"port": port_b, "log_file": str(log_b)},
+            }
+        finally:
+            if proc_a:
+                proc_a.terminate()
+            if proc_b:
+                proc_b.terminate()
+
+
+@pytest.fixture(scope="function")
 def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
     """
     启动最小 HTTPS 观测服务端（自签 CA + localhost 证书），用于 TLS 校验一致性。

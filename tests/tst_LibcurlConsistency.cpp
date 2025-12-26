@@ -307,6 +307,8 @@ void TestLibcurlConsistency::testCase()
     const int observeHttpsPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
     const QString caCertPath = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
     const QString targetUrl = qEnvironmentVariable("QCURL_LC_TARGET_URL");
+    const QString authUser = qEnvironmentVariable("QCURL_LC_AUTH_USER");
+    const QString authPass = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
 
     const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
     if (!outDir.isEmpty()) {
@@ -421,6 +423,46 @@ void TestLibcurlConsistency::testCase()
             requestId));
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(follow);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_httpauth_any_basic") ||
+        caseId == QStringLiteral("p1_httpauth_anysafe_digest") ||
+        caseId == QStringLiteral("p1_unrestricted_auth_redirect_off") ||
+        caseId == QStringLiteral("p1_unrestricted_auth_redirect_on")) {
+        QVERIFY(!targetUrl.isEmpty());
+        QVERIFY(!authUser.isEmpty());
+        QVERIFY(!authPass.isEmpty());
+
+        const bool follow = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_off") ||
+                             caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
+        const bool unrestricted = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
+
+        QCNetworkRequest req(withRequestId(QUrl(targetUrl), requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(follow);
+
+        QCNetworkHttpAuthConfig auth;
+        auth.userName = authUser;
+        auth.password = authPass;
+        auth.allowUnrestrictedAuth = unrestricted;
+        if (caseId == QStringLiteral("p1_httpauth_any_basic")) {
+            auth.method = QCNetworkHttpAuthMethod::Any;
+        } else if (caseId == QStringLiteral("p1_httpauth_anysafe_digest")) {
+            auth.method = QCNetworkHttpAuthMethod::AnySafe;
+        } else {
+            auth.method = QCNetworkHttpAuthMethod::Basic;
+        }
+        req.setHttpAuth(auth);
 
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);

@@ -332,7 +332,9 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     const QByteArray body = QByteArrayLiteral("delete-body=test&x=1");
 
     QTcpServer server;
-    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("Cannot bind local port for test HTTP server");
+    }
     const quint16 port = server.serverPort();
 
     QByteArray recvBuf;
@@ -604,7 +606,9 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     const QByteArray payload(kPayloadSize, 'x');
 
     QTcpServer server;
-    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("Cannot bind local port for test HTTP server");
+    }
 
     const quint16 port = server.serverPort();
 

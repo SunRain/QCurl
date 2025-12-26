@@ -10,6 +10,9 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QHostAddress>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -19,6 +22,154 @@
 using namespace QCurl;
 
 static const QString HTTPBIN_BASE_URL = QStringLiteral("http://localhost:8935");
+
+namespace {
+
+class ThrottledRangeServer final : public QObject
+{
+public:
+    explicit ThrottledRangeServer(qint64 totalBytes, QObject *parent = nullptr)
+        : QObject(parent)
+        , m_totalBytes(totalBytes)
+        , m_payload(static_cast<int>(totalBytes), Qt::Uninitialized)
+    {
+        for (int i = 0; i < m_payload.size(); ++i) {
+            m_payload[i] = static_cast<char>(i % 256);
+        }
+
+        QObject::connect(&m_server, &QTcpServer::newConnection, this, [this]() {
+            while (m_server.hasPendingConnections()) {
+                QTcpSocket *socket = m_server.nextPendingConnection();
+                if (!socket) {
+                    continue;
+                }
+                setupSocket(socket);
+            }
+        });
+    }
+
+    bool start()
+    {
+        return m_server.listen(QHostAddress::LocalHost, 0);
+    }
+
+    QUrl url(const QString &path) const
+    {
+        return QUrl(QStringLiteral("http://127.0.0.1:%1%2")
+                        .arg(m_server.serverPort())
+                        .arg(path));
+    }
+
+    QByteArray expectedPayload() const
+    {
+        return m_payload;
+    }
+
+private:
+    static qint64 parseRangeStart(const QByteArray &headerValue)
+    {
+        QByteArray value = headerValue.trimmed();
+        if (!value.startsWith("bytes=")) {
+            return 0;
+        }
+
+        const int dashPos = value.indexOf('-');
+        if (dashPos <= 6) {
+            return 0;
+        }
+
+        bool ok = false;
+        const qint64 start = value.mid(6, dashPos - 6).toLongLong(&ok);
+        return ok ? qMax<qint64>(0, start) : 0;
+    }
+
+    void setupSocket(QTcpSocket *socket)
+    {
+        auto requestBuffer = QSharedPointer<QByteArray>::create();
+        auto requestHandled = QSharedPointer<bool>::create(false);
+
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket, requestBuffer, requestHandled]() {
+            if (*requestHandled) {
+                return;
+            }
+
+            requestBuffer->append(socket->readAll());
+            const int headerEnd = requestBuffer->indexOf("\r\n\r\n");
+            if (headerEnd < 0) {
+                return;
+            }
+
+            *requestHandled = true;
+
+            const QByteArray headerBlock = requestBuffer->left(headerEnd);
+            const QList<QByteArray> lines = headerBlock.split('\n');
+
+            qint64 rangeStart = 0;
+            for (QByteArray line : lines) {
+                line = line.trimmed();
+                if (line.toLower().startsWith("range:")) {
+                    const int colonPos = line.indexOf(':');
+                    if (colonPos >= 0) {
+                        rangeStart = parseRangeStart(line.mid(colonPos + 1));
+                    }
+                }
+            }
+
+            if (rangeStart >= m_totalBytes) {
+                const QByteArray resp = QByteArray("HTTP/1.1 416 Range Not Satisfiable\r\n"
+                                                   "Connection: close\r\n\r\n");
+                socket->write(resp);
+                socket->disconnectFromHost();
+                return;
+            }
+
+            const bool isPartial = rangeStart > 0;
+            const qint64 remaining = m_totalBytes - rangeStart;
+
+            QByteArray resp;
+            resp += isPartial ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n";
+            resp += "Content-Type: application/octet-stream\r\n";
+            resp += "Accept-Ranges: bytes\r\n";
+            resp += "Content-Length: " + QByteArray::number(remaining) + "\r\n";
+            if (isPartial) {
+                resp += "Content-Range: bytes ";
+                resp += QByteArray::number(rangeStart);
+                resp += "-";
+                resp += QByteArray::number(m_totalBytes - 1);
+                resp += "/";
+                resp += QByteArray::number(m_totalBytes);
+                resp += "\r\n";
+            }
+            resp += "Connection: close\r\n\r\n";
+
+            socket->write(resp);
+            socket->flush();
+
+            if (!isPartial && m_dropFirstFullResponse) {
+                // 故意只发送部分数据并关闭连接，制造“中断下载”以验证断点续传逻辑（避免依赖 cancel 的时序不确定性）。
+                const qint64 sendBytes = qMin<qint64>(m_dropBytes, remaining);
+                socket->write(m_payload.constData() + rangeStart, sendBytes);
+                socket->flush();
+                m_dropFirstFullResponse = false;
+                socket->disconnectFromHost();
+                socket->close();
+                return;
+            }
+
+            socket->write(m_payload.constData() + rangeStart, remaining);
+            socket->flush();
+            socket->disconnectFromHost();
+        });
+    }
+
+    qint64 m_totalBytes = 0;
+    QByteArray m_payload;
+    QTcpServer m_server;
+    bool m_dropFirstFullResponse = true;
+    qint64 m_dropBytes = 64 * 1024;
+};
+
+} // namespace
 
 class TestQCNetworkFileTransfer : public QObject
 {
@@ -155,33 +306,20 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     QVERIFY(dir.isValid());
 
     const QString savePath = dir.filePath(QStringLiteral("resumable.bin"));
-    const int totalBytes = 8192;
-    QUrl url(HTTPBIN_BASE_URL + QStringLiteral("/range/%1").arg(totalBytes));
+    const qint64 totalBytes = 256 * 1024;
+
+    ThrottledRangeServer server(totalBytes);
+    if (!server.start()) {
+        QSKIP("Cannot start local throttled HTTP server (port binding failed)");
+    }
+
+    const QUrl url = server.url(QStringLiteral("/range.bin"));
 
     auto *firstAttempt = m_manager->downloadFileResumable(url, savePath);
     QVERIFY(firstAttempt);
 
-    bool cancelled = false;
-    qint64 cancelledAt = 0;
-    QObject::connect(firstAttempt, &QCNetworkReply::downloadProgress, this,
-                     [firstAttempt, totalBytes, &cancelled, &cancelledAt](qint64 received, qint64 total) {
-        Q_UNUSED(total);
-        // ✅ 减少取消点以加快测试
-        if (!cancelled && received >= qMin(totalBytes / 3, 2048)) {
-            cancelled = true;
-            cancelledAt = received;
-            firstAttempt->cancel();
-        }
-    });
-
-    // ✅ 等待取消完成或超时
-    bool finished = waitForFinished(firstAttempt);
-    if (!finished || !cancelled) {
-        // ✅ 如果取消没有触发或等待超时，跳过测试
-        firstAttempt->deleteLater();
-        QSKIP("Download cancel mechanism not working properly (network dependent)");
-    }
-    
+    // ✅ 服务端会主动断开连接造成部分下载，确保用例可复现且不依赖 cancel 时序
+    QVERIFY(waitForFinished(firstAttempt, 10000));
     QVERIFY(firstAttempt->error() != NetworkError::NoError);
     firstAttempt->deleteLater();
 
@@ -190,28 +328,17 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     qint64 partialSize = partial.size();
     QVERIFY(partialSize > 0);
     QVERIFY(partialSize < totalBytes);
-    
-    qDebug() << "Cancelled download at:" << cancelledAt 
-             << "bytes, file size:" << partialSize;
 
     auto *resumeReply = m_manager->downloadFileResumable(url, savePath);
-    QVERIFY(waitForFinished(resumeReply));
+    QVERIFY(waitForFinished(resumeReply, 10000));
     QCOMPARE(resumeReply->error(), NetworkError::NoError);
     resumeReply->deleteLater();
 
     QFile finalFile(savePath);
     QVERIFY(finalFile.open(QIODevice::ReadOnly));
     QByteArray finalData = finalFile.readAll();
-    QCOMPARE(finalData.size(), totalBytes);
-
-    QCNetworkRequest verifyRequest(url);
-    auto *verifyReply = m_manager->sendGet(verifyRequest);
-    QVERIFY(waitForFinished(verifyReply));
-    QCOMPARE(verifyReply->error(), NetworkError::NoError);
-    auto expectedData = verifyReply->readAll();
-    QVERIFY(expectedData.has_value());
-    QCOMPARE(finalData, expectedData.value());
-    verifyReply->deleteLater();
+    QCOMPARE(static_cast<qint64>(finalData.size()), totalBytes);
+    QCOMPARE(finalData, server.expectedPayload());
 }
 
 QTEST_MAIN(TestQCNetworkFileTransfer)

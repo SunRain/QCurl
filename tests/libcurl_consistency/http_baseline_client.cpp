@@ -15,6 +15,10 @@ struct Args {
     std::string outFile = "download_0.data";
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
+    std::string user;
+    std::string pass;
+    std::string httpAuth;  // basic | any | anysafe
+    bool unrestrictedAuth = false;
     std::string proxy;
     std::string proxyType = "http";
     std::string proxyUser;
@@ -158,6 +162,31 @@ std::string toUpperAscii(const std::string &s)
     return out;
 }
 
+std::string toLowerAscii(const std::string &s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        out.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return out;
+}
+
+std::optional<unsigned long> httpAuthMask(const std::string &s)
+{
+    const std::string v = toLowerAscii(s);
+    if (v == "basic") {
+        return CURLAUTH_BASIC;
+    }
+    if (v == "any") {
+        return CURLAUTH_ANY;
+    }
+    if (v == "anysafe") {
+        return CURLAUTH_ANYSAFE;
+    }
+    return std::nullopt;
+}
+
 std::optional<Args> parseArgs(int argc, char **argv)
 {
     Args out;
@@ -186,6 +215,22 @@ std::optional<Args> parseArgs(int argc, char **argv)
         }
         if (arg == "--progress-out" && i + 1 < argc) {
             out.progressOutFile = argv[++i];
+            continue;
+        }
+        if (arg == "--user" && i + 1 < argc) {
+            out.user = argv[++i];
+            continue;
+        }
+        if (arg == "--pass" && i + 1 < argc) {
+            out.pass = argv[++i];
+            continue;
+        }
+        if (arg == "--httpauth" && i + 1 < argc) {
+            out.httpAuth = argv[++i];
+            continue;
+        }
+        if (arg == "--unrestricted-auth") {
+            out.unrestrictedAuth = true;
             continue;
         }
         if (arg == "--proxy" && i + 1 < argc) {
@@ -314,6 +359,7 @@ int printUsage()
         << "  [--multipart-demo]\n"
         << "  [--header-out <file>]\n"
         << "  [--progress-out <file>] [--repeat <n>]\n"
+        << "  [--user <user> --pass <pass> --httpauth <basic|any|anysafe>] [--unrestricted-auth]\n"
         << "  [--proxy <proxy_url> [--proxy-type <http|https|socks4|socks4a|socks5|socks5h>] --proxy-user <user> --proxy-pass <pass>]\n"
         << "  [--cookiefile <path>] [--cookiejar <path>]\n"
         << "  [--follow] [--max-redirs <n>]\n"
@@ -514,6 +560,26 @@ int main(int argc, char **argv)
         curl_global_cleanup();
         std::cerr << "unsupported proto: " << args.proto << "\n";
         return 6;
+    }
+
+    if (!args.user.empty()) {
+        curl_easy_setopt(curl, CURLOPT_USERNAME, args.user.c_str());
+    }
+    if (!args.pass.empty()) {
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, args.pass.c_str());
+    }
+    if (!args.httpAuth.empty()) {
+        const auto maskOpt = httpAuthMask(args.httpAuth);
+        if (!maskOpt.has_value()) {
+            std::cerr << "unsupported httpauth: " << args.httpAuth << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        curl_easy_setopt(curl, CURLOPT_HTTPAUTH, maskOpt.value());
+    }
+    if (args.unrestrictedAuth && args.followLocation) {
+        curl_easy_setopt(curl, CURLOPT_UNRESTRICTED_AUTH, 1L);
     }
 
     if (!args.proxy.empty()) {

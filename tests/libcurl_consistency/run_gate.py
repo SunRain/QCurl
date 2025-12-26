@@ -124,6 +124,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
         base.extend([
             "tests/libcurl_consistency/test_p1_proxy.py",
             "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py",
+            "tests/libcurl_consistency/test_p1_httpauth.py",
             "tests/libcurl_consistency/test_p1_empty_body.py",
             "tests/libcurl_consistency/test_p1_resp_headers.py",
             "tests/libcurl_consistency/test_p1_progress.py",
