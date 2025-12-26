@@ -43,12 +43,24 @@ def _seed_cookiefile(path: Path, host: str) -> None:
     ])
     path.write_text(content, encoding="utf-8")
 
+def _cookie_summary_names(summary: str) -> List[str]:
+    summary = (summary or "").strip()
+    if not summary:
+        return []
+    for token in summary.split():
+        if token.startswith("names:"):
+            raw = token[len("names:"):]
+            return sorted([p for p in raw.split(",") if p])
+    return []
 
-def _normalize_cookie_header(raw: str) -> str:
-    parts = [p.strip() for p in (raw or "").split(";")]
-    parts = [p for p in parts if p]
-    parts.sort()
-    return "; ".join(parts)
+def _cookie_summary_sha256(summary: str) -> str:
+    summary = (summary or "").strip()
+    if not summary:
+        return ""
+    for token in summary.split():
+        if token.startswith("sha256:"):
+            return token[len("sha256:"):]
+    return ""
 
 
 def test_p2_cookie_request_header(env, lc_services, lc_logs, lc_observe_http, tmp_path):
@@ -100,13 +112,15 @@ def test_p2_cookie_request_header(env, lc_services, lc_logs, lc_observe_http, tm
         )
 
         obs = observe_http_observed_for_id(observe_log, baseline_req_id)
-        cookie_norm = _normalize_cookie_header(obs.headers.get("cookie", ""))
-        req_headers = dict(obs.headers)
-        req_headers["cookie"] = cookie_norm
+        cookie_summary = str(obs.headers.get("cookie") or "")
+        assert cookie_summary, "服务端未观测到 Cookie 请求头（baseline）"
+        assert set(_cookie_summary_names(cookie_summary)) == {"foo", "baz"}, f"cookie 名集合异常: {cookie_summary!r}"
+        assert _cookie_summary_sha256(cookie_summary), f"cookie sha256 缺失: {cookie_summary!r}"
+
         baseline["payload"]["request"] = build_request_semantic(
             obs.method,
             obs.url,
-            req_headers,
+            dict(obs.headers),
             b"",
         )
         baseline["payload"]["response"]["status"] = obs.status
@@ -135,13 +149,15 @@ def test_p2_cookie_request_header(env, lc_services, lc_logs, lc_observe_http, tm
         )
 
         obs = observe_http_observed_for_id(observe_log, qcurl_req_id)
-        cookie_norm = _normalize_cookie_header(obs.headers.get("cookie", ""))
-        req_headers = dict(obs.headers)
-        req_headers["cookie"] = cookie_norm
+        cookie_summary = str(obs.headers.get("cookie") or "")
+        assert cookie_summary, "服务端未观测到 Cookie 请求头（qcurl）"
+        assert set(_cookie_summary_names(cookie_summary)) == {"foo", "baz"}, f"cookie 名集合异常: {cookie_summary!r}"
+        assert _cookie_summary_sha256(cookie_summary), f"cookie sha256 缺失: {cookie_summary!r}"
+
         qcurl["payload"]["request"] = build_request_semantic(
             obs.method,
             obs.url,
-            req_headers,
+            dict(obs.headers),
             b"",
         )
         qcurl["payload"]["response"]["status"] = obs.status

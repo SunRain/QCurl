@@ -26,6 +26,26 @@ from urllib.parse import parse_qs, urlsplit, urlencode, urlunsplit
 
 log = logging.getLogger(__name__)
 
+def _auth_scheme(value: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        return ""
+    scheme = v.split()[0].strip()
+    if not scheme:
+        return ""
+    low = scheme.lower()
+    if low == "basic":
+        return "Basic"
+    if low == "digest":
+        return "Digest"
+    if low == "bearer":
+        return "Bearer"
+    if low == "negotiate":
+        return "Negotiate"
+    if low == "ntlm":
+        return "NTLM"
+    return scheme
+
 
 def _utc_ts() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
@@ -123,7 +143,12 @@ class ProxyServer:
             for name in ("host", "proxy-authorization", "proxy-connection", "user-agent"):
                 v = headers.get(name)
                 if v:
-                    headers_allowlist[name] = v
+                    if name == "proxy-authorization":
+                        scheme = _auth_scheme(v)
+                        if scheme:
+                            headers_allowlist[name] = scheme
+                    else:
+                        headers_allowlist[name] = v
 
             self._append_log(ProxyLogEntry(
                 ts=_utc_ts(),
@@ -294,4 +319,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

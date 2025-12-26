@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -19,6 +20,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+
+
+_FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS = (
+    "localhost:8935",
+    "127.0.0.1:8935",
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,224 @@ def _run(cmd: List[str], *, cwd: Optional[Path] = None, env: Optional[Dict[str, 
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+def _redact_text(text: str) -> str:
+    """
+    Gate 报告中禁止落盘敏感信息（最小脱敏）：
+    - Authorization / Proxy-Authorization：仅保留 scheme（Basic/Digest/Bearer...）
+    - Cookie / Set-Cookie：替换为固定占位（避免明文）
+    """
+    if not text:
+        return ""
+
+    patterns: list[tuple[re.Pattern[str], str]] = [
+        # Header lines
+        (re.compile(r"(?im)^(\s*authorization:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
+        (re.compile(r"(?im)^(\s*proxy-authorization:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
+        (re.compile(r"(?im)^(\s*cookie:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
+        (re.compile(r"(?im)^(\s*set-cookie:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
+        # JSON-ish fragments
+        (re.compile(r"(?i)(\"authorization\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
+        (re.compile(r"(?i)(\"proxy-authorization\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
+        (re.compile(r"(?i)(\"cookie\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
+        (re.compile(r"(?i)(\"set-cookie\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
+    ]
+    out = text
+    for rx, repl in patterns:
+        out = rx.sub(repl, out)
+    return out
+
+def _redaction_scan_roots(cfg: GateConfig) -> List[Path]:
+    roots: List[Path] = []
+    artifacts_dir = cfg.repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
+    if artifacts_dir.exists():
+        roots.append(artifacts_dir)
+    reports_dir = cfg.json_report.parent
+    if reports_dir.exists():
+        roots.append(reports_dir)
+    return roots
+
+def _postflight_redaction_scan(cfg: GateConfig, *, since_ts: float) -> Dict[str, object]:
+    """
+    脱敏扫描门禁（更强落地）：
+    - 扫描 Gate 会落盘/会随 CI 上传的文本产物（artifacts + reports）
+    - 发现敏感头明文则直接 fail（避免“空指令”）
+    """
+
+    rules: list[dict[str, object]] = [
+        {
+            "id": "auth_basic_unredacted",
+            "desc": "Authorization: Basic 明文（应仅保留 scheme 或摘要）",
+            "patterns": [
+                re.compile(br"(?i)\"authorization\"\s*:\s*\"basic\s+"),
+                re.compile(br"(?im)^\s*authorization:\s*basic\s+"),
+            ],
+        },
+        {
+            "id": "auth_bearer_unredacted",
+            "desc": "Authorization: Bearer 明文（token 不得落盘）",
+            "patterns": [
+                re.compile(br"(?i)\"authorization\"\s*:\s*\"bearer\s+"),
+                re.compile(br"(?im)^\s*authorization:\s*bearer\s+"),
+            ],
+        },
+        {
+            "id": "auth_digest_unredacted",
+            "desc": "Authorization: Digest 明文（参数不应落盘）",
+            "patterns": [
+                re.compile(br"(?i)\"authorization\"\s*:\s*\"digest\s+"),
+                re.compile(br"(?im)^\s*authorization:\s*digest\s+"),
+            ],
+        },
+        {
+            "id": "proxy_auth_basic_unredacted",
+            "desc": "Proxy-Authorization: Basic 明文（应仅保留 scheme 或摘要）",
+            "patterns": [
+                re.compile(br"(?i)\"proxy-authorization\"\s*:\s*\"basic\s+"),
+                re.compile(br"(?im)^\s*proxy-authorization:\s*basic\s+"),
+            ],
+        },
+        {
+            "id": "cookie_header_unredacted",
+            "desc": "Cookie 请求头明文（value 不得落盘）",
+            "patterns": [
+                re.compile(br"(?i)\"cookie\"\s*:\s*\"[^\r\n\"]*="),
+                re.compile(br"(?im)^\s*cookie:\s*[^\r\n]*="),
+            ],
+        },
+        {
+            "id": "set_cookie_unredacted",
+            "desc": "Set-Cookie 响应头明文（value 不得落盘）",
+            "patterns": [
+                re.compile(br"(?i)\"set-cookie\"\s*:\s*\"[^\r\n\"]*="),
+                re.compile(br"(?im)^\s*set-cookie:\s*[^\r\n]*="),
+            ],
+        },
+    ]
+
+    scan_roots = _redaction_scan_roots(cfg)
+    scan_files: List[Path] = []
+
+    def should_scan_file(path: Path) -> bool:
+        # 仅扫文本类产物，避免把下载文件/二进制当作“敏感命中”。
+        if path.name in ("stderr", "stdout"):
+            return True
+        ext = path.suffix.lower()
+        return ext in (".json", ".jsonl", ".xml", ".txt", ".log")
+
+    for root in scan_roots:
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            try:
+                if float(p.stat().st_mtime) < (float(since_ts) - 1.0):
+                    continue
+            except OSError:
+                continue
+            if should_scan_file(p):
+                scan_files.append(p)
+
+    violations: List[Dict[str, object]] = []
+    max_hits = 200
+
+    def rel(path: Path) -> str:
+        try:
+            return str(path.relative_to(cfg.repo_root))
+        except Exception:
+            return str(path)
+
+    for p in sorted(scan_files):
+        try:
+            data = p.read_bytes()
+        except OSError:
+            continue
+        for line_no, line in enumerate(data.splitlines(), 1):
+            for rule in rules:
+                for rx in rule["patterns"]:  # type: ignore[index]
+                    if rx.search(line):  # type: ignore[union-attr]
+                        violations.append({
+                            "rule": str(rule["id"]),
+                            "file": rel(p),
+                            "line": int(line_no),
+                        })
+                        if len(violations) >= max_hits:
+                            break
+                if len(violations) >= max_hits:
+                    break
+            if len(violations) >= max_hits:
+                break
+        if len(violations) >= max_hits:
+            break
+
+    return {
+        "scan_roots": [str(p) for p in scan_roots],
+        "since_ts": float(since_ts),
+        "scanned_files": len(scan_files),
+        "rules": [{"id": r["id"], "desc": r["desc"]} for r in rules],
+        "violations": violations,
+    }
+
+
+def _preflight_forbid_local_httpbin(cfg: GateConfig) -> List[Dict[str, object]]:
+    """
+    一致性 Gate 的前置约束：禁止引入本地 httpbin（localhost:8935）作为依赖。
+
+    说明：
+    - 一致性测试以 `curl/tests/http/testenv` 与本仓库 `http_observe_server.py` 为唯一服务端依赖；
+    - 本地 httpbin 仅用于 `tests/` 下的 QCurl 单侧集成测试，不得进入一致性 Gate（避免 Docker/端口成为门禁前置条件）。
+
+    实现：
+    - 仅扫描“一致性套件可能执行的代码文件”（.py/.cpp/.h/.hpp...），避免文档出现端口号导致误报。
+    - 发现禁用端点则直接 fail，便于在 CI/本地第一时间阻断误引入。
+    """
+
+    code_suffixes = {".py", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
+    skip_files = {Path(__file__).resolve()}
+    scan_targets: List[Path] = [
+        cfg.repo_root / "tests" / "libcurl_consistency",
+        cfg.repo_root / "tests" / "tst_LibcurlConsistency.cpp",
+    ]
+
+    violations: List[Dict[str, object]] = []
+
+    def scan_file(path: Path) -> None:
+        try:
+            if path.resolve() in skip_files:
+                return
+        except OSError:
+            return
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+
+        hits: Dict[str, List[int]] = {}
+        for line_no, line in enumerate(text.splitlines(), 1):
+            for needle in _FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS:
+                if needle in line:
+                    hits.setdefault(needle, []).append(line_no)
+        if not hits:
+            return
+        violations.append({
+            "file": str(path.relative_to(cfg.repo_root)),
+            "hits": hits,
+        })
+
+    for target in scan_targets:
+        if target.is_file():
+            if target.suffix in code_suffixes:
+                scan_file(target)
+            continue
+        if not target.exists():
+            continue
+        for path in target.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix not in code_suffixes:
+                continue
+            scan_file(path)
+
+    return violations
 
 
 def _default_reports_dir(qcurl_build_dir: Path) -> Path:
@@ -202,6 +427,21 @@ def main(argv: List[str]) -> int:
     }
 
     try:
+        violations = _preflight_forbid_local_httpbin(cfg)
+        report["preflight_forbid_local_httpbin_8935"] = {
+            "forbidden_endpoints": list(_FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS),
+            "violations": violations,
+        }
+        if violations:
+            lines = [
+                "preflight failed: forbidden local httpbin dependency detected (localhost:8935).",
+                "consistency gate must not depend on httpbin; use curl testenv + http_observe_server.py instead.",
+                "violations:",
+            ]
+            for v in violations:
+                lines.append(f" - {v.get('file')}: {v.get('hits')}")
+            raise RuntimeError("\n".join(lines))
+
         if cfg.build:
             _build_targets(cfg)
 
@@ -217,16 +457,26 @@ def main(argv: List[str]) -> int:
         report["commands"].append(pytest_cmd)
         rc = _run(pytest_cmd, cwd=cfg.repo_root, env=env)
         report["pytest_returncode"] = rc.returncode
-        report["pytest_stdout"] = rc.stdout
-        report["pytest_stderr"] = rc.stderr
+        report["pytest_stdout"] = _redact_text(rc.stdout)
+        report["pytest_stderr"] = _redact_text(rc.stderr)
     except Exception as exc:
-        report["exception"] = str(exc)
+        report["exception"] = _redact_text(str(exc))
         report["pytest_returncode"] = 2
     finally:
         report["duration_s"] = round(time.time() - started, 3)
+        # 先落盘一次 report（stdout/stderr 已脱敏），使 redaction scan 也能覆盖 gate_*.json 本身。
         cfg.json_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    return int(report.get("pytest_returncode", 2))
+        report["postflight_redaction_scan"] = _postflight_redaction_scan(cfg, since_ts=started)
+        gate_rc = int(report.get("pytest_returncode", 2))
+        if (report.get("postflight_redaction_scan") or {}).get("violations"):
+            gate_rc = 3
+        report["gate_returncode"] = gate_rc
+
+        # 写回包含 scan 结果的最终报告。
+        cfg.json_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return int(report.get("gate_returncode", report.get("pytest_returncode", 2)))
 
 
 if __name__ == "__main__":

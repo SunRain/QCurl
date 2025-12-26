@@ -59,6 +59,110 @@ def _strip_query_id(path_or_url: str) -> str:
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def _auth_scheme(value: str) -> str:
+    """
+    返回 Authorization 头的 scheme（不落盘任何凭据/参数）。
+
+    示例：
+    - "Basic dXNlcjpwYXNz" -> "Basic"
+    - "Digest username=..., response=..." -> "Digest"
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    scheme = v.split()[0].strip()
+    if not scheme:
+        return ""
+    low = scheme.lower()
+    if low == "basic":
+        return "Basic"
+    if low == "digest":
+        return "Digest"
+    if low == "bearer":
+        return "Bearer"
+    if low == "negotiate":
+        return "Negotiate"
+    if low == "ntlm":
+        return "NTLM"
+    return scheme
+
+def _cookie_header_summary(value: str) -> str:
+    """
+    生成 Cookie 头的“可比较摘要”（不落盘 value 明文）。
+    - names: cookie 名集合（排序，去重）
+    - sha256: 对 `name=value` 规范化串的 sha256（用于对齐 value 变化，但不暴露明文）
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    parts = [p.strip() for p in raw.split(";")]
+    parts = [p for p in parts if p]
+
+    items: list[tuple[str, str]] = []
+    names: list[str] = []
+    for p in parts:
+        if "=" in p:
+            name, val = p.split("=", 1)
+            name = name.strip()
+            val = val.strip()
+        else:
+            name = p.strip()
+            val = ""
+        if not name:
+            continue
+        items.append((name, val))
+        names.append(name)
+
+    names_sorted = sorted(set(names))
+    items_sorted = sorted(items, key=lambda x: (x[0], x[1]))
+    canonical = "; ".join(f"{n}={v}" if v != "" else n for n, v in items_sorted)
+    digest = _sha256_hex(canonical.encode("utf-8")) if canonical else ""
+
+    # 约束：输出中禁止出现 '='，避免误把摘要当作明文 cookie。
+    return f"names:{','.join(names_sorted)} sha256:{digest}"
+
+def _set_cookie_summary(value: str) -> str:
+    """
+    生成 Set-Cookie 的“可比较摘要”（不落盘 value 明文）。
+    - name: cookie 名
+    - attrs: 属性集合（path/domain/secure/httponly/samesite...；排序；值使用 ':' 分隔）
+    - value_sha256: cookie value 的 sha256（可选诊断）
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    parts = [p.strip() for p in raw.split(";")]
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+
+    first = parts[0]
+    name = ""
+    val = ""
+    if "=" in first:
+        name, val = first.split("=", 1)
+        name = name.strip()
+        val = val.strip()
+    else:
+        name = first.strip()
+
+    attrs: list[str] = []
+    for p in parts[1:]:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            k = k.strip().lower()
+            v = v.strip()
+            attrs.append(f"{k}:{v}")
+        else:
+            attrs.append(p.strip().lower())
+    attrs_sorted = sorted(attrs)
+    val_digest = _sha256_hex(val.encode("utf-8")) if val else ""
+
+    # 约束：输出中禁止出现 '='，避免误把摘要当作明文 cookie。
+    return f"name:{name} attrs:{','.join(attrs_sorted)} value_sha256:{val_digest}"
+
 def _multipart_semantic_summary(content_type: str, body: bytes) -> Dict[str, object]:
     """
     解析 multipart/form-data，并返回“可比的语义摘要”（不包含 boundary）。
@@ -156,7 +260,17 @@ class Handler(BaseHTTPRequestHandler):
         for name in ("cookie", "authorization", "content-length", "host", "expect"):
             v = self.headers.get(name)
             if v is not None:
-                headers_allowlist[name] = str(v)
+                raw = str(v)
+                if name == "authorization":
+                    scheme = _auth_scheme(raw)
+                    if scheme:
+                        headers_allowlist[name] = scheme
+                elif name == "cookie":
+                    summary = _cookie_header_summary(raw)
+                    if summary:
+                        headers_allowlist[name] = summary
+                else:
+                    headers_allowlist[name] = raw
 
         resp_allowlist: Dict[str, str] = {}
         for k, v in response_headers.items():
@@ -165,6 +279,10 @@ class Handler(BaseHTTPRequestHandler):
                 # Location 中会携带 id（用于关联日志），对比时需要去掉
                 if lk == "location":
                     resp_allowlist[lk] = _strip_query_id(str(v))
+                elif lk == "set-cookie":
+                    summary = _set_cookie_summary(str(v))
+                    if summary:
+                        resp_allowlist[lk] = summary
                 else:
                     resp_allowlist[lk] = str(v)
         entry = ObserveLogEntry(

@@ -82,6 +82,16 @@ def _order_cookie_path_chain(observed_list):
     order = {"/login_path": 0, "/a/step": 1, "/b/final": 2}
     return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
 
+def _cookie_names_from_summary(summary: str) -> set[str]:
+    summary = (summary or "").strip()
+    if not summary:
+        return set()
+    for token in summary.split():
+        if token.startswith("names:"):
+            raw = token[len("names:"):]
+            return {p for p in raw.split(",") if p}
+    return set()
+
 
 @pytest.mark.parametrize("follow", [False, True])
 def test_p1_redirect_followlocation(follow: bool, env, lc_observe_http):
@@ -417,8 +427,8 @@ def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
         obs_list = _order_cookie_path_chain(obs_list)
         assert [o.method for o in obs_list] == ["GET", "GET", "GET"]
         assert [int(o.status) for o in obs_list] == [302, 302, 200]
-        assert "sid=lc123" in str(obs_list[1].headers.get("cookie") or "")
-        assert "sid=lc123" not in str(obs_list[2].headers.get("cookie") or "")
+        assert "sid" in _cookie_names_from_summary(str(obs_list[1].headers.get("cookie") or "")), "Path=/a 应发送 sid cookie"
+        assert "sid" not in _cookie_names_from_summary(str(obs_list[2].headers.get("cookie") or "")), "Path 不匹配时不应发送 sid cookie"
 
         baseline["payload"]["requests"] = [
             build_request_semantic(obs.method, obs.url, obs.headers, b"")

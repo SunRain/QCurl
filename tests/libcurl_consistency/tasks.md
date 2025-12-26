@@ -47,6 +47,7 @@
 | LC-38 | 补齐：重定向链 + Cookie Path 匹配发送（只在 path 匹配时带 Cookie），参考 `curl/tests/data/test1024`。 | 中 | LC-24、LC-10、LC-5a | 已完成 | 2025-12-24：观测服务端新增 `/login_path -> /a/step -> /b/final`（Set-Cookie Path=/a；/a 必须带 cookie；/b 必须不带）；Qt 执行器新增 `p1_cookie_path_match_redirect`；pytest 新增 `test_p1_cookie_path_match_redirect_chain`，回归通过（需 escalated）。 |
 | LC-39 | 可选：SOCKS5 proxy 失败语义一致性（终态/错误归一化），参考 `curl/tests/data/test703`。 | 低 | LC-21、LC-32 | 已完成 | 2025-12-24：新增 SOCKS5 stub `tests/libcurl_consistency/socks5_proxy_server.py`（固定失败 REP=1）；pytest 增加 fixture `lc_socks5_proxy` 与用例 `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`；baseline `qcurl_lc_http_baseline` 支持 `--proxy-type socks5`；Qt 执行器新增 `p2_socks5_proxy_connect_fail` 并断言 `fromCurlCode(CURLE_PROXY)`；`run_gate.py --suite all` 已纳入该用例。 |
 | LC-40 | 可选：Expect: 100-continue（417→重试）一致性，参考 `curl/tests/data/test357`。 | 低 | LC-5a、LC-32 | 已完成 | 2025-12-24：修正为“依赖 libcurl 自动注入阈值（>1MB）触发 exp100 状态机”，避免手工设置 Expect 导致不重试；观测服务端支持 PUT/POST `/expect_417`；Qt 执行器 `p2_expect_100_continue` 改为 `sendPut` 且不显式设置 Expect；pytest `tests/libcurl_consistency/test_p2_expect_100_continue.py` 对齐并回归；`run_gate.py --suite all` 已纳入该用例。 |
+| LC-49 | 诊断输出“零敏感信息泄漏”门禁：产物/日志脱敏 + gate 扫描落地（替代空指令）。 | 中 | LC-5a、LC-16 | 已完成 | 2025-12-27：`http_observe_server.py`/`http_proxy_server.py` 观测日志不再落盘 Authorization/Cookie/Proxy-Authorization/Set-Cookie 明文（仅保留 scheme/摘要）；相关用例断言口径同步调整；`run_gate.py` 增加 postflight “脱敏扫描门禁”，扫描本次运行产物（artifacts+reports），命中敏感明文则 gate 失败。 |
 
 ---
 
@@ -54,7 +55,19 @@
 
 > 说明：以下任务以“可观测数据层面一致性”为唯一验收核心。每项任务都必须：
 > 1) 可复现（本地可跑、无外网依赖）；2) 可对比（baseline/QCurl 同一输入）；3) 可追踪（ID、产物路径、断言字段明确）。
-> 注：LC-0..LC-40 已完成；其中 LC-39/LC-40 属于“可选扩展维度”，已按离线可复现的方式补齐（SOCKS5 stub + Expect 自动注入阈值触发）。
+> 额外约束：禁止将本地 httpbin（`localhost:8935`）作为 LC-41+ 用例依赖；一致性用例仅依赖上游 `curl/tests/http/testenv` 与本仓库 `http_observe_server.py`（边界见 `tests/libcurl_consistency/README.md`）。
+> 注：LC-0..LC-40 已完成；其中 LC-39/LC-40 属于“可选扩展维度”，已按离线可复现的方式补齐（SOCKS5 stub + Expect 自动注入阈值触发）。下列 LC-41+ 为后续计划任务（待实现）。
+
+待新增任务（LC-41+，待实现）：
+- LC-41：重定向策略控制一致性（`CURLOPT_MAXREDIRS`/`CURLOPT_POSTREDIR`/`CURLOPT_AUTOREFERER`/`CURLOPT_REFERER`）— suite:P1；新增 `test_p1_redirect_policies.py`；断言：重定向链长度/方法重写/Referer 注入/终态 status+error+event_seq 与 body+raw headers 字节一致。
+- LC-42：自动内容解码交付口径一致性（`CURLOPT_ACCEPT_ENCODING`）— suite:P1；新增 `test_p1_accept_encoding.py`（需 `http_observe_server.py` 增加 gzip/deflate fixture）；断言：交付 body bytes 与 `Content-Encoding`/`Content-Length`/`rawHeaderData()` 口径一致（禁止用耗时/速率硬断言）。
+- LC-43：流式上传可重放一致性（`CURLOPT_UPLOAD`/`CURLOPT_READFUNCTION`/`CURLOPT_SEEKFUNCTION`/`CURLOPT_INFILESIZE_LARGE`）— suite:P1；新增 `test_p1_upload_stream_replay.py`；场景：307/308 或 401→重发；断言：服务端观测到的多次请求 body 字节一致，且 QCurl 与 baseline 的重试/失败终态一致。
+- LC-44：速率限制“可取消/不破坏字节一致”smoke（`CURLOPT_MAX_RECV_SPEED_LARGE`/`CURLOPT_MAX_SEND_SPEED_LARGE`）— suite:ext；新增 `test_ext_speed_limit_smoke.py`；断言：可取消、无死锁/崩溃、终态字节一致；不要求精确限速值/耗时一致。
+- LC-45：连接与并发上限一致性（`CURLMOPT_MAX_TOTAL_CONNECTIONS`/`CURLMOPT_MAX_HOST_CONNECTIONS`/`CURLMOPT_MAXCONNECTS`/`CURLMOPT_MAX_CONCURRENT_STREAMS`）— suite:P2(或 ext)；新增 `test_p2_connection_limits.py`；断言：最大并发不超限、队列化行为可观测且可取消、无饿死/死锁，HTTP/2 场景 capability-gated。
+- LC-46：共享句柄语义一致性（`CURLOPT_SHARE`）— suite:P2；新增 `test_p2_share_handle.py`；断言：cookie/DNS/SSL session 共享的“可观测结果”一致（不要求内部缓存命中一致），且不破坏取消/超时/生命周期语义。
+- LC-47：网络路径覆盖一致性（`CURLOPT_RESOLVE`/`CURLOPT_CONNECT_TO`）— suite:P1；新增 `test_p1_resolve_connect_to.py`；断言：不依赖真实 DNS 仍可达、Host/SNI/重定向语义一致，且 artifacts 中记录映射规则用于复现。
+- LC-48：协议白名单与重定向协议限制一致性（`CURLOPT_PROTOCOLS_STR`/`CURLOPT_REDIR_PROTOCOLS_STR`）— suite:P2；新增 `test_p2_protocol_restrictions.py`；断言：访问/重定向到被禁协议时的错误码/状态/事件序列一致（capability-gated：依赖构建启用的协议集合）。
+- LC-50：TLS 策略与缓存一致性（`CURLOPT_PINNEDPUBLICKEY`/`CURLOPT_SSLVERSION`/`CURLOPT_SSL_CIPHER_LIST`/`CURLOPT_TLS13_CIPHERS`/`CURLOPT_HSTS`/`CURLOPT_ALTSVC`）— suite:ext；新增 `test_ext_tls_policy_and_cache.py`；断言：握手成功/失败与缓存行为的外显结果一致（capability-gated：依赖本地 TLS fixture 与可写 cache 目录）。
 
 ## LC-15：pause/resume 一致性（in-flight）
 
