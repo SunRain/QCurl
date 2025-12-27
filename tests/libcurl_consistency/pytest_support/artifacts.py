@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 
+ARTIFACTS_SCHEMA = "qcurl-lc/artifacts@v1"
+
+
 def artifacts_root(env) -> Path:
     """默认将 artifacts 放在 testenv 的 gen_dir 下，避免污染源码树。"""
     return Path(env.gen_dir) / "artifacts"

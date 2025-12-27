@@ -27,6 +27,8 @@ _FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS = (
     "127.0.0.1:8935",
 )
 
+_EXPECTED_ARTIFACTS_SCHEMA = "qcurl-lc/artifacts@v1"
+
 
 @dataclass(frozen=True)
 class GateConfig:
@@ -88,6 +90,99 @@ def _redaction_scan_roots(cfg: GateConfig) -> List[Path]:
     if reports_dir.exists():
         roots.append(reports_dir)
     return roots
+
+def _artifacts_dir(cfg: GateConfig) -> Path:
+    return cfg.repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
+
+def _postflight_artifacts_schema_check(cfg: GateConfig, *, since_ts: float) -> Dict[str, object]:
+    """
+    artifacts schema/version 门禁：
+    - baseline/qcurl artifacts 必须声明 schema（版本）
+    - schema 不识别/缺失视为 Gate 失败（避免“字段漂移”导致误判）
+
+    说明：
+    - 仅检查本次运行产生/更新的 artifacts（mtime >= since_ts-1s），避免历史残留造成误报。
+    - 未知字段允许存在（向前兼容）；仅校验版本与 required 字段的存在性/类型。
+    """
+
+    root = _artifacts_dir(cfg)
+    if not root.exists():
+        return {
+            "schema_expected": _EXPECTED_ARTIFACTS_SCHEMA,
+            "since_ts": float(since_ts),
+            "scanned_files": 0,
+            "violations": [],
+            "note": "artifacts dir not found",
+        }
+
+    targets: List[Path] = []
+    for name in ("baseline.json", "qcurl.json"):
+        for p in root.rglob(name):
+            if not p.is_file():
+                continue
+            try:
+                if float(p.stat().st_mtime) < (float(since_ts) - 1.0):
+                    continue
+            except OSError:
+                continue
+            targets.append(p)
+
+    def rel(path: Path) -> str:
+        try:
+            return str(path.relative_to(cfg.repo_root))
+        except Exception:
+            return str(path)
+
+    required_request_fields = ("method", "url", "headers", "body_len", "body_sha256")
+    required_response_fields = ("status", "http_version", "headers", "body_len", "body_sha256")
+
+    violations: List[Dict[str, object]] = []
+
+    def add_violation(path: Path, reason: str) -> None:
+        violations.append({"file": rel(path), "reason": reason})
+
+    for p in sorted(targets):
+        try:
+            payload = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+        except Exception as exc:
+            add_violation(p, f"invalid json: {exc}")
+            continue
+
+        schema = payload.get("schema")
+        if schema != _EXPECTED_ARTIFACTS_SCHEMA:
+            add_violation(p, f"schema mismatch: {schema!r} != {_EXPECTED_ARTIFACTS_SCHEMA!r}")
+            continue
+
+        runner = payload.get("runner")
+        if not isinstance(runner, str) or not runner:
+            add_violation(p, "runner missing or invalid")
+
+        req = payload.get("request")
+        if not isinstance(req, dict):
+            add_violation(p, "request missing or invalid")
+        else:
+            for k in required_request_fields:
+                if k not in req:
+                    add_violation(p, f"request.{k} missing")
+            if "headers" in req and not isinstance(req.get("headers"), dict):
+                add_violation(p, "request.headers not a dict")
+
+        resp = payload.get("response")
+        if not isinstance(resp, dict):
+            add_violation(p, "response missing or invalid")
+        else:
+            for k in required_response_fields:
+                if k not in resp:
+                    add_violation(p, f"response.{k} missing")
+            if "headers" in resp and not isinstance(resp.get("headers"), dict):
+                add_violation(p, "response.headers not a dict")
+
+    return {
+        "schema_expected": _EXPECTED_ARTIFACTS_SCHEMA,
+        "since_ts": float(since_ts),
+        "scanned_files": len(targets),
+        "violations": violations,
+    }
 
 def _postflight_redaction_scan(cfg: GateConfig, *, since_ts: float) -> Dict[str, object]:
     """
@@ -467,9 +562,16 @@ def main(argv: List[str]) -> int:
         # 先落盘一次 report（stdout/stderr 已脱敏），使 redaction scan 也能覆盖 gate_*.json 本身。
         cfg.json_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        report["postflight_artifacts_schema_check"] = _postflight_artifacts_schema_check(cfg, since_ts=started)
         report["postflight_redaction_scan"] = _postflight_redaction_scan(cfg, since_ts=started)
         gate_rc = int(report.get("pytest_returncode", 2))
+        policy_violations = []
+        if (report.get("postflight_artifacts_schema_check") or {}).get("violations"):
+            policy_violations.append("artifacts_schema")
         if (report.get("postflight_redaction_scan") or {}).get("violations"):
+            policy_violations.append("redaction")
+        report["policy_violations"] = policy_violations
+        if policy_violations:
             gate_rc = 3
         report["gate_returncode"] = gate_rc
 

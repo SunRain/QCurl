@@ -48,6 +48,7 @@
 | LC-39 | 可选：SOCKS5 proxy 失败语义一致性（终态/错误归一化），参考 `curl/tests/data/test703`。 | 低 | LC-21、LC-32 | 已完成 | 2025-12-24：新增 SOCKS5 stub `tests/libcurl_consistency/socks5_proxy_server.py`（固定失败 REP=1）；pytest 增加 fixture `lc_socks5_proxy` 与用例 `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`；baseline `qcurl_lc_http_baseline` 支持 `--proxy-type socks5`；Qt 执行器新增 `p2_socks5_proxy_connect_fail` 并断言 `fromCurlCode(CURLE_PROXY)`；`run_gate.py --suite all` 已纳入该用例。 |
 | LC-40 | 可选：Expect: 100-continue（417→重试）一致性，参考 `curl/tests/data/test357`。 | 低 | LC-5a、LC-32 | 已完成 | 2025-12-24：修正为“依赖 libcurl 自动注入阈值（>1MB）触发 exp100 状态机”，避免手工设置 Expect 导致不重试；观测服务端支持 PUT/POST `/expect_417`；Qt 执行器 `p2_expect_100_continue` 改为 `sendPut` 且不显式设置 Expect；pytest `tests/libcurl_consistency/test_p2_expect_100_continue.py` 对齐并回归；`run_gate.py --suite all` 已纳入该用例。 |
 | LC-49 | 诊断输出“零敏感信息泄漏”门禁：产物/日志脱敏 + gate 扫描落地（替代空指令）。 | 中 | LC-5a、LC-16 | 已完成 | 2025-12-27：`http_observe_server.py`/`http_proxy_server.py` 观测日志不再落盘 Authorization/Cookie/Proxy-Authorization/Set-Cookie 明文（仅保留 scheme/摘要）；相关用例断言口径同步调整；`run_gate.py` 增加 postflight “脱敏扫描门禁”，扫描本次运行产物（artifacts+reports），命中敏感明文则 gate 失败。 |
+| LC-51 | artifacts schema/version 与兼容规则门禁：baseline/qcurl artifacts 必须带 schema（版本），Gate 做 postflight 校验。 | 中 | LC-0、LC-16 | 已完成 | 2025-12-27：`baseline.json/qcurl.json` 增加 `schema: qcurl-lc/artifacts@v1`；`run_gate.py` 增加 postflight schema 校验（仅检查本次运行生成的 artifacts）；SSOT 在 `README.md` 固化 v1 兼容规则（只增可选字段/破坏性变更 bump major）。 |
 
 ---
 

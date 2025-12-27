@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Set
 from testenv import Env, LocalClient  # type: ignore
 
 from .artifacts import (
+    ARTIFACTS_SCHEMA,
     artifact_path,
     artifacts_root,
     build_request_semantic,
@@ -228,6 +229,7 @@ def run_libtest_case(
         )
 
     payload: Dict[str, object] = {
+        "schema": ARTIFACTS_SCHEMA,
         "runner": "libcurl",
         "client": client_name,
         "args": cmd_args,

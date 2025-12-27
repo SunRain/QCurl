@@ -13,6 +13,7 @@ from typing import Dict, Optional
 from testenv import Env  # type: ignore
 
 from .artifacts import (
+    ARTIFACTS_SCHEMA,
     artifact_path,
     artifacts_root,
     build_request_semantic,
@@ -78,6 +79,7 @@ def run_ws_baseline_case(
         )
 
     payload: Dict[str, object] = {
+        "schema": ARTIFACTS_SCHEMA,
         "runner": "libcurl",
         "binary": str(baseline_executable),
         "scenario": scenario,
@@ -90,4 +92,3 @@ def run_ws_baseline_case(
     path = artifact_path(root, suite=suite, case=case, flavor="baseline")
     write_json(path, payload)
     return {"path": path, "payload": payload}
-

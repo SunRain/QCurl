@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from testenv import Env  # type: ignore
 
 from .artifacts import (
+    ARTIFACTS_SCHEMA,
     artifact_path,
     artifacts_root,
     build_request_semantic,
@@ -102,6 +103,7 @@ def run_qt_test(
         )
 
     payload: Dict[str, object] = {
+        "schema": ARTIFACTS_SCHEMA,
         "runner": "qcurl",
         "binary": str(qt_executable),
         "args": args or [],
