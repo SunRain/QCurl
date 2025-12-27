@@ -9,8 +9,15 @@
 
 ## 2025-12-27
 
+### Fixed
+- 修复 `downloadToDevice()` 在 QIODevice 提前析构/写入失败场景的潜在 UAF，失败时以可诊断错误结束（`error` + `finished`）
+- 修复 `uploadFromDevice()` 参数无效时错误回退到 GET 的行为，改为返回可诊断错误 Reply
+
+### Added
+- 新增 Qt Test：`tst_QCNetworkIODeviceLifetime`，覆盖下载过程中 QIODevice 提前析构的回归用例
+
 ### Testing
-- 全量回归：`cd build && ctest --output-on-failure`（26/26 passed）
+- 全量回归：`cd build && ctest --output-on-failure`（27/27 passed）
 - 一致性 gate（all）：`python3 tests/libcurl_consistency/run_gate.py --suite all --build`（45 passed，报告：`build/libcurl_consistency/reports/gate_all.json`、`build/libcurl_consistency/reports/junit_all.xml`）
 
 ---

@@ -162,6 +162,7 @@ public:
 
     void execute();
     void cancel();
+    void abortWithError(NetworkError error, const QString &message = QString());
     void pause();
     void pause(PauseMode mode);
     void resume();

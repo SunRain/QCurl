@@ -47,6 +47,7 @@ add_qcurl_test(tst_QCRequest tst_QCRequest.cpp)  # v2.9.0: 流式 Request API �
 add_qcurl_test(tst_QCRequestBuilder tst_QCRequestBuilder.cpp)  # v2.9.0: 传统 Builder API 测试
 add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp)  # v2.11.0: Multipart/form-data 测试
 add_qcurl_test(tst_QCNetworkFileTransfer tst_QCNetworkFileTransfer.cpp)  # v2.11.0+: 文件传输 API 测试
+add_qcurl_test(tst_QCNetworkIODeviceLifetime tst_QCNetworkIODeviceLifetime.cpp)  # v2.20.0: QIODevice 生命周期契约测试
 add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp)  # v2.12.0: 缓存机制测试
 add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp)  # v2.13.0: 缓存集成测试
 add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp)  # v2.14.0: 连接池测试
@@ -116,7 +117,7 @@ add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量
-set(TEST_COUNT 22)  # v2.19.0: 新增 1 个测试 (21 + 1 = 22)
+set(TEST_COUNT 23)  # v2.20.0: 新增 1 个测试 (22 + 1 = 23)
 if(QCURL_WEBSOCKET_SUPPORT)
     math(EXPR TEST_COUNT "${TEST_COUNT} + 3")  # WebSocket + WebSocketPool + WebSocketCompression
 endif()

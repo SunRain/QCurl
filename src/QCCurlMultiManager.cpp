@@ -170,6 +170,11 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
             // 处理完成逻辑（设置错误、发射信号）
             auto *d = reply->d_func();
 
+            // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
+            if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
+                return;
+            }
+
             // ========================================================
             // 检查 HTTP 状态码（即使 CURLcode 成功）
             // ========================================================

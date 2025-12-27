@@ -11,6 +11,7 @@
 #include <QUrl>
 #include <QFile>
 #include <QIODevice>
+#include <QPointer>
 #include <QSharedPointer>
 #include <QDir>
 
@@ -408,26 +409,89 @@ QCNetworkReply* QCNetworkAccessManager::uploadFile(const QUrl &url, const QStrin
 
 QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
 {
-    if (!device || !device->isWritable()) {
-        qWarning() << "downloadToDevice: device not writable";
-        QCNetworkRequest request(url);
-        return sendGet(request);
-    }
-
-    // 创建请求
     QCNetworkRequest request(url);
 
-    // 发送 GET 请求
-    QCNetworkReply *reply = sendGet(request);
+    auto *reply = new QCNetworkReply(request,
+                                      HttpMethod::Get,
+                                      ExecutionMode::Async,
+                                      QByteArray(),
+                                      this);
+
+    // Cookie 配置传递
+    if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
+        reply->d_func()->cookieFilePath = m_cookieFilePath;
+        reply->d_func()->cookieMode = m_cookieModeFlag;
+    }
+
+    if (!device || !device->isWritable()) {
+        qWarning() << "downloadToDevice: device is null or not writable";
+        QMetaObject::invokeMethod(reply,
+                                  [reply]() {
+                                      reply->abortWithError(
+                                          NetworkError::InvalidRequest,
+                                          QStringLiteral("downloadToDevice: 目标 QIODevice 为空或不可写"));
+                                  },
+                                  Qt::QueuedConnection);
+        return reply;
+    }
+
+    if (device->thread() != thread()) {
+        qWarning() << "downloadToDevice: device thread mismatch. deviceThread=" << device->thread()
+                   << "managerThread=" << thread();
+        QMetaObject::invokeMethod(reply,
+                                  [reply]() {
+                                      reply->abortWithError(
+                                          NetworkError::InvalidRequest,
+                                          QStringLiteral("downloadToDevice: 目标 QIODevice 与 Reply 不在同一线程"));
+                                  },
+                                  Qt::QueuedConnection);
+        return reply;
+    }
+
+    QPointer<QIODevice> safeDevice(device);
+
+    QObject::connect(device, &QObject::destroyed, reply, [reply]() {
+        reply->abortWithError(
+            NetworkError::InvalidRequest,
+            QStringLiteral("downloadToDevice: 目标 QIODevice 在传输中被销毁"));
+    });
 
     // 连接 readyRead 信号实现流式写入
-    QObject::connect(reply, &QCNetworkReply::readyRead, reply, [reply, device]() {
+    QObject::connect(reply, &QCNetworkReply::readyRead, reply, [reply, safeDevice]() {
+        if (!safeDevice) {
+            reply->abortWithError(
+                NetworkError::InvalidRequest,
+                QStringLiteral("downloadToDevice: 目标 QIODevice 在传输中被销毁"));
+            return;
+        }
+
+        if (!safeDevice->isWritable()) {
+            reply->abortWithError(
+                NetworkError::InvalidRequest,
+                QStringLiteral("downloadToDevice: 目标 QIODevice 已不可写"));
+            return;
+        }
+
         auto data = reply->readAll();
-        if (data.has_value()) {
-            device->write(data.value());
+        if (data.has_value() && !data->isEmpty()) {
+            const QByteArray &buf = data.value();
+            qint64 totalWritten = 0;
+            while (totalWritten < buf.size()) {
+                const qint64 written = safeDevice->write(buf.constData() + totalWritten,
+                                                        buf.size() - totalWritten);
+                if (written <= 0) {
+                    reply->abortWithError(
+                        NetworkError::InvalidRequest,
+                        QStringLiteral("downloadToDevice: 写入目标设备失败: %1")
+                            .arg(safeDevice->errorString()));
+                    return;
+                }
+                totalWritten += written;
+            }
         }
     });
 
+    reply->execute();  // 自动启动请求
     return reply;
 }
 
@@ -436,9 +500,54 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
                                                           const QString &mimeType)
 {
     if (!device || !device->isReadable()) {
-        qWarning() << "uploadFromDevice: device not readable";
+        qWarning() << "uploadFromDevice: device is null or not readable";
         QCNetworkRequest request(url);
-        return sendGet(request);
+        auto *reply = new QCNetworkReply(request,
+                                          HttpMethod::Post,
+                                          ExecutionMode::Async,
+                                          QByteArray(),
+                                          this);
+
+        // Cookie 配置传递
+        if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
+            reply->d_func()->cookieFilePath = m_cookieFilePath;
+            reply->d_func()->cookieMode = m_cookieModeFlag;
+        }
+
+        QMetaObject::invokeMethod(reply,
+                                  [reply]() {
+                                      reply->abortWithError(
+                                          NetworkError::InvalidRequest,
+                                          QStringLiteral("uploadFromDevice: 源 QIODevice 为空或不可读"));
+                                  },
+                                  Qt::QueuedConnection);
+        return reply;
+    }
+
+    if (device->thread() != thread()) {
+        qWarning() << "uploadFromDevice: device thread mismatch. deviceThread=" << device->thread()
+                   << "managerThread=" << thread();
+        QCNetworkRequest request(url);
+        auto *reply = new QCNetworkReply(request,
+                                          HttpMethod::Post,
+                                          ExecutionMode::Async,
+                                          QByteArray(),
+                                          this);
+
+        // Cookie 配置传递
+        if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
+            reply->d_func()->cookieFilePath = m_cookieFilePath;
+            reply->d_func()->cookieMode = m_cookieModeFlag;
+        }
+
+        QMetaObject::invokeMethod(reply,
+                                  [reply]() {
+                                      reply->abortWithError(
+                                          NetworkError::InvalidRequest,
+                                          QStringLiteral("uploadFromDevice: 源 QIODevice 与 Reply 不在同一线程"));
+                                  },
+                                  Qt::QueuedConnection);
+        return reply;
     }
 
     QCMultipartFormData formData;
@@ -446,7 +555,26 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
     if (!formData.addFileFieldStream(fieldName, device, fileName, mimeType)) {
         qWarning() << "uploadFromDevice: cannot add stream field to form";
         QCNetworkRequest request(url);
-        return sendGet(request);
+        auto *reply = new QCNetworkReply(request,
+                                          HttpMethod::Post,
+                                          ExecutionMode::Async,
+                                          QByteArray(),
+                                          this);
+
+        // Cookie 配置传递
+        if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
+            reply->d_func()->cookieFilePath = m_cookieFilePath;
+            reply->d_func()->cookieMode = m_cookieModeFlag;
+        }
+
+        QMetaObject::invokeMethod(reply,
+                                  [reply]() {
+                                      reply->abortWithError(
+                                          NetworkError::InvalidRequest,
+                                          QStringLiteral("uploadFromDevice: 无法从 QIODevice 构建 multipart 表单"));
+                                  },
+                                  Qt::QueuedConnection);
+        return reply;
     }
 
     // 使用 postMultipart 发送

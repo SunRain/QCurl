@@ -402,14 +402,18 @@ public:
      *             [](qint64 received, qint64 total) {
      *         qDebug() << "Progress:" << (received * 100 / total) << "%";
      *     });
-     *     connect(reply, &QCNetworkReply::finished, [file]() {
+     *     auto cleanup = [file]() {
      *         file->close();
      *         file->deleteLater();
-     *     });
+     *     };
+     *     connect(reply, &QCNetworkReply::finished, cleanup);
+     *     connect(reply, &QCNetworkReply::cancelled, cleanup);
      * }
      * @endcode
      *
-     * @note device 必须在请求完成前保持有效
+     * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
+     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可写/写入失败，Reply 将以可诊断错误结束
+     * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
      */
     QCNetworkReply* downloadToDevice(const QUrl &url, QIODevice *device);
 
@@ -436,14 +440,18 @@ public:
      *             [](qint64 sent, qint64 total) {
      *         qDebug() << "Progress:" << (sent * 100 / total) << "%";
      *     });
-     *     connect(reply, &QCNetworkReply::finished, [largeFile]() {
+     *     auto cleanup = [largeFile]() {
      *         largeFile->close();
      *         largeFile->deleteLater();
-     *     });
+     *     };
+     *     connect(reply, &QCNetworkReply::finished, cleanup);
+     *     connect(reply, &QCNetworkReply::cancelled, cleanup);
      * }
      * @endcode
      *
-     * @note device 必须在请求完成前保持有效
+     * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
+     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可读/读取失败，Reply 将以可诊断错误结束
+     * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
      */
     QCNetworkReply* uploadFromDevice(const QUrl &url, const QString &fieldName,
                                       QIODevice *device, const QString &fileName,

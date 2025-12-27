@@ -572,8 +572,8 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size,
 
     const size_t totalSize = size * nmemb;
 
-    if (d->state == ReplyState::Cancelled) {
-        // 取消后禁止继续产生可观测数据事件（readyRead 等）；
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
+        // 取消/错误后禁止继续产生可观测数据事件（readyRead 等）；
         // 返回 totalSize 以避免触发额外的 libcurl 错误路径。
         return totalSize;
     }
@@ -660,8 +660,8 @@ int QCNetworkReplyPrivate::curlProgressCallback(void *userdata,
         return 1;  // 对象已销毁，中止传输
     }
 
-    if (d->state == ReplyState::Cancelled) {
-        // 取消后禁止继续产生可观测事件（downloadProgress/uploadProgress）。
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
+        // 取消/错误后禁止继续产生可观测事件（downloadProgress/uploadProgress）。
         return 0;
     }
 
@@ -932,6 +932,42 @@ void QCNetworkReply::cancel()
     // 设置取消状态（这会发射 cancelled 信号）
     // 注意：即使在 Idle 状态（重试延迟期间）也允许取消
     d->setState(ReplyState::Cancelled);
+}
+
+void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
+{
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this,
+                                  [this, error, message]() { abortWithError(error, message); },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    Q_D(QCNetworkReply);
+
+    if (d->state == ReplyState::Cancelled
+        || d->state == ReplyState::Finished
+        || d->state == ReplyState::Error) {
+        return;
+    }
+
+    if (d->executionMode == ExecutionMode::Async
+        && (d->state == ReplyState::Running || d->state == ReplyState::Paused)) {
+        auto *multiManager = QCCurlMultiManager::instance();
+        QPointer<QCNetworkReply> safeThis(this);
+        QMetaObject::invokeMethod(
+            multiManager,
+            [multiManager, safeThis]() {
+                if (safeThis) {
+                    multiManager->removeReply(safeThis.data());
+                }
+            },
+            Qt::QueuedConnection);
+    }
+
+    const QString resolvedMessage = message.isEmpty() ? QCurl::errorString(error) : message;
+    d->setError(error, resolvedMessage);
+    d->setState(ReplyState::Error);
 }
 
 void QCNetworkReply::pause()
