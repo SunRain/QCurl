@@ -7,6 +7,14 @@
 
 ---
 
+## 2025-12-27
+
+### Testing
+- 全量回归：`cd build && ctest --output-on-failure`（26/26 passed）
+- 一致性 gate（all）：`python3 tests/libcurl_consistency/run_gate.py --suite all --build`（45 passed，报告：`build/libcurl_consistency/reports/gate_all.json`、`build/libcurl_consistency/reports/junit_all.xml`）
+
+---
+
 ## 2025-12-26
 
 ### Testing
