@@ -408,6 +408,52 @@ cases:
     minimality_reason:
       - 最小覆盖 CUSTOMREQUEST 类方法映射
 
+  # ---------------------------------------------------------------------------
+  # 本仓库自建：M2 流式上传前置语义探针（seekable vs non-seekable）
+  # ---------------------------------------------------------------------------
+  - id: lc_stream_body_redirect_307_replay
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay"
+    selection:
+      parameters:
+        method:
+          required: ["POST"]
+          optional: ["PUT"]
+        seekable:
+          required: [true, false]
+    capability_gates:
+      - http_observe_server
+    dimensions:
+      - request_body_replay
+      - redirect:307_keep_method
+      - seekable_vs_nonseekable
+    observation_points:
+      - 服务端观测请求序列一致（/redir_307 -> /method）
+      - seekable 成功回显 body；non-seekable 明确失败（无 silent fallback）
+    minimality_reason:
+      - 307 保持 method/body，是“重发 body”语义的最小稳定触发器
+
+  - id: lc_stream_body_httpauth_anysafe_digest_replay
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay"
+    selection:
+      parameters:
+        seekable:
+          required: [true, false]
+    capability_gates:
+      - http_observe_server
+    dimensions:
+      - request_body_replay
+      - httpauth:anysafe_digest_challenge
+      - seekable_vs_nonseekable
+    observation_points:
+      - 服务端观测请求序列一致（401 -> 200）
+      - seekable 可重发并成功；non-seekable 明确失败（无 silent fallback）
+    minimality_reason:
+      - 401 challenge 是业务常见的“隐式重发 body”触发点（协商认证最相关）
+
 excluded:
   # ---------------------------------------------------------------------------
   # 明确排除（与 tests/libcurl_consistency/README.md:225 口径一致）

@@ -339,6 +339,32 @@ EXT_CASES = {
         "qcurl_download_count": 4,
         "expected_requests": 4,
     },
+
+    # multi limits smoke（M3）：显式配置 multi 阀门后执行 multi-get4（弱断言，避免 flaky）
+    "multi_limits_smoke": {
+        "suite": "ext_multi",
+        "case": "lc_ext_multi_limits_smoke",
+        "client": "cli_hx_multi_get4",
+        "args_template": [
+            "-n",
+            "{count}",
+            "-I",
+            "{req_id}",
+            "-V",
+            "{proto}",
+            "{url_prefix}",
+        ],
+        "defaults": {
+            "count": 4,
+            "proto": "h2",
+            "docname": "path/2402",
+            "url_prefix": "https://localhost:{https_port}/path/2402",
+        },
+        "protos": ["h2"],
+        "baseline_download_count": 4,
+        "qcurl_download_count": 4,
+        "expected_requests": 4,
+    },
 }
 
 # 可选扩展：WebSocket 低层帧语义（LC-19/LC-20）

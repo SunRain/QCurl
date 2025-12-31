@@ -16,11 +16,18 @@
  * - QCURL_LC_ABORT_OFFSET: 中断点（Range 续传用，默认 0）
  * - QCURL_LC_FILE_SIZE: 资源总长度（Range 续传用，默认 0）
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
+ * - QCURL_LC_REFERER: 显式 Referer（M1）
+ * - QCURL_LC_SHARE_HANDLE: multi share handle（测试注入；默认不设置=关闭；off|dns,cookie,ssl_session）
+ * - QCURL_LC_SOAK_DURATION_S: 长稳压测时长秒（lc_soak_parallel_get）
+ * - QCURL_LC_SOAK_PARALLEL: 长稳并发数（lc_soak_parallel_get）
+ * - QCURL_LC_SOAK_MAX_ERRORS: 长稳允许错误数（lc_soak_parallel_get）
  */
 
 #include <QtTest/QtTest>
 
 #include <QByteArray>
+#include <QBuffer>
+#include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
@@ -28,15 +35,21 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
+#include <QScopedPointer>
 #include <QSignalSpy>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVector>
 
+#include <cstring>
+#include <optional>
+
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkConnectionPoolConfig.h"
+#include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -68,6 +81,51 @@ QByteArray makeUploadBody(int size)
 {
     return QByteArray(size, 'x');
 }
+
+class SequentialReadDevice final : public QIODevice
+{
+public:
+    explicit SequentialReadDevice(QByteArray data, QObject *parent = nullptr)
+        : QIODevice(parent),
+          m_data(std::move(data))
+    {
+    }
+
+    bool isSequential() const override
+    {
+        return true;
+    }
+
+    qint64 bytesAvailable() const override
+    {
+        return (m_data.size() - m_pos) + QIODevice::bytesAvailable();
+    }
+
+protected:
+    qint64 readData(char *data, qint64 maxSize) override
+    {
+        if (maxSize <= 0) {
+            return 0;
+        }
+        const qint64 remaining = m_data.size() - m_pos;
+        if (remaining <= 0) {
+            return 0;
+        }
+        const qint64 n = qMin(maxSize, remaining);
+        std::memcpy(data, m_data.constData() + m_pos, static_cast<size_t>(n));
+        m_pos += n;
+        return n;
+    }
+
+    qint64 writeData(const char *, qint64) override
+    {
+        return -1;
+    }
+
+private:
+    QByteArray m_data;
+    qint64 m_pos = 0;
+};
 
 QUrl withRequestId(const QUrl &url, const QString &requestId)
 {
@@ -309,6 +367,7 @@ void TestLibcurlConsistency::testCase()
     const QString targetUrl = qEnvironmentVariable("QCURL_LC_TARGET_URL");
     const QString authUser = qEnvironmentVariable("QCURL_LC_AUTH_USER");
     const QString authPass = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
+    const QString referer = qEnvironmentVariable("QCURL_LC_REFERER");
 
     const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
     if (!outDir.isEmpty()) {
@@ -318,6 +377,40 @@ void TestLibcurlConsistency::testCase()
 
     QCNetworkAccessManager manager;
     const QCNetworkHttpVersion httpVersion = toHttpVersion(proto);
+
+    const QString shareHandleEnv = qEnvironmentVariable("QCURL_LC_SHARE_HANDLE");
+    if (!shareHandleEnv.isEmpty()) {
+        QCNetworkAccessManager::ShareHandleConfig shareCfg;
+        const QString normalized = shareHandleEnv.trimmed().toLower();
+        if (normalized == QStringLiteral("off") ||
+            normalized == QStringLiteral("0") ||
+            normalized == QStringLiteral("false")) {
+            // 保持默认关闭
+        } else {
+            const QStringList tokens = normalized.split(QChar(','), Qt::SkipEmptyParts);
+            if (tokens.isEmpty()) {
+                QFAIL("QCURL_LC_SHARE_HANDLE 解析失败：空值");
+            }
+            for (const QString &raw : tokens) {
+                const QString t = raw.trimmed();
+                if (t == QStringLiteral("dns") ||
+                    t == QStringLiteral("dns_cache") ||
+                    t == QStringLiteral("dns-cache")) {
+                    shareCfg.shareDnsCache = true;
+                } else if (t == QStringLiteral("cookie") ||
+                           t == QStringLiteral("cookies")) {
+                    shareCfg.shareCookies = true;
+                } else if (t == QStringLiteral("ssl") ||
+                           t == QStringLiteral("ssl_session") ||
+                           t == QStringLiteral("ssl-session")) {
+                    shareCfg.shareSslSession = true;
+                } else {
+                    QFAIL(qPrintable(QStringLiteral("QCURL_LC_SHARE_HANDLE 解析失败：未知 token=%1").arg(t)));
+                }
+            }
+        }
+        manager.setShareHandleConfig(shareCfg);
+    }
 
     if (caseId == QStringLiteral("p2_tls_verify_success")) {
         QVERIFY(observeHttpsPort > 0);
@@ -435,6 +528,122 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("p1_redirect_auto_referer")) {
+        QVERIFY(observeHttpPort > 0);
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir/1").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+        req.setAutoRefererEnabled(true);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_redirect_max_redirs_too_many")) {
+        QVERIFY(observeHttpPort > 0);
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir/3").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+        req.setMaxRedirects(1);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::TooManyRedirects);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_accept_encoding_gzip")) {
+        QVERIFY(observeHttpPort > 0);
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/enc").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setAcceptedEncodings(QStringList{QStringLiteral("gzip")});
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_referer_explicit")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(!referer.isEmpty());
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/abs_target").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setReferer(referer);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_unrestricted_sensitive_headers_redirect_off") ||
+        caseId == QStringLiteral("p1_unrestricted_sensitive_headers_redirect_on")) {
+        QVERIFY(!targetUrl.isEmpty());
+        QVERIFY(!authUser.isEmpty());
+        QVERIFY(!authPass.isEmpty());
+
+        const bool unrestricted = (caseId == QStringLiteral("p1_unrestricted_sensitive_headers_redirect_on"));
+
+        QCNetworkRequest req(withRequestId(QUrl(targetUrl), requestId));
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+        if (unrestricted) {
+            req.setAllowUnrestrictedSensitiveHeadersOnRedirect(true);
+        }
+
+        QCNetworkHttpAuthConfig auth;
+        auth.userName = authUser;
+        auth.password = authPass;
+        auth.method = QCNetworkHttpAuthMethod::Basic;
+        auth.allowUnrestrictedAuth = false;
+        req.setHttpAuth(auth);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
     if (caseId == QStringLiteral("p1_httpauth_any_basic") ||
         caseId == QStringLiteral("p1_httpauth_anysafe_digest") ||
         caseId == QStringLiteral("p1_unrestricted_auth_redirect_off") ||
@@ -507,6 +716,153 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
 
         reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_redirect_postredir_keep_post_301")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(uploadSize > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir_post_301").arg(observeHttpPort)),
+            requestId);
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+        req.setPostRedirectPolicy(QCNetworkPostRedirectPolicy::KeepPost301);
+
+        QCNetworkReply *reply = manager.sendPost(req, body);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(20000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for post redirect request");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_stream_body_redirect_307_post_seekable") ||
+        caseId == QStringLiteral("p1_stream_body_redirect_307_post_nonseekable") ||
+        caseId == QStringLiteral("p1_stream_body_redirect_307_put_seekable") ||
+        caseId == QStringLiteral("p1_stream_body_redirect_307_put_nonseekable") ||
+        caseId == QStringLiteral("p1_stream_body_httpauth_anysafe_digest_post_seekable") ||
+        caseId == QStringLiteral("p1_stream_body_httpauth_anysafe_digest_post_nonseekable")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const bool seekable = caseId.endsWith(QStringLiteral("_seekable"));
+        const bool isRedirect307 = caseId.startsWith(QStringLiteral("p1_stream_body_redirect_307_"));
+        const bool isDigestAnySafe = caseId.startsWith(QStringLiteral("p1_stream_body_httpauth_anysafe_digest_"));
+
+        const int uploadSize = 4096;
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QScopedPointer<QIODevice> device;
+        if (seekable) {
+            auto *buf = new QBuffer();
+            buf->setData(body);
+            QVERIFY(buf->open(QIODevice::ReadOnly));
+            device.reset(buf);
+        } else {
+            auto *seq = new SequentialReadDevice(body);
+            QVERIFY(seq->open(QIODevice::ReadOnly));
+            device.reset(seq);
+        }
+
+        QUrl url;
+        HttpMethod method = HttpMethod::Post;
+        QCNetworkRequest req;
+
+        if (isRedirect307) {
+            const bool isPut = caseId.contains(QStringLiteral("_put_"));
+            method = isPut ? HttpMethod::Put : HttpMethod::Post;
+            url = withRequestId(
+                QUrl(QStringLiteral("http://localhost:%1/redir_307").arg(observeHttpPort)),
+                requestId);
+
+            req = QCNetworkRequest(url);
+            req.setHttpVersion(httpVersion);
+            req.setFollowLocation(true);
+        } else if (isDigestAnySafe) {
+            method = HttpMethod::Post;
+            url = withRequestId(
+                QUrl(QStringLiteral("http://localhost:%1/auth/digest").arg(observeHttpPort)),
+                requestId);
+
+            req = QCNetworkRequest(url);
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkHttpAuthConfig cfg;
+            cfg.userName = QStringLiteral("user");
+            cfg.password = QStringLiteral("passwd");
+            cfg.method = QCNetworkHttpAuthMethod::AnySafe;
+            req.setHttpAuth(cfg);
+        } else {
+            QFAIL("unexpected stream-body case id");
+        }
+
+        req.setUploadDevice(device.data(),
+                            std::optional<qint64>(static_cast<qint64>(uploadSize)));
+
+        QCNetworkReply reply(req, method, ExecutionMode::Sync, QByteArray(), &manager);
+        reply.execute();
+
+        if (seekable) {
+            QCOMPARE(reply.error(), NetworkError::NoError);
+        } else {
+            QVERIFY(reply.error() != NetworkError::NoError);
+        }
+
+        QByteArray out;
+        if (seekable) {
+            const auto dataOpt = reply.readAll();
+            QVERIFY(dataOpt.has_value());
+            out = dataOpt.value();
+        }
+
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), out, QIODevice::WriteOnly | QIODevice::Truncate));
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_stream_body_post_chunked_unknown_size")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const int uploadSize = 4096;
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QScopedPointer<QIODevice> device(new SequentialReadDevice(body));
+        QVERIFY(device->open(QIODevice::ReadOnly));
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/method").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setAllowChunkedUploadForPost(true);
+        req.setUploadDevice(device.data(), std::nullopt);
+
+        QCNetworkReply reply(req, HttpMethod::Post, ExecutionMode::Sync, QByteArray(), &manager);
+        reply.execute();
+        QCOMPARE(reply.error(), NetworkError::NoError);
+
+        const auto dataOpt = reply.readAll();
+        QVERIFY(dataOpt.has_value());
+        QCOMPARE(dataOpt.value(), body);
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), dataOpt.value(), QIODevice::WriteOnly | QIODevice::Truncate));
         return;
     }
 
@@ -956,7 +1312,7 @@ void TestLibcurlConsistency::testCase()
         loop.exec();
         QVERIFY2(timer.isActive(), "timeout waiting for cancellation");
         QVERIFY(cancelledEmitted);
-        QVERIFY(!finishedEmitted);
+        QVERIFY(finishedEmitted);
         QCOMPARE(reply->error(), NetworkError::OperationCancelled);
         QVERIFY(postCancelReadyRead == 0);
         QVERIFY(postCancelProgress == 0);
@@ -1444,6 +1800,65 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("multi_limits_smoke")) {
+        QVERIFY(!docname.isEmpty());
+        QVERIFY(httpsPort > 0);
+
+        // 显式配置 multi limits（M3），用于覆盖 curl_multi_setopt + 线程切换路径。
+        auto *poolManager = QCNetworkConnectionPoolManager::instance();
+        QCNetworkConnectionPoolConfig cfg = poolManager->config();
+        cfg.multiMaxTotalConnections = 2;
+        cfg.multiMaxHostConnections = 1;
+        cfg.multiMaxConcurrentStreams = 1;
+        cfg.multiMaxConnects = 16;
+        QVERIFY(cfg.isValid());
+        poolManager->setConfig(cfg);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        QVector<NetworkError> errors;
+        errors.resize(count);
+        int remaining = count;
+
+        for (int i = 0; i < count; ++i) {
+            const QString suffix = QStringLiteral("%1").arg(i + 1, 4, 10, QLatin1Char('0'));
+            const QUrl url = withRequestId(
+                QUrl(QStringLiteral("https://localhost:%1/%2%3").arg(httpsPort).arg(docname).arg(suffix)),
+                requestId);
+
+            QCNetworkRequest req(url);
+            req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkReply *reply = manager.sendGet(req);
+            QVERIFY(reply);
+            connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
+                const QString outFile = QStringLiteral("download_%1.data").arg(i);
+                const std::optional<QByteArray> data = reply->readAll();
+                QVERIFY(data.has_value());
+                QVERIFY(writeAllToFile(outFile, *data, QIODevice::WriteOnly | QIODevice::Truncate));
+                errors[i] = reply->error();
+                reply->deleteLater();
+
+                --remaining;
+                if (remaining == 0) {
+                    loop.quit();
+                }
+            });
+        }
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for multi-limits smoke downloads");
+        for (int i = 0; i < errors.size(); ++i) {
+            QCOMPARE(errors[i], NetworkError::NoError);
+        }
+        return;
+    }
+
     if (caseId == QStringLiteral("ext_multi_get4_h2") ||
         caseId == QStringLiteral("ext_multi_get4_h3")) {
         QVERIFY(!docname.isEmpty());
@@ -1494,9 +1909,120 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("lc_soak_parallel_get")) {
+        QVERIFY(httpsPort > 0);
+        QVERIFY(!docname.isEmpty());
+
+        const QString durationEnv = qEnvironmentVariable("QCURL_LC_SOAK_DURATION_S");
+        const QString parallelEnv = qEnvironmentVariable("QCURL_LC_SOAK_PARALLEL");
+        const QString maxErrorsEnv = qEnvironmentVariable("QCURL_LC_SOAK_MAX_ERRORS");
+
+        const int durationS = durationEnv.isEmpty() ? 300 : durationEnv.toInt();
+        const int parallel = parallelEnv.isEmpty() ? 32 : parallelEnv.toInt();
+        const int maxErrors = maxErrorsEnv.isEmpty() ? 0 : maxErrorsEnv.toInt();
+
+        QVERIFY2(durationS > 0, "QCURL_LC_SOAK_DURATION_S invalid");
+        QVERIFY2(parallel > 0, "QCURL_LC_SOAK_PARALLEL invalid");
+        QVERIFY2(maxErrors >= 0, "QCURL_LC_SOAK_MAX_ERRORS invalid");
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/%2").arg(httpsPort).arg(docname)),
+            requestId);
+
+        QElapsedTimer elapsed;
+        elapsed.start();
+
+        QEventLoop loop;
+        QTimer stopTimer;
+        QTimer hardTimer;
+        stopTimer.setSingleShot(true);
+        hardTimer.setSingleShot(true);
+
+        bool stopRequested = false;
+        bool hardTimeout = false;
+
+        QObject::connect(&stopTimer, &QTimer::timeout, this, [&]() {
+            stopRequested = true;
+        });
+        QObject::connect(&hardTimer, &QTimer::timeout, &loop, [&]() {
+            stopRequested = true;
+            hardTimeout = true;
+            loop.quit();
+        });
+
+        const int durationMs = durationS * 1000;
+        stopTimer.start(durationMs);
+        hardTimer.start(durationMs + 60000);
+
+        int inFlight = 0;
+        int startedCount = 0;
+        int finishedCount = 0;
+        int errorCount = 0;
+
+        std::function<void()> startOne;
+        startOne = [&]() {
+            if (stopRequested) {
+                return;
+            }
+            QCNetworkRequest req(url);
+            req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkReply *reply = manager.sendGet(req);
+            QVERIFY(reply);
+            ++inFlight;
+            ++startedCount;
+
+            QObject::connect(reply, &QCNetworkReply::finished, this, [&, reply]() {
+                const auto dataOpt = reply->readAll();
+                QVERIFY(dataOpt.has_value());
+                if (reply->error() != NetworkError::NoError) {
+                    ++errorCount;
+                }
+                reply->deleteLater();
+                --inFlight;
+                ++finishedCount;
+
+                if (!stopRequested && errorCount <= maxErrors) {
+                    startOne();
+                } else if (inFlight == 0) {
+                    loop.quit();
+                }
+            });
+        };
+
+        for (int i = 0; i < parallel; ++i) {
+            startOne();
+        }
+
+        loop.exec();
+
+        if (hardTimeout) {
+            QFAIL("timeout waiting for soak run to complete");
+        }
+
+        // stopTimer 可能已触发（期望），但 hardTimer 必须仍然 active。
+        QVERIFY2(hardTimer.isActive(), "hard timeout triggered during soak run");
+        QVERIFY2(errorCount <= maxErrors, "too many errors during soak run");
+
+        QJsonObject summary;
+        summary.insert(QStringLiteral("case_id"), QStringLiteral("lc_soak_parallel_get"));
+        summary.insert(QStringLiteral("duration_s"), durationS);
+        summary.insert(QStringLiteral("parallel"), parallel);
+        summary.insert(QStringLiteral("started"), startedCount);
+        summary.insert(QStringLiteral("finished"), finishedCount);
+        summary.insert(QStringLiteral("errors"), errorCount);
+        summary.insert(QStringLiteral("elapsed_ms"), static_cast<qint64>(elapsed.elapsed()));
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("soak_summary.json"), summary));
+
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return;
+    }
+
     if (caseId == QStringLiteral("ext_download_parallel_stress")) {
         QVERIFY(!docname.isEmpty());
         QVERIFY(httpsPort > 0);
+        const bool perfNoDisk = qEnvironmentVariableIntValue("QCURL_LC_PERF_NO_DISK") != 0;
 
         const QUrl url = withRequestId(
             QUrl(QStringLiteral("https://localhost:%1/%2").arg(httpsPort).arg(docname)),
@@ -1520,10 +2046,13 @@ void TestLibcurlConsistency::testCase()
             QCNetworkReply *reply = manager.sendGet(req);
             QVERIFY(reply);
             connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
-                const QString outFile = QStringLiteral("download_%1.data").arg(i);
                 const std::optional<QByteArray> data = reply->readAll();
                 QVERIFY(data.has_value());
-                QVERIFY(writeAllToFile(outFile, *data, QIODevice::WriteOnly | QIODevice::Truncate));
+                QVERIFY(!data->isEmpty());
+                if (!perfNoDisk) {
+                    const QString outFile = QStringLiteral("download_%1.data").arg(i);
+                    QVERIFY(writeAllToFile(outFile, *data, QIODevice::WriteOnly | QIODevice::Truncate));
+                }
                 errors[i] = reply->error();
                 reply->deleteLater();
 

@@ -57,11 +57,9 @@
 > 说明：以下任务以“可观测数据层面一致性”为唯一验收核心。每项任务都必须：
 > 1) 可复现（本地可跑、无外网依赖）；2) 可对比（baseline/QCurl 同一输入）；3) 可追踪（ID、产物路径、断言字段明确）。
 > 额外约束：禁止将本地 httpbin（`localhost:8935`）作为 LC-41+ 用例依赖；一致性用例仅依赖上游 `curl/tests/http/testenv` 与本仓库 `http_observe_server.py`（边界见 `tests/libcurl_consistency/README.md`）。
-> 注：LC-0..LC-40 已完成；其中 LC-39/LC-40 属于“可选扩展维度”，已按离线可复现的方式补齐（SOCKS5 stub + Expect 自动注入阈值触发）。下列 LC-41+ 为后续计划任务（待实现）。
+> 注：LC-0..LC-42 已完成；其中 LC-39/LC-40 属于“可选扩展维度”，已按离线可复现的方式补齐（SOCKS5 stub + Expect 自动注入阈值触发）。下列 LC-43+ 为后续计划任务（待实现）。
 
-待新增任务（LC-41+，待实现）：
-- LC-41：重定向策略控制一致性（`CURLOPT_MAXREDIRS`/`CURLOPT_POSTREDIR`/`CURLOPT_AUTOREFERER`/`CURLOPT_REFERER`）— suite:P1；新增 `test_p1_redirect_policies.py`；断言：重定向链长度/方法重写/Referer 注入/终态 status+error+event_seq 与 body+raw headers 字节一致。
-- LC-42：自动内容解码交付口径一致性（`CURLOPT_ACCEPT_ENCODING`）— suite:P1；新增 `test_p1_accept_encoding.py`（需 `http_observe_server.py` 增加 gzip/deflate fixture）；断言：交付 body bytes 与 `Content-Encoding`/`Content-Length`/`rawHeaderData()` 口径一致（禁止用耗时/速率硬断言）。
+待新增任务（LC-43+，待实现）：
 - LC-43：流式上传可重放一致性（`CURLOPT_UPLOAD`/`CURLOPT_READFUNCTION`/`CURLOPT_SEEKFUNCTION`/`CURLOPT_INFILESIZE_LARGE`）— suite:P1；新增 `test_p1_upload_stream_replay.py`；场景：307/308 或 401→重发；断言：服务端观测到的多次请求 body 字节一致，且 QCurl 与 baseline 的重试/失败终态一致。
 - LC-44：速率限制“可取消/不破坏字节一致”smoke（`CURLOPT_MAX_RECV_SPEED_LARGE`/`CURLOPT_MAX_SEND_SPEED_LARGE`）— suite:ext；新增 `test_ext_speed_limit_smoke.py`；断言：可取消、无死锁/崩溃、终态字节一致；不要求精确限速值/耗时一致。
 - LC-45：连接与并发上限一致性（`CURLMOPT_MAX_TOTAL_CONNECTIONS`/`CURLMOPT_MAX_HOST_CONNECTIONS`/`CURLMOPT_MAXCONNECTS`/`CURLMOPT_MAX_CONCURRENT_STREAMS`）— suite:P2(或 ext)；新增 `test_p2_connection_limits.py`；断言：最大并发不超限、队列化行为可观测且可取消、无饿死/死锁，HTTP/2 场景 capability-gated。

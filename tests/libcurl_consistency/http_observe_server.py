@@ -21,11 +21,13 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import logging
 import ssl
 import time
+import zlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from email.parser import BytesParser
@@ -34,6 +36,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, Optional
 from urllib.parse import parse_qs, urlsplit, urlencode, urlunsplit
+
+try:
+    import brotli  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    brotli = None
 
 
 log = logging.getLogger(__name__)
@@ -55,6 +62,10 @@ def _strip_query_id(path_or_url: str) -> str:
     query = urlencode(q, doseq=True)
     # path_or_url 可能是相对路径或绝对 URL；两者都能用 urlunsplit 复原
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+def _strip_query_all(path_or_url: str) -> str:
+    parts = urlsplit(path_or_url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", parts.fragment))
 
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -242,7 +253,60 @@ class Handler(BaseHTTPRequestHandler):
         # 禁止默认 stdout 访问日志（用 JSONL 代替）
         return
 
+    def _read_chunked_body(self) -> bytes:
+        """
+        读取 HTTP/1.1 chunked 请求体（Transfer-Encoding: chunked）。
+
+        说明：
+        - 最小实现：仅用于测试观测/回显；不做复杂流控
+        - 若解析失败，抛异常让连接失败（避免静默吞错导致用例假绿）
+        """
+        out = bytearray()
+        max_total = 64 * 1024 * 1024  # 64MiB：测试上限，避免异常请求导致 OOM
+
+        while True:
+            line = self.rfile.readline(65536)
+            if not line:
+                raise ValueError("chunked body: unexpected EOF while reading chunk size")
+
+            raw = line.strip()
+            if not raw:
+                continue
+            size_hex = raw.split(b";", 1)[0].strip()
+            try:
+                n = int(size_hex, 16)
+            except ValueError as exc:
+                raise ValueError(f"chunked body: invalid chunk size line: {raw!r}") from exc
+
+            if n == 0:
+                # trailers (optional) until CRLF
+                while True:
+                    trailer = self.rfile.readline(65536)
+                    if not trailer:
+                        break
+                    if trailer in (b"\r\n", b"\n"):
+                        break
+                break
+
+            chunk = self.rfile.read(n)
+            if len(chunk) != n:
+                raise ValueError("chunked body: unexpected EOF while reading chunk data")
+
+            crlf = self.rfile.read(2)
+            if crlf != b"\r\n":
+                raise ValueError("chunked body: missing CRLF after chunk data")
+
+            out.extend(chunk)
+            if len(out) > max_total:
+                raise ValueError("chunked body: body too large")
+
+        return bytes(out)
+
     def _read_body(self) -> bytes:
+        te = str(self.headers.get("transfer-encoding") or "")
+        if "chunked" in te.lower():
+            return self._read_chunked_body()
+
         try:
             length = int(self.headers.get("content-length") or "0")
         except ValueError:
@@ -257,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         req_id = q.get("id", [""])[0]
         headers_allowlist = {}
-        for name in ("cookie", "authorization", "content-length", "host", "expect"):
+        for name in ("cookie", "authorization", "content-length", "transfer-encoding", "host", "expect", "accept-encoding", "referer"):
             v = self.headers.get(name)
             if v is not None:
                 raw = str(v)
@@ -269,13 +333,15 @@ class Handler(BaseHTTPRequestHandler):
                     summary = _cookie_header_summary(raw)
                     if summary:
                         headers_allowlist[name] = summary
+                elif name == "referer":
+                    headers_allowlist[name] = _strip_query_all(raw)
                 else:
                     headers_allowlist[name] = raw
 
         resp_allowlist: Dict[str, str] = {}
         for k, v in response_headers.items():
             lk = str(k).lower().strip()
-            if lk in ("location", "set-cookie", "www-authenticate"):
+            if lk in ("location", "set-cookie", "www-authenticate", "content-encoding", "content-length"):
                 # Location 中会携带 id（用于关联日志），对比时需要去掉
                 if lk == "location":
                     resp_allowlist[lk] = _strip_query_id(str(v))
@@ -380,6 +446,64 @@ class Handler(BaseHTTPRequestHandler):
         if self._handle_expect_417():
             return
 
+        # 307 redirect（保持 method/body）→ /method（用于“请求体可重发”语义探针）
+        if self.path.startswith("/redir_307"):
+            # 必须消费请求体，否则同一连接上的后续请求会被残留 body 字节污染。
+            _ = self._read_body()
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            next_path = "/method"
+            if req_id:
+                next_path = f"{next_path}?id={req_id}"
+            self.send_response(307)
+            self.send_header("Location", next_path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(307, {"Location": next_path})
+            return
+
+        # POST/PUT 版 auth/basic：用于“401 challenge → 重发 body”语义探针（seekable vs non-seekable）
+        if self.path.startswith("/auth/basic"):
+            body = self._read_body()
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("basic "):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            self.send_response(401)
+            v = "Basic realm=\"qcurl_lc\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
+        # POST/PUT 版 auth/digest：用于“401 challenge → 重发 body”语义探针（seekable vs non-seekable）
+        if self.path.startswith("/auth/digest"):
+            body = self._read_body()
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("digest "):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            self.send_response(401)
+            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
         if self.path.startswith("/method"):
             body = self._read_body()
             self.send_response(200)
@@ -400,6 +524,75 @@ class Handler(BaseHTTPRequestHandler):
         if self._handle_expect_417():
             return
 
+        # 307 redirect（保持 method/body）→ /method（用于“请求体可重发”语义探针）
+        if self.path.startswith("/redir_307"):
+            # 必须消费请求体，否则同一连接上的后续请求会被残留 body 字节污染。
+            _ = self._read_body()
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            req_id = q.get("id", [""])[0]
+            next_path = "/method"
+            if req_id:
+                next_path = f"{next_path}?id={req_id}"
+            self.send_response(307)
+            self.send_header("Location", next_path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(307, {"Location": next_path})
+            return
+
+        # POST 版 auth/basic：用于“401 challenge → 重发 body”语义探针（seekable vs non-seekable）
+        if self.path.startswith("/auth/basic"):
+            body = self._read_body()
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("basic "):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            self.send_response(401)
+            v = "Basic realm=\"qcurl_lc\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
+        # POST 版 auth/digest：用于“401 challenge → 重发 body”语义探针（seekable vs non-seekable）
+        if self.path.startswith("/auth/digest"):
+            body = self._read_body()
+            auth = str(self.headers.get("authorization") or "")
+            if auth.lower().startswith("digest "):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+                self._write_log(200, {})
+                return
+            self.send_response(401)
+            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            self.send_header("WWW-Authenticate", v)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            self._write_log(401, {"WWW-Authenticate": v})
+            return
+
+        if self.path.startswith("/method"):
+            body = self._read_body()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+            self._write_log(200, {})
+            return
+
         # POST 301 → follow 后应变为 GET（参考 curl/tests/data/test1011）
         if self.path.startswith("/redir_post_301"):
             # 必须消费请求体，否则同一连接上的后续请求会被残留 body 字节污染（导致 501/解析异常）。
@@ -414,6 +607,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             self._write_log(301, {"Location": next_path})
+            return
+
+        if self.path.startswith("/final_post_301"):
+            # KeepPost* 策略下，301 重定向后的目标仍可能收到 POST。
+            _ = self._read_body()
+            body = b"post-301-ok\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            self._write_log(200, {})
             return
 
         if self.path.startswith("/multipart"):
@@ -551,6 +756,38 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             self._write_log(200, {})
+            return
+
+        if self.path.startswith("/enc"):
+            raw_body = b"accept-encoding-ok\n"
+            accept = str(self.headers.get("accept-encoding") or "")
+            accept_lower = accept.lower()
+
+            encoding = ""
+            out = raw_body
+            if "br" in accept_lower and brotli is not None:
+                try:
+                    encoding = "br"
+                    out = brotli.compress(raw_body)
+                except Exception:
+                    encoding = ""
+                    out = raw_body
+            elif "gzip" in accept_lower:
+                encoding = "gzip"
+                out = gzip.compress(raw_body)
+            elif "deflate" in accept_lower:
+                encoding = "deflate"
+                out = zlib.compress(raw_body)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            if encoding:
+                self.send_header("Content-Encoding", encoding)
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            if out:
+                self.wfile.write(out)
+            self._write_log(200, {"Content-Encoding": encoding, "Content-Length": str(len(out))})
             return
 
         if self.path.startswith("/resp_headers"):

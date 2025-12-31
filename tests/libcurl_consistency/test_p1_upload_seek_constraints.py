@@ -1,0 +1,400 @@
+"""
+P1：带 body 的“可重发约束”（seekable vs non-seekable）。
+
+目标（M2 流式上传落地后启用）：
+- 对齐 QCurl 与 libcurl baseline 在“需要重发 body”的场景下的可观测语义。
+  - seekable body：允许 follow redirect / auth challenge 等触发的重发，并成功完成
+  - non-seekable body：必须明确失败（不允许 silent fallback）
+
+说明：
+- 本模块在 M2（3.1+）接口未落地前会整体 skip（避免 gate 引入无意义噪声）。
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+from pathlib import Path
+
+import pytest
+
+from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
+from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
+from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
+from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
+from tests.libcurl_consistency.pytest_support.artifacts import sha256_bytes, write_json
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _has_m2_upload_device_api() -> bool:
+    """
+    以源码为准的“能力门控”：
+    - M2 未落地前跳过本模块，避免 gate 引入无意义失败
+    - M2 落地后自动启用（无需人工改 env）
+    """
+    header = _REPO_ROOT / "src" / "QCNetworkRequest.h"
+    try:
+        text = header.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    return "setUploadDevice" in text
+
+
+if not _has_m2_upload_device_api():
+    pytest.skip("M2 uploadDevice API 未落地（3.1+），跳过 seek/重发约束一致性用例", allow_module_level=True)
+
+
+def _normalize_req_headers(headers: dict) -> dict:
+    out: dict = {}
+    for name in ("host", "content-length", "authorization", "expect"):
+        v = headers.get(name)
+        if v:
+            out[name] = v
+    return out
+
+
+def _response_sha_empty() -> str:
+    return sha256_bytes(b"")
+
+
+@pytest.mark.parametrize("seekable", [False, True])
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+def test_p1_stream_body_redirect_307_replay(seekable: bool, method: str, env, lc_observe_http):
+    """
+    307 redirect（保持 method/body）会触发 body 重发：
+    - seekable：应成功到达 /method 并回显 body
+    - non-seekable：应明确失败（无法重发）
+    """
+    qt_bin = os.environ.get("QCURL_QTTEST")
+    qt_path = Path(qt_bin).resolve() if qt_bin else None
+    if not qt_path or not qt_path.exists():
+        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+
+    collect_logs = should_collect_service_logs()
+    port = int(lc_observe_http["port"])
+    observe_log = Path(str(lc_observe_http["log_file"]))
+
+    suite = "p1_upload_seek"
+    proto = "http/1.1"
+    upload_size = 4096
+    flavor = "seekable" if seekable else "nonseekable"
+    case_variant = f"lc_stream_body_redirect_307_{method.lower()}_{flavor}_http_1.1"
+    case_id = f"p1_stream_body_redirect_307_{method.lower()}_{flavor}"
+
+    trace_base = f"lc_{uuid.uuid4().hex[:8]}_redir307_{method.lower()}_{'s' if seekable else 'n'}"
+    baseline_req_id = f"{trace_base}__baseline"
+    qcurl_req_id = f"{trace_base}__qcurl"
+
+    base_url = f"http://localhost:{port}/redir_307"
+    baseline_url = f"{base_url}?id={baseline_req_id}"
+    qcurl_url = f"{base_url}?id={qcurl_req_id}"
+
+    body = b"x" * upload_size
+    expect_success = bool(seekable)
+    expected_count = 2 if expect_success else 1  # /redir_307 -> /method
+
+    try:
+        observe_log.write_text("", encoding="utf-8")
+        baseline_args = [
+            "-V",
+            proto,
+            "--method",
+            method,
+            "--data-size",
+            str(upload_size),
+            "--stream-body",
+            "--follow",
+        ]
+        if seekable:
+            baseline_args.append("--seekable-body")
+        baseline_args.append(baseline_url)
+
+        baseline = run_libtest_case(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            client_name="cli_lc_http",
+            args=baseline_args,
+            request_meta={"method": method, "url": baseline_url, "headers": {}, "body": body},
+            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            download_count=1,
+            allowed_exit_codes={0, 7},
+        )
+        obs_base = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=expected_count)
+        baseline["payload"]["requests"] = [{
+            "method": obs.method,
+            "url": obs.url,
+            "headers": _normalize_req_headers(obs.headers),
+            "body_len": len(body),
+            "body_sha256": sha256_bytes(body),
+        } for obs in obs_base]
+        baseline["payload"]["responses"] = []
+        for idx, obs in enumerate(obs_base):
+            if idx < len(obs_base) - 1:
+                baseline["payload"]["responses"].append({
+                    "status": obs.status,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                    "body_len": 0,
+                    "body_sha256": _response_sha_empty(),
+                })
+            else:
+                baseline["payload"]["responses"].append({
+                    **baseline["payload"]["response"],
+                    "status": obs.status if expect_success else 0,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                })
+        baseline["payload"]["request"]["method"] = obs_base[0].method
+        baseline["payload"]["request"]["url"] = obs_base[0].url
+        baseline["payload"]["request"]["headers"] = _normalize_req_headers(obs_base[0].headers)
+        baseline["payload"]["response"]["status"] = obs_base[-1].status if expect_success else 0
+        baseline["payload"]["response"]["http_version"] = proto
+        baseline["payload"]["response"]["headers"] = dict(obs_base[-1].response_headers) if expect_success else {}
+        write_json(baseline["path"], baseline["payload"])
+
+        observe_log.write_text("", encoding="utf-8")
+        qcurl = run_qt_test(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            qt_executable=qt_path,
+            args=[],
+            request_meta={"method": method, "url": qcurl_url, "headers": {}, "body": body},
+            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            download_count=1,
+            case_env={
+                "QCURL_LC_CASE_ID": case_id,
+                "QCURL_LC_PROTO": proto,
+                "QCURL_LC_OBSERVE_HTTP_PORT": str(port),
+                "QCURL_LC_REQ_ID": qcurl_req_id,
+            },
+        )
+        obs_q = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=expected_count)
+        qcurl["payload"]["requests"] = [{
+            "method": obs.method,
+            "url": obs.url,
+            "headers": _normalize_req_headers(obs.headers),
+            "body_len": len(body),
+            "body_sha256": sha256_bytes(body),
+        } for obs in obs_q]
+        qcurl["payload"]["responses"] = []
+        for idx, obs in enumerate(obs_q):
+            if idx < len(obs_q) - 1:
+                qcurl["payload"]["responses"].append({
+                    "status": obs.status,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                    "body_len": 0,
+                    "body_sha256": _response_sha_empty(),
+                })
+            else:
+                qcurl["payload"]["responses"].append({
+                    **qcurl["payload"]["response"],
+                    "status": obs.status if expect_success else 0,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                })
+        qcurl["payload"]["request"]["method"] = obs_q[0].method
+        qcurl["payload"]["request"]["url"] = obs_q[0].url
+        qcurl["payload"]["request"]["headers"] = _normalize_req_headers(obs_q[0].headers)
+        qcurl["payload"]["response"]["status"] = obs_q[-1].status if expect_success else 0
+        qcurl["payload"]["response"]["http_version"] = proto
+        qcurl["payload"]["response"]["headers"] = dict(obs_q[-1].response_headers) if expect_success else {}
+        write_json(qcurl["path"], qcurl["payload"])
+
+        assert_artifacts_match(baseline["path"], qcurl["path"])
+    except Exception:
+        if collect_logs:
+            collect_service_logs_for_case(
+                env,
+                suite=suite,
+                case=case_variant,
+                logs={"observe_http_log": observe_log},
+                meta={
+                    "case_id": case_id,
+                    "proto": proto,
+                    "baseline_req_id": baseline_req_id,
+                    "qcurl_req_id": qcurl_req_id,
+                    "observe_port": port,
+                    "method": method,
+                    "seekable": seekable,
+                },
+            )
+        raise
+
+
+@pytest.mark.parametrize("seekable", [False, True])
+def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_observe_http):
+    """
+    401 challenge（Digest/AnySafe）会触发同一请求体重发：
+    - seekable：应通过 challenge 并成功回显 body
+    - non-seekable：应明确失败（无法重发）
+    """
+    qt_bin = os.environ.get("QCURL_QTTEST")
+    qt_path = Path(qt_bin).resolve() if qt_bin else None
+    if not qt_path or not qt_path.exists():
+        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+
+    collect_logs = should_collect_service_logs()
+    port = int(lc_observe_http["port"])
+    observe_log = Path(str(lc_observe_http["log_file"]))
+
+    suite = "p1_upload_seek"
+    proto = "http/1.1"
+    upload_size = 4096
+    flavor = "seekable" if seekable else "nonseekable"
+    case_variant = f"lc_stream_body_httpauth_anysafe_digest_post_{flavor}_http_1.1"
+    case_id = f"p1_stream_body_httpauth_anysafe_digest_post_{flavor}"
+
+    trace_base = f"lc_{uuid.uuid4().hex[:8]}_authdigest_post_{'s' if seekable else 'n'}"
+    baseline_req_id = f"{trace_base}__baseline"
+    qcurl_req_id = f"{trace_base}__qcurl"
+
+    base_url = f"http://localhost:{port}/auth/digest"
+    baseline_url = f"{base_url}?id={baseline_req_id}"
+    qcurl_url = f"{base_url}?id={qcurl_req_id}"
+
+    body = b"x" * upload_size
+    expect_success = bool(seekable)
+    expected_count = 2 if expect_success else 1  # 401 -> 200（或 non-seekable 失败止于首次）
+
+    try:
+        observe_log.write_text("", encoding="utf-8")
+        baseline_args = [
+            "-V",
+            proto,
+            "--method",
+            "POST",
+            "--data-size",
+            str(upload_size),
+            "--stream-body",
+            "--user",
+            "user",
+            "--pass",
+            "passwd",
+            "--httpauth",
+            "anysafe",
+        ]
+        if seekable:
+            baseline_args.append("--seekable-body")
+        baseline_args.append(baseline_url)
+
+        baseline = run_libtest_case(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            client_name="cli_lc_http",
+            args=baseline_args,
+            request_meta={"method": "POST", "url": baseline_url, "headers": {}, "body": body},
+            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            download_count=1,
+            allowed_exit_codes={0, 7},
+        )
+        obs_base = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=expected_count)
+        baseline["payload"]["requests"] = [{
+            "method": obs.method,
+            "url": obs.url,
+            "headers": _normalize_req_headers(obs.headers),
+            "body_len": len(body),
+            "body_sha256": sha256_bytes(body),
+        } for obs in obs_base]
+        baseline["payload"]["responses"] = []
+        for idx, obs in enumerate(obs_base):
+            if idx < len(obs_base) - 1:
+                baseline["payload"]["responses"].append({
+                    "status": obs.status,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                    "body_len": 0,
+                    "body_sha256": _response_sha_empty(),
+                })
+            else:
+                baseline["payload"]["responses"].append({
+                    **baseline["payload"]["response"],
+                    "status": obs.status if expect_success else 0,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                })
+        baseline["payload"]["request"]["method"] = obs_base[0].method
+        baseline["payload"]["request"]["url"] = obs_base[0].url
+        baseline["payload"]["request"]["headers"] = _normalize_req_headers(obs_base[0].headers)
+        baseline["payload"]["response"]["status"] = obs_base[-1].status if expect_success else 0
+        baseline["payload"]["response"]["http_version"] = proto
+        baseline["payload"]["response"]["headers"] = dict(obs_base[-1].response_headers) if expect_success else {}
+        write_json(baseline["path"], baseline["payload"])
+
+        observe_log.write_text("", encoding="utf-8")
+        qcurl = run_qt_test(
+            env=env,
+            suite=suite,
+            case=case_variant,
+            qt_executable=qt_path,
+            args=[],
+            request_meta={"method": "POST", "url": qcurl_url, "headers": {}, "body": body},
+            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            download_count=1,
+            case_env={
+                "QCURL_LC_CASE_ID": case_id,
+                "QCURL_LC_PROTO": proto,
+                "QCURL_LC_OBSERVE_HTTP_PORT": str(port),
+                "QCURL_LC_REQ_ID": qcurl_req_id,
+                "QCURL_LC_AUTH_USER": "user",
+                "QCURL_LC_AUTH_PASS": "passwd",
+            },
+        )
+        obs_q = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=expected_count)
+        qcurl["payload"]["requests"] = [{
+            "method": obs.method,
+            "url": obs.url,
+            "headers": _normalize_req_headers(obs.headers),
+            "body_len": len(body),
+            "body_sha256": sha256_bytes(body),
+        } for obs in obs_q]
+        qcurl["payload"]["responses"] = []
+        for idx, obs in enumerate(obs_q):
+            if idx < len(obs_q) - 1:
+                qcurl["payload"]["responses"].append({
+                    "status": obs.status,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                    "body_len": 0,
+                    "body_sha256": _response_sha_empty(),
+                })
+            else:
+                qcurl["payload"]["responses"].append({
+                    **qcurl["payload"]["response"],
+                    "status": obs.status if expect_success else 0,
+                    "http_version": proto,
+                    "headers": dict(obs.response_headers),
+                })
+        qcurl["payload"]["request"]["method"] = obs_q[0].method
+        qcurl["payload"]["request"]["url"] = obs_q[0].url
+        qcurl["payload"]["request"]["headers"] = _normalize_req_headers(obs_q[0].headers)
+        qcurl["payload"]["response"]["status"] = obs_q[-1].status if expect_success else 0
+        qcurl["payload"]["response"]["http_version"] = proto
+        qcurl["payload"]["response"]["headers"] = dict(obs_q[-1].response_headers) if expect_success else {}
+        write_json(qcurl["path"], qcurl["payload"])
+
+        assert_artifacts_match(baseline["path"], qcurl["path"])
+    except Exception:
+        if collect_logs:
+            collect_service_logs_for_case(
+                env,
+                suite=suite,
+                case=case_variant,
+                logs={"observe_http_log": observe_log},
+                meta={
+                    "case_id": case_id,
+                    "proto": proto,
+                    "baseline_req_id": baseline_req_id,
+                    "qcurl_req_id": qcurl_req_id,
+                    "observe_port": port,
+                    "seekable": seekable,
+                },
+            )
+        raise
+

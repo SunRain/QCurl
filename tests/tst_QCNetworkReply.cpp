@@ -56,6 +56,7 @@ private slots:
     void testAsyncGetRequest();
     void testAsyncPostRequest();
     void testAsyncDeleteWithBody();
+    void testExpect100ContinueTimeoutIgnoredOnGet();
     void testAsyncHeadRequest();
     void testAsyncMultipleRequests();
 
@@ -255,6 +256,9 @@ void TestQCNetworkReply::testSyncInvalidUrl()
     // 注意：同步请求即使失败也可能不会设置 isFinished()
     
     QCNetworkRequest request(QUrl("http://invalid-domain-that-does-not-exist-12345.com"));
+    // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
     auto *reply = m_manager->sendGetSync(request);
 
     QVERIFY(reply != nullptr);
@@ -451,6 +455,73 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     reply->deleteLater();
 }
 
+void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
+{
+    QTcpServer server;
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("Cannot bind local port for test HTTP server");
+    }
+    const quint16 port = server.serverPort();
+
+    QByteArray recvBuf;
+    QPointer<QTcpSocket> clientSocket;
+
+    auto tryHandleRequest = [&]() {
+        if (!clientSocket) {
+            return;
+        }
+
+        recvBuf.append(clientSocket->readAll());
+        const int headerEnd = recvBuf.indexOf("\r\n\r\n");
+        if (headerEnd < 0) {
+            return;
+        }
+
+        const QByteArray resp =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+
+        clientSocket->write(resp);
+        clientSocket->flush();
+        clientSocket->disconnectFromHost();
+    };
+
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        clientSocket = server.nextPendingConnection();
+        QVERIFY(clientSocket);
+        connect(clientSocket, &QTcpSocket::readyRead, this, tryHandleRequest);
+        connect(clientSocket, &QTcpSocket::disconnected, clientSocket, &QTcpSocket::deleteLater);
+        tryHandleRequest();
+    });
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/get").arg(port)));
+    request.setConnectTimeout(std::chrono::milliseconds(2000));
+    request.setTimeout(std::chrono::milliseconds(5000));
+    request.setExpect100ContinueTimeout(std::chrono::milliseconds(0));
+
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(reply != nullptr);
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QVERIFY(finishedSpy.wait(5000));
+
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    const QStringList warnings = reply->capabilityWarnings();
+    bool found = false;
+    for (const QString &w : warnings) {
+        if (w.contains(QStringLiteral("100-continue"), Qt::CaseInsensitive)) {
+            found = true;
+            break;
+        }
+    }
+    QVERIFY2(found, "expected capability warning for ignored expect100 timeout on GET");
+
+    reply->deleteLater();
+}
+
 void TestQCNetworkReply::testAsyncHeadRequest()
 {
     if (!m_isHttpbinReachable) {
@@ -545,6 +616,9 @@ void TestQCNetworkReply::testStateTransitionIdleToFinished()
 void TestQCNetworkReply::testStateTransitionIdleToError()
 {
     QCNetworkRequest request(QUrl("http://invalid-url-12345.com"));
+    // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
     auto *reply = m_manager->sendGet(request);
 
     QVERIFY(reply->state() == ReplyState::Idle || reply->state() == ReplyState::Running);
@@ -820,6 +894,9 @@ void TestQCNetworkReply::testNetworkError()
 {
     // 使用不存在的域名模拟网络错误
     QCNetworkRequest request(QUrl("http://this-domain-does-not-exist-123456789.com"));
+    // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
     auto *reply = m_manager->sendGetSync(request);
 
     QVERIFY(reply->error() != NetworkError::NoError);
@@ -847,6 +924,9 @@ void TestQCNetworkReply::testHttpError404()
 void TestQCNetworkReply::testErrorString()
 {
     QCNetworkRequest request(QUrl("http://invalid-12345.com"));
+    // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
     auto *reply = m_manager->sendGetSync(request);
 
     QString errStr = reply->errorString();
@@ -880,6 +960,9 @@ void TestQCNetworkReply::testFinishedSignal()
 void TestQCNetworkReply::testErrorSignal()
 {
     QCNetworkRequest request(QUrl("http://invalid-url-12345.com"));
+    // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy errorSpy(reply,

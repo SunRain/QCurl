@@ -34,6 +34,7 @@ private slots:
     void testSetAndGetLogger();
     void testLoggerNullptr();
     void testMultipleLoggers();
+    void testDebugTraceFlag();
 
     // 日志记录测试
     void testRequestLogging();
@@ -155,6 +156,17 @@ void TestQCNetworkLogger::testMultipleLoggers()
     manager1->deleteLater();
     manager2->deleteLater();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void TestQCNetworkLogger::testDebugTraceFlag()
+{
+    QVERIFY(!m_manager->debugTraceEnabled());
+
+    m_manager->setDebugTraceEnabled(true);
+    QVERIFY(m_manager->debugTraceEnabled());
+
+    m_manager->setDebugTraceEnabled(false);
+    QVERIFY(!m_manager->debugTraceEnabled());
 }
 
 /**

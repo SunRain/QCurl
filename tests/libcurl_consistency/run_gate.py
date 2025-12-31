@@ -444,7 +444,10 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
         base.extend([
             "tests/libcurl_consistency/test_p1_proxy.py",
             "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py",
+            "tests/libcurl_consistency/test_p1_redirect_policy.py",
             "tests/libcurl_consistency/test_p1_httpauth.py",
+            "tests/libcurl_consistency/test_p1_accept_encoding.py",
+            "tests/libcurl_consistency/test_p1_upload_seek_constraints.py",
             "tests/libcurl_consistency/test_p1_empty_body.py",
             "tests/libcurl_consistency/test_p1_resp_headers.py",
             "tests/libcurl_consistency/test_p1_progress.py",
@@ -455,7 +458,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p1_postfields_binary.py",
             "tests/libcurl_consistency/test_p1_cookiejar_1903.py",
         ])
-    if cfg.suite == "all":
+    if cfg.suite in ("p2", "all"):
         base.extend([
             "tests/libcurl_consistency/test_p2_tls_verify.py",
             "tests/libcurl_consistency/test_p2_cookie_request_header.py",
@@ -463,6 +466,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_error_paths.py",
             "tests/libcurl_consistency/test_p2_socks5_proxy_fail.py",
             "tests/libcurl_consistency/test_p2_expect_100_continue.py",
+            "tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py",
             "tests/libcurl_consistency/test_p2_pause_resume.py",
             "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
         ])
@@ -487,7 +491,7 @@ def _gate_env(cfg: GateConfig) -> Dict[str, str]:
 
 def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(description="QCurl ↔ libcurl 一致性 Gate（P0 优先）")
-    parser.add_argument("--suite", choices=["p0", "p1", "all"], default="p0", help="选择要跑的套件（默认 p0）")
+    parser.add_argument("--suite", choices=["p0", "p1", "p2", "all"], default="p0", help="选择要跑的套件（默认 p0）")
     parser.add_argument("--with-ext", action="store_true", help="同时运行 ext suite（需要 QCURL_LC_EXT=1）")
     parser.add_argument("--build", action="store_true", help="先构建 tst_LibcurlConsistency 与 curl libtests")
     parser.add_argument("--qcurl-build", default="build", help="QCurl CMake build 目录（默认 build）")

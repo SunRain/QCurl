@@ -1,6 +1,8 @@
 #include <curl/curl.h>
 
+#include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -15,6 +17,7 @@ struct Args {
     std::string outFile = "download_0.data";
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
+    std::optional<std::string> acceptEncoding;  // "gzip,br" | ""(all)
     std::string user;
     std::string pass;
     std::string httpAuth;  // basic | any | anysafe
@@ -29,6 +32,12 @@ struct Args {
     bool multipartDemo = false;
     bool followLocation = false;
     long maxRedirs = 10;
+    bool autoReferer = false;
+    std::optional<long> postRedir;
+    std::string referer;
+    bool streamBody = false;
+    bool seekableBody = false;
+    bool unknownSize = false;
     bool verifyPeer = false;
     bool verifyHost = false;
     long connectTimeoutMs = -1;
@@ -152,6 +161,68 @@ size_t headerCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return total;
 }
 
+struct BodyStream {
+    const char *data = nullptr;
+    std::size_t len = 0;
+    std::size_t offset = 0;
+
+    void reset() { offset = 0; }
+
+    std::size_t remaining() const
+    {
+        if (offset >= len) {
+            return 0;
+        }
+        return len - offset;
+    }
+};
+
+size_t readBodyCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    auto *ctx = static_cast<BodyStream *>(userdata);
+    if (!ctx || !ptr) {
+        return 0;
+    }
+    const std::size_t max = size * nmemb;
+    if (max == 0) {
+        return 0;
+    }
+    const std::size_t remain = ctx->remaining();
+    if (remain == 0) {
+        return 0;
+    }
+    const std::size_t n = std::min(max, remain);
+    std::memcpy(ptr, ctx->data + ctx->offset, n);
+    ctx->offset += n;
+    return n;
+}
+
+int seekBodyCallback(void *userdata, curl_off_t offset, int origin)
+{
+    auto *ctx = static_cast<BodyStream *>(userdata);
+    if (!ctx) {
+        return CURL_SEEKFUNC_FAIL;
+    }
+
+    curl_off_t base = 0;
+    if (origin == SEEK_SET) {
+        base = 0;
+    } else if (origin == SEEK_CUR) {
+        base = static_cast<curl_off_t>(ctx->offset);
+    } else if (origin == SEEK_END) {
+        base = static_cast<curl_off_t>(ctx->len);
+    } else {
+        return CURL_SEEKFUNC_FAIL;
+    }
+
+    const curl_off_t next = base + offset;
+    if (next < 0 || next > static_cast<curl_off_t>(ctx->len)) {
+        return CURL_SEEKFUNC_FAIL;
+    }
+    ctx->offset = static_cast<std::size_t>(next);
+    return CURL_SEEKFUNC_OK;
+}
+
 std::string toUpperAscii(const std::string &s)
 {
     std::string out;
@@ -203,6 +274,18 @@ std::optional<Args> parseArgs(int argc, char **argv)
         if (arg == "--multipart-demo") {
             out.multipartDemo = true;
             out.method = "POST";
+            continue;
+        }
+        if (arg == "--stream-body") {
+            out.streamBody = true;
+            continue;
+        }
+        if (arg == "--seekable-body") {
+            out.seekableBody = true;
+            continue;
+        }
+        if (arg == "--unknown-size") {
+            out.unknownSize = true;
             continue;
         }
         if (arg == "--out" && i + 1 < argc) {
@@ -333,6 +416,43 @@ std::optional<Args> parseArgs(int argc, char **argv)
             }
             continue;
         }
+        if (arg == "--auto-referer") {
+            out.autoReferer = true;
+            continue;
+        }
+        if (arg == "--post-redir" && i + 1 < argc) {
+            const std::string v = toLowerAscii(argv[++i]);
+            if (v == "default") {
+                out.postRedir.reset();
+            } else if (v == "301") {
+                out.postRedir = CURL_REDIR_POST_301;
+            } else if (v == "302") {
+                out.postRedir = CURL_REDIR_POST_302;
+            } else if (v == "303") {
+                out.postRedir = CURL_REDIR_POST_303;
+            } else if (v == "all") {
+                out.postRedir = CURL_REDIR_POST_ALL;
+            } else {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (arg == "--referer" && i + 1 < argc) {
+            out.referer = argv[++i];
+            continue;
+        }
+        if (arg == "--accept-encoding" && i + 1 < argc) {
+            std::string v = argv[++i];
+            if (toLowerAscii(v) == "all") {
+                v.clear();  // 空字符串：让 libcurl 使用其内置支持的编码列表，并启用自动解压
+            }
+            out.acceptEncoding = v;
+            continue;
+        }
+        if (arg == "--accept-encoding-all") {
+            out.acceptEncoding = std::string();
+            continue;
+        }
         if (arg == "--secure") {
             out.verifyPeer = true;
             out.verifyHost = true;
@@ -355,6 +475,7 @@ int printUsage()
     std::cerr
         << "Usage: qcurl_lc_http_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
         << "  [--method <GET|HEAD|POST|PUT|PATCH|DELETE>] [--data-size <n>]\n"
+        << "  [--stream-body [--seekable-body] [--unknown-size]]\n"
         << "  [--expect100]\n"
         << "  [--multipart-demo]\n"
         << "  [--header-out <file>]\n"
@@ -363,6 +484,8 @@ int printUsage()
         << "  [--proxy <proxy_url> [--proxy-type <http|https|socks4|socks4a|socks5|socks5h>] --proxy-user <user> --proxy-pass <pass>]\n"
         << "  [--cookiefile <path>] [--cookiejar <path>]\n"
         << "  [--follow] [--max-redirs <n>]\n"
+        << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
+        << "  [--accept-encoding <csv|all>] [--accept-encoding-all]\n"
         << "  [--secure] [--cainfo <path>]\n"
         << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>]\n"
         << "  [--low-speed-time <s>] [--low-speed-limit <bytes_per_sec>]\n"
@@ -436,6 +559,21 @@ int main(int argc, char **argv)
     if ((args.method == "GET" || args.method == "HEAD") && args.dataSize > 0) {
         return printUsage();
     }
+    if (args.streamBody && args.multipartDemo) {
+        return printUsage();
+    }
+    if (args.streamBody && !(args.method == "POST" || args.method == "PUT")) {
+        return printUsage();
+    }
+    if (args.unknownSize && !args.streamBody) {
+        return printUsage();
+    }
+    if (args.unknownSize && args.method != "POST") {
+        return printUsage();
+    }
+    if (args.unknownSize && args.proto != "http/1.1") {
+        return printUsage();
+    }
 
     const CURLcode g = curl_global_init(CURL_GLOBAL_ALL);
     if (g != CURLE_OK) {
@@ -455,6 +593,18 @@ int main(int argc, char **argv)
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, args.followLocation ? 1L : 0L);
     if (args.followLocation) {
         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, args.maxRedirs);
+        if (args.autoReferer) {
+            curl_easy_setopt(curl, CURLOPT_AUTOREFERER, 1L);
+        }
+        if (args.postRedir.has_value()) {
+            curl_easy_setopt(curl, CURLOPT_POSTREDIR, args.postRedir.value());
+        }
+    }
+    if (!args.referer.empty()) {
+        curl_easy_setopt(curl, CURLOPT_REFERER, args.referer.c_str());
+    }
+    if (args.acceptEncoding.has_value()) {
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, args.acceptEncoding.value().c_str());
     }
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, args.verifyPeer ? 1L : 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, args.verifyHost ? 2L : 0L);
@@ -477,6 +627,9 @@ int main(int argc, char **argv)
     if (args.dataSize > 0) {
         body.assign(static_cast<std::size_t>(args.dataSize), 'x');
     }
+    BodyStream bodyStream;
+    bodyStream.data = body.data();
+    bodyStream.len = body.size();
 
     curl_mime *mime = nullptr;
     curl_slist *headers = nullptr;
@@ -524,6 +677,23 @@ int main(int argc, char **argv)
 
     if (args.method == "HEAD") {
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    } else if (args.streamBody) {
+        curl_easy_setopt(curl, CURLOPT_READFUNCTION, &readBodyCallback);
+        curl_easy_setopt(curl, CURLOPT_READDATA, &bodyStream);
+        if (args.seekableBody) {
+            curl_easy_setopt(curl, CURLOPT_SEEKFUNCTION, &seekBodyCallback);
+            curl_easy_setopt(curl, CURLOPT_SEEKDATA, &bodyStream);
+        }
+
+        if (args.method == "POST") {
+            curl_easy_setopt(curl, CURLOPT_POST, 1L);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, nullptr);
+            const curl_off_t postSize = args.unknownSize ? static_cast<curl_off_t>(-1) : static_cast<curl_off_t>(bodyStream.len);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, postSize);
+        } else if (args.method == "PUT") {
+            curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+            curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(bodyStream.len));
+        }
     } else if (args.method == "POST" && !args.multipartDemo) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
@@ -631,6 +801,9 @@ int main(int argc, char **argv)
 
     CURLcode rc = CURLE_OK;
     for (int i = 0; i < args.repeat; ++i) {
+        if (args.streamBody) {
+            bodyStream.reset();
+        }
         headerData.clear();
         std::ofstream out(args.outFile, std::ios::binary | std::ios::trunc);
         if (!out.is_open()) {

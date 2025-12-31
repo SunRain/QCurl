@@ -38,6 +38,7 @@ endfunction()
 # 添加测试文件
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
+add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
 add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp)  # v2.1.0: 重试机制测试
 add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp)  # v2.2.0: HTTP/2 功能测试
@@ -48,9 +49,12 @@ add_qcurl_test(tst_QCRequestBuilder tst_QCRequestBuilder.cpp)  # v2.9.0: 传统 
 add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp)  # v2.11.0: Multipart/form-data 测试
 add_qcurl_test(tst_QCNetworkFileTransfer tst_QCNetworkFileTransfer.cpp)  # v2.11.0+: 文件传输 API 测试
 add_qcurl_test(tst_QCNetworkIODeviceLifetime tst_QCNetworkIODeviceLifetime.cpp)  # v2.20.0: QIODevice 生命周期契约测试
+add_qcurl_test(tst_QCNetworkStreamUpload tst_QCNetworkStreamUpload.cpp)  # v2.20.0+: 流式上传契约/分支覆盖测试
 add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp)  # v2.12.0: 缓存机制测试
 add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp)  # v2.13.0: 缓存集成测试
 add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp)  # v2.14.0: 连接池测试
+add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp)  # v2.21.0: 网络路径与 DNS 控制（M4）
+add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp)  # v2.22.0: multi share handle（M6+）
 
 # v2.15.0 + v2.16.0: 生产级增强和开发体验优化测试
 add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp)  # v2.15.0: Logger 系统测试
@@ -117,7 +121,7 @@ add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量
-set(TEST_COUNT 23)  # v2.20.0: 新增 1 个测试 (22 + 1 = 23)
+set(TEST_COUNT 27)  # 不含 WebSocket 条件测试的总数
 if(QCURL_WEBSOCKET_SUPPORT)
     math(EXPR TEST_COUNT "${TEST_COUNT} + 3")  # WebSocket + WebSocketPool + WebSocketCompression
 endif()
