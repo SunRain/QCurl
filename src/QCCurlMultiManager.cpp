@@ -1,15 +1,97 @@
 #include "QCCurlMultiManager.h"
+#include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
+#include "QCNetworkConnectionPoolConfig.h"
 
 #include <QDebug>
 #include <QList>
 #include <QMutexLocker>
+#include <QStringList>
 #include <QThread>
 #include <QTimer>
 
 namespace QCurl {
+
+void QCCurlMultiManager::shareLockCallback(CURL *, curl_lock_data data, curl_lock_access, void *userptr)
+{
+    auto *context = static_cast<ShareContext*>(userptr);
+    if (!context) {
+        return;
+    }
+
+    switch (data) {
+    case CURL_LOCK_DATA_DNS:
+        context->dnsMutex.lock();
+        return;
+    case CURL_LOCK_DATA_COOKIE:
+        context->cookieMutex.lock();
+        return;
+    case CURL_LOCK_DATA_SSL_SESSION:
+        context->sslMutex.lock();
+        return;
+    default:
+        context->otherMutex.lock();
+        return;
+    }
+}
+
+void QCCurlMultiManager::shareUnlockCallback(CURL *, curl_lock_data data, void *userptr)
+{
+    auto *context = static_cast<ShareContext*>(userptr);
+    if (!context) {
+        return;
+    }
+
+    switch (data) {
+    case CURL_LOCK_DATA_DNS:
+        context->dnsMutex.unlock();
+        return;
+    case CURL_LOCK_DATA_COOKIE:
+        context->cookieMutex.unlock();
+        return;
+    case CURL_LOCK_DATA_SSL_SESSION:
+        context->sslMutex.unlock();
+        return;
+    default:
+        context->otherMutex.unlock();
+        return;
+    }
+}
+
+QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(const QCNetworkAccessManager *manager)
+{
+    ShareConfig out;
+    if (!manager) {
+        return out;
+    }
+
+    const auto config = manager->shareHandleConfig();
+    out.dnsCache = config.shareDnsCache;
+    out.cookies = config.shareCookies;
+    out.sslSession = config.shareSslSession;
+    return out;
+}
+
+QString QCCurlMultiManager::shareConfigSummary(const ShareConfig &config)
+{
+    if (!config.enabled()) {
+        return QStringLiteral("关闭");
+    }
+
+    QStringList parts;
+    if (config.dnsCache) {
+        parts.append(QStringLiteral("DNS"));
+    }
+    if (config.cookies) {
+        parts.append(QStringLiteral("Cookie"));
+    }
+    if (config.sslSession) {
+        parts.append(QStringLiteral("SSL session"));
+    }
+    return parts.join(QStringLiteral(","));
+}
 
 // ============================================================================
 // QCCurlMultiManager 实现
@@ -91,12 +173,17 @@ QCCurlMultiManager::~QCCurlMultiManager()
 
     QList<CURL*> activeHandles;
     QList<SocketInfo*> sockets;
+    QList<ShareContext*> shareContexts;
     {
         QMutexLocker locker(&m_mutex);
         activeHandles = m_activeReplies.keys();
         sockets = m_socketMap.values();
         m_activeReplies.clear();
         m_socketMap.clear();
+        shareContexts = m_shareContexts.values();
+        m_shareContexts.clear();
+        m_easyToShareContext.clear();
+        m_easyShareOptionSet.clear();
     }
 
     if (!activeHandles.isEmpty()) {
@@ -123,6 +210,17 @@ QCCurlMultiManager::~QCCurlMultiManager()
         delete info;
     }
 
+    for (ShareContext *context : shareContexts) {
+        if (!context) {
+            continue;
+        }
+        if (context->share) {
+            curl_share_cleanup(context->share);
+            context->share = nullptr;
+        }
+        delete context;
+    }
+
     // 清理 multi handle
     if (m_multiHandle) {
         curl_multi_cleanup(m_multiHandle);
@@ -130,6 +228,211 @@ QCCurlMultiManager::~QCCurlMultiManager()
     }
 
     qDebug() << "QCCurlMultiManager: Destruction complete";
+}
+
+QCCurlMultiManager::ShareContext *QCCurlMultiManager::getOrCreateShareContextLocked(const QCNetworkAccessManager *manager)
+{
+    if (!manager) {
+        return nullptr;
+    }
+
+    auto it = m_shareContexts.find(manager);
+    if (it != m_shareContexts.end()) {
+        return it.value();
+    }
+
+    auto *context = new ShareContext;
+    context->scopeKey = manager;
+    m_shareContexts.insert(manager, context);
+
+    QObject::connect(const_cast<QCNetworkAccessManager*>(manager), &QObject::destroyed, this, [this, manager]() {
+        QMutexLocker locker(&m_mutex);
+        onAccessManagerDestroyedLocked(manager);
+    });
+
+    return context;
+}
+
+void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessManager *manager)
+{
+    auto it = m_shareContexts.find(manager);
+    if (it == m_shareContexts.end()) {
+        return;
+    }
+
+    ShareContext *context = it.value();
+    if (!context) {
+        m_shareContexts.erase(it);
+        return;
+    }
+
+    context->scopeDestroyed = true;
+    context->pendingDelete = true;
+
+    if (context->activeUsers == 0) {
+        if (context->share) {
+            curl_share_cleanup(context->share);
+            context->share = nullptr;
+        }
+        m_shareContexts.erase(it);
+        delete context;
+        return;
+    }
+
+    context->pending = ShareConfig{};
+}
+
+bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, const ShareConfig &desired, QString *outError)
+{
+    if (!context || context->activeUsers != 0) {
+        if (outError) {
+            *outError = QStringLiteral("share handle 正在使用中，无法切换配置");
+        }
+        return false;
+    }
+
+    context->pending.reset();
+
+    if (!desired.enabled()) {
+        if (context->share) {
+            curl_share_cleanup(context->share);
+            context->share = nullptr;
+        }
+        context->applied = ShareConfig{};
+        context->lastInitAttempt = desired;
+        context->lastInitFailed = false;
+        context->lastInitError.clear();
+        return true;
+    }
+
+    if (!context->share && context->lastInitFailed && context->lastInitAttempt == desired) {
+        if (outError) {
+            *outError = context->lastInitError;
+        }
+        return false;
+    }
+
+    if (context->share) {
+        curl_share_cleanup(context->share);
+        context->share = nullptr;
+    }
+
+    context->applied = ShareConfig{};
+    context->lastInitAttempt = desired;
+    context->lastInitFailed = false;
+    context->lastInitError.clear();
+
+    CURLSH *share = curl_share_init();
+    if (!share) {
+        context->lastInitFailed = true;
+        context->lastInitError = QStringLiteral("curl_share_init 失败");
+        if (outError) {
+            *outError = context->lastInitError;
+        }
+        return false;
+    }
+
+    auto failHard = [context, share, outError](const QString &message) {
+        curl_share_cleanup(share);
+        context->lastInitFailed = true;
+        context->lastInitError = message;
+        if (outError) {
+            *outError = message;
+        }
+    };
+
+    CURLSHcode rc = curl_share_setopt(share, CURLSHOPT_USERDATA, context);
+    if (rc != CURLSHE_OK) {
+        failHard(QStringLiteral("设置 CURLSHOPT_USERDATA 失败（%1）")
+                     .arg(QString::fromUtf8(curl_share_strerror(rc))));
+        return false;
+    }
+
+    rc = curl_share_setopt(share, CURLSHOPT_LOCKFUNC, shareLockCallback);
+    if (rc != CURLSHE_OK) {
+        failHard(QStringLiteral("设置 CURLSHOPT_LOCKFUNC 失败（%1）")
+                     .arg(QString::fromUtf8(curl_share_strerror(rc))));
+        return false;
+    }
+
+    rc = curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, shareUnlockCallback);
+    if (rc != CURLSHE_OK) {
+        failHard(QStringLiteral("设置 CURLSHOPT_UNLOCKFUNC 失败（%1）")
+                     .arg(QString::fromUtf8(curl_share_strerror(rc))));
+        return false;
+    }
+
+    if (desired.dnsCache) {
+        rc = curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+        if (rc == CURLSHE_OK) {
+            context->applied.dnsCache = true;
+        }
+    }
+
+    if (desired.cookies) {
+        rc = curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
+        if (rc == CURLSHE_OK) {
+            context->applied.cookies = true;
+        }
+    }
+
+    if (desired.sslSession) {
+        rc = curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        if (rc == CURLSHE_OK) {
+            context->applied.sslSession = true;
+        }
+    }
+
+    if (!context->applied.enabled()) {
+        failHard(QStringLiteral("curl_share_setopt(CURLSHOPT_SHARE) 全部失败，share handle 不可用"));
+        return false;
+    }
+
+    context->share = share;
+    return true;
+}
+
+void QCCurlMultiManager::releaseShareForEasyHandleLocked(CURL *easy)
+{
+    auto it = m_easyToShareContext.find(easy);
+    if (it == m_easyToShareContext.end()) {
+        return;
+    }
+
+    ShareContext *context = it.value();
+    m_easyToShareContext.erase(it);
+
+    if (context && context->activeUsers > 0) {
+        context->activeUsers -= 1;
+    }
+
+    if (context) {
+        maybeFinalizeShareContextLocked(context);
+    }
+}
+
+void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
+{
+    if (!context || context->activeUsers != 0) {
+        return;
+    }
+
+    if (context->pending.has_value()) {
+        QString error;
+        (void)applyShareConfigIfIdleLocked(context, context->pending.value(), &error);
+        context->pending.reset();
+    }
+
+    if (!context->pendingDelete) {
+        return;
+    }
+
+    if (context->share) {
+        curl_share_cleanup(context->share);
+        context->share = nullptr;
+    }
+    m_shareContexts.remove(context->scopeKey);
+    delete context;
 }
 
 void QCCurlMultiManager::addReply(QCNetworkReply *reply)
@@ -151,6 +454,75 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     if (!easy) {
         qCritical() << "QCCurlMultiManager::addReply: reply has invalid curl handle";
         return;
+    }
+
+    // ========================================================================
+    // Share handle（M6+，可选）：默认关闭；显式开启时才设置 CURLOPT_SHARE
+    // ========================================================================
+
+    auto *accessManager = qobject_cast<QCNetworkAccessManager*>(reply->parent());
+    const ShareConfig desiredShareConfig = toShareConfig(accessManager);
+
+    ShareContext *shareContext = nullptr;
+    if (accessManager && desiredShareConfig.enabled()) {
+        shareContext = getOrCreateShareContextLocked(accessManager);
+        if (shareContext && !shareContext->pendingDelete) {
+            if (desiredShareConfig != shareContext->applied) {
+                if (shareContext->activeUsers > 0) {
+                    shareContext->pending = desiredShareConfig;
+                    reply->d_func()->capabilityWarnings.append(
+                        QStringLiteral("share handle 配置变更延迟生效：当前仍按 %1 生效，待在途请求结束后切换为 %2")
+                            .arg(shareConfigSummary(shareContext->applied))
+                            .arg(shareConfigSummary(desiredShareConfig)));
+                } else {
+                    QString initError;
+                    if (!applyShareConfigIfIdleLocked(shareContext, desiredShareConfig, &initError)) {
+                        const QString reason = initError.isEmpty() ? shareContext->lastInitError : initError;
+                        reply->d_func()->capabilityWarnings.append(
+                            QStringLiteral("share handle 不可用（%1），已降级为不共享缓存")
+                                .arg(reason.isEmpty() ? QStringLiteral("unknown") : reason));
+                    } else if (shareContext->applied != desiredShareConfig) {
+                        reply->d_func()->capabilityWarnings.append(
+                            QStringLiteral("share handle 降级：期望 %1，但实际仅启用 %2")
+                                .arg(shareConfigSummary(desiredShareConfig))
+                                .arg(shareConfigSummary(shareContext->applied)));
+                    }
+                }
+            }
+        } else {
+            reply->d_func()->capabilityWarnings.append(
+                QStringLiteral("share handle 作用域已销毁，已降级为不共享缓存"));
+        }
+    }
+
+    const bool canApplyShare = shareContext && shareContext->share && shareContext->applied.enabled();
+    if (canApplyShare) {
+        const CURLcode rc = curl_easy_setopt(easy, CURLOPT_SHARE, shareContext->share);
+        if (rc == CURLE_OK) {
+            shareContext->activeUsers += 1;
+            m_easyToShareContext.insert(easy, shareContext);
+            m_easyShareOptionSet.insert(easy, true);
+
+            if (shareContext->applied.cookies) {
+                auto *d = reply->d_func();
+                const bool hasCookieJar = (d->cookieMode != 0) && !d->cookieFilePath.isEmpty();
+                if (!hasCookieJar) {
+                    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
+                }
+            }
+        } else {
+            reply->d_func()->capabilityWarnings.append(
+                QStringLiteral("设置 CURLOPT_SHARE 失败（%1），已降级为不共享缓存")
+                    .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+            curl_easy_setopt(easy, CURLOPT_SHARE, nullptr);
+            m_easyShareOptionSet.insert(easy, false);
+        }
+    } else {
+        auto it = m_easyShareOptionSet.find(easy);
+        if (it != m_easyShareOptionSet.end() && it.value()) {
+            curl_easy_setopt(easy, CURLOPT_SHARE, nullptr);
+            it.value() = false;
+        }
     }
 
     // 检查是否已存在
@@ -196,6 +568,19 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                 // HTTP 错误（4xx, 5xx）
                 error = fromHttpCode(httpCode);
                 errorMsg = QString("HTTP error %1").arg(httpCode);
+            }
+
+#if defined(CURLE_SEND_FAIL_REWIND)
+            if (curlCode == CURLE_SEND_FAIL_REWIND && d->uploadDevice && !d->hasUploadErrorOverride) {
+                error = NetworkError::InvalidRequest;
+                errorMsg = QStringLiteral("uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
+                               .arg(QString::fromUtf8(curl_easy_strerror(static_cast<CURLcode>(curlCode))));
+            }
+#endif
+
+            if (d->hasUploadErrorOverride) {
+                error = d->uploadErrorOverrideCode;
+                errorMsg = d->uploadErrorOverrideMessage;
             }
 
             // 如果没有错误，标记为完成
@@ -277,6 +662,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     if (ret != CURLM_OK) {
         qCritical() << "QCCurlMultiManager::addReply: curl_multi_add_handle failed:" << ret;
         m_activeReplies.remove(easy);
+        releaseShareForEasyHandleLocked(easy);
         return;
     }
 
@@ -317,6 +703,7 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
     // 从活动列表移除
     m_activeReplies.remove(easy);
     m_runningRequests.fetch_sub(1, std::memory_order_relaxed);
+    releaseShareForEasyHandleLocked(easy);
 
     qDebug() << "QCCurlMultiManager::removeReply: Removed reply" << reply
              << "Remaining:" << m_runningRequests.load();
@@ -350,6 +737,144 @@ void QCCurlMultiManager::wakeup()
 #endif
 
     QTimer::singleShot(0, this, [this]() { handleSocketAction(CURL_SOCKET_TIMEOUT, 0); });
+}
+
+void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &config)
+{
+    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, config]() { applyLimitsConfig(config); }, Qt::QueuedConnection);
+        return;
+    }
+
+    if (!m_multiHandle) {
+        return;
+    }
+
+    const std::optional<long> newMaxTotal = config.multiMaxTotalConnections;
+    const std::optional<long> newMaxHost = config.multiMaxHostConnections;
+    const std::optional<long> newMaxStreams = config.multiMaxConcurrentStreams;
+    const std::optional<long> newMaxConnects = config.multiMaxConnects;
+
+    const bool clearRequested = (!newMaxTotal.has_value() && m_multiMaxTotalConnections.has_value()) ||
+                                (!newMaxHost.has_value() && m_multiMaxHostConnections.has_value()) ||
+                                (!newMaxStreams.has_value() && m_multiMaxConcurrentStreams.has_value()) ||
+                                (!newMaxConnects.has_value() && m_multiMaxConnects.has_value());
+
+    auto canRecreateMultiHandle = [this]() -> bool {
+        QMutexLocker locker(&m_mutex);
+        return m_activeReplies.isEmpty() && m_socketMap.isEmpty() &&
+               (m_runningRequests.load(std::memory_order_relaxed) == 0);
+    };
+
+    auto recreateMultiHandle = [this]() -> bool {
+        if (m_socketTimer) {
+            m_socketTimer->stop();
+        }
+
+        if (m_multiHandle) {
+            curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETDATA, nullptr);
+            curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETFUNCTION, nullptr);
+            curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERDATA, nullptr);
+            curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, nullptr);
+            curl_multi_cleanup(m_multiHandle);
+            m_multiHandle = nullptr;
+        }
+
+        m_multiHandle = curl_multi_init();
+        if (!m_multiHandle) {
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
+            return false;
+        }
+
+        CURLMcode ret = curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETDATA, this);
+        if (ret != CURLM_OK) {
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETDATA:" << ret;
+        }
+
+        ret = curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETFUNCTION, curlSocketCallback);
+        if (ret != CURLM_OK) {
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETFUNCTION:" << ret;
+        }
+
+        ret = curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERDATA, this);
+        if (ret != CURLM_OK) {
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERDATA:" << ret;
+        }
+
+        ret = curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, curlTimerCallback);
+        if (ret != CURLM_OK) {
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERFUNCTION:" << ret;
+        }
+
+        return true;
+    };
+
+    if (clearRequested) {
+        if (!canRecreateMultiHandle()) {
+            qWarning() << "QCCurlMultiManager::applyLimitsConfig: Some multi limits were cleared, but active requests exist; "
+                          "cannot reset multi handle safely (limits keep previous values until restart)";
+        } else {
+            if (!recreateMultiHandle()) {
+                qWarning() << "QCCurlMultiManager::applyLimitsConfig: Failed to reset multi handle; keeping previous limits";
+            } else {
+                m_multiMaxTotalConnections.reset();
+                m_multiMaxHostConnections.reset();
+                m_multiMaxConcurrentStreams.reset();
+                m_multiMaxConnects.reset();
+            }
+        }
+    }
+
+    auto setMultiLongOption = [this](CURLMoption option,
+                                     const char *optionName,
+                                     long value,
+                                     std::optional<long> &stateSlot) {
+        const CURLMcode rc = curl_multi_setopt(m_multiHandle, option, value);
+        if (rc == CURLM_OK) {
+            stateSlot = value;
+            return;
+        }
+
+        if (rc == CURLM_UNKNOWN_OPTION) {
+            qWarning() << "QCCurlMultiManager capability warning: libcurl 不支持"
+                       << optionName << "(" << curl_multi_strerror(rc) << ")";
+            return;
+        }
+
+        qWarning() << "QCCurlMultiManager: Failed to set" << optionName << "(" << curl_multi_strerror(rc) << ")";
+    };
+
+    if (newMaxTotal.has_value()) {
+        setMultiLongOption(CURLMOPT_MAX_TOTAL_CONNECTIONS,
+                           "CURLMOPT_MAX_TOTAL_CONNECTIONS",
+                           newMaxTotal.value(),
+                           m_multiMaxTotalConnections);
+    }
+
+    if (newMaxHost.has_value()) {
+        setMultiLongOption(CURLMOPT_MAX_HOST_CONNECTIONS,
+                           "CURLMOPT_MAX_HOST_CONNECTIONS",
+                           newMaxHost.value(),
+                           m_multiMaxHostConnections);
+    }
+
+    if (newMaxStreams.has_value()) {
+        setMultiLongOption(CURLMOPT_MAX_CONCURRENT_STREAMS,
+                           "CURLMOPT_MAX_CONCURRENT_STREAMS",
+                           newMaxStreams.value(),
+                           m_multiMaxConcurrentStreams);
+    }
+
+    if (newMaxConnects.has_value()) {
+        setMultiLongOption(CURLMOPT_MAXCONNECTS,
+                           "CURLMOPT_MAXCONNECTS",
+                           newMaxConnects.value(),
+                           m_multiMaxConnects);
+    }
 }
 
 void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBitmask)
@@ -407,6 +932,7 @@ void QCCurlMultiManager::checkMultiInfo()
             qWarning() << "QCCurlMultiManager::checkMultiInfo: Reply object already destroyed";
             curl_multi_remove_handle(m_multiHandle, easy);
             m_activeReplies.remove(easy);
+            releaseShareForEasyHandleLocked(easy);
             continue;
         }
 
@@ -429,6 +955,7 @@ void QCCurlMultiManager::checkMultiInfo()
         curl_multi_remove_handle(m_multiHandle, easy);
         m_activeReplies.remove(easy);
         m_runningRequests.fetch_sub(1, std::memory_order_relaxed);
+        releaseShareForEasyHandleLocked(easy);
 
         // 解锁后发射信号（避免死锁）
         locker.unlock();

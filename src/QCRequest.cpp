@@ -135,6 +135,8 @@ QCRequest& QCRequest::withJson(const QJsonObject &json)
     QJsonDocument doc(json);
     m_postData = doc.toJson(QJsonDocument::Compact);
 
+    m_request.clearUploadBody();
+
     // 自动设置 Content-Type
     m_request.setRawHeader("Content-Type", "application/json");
 
@@ -145,12 +147,28 @@ QCRequest& QCRequest::withBody(const QByteArray &data, const QString &contentTyp
 {
     m_postData = data;
 
+    m_request.clearUploadBody();
+
     if (!contentType.isEmpty()) {
         m_request.setRawHeader("Content-Type", contentType.toUtf8());
     } else {
         m_request.setRawHeader("Content-Type", "application/octet-stream");
     }
 
+    return *this;
+}
+
+QCRequest& QCRequest::withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
+{
+    m_request.setUploadDevice(device, sizeBytes);
+    m_postData.clear();
+    return *this;
+}
+
+QCRequest& QCRequest::withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
+{
+    m_request.setUploadFile(filePath, sizeBytes);
+    m_postData.clear();
     return *this;
 }
 
@@ -231,9 +249,17 @@ QCNetworkReply* QCRequest::sendInternal(QCNetworkAccessManager *manager)
     if (m_method == "GET") {
         reply = manager->sendGet(m_request);
     } else if (m_method == "POST") {
-        reply = manager->sendPost(m_request, m_postData);
+        if (m_request.uploadDevice() || m_request.uploadFilePath().has_value()) {
+            reply = manager->sendPost(m_request, QByteArray());
+        } else {
+            reply = manager->sendPost(m_request, m_postData);
+        }
     } else if (m_method == "PUT") {
-        reply = manager->sendPut(m_request, m_postData);
+        if (m_request.uploadDevice() || m_request.uploadFilePath().has_value()) {
+            reply = manager->sendPut(m_request, QByteArray());
+        } else {
+            reply = manager->sendPut(m_request, m_postData);
+        }
     } else if (m_method == "DELETE") {
         reply = manager->sendDelete(m_request, m_postData);
     } else if (m_method == "PATCH") {

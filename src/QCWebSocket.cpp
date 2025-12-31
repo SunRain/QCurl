@@ -67,130 +67,116 @@ void QCWebSocketPrivate::processIncomingData()
         return;
     }
 
-    char buffer[4096];
-    size_t received = 0;
-    const struct curl_ws_frame *meta = nullptr;
+    // 说明：在事件驱动模式下，单次 socket 可读事件可能已被 libcurl 预读了多段数据到内部缓冲。
+    // 若只调用一次 curl_ws_recv，会导致“还有 bytesleft 但不再触发新的 socket 事件”的死等。
+    // 这里必须循环读取，直到返回 CURLE_AGAIN。
+    for (int i = 0; i < 1024; ++i) {
+        char buffer[4096];
+        size_t received = 0;
+        const struct curl_ws_frame *meta = nullptr;
 
-    // 尝试接收 WebSocket 数据
-    CURLcode res = curl_ws_recv(curlManager.handle(),
-                                 buffer,
-                                 sizeof(buffer),
-                                 &received,
-                                 &meta);
+        CURLcode res = curl_ws_recv(curlManager.handle(),
+                                    buffer,
+                                    sizeof(buffer),
+                                    &received,
+                                    &meta);
 
-    // CURLE_AGAIN 表示无数据可读（非阻塞模式）
-    if (res == CURLE_AGAIN) {
-        return;
-    }
-
-    // 其他错误
-    if (res != CURLE_OK) {
-        handleError(QString::fromUtf8(curl_easy_strerror(res)));
-        return;
-    }
-
-    // 检查帧元数据
-    if (!meta) {
-        qWarning() << "QCWebSocket: Received data but no metadata";
-        return;
-    }
-
-    QByteArray data(buffer, static_cast<int>(received));
-
-    // 如果压缩已协商，解压缩数据（仅对 TEXT 和 BINARY 帧）
-    if (compressionNegotiated && (meta->flags & (CURLWS_TEXT | CURLWS_BINARY))) {
-        QByteArray decompressed;
-        if (decompressData(data, decompressed)) {
-            receivedBytesCompressed += data.size();
-            receivedBytesRaw += decompressed.size();
-            data = decompressed;
-            qDebug() << "QCWebSocket: Decompressed" << receivedBytesCompressed 
-                     << "bytes to" << decompressed.size() << "bytes";
-        } else {
-            // 解压缩失败，使用原始数据（可能未压缩）
-            qWarning() << "QCWebSocket: Decompression failed, using raw data";
+        if (res == CURLE_AGAIN) {
+            return;
         }
-    }
 
-    // 处理文本帧
-    if (meta->flags & CURLWS_TEXT) {
-        // 使用 bytesleft 判断是否还有更多分片
-        // bytesleft > 0 表示还有更多分片要接收
-        // bytesleft == 0 表示这是最后一个分片（或完整消息）
-        
-        if (meta->bytesleft > 0) {
-            // 还有更多分片，继续累积
-            fragmentBuffer.append(data);
-            qDebug() << "QCWebSocket: Text fragment received, offset:" << meta->offset
-                     << "received:" << received << "bytesleft:" << meta->bytesleft
-                     << "buffer size:" << fragmentBuffer.size();
-        } else {
-            // 最后一个分片或完整消息
-            if (!fragmentBuffer.isEmpty()) {
-                // 这是分片消息的最后一帧
-                fragmentBuffer.append(data);
-                qDebug() << "QCWebSocket: Text message complete, total size:" 
-                         << fragmentBuffer.size() << "bytes";
-                emit q->textMessageReceived(QString::fromUtf8(fragmentBuffer));
-                fragmentBuffer.clear();
+        if (res != CURLE_OK) {
+            handleError(QString::fromUtf8(curl_easy_strerror(res)));
+            return;
+        }
+
+        if (!meta) {
+            qWarning() << "QCWebSocket: Received data but no metadata";
+            continue;
+        }
+
+        QByteArray data(buffer, static_cast<int>(received));
+
+        // 如果压缩已协商，解压缩数据（仅对 TEXT 和 BINARY 帧）
+        if (compressionNegotiated && (meta->flags & (CURLWS_TEXT | CURLWS_BINARY))) {
+            QByteArray decompressed;
+            if (decompressData(data, decompressed)) {
+                receivedBytesCompressed += data.size();
+                receivedBytesRaw += decompressed.size();
+                data = decompressed;
+                qDebug() << "QCWebSocket: Decompressed" << receivedBytesCompressed
+                         << "bytes to" << decompressed.size() << "bytes";
             } else {
-                // 完整的单帧消息
-                emit q->textMessageReceived(QString::fromUtf8(data));
+                qWarning() << "QCWebSocket: Decompression failed, using raw data";
             }
         }
-    }
-    // 处理二进制帧
-    else if (meta->flags & CURLWS_BINARY) {
-        // 使用 bytesleft 判断是否还有更多分片
-        if (meta->bytesleft > 0) {
-            // 还有更多分片，继续累积
-            fragmentBuffer.append(data);
-            qDebug() << "QCWebSocket: Binary fragment received, offset:" << meta->offset
-                     << "received:" << received << "bytesleft:" << meta->bytesleft
-                     << "buffer size:" << fragmentBuffer.size();
-        } else {
-            // 最后一个分片或完整消息
-            if (!fragmentBuffer.isEmpty()) {
-                // 这是分片消息的最后一帧
+
+        // 处理文本帧
+        if (meta->flags & CURLWS_TEXT) {
+            if (meta->bytesleft > 0) {
                 fragmentBuffer.append(data);
-                qDebug() << "QCWebSocket: Binary message complete, total size:" 
-                         << fragmentBuffer.size() << "bytes";
-                emit q->binaryMessageReceived(fragmentBuffer);
-                fragmentBuffer.clear();
+                qDebug() << "QCWebSocket: Text fragment received, offset:" << meta->offset
+                         << "received:" << received << "bytesleft:" << meta->bytesleft
+                         << "buffer size:" << fragmentBuffer.size();
             } else {
-                // 完整的单帧消息
-                emit q->binaryMessageReceived(data);
+                if (!fragmentBuffer.isEmpty()) {
+                    fragmentBuffer.append(data);
+                    qDebug() << "QCWebSocket: Text message complete, total size:"
+                             << fragmentBuffer.size() << "bytes";
+                    emit q->textMessageReceived(QString::fromUtf8(fragmentBuffer));
+                    fragmentBuffer.clear();
+                } else {
+                    emit q->textMessageReceived(QString::fromUtf8(data));
+                }
             }
         }
-    }
-    // 处理 Pong 响应
-    else if (meta->flags & CURLWS_PONG) {
-        emit q->pongReceived(data);
-    }
-    // 处理 Close 帧
-    else if (meta->flags & CURLWS_CLOSE) {
-        QString closeReason;
-        // 从 Close 帧中提取关闭状态码
-        // libcurl 会将状态码放在前 2 个字节（大端序）
-        if (received >= 2) {
-            lastCloseCode = (static_cast<unsigned char>(buffer[0]) << 8) | 
-                           static_cast<unsigned char>(buffer[1]);
-            if (received > 2) {
-                closeReason = QString::fromUtf8(buffer + 2, static_cast<int>(received - 2));
+        // 处理二进制帧
+        else if (meta->flags & CURLWS_BINARY) {
+            if (meta->bytesleft > 0) {
+                fragmentBuffer.append(data);
+                qDebug() << "QCWebSocket: Binary fragment received, offset:" << meta->offset
+                         << "received:" << received << "bytesleft:" << meta->bytesleft
+                         << "buffer size:" << fragmentBuffer.size();
+            } else {
+                if (!fragmentBuffer.isEmpty()) {
+                    fragmentBuffer.append(data);
+                    qDebug() << "QCWebSocket: Binary message complete, total size:"
+                             << fragmentBuffer.size() << "bytes";
+                    emit q->binaryMessageReceived(fragmentBuffer);
+                    fragmentBuffer.clear();
+                } else {
+                    emit q->binaryMessageReceived(data);
+                }
             }
-        } else {
-            lastCloseCode = 1006;  // AbnormalClosure
         }
-        
-        qDebug() << "QCWebSocket: Received Close frame, code:" << lastCloseCode;
-        emit q->closeReceived(lastCloseCode, closeReason);
-        setState(QCWebSocket::State::Closing);
-        cleanupConnection();
-    }
-    // 处理 Ping 帧（通常 libcurl 会自动响应 Pong）
-    else if (meta->flags & CURLWS_PING) {
-        emit q->pingReceived(data);
-        qDebug() << "QCWebSocket: Received Ping frame";
+        // 处理 Pong 响应
+        else if (meta->flags & CURLWS_PONG) {
+            emit q->pongReceived(data);
+        }
+        // 处理 Close 帧
+        else if (meta->flags & CURLWS_CLOSE) {
+            QString closeReason;
+            if (received >= 2) {
+                lastCloseCode = (static_cast<unsigned char>(buffer[0]) << 8)
+                                | static_cast<unsigned char>(buffer[1]);
+                if (received > 2) {
+                    closeReason = QString::fromUtf8(buffer + 2, static_cast<int>(received - 2));
+                }
+            } else {
+                lastCloseCode = 1006;
+            }
+
+            qDebug() << "QCWebSocket: Received Close frame, code:" << lastCloseCode;
+            emit q->closeReceived(lastCloseCode, closeReason);
+            setState(QCWebSocket::State::Closing);
+            cleanupConnection();
+            return;
+        }
+        // 处理 Ping 帧（通常 libcurl 会自动响应 Pong）
+        else if (meta->flags & CURLWS_PING) {
+            emit q->pingReceived(data);
+            qDebug() << "QCWebSocket: Received Ping frame";
+        }
     }
 }
 

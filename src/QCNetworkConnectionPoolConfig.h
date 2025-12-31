@@ -6,6 +6,8 @@
 
 #include "QCGlobal.h"
 
+#include <optional>
+
 namespace QCurl {
 
 /**
@@ -67,6 +69,40 @@ public:
      * @note libcurl 使用此值初始化连接池（CURLOPT_MAXCONNECTS）
      */
     int maxTotalConnections = 30;
+
+    /**
+     * @brief multi 级别：全局最大连接数（可选，默认不设置）
+     *
+     * 映射到 libcurl 的 CURLMOPT_MAX_TOTAL_CONNECTIONS。
+     *
+     * 约束：
+     * - 未设置（std::nullopt）：不改变 libcurl 默认行为
+     * - value >= 0：设置对应阀值（0 的语义由 libcurl 定义）
+     *
+     * @note 该字段不会影响旧的 per-easy 选项设置（如 CURLOPT_MAXCONNECTS）。
+     */
+    std::optional<long> multiMaxTotalConnections = std::nullopt;
+
+    /**
+     * @brief multi 级别：单 Host 最大连接数（可选，默认不设置）
+     *
+     * 映射到 libcurl 的 CURLMOPT_MAX_HOST_CONNECTIONS。
+     */
+    std::optional<long> multiMaxHostConnections = std::nullopt;
+
+    /**
+     * @brief multi 级别：单连接最大并发 streams（可选，默认不设置）
+     *
+     * 映射到 libcurl 的 CURLMOPT_MAX_CONCURRENT_STREAMS。
+     */
+    std::optional<long> multiMaxConcurrentStreams = std::nullopt;
+
+    /**
+     * @brief multi 级别：连接缓存上限（可选，默认不设置）
+     *
+     * 映射到 libcurl 的 CURLMOPT_MAXCONNECTS。
+     */
+    std::optional<long> multiMaxConnects = std::nullopt;
     
     /**
      * @brief 空闲连接的最大保持时间（秒）
@@ -162,7 +198,11 @@ public:
                maxConnectionsPerHost <= maxTotalConnections &&
                maxIdleTime >= 0 &&
                maxConnectionLifetime >= 0 &&
-               dnsCacheTimeout >= -1;
+               dnsCacheTimeout >= -1 &&
+               (!multiMaxTotalConnections.has_value() || multiMaxTotalConnections.value() >= 0) &&
+               (!multiMaxHostConnections.has_value() || multiMaxHostConnections.value() >= 0) &&
+               (!multiMaxConcurrentStreams.has_value() || multiMaxConcurrentStreams.value() >= 0) &&
+               (!multiMaxConnects.has_value() || multiMaxConnects.value() >= 0);
     }
     
     /**

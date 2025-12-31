@@ -53,6 +53,7 @@ public:
 
     // 高级功能成员
     QCNetworkLogger *logger;
+    bool debugTraceEnabled = false;
     QList<QCNetworkMiddleware*> middlewares;
     QCNetworkMockHandler *mockHandler;
     

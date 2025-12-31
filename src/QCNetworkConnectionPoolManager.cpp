@@ -2,6 +2,7 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkConnectionPoolManager.h"
+#include "QCCurlMultiManager.h"
 
 #include <QMutexLocker>
 #include <QDebug>
@@ -52,19 +53,32 @@ void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConf
         qWarning() << "QCNetworkConnectionPoolManager::setConfig: Invalid config, ignored";
         return;
     }
-    
-    QMutexLocker locker(&m_mutex);
-    
-    if (m_config.maxConnectionsPerHost != config.maxConnectionsPerHost ||
-        m_config.maxTotalConnections != config.maxTotalConnections ||
-        m_config.enableMultiplexing != config.enableMultiplexing) {
-        qDebug() << "QCNetworkConnectionPoolManager: Config changed";
-        qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
-        qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
-        qDebug() << "  - HTTP/2 multiplexing:" << (config.enableMultiplexing ? "enabled" : "disabled");
+
+    bool multiLimitsChanged = false;
+
+    {
+        QMutexLocker locker(&m_mutex);
+
+        if (m_config.maxConnectionsPerHost != config.maxConnectionsPerHost ||
+            m_config.maxTotalConnections != config.maxTotalConnections ||
+            m_config.enableMultiplexing != config.enableMultiplexing) {
+            qDebug() << "QCNetworkConnectionPoolManager: Config changed";
+            qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
+            qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
+            qDebug() << "  - HTTP/2 multiplexing:" << (config.enableMultiplexing ? "enabled" : "disabled");
+        }
+
+        multiLimitsChanged = (m_config.multiMaxTotalConnections != config.multiMaxTotalConnections) ||
+                             (m_config.multiMaxHostConnections != config.multiMaxHostConnections) ||
+                             (m_config.multiMaxConcurrentStreams != config.multiMaxConcurrentStreams) ||
+                             (m_config.multiMaxConnects != config.multiMaxConnects);
+
+        m_config = config;
     }
-    
-    m_config = config;
+
+    if (multiLimitsChanged) {
+        QCCurlMultiManager::instance()->applyLimitsConfig(config);
+    }
 }
 
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const

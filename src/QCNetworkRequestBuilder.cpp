@@ -5,6 +5,8 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
+#include <QIODevice>
+#include <QPointer>
 #include <QUrlQuery>
 
 namespace QCurl {
@@ -18,6 +20,9 @@ public:
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
     QList<QPair<QString, QString>> queryParams;
     QByteArray body;
+    QPointer<QIODevice> uploadDevice;
+    std::optional<QString> uploadFilePath;
+    std::optional<qint64> uploadSizeBytes;
     int timeout = -1;
     bool followLocation = false;
     QUrl proxy;
@@ -109,6 +114,27 @@ QCNetworkRequestBuilder &QCNetworkRequestBuilder::withQueryParam(const QString &
 QCNetworkRequestBuilder &QCNetworkRequestBuilder::withBody(const QByteArray &body)
 {
     d_ptr->body = body;
+    d_ptr->uploadDevice = nullptr;
+    d_ptr->uploadFilePath.reset();
+    d_ptr->uploadSizeBytes.reset();
+    return *this;
+}
+
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
+{
+    d_ptr->uploadDevice = device;
+    d_ptr->uploadFilePath.reset();
+    d_ptr->uploadSizeBytes = sizeBytes;
+    d_ptr->body.clear();
+    return *this;
+}
+
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
+{
+    d_ptr->uploadDevice = nullptr;
+    d_ptr->uploadFilePath = filePath;
+    d_ptr->uploadSizeBytes = sizeBytes;
+    d_ptr->body.clear();
     return *this;
 }
 
@@ -178,7 +204,16 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
     if (!d_ptr->proxy.isEmpty()) {
         // request.setProxyUrl(d_ptr->proxy);
     }
-    
+
+    if (d_ptr->uploadDevice || d_ptr->uploadFilePath.has_value()) {
+        if (d_ptr->uploadDevice) {
+            request.setUploadDevice(d_ptr->uploadDevice.data(), d_ptr->uploadSizeBytes);
+        } else {
+            request.setUploadFile(d_ptr->uploadFilePath.value(), d_ptr->uploadSizeBytes);
+        }
+        return d_ptr->manager->sendPost(request, QByteArray());
+    }
+
     QByteArray finalBody = body.isEmpty() ? d_ptr->body : body;
     return d_ptr->manager->sendPost(request, finalBody);
 }
@@ -274,7 +309,16 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
     }
-    
+
+    if (d_ptr->uploadDevice || d_ptr->uploadFilePath.has_value()) {
+        if (d_ptr->uploadDevice) {
+            request.setUploadDevice(d_ptr->uploadDevice.data(), d_ptr->uploadSizeBytes);
+        } else {
+            request.setUploadFile(d_ptr->uploadFilePath.value(), d_ptr->uploadSizeBytes);
+        }
+        return d_ptr->manager->sendPut(request, QByteArray());
+    }
+
     QByteArray finalBody = body.isEmpty() ? d_ptr->body : body;
     return d_ptr->manager->sendPut(request, finalBody);
 }

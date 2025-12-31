@@ -1,8 +1,12 @@
 #ifndef QCNETWORKPROXYCONFIG_H
 #define QCNETWORKPROXYCONFIG_H
 
+#include "QCGlobal.h"
+#include "QCNetworkSslConfig.h"
+
 #include <QString>
 #include <QtCore/qglobal.h>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
@@ -80,6 +84,24 @@ public:
      * @brief 代理认证密码（可选）
      */
     QString password;
+
+    /**
+     * @brief HTTPS proxy 的 TLS 配置（可选）
+     *
+     * 仅在 type == ProxyType::Https 且 tlsConfig.has_value() 时生效。
+     * 默认不设置，避免 silent behavior change。
+     */
+    struct ProxyTlsConfig {
+        bool verifyPeer = true;
+        bool verifyHost = true;
+        QString caCertPath;
+        std::optional<QCNetworkTlsVersion> minTlsVersion = std::nullopt;
+        QString cipherList;
+        QString tls13Ciphers;
+        QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
+    };
+
+    std::optional<ProxyTlsConfig> tlsConfig = std::nullopt;
 
     /**
      * @brief 检查配置是否有效

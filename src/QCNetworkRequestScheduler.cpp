@@ -57,9 +57,17 @@ QCNetworkReply* QCNetworkRequestScheduler::scheduleRequest(
                                      ExecutionMode::Async, 
                                      body);
     
-    // 连接 finished 信号
-    connect(reply, &QCNetworkReply::finished, this, 
-            [this, reply]() { onRequestFinished(reply); });
+    // 连接 finished 信号（QueuedConnection：避免 cancelAllRequests 等路径下的重入死锁）
+    QPointer<QCNetworkReply> safeReply(reply);
+    connect(reply,
+            &QCNetworkReply::finished,
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    onRequestFinished(safeReply.data());
+                }
+            },
+            Qt::QueuedConnection);
     
     // 创建队列项
     QueuedRequest queuedReq;

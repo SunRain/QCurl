@@ -9,7 +9,10 @@
 #include <QPair>
 #include <functional>
 #include <memory>
+#include <optional>
 #include "QCGlobal.h"
+
+class QIODevice;
 
 namespace QCurl {
 
@@ -127,6 +130,20 @@ public:
      * @param body 请求体数据
      */
     QCNetworkRequestBuilder &withBody(const QByteArray &body);
+
+    /**
+     * @brief 设置流式上传的请求体来源（QIODevice，仅 PUT/POST）
+     *
+     * 说明：
+     * - 所有权：device 由调用方管理，QCurl 不会 close/delete
+     * - 生命周期：device 必须在请求完成前保持有效且可读
+     */
+    QCNetworkRequestBuilder &withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
+
+    /**
+     * @brief 设置流式上传的请求体来源（本地文件路径，仅 PUT/POST）
+     */
+    QCNetworkRequestBuilder &withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes = std::nullopt);
     
     /**
      * @brief 发送 GET 请求

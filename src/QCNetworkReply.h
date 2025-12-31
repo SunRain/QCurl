@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QPair>
+#include <QStringList>
 
 #include <optional>
 #include <functional>
@@ -177,6 +178,7 @@ public:
     [[nodiscard]] QByteArray rawHeaderData() const;
     [[nodiscard]] QUrl url() const;
     [[nodiscard]] qint64 bytesAvailable() const noexcept;
+    [[nodiscard]] QStringList capabilityWarnings() const;
 
     // ========================================================================
     // 状态查询

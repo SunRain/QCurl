@@ -1,11 +1,27 @@
 #ifndef QCNETWORKSSLCONFIG_H
 #define QCNETWORKSSLCONFIG_H
 
+#include "QCGlobal.h"
+
 #include <QString>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
 namespace QCurl {
+
+/**
+ * @brief TLS 最低版本策略（M5，可选）
+ *
+ * 映射到 libcurl 的 CURLOPT_SSLVERSION（最低版本）。
+ */
+enum class QCNetworkTlsVersion {
+    Default, ///< 不设置（保持 libcurl 默认）
+    Tls1_0,
+    Tls1_1,
+    Tls1_2,
+    Tls1_3
+};
 
 /**
  * @brief SSL/TLS 配置类
@@ -81,6 +97,44 @@ public:
      * 如果私钥文件有密码保护，在此设置。
      */
     QString clientKeyPassword;
+
+    /**
+     * @brief 公钥 pin（可选）
+     *
+     * 映射到 CURLOPT_PINNEDPUBLICKEY。
+     * 允许设置文件路径或 libcurl 支持的 "sha256//..." 形式。
+     *
+     * 默认空（不设置），避免 silent behavior change。
+     */
+    QString pinnedPublicKey;
+
+    /**
+     * @brief TLS 最低版本（可选）
+     *
+     * 默认 std::nullopt（不设置）。
+     */
+    std::optional<QCNetworkTlsVersion> minTlsVersion = std::nullopt;
+
+    /**
+     * @brief TLS cipher 列表（可选，OpenSSL 风格）
+     *
+     * 映射到 CURLOPT_SSL_CIPHER_LIST。
+     */
+    QString cipherList;
+
+    /**
+     * @brief TLS 1.3 cipher 列表（可选）
+     *
+     * 映射到 CURLOPT_TLS13_CIPHERS。
+     */
+    QString tls13Ciphers;
+
+    /**
+     * @brief 安全相关能力不可用时的处理策略
+     *
+     * 默认 Fail（更安全）。
+     */
+    QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
 
     /**
      * @brief 返回默认的安全配置

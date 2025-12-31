@@ -44,6 +44,31 @@ public:
 
     void setCookieFilePath(const QString &cookieFilePath, CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
+    struct ShareHandleConfig {
+        bool shareDnsCache = false;
+        bool shareCookies = false;
+        bool shareSslSession = false;
+
+        [[nodiscard]] bool enabled() const noexcept
+        {
+            return shareDnsCache || shareCookies || shareSslSession;
+        }
+    };
+
+    /**
+     * @brief 配置 multi share handle（默认关闭）
+     *
+     * 说明：
+     * - 仅对异步（multi）路径生效；同步（send*Sync）不在本阶段覆盖范围。
+     * - 该能力默认关闭；未显式开启时不创建 CURLSH*，不设置 CURLOPT_SHARE。
+     */
+    void setShareHandleConfig(const ShareHandleConfig &config);
+
+    /**
+     * @brief 获取当前 share handle 配置
+     */
+    [[nodiscard]] ShareHandleConfig shareHandleConfig() const noexcept;
+
     // ========================================================================
     // 核心 API：返回统一的 QCNetworkReply
     // ========================================================================
@@ -140,6 +165,21 @@ public:
      * @return 日志记录器指针，如果未设置则返回 nullptr
      */
     QCNetworkLogger* logger() const;
+
+    /**
+     * @brief 启用/关闭 libcurl verbose/debug trace（强制脱敏）
+     *
+     * 默认关闭。开启后会通过 CURLOPT_DEBUGFUNCTION 收集 trace，
+     * 并对 Authorization/Cookie 等敏感信息做强制脱敏。
+     *
+     * @note 输出走 QCNetworkLogger；若未设置 logger，则开启不产生输出。
+     */
+    void setDebugTraceEnabled(bool enabled);
+
+    /**
+     * @brief 获取 debug trace 开关状态
+     */
+    [[nodiscard]] bool debugTraceEnabled() const noexcept;
 
     /**
      * @brief 添加请求/响应中间件
@@ -557,6 +597,7 @@ private:
     QString                     m_cookieFilePath;
     bool                        m_schedulerEnabled;
     QCNetworkCache             *m_cache;
+    ShareHandleConfig m_shareHandleConfig;
 };
 
 } //namespace QCurl

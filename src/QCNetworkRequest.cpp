@@ -11,6 +11,8 @@
 #include <QSharedData>
 #include <QUrl>
 #include <QMap>
+#include <QIODevice>
+#include <QPointer>
 
 namespace QCurl {
 
@@ -29,6 +31,32 @@ public:
           rangeStart(-1),
           rangeEnd(-1),
           reqUrl(QUrl()),
+          maxRedirects(std::nullopt),
+          postRedirectPolicy(QCNetworkPostRedirectPolicy::Default),
+          autoRefererEnabled(false),
+          referer(QString()),
+          allowUnrestrictedSensitiveHeadersOnRedirect(false),
+          autoDecompressionEnabled(false),
+          acceptedEncodings(QStringList()),
+          maxDownloadBytesPerSec(std::nullopt),
+          maxUploadBytesPerSec(std::nullopt),
+          uploadDevice(nullptr),
+          uploadFilePath(std::nullopt),
+          uploadBodySizeBytes(std::nullopt),
+          allowChunkedUploadForPost(false),
+          expect100ContinueTimeout(std::nullopt),
+          ipResolve(std::nullopt),
+          happyEyeballsTimeout(std::nullopt),
+          networkInterface(std::nullopt),
+          localPort(std::nullopt),
+          localPortRange(std::nullopt),
+          resolveOverride(std::nullopt),
+          connectTo(std::nullopt),
+          dnsServers(std::nullopt),
+          dohUrl(std::nullopt),
+          allowedProtocols(std::nullopt),
+          allowedRedirectProtocols(std::nullopt),
+          unsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail),
           sslConfig(QCNetworkSslConfig::defaultConfig()),
           proxyConfig(std::nullopt),
           timeoutConfig(QCNetworkTimeoutConfig::defaultConfig()),
@@ -49,6 +77,46 @@ public:
     int rangeEnd;
     QMap<QByteArray, QByteArray> rawHeaderMap;
     QUrl reqUrl;
+
+    // ========== 重定向策略（M1） ==========
+    std::optional<int> maxRedirects;
+    QCNetworkPostRedirectPolicy postRedirectPolicy;
+    bool autoRefererEnabled;
+    QString referer;
+    bool allowUnrestrictedSensitiveHeadersOnRedirect;
+
+    // ========== 自动解压（M1） ==========
+    bool autoDecompressionEnabled;
+    QStringList acceptedEncodings;
+
+    // ========== 传输限速（M1） ==========
+    std::optional<qint64> maxDownloadBytesPerSec;
+    std::optional<qint64> maxUploadBytesPerSec;
+
+    // ========== 流式上传（M2） ==========
+    QPointer<QIODevice> uploadDevice;
+    std::optional<QString> uploadFilePath;
+    std::optional<qint64> uploadBodySizeBytes;
+    bool allowChunkedUploadForPost;
+
+    // ========== Expect: 100-continue（P1） ==========
+    std::optional<std::chrono::milliseconds> expect100ContinueTimeout;
+
+    // ========== 网络路径与 DNS 控制（M4） ==========
+    std::optional<QCNetworkIpResolve> ipResolve;
+    std::optional<std::chrono::milliseconds> happyEyeballsTimeout;
+    std::optional<QString> networkInterface;
+    std::optional<int> localPort;
+    std::optional<int> localPortRange;
+    std::optional<QStringList> resolveOverride;
+    std::optional<QStringList> connectTo;
+    std::optional<QStringList> dnsServers;
+    std::optional<QUrl> dohUrl;
+
+    // ========== 协议白名单（M5，安全） ==========
+    std::optional<QStringList> allowedProtocols;
+    std::optional<QStringList> allowedRedirectProtocols;
+    QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy;
 
     // ========== 高级配置字段 ==========
     QCNetworkSslConfig sslConfig;
@@ -138,6 +206,67 @@ QCNetworkRequest& QCNetworkRequest::setFollowLocation(bool followLocation)
 bool QCNetworkRequest::followLocation() const
 {
     return d.data()->followLocation;
+}
+
+QCNetworkRequest& QCNetworkRequest::setMaxRedirects(int n)
+{
+    if (n < 0) {
+        qWarning() << "QCNetworkRequest: maxRedirects must be >= 0, got" << n << "(ignored)";
+        d.data()->maxRedirects.reset();
+        return *this;
+    }
+
+    d.data()->maxRedirects = n;
+    return *this;
+}
+
+std::optional<int> QCNetworkRequest::maxRedirects() const
+{
+    return d.data()->maxRedirects;
+}
+
+QCNetworkRequest& QCNetworkRequest::setPostRedirectPolicy(QCNetworkPostRedirectPolicy policy)
+{
+    d.data()->postRedirectPolicy = policy;
+    return *this;
+}
+
+QCNetworkPostRedirectPolicy QCNetworkRequest::postRedirectPolicy() const
+{
+    return d.data()->postRedirectPolicy;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAutoRefererEnabled(bool enabled)
+{
+    d.data()->autoRefererEnabled = enabled;
+    return *this;
+}
+
+bool QCNetworkRequest::autoRefererEnabled() const
+{
+    return d.data()->autoRefererEnabled;
+}
+
+QCNetworkRequest& QCNetworkRequest::setReferer(const QString &referer)
+{
+    d.data()->referer = referer;
+    return *this;
+}
+
+QString QCNetworkRequest::referer() const
+{
+    return d.data()->referer;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAllowUnrestrictedSensitiveHeadersOnRedirect(bool enabled)
+{
+    d.data()->allowUnrestrictedSensitiveHeadersOnRedirect = enabled;
+    return *this;
+}
+
+bool QCNetworkRequest::allowUnrestrictedSensitiveHeadersOnRedirect() const
+{
+    return d.data()->allowUnrestrictedSensitiveHeadersOnRedirect;
 }
 
 QCNetworkRequest& QCNetworkRequest::setRawHeader(const QByteArray &headerName, const QByteArray &headerValue)
@@ -267,6 +396,398 @@ QCNetworkRequest& QCNetworkRequest::setConnectTimeout(std::chrono::milliseconds 
 {
     d.data()->timeoutConfig.connectTimeout = timeout;
     return *this;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAutoDecompressionEnabled(bool enabled)
+{
+    d.data()->autoDecompressionEnabled = enabled;
+    return *this;
+}
+
+bool QCNetworkRequest::autoDecompressionEnabled() const
+{
+    return d.data()->autoDecompressionEnabled;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAcceptedEncodings(const QStringList &encodings)
+{
+    d.data()->acceptedEncodings = encodings;
+    d.data()->autoDecompressionEnabled = !encodings.isEmpty();
+    return *this;
+}
+
+QStringList QCNetworkRequest::acceptedEncodings() const
+{
+    return d.data()->acceptedEncodings;
+}
+
+QCNetworkRequest& QCNetworkRequest::setMaxDownloadBytesPerSec(qint64 bytesPerSec)
+{
+    if (bytesPerSec < 0) {
+        qWarning() << "QCNetworkRequest: maxDownloadBytesPerSec must be >= 0, got" << bytesPerSec << "(ignored)";
+        d.data()->maxDownloadBytesPerSec.reset();
+        return *this;
+    }
+
+    if (bytesPerSec == 0) {
+        d.data()->maxDownloadBytesPerSec.reset();
+        return *this;
+    }
+
+    d.data()->maxDownloadBytesPerSec = bytesPerSec;
+    return *this;
+}
+
+std::optional<qint64> QCNetworkRequest::maxDownloadBytesPerSec() const
+{
+    return d.data()->maxDownloadBytesPerSec;
+}
+
+QCNetworkRequest& QCNetworkRequest::setMaxUploadBytesPerSec(qint64 bytesPerSec)
+{
+    if (bytesPerSec < 0) {
+        qWarning() << "QCNetworkRequest: maxUploadBytesPerSec must be >= 0, got" << bytesPerSec << "(ignored)";
+        d.data()->maxUploadBytesPerSec.reset();
+        return *this;
+    }
+
+    if (bytesPerSec == 0) {
+        d.data()->maxUploadBytesPerSec.reset();
+        return *this;
+    }
+
+    d.data()->maxUploadBytesPerSec = bytesPerSec;
+    return *this;
+}
+
+std::optional<qint64> QCNetworkRequest::maxUploadBytesPerSec() const
+{
+    return d.data()->maxUploadBytesPerSec;
+}
+
+QCNetworkRequest& QCNetworkRequest::setUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
+{
+    if (!device) {
+        return clearUploadBody();
+    }
+
+    if (!device->isReadable()) {
+        qWarning() << "QCNetworkRequest: uploadDevice must be readable (ignored)";
+        return clearUploadBody();
+    }
+
+    d.data()->uploadDevice = device;
+    d.data()->uploadFilePath.reset();
+
+    if (sizeBytes.has_value() && sizeBytes.value() < 0) {
+        qWarning() << "QCNetworkRequest: upload sizeBytes must be >= 0, got" << sizeBytes.value() << "(ignored)";
+        d.data()->uploadBodySizeBytes.reset();
+    } else {
+        d.data()->uploadBodySizeBytes = sizeBytes;
+    }
+    return *this;
+}
+
+QIODevice* QCNetworkRequest::uploadDevice() const
+{
+    return d.data()->uploadDevice.data();
+}
+
+QCNetworkRequest& QCNetworkRequest::setUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
+{
+    if (filePath.trimmed().isEmpty()) {
+        return clearUploadBody();
+    }
+
+    d.data()->uploadDevice = nullptr;
+    d.data()->uploadFilePath = filePath;
+
+    if (sizeBytes.has_value() && sizeBytes.value() < 0) {
+        qWarning() << "QCNetworkRequest: upload sizeBytes must be >= 0, got" << sizeBytes.value() << "(ignored)";
+        d.data()->uploadBodySizeBytes.reset();
+    } else {
+        d.data()->uploadBodySizeBytes = sizeBytes;
+    }
+    return *this;
+}
+
+std::optional<QString> QCNetworkRequest::uploadFilePath() const
+{
+    return d.data()->uploadFilePath;
+}
+
+std::optional<qint64> QCNetworkRequest::uploadBodySizeBytes() const
+{
+    return d.data()->uploadBodySizeBytes;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAllowChunkedUploadForPost(bool enabled)
+{
+    d.data()->allowChunkedUploadForPost = enabled;
+    return *this;
+}
+
+bool QCNetworkRequest::allowChunkedUploadForPost() const
+{
+    return d.data()->allowChunkedUploadForPost;
+}
+
+QCNetworkRequest& QCNetworkRequest::clearUploadBody()
+{
+    d.data()->uploadDevice = nullptr;
+    d.data()->uploadFilePath.reset();
+    d.data()->uploadBodySizeBytes.reset();
+    return *this;
+}
+
+QCNetworkRequest& QCNetworkRequest::setExpect100ContinueTimeout(std::chrono::milliseconds timeout)
+{
+    if (timeout.count() < 0) {
+        qWarning() << "QCNetworkRequest: expect100ContinueTimeout must be >= 0, got" << timeout.count() << "(ignored)";
+        d.data()->expect100ContinueTimeout.reset();
+        return *this;
+    }
+
+    d.data()->expect100ContinueTimeout = timeout;
+    return *this;
+}
+
+std::optional<std::chrono::milliseconds> QCNetworkRequest::expect100ContinueTimeout() const
+{
+    return d.data()->expect100ContinueTimeout;
+}
+
+QCNetworkRequest& QCNetworkRequest::setIpResolve(QCNetworkIpResolve resolve)
+{
+    if (resolve == QCNetworkIpResolve::Any) {
+        d.data()->ipResolve.reset();
+        return *this;
+    }
+
+    d.data()->ipResolve = resolve;
+    return *this;
+}
+
+std::optional<QCNetworkIpResolve> QCNetworkRequest::ipResolve() const
+{
+    return d.data()->ipResolve;
+}
+
+QCNetworkRequest& QCNetworkRequest::setHappyEyeballsTimeout(std::chrono::milliseconds timeout)
+{
+    if (timeout.count() < 0) {
+        qWarning() << "QCNetworkRequest: happyEyeballsTimeout must be >= 0, got" << timeout.count() << "(ignored)";
+        d.data()->happyEyeballsTimeout.reset();
+        return *this;
+    }
+
+    d.data()->happyEyeballsTimeout = timeout;
+    return *this;
+}
+
+std::optional<std::chrono::milliseconds> QCNetworkRequest::happyEyeballsTimeout() const
+{
+    return d.data()->happyEyeballsTimeout;
+}
+
+QCNetworkRequest& QCNetworkRequest::setNetworkInterface(const QString &interfaceName)
+{
+    const QString trimmed = interfaceName.trimmed();
+    if (trimmed.isEmpty()) {
+        d.data()->networkInterface.reset();
+        return *this;
+    }
+
+    d.data()->networkInterface = trimmed;
+    return *this;
+}
+
+std::optional<QString> QCNetworkRequest::networkInterface() const
+{
+    return d.data()->networkInterface;
+}
+
+QCNetworkRequest& QCNetworkRequest::setLocalPortRange(int port, int range)
+{
+    if (port <= 0 || port > 65535) {
+        qWarning() << "QCNetworkRequest: localPort must be in [1, 65535], got" << port << "(ignored)";
+        d.data()->localPort.reset();
+        d.data()->localPortRange.reset();
+        return *this;
+    }
+
+    if (range < 0 || range > 65535) {
+        qWarning() << "QCNetworkRequest: localPortRange must be in [0, 65535], got" << range << "(ignored)";
+        d.data()->localPort.reset();
+        d.data()->localPortRange.reset();
+        return *this;
+    }
+
+    d.data()->localPort = port;
+    d.data()->localPortRange = range;
+    return *this;
+}
+
+std::optional<int> QCNetworkRequest::localPort() const
+{
+    return d.data()->localPort;
+}
+
+std::optional<int> QCNetworkRequest::localPortRange() const
+{
+    return d.data()->localPortRange;
+}
+
+QCNetworkRequest& QCNetworkRequest::setResolveOverride(const QStringList &entries)
+{
+    QStringList cleaned;
+    cleaned.reserve(entries.size());
+    for (const QString &e : entries) {
+        const QString v = e.trimmed();
+        if (!v.isEmpty()) {
+            cleaned.append(v);
+        }
+    }
+
+    if (cleaned.isEmpty()) {
+        d.data()->resolveOverride.reset();
+        return *this;
+    }
+
+    d.data()->resolveOverride = cleaned;
+    return *this;
+}
+
+std::optional<QStringList> QCNetworkRequest::resolveOverride() const
+{
+    return d.data()->resolveOverride;
+}
+
+QCNetworkRequest& QCNetworkRequest::setConnectTo(const QStringList &entries)
+{
+    QStringList cleaned;
+    cleaned.reserve(entries.size());
+    for (const QString &e : entries) {
+        const QString v = e.trimmed();
+        if (!v.isEmpty()) {
+            cleaned.append(v);
+        }
+    }
+
+    if (cleaned.isEmpty()) {
+        d.data()->connectTo.reset();
+        return *this;
+    }
+
+    d.data()->connectTo = cleaned;
+    return *this;
+}
+
+std::optional<QStringList> QCNetworkRequest::connectTo() const
+{
+    return d.data()->connectTo;
+}
+
+QCNetworkRequest& QCNetworkRequest::setDnsServers(const QStringList &servers)
+{
+    QStringList cleaned;
+    cleaned.reserve(servers.size());
+    for (const QString &s : servers) {
+        const QString v = s.trimmed();
+        if (!v.isEmpty()) {
+            cleaned.append(v);
+        }
+    }
+
+    if (cleaned.isEmpty()) {
+        d.data()->dnsServers.reset();
+        return *this;
+    }
+
+    d.data()->dnsServers = cleaned;
+    return *this;
+}
+
+std::optional<QStringList> QCNetworkRequest::dnsServers() const
+{
+    return d.data()->dnsServers;
+}
+
+QCNetworkRequest& QCNetworkRequest::setDohUrl(const QUrl &url)
+{
+    if (url.isEmpty()) {
+        d.data()->dohUrl.reset();
+        return *this;
+    }
+
+    d.data()->dohUrl = url;
+    return *this;
+}
+
+std::optional<QUrl> QCNetworkRequest::dohUrl() const
+{
+    return d.data()->dohUrl;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAllowedProtocols(const QStringList &protocols)
+{
+    QStringList cleaned;
+    cleaned.reserve(protocols.size());
+    for (const QString &p : protocols) {
+        const QString v = p.trimmed();
+        if (!v.isEmpty()) {
+            cleaned.append(v);
+        }
+    }
+
+    if (cleaned.isEmpty()) {
+        d.data()->allowedProtocols.reset();
+        return *this;
+    }
+
+    d.data()->allowedProtocols = cleaned;
+    return *this;
+}
+
+std::optional<QStringList> QCNetworkRequest::allowedProtocols() const
+{
+    return d.data()->allowedProtocols;
+}
+
+QCNetworkRequest& QCNetworkRequest::setAllowedRedirectProtocols(const QStringList &protocols)
+{
+    QStringList cleaned;
+    cleaned.reserve(protocols.size());
+    for (const QString &p : protocols) {
+        const QString v = p.trimmed();
+        if (!v.isEmpty()) {
+            cleaned.append(v);
+        }
+    }
+
+    if (cleaned.isEmpty()) {
+        d.data()->allowedRedirectProtocols.reset();
+        return *this;
+    }
+
+    d.data()->allowedRedirectProtocols = cleaned;
+    return *this;
+}
+
+std::optional<QStringList> QCNetworkRequest::allowedRedirectProtocols() const
+{
+    return d.data()->allowedRedirectProtocols;
+}
+
+QCNetworkRequest& QCNetworkRequest::setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy)
+{
+    d.data()->unsupportedSecurityOptionPolicy = policy;
+    return *this;
+}
+
+QCUnsupportedSecurityOptionPolicy QCNetworkRequest::unsupportedSecurityOptionPolicy() const
+{
+    return d.data()->unsupportedSecurityOptionPolicy;
 }
 
 // ========== 请求优先级 ==========

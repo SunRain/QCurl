@@ -20,6 +20,7 @@ set(QCURL_LEGACY_HEADERS
 # 新的现代化实现（正在添加中）
 set(QCURL_MODERN_SOURCES
     QCCurlHandleManager.cpp
+    CurlFeatureProbe.cpp
     QCNetworkSslConfig.cpp
     QCNetworkProxyConfig.cpp
     QCNetworkTimeoutConfig.cpp
@@ -47,6 +48,7 @@ set(QCURL_MODERN_SOURCES
 set(QCURL_MODERN_HEADERS
     QCGlobal.h
     QCCurlHandleManager.h
+    CurlFeatureProbe.h
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h

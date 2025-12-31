@@ -19,6 +19,9 @@
 #include <QMap>
 #include <QString>
 #include <QPointer>
+#include <QStringList>
+
+class QFile;
 
 namespace QCurl {
 
@@ -97,6 +100,12 @@ public:
     NetworkError errorCode;     ///< 错误码（NetworkNoError = 0）
     QString errorMessage;       ///< 错误描述信息
 
+    // ========================================================================
+    // 能力探测/可诊断 warning（不含敏感信息）
+    // ========================================================================
+
+    QStringList capabilityWarnings;
+
     qint64 bytesDownloaded;     ///< 已下载字节数
     qint64 bytesUploaded;       ///< 已上传字节数
     qint64 downloadTotal;       ///< 下载总字节数（-1 表示未知）
@@ -141,10 +150,53 @@ public:
     QByteArray httpAuthUserBytes;    ///< HTTP 认证用户名缓存
     QByteArray httpAuthPasswordBytes;///< HTTP 认证密码缓存
 
+    QByteArray refererBytes;         ///< Referer 缓存
+    QByteArray acceptEncodingBytes;  ///< Accept-Encoding(由 libcurl 托管) 缓存
+
+    // ========================================================================
+    // 网络路径与 DNS 控制（M4）
+    // ========================================================================
+
+    QByteArray interfaceBytes;       ///< CURLOPT_INTERFACE 缓存
+    QByteArray dnsServersBytes;      ///< CURLOPT_DNS_SERVERS 缓存
+    QByteArray dohUrlBytes;          ///< CURLOPT_DOH_URL 缓存
+    curl_slist *resolveSlist = nullptr;   ///< CURLOPT_RESOLVE 列表（Reply 生命周期内有效）
+    curl_slist *connectToSlist = nullptr; ///< CURLOPT_CONNECT_TO 列表（Reply 生命周期内有效）
+
+    // ========================================================================
+    // 协议白名单（M5，安全）
+    // ========================================================================
+
+    QByteArray allowedProtocolsBytes;        ///< CURLOPT_PROTOCOLS_STR 缓存
+    QByteArray allowedRedirectProtocolsBytes;///< CURLOPT_REDIR_PROTOCOLS_STR 缓存
+
     QByteArray sslCaCertPathBytes;        ///< CA 证书路径缓存
     QByteArray sslClientCertPathBytes;    ///< 客户端证书路径缓存
     QByteArray sslClientKeyPathBytes;     ///< 客户端私钥路径缓存
     QByteArray sslClientKeyPasswordBytes; ///< 客户端私钥密码缓存
+
+    QByteArray sslPinnedPublicKeyBytes;    ///< CURLOPT_PINNEDPUBLICKEY 缓存
+    QByteArray sslCipherListBytes;         ///< CURLOPT_SSL_CIPHER_LIST 缓存
+    QByteArray sslTls13CiphersBytes;       ///< CURLOPT_TLS13_CIPHERS 缓存
+
+    QByteArray proxySslCaCertPathBytes;    ///< CURLOPT_PROXY_CAINFO 缓存
+    QByteArray proxySslCipherListBytes;    ///< CURLOPT_PROXY_SSL_CIPHER_LIST 缓存
+    QByteArray proxySslTls13CiphersBytes;  ///< CURLOPT_PROXY_TLS13_CIPHERS 缓存
+
+    // ========================================================================
+    // 流式上传（M2）
+    // ========================================================================
+
+    QPointer<QIODevice> uploadDevice;   ///< 上传来源（调用方/内部文件，所有权不在 Reply）
+    QFile *ownedUploadFile = nullptr;    ///< 若来源为 uploadFilePath，则由 Reply 打开并持有
+    qint64 uploadDeviceBasePos = 0;      ///< 首次执行时记录的起始位置（支持非 0 起点）
+    qint64 uploadBodySizeBytes = -1;     ///< 约定：-1 表示未知/未设置
+    qint64 uploadBytesRead = 0;          ///< 已从 uploadDevice 读取的字节数（相对 basePos）
+    bool uploadDeviceSeekable = false;   ///< uploadDevice 是否可 seek（用于重发 body）
+
+    bool hasUploadErrorOverride = false;
+    NetworkError uploadErrorOverrideCode = NetworkError::NoError;
+    QString uploadErrorOverrideMessage;
 
     // ========================================================================
     // 内部方法
@@ -250,6 +302,13 @@ public:
     static int curlProgressCallback(void *userdata,
                                    curl_off_t dltotal, curl_off_t dlnow,
                                    curl_off_t ultotal, curl_off_t ulnow);
+
+    /**
+     * @brief libcurl debug 回调（仅在显式启用 verbose/debug trace 时调用）
+     *
+     * @note 必须对敏感信息（Authorization/Cookie 等）做强制脱敏
+     */
+    static int curlDebugCallback(CURL *handle, curl_infotype type, char *data, size_t size, void *userptr);
 };
 
 } // namespace QCurl

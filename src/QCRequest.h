@@ -8,6 +8,9 @@
 #include <QUrl>
 #include <QJsonObject>
 #include <chrono>
+#include <optional>
+
+class QIODevice;
 
 namespace QCurl {
 
@@ -160,6 +163,20 @@ public:
      * @return 返回 *this 以支持方法链
      */
     QCRequest& withBody(const QByteArray &data, const QString &contentType = QString());
+
+    /**
+     * @brief 设置流式上传的请求体来源（QIODevice，仅 PUT/POST）
+     *
+     * 说明：
+     * - 所有权：device 由调用方管理，QCurl 不会 close/delete
+     * - 生命周期：device 必须在请求完成前保持有效且可读
+     */
+    QCRequest& withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
+
+    /**
+     * @brief 设置流式上传的请求体来源（本地文件路径，仅 PUT/POST）
+     */
+    QCRequest& withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 设置 SSL/TLS 配置

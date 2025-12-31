@@ -62,6 +62,16 @@ void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath, Co
     m_cookieModeFlag = flag;
 }
 
+void QCNetworkAccessManager::setShareHandleConfig(const ShareHandleConfig &config)
+{
+    m_shareHandleConfig = config;
+}
+
+QCNetworkAccessManager::ShareHandleConfig QCNetworkAccessManager::shareHandleConfig() const noexcept
+{
+    return m_shareHandleConfig;
+}
+
 // ============================================================================
 // 核心 API 实现
 // ============================================================================
@@ -680,6 +690,18 @@ QCNetworkLogger* QCNetworkAccessManager::logger() const
 {
     Q_D(const QCNetworkAccessManager);
     return d->logger;
+}
+
+void QCNetworkAccessManager::setDebugTraceEnabled(bool enabled)
+{
+    Q_D(QCNetworkAccessManager);
+    d->debugTraceEnabled = enabled;
+}
+
+bool QCNetworkAccessManager::debugTraceEnabled() const noexcept
+{
+    Q_D(const QCNetworkAccessManager);
+    return d->debugTraceEnabled;
 }
 
 // ============================================================================

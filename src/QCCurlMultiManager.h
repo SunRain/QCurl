@@ -3,13 +3,16 @@
 
 #include <QObject>
 #include <QRecursiveMutex>
+#include <QMutex>
 #include <QPointer>
 #include <QHash>
 #include <QTimer>
 #include <QSocketNotifier>
+#include <QString>
 
 #include <atomic>
 #include <limits>
+#include <optional>
 
 #include <curl/curl.h>
 
@@ -18,6 +21,8 @@ QT_BEGIN_NAMESPACE
 namespace QCurl {
 
 class QCNetworkReply;  // 前向声明
+class QCNetworkAccessManager; // 前向声明
+class QCNetworkConnectionPoolConfig; // 前向声明
 
 /**
  * @brief Socket 信息结构体
@@ -121,6 +126,16 @@ public:
      * @note 线程安全：可从任意线程调用；必要时会 marshal 到管理器线程。
      */
     void wakeup();
+
+    /**
+     * @brief 应用 multi 级别的资源阀门配置（可安全 no-op）
+     *
+     * 当前阶段该接口作为“未来扩展点”保留：即使暂不设置任何 CURLMOPT_*，
+     * 也必须保证可被调用且不会崩溃/死锁。
+     *
+     * @note 线程安全：可从任意线程调用；必要时会 marshal 到管理器线程。
+     */
+    void applyLimitsConfig(const QCNetworkConnectionPoolConfig &config);
 
 Q_SIGNALS:
     /**
@@ -246,6 +261,70 @@ private:
      */
     static int curlTimerCallback(CURLM *multi, long timeout_ms, void *userp);
 
+    // ========================================================================
+    // Share handle（M6+，可选）
+    // ========================================================================
+
+    struct ShareConfig {
+        bool dnsCache = false;
+        bool cookies = false;
+        bool sslSession = false;
+
+        [[nodiscard]] bool enabled() const noexcept
+        {
+            return dnsCache || cookies || sslSession;
+        }
+
+        bool operator==(const ShareConfig &other) const noexcept
+        {
+            return dnsCache == other.dnsCache
+                && cookies == other.cookies
+                && sslSession == other.sslSession;
+        }
+
+        bool operator!=(const ShareConfig &other) const noexcept
+        {
+            return !(*this == other);
+        }
+    };
+
+    struct ShareContext {
+        const QCNetworkAccessManager *scopeKey = nullptr;
+        CURLSH *share = nullptr;
+        ShareConfig applied;
+        std::optional<ShareConfig> pending;
+
+        ShareConfig lastInitAttempt;
+        bool lastInitFailed = false;
+        QString lastInitError;
+
+        bool scopeDestroyed = false;
+        bool pendingDelete = false;
+        int activeUsers = 0;
+
+        QMutex dnsMutex;
+        QMutex cookieMutex;
+        QMutex sslMutex;
+        QMutex otherMutex;
+    };
+
+    static void shareLockCallback(CURL *handle,
+                                  curl_lock_data data,
+                                  curl_lock_access access,
+                                  void *userptr);
+    static void shareUnlockCallback(CURL *handle,
+                                    curl_lock_data data,
+                                    void *userptr);
+
+    static ShareConfig toShareConfig(const QCNetworkAccessManager *manager);
+    static QString shareConfigSummary(const ShareConfig &config);
+
+    ShareContext *getOrCreateShareContextLocked(const QCNetworkAccessManager *manager);
+    void onAccessManagerDestroyedLocked(const QCNetworkAccessManager *manager);
+    bool applyShareConfigIfIdleLocked(ShareContext *context, const ShareConfig &desired, QString *outError);
+    void releaseShareForEasyHandleLocked(CURL *easy);
+    void maybeFinalizeShareContextLocked(ShareContext *context);
+
 private:
     // ========================================================================
     // 成员变量
@@ -264,6 +343,23 @@ private:
     QTimer *m_socketTimer;                                   ///< socket 超时定时器
 
     QHash<curl_socket_t, SocketInfo*> m_socketMap;           ///< socket 信息映射
+
+    // ========================================================================
+    // multi limits（M3）：上次成功应用的阀值（用于识别“清除设置”的场景）
+    // ========================================================================
+
+    std::optional<long> m_multiMaxTotalConnections = std::nullopt;
+    std::optional<long> m_multiMaxHostConnections = std::nullopt;
+    std::optional<long> m_multiMaxConcurrentStreams = std::nullopt;
+    std::optional<long> m_multiMaxConnects = std::nullopt;
+
+    // ========================================================================
+    // Share handle（M6+，可选）：按 manager scope 隔离（默认关闭）
+    // ========================================================================
+
+    QHash<const QCNetworkAccessManager*, ShareContext*> m_shareContexts;
+    QHash<CURL*, ShareContext*> m_easyToShareContext;
+    QHash<CURL*, bool> m_easyShareOptionSet;
 };
 
 } // namespace QCurl
