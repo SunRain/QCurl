@@ -9,6 +9,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkReply_p.h"
 #include "QCNetworkLogger.h"
 
 using namespace QCurl;
@@ -35,6 +36,7 @@ private slots:
     void testLoggerNullptr();
     void testMultipleLoggers();
     void testDebugTraceFlag();
+    void testDebugTraceRedaction();
 
     // 日志记录测试
     void testRequestLogging();
@@ -167,6 +169,63 @@ void TestQCNetworkLogger::testDebugTraceFlag()
 
     m_manager->setDebugTraceEnabled(false);
     QVERIFY(!m_manager->debugTraceEnabled());
+}
+
+void TestQCNetworkLogger::testDebugTraceRedaction()
+{
+    class CaptureLogger : public QCNetworkLogger
+    {
+    public:
+        int m_logCount = 0;
+        QString m_lastMessage;
+        NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
+
+        void log(NetworkLogLevel level, const QString &category, const QString &message) override {
+            Q_UNUSED(level);
+            Q_UNUSED(category);
+            ++m_logCount;
+            m_lastMessage = message;
+        }
+
+        void setMinLogLevel(NetworkLogLevel level) override { m_minLevel = level; }
+        NetworkLogLevel minLogLevel() const override { return m_minLevel; }
+    };
+
+    CaptureLogger logger;
+    m_manager->setLogger(&logger);
+    m_manager->setDebugTraceEnabled(true);
+
+    QCNetworkRequest request(QUrl("https://example.com/path?token=abc"));
+    QCNetworkReply dummyReply(request, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), m_manager);
+    QCNetworkReplyPrivate priv(&dummyReply, request, HttpMethod::Get, ExecutionMode::Sync, QByteArray());
+
+    const QByteArray raw =
+        QByteArray("GET /path?token=abc&foo=bar HTTP/1.1\r\n"
+                   "Authorization: Bearer secret_token\r\n"
+                   "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"
+                   "Cookie: sessionid=abc\r\n"
+                   "Set-Cookie: sid=def\r\n");
+
+    QCNetworkReplyPrivate::curlDebugCallback(nullptr,
+                                             CURLINFO_HEADER_OUT,
+                                             const_cast<char*>(raw.constData()),
+                                             static_cast<size_t>(raw.size()),
+                                             &priv);
+
+    QVERIFY(logger.m_logCount > 0);
+    QVERIFY(!logger.m_lastMessage.contains("secret_token"));
+    QVERIFY(!logger.m_lastMessage.contains("dXNlcjpwYXNz"));
+    QVERIFY(!logger.m_lastMessage.contains("sessionid=abc"));
+    QVERIFY(!logger.m_lastMessage.contains("token=abc"));
+    QVERIFY(logger.m_lastMessage.contains("Authorization: [REDACTED]"));
+    QVERIFY(logger.m_lastMessage.contains("Proxy-Authorization: [REDACTED]"));
+    QVERIFY(logger.m_lastMessage.contains("Cookie: [REDACTED]"));
+    QVERIFY(logger.m_lastMessage.contains("Set-Cookie: [REDACTED]"));
+    QVERIFY(logger.m_lastMessage.contains("token=[REDACTED]"));
+    QVERIFY(logger.m_lastMessage.contains("foo=bar"));
+
+    m_manager->setDebugTraceEnabled(false);
+    m_manager->setLogger(nullptr);
 }
 
 /**

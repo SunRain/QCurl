@@ -364,6 +364,8 @@ void TestLibcurlConsistency::testCase()
     const int observeStatusCode = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
     const int observeHttpsPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
     const QString caCertPath = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
+    const QString hstsPath = qEnvironmentVariable("QCURL_LC_HSTS_PATH");
+    const QString altSvcPath = qEnvironmentVariable("QCURL_LC_ALTSVC_PATH");
     const QString targetUrl = qEnvironmentVariable("QCURL_LC_TARGET_URL");
     const QString authUser = qEnvironmentVariable("QCURL_LC_AUTH_USER");
     const QString authPass = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
@@ -410,6 +412,13 @@ void TestLibcurlConsistency::testCase()
             }
         }
         manager.setShareHandleConfig(shareCfg);
+    }
+
+    if (!hstsPath.isEmpty() || !altSvcPath.isEmpty()) {
+        QCNetworkAccessManager::HstsAltSvcCacheConfig cacheCfg;
+        cacheCfg.hstsFilePath = hstsPath;
+        cacheCfg.altSvcFilePath = altSvcPath;
+        manager.setHstsAltSvcCacheConfig(cacheCfg);
     }
 
     if (caseId == QStringLiteral("p2_tls_verify_success")) {
@@ -1697,6 +1706,166 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("p2_share_handle_cookie_disabled")) {
+        QVERIFY(observeHttpPort > 0);
+
+        auto waitForFinished = [](QCNetworkReply *reply, int timeoutMs) -> bool {
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            timer.start(timeoutMs);
+            loop.exec();
+            return reply->isFinished();
+        };
+
+        QCNetworkRequest loginReq(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/login").arg(observeHttpPort)),
+            requestId));
+        loginReq.setFollowLocation(false);
+        loginReq.setHttpVersion(httpVersion);
+        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QVERIFY(loginReply);
+        QVERIFY(waitForFinished(loginReply, 5000));
+        QCOMPARE(loginReply->error(), NetworkError::NoError);
+        loginReply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+        QCNetworkRequest homeReq(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/home").arg(observeHttpPort)),
+            requestId));
+        homeReq.setFollowLocation(false);
+        homeReq.setHttpVersion(httpVersion);
+        QCNetworkReply *homeReply = manager.sendGet(homeReq);
+        QVERIFY(homeReply);
+        QVERIFY(waitForFinished(homeReply, 5000));
+        QVERIFY(homeReply->error() != NetworkError::NoError);
+        const auto dataOpt = homeReply->readAll();
+        const QByteArray body = dataOpt.value_or(QByteArray());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), body, QIODevice::WriteOnly | QIODevice::Truncate));
+        homeReply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_share_handle_cookie_enabled")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY2(!shareHandleEnv.isEmpty(), "QCURL_LC_SHARE_HANDLE required for share cookie enabled case");
+
+        auto waitForFinished = [](QCNetworkReply *reply, int timeoutMs) -> bool {
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            timer.start(timeoutMs);
+            loop.exec();
+            return reply->isFinished();
+        };
+
+        QCNetworkRequest loginReq(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/login").arg(observeHttpPort)),
+            requestId));
+        loginReq.setFollowLocation(false);
+        loginReq.setHttpVersion(httpVersion);
+        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QVERIFY(loginReply);
+        QVERIFY(waitForFinished(loginReply, 5000));
+        QCOMPARE(loginReply->error(), NetworkError::NoError);
+        loginReply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+        QCNetworkRequest homeReq(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/home").arg(observeHttpPort)),
+            requestId));
+        homeReq.setFollowLocation(false);
+        homeReq.setHttpVersion(httpVersion);
+        QCNetworkReply *homeReply = manager.sendGet(homeReq);
+        QVERIFY(homeReply);
+        QVERIFY(waitForFinished(homeReply, 5000));
+        QCOMPARE(homeReply->error(), NetworkError::NoError);
+        const auto dataOpt = homeReply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QCOMPARE(*dataOpt, QByteArray("home-ok\n"));
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        homeReply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_share_handle_cookie_concurrency")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY2(!shareHandleEnv.isEmpty(), "QCURL_LC_SHARE_HANDLE required for share cookie concurrency case");
+
+        auto waitForFinished = [](QCNetworkReply *reply, int timeoutMs) -> bool {
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            timer.start(timeoutMs);
+            loop.exec();
+            return reply->isFinished();
+        };
+
+        QCNetworkRequest loginReq(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/login").arg(observeHttpPort)),
+            requestId));
+        loginReq.setFollowLocation(false);
+        loginReq.setHttpVersion(httpVersion);
+        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QVERIFY(loginReply);
+        QVERIFY(waitForFinished(loginReply, 5000));
+        QCOMPARE(loginReply->error(), NetworkError::NoError);
+        loginReply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+        constexpr int kConcurrency = 64;
+        QVector<QPointer<QCNetworkReply>> replies;
+        replies.reserve(kConcurrency);
+
+        int finishedCount = 0;
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timer.start(30000);
+
+        for (int i = 0; i < kConcurrency; ++i) {
+            QUrl url(QStringLiteral("http://localhost:%1/home").arg(observeHttpPort));
+            QUrlQuery q(url);
+            q.addQueryItem(QStringLiteral("seq"), QString::number(i));
+            url.setQuery(q);
+
+            QCNetworkRequest req(withRequestId(url, requestId));
+            req.setFollowLocation(false);
+            req.setHttpVersion(httpVersion);
+
+            QCNetworkReply *reply = manager.sendGet(req);
+            QVERIFY(reply);
+            replies.append(reply);
+            QObject::connect(reply, &QCNetworkReply::finished, this, [&finishedCount, &loop]() {
+                finishedCount += 1;
+                if (finishedCount >= kConcurrency) {
+                    loop.quit();
+                }
+            });
+        }
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for share handle concurrency requests");
+        QCOMPARE(finishedCount, kConcurrency);
+        for (const auto &r : replies) {
+            QVERIFY(r);
+            QVERIFY(r->isFinished());
+            QCOMPARE(r->error(), NetworkError::NoError);
+            r->deleteLater();
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return;
+    }
+
     if (caseId == QStringLiteral("p2_fixed_http_error")) {
         QVERIFY(observeHttpPort > 0);
         QVERIFY(observeStatusCode > 0);
@@ -1796,6 +1965,73 @@ void TestLibcurlConsistency::testCase()
             const QString outFile = QStringLiteral("download_%1.data").arg(i);
             const NetworkError err = httpMethodToFile(manager, HttpMethod::Get, url, httpVersion, QByteArray(), outFile);
             QCOMPARE(err, NetworkError::NoError);
+        }
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_tls_policy_and_cache")) {
+        QVERIFY(httpsPort > 0);
+        QVERIFY(!caCertPath.isEmpty());
+        QVERIFY2(!hstsPath.isEmpty() || !altSvcPath.isEmpty(),
+                 "QCURL_LC_HSTS_PATH or QCURL_LC_ALTSVC_PATH required");
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+        ssl.caCertPath = caCertPath;
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/lc_cache_headers").arg(httpsPort)),
+            requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(false);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        const QStringList warnings = reply->capabilityWarnings();
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        if (dataOpt.has_value()) {
+            QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        }
+        delete reply;
+
+        [[maybe_unused]] auto shouldSkipByOpt = [&warnings](const QString &opt) -> bool {
+            for (const QString &w : warnings) {
+                if (w.contains(opt)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (!hstsPath.isEmpty()) {
+#ifdef CURLOPT_HSTS
+            QFile f(hstsPath);
+            if (!f.exists() || f.size() <= 0) {
+                if (shouldSkipByOpt(QStringLiteral("CURLOPT_HSTS"))) {
+                    QSKIP("capability gated: CURLOPT_HSTS unsupported");
+                }
+            }
+            QVERIFY2(f.exists(), "HSTS cache file missing");
+            QVERIFY2(f.size() > 0, "HSTS cache file empty");
+#else
+            QSKIP("libcurl headers lack CURLOPT_HSTS");
+#endif
+        }
+
+        if (!altSvcPath.isEmpty()) {
+#ifdef CURLOPT_ALTSVC
+            QFile f(altSvcPath);
+            if (!f.exists() || f.size() <= 0) {
+                if (shouldSkipByOpt(QStringLiteral("CURLOPT_ALTSVC"))) {
+                    QSKIP("capability gated: CURLOPT_ALTSVC unsupported");
+                }
+            }
+            QVERIFY2(f.exists(), "Alt-Svc cache file missing");
+            QVERIFY2(f.size() > 0, "Alt-Svc cache file empty");
+#else
+            QSKIP("libcurl headers lack CURLOPT_ALTSVC");
+#endif
         }
         return;
     }

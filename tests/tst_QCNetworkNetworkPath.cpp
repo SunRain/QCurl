@@ -5,6 +5,7 @@
 
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkReply_p.h"
 #include "QCNetworkSslConfig.h"
 
 using namespace QCurl;
@@ -18,6 +19,7 @@ private slots:
     void testSettersAndGetters();
     void testInvalidInputs();
     void testConfigureCurlOptionsSmoke();
+    void testProtocolAllowlistCapabilityPolicy();
 };
 
 void TestQCNetworkNetworkPath::testDefaults()
@@ -166,7 +168,52 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     }
 }
 
+void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
+{
+#ifndef CURLOPT_PROTOCOLS_STR
+    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROTOCOLS_STR");
+#endif
+
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
+
+    {
+        QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
+        request.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
+
+        QCNetworkReplyPrivate replyPrivate(nullptr,
+                                           request,
+                                           HttpMethod::Get,
+                                           ExecutionMode::Sync,
+                                           QByteArray());
+        QVERIFY(!replyPrivate.configureCurlOptions());
+        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
+        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+    }
+
+    {
+        QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
+        request.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
+
+        QCNetworkReplyPrivate replyPrivate(nullptr,
+                                           request,
+                                           HttpMethod::Get,
+                                           ExecutionMode::Sync,
+                                           QByteArray());
+        QVERIFY(replyPrivate.configureCurlOptions());
+        QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+        QVERIFY(replyPrivate.capabilityWarnings.join(QStringLiteral("\n")).contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+    }
+
+    if (oldEnv.isEmpty()) {
+        qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    } else {
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", oldEnv);
+    }
+}
+
 QTEST_MAIN(TestQCNetworkNetworkPath)
 
 #include "tst_QCNetworkNetworkPath.moc"
-

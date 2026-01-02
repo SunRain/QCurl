@@ -469,11 +469,14 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py",
             "tests/libcurl_consistency/test_p2_pause_resume.py",
             "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
+            "tests/libcurl_consistency/test_p2_connection_limits.py",
+            "tests/libcurl_consistency/test_p2_share_handle.py",
         ])
     if cfg.with_ext:
         base.extend([
             "tests/libcurl_consistency/test_ext_suite.py",
             "tests/libcurl_consistency/test_ext_ws_suite.py",
+            "tests/libcurl_consistency/test_ext_tls_policy_and_cache.py",
         ])
     return base
 

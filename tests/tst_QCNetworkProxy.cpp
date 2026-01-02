@@ -39,6 +39,8 @@ private slots:
     void testProxyWithSsl();
     void testProxyAppliedToCurlHandle();
     void testSslConfigApplied();
+    void testProxyTlsUnsupportedFail();
+    void testProxyTlsUnsupportedWarn();
 
     // 代理错误处理测试
     void testProxyConnectionFailed();
@@ -290,6 +292,92 @@ void TestQCNetworkProxy::testProxyWithSsl()
     }
 
     qDebug() << "✅ 代理与 SSL 结合配置验证通过";
+}
+
+void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
+{
+#ifndef CURLPROXY_HTTPS
+    QSKIP("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）");
+#endif
+#ifndef CURLOPT_PROXY_SSL_CIPHER_LIST
+    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST");
+#endif
+
+    qDebug() << "测试 4.3：Proxy TLS 不可用（Fail）";
+
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+
+    QCNetworkRequest request(QUrl("https://example.com"));
+    QCNetworkProxyConfig proxy;
+    proxy.type = QCNetworkProxyConfig::ProxyType::Https;
+    proxy.hostName = "proxy.example.com";
+    proxy.port = 443;
+
+    QCNetworkProxyConfig::ProxyTlsConfig tls;
+    tls.cipherList = "TLS_AES_128_GCM_SHA256";
+    tls.unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
+    proxy.tlsConfig = tls;
+    request.setProxyConfig(proxy);
+
+    QCNetworkReplyPrivate replyPrivate(nullptr,
+                                       request,
+                                       HttpMethod::Get,
+                                       ExecutionMode::Sync,
+                                       QByteArray());
+
+    QVERIFY(!replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
+    QVERIFY(replyPrivate.errorMessage.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+
+    if (oldEnv.isEmpty()) {
+        qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    } else {
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", oldEnv);
+    }
+}
+
+void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
+{
+#ifndef CURLPROXY_HTTPS
+    QSKIP("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）");
+#endif
+#ifndef CURLOPT_PROXY_SSL_CIPHER_LIST
+    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST");
+#endif
+
+    qDebug() << "测试 4.4：Proxy TLS 不可用（Warn）";
+
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+
+    QCNetworkRequest request(QUrl("https://example.com"));
+    QCNetworkProxyConfig proxy;
+    proxy.type = QCNetworkProxyConfig::ProxyType::Https;
+    proxy.hostName = "proxy.example.com";
+    proxy.port = 443;
+
+    QCNetworkProxyConfig::ProxyTlsConfig tls;
+    tls.cipherList = "TLS_AES_128_GCM_SHA256";
+    tls.unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Warn;
+    proxy.tlsConfig = tls;
+    request.setProxyConfig(proxy);
+
+    QCNetworkReplyPrivate replyPrivate(nullptr,
+                                       request,
+                                       HttpMethod::Get,
+                                       ExecutionMode::Sync,
+                                       QByteArray());
+
+    QVERIFY(replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+
+    if (oldEnv.isEmpty()) {
+        qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    } else {
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", oldEnv);
+    }
 }
 
 void TestQCNetworkProxy::testProxyConnectionFailed()

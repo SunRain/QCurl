@@ -260,6 +260,9 @@ def lc_seed_http_docs(env, httpd):
     for prefix in ("2402", "2502"):
         for i in range(1, 5):
             (path_dir / f"{prefix}{i:04d}").write_text(multi_body, encoding="utf-8")
+
+    # ext：TLS policy + cache（LC-50）：用于注入 Strict-Transport-Security / Alt-Svc 响应头并验证落盘
+    (Path(indir) / "lc_cache_headers").write_text("cache-headers-ok\n", encoding="utf-8")
     yield True
 
 
@@ -407,6 +410,42 @@ def lc_http_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
         finally:
             if proc:
                 proc.terminate()
+
+@pytest.fixture(scope="function")
+def lc_httpd_cache_headers(env: Env, httpd) -> Generator[Dict[str, object], None, None]:
+    """
+    为 ext cache 用例注入响应头：
+    - Strict-Transport-Security
+    - Alt-Svc
+
+    注意：
+    - 仅对 https vhost 生效（通过 domain extra config 注入到 <VirtualHost *:https> 内）。
+    - 用例结束必须清理，避免污染其他 case。
+    """
+    if not httpd:
+        pytest.skip("httpd unavailable")
+    domain = getattr(env, "domain1", None)
+    if not domain:
+        pytest.skip("curl testenv domain1 unavailable")
+
+    alt_svc_port = int(getattr(env, "h3_port", 0) or getattr(env, "https_port", 0) or 0)
+    if alt_svc_port <= 0:
+        pytest.skip("ports unavailable for Alt-Svc header")
+
+    lines = [
+        '<Location "/lc_cache_headers">',
+        '    Header always set Strict-Transport-Security "max-age=60"',
+        f'    Header always set Alt-Svc \'h3=":{alt_svc_port}"; ma=60\'',
+        "</Location>",
+    ]
+    httpd.set_extra_config(domain, lines)
+    if not httpd.reload_if_config_changed():
+        pytest.skip("httpd reload failed")
+    try:
+        yield {"alt_svc_port": alt_svc_port}
+    finally:
+        httpd.set_extra_config(domain, None)
+        httpd.reload_if_config_changed()
 
 
 @pytest.fixture(scope="function")
