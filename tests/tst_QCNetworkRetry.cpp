@@ -150,7 +150,7 @@ void TestQCNetworkRetry::testRetryPolicyDefaults()
     QCOMPARE(policy.initialDelay.count(), 1000);
     QCOMPARE(policy.backoffMultiplier, 2.0);
     QCOMPARE(policy.maxDelay.count(), 30000);
-    QCOMPARE(policy.retryableErrors.size(), 8);  // 8 种可重试错误
+    QCOMPARE(policy.retryableErrors.size(), 9);  // 9 种可重试错误
 }
 
 void TestQCNetworkRetry::testRetryPolicyFactoryMethods()
