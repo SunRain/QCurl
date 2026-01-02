@@ -1,0 +1,139 @@
+# libcurl_consistency ext PR gate
+name: PR Gate (libcurl_consistency ext)
+
+on:
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'curl/**'
+      - '.github/workflows/libcurl_consistency_ext_gate.yml'
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'curl/**'
+      - '.github/workflows/libcurl_consistency_ext_gate.yml'
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  libcurl_consistency_ext:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            qt6-base-dev \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            python3-pip \
+            apache2 \
+            apache2-dev \
+            libapache2-mod-http2 \
+            libevent-dev \
+            libnghttp3-dev
+
+          # ngtcp2 的包名在不同 Ubuntu 版本可能不同：优先 libngtcp2-dev，否则退回 crypto 后端包。
+          sudo apt-get install -y libngtcp2-dev || sudo apt-get install -y libngtcp2-crypto-openssl-dev || sudo apt-get install -y libngtcp2-crypto-gnutls-dev
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest websockets
+
+      - name: Ensure curl testenv tool paths (httpd/apxs)
+        run: |
+          set -euo pipefail
+
+          if [ ! -x /usr/bin/httpd ] && command -v apache2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apache2)" /usr/bin/httpd
+          fi
+
+          if [ ! -x /usr/bin/apxs ] && command -v apxs2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apxs2)" /usr/bin/apxs
+          fi
+
+          /usr/bin/httpd -v || true
+          /usr/bin/apxs -q HTTPD_VERSION || true
+
+      - name: Preflight (socket/httpd/nghttpx-h3)
+        run: |
+          python3 - <<'PY'
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.bind(("127.0.0.1", 0))
+          s.listen(1)
+          s.close()
+          print("socket_bind_ok")
+          PY
+
+      - name: Configure QCurl (CMake)
+        run: |
+          set -euo pipefail
+          extra=""
+          if [ -n "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            extra="-DQCURL_LC_NGHTTP2_ARCHIVE=${QCURL_LC_NGHTTP2_ARCHIVE}"
+          fi
+
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            ${extra}
+
+      - name: Build local nghttpx (h3-capable) for curl testenv
+        run: |
+          set -euo pipefail
+          cmake --build build --target qcurl_nghttpx_h3 --parallel
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version | grep -q "ngtcp2/"
+
+      - name: Configure curl baseline (CMake)
+        run: |
+          cmake -S curl -B curl/build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Run libcurl_consistency gate (all + ext)
+        run: |
+          QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+
+      - name: Upload gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libcurl-consistency-reports-${{ github.sha }}
+          path: |
+            build/libcurl_consistency/reports/
+          retention-days: 14
+
+      - name: Upload service logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libcurl-consistency-service-logs-${{ github.sha }}
+          path: |
+            curl/tests/http/gen/artifacts/**/service_logs/
+          retention-days: 14

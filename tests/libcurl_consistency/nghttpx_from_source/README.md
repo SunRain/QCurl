@@ -17,6 +17,16 @@
 - 构建一致性 Qt Test 时自动触发：
   - `cmake --build build --target tst_LibcurlConsistency`
 
+### CI（PR gate）推荐用法
+
+在 CI 中建议显式构建一次 `qcurl_nghttpx_h3` 并做版本校验，以便在依赖缺失时尽早失败、并输出更清晰的错误：
+
+- 构建：
+  - `cmake --build build --target qcurl_nghttpx_h3`
+- 校验（curl testenv 用该字符串判定 `nghttpx_with_h3`）：
+  - `build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version`
+  - 预期输出包含 `ngtcp2/x.y.z`
+
 ### 离线/内网构建
 
 如需避免构建时下载源码，可在配置阶段提供本地 tarball 路径：
