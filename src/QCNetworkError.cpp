@@ -23,8 +23,12 @@ QString errorString(NetworkError error)
             return QStringLiteral("HTTP 405: 方法不允许");
         case NetworkError::HttpTimeout:
             return QStringLiteral("HTTP 408: 请求超时");
+        case NetworkError::HttpTooManyRequests:
+            return QStringLiteral("HTTP 429: 请求过多（限流）");
         case NetworkError::HttpInternalServerError:
             return QStringLiteral("HTTP 500: 服务器内部错误");
+        case NetworkError::HttpNotImplemented:
+            return QStringLiteral("HTTP 501: 未实现");
         case NetworkError::HttpBadGateway:
             return QStringLiteral("HTTP 502: 网关错误");
         case NetworkError::HttpServiceUnavailable:

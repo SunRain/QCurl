@@ -39,7 +39,9 @@ enum class NetworkError {
     HttpNotFound = 404,           ///< HTTP 404 Not Found
     HttpMethodNotAllowed = 405,   ///< HTTP 405 Method Not Allowed
     HttpTimeout = 408,            ///< HTTP 408 Request Timeout
+    HttpTooManyRequests = 429,    ///< HTTP 429 Too Many Requests
     HttpInternalServerError = 500,///< HTTP 500 Internal Server Error
+    HttpNotImplemented = 501,     ///< HTTP 501 Not Implemented
     HttpBadGateway = 502,         ///< HTTP 502 Bad Gateway
     HttpServiceUnavailable = 503, ///< HTTP 503 Service Unavailable
     HttpGatewayTimeout = 504,     ///< HTTP 504 Gateway Timeout

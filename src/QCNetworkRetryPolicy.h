@@ -2,6 +2,7 @@
 #define QCNETWORKRETRYPOLICY_H
 
 #include <chrono>
+#include <optional>
 #include <QSet>
 #include "QCNetworkError.h"
 
@@ -108,11 +109,23 @@ public:
 
         // HTTP 临时性错误
         NetworkError::HttpTimeout,
+        NetworkError::HttpTooManyRequests,
         NetworkError::HttpInternalServerError,
         NetworkError::HttpBadGateway,
         NetworkError::HttpServiceUnavailable,
         NetworkError::HttpGatewayTimeout
     };
+
+    /**
+     * @brief HTTP 状态码重试的 method 限制（与 legendary 迁移语义对齐）
+     *
+     * 当启用后：
+     * - 对于 HTTP 4xx/5xx（isHttpError() == true）触发的重试，仅允许 GET。
+     * - libcurl 层网络错误（ConnectionTimeout 等）不受该限制。
+     *
+     * 默认关闭以保持兼容性。
+     */
+    bool retryHttpStatusErrorsForGetOnly = false;
 
     // ========================================================================
     // 公共方法
@@ -152,6 +165,16 @@ public:
      * - attemptCount=5: 30000ms (达到上限)
      */
     [[nodiscard]] std::chrono::milliseconds delayForAttempt(int attemptCount) const;
+
+    /**
+     * @brief 计算延迟时间（支持服务端 Retry-After 覆写）
+     *
+     * @param attemptCount 尝试次数（从 0 开始）
+     * @param serverDelay 服务端建议延迟（例如 Retry-After）；若存在则优先使用，并以 maxDelay 为上限
+     */
+    [[nodiscard]] std::chrono::milliseconds delayForAttempt(
+        int attemptCount,
+        std::optional<std::chrono::milliseconds> serverDelay) const;
 
     /**
      * @brief 检查重试功能是否启用

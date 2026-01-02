@@ -14,6 +14,29 @@
 
 namespace QCurl {
 
+namespace {
+
+std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString, QString> &headers)
+{
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        bool ok = false;
+        const qint64 seconds = it.value().trimmed().toLongLong(&ok);
+        if (!ok || seconds < 0) {
+            return std::nullopt;
+        }
+
+        return std::chrono::milliseconds(seconds * 1000);
+    }
+
+    return std::nullopt;
+}
+
+} // namespace
+
 void QCCurlMultiManager::shareLockCallback(CURL *, curl_lock_data data, curl_lock_access, void *userptr)
 {
     auto *context = static_cast<ShareContext*>(userptr);
@@ -596,8 +619,12 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
             // 获取重试策略
             QCNetworkRetryPolicy policy = d->request.retryPolicy();
 
+            const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                           && isHttpError(error)
+                                           && (d->httpMethod != HttpMethod::Get);
+
             // 检查是否应该重试
-            if (policy.shouldRetry(error, d->attemptCount)) {
+            if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
                 // 增加重试计数
                 d->attemptCount++;
 
@@ -605,7 +632,13 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                 emit reply->retryAttempt(d->attemptCount, error);
 
                 // 计算延迟时间（注意：attemptCount 已经++，所以使用 attemptCount-1）
-                auto delay = policy.delayForAttempt(d->attemptCount - 1);
+                std::optional<std::chrono::milliseconds> retryAfter;
+                if (error == NetworkError::HttpTooManyRequests) {
+                    d->parseHeaders();
+                    retryAfter = parseRetryAfterDelay(d->headerMap);
+                }
+
+                auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
 
                 qDebug() << "QCCurlMultiManager: Retry scheduled for reply" << reply
                          << "Attempt" << d->attemptCount << "after" << delay.count() << "ms"

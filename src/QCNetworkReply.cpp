@@ -13,6 +13,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkLogger.h"
+#include "QCNetworkMockHandler.h"
 
 #include <QDebug>
 #include <QFile>
@@ -308,6 +309,25 @@ std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
 #else
         return std::nullopt;
 #endif
+    }
+    return std::nullopt;
+}
+
+std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString, QString> &headers)
+{
+    // 最小实现：仅支持整数秒（RFC 9110：Retry-After = delta-seconds / HTTP-date）
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        bool ok = false;
+        const qint64 seconds = it.value().trimmed().toLongLong(&ok);
+        if (!ok || seconds < 0) {
+            return std::nullopt;
+        }
+
+        return std::chrono::milliseconds(seconds * 1000);
     }
     return std::nullopt;
 }
@@ -2127,6 +2147,236 @@ void QCNetworkReply::execute()
     }
 
     // ========================================================================
+    // MockHandler 集成（离线回归/单元测试）
+    // ========================================================================
+    if (manager && manager->mockHandler()) {
+        auto *mock = manager->mockHandler();
+
+        // 请求捕获：用于离线断言 middleware/header 注入、body 形态等
+        if (mock->captureEnabled()) {
+            QCNetworkMockHandler::CapturedRequest captured;
+            captured.url = d->request.url();
+            captured.method = d->httpMethod;
+
+            const auto headerNames = d->request.rawHeaderList();
+            for (const auto &name : headerNames) {
+                captured.headers.append(qMakePair(name, d->request.rawHeader(name)));
+            }
+
+            captured.bodySize = d->requestBody.size();
+            const int previewLimit = mock->captureBodyPreviewLimit();
+            captured.bodyPreview = previewLimit > 0 ? d->requestBody.left(previewLimit) : QByteArray();
+            mock->recordRequest(captured);
+        }
+
+        // 仅当存在 mock 规则时才进入回放分支；否则继续走真实网络
+        if (mock->hasMock(d->httpMethod, d->request.url())) {
+            const int responseDelayMs = mock->globalDelay();
+
+            // 进入 Running（与真实网络保持一致）；完成/错误信号通过延迟触发，避免在连接信号前同步发射
+            d->setState(ReplyState::Running);
+
+            // 同步模式：阻塞执行（支持重试）
+            if (d->executionMode == ExecutionMode::Sync) {
+                QCNetworkRetryPolicy policy = d->request.retryPolicy();
+
+                while (true) {
+                    QCNetworkMockHandler::MockData mockData;
+                    if (!mock->consumeMock(d->httpMethod, d->request.url(), mockData)) {
+                        d->setError(NetworkError::InvalidRequest,
+                                    QStringLiteral("MockHandler: no mock matched for %1")
+                                        .arg(d->request.url().toString()));
+                        d->setState(ReplyState::Error);
+                        return;
+                    }
+
+                    if (responseDelayMs > 0) {
+                        QThread::msleep(static_cast<unsigned long>(responseDelayMs));
+                    }
+
+                    d->bodyBuffer.clear();
+                    d->headerData.clear();
+                    d->headerMap.clear();
+                    d->bytesDownloaded = 0;
+                    d->bytesUploaded = 0;
+                    d->downloadTotal = -1;
+                    d->uploadTotal = -1;
+
+                    if (!mockData.response.isEmpty()) {
+                        d->bodyBuffer.append(mockData.response);
+                        d->bytesDownloaded = mockData.response.size();
+                    }
+
+                    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+                        d->headerData.append(it.key());
+                        d->headerData.append(": ");
+                        d->headerData.append(it.value());
+                        d->headerData.append('\n');
+                    }
+
+                    NetworkError error = NetworkError::NoError;
+                    QString errorMsg;
+                    if (mockData.isError && mockData.error != NetworkError::NoError) {
+                        error = mockData.error;
+                        errorMsg = QCurl::errorString(error);
+                    } else if (mockData.statusCode >= 400) {
+                        error = fromHttpCode(mockData.statusCode);
+                        errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
+                    }
+
+                    if (error == NetworkError::NoError) {
+                        if (!mockData.response.isEmpty()) {
+                            emit readyRead();
+                        }
+                        d->setState(ReplyState::Finished);
+                        return;
+                    }
+
+                    const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                                   && isHttpError(error)
+                                                   && (d->httpMethod != HttpMethod::Get);
+
+                    if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
+                        d->attemptCount++;
+                        emit retryAttempt(d->attemptCount, error);
+
+                        d->parseHeaders();
+                        const std::optional<std::chrono::milliseconds> retryAfter =
+                            (error == NetworkError::HttpTooManyRequests)
+                                ? parseRetryAfterDelay(d->headerMap)
+                                : std::nullopt;
+
+                        const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
+                        QThread::msleep(static_cast<unsigned long>(delay.count()));
+                        continue;
+                    }
+
+                    d->setError(error, errorMsg);
+                    d->setState(ReplyState::Error);
+                    return;
+                }
+            }
+
+            // 异步模式：以定时器回放，支持重试/取消
+            QPointer<QCNetworkReply> safeThis(this);
+            QTimer::singleShot(responseDelayMs > 0 ? responseDelayMs : 0, this, [safeThis]() {
+                if (!safeThis) {
+                    return;
+                }
+
+                auto *d = safeThis->d_func();
+                if (d->state == ReplyState::Cancelled
+                    || d->state == ReplyState::Finished
+                    || d->state == ReplyState::Error) {
+                    return;
+                }
+
+                auto *manager = qobject_cast<QCNetworkAccessManager*>(safeThis->parent());
+                auto *mock = manager ? manager->mockHandler() : nullptr;
+                if (!mock) {
+                    d->setError(NetworkError::InvalidRequest, QStringLiteral("MockHandler: not set"));
+                    d->setState(ReplyState::Error);
+                    return;
+                }
+
+                QCNetworkMockHandler::MockData mockData;
+                if (!mock->consumeMock(d->httpMethod, d->request.url(), mockData)) {
+                    d->setError(NetworkError::InvalidRequest,
+                                QStringLiteral("MockHandler: no mock matched for %1")
+                                    .arg(d->request.url().toString()));
+                    d->setState(ReplyState::Error);
+                    return;
+                }
+
+                d->bodyBuffer.clear();
+                d->headerData.clear();
+                d->headerMap.clear();
+                d->bytesDownloaded = 0;
+                d->bytesUploaded = 0;
+                d->downloadTotal = -1;
+                d->uploadTotal = -1;
+
+                if (!mockData.response.isEmpty()) {
+                    d->bodyBuffer.append(mockData.response);
+                    d->bytesDownloaded = mockData.response.size();
+                    emit safeThis->readyRead();
+                }
+
+                for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+                    d->headerData.append(it.key());
+                    d->headerData.append(": ");
+                    d->headerData.append(it.value());
+                    d->headerData.append('\n');
+                }
+
+                NetworkError error = NetworkError::NoError;
+                QString errorMsg;
+                if (mockData.isError && mockData.error != NetworkError::NoError) {
+                    error = mockData.error;
+                    errorMsg = QCurl::errorString(error);
+                } else if (mockData.statusCode >= 400) {
+                    error = fromHttpCode(mockData.statusCode);
+                    errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
+                }
+
+                if (error == NetworkError::NoError) {
+                    d->setState(ReplyState::Finished);
+                    return;
+                }
+
+                QCNetworkRetryPolicy policy = d->request.retryPolicy();
+                const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                               && isHttpError(error)
+                                               && (d->httpMethod != HttpMethod::Get);
+
+                if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
+                    d->attemptCount++;
+                    emit safeThis->retryAttempt(d->attemptCount, error);
+
+                    d->parseHeaders();
+                    const std::optional<std::chrono::milliseconds> retryAfter =
+                        (error == NetworkError::HttpTooManyRequests)
+                            ? parseRetryAfterDelay(d->headerMap)
+                            : std::nullopt;
+
+                    const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
+
+                    QPointer<QCNetworkReply> safeReply(safeThis);
+                    QTimer::singleShot(delay.count(), safeThis.data(), [safeReply, d]() {
+                        if (!safeReply) {
+                            return;
+                        }
+                        if (d->state == ReplyState::Cancelled) {
+                            return;
+                        }
+
+                        // 准备重试：不发射额外信号，保持与真实网络一致
+                        d->state = ReplyState::Idle;
+                        d->errorCode = NetworkError::NoError;
+                        d->errorMessage.clear();
+                        d->bodyBuffer.clear();
+                        d->headerData.clear();
+                        d->headerMap.clear();
+                        d->bytesDownloaded = 0;
+                        d->bytesUploaded = 0;
+                        d->downloadTotal = -1;
+                        d->uploadTotal = -1;
+
+                        safeReply->execute();
+                    });
+
+                    return;
+                }
+
+                d->setError(error, errorMsg);
+                d->setState(ReplyState::Error);
+            });
+
+            return;
+        }
+    }
+
+    // ========================================================================
     // 应用 Cookie 配置（在 QCNetworkAccessManager 中设置）
     // ========================================================================
     // 注意：cookieFilePath 和 cookieMode 是在构造函数之后通过 d_func() 设置的，
@@ -2292,8 +2542,12 @@ void QCNetworkReply::execute()
                 return;
             }
 
+            const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                           && isHttpError(error)
+                                           && (d->httpMethod != HttpMethod::Get);
+
             // 检查是否应该重试
-            if (policy.shouldRetry(error, d->attemptCount)) {
+            if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
                 // 增加重试计数
                 d->attemptCount++;
 
@@ -2301,7 +2555,13 @@ void QCNetworkReply::execute()
                 emit retryAttempt(d->attemptCount, error);
 
                 // 计算延迟时间
-                auto delay = policy.delayForAttempt(d->attemptCount - 1);
+                std::optional<std::chrono::milliseconds> retryAfter;
+                if (error == NetworkError::HttpTooManyRequests) {
+                    d->parseHeaders();
+                    retryAfter = parseRetryAfterDelay(d->headerMap);
+                }
+
+                auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
 
                 qDebug() << "QCNetworkReply::execute: Sync request failed, retrying after"
                          << delay.count() << "ms. Attempt" << d->attemptCount

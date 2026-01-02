@@ -73,6 +73,20 @@ std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(int attemptCount
     return std::chrono::milliseconds(static_cast<long long>(delayMs));
 }
 
+std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(
+    int attemptCount,
+    std::optional<std::chrono::milliseconds> serverDelay) const
+{
+    if (serverDelay.has_value()) {
+        const auto raw = serverDelay.value();
+        if (raw.count() <= 0) {
+            return std::chrono::milliseconds(0);
+        }
+        return std::min(raw, maxDelay);
+    }
+    return delayForAttempt(attemptCount);
+}
+
 // ============================================================================
 // 静态工厂方法
 // ============================================================================
