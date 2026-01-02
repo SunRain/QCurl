@@ -33,6 +33,40 @@ bool isCapabilityRelatedCurlError(CURLcode code)
     return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
 }
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+bool shouldForceCapabilityErrorForOption(const char *optionName)
+{
+    const QByteArray raw = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    if (raw.isEmpty()) {
+        return false;
+    }
+
+    const QByteArray trimmed = raw.trimmed();
+    if (trimmed == "1" || trimmed == "all") {
+        return true;
+    }
+
+    const QList<QByteArray> parts = raw.split(',');
+    for (const QByteArray &p : parts) {
+        if (p.trimmed() == optionName) {
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
+template<typename T>
+CURLcode curlEasySetoptWithTestHook(CURL *handle, CURLoption option, const char *optionName, T value)
+{
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    if (shouldForceCapabilityErrorForOption(optionName)) {
+        return CURLE_NOT_BUILT_IN;
+    }
+#endif
+    return curl_easy_setopt(handle, option, value);
+}
+
 void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
 {
     if (!d) {
@@ -173,7 +207,64 @@ bool setOptionalSlistOption(QCNetworkReplyPrivate *d,
     return false;
 }
 
-QString redactSensitiveHeaderLine(const QByteArray &line)
+bool isSensitiveQueryKey(const QString &keyLower)
+{
+    return keyLower == QStringLiteral("token") ||
+           keyLower == QStringLiteral("access_token") ||
+           keyLower == QStringLiteral("id_token") ||
+           keyLower == QStringLiteral("refresh_token") ||
+           keyLower == QStringLiteral("api_key") ||
+           keyLower == QStringLiteral("apikey") ||
+           keyLower == QStringLiteral("key") ||
+           keyLower == QStringLiteral("secret") ||
+           keyLower == QStringLiteral("signature") ||
+           keyLower == QStringLiteral("sig") ||
+           keyLower == QStringLiteral("password") ||
+           keyLower == QStringLiteral("passwd") ||
+           keyLower == QStringLiteral("pwd");
+}
+
+QString redactSensitiveQueryParams(const QString &line)
+{
+    const int qpos = line.indexOf(QLatin1Char('?'));
+    if (qpos < 0) {
+        return line;
+    }
+
+    int end = -1;
+    for (int i = qpos + 1; i < line.size(); ++i) {
+        if (line.at(i).isSpace()) {
+            end = i;
+            break;
+        }
+    }
+    if (end < 0) {
+        end = line.size();
+    }
+
+    const QString before = line.left(qpos + 1);
+    const QString query = line.mid(qpos + 1, end - qpos - 1);
+    const QString after = line.mid(end);
+
+    QStringList parts = query.split(QLatin1Char('&'));
+    for (QString &part : parts) {
+        const int eq = part.indexOf(QLatin1Char('='));
+        if (eq <= 0) {
+            continue;
+        }
+        const QString key = part.left(eq).trimmed();
+        if (key.isEmpty()) {
+            continue;
+        }
+        if (isSensitiveQueryKey(key.toLower())) {
+            part = key + QStringLiteral("=[REDACTED]");
+        }
+    }
+
+    return before + parts.join(QLatin1Char('&')) + after;
+}
+
+QString redactSensitiveTraceLine(const QByteArray &line)
 {
     QByteArray trimmed = line;
     if (trimmed.endsWith('\n')) {
@@ -185,7 +276,7 @@ QString redactSensitiveHeaderLine(const QByteArray &line)
 
     const int colonPos = trimmed.indexOf(':');
     if (colonPos <= 0) {
-        return QString::fromUtf8(trimmed);
+        return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
     }
 
     const QByteArray key = trimmed.left(colonPos).trimmed();
@@ -197,7 +288,7 @@ QString redactSensitiveHeaderLine(const QByteArray &line)
         return QString::fromUtf8(key) + QStringLiteral(": [REDACTED]");
     }
 
-    return QString::fromUtf8(trimmed);
+    return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
 }
 
 std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
@@ -430,7 +521,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (const auto allowedOpt = request.allowedProtocols(); allowedOpt.has_value()) {
 #ifdef CURLOPT_PROTOCOLS_STR
         allowedProtocolsBytes = allowedOpt.value().join(QStringLiteral(",")).toUtf8();
-        const CURLcode rc = curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, allowedProtocolsBytes.constData());
+        const CURLcode rc =
+            curlEasySetoptWithTestHook(handle, CURLOPT_PROTOCOLS_STR, "CURLOPT_PROTOCOLS_STR", allowedProtocolsBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg =
@@ -462,7 +554,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #ifdef CURLOPT_REDIR_PROTOCOLS_STR
         allowedRedirectProtocolsBytes = redirOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc =
-            curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR, allowedRedirectProtocolsBytes.constData());
+            curlEasySetoptWithTestHook(handle,
+                                       CURLOPT_REDIR_PROTOCOLS_STR,
+                                       "CURLOPT_REDIR_PROTOCOLS_STR",
+                                       allowedRedirectProtocolsBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg =
@@ -969,14 +1064,27 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
 #ifdef CURLOPT_PROXY_SSL_VERIFYPEER
                     {
-                        const CURLcode rc = curl_easy_setopt(handle,
-                                                             CURLOPT_PROXY_SSL_VERIFYPEER,
-                                                             tlsCfg.verifyPeer ? 1L : 0L);
-                        if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER（%1）")
-                                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                            return false;
+                        const CURLcode rc =
+                            curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PROXY_SSL_VERIFYPEER,
+                                                       "CURLOPT_PROXY_SSL_VERIFYPEER",
+                                                       tlsCfg.verifyPeer ? 1L : 0L);
+                        if (rc != CURLE_OK) {
+                            if (isCapabilityRelatedCurlError(rc)) {
+                                const QString msg =
+                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                    setError(NetworkError::InvalidRequest, msg);
+                                    return false;
+                                }
+                                appendCapabilityWarning(this, msg);
+                            } else {
+                                setError(NetworkError::InvalidRequest,
+                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_VERIFYPEER 失败（%1）")
+                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                return false;
+                            }
                         }
                     }
 #else
@@ -990,14 +1098,27 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
 #ifdef CURLOPT_PROXY_SSL_VERIFYHOST
                     {
-                        const CURLcode rc = curl_easy_setopt(handle,
-                                                             CURLOPT_PROXY_SSL_VERIFYHOST,
-                                                             tlsCfg.verifyHost ? 2L : 0L);
-                        if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST（%1）")
-                                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                            return false;
+                        const CURLcode rc =
+                            curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PROXY_SSL_VERIFYHOST,
+                                                       "CURLOPT_PROXY_SSL_VERIFYHOST",
+                                                       tlsCfg.verifyHost ? 2L : 0L);
+                        if (rc != CURLE_OK) {
+                            if (isCapabilityRelatedCurlError(rc)) {
+                                const QString msg =
+                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                    setError(NetworkError::InvalidRequest, msg);
+                                    return false;
+                                }
+                                appendCapabilityWarning(this, msg);
+                            } else {
+                                setError(NetworkError::InvalidRequest,
+                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_VERIFYHOST 失败（%1）")
+                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                return false;
+                            }
                         }
                     }
 #else
@@ -1012,12 +1133,24 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     if (!tlsCfg.caCertPath.isEmpty()) {
 #ifdef CURLOPT_PROXY_CAINFO
                         proxySslCaCertPathBytes = tlsCfg.caCertPath.toUtf8();
-                        const CURLcode rc = curl_easy_setopt(handle, CURLOPT_PROXY_CAINFO, proxySslCaCertPathBytes.constData());
-                        if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("libcurl 不支持 CURLOPT_PROXY_CAINFO（%1）")
-                                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                            return false;
+                        const CURLcode rc =
+                            curlEasySetoptWithTestHook(handle, CURLOPT_PROXY_CAINFO, "CURLOPT_PROXY_CAINFO", proxySslCaCertPathBytes.constData());
+                        if (rc != CURLE_OK) {
+                            if (isCapabilityRelatedCurlError(rc)) {
+                                const QString msg =
+                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_CAINFO（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                    setError(NetworkError::InvalidRequest, msg);
+                                    return false;
+                                }
+                                appendCapabilityWarning(this, msg);
+                            } else {
+                                setError(NetworkError::InvalidRequest,
+                                         QStringLiteral("设置 CURLOPT_PROXY_CAINFO 失败（%1）")
+                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                return false;
+                            }
                         }
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1040,12 +1173,24 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                             appendCapabilityWarning(this, msg);
                         } else {
 #ifdef CURLOPT_PROXY_SSLVERSION
-                            const CURLcode rc = curl_easy_setopt(handle, CURLOPT_PROXY_SSLVERSION, sslVer.value());
-                            if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                                setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSLVERSION（%1）")
-                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                                return false;
+                            const CURLcode rc =
+                                curlEasySetoptWithTestHook(handle, CURLOPT_PROXY_SSLVERSION, "CURLOPT_PROXY_SSLVERSION", sslVer.value());
+                            if (rc != CURLE_OK) {
+                                if (isCapabilityRelatedCurlError(rc)) {
+                                    const QString msg =
+                                        QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSLVERSION（%1）")
+                                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                    if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                        setError(NetworkError::InvalidRequest, msg);
+                                        return false;
+                                    }
+                                    appendCapabilityWarning(this, msg);
+                                } else {
+                                    setError(NetworkError::InvalidRequest,
+                                             QStringLiteral("设置 CURLOPT_PROXY_SSLVERSION 失败（%1）")
+                                                 .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                    return false;
+                                }
                             }
 #else
                             if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1061,14 +1206,27 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     if (!tlsCfg.cipherList.isEmpty()) {
 #ifdef CURLOPT_PROXY_SSL_CIPHER_LIST
                         proxySslCipherListBytes = tlsCfg.cipherList.toUtf8();
-                        const CURLcode rc = curl_easy_setopt(handle,
-                                                             CURLOPT_PROXY_SSL_CIPHER_LIST,
-                                                             proxySslCipherListBytes.constData());
-                        if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST（%1）")
-                                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                            return false;
+                        const CURLcode rc =
+                            curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PROXY_SSL_CIPHER_LIST,
+                                                       "CURLOPT_PROXY_SSL_CIPHER_LIST",
+                                                       proxySslCipherListBytes.constData());
+                        if (rc != CURLE_OK) {
+                            if (isCapabilityRelatedCurlError(rc)) {
+                                const QString msg =
+                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                    setError(NetworkError::InvalidRequest, msg);
+                                    return false;
+                                }
+                                appendCapabilityWarning(this, msg);
+                            } else {
+                                setError(NetworkError::InvalidRequest,
+                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_CIPHER_LIST 失败（%1）")
+                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                return false;
+                            }
                         }
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1083,14 +1241,27 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     if (!tlsCfg.tls13Ciphers.isEmpty()) {
 #ifdef CURLOPT_PROXY_TLS13_CIPHERS
                         proxySslTls13CiphersBytes = tlsCfg.tls13Ciphers.toUtf8();
-                        const CURLcode rc = curl_easy_setopt(handle,
-                                                             CURLOPT_PROXY_TLS13_CIPHERS,
-                                                             proxySslTls13CiphersBytes.constData());
-                        if (rc != CURLE_OK && isCapabilityRelatedCurlError(rc) && tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS（%1）")
-                                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                            return false;
+                        const CURLcode rc =
+                            curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PROXY_TLS13_CIPHERS,
+                                                       "CURLOPT_PROXY_TLS13_CIPHERS",
+                                                       proxySslTls13CiphersBytes.constData());
+                        if (rc != CURLE_OK) {
+                            if (isCapabilityRelatedCurlError(rc)) {
+                                const QString msg =
+                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                                    setError(NetworkError::InvalidRequest, msg);
+                                    return false;
+                                }
+                                appendCapabilityWarning(this, msg);
+                            } else {
+                                setError(NetworkError::InvalidRequest,
+                                         QStringLiteral("设置 CURLOPT_PROXY_TLS13_CIPHERS 失败（%1）")
+                                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                return false;
+                            }
                         }
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1206,7 +1377,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.pinnedPublicKey.isEmpty()) {
 #ifdef CURLOPT_PINNEDPUBLICKEY
         sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey.toUtf8();
-        const CURLcode rc = curl_easy_setopt(handle, CURLOPT_PINNEDPUBLICKEY, sslPinnedPublicKeyBytes.constData());
+        const CURLcode rc =
+            curlEasySetoptWithTestHook(handle, CURLOPT_PINNEDPUBLICKEY, "CURLOPT_PINNEDPUBLICKEY", sslPinnedPublicKeyBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg =
@@ -1245,7 +1417,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             appendCapabilityWarning(this, msg);
         } else {
 #ifdef CURLOPT_SSLVERSION
-            const CURLcode rc = curl_easy_setopt(handle, CURLOPT_SSLVERSION, sslVer.value());
+            const CURLcode rc = curlEasySetoptWithTestHook(handle, CURLOPT_SSLVERSION, "CURLOPT_SSLVERSION", sslVer.value());
             if (rc != CURLE_OK) {
                 if (isCapabilityRelatedCurlError(rc)) {
                     const QString msg =
@@ -1277,7 +1449,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.cipherList.isEmpty()) {
 #ifdef CURLOPT_SSL_CIPHER_LIST
         sslCipherListBytes = sslConfig.cipherList.toUtf8();
-        const CURLcode rc = curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, sslCipherListBytes.constData());
+        const CURLcode rc =
+            curlEasySetoptWithTestHook(handle, CURLOPT_SSL_CIPHER_LIST, "CURLOPT_SSL_CIPHER_LIST", sslCipherListBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg =
@@ -1308,7 +1481,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.tls13Ciphers.isEmpty()) {
 #ifdef CURLOPT_TLS13_CIPHERS
         sslTls13CiphersBytes = sslConfig.tls13Ciphers.toUtf8();
-        const CURLcode rc = curl_easy_setopt(handle, CURLOPT_TLS13_CIPHERS, sslTls13CiphersBytes.constData());
+        const CURLcode rc =
+            curlEasySetoptWithTestHook(handle, CURLOPT_TLS13_CIPHERS, "CURLOPT_TLS13_CIPHERS", sslTls13CiphersBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg =
@@ -1802,7 +1976,7 @@ int QCNetworkReplyPrivate::curlDebugCallback(CURL *handle,
             if (line.isEmpty()) {
                 continue;
             }
-            out.append(redactSensitiveHeaderLine(line));
+            out.append(redactSensitiveTraceLine(line));
         }
         return out.join(QStringLiteral("\n"));
     };
@@ -1969,6 +2143,32 @@ void QCNetworkReply::execute()
         // WriteOnly (0x2) 或 ReadWrite (0x3)：将 cookie 写入文件
         if (d->cookieMode & 0x2) {
             curl_easy_setopt(handle, CURLOPT_COOKIEJAR, cookiePathBytes.constData());
+        }
+    }
+
+    // ========================================================================
+    // HSTS/Alt-Svc cache 持久化（LC-50）：默认关闭；显式 opt-in
+    // ========================================================================
+
+    if (handle && manager) {
+        const auto cacheCfg = manager->hstsAltSvcCacheConfig();
+        d->hstsCachePathBytes = cacheCfg.hstsFilePath.toUtf8();
+        d->altSvcCachePathBytes = cacheCfg.altSvcFilePath.toUtf8();
+
+        if (!d->hstsCachePathBytes.isEmpty()) {
+#ifdef CURLOPT_HSTS
+            setOptionalStringOption(d, handle, CURLOPT_HSTS, "CURLOPT_HSTS", d->hstsCachePathBytes);
+#else
+            appendCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_HSTS"));
+#endif
+        }
+
+        if (!d->altSvcCachePathBytes.isEmpty()) {
+#ifdef CURLOPT_ALTSVC
+            setOptionalStringOption(d, handle, CURLOPT_ALTSVC, "CURLOPT_ALTSVC", d->altSvcCachePathBytes);
+#else
+            appendCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_ALTSVC"));
+#endif
         }
     }
 

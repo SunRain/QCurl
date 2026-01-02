@@ -55,6 +55,16 @@ public:
         }
     };
 
+    struct HstsAltSvcCacheConfig {
+        QString hstsFilePath;
+        QString altSvcFilePath;
+
+        [[nodiscard]] bool enabled() const noexcept
+        {
+            return !hstsFilePath.isEmpty() || !altSvcFilePath.isEmpty();
+        }
+    };
+
     /**
      * @brief 配置 multi share handle（默认关闭）
      *
@@ -68,6 +78,20 @@ public:
      * @brief 获取当前 share handle 配置
      */
     [[nodiscard]] ShareHandleConfig shareHandleConfig() const noexcept;
+
+    /**
+     * @brief 配置 HSTS/Alt-Svc cache 持久化（默认关闭，显式 opt-in）
+     *
+     * 说明：
+     * - 默认关闭：未显式设置时不设置 CURLOPT_HSTS/CURLOPT_ALTSVC，避免行为变化与落盘副作用。
+     * - 路径可控：由调用方提供落盘路径（建议使用临时目录隔离并在用例结束清理）。
+     */
+    void setHstsAltSvcCacheConfig(const HstsAltSvcCacheConfig &config);
+
+    /**
+     * @brief 获取当前 HSTS/Alt-Svc cache 配置
+     */
+    [[nodiscard]] HstsAltSvcCacheConfig hstsAltSvcCacheConfig() const noexcept;
 
     // ========================================================================
     // 核心 API：返回统一的 QCNetworkReply
@@ -598,6 +622,7 @@ private:
     bool                        m_schedulerEnabled;
     QCNetworkCache             *m_cache;
     ShareHandleConfig m_shareHandleConfig;
+    HstsAltSvcCacheConfig m_hstsAltSvcCacheConfig;
 };
 
 } //namespace QCurl

@@ -72,6 +72,16 @@ QCNetworkAccessManager::ShareHandleConfig QCNetworkAccessManager::shareHandleCon
     return m_shareHandleConfig;
 }
 
+void QCNetworkAccessManager::setHstsAltSvcCacheConfig(const HstsAltSvcCacheConfig &config)
+{
+    m_hstsAltSvcCacheConfig = config;
+}
+
+QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvcCacheConfig() const noexcept
+{
+    return m_hstsAltSvcCacheConfig;
+}
+
 // ============================================================================
 // 核心 API 实现
 // ============================================================================

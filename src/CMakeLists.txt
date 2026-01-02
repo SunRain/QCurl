@@ -151,6 +151,11 @@ target_compile_definitions(QCurl
         # QT_NO_URL_CAST_FROM_STRING
 )
 
+# 测试专用：为单元测试提供可控的 capability 分支覆盖（不影响默认构建）
+if(BUILD_TESTING)
+    target_compile_definitions(QCurl PRIVATE QCURL_ENABLE_TEST_HOOKS)
+endif()
+
 # 特性宏定义
 if(QCURL_WEBSOCKET_SUPPORT)
     target_compile_definitions(QCurl PUBLIC QCURL_WEBSOCKET_SUPPORT)
