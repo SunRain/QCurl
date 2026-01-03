@@ -60,6 +60,8 @@ add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp)  # v2.22.0
 # v2.15.0 + v2.16.0: 生产级增强和开发体验优化测试
 add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp)  # v2.15.0: Logger 系统测试
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp)  # v2.15.0: 中间件测试
+add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp)  # v2.24.0: middleware 自动接入执行链路（离线门禁）
+add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp)  # v2.25.0: 统一重试/脱敏日志/观测埋点（离线门禁）
 add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp)  # v2.15.0: 取消令牌测试
 add_qcurl_test(tst_QCNetworkRequestBuilder tst_QCNetworkRequestBuilder.cpp)  # v2.16.0: 流式构建器测试
 add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp)  # v2.16.0: Mock 工具测试
@@ -122,7 +124,7 @@ add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量
-set(TEST_COUNT 27)  # 不含 WebSocket 条件测试的总数
+set(TEST_COUNT 29)  # 不含 WebSocket 条件测试的总数
 if(QCURL_WEBSOCKET_SUPPORT)
     math(EXPR TEST_COUNT "${TEST_COUNT} + 3")  # WebSocket + WebSocketPool + WebSocketCompression
 endif()
