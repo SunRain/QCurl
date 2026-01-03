@@ -50,13 +50,25 @@ QCNetworkReply* QCNetworkRequestScheduler::scheduleRequest(
     QCNetworkRequestPriority priority,
     const QByteArray &body)
 {
+    return scheduleRequest(request, method, priority, body, nullptr);
+}
+
+QCNetworkReply* QCNetworkRequestScheduler::scheduleRequest(
+    const QCNetworkRequest &request,
+    HttpMethod method,
+    QCNetworkRequestPriority priority,
+    const QByteArray &body,
+    QObject *replyParent)
+{
     QMutexLocker locker(&m_mutex);
-    
+
     // 创建 Reply 对象（但不立即执行）
-    auto *reply = new QCNetworkReply(request, method, 
-                                     ExecutionMode::Async, 
-                                     body);
-    
+    auto *reply = new QCNetworkReply(request,
+                                     method,
+                                     ExecutionMode::Async,
+                                     body,
+                                     replyParent);
+
     // 连接 finished 信号（QueuedConnection：避免 cancelAllRequests 等路径下的重入死锁）
     QPointer<QCNetworkReply> safeReply(reply);
     connect(reply,
@@ -68,14 +80,14 @@ QCNetworkReply* QCNetworkRequestScheduler::scheduleRequest(
                 }
             },
             Qt::QueuedConnection);
-    
+
     // 创建队列项
     QueuedRequest queuedReq;
     queuedReq.reply = reply;
     queuedReq.priority = priority;
     queuedReq.queueTime = QDateTime::currentDateTime();
     queuedReq.host = request.url().host();
-    
+
     // 如果是 Critical 优先级，跳过队列直接执行
     if (priority == QCNetworkRequestPriority::Critical) {
         startRequest(queuedReq);
@@ -84,11 +96,11 @@ QCNetworkReply* QCNetworkRequestScheduler::scheduleRequest(
         m_pendingQueue[priority].enqueue(queuedReq);
         m_stats.pendingRequests++;
         emit requestQueued(reply, priority);
-        
+
         // 尝试处理队列
         processQueue();
     }
-    
+
     return reply;
 }
 

@@ -148,6 +148,22 @@ public:
         QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal,
         const QByteArray &body = QByteArray()
     );
+
+    /**
+     * @brief 调度一个网络请求（显式指定 replyParent）
+     *
+     * 用于需要将 QCNetworkReply 绑定到特定 QObject 父对象（例如 QCNetworkAccessManager）
+     * 的场景，以确保通过 reply->parent() 能回溯到管理器上下文（MockHandler/缓存/中间件等）。
+     *
+     * @note 该重载不提供默认参数，避免与现有带默认参数的 scheduleRequest 产生重载二义性。
+     */
+    QCNetworkReply* scheduleRequest(
+        const QCNetworkRequest &request,
+        HttpMethod method,
+        QCNetworkRequestPriority priority,
+        const QByteArray &body,
+        QObject *replyParent
+    );
     
     /**
      * @brief 延后调度请求（非传输级暂停）

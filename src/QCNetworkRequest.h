@@ -227,6 +227,7 @@ public:
      * @return 重试策略对象
      */
     [[nodiscard]] QCNetworkRetryPolicy retryPolicy() const;
+    [[nodiscard]] bool isRetryPolicyExplicit() const noexcept;
 
     // ========== HTTP 认证 ==========
 

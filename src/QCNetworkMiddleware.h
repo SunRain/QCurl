@@ -7,6 +7,7 @@
 #include <QString>
 #include <memory>
 #include "QCGlobal.h"
+#include "QCNetworkRetryPolicy.h"
 
 namespace QCurl {
 
@@ -46,6 +47,17 @@ public:
      */
     virtual void onRequestPreSend(QCNetworkRequest &request) {
         Q_UNUSED(request);
+    }
+
+    /**
+     * @brief Reply 创建后拦截
+     * @param reply 网络响应对象
+     *
+     * 在 QCNetworkReply 构造完成后、执行前调用。
+     * 适合用于挂接观测/日志（例如订阅 retryAttempt/finished 等信号）。
+     */
+    virtual void onReplyCreated(QCNetworkReply *reply) {
+        Q_UNUSED(reply);
     }
     
     /**
@@ -122,6 +134,54 @@ public:
 
 private:
     QString m_signingKey;
+};
+
+/**
+ * @brief 统一重试策略中间件
+ *
+ * - 仅在 request 未显式设置 retryPolicy 时注入默认策略（显式优先）。
+ * - request 显式 setRetryPolicy(noRetry()) 视为“显式禁用”，不会被覆盖。
+ */
+class QCURL_EXPORT QCUnifiedRetryPolicyMiddleware : public QCNetworkMiddleware
+{
+public:
+    explicit QCUnifiedRetryPolicyMiddleware(const QCNetworkRetryPolicy &defaultPolicy);
+
+    void setDefaultPolicy(const QCNetworkRetryPolicy &policy);
+    [[nodiscard]] QCNetworkRetryPolicy defaultPolicy() const;
+
+    void onRequestPreSend(QCNetworkRequest &request) override;
+    QString name() const override { return "QCUnifiedRetryPolicyMiddleware"; }
+
+private:
+    QCNetworkRetryPolicy m_defaultPolicy;
+};
+
+/**
+ * @brief 脱敏日志中间件（默认安全）
+ *
+ * - 输出 request/response 摘要（不输出 body 明文）。
+ * - URL/query/header 做脱敏处理（仅输出 [REDACTED]）。
+ */
+class QCURL_EXPORT QCRedactingLoggingMiddleware : public QCNetworkMiddleware
+{
+public:
+    void onReplyCreated(QCNetworkReply *reply) override;
+    void onResponseReceived(QCNetworkReply *reply) override;
+    QString name() const override { return "QCRedactingLoggingMiddleware"; }
+};
+
+/**
+ * @brief 观测埋点中间件（MVP）
+ *
+ * 通过 logger 输出可用于排障与估价的关键指标（离线可断言）。
+ */
+class QCURL_EXPORT QCObservabilityMiddleware : public QCNetworkMiddleware
+{
+public:
+    void onReplyCreated(QCNetworkReply *reply) override;
+    void onResponseReceived(QCNetworkReply *reply) override;
+    QString name() const override { return "QCObservabilityMiddleware"; }
 };
 
 } // namespace QCurl

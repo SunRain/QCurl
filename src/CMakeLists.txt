@@ -38,6 +38,7 @@ set(QCURL_MODERN_SOURCES
     QCNetworkDiskCache.cpp          # v2.12.0: 磁盘缓存
     QCNetworkConnectionPoolManager.cpp  # v2.14.0: 连接池管理器
     QCNetworkLogger.cpp             # v2.15.0: 日志系统
+    QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.cpp         # v2.15.0: 中间件
     QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
     QCNetworkRequestBuilder.cpp     # v2.16.0: 流式构建器
@@ -70,6 +71,7 @@ set(QCURL_MODERN_HEADERS
     QCNetworkConnectionPoolConfig.h # v2.14.0: 连接池配置
     QCNetworkConnectionPoolManager.h # v2.14.0: 连接池管理器
     QCNetworkLogger.h               # v2.15.0: 日志系统
+    QCNetworkLogRedaction.h         # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
     QCNetworkRequestBuilder.h       # v2.16.0: 流式构建器

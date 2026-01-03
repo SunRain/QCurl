@@ -31,6 +31,80 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr const char kMiddlewareResponseInvokedProperty[] = "_qcurl_middleware_response_invoked";
+
+QCNetworkRequest applyRequestPreSendMiddlewares(const QCNetworkRequest &request,
+                                               const QList<QCNetworkMiddleware*> &middlewares)
+{
+    if (middlewares.isEmpty()) {
+        return request;
+    }
+
+    QCNetworkRequest modifiedRequest = request;
+    for (auto *middleware : middlewares) {
+        if (middleware) {
+            middleware->onRequestPreSend(modifiedRequest);
+        }
+    }
+    return modifiedRequest;
+}
+
+void runReplyCreatedMiddlewares(QCNetworkReply *reply, const QList<QCNetworkMiddleware*> &middlewares)
+{
+    if (!reply || middlewares.isEmpty()) {
+        return;
+    }
+
+    for (auto *middleware : middlewares) {
+        if (middleware) {
+            middleware->onReplyCreated(reply);
+        }
+    }
+}
+
+void runResponseMiddlewaresOnce(QCNetworkReply *reply, const QList<QCNetworkMiddleware*> &middlewares)
+{
+    if (!reply || middlewares.isEmpty()) {
+        return;
+    }
+
+    if (reply->property(kMiddlewareResponseInvokedProperty).toBool()) {
+        return;
+    }
+    reply->setProperty(kMiddlewareResponseInvokedProperty, true);
+
+    for (auto *middleware : middlewares) {
+        if (middleware) {
+            middleware->onResponseReceived(reply);
+        }
+    }
+}
+
+void wireResponseMiddlewares(QCNetworkAccessManager *manager,
+                             QCNetworkReply *reply,
+                             const QList<QCNetworkMiddleware*> &middlewares)
+{
+    if (!manager || !reply || middlewares.isEmpty()) {
+        return;
+    }
+
+    QPointer<QCNetworkReply> safeReply(reply);
+    QObject::connect(reply, &QCNetworkReply::finished, manager, [safeReply, middlewares]() {
+        if (!safeReply) {
+            return;
+        }
+        runResponseMiddlewaresOnce(safeReply.data(), middlewares);
+    });
+
+    if (reply->isFinished()) {
+        runResponseMiddlewaresOnce(reply, middlewares);
+    }
+}
+
+} // namespace
+
 QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     : QObject(parent),
       d_ptr(new QCNetworkAccessManagerPrivate(this)),
@@ -88,7 +162,12 @@ QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvc
 
 QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Head,
                                       ExecutionMode::Async,
                                       QByteArray(),
@@ -100,13 +179,20 @@ QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Get,
                                       ExecutionMode::Async,
                                       QByteArray(),
@@ -118,13 +204,20 @@ QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request, const QByteArray &data)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Post,
                                       ExecutionMode::Async,
                                       data,
@@ -136,13 +229,20 @@ QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request, const QByteArray &data)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Put,
                                       ExecutionMode::Async,
                                       data,
@@ -154,6 +254,8 @@ QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
@@ -165,7 +267,12 @@ QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
 
 QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request, const QByteArray &data)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Delete,
                                       ExecutionMode::Async,
                                       data,
@@ -177,13 +284,20 @@ QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request, const QByteArray &data)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Patch,
                                       ExecutionMode::Async,
                                       data,
@@ -195,13 +309,20 @@ QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 自动启动请求
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &request)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Get,
                                       ExecutionMode::Sync,
                                       QByteArray(),
@@ -213,13 +334,20 @@ QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &requ
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 同步执行（会阻塞）
     return reply;
 }
 
 QCNetworkReply* QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request, const QByteArray &data)
 {
-    auto *reply = new QCNetworkReply(request,
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Post,
                                       ExecutionMode::Sync,
                                       data,
@@ -231,6 +359,8 @@ QCNetworkReply* QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
 
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
     reply->execute();  // 同步执行（会阻塞）
     return reply;
 }
@@ -257,11 +387,19 @@ QCNetworkRequestScheduler* QCNetworkAccessManager::scheduler() const
 QCNetworkReply* QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &request)
 {
     if (m_schedulerEnabled) {
-        return scheduler()->scheduleRequest(
-            request,
-            HttpMethod::Get,
-            request.priority()
-        );
+        Q_D(QCNetworkAccessManager);
+        const auto middlewaresSnapshot = d->middlewares;
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+        auto *reply = scheduler()->scheduleRequest(modifiedRequest,
+                                                   HttpMethod::Get,
+                                                   request.priority(),
+                                                   QByteArray(),
+                                                   this);
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
+        return reply;
     } else {
         // 回退到直接执行
         return sendGet(request);
@@ -271,12 +409,19 @@ QCNetworkReply* QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &requ
 QCNetworkReply* QCNetworkAccessManager::schedulePost(const QCNetworkRequest &request, const QByteArray &data)
 {
     if (m_schedulerEnabled) {
-        return scheduler()->scheduleRequest(
-            request,
-            HttpMethod::Post,
-            request.priority(),
-            data
-        );
+        Q_D(QCNetworkAccessManager);
+        const auto middlewaresSnapshot = d->middlewares;
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+        auto *reply = scheduler()->scheduleRequest(modifiedRequest,
+                                                   HttpMethod::Post,
+                                                   request.priority(),
+                                                   data,
+                                                   this);
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
+        return reply;
     } else {
         // 回退到直接执行
         return sendPost(request, data);
@@ -286,12 +431,19 @@ QCNetworkReply* QCNetworkAccessManager::schedulePost(const QCNetworkRequest &req
 QCNetworkReply* QCNetworkAccessManager::schedulePut(const QCNetworkRequest &request, const QByteArray &data)
 {
     if (m_schedulerEnabled) {
-        return scheduler()->scheduleRequest(
-            request,
-            HttpMethod::Put,
-            request.priority(),
-            data
-        );
+        Q_D(QCNetworkAccessManager);
+        const auto middlewaresSnapshot = d->middlewares;
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+        auto *reply = scheduler()->scheduleRequest(modifiedRequest,
+                                                   HttpMethod::Put,
+                                                   request.priority(),
+                                                   data,
+                                                   this);
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
+        return reply;
     } else {
         // 回退到直接执行
         return sendPut(request, data);
@@ -429,9 +581,14 @@ QCNetworkReply* QCNetworkAccessManager::uploadFile(const QUrl &url, const QStrin
 
 QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
 {
-    QCNetworkRequest request(url);
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
 
-    auto *reply = new QCNetworkReply(request,
+    QCNetworkRequest request(url);
+    const QCNetworkRequest modifiedRequest =
+        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+
+    auto *reply = new QCNetworkReply(modifiedRequest,
                                       HttpMethod::Get,
                                       ExecutionMode::Async,
                                       QByteArray(),
@@ -442,6 +599,9 @@ QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODev
         reply->d_func()->cookieFilePath = m_cookieFilePath;
         reply->d_func()->cookieMode = m_cookieModeFlag;
     }
+
+    wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+    runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
     if (!device || !device->isWritable()) {
         qWarning() << "downloadToDevice: device is null or not writable";
@@ -519,10 +679,15 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
                                                           QIODevice *device, const QString &fileName,
                                                           const QString &mimeType)
 {
+    Q_D(QCNetworkAccessManager);
+    const auto middlewaresSnapshot = d->middlewares;
+
     if (!device || !device->isReadable()) {
         qWarning() << "uploadFromDevice: device is null or not readable";
         QCNetworkRequest request(url);
-        auto *reply = new QCNetworkReply(request,
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        auto *reply = new QCNetworkReply(modifiedRequest,
                                           HttpMethod::Post,
                                           ExecutionMode::Async,
                                           QByteArray(),
@@ -533,6 +698,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
             reply->d_func()->cookieFilePath = m_cookieFilePath;
             reply->d_func()->cookieMode = m_cookieModeFlag;
         }
+
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
         QMetaObject::invokeMethod(reply,
                                   [reply]() {
@@ -548,7 +716,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
         qWarning() << "uploadFromDevice: device thread mismatch. deviceThread=" << device->thread()
                    << "managerThread=" << thread();
         QCNetworkRequest request(url);
-        auto *reply = new QCNetworkReply(request,
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        auto *reply = new QCNetworkReply(modifiedRequest,
                                           HttpMethod::Post,
                                           ExecutionMode::Async,
                                           QByteArray(),
@@ -559,6 +729,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
             reply->d_func()->cookieFilePath = m_cookieFilePath;
             reply->d_func()->cookieMode = m_cookieModeFlag;
         }
+
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
         QMetaObject::invokeMethod(reply,
                                   [reply]() {
@@ -575,7 +748,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
     if (!formData.addFileFieldStream(fieldName, device, fileName, mimeType)) {
         qWarning() << "uploadFromDevice: cannot add stream field to form";
         QCNetworkRequest request(url);
-        auto *reply = new QCNetworkReply(request,
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        auto *reply = new QCNetworkReply(modifiedRequest,
                                           HttpMethod::Post,
                                           ExecutionMode::Async,
                                           QByteArray(),
@@ -586,6 +761,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
             reply->d_func()->cookieFilePath = m_cookieFilePath;
             reply->d_func()->cookieMode = m_cookieModeFlag;
         }
+
+        wireResponseMiddlewares(this, reply, middlewaresSnapshot);
+        runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
         QMetaObject::invokeMethod(reply,
                                   [reply]() {

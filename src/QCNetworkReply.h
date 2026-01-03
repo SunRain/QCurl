@@ -177,6 +177,9 @@ public:
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
     [[nodiscard]] QByteArray rawHeaderData() const;
     [[nodiscard]] QUrl url() const;
+    [[nodiscard]] HttpMethod method() const noexcept;
+    [[nodiscard]] int httpStatusCode() const noexcept;
+    [[nodiscard]] qint64 durationMs() const noexcept;
     [[nodiscard]] qint64 bytesAvailable() const noexcept;
     [[nodiscard]] QStringList capabilityWarnings() const;
 

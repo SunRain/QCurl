@@ -63,6 +63,7 @@ public:
           httpVersion(QCNetworkHttpVersion::Http1_1),
           httpVersionExplicit(false),
           retryPolicy(QCNetworkRetryPolicy::noRetry()),
+          retryPolicyExplicit(false),
           httpAuthConfig(std::nullopt),
           requestPriority(QCNetworkRequestPriority::Normal),
           cachePolicy(QCNetworkCachePolicy::PreferCache)
@@ -127,6 +128,7 @@ public:
 
     // ========== 重试策略字段 ==========
     QCNetworkRetryPolicy retryPolicy;
+    bool retryPolicyExplicit;
 
     // ========== HTTP 认证（请求级） ==========
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
@@ -357,12 +359,18 @@ bool QCNetworkRequest::isHttpVersionExplicit() const noexcept
 QCNetworkRequest& QCNetworkRequest::setRetryPolicy(const QCNetworkRetryPolicy &policy)
 {
     d.data()->retryPolicy = policy;
+    d.data()->retryPolicyExplicit = true;
     return *this;
 }
 
 QCNetworkRetryPolicy QCNetworkRequest::retryPolicy() const
 {
     return d.data()->retryPolicy;
+}
+
+bool QCNetworkRequest::isRetryPolicyExplicit() const noexcept
+{
+    return d.data()->retryPolicyExplicit;
 }
 
 // ========== HTTP 认证 ==========

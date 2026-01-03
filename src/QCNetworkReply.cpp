@@ -14,6 +14,7 @@
 #include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMockHandler.h"
+#include "QCNetworkLogRedaction.h"
 
 #include <QDebug>
 #include <QFile>
@@ -206,90 +207,6 @@ bool setOptionalSlistOption(QCNetworkReplyPrivate *d,
                                 .arg(QString::fromUtf8(optionName))
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc))));
     return false;
-}
-
-bool isSensitiveQueryKey(const QString &keyLower)
-{
-    return keyLower == QStringLiteral("token") ||
-           keyLower == QStringLiteral("access_token") ||
-           keyLower == QStringLiteral("id_token") ||
-           keyLower == QStringLiteral("refresh_token") ||
-           keyLower == QStringLiteral("api_key") ||
-           keyLower == QStringLiteral("apikey") ||
-           keyLower == QStringLiteral("key") ||
-           keyLower == QStringLiteral("secret") ||
-           keyLower == QStringLiteral("signature") ||
-           keyLower == QStringLiteral("sig") ||
-           keyLower == QStringLiteral("password") ||
-           keyLower == QStringLiteral("passwd") ||
-           keyLower == QStringLiteral("pwd");
-}
-
-QString redactSensitiveQueryParams(const QString &line)
-{
-    const int qpos = line.indexOf(QLatin1Char('?'));
-    if (qpos < 0) {
-        return line;
-    }
-
-    int end = -1;
-    for (int i = qpos + 1; i < line.size(); ++i) {
-        if (line.at(i).isSpace()) {
-            end = i;
-            break;
-        }
-    }
-    if (end < 0) {
-        end = line.size();
-    }
-
-    const QString before = line.left(qpos + 1);
-    const QString query = line.mid(qpos + 1, end - qpos - 1);
-    const QString after = line.mid(end);
-
-    QStringList parts = query.split(QLatin1Char('&'));
-    for (QString &part : parts) {
-        const int eq = part.indexOf(QLatin1Char('='));
-        if (eq <= 0) {
-            continue;
-        }
-        const QString key = part.left(eq).trimmed();
-        if (key.isEmpty()) {
-            continue;
-        }
-        if (isSensitiveQueryKey(key.toLower())) {
-            part = key + QStringLiteral("=[REDACTED]");
-        }
-    }
-
-    return before + parts.join(QLatin1Char('&')) + after;
-}
-
-QString redactSensitiveTraceLine(const QByteArray &line)
-{
-    QByteArray trimmed = line;
-    if (trimmed.endsWith('\n')) {
-        trimmed.chop(1);
-    }
-    if (trimmed.endsWith('\r')) {
-        trimmed.chop(1);
-    }
-
-    const int colonPos = trimmed.indexOf(':');
-    if (colonPos <= 0) {
-        return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
-    }
-
-    const QByteArray key = trimmed.left(colonPos).trimmed();
-    const QByteArray keyLower = key.toLower();
-    if (keyLower == "authorization" ||
-        keyLower == "proxy-authorization" ||
-        keyLower == "cookie" ||
-        keyLower == "set-cookie") {
-        return QString::fromUtf8(key) + QStringLiteral(": [REDACTED]");
-    }
-
-    return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
 }
 
 std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
@@ -1596,6 +1513,20 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
 
     state = newState;
 
+    if (newState == ReplyState::Running) {
+        if (!elapsedTimerStarted) {
+            elapsedTimer.start();
+            elapsedTimerStarted = true;
+            durationMs = -1;
+        }
+    } else if (newState == ReplyState::Finished
+               || newState == ReplyState::Error
+               || newState == ReplyState::Cancelled) {
+        if (elapsedTimerStarted && durationMs < 0) {
+            durationMs = elapsedTimer.elapsed();
+        }
+    }
+
     // 发射状态变更信号
     emit q->stateChanged(newState);
 
@@ -1996,7 +1927,7 @@ int QCNetworkReplyPrivate::curlDebugCallback(CURL *handle,
             if (line.isEmpty()) {
                 continue;
             }
-            out.append(redactSensitiveTraceLine(line));
+            out.append(QCNetworkLogRedaction::redactSensitiveTraceLine(line));
         }
         return out.join(QStringLiteral("\n"));
     };
@@ -2214,6 +2145,8 @@ void QCNetworkReply::execute()
                         d->headerData.append('\n');
                     }
 
+                    d->httpStatusCode = mockData.statusCode;
+
                     NetworkError error = NetworkError::NoError;
                     QString errorMsg;
                     if (mockData.isError && mockData.error != NetworkError::NoError) {
@@ -2309,6 +2242,8 @@ void QCNetworkReply::execute()
                     d->headerData.append('\n');
                 }
 
+                d->httpStatusCode = mockData.statusCode;
+
                 NetworkError error = NetworkError::NoError;
                 QString errorMsg;
                 if (mockData.isError && mockData.error != NetworkError::NoError) {
@@ -2379,9 +2314,22 @@ void QCNetworkReply::execute()
     // ========================================================================
     // 应用 Cookie 配置（在 QCNetworkAccessManager 中设置）
     // ========================================================================
-    // 注意：cookieFilePath 和 cookieMode 是在构造函数之后通过 d_func() 设置的，
-    // 所以必须在 execute() 中应用，而不是在 configureCurlOptions() 中
+    // 注意：
+    // - cookieFilePath/cookieMode 可能在构造函数之后通过 d_func() 设置，
+    //   所以必须在 execute() 中应用，而不是在 configureCurlOptions() 中；
+    // - 对于 scheduler 等路径，如果 replyParent 指向 manager 但未显式写入 d_func()，
+    //   这里会回溯 manager 配置以保持行为一致性。
     CURL *handle = d->curlManager.handle();
+
+    if (manager && d->cookieMode == 0 && d->cookieFilePath.isEmpty()) {
+        const auto mode = manager->cookieFileMode();
+        const auto path = manager->cookieFilePath();
+        if (mode != QCNetworkAccessManager::NotOpen && !path.isEmpty()) {
+            d->cookieMode = static_cast<int>(mode);
+            d->cookieFilePath = path;
+        }
+    }
+
     if (handle && d->cookieMode != 0 && !d->cookieFilePath.isEmpty()) {
         QByteArray cookiePathBytes = d->cookieFilePath.toUtf8();
 
@@ -2508,6 +2456,7 @@ void QCNetworkReply::execute()
             // 检查 HTTP 状态码（即使 CURLcode 成功）
             long httpCode = 0;
             curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
+            d->httpStatusCode = static_cast<int>(httpCode);
 
             // 确定最终错误：优先使用 HTTP 错误，否则使用 curl 错误
             NetworkError error = NetworkError::NoError;
@@ -2841,6 +2790,24 @@ QUrl QCNetworkReply::url() const
 {
     Q_D(const QCNetworkReply);
     return d->request.url();
+}
+
+HttpMethod QCNetworkReply::method() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->httpMethod;
+}
+
+int QCNetworkReply::httpStatusCode() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->httpStatusCode;
+}
+
+qint64 QCNetworkReply::durationMs() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->durationMs;
 }
 
 qint64 QCNetworkReply::bytesAvailable() const noexcept

@@ -578,6 +578,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
             if (handle) {
                 curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
             }
+            d->httpStatusCode = static_cast<int>(httpCode);
 
             // 确定最终错误：优先使用 HTTP 错误，否则使用 curl 错误
             NetworkError error = NetworkError::NoError;
