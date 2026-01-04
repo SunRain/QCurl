@@ -29,6 +29,7 @@ struct Args {
     std::string cookieFile;
     std::string cookieJar;
     std::string caInfo;
+    std::string pinnedPublicKey;
     bool multipartDemo = false;
     bool followLocation = false;
     long maxRedirs = 10;
@@ -344,6 +345,10 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.caInfo = argv[++i];
             continue;
         }
+        if (arg == "--pinned-public-key" && i + 1 < argc) {
+            out.pinnedPublicKey = argv[++i];
+            continue;
+        }
         if (arg == "--connect-timeout-ms" && i + 1 < argc) {
             try {
                 out.connectTimeoutMs = std::stol(argv[++i]);
@@ -486,7 +491,7 @@ int printUsage()
         << "  [--follow] [--max-redirs <n>]\n"
         << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
         << "  [--accept-encoding <csv|all>] [--accept-encoding-all]\n"
-        << "  [--secure] [--cainfo <path>]\n"
+        << "  [--secure] [--cainfo <path>] [--pinned-public-key <sha256//...|path>]\n"
         << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>]\n"
         << "  [--low-speed-time <s>] [--low-speed-limit <bytes_per_sec>]\n"
         << "  [--abort-after-bytes <n>]\n"
@@ -611,6 +616,18 @@ int main(int argc, char **argv)
     if (args.verifyPeer && !args.caInfo.empty()) {
         curl_easy_setopt(curl, CURLOPT_CAINFO, args.caInfo.c_str());
     }
+#ifdef CURLOPT_PINNEDPUBLICKEY
+    if (!args.pinnedPublicKey.empty()) {
+        curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, args.pinnedPublicKey.c_str());
+    }
+#else
+    if (!args.pinnedPublicKey.empty()) {
+        std::cerr << "unsupported pinned public key (no CURLOPT_PINNEDPUBLICKEY)\n";
+        curl_easy_cleanup(curl);
+        curl_global_cleanup();
+        return 6;
+    }
+#endif
     if (args.connectTimeoutMs > 0) {
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, args.connectTimeoutMs);
     }

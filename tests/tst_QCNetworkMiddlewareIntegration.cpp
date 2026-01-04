@@ -4,6 +4,7 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QEvent>
+#include <QNetworkCookie>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMiddleware.h"
@@ -24,6 +25,7 @@ private slots:
 
     void testSendGet_AutoWiredMiddleware();
     void testScheduleGet_AutoWiredMiddleware();
+    void testXsrfCookieToHeader_InMiddleware();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -169,6 +171,150 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     QCOMPARE(xTest, QByteArray("B"));
 
     reply->deleteLater();
+}
+
+void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
+{
+    class XsrfCookieHeaderMiddleware final : public QCNetworkMiddleware
+    {
+    public:
+        XsrfCookieHeaderMiddleware(QCNetworkAccessManager *manager, const QString &host, const QString &pathPrefix)
+            : m_manager(manager),
+              m_host(host),
+              m_pathPrefix(pathPrefix)
+        {
+        }
+
+        void onRequestPreSend(QCNetworkRequest &request) override
+        {
+            if (!m_manager) {
+                return;
+            }
+
+            const QUrl url = request.url();
+            if (!m_host.isEmpty() && url.host() != m_host) {
+                return;
+            }
+            if (!m_pathPrefix.isEmpty() && !url.path().startsWith(m_pathPrefix)) {
+                return;
+            }
+
+            // 不覆盖用户显式设置的 header（大小写不敏感）
+            for (const QByteArray &name : request.rawHeaderList()) {
+                if (QString::fromLatin1(name).compare(QStringLiteral("X-XSRF-TOKEN"), Qt::CaseInsensitive) == 0) {
+                    return;
+                }
+            }
+
+            const QList<QNetworkCookie> cookies = m_manager->exportCookies(url);
+            for (const QNetworkCookie &c : cookies) {
+                if (c.name() == QByteArray("XSRF-TOKEN")) {
+                    request.setRawHeader("X-XSRF-TOKEN", c.value());
+                    break;
+                }
+            }
+        }
+
+        QString name() const override
+        {
+            return QStringLiteral("XsrfCookieHeaderMiddleware");
+        }
+
+    private:
+        QCNetworkAccessManager *m_manager = nullptr;
+        QString m_host;
+        QString m_pathPrefix;
+    };
+
+    auto hasHeader = [](const QList<QPair<QByteArray, QByteArray>> &headers,
+                        const QByteArray &name,
+                        const QByteArray &value) -> bool {
+        for (const auto &h : headers) {
+            if (h.first.compare(name, Qt::CaseInsensitive) == 0 && h.second == value) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    QCNetworkAccessManager::ShareHandleConfig shareCfg;
+    shareCfg.shareCookies = true;
+    m_manager->setShareHandleConfig(shareCfg);
+
+    QNetworkCookie xsrf("XSRF-TOKEN", "token123");
+    xsrf.setDomain("example.com");
+    xsrf.setPath("/id");
+
+    QString err;
+    QVERIFY(m_manager->importCookies({xsrf}, QUrl("https://example.com/id/"), &err));
+
+    XsrfCookieHeaderMiddleware mw(m_manager, QStringLiteral("example.com"), QStringLiteral("/id"));
+    m_manager->addMiddleware(&mw);
+
+    // 1) 命中 host/path：应注入 X-XSRF-TOKEN
+    m_mockHandler.clear();
+    m_mockHandler.clearCapturedRequests();
+    const QUrl url1("https://example.com/id/api/csrf");
+    m_mockHandler.mockResponse(url1, QByteArray("ok"), 200);
+    {
+        QCNetworkRequest request(url1);
+        auto *reply = m_manager->sendGet(request);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        QVERIFY(finishedSpy.wait(1000));
+        const auto captured = m_mockHandler.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QVERIFY(hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        reply->deleteLater();
+    }
+
+    // 2) 用户显式设置 header：不应被覆盖
+    m_mockHandler.clear();
+    m_mockHandler.clearCapturedRequests();
+    const QUrl url2("https://example.com/id/api/csrf_explicit");
+    m_mockHandler.mockResponse(url2, QByteArray("ok"), 200);
+    {
+        QCNetworkRequest request(url2);
+        request.setRawHeader("X-XSRF-TOKEN", "manual");
+        auto *reply = m_manager->sendGet(request);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        QVERIFY(finishedSpy.wait(1000));
+        const auto captured = m_mockHandler.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QVERIFY(hasHeader(captured[0].headers, "X-XSRF-TOKEN", "manual"));
+        reply->deleteLater();
+    }
+
+    // 3) 不命中 path：不应注入
+    m_mockHandler.clear();
+    m_mockHandler.clearCapturedRequests();
+    const QUrl url3("https://example.com/other/path");
+    m_mockHandler.mockResponse(url3, QByteArray("ok"), 200);
+    {
+        QCNetworkRequest request(url3);
+        auto *reply = m_manager->sendGet(request);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        QVERIFY(finishedSpy.wait(1000));
+        const auto captured = m_mockHandler.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QVERIFY(!hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        reply->deleteLater();
+    }
+
+    // 4) 不命中 host：不应注入
+    m_mockHandler.clear();
+    m_mockHandler.clearCapturedRequests();
+    const QUrl url4("https://other.example/id/api/csrf");
+    m_mockHandler.mockResponse(url4, QByteArray("ok"), 200);
+    {
+        QCNetworkRequest request(url4);
+        auto *reply = m_manager->sendGet(request);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        QVERIFY(finishedSpy.wait(1000));
+        const auto captured = m_mockHandler.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QVERIFY(!hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        reply->deleteLater();
+    }
 }
 
 QTEST_MAIN(tst_QCNetworkMiddlewareIntegration)

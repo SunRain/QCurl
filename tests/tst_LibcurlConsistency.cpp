@@ -364,6 +364,7 @@ void TestLibcurlConsistency::testCase()
     const int observeStatusCode = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
     const int observeHttpsPort = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
     const QString caCertPath = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
+    const QString pinnedPublicKey = qEnvironmentVariable("QCURL_LC_PINNED_PUBLIC_KEY");
     const QString hstsPath = qEnvironmentVariable("QCURL_LC_HSTS_PATH");
     const QString altSvcPath = qEnvironmentVariable("QCURL_LC_ALTSVC_PATH");
     const QString targetUrl = qEnvironmentVariable("QCURL_LC_TARGET_URL");
@@ -458,6 +459,53 @@ void TestLibcurlConsistency::testCase()
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::SslHandshakeFailed);
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_tls_pinned_public_key_match")) {
+        QVERIFY(observeHttpsPort > 0);
+        QVERIFY(!caCertPath.isEmpty());
+        QVERIFY(!pinnedPublicKey.isEmpty());
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+        ssl.caCertPath = caCertPath;
+        ssl.pinnedPublicKey = pinnedPublicKey;
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
+            requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_tls_pinned_public_key_mismatch")) {
+        QVERIFY(observeHttpsPort > 0);
+        QVERIFY(!caCertPath.isEmpty());
+        QVERIFY(!pinnedPublicKey.isEmpty());
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+        ssl.caCertPath = caCertPath;
+        ssl.pinnedPublicKey = pinnedPublicKey;
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
+            requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QVERIFY(reply->error() != NetworkError::NoError);
         delete reply;
         return;
     }
@@ -2455,7 +2503,9 @@ void TestLibcurlConsistency::testCase()
         ws.open();
         QVERIFY(connectedSpy.wait(5000));
 
-        QVERIFY(pingSpy.wait(5000));
+        if (pingSpy.count() == 0) {
+            QVERIFY(pingSpy.wait(5000));
+        }
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload.size(), 0);
         ws.pong(pingPayload);
@@ -2495,7 +2545,9 @@ void TestLibcurlConsistency::testCase()
         ws.open();
         QVERIFY(connectedSpy.wait(5000));
 
-        QVERIFY(pingSpy.wait(5000));
+        if (pingSpy.count() == 0) {
+            QVERIFY(pingSpy.wait(5000));
+        }
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload.size(), 0);
         ws.pong(pingPayload);

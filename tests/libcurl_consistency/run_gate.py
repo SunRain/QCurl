@@ -461,6 +461,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
     if cfg.suite in ("p2", "all"):
         base.extend([
             "tests/libcurl_consistency/test_p2_tls_verify.py",
+            "tests/libcurl_consistency/test_p2_tls_pinned_public_key.py",
             "tests/libcurl_consistency/test_p2_cookie_request_header.py",
             "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
             "tests/libcurl_consistency/test_p2_error_paths.py",

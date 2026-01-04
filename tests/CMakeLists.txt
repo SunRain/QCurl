@@ -62,6 +62,7 @@ add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp)  # v2.15.0: Logger �
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp)  # v2.15.0: 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp)  # v2.24.0: middleware 自动接入执行链路（离线门禁）
 add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp)  # v2.25.0: 统一重试/脱敏日志/观测埋点（离线门禁）
+add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp)  # v2.26.0: cookie bridge（share cookie store）离线门禁
 add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp)  # v2.15.0: 取消令牌测试
 add_qcurl_test(tst_QCNetworkRequestBuilder tst_QCNetworkRequestBuilder.cpp)  # v2.16.0: 流式构建器测试
 add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp)  # v2.16.0: Mock 工具测试
