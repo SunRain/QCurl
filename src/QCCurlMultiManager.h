@@ -6,9 +6,11 @@
 #include <QMutex>
 #include <QPointer>
 #include <QHash>
+#include <QList>
 #include <QTimer>
 #include <QSocketNotifier>
 #include <QString>
+#include <QUrl>
 
 #include <atomic>
 #include <limits>
@@ -17,6 +19,8 @@
 #include <curl/curl.h>
 
 QT_BEGIN_NAMESPACE
+
+class QNetworkCookie; // QtNetwork
 
 namespace QCurl {
 
@@ -116,6 +120,22 @@ public:
      * @note 线程安全（原子操作）
      */
     [[nodiscard]] int runningRequestsCount() const noexcept;
+
+    // ========================================================================
+    // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通）
+    // ========================================================================
+
+    bool importCookiesForManager(const QCNetworkAccessManager *manager,
+                                 const QList<QNetworkCookie> &cookies,
+                                 const QUrl &originUrl,
+                                 QString *outError);
+
+    [[nodiscard]] QList<QNetworkCookie> exportCookiesForManager(const QCNetworkAccessManager *manager,
+                                                                const QUrl &filterUrl,
+                                                                QString *outError);
+
+    bool clearAllCookiesForManager(const QCNetworkAccessManager *manager,
+                                   QString *outError);
 
     /**
      * @brief 触发一次 multi 推进/唤醒

@@ -15,6 +15,7 @@
 #include "QCNetworkLogger.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkLogRedaction.h"
+#include "CurlFeatureProbe.h"
 
 #include <QDebug>
 #include <QFile>
@@ -1236,9 +1237,41 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // HTTP 版本配置
     // ========================================================================
 
-    const QCNetworkHttpVersion httpVer = request.httpVersion();
-    if (httpVer != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
-        long curlVersion = toCurlHttpVersion(httpVer);
+    const QCNetworkHttpVersion requestedHttpVer = request.httpVersion();
+    QCNetworkHttpVersion effectiveHttpVer = requestedHttpVer;
+
+    const long features = CurlFeatureProbe::instance().runtimeFeatures();
+    const bool runtimeHasHttp3 = (features & CURL_VERSION_HTTP3) != 0;
+    const bool requireHttp3 = qgetenv("QCURL_REQUIRE_HTTP3").trimmed() == "1";
+
+    if (requireHttp3 &&
+        (requestedHttpVer == QCNetworkHttpVersion::Http3 || requestedHttpVer == QCNetworkHttpVersion::Http3Only) &&
+        !runtimeHasHttp3) {
+        setError(NetworkError::InvalidRequest,
+                 QStringLiteral("交付门禁 QCURL_REQUIRE_HTTP3=1：运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），请求被拒绝"));
+        return false;
+    }
+
+    if (requestedHttpVer == QCNetworkHttpVersion::Http3Only) {
+        if (!runtimeHasHttp3) {
+            setError(NetworkError::InvalidRequest,
+                     QStringLiteral("运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），Http3Only 无法执行"));
+            return false;
+        }
+#if !defined(CURL_HTTP_VERSION_3ONLY)
+        appendCapabilityWarning(this,
+                                QStringLiteral("当前构建的 libcurl 不支持 CURL_HTTP_VERSION_3ONLY，Http3Only 将退化为 Http3（可能发生协议降级）"));
+#endif
+    } else if (requestedHttpVer == QCNetworkHttpVersion::Http3) {
+        if (!runtimeHasHttp3) {
+            effectiveHttpVer = QCNetworkHttpVersion::Http2TLS;
+            appendCapabilityWarning(this,
+                                    QStringLiteral("运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），已降级为 HTTP/2TLS"));
+        }
+    }
+
+    if (effectiveHttpVer != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
+        long curlVersion = toCurlHttpVersion(effectiveHttpVer);
         curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, curlVersion);
     }
 
@@ -1312,7 +1345,6 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     const QCUnsupportedSecurityOptionPolicy sslPolicy = sslConfig.unsupportedSecurityPolicy;
 
     if (!sslConfig.pinnedPublicKey.isEmpty()) {
-#ifdef CURLOPT_PINNEDPUBLICKEY
         sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey.toUtf8();
         const CURLcode rc =
             curlEasySetoptWithTestHook(handle, CURLOPT_PINNEDPUBLICKEY, "CURLOPT_PINNEDPUBLICKEY", sslPinnedPublicKeyBytes.constData());
@@ -1333,14 +1365,6 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 return false;
             }
         }
-#else
-        const QString msg = QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PINNEDPUBLICKEY");
-        if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-            setError(NetworkError::InvalidRequest, msg);
-            return false;
-        }
-        appendCapabilityWarning(this, msg);
-#endif
     }
 
     if (sslConfig.minTlsVersion.has_value()) {
@@ -1538,21 +1562,20 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // ========================================================================
         // Cookie jar flush：当启用 COOKIEJAR 时，确保请求完成后立即落盘
         // ========================================================================
-#ifdef CURLOPT_COOKIELIST
         if (curlManager.handle() && (cookieMode & 0x2) && !cookieFilePath.isEmpty()) {
             const CURLcode rc = curl_easy_setopt(curlManager.handle(), CURLOPT_COOKIELIST, "FLUSH");
             if (rc != CURLE_OK) {
-                appendCapabilityWarning(this,
-                                        QStringLiteral("Cookie flush 失败（%1）")
-                                            .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                if (isCapabilityRelatedCurlError(rc)) {
+                    appendCapabilityWarning(this,
+                                            QStringLiteral("libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST，%1），CookieJAR 可能不会立即落盘")
+                                                .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                } else {
+                    appendCapabilityWarning(this,
+                                            QStringLiteral("Cookie flush 失败（%1）")
+                                                .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                }
             }
         }
-#else
-        if ((cookieMode & 0x2) && !cookieFilePath.isEmpty()) {
-            appendCapabilityWarning(this,
-                                    QStringLiteral("当前构建的 libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST 未定义），CookieJAR 可能不会立即落盘"));
-        }
-#endif
 
         // ========================================================================
         // 连接池统计 - 记录连接复用情况

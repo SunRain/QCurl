@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QJsonObject>
 #include <QMap>
+#include <QNetworkCookie>
 
 #include "QCNetworkRequestBuilder.h"
 
@@ -43,6 +44,44 @@ public:
     CookieFileModeFlag cookieFileMode() const;
 
     void setCookieFilePath(const QString &cookieFilePath, CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
+
+    // ========================================================================
+    // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通；不引入 WebEngine 依赖）
+    // ========================================================================
+
+    /**
+     * @brief 导入 cookies 到当前 manager 的 cookie store（仅在 shareCookies 开启时可用）
+     *
+     * 说明：
+     * - 该 API 不依赖 Qt WebEngine；调用方可自行从 WebView 侧提取 QNetworkCookie 后导入。
+     * - 若 cookie 的 domain/path 为空且提供 originUrl，则会使用 originUrl.host() 与 "/" 补全。
+     *
+     * @param cookies 需要导入的 cookies
+     * @param originUrl 可选：用于补全 domain/path 的来源 URL
+     * @param error 可选：失败原因输出
+     * @return bool true 表示导入成功
+     */
+    bool importCookies(const QList<QNetworkCookie> &cookies,
+                       const QUrl &originUrl = QUrl(),
+                       QString *error = nullptr);
+
+    /**
+     * @brief 导出当前 manager 的 cookies（仅在 shareCookies 开启时可用）
+     *
+     * @param filterUrl 可选：按 host/path 过滤导出（KISS：domain 后缀匹配 + path 前缀匹配）
+     * @param error 可选：失败原因输出
+     * @return QList<QNetworkCookie> 导出的 cookies（失败返回空列表）
+     */
+    [[nodiscard]] QList<QNetworkCookie> exportCookies(const QUrl &filterUrl = QUrl(),
+                                                      QString *error = nullptr) const;
+
+    /**
+     * @brief 清空当前 manager 的 cookie store（仅在 shareCookies 开启时可用）
+     *
+     * @param error 可选：失败原因输出
+     * @return bool true 表示清空成功
+     */
+    bool clearAllCookies(QString *error = nullptr);
 
     struct ShareHandleConfig {
         bool shareDnsCache = false;

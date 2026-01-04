@@ -28,6 +28,7 @@
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkRequestBuilder.h"
 #include "QCNetworkMockHandler.h"
+#include "QCCurlMultiManager.h"
 
 namespace QCurl {
 
@@ -134,6 +135,45 @@ void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath, Co
 {
     m_cookieFilePath = cookieFilePath;
     m_cookieModeFlag = flag;
+}
+
+bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
+                                          const QUrl &originUrl,
+                                          QString *error)
+{
+    auto *multi = QCCurlMultiManager::instance();
+    if (!multi) {
+        if (error) {
+            *error = QStringLiteral("QCCurlMultiManager 不可用");
+        }
+        return false;
+    }
+    return multi->importCookiesForManager(this, cookies, originUrl, error);
+}
+
+QList<QNetworkCookie> QCNetworkAccessManager::exportCookies(const QUrl &filterUrl,
+                                                           QString *error) const
+{
+    auto *multi = QCCurlMultiManager::instance();
+    if (!multi) {
+        if (error) {
+            *error = QStringLiteral("QCCurlMultiManager 不可用");
+        }
+        return {};
+    }
+    return multi->exportCookiesForManager(this, filterUrl, error);
+}
+
+bool QCNetworkAccessManager::clearAllCookies(QString *error)
+{
+    auto *multi = QCCurlMultiManager::instance();
+    if (!multi) {
+        if (error) {
+            *error = QStringLiteral("QCCurlMultiManager 不可用");
+        }
+        return false;
+    }
+    return multi->clearAllCookiesForManager(this, error);
 }
 
 void QCNetworkAccessManager::setShareHandleConfig(const ShareHandleConfig &config)

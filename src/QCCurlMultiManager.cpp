@@ -6,15 +6,25 @@
 #include "QCNetworkConnectionPoolConfig.h"
 
 #include <QDebug>
+#include <QDateTime>
 #include <QList>
 #include <QMutexLocker>
+#include <QNetworkCookie>
 #include <QStringList>
 #include <QThread>
+#include <QTimeZone>
 #include <QTimer>
+
+#include <memory>
 
 namespace QCurl {
 
 namespace {
+
+bool isCapabilityRelatedCurlError(CURLcode code)
+{
+    return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
+}
 
 std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString, QString> &headers)
 {
@@ -33,6 +43,115 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
     }
 
     return std::nullopt;
+}
+
+bool domainMatchesHost(const QString &cookieDomain, const QString &host)
+{
+    if (cookieDomain.isEmpty() || host.isEmpty()) {
+        return false;
+    }
+
+    QString normalized = cookieDomain;
+    if (normalized.startsWith(QStringLiteral("#HttpOnly_"))) {
+        normalized = normalized.mid(QStringLiteral("#HttpOnly_").size());
+    }
+    const bool includeSubdomains = normalized.startsWith('.');
+    if (includeSubdomains) {
+        normalized = normalized.mid(1);
+    }
+
+    if (normalized.isEmpty()) {
+        return false;
+    }
+
+    if (host.compare(normalized, Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+
+    if (!includeSubdomains) {
+        return false;
+    }
+
+    if (host.size() <= normalized.size()) {
+        return false;
+    }
+
+    if (!host.endsWith(normalized, Qt::CaseInsensitive)) {
+        return false;
+    }
+
+    const int idx = host.size() - normalized.size() - 1;
+    return idx >= 0 && host.at(idx) == QChar('.');
+}
+
+bool pathMatchesUrl(const QString &cookiePath, const QString &urlPath)
+{
+    const QString p = cookiePath.isEmpty() ? QStringLiteral("/") : cookiePath;
+    const QString u = urlPath.isEmpty() ? QStringLiteral("/") : urlPath;
+    if (!u.startsWith(p)) {
+        return false;
+    }
+
+    if (u.size() == p.size()) {
+        return true;
+    }
+
+    if (p.endsWith('/')) {
+        return true;
+    }
+
+    return u.at(p.size()) == QChar('/');
+}
+
+std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
+{
+    if (line.isEmpty()) {
+        return std::nullopt;
+    }
+
+    const QList<QByteArray> parts = line.split('\t');
+    if (parts.size() < 7) {
+        return std::nullopt;
+    }
+
+    QByteArray domainBytes = parts.at(0);
+    const QByteArray includeSubdomainsBytes = parts.at(1);
+    const bool includeSubdomains = includeSubdomainsBytes.trimmed().toUpper() == "TRUE";
+    bool httpOnly = false;
+    static const QByteArray kHttpOnlyPrefix = "#HttpOnly_";
+    if (domainBytes.startsWith(kHttpOnlyPrefix)) {
+        httpOnly = true;
+        domainBytes = domainBytes.mid(kHttpOnlyPrefix.size());
+    }
+
+    const QByteArray pathBytes = parts.at(2);
+    const QByteArray secureBytes = parts.at(3);
+    const QByteArray expiresBytes = parts.at(4);
+    const QByteArray nameBytes = parts.at(5);
+    const QByteArray valueBytes = parts.at(6);
+
+    QNetworkCookie cookie(nameBytes, valueBytes);
+    QString domain = QString::fromUtf8(domainBytes);
+    if (includeSubdomains) {
+        if (!domain.startsWith('.')) {
+            domain.prepend('.');
+        }
+    } else {
+        if (domain.startsWith('.')) {
+            domain.remove(0, 1);
+        }
+    }
+    cookie.setDomain(domain);
+    cookie.setPath(QString::fromUtf8(pathBytes));
+    cookie.setSecure(secureBytes.trimmed().toUpper() == "TRUE");
+    cookie.setHttpOnly(httpOnly);
+
+    bool ok = false;
+    const qint64 epoch = expiresBytes.trimmed().toLongLong(&ok);
+    if (ok && epoch > 0) {
+        cookie.setExpirationDate(QDateTime::fromSecsSinceEpoch(epoch, QTimeZone::utc()));
+    }
+    return cookie;
 }
 
 } // namespace
@@ -746,6 +865,304 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
 int QCCurlMultiManager::runningRequestsCount() const noexcept
 {
     return m_runningRequests.load(std::memory_order_relaxed);
+}
+
+bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *manager,
+                                                const QList<QNetworkCookie> &cookies,
+                                                const QUrl &originUrl,
+                                                QString *outError)
+{
+    if (!manager) {
+        if (outError) {
+            *outError = QStringLiteral("manager 为空");
+        }
+        return false;
+    }
+
+    const ShareConfig desired = toShareConfig(manager);
+    if (!desired.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("importCookies 需要启用 ShareHandleConfig.shareCookies");
+        }
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    ShareContext *context = getOrCreateShareContextLocked(manager);
+    if (!context) {
+        if (outError) {
+            *outError = QStringLiteral("share context 不可用");
+        }
+        return false;
+    }
+
+    if (!context->share || (context->applied != desired)) {
+        if (context->activeUsers != 0) {
+            if (outError) {
+                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            }
+            return false;
+        }
+        QString err;
+        if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
+            if (outError) {
+                *outError = err;
+            }
+            return false;
+        }
+    }
+
+    if (!context->share || !context->applied.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("share cookie store 未启用");
+        }
+        return false;
+    }
+
+    CURL *easy = curl_easy_init();
+    if (!easy) {
+        if (outError) {
+            *outError = QStringLiteral("curl_easy_init 失败");
+        }
+        return false;
+    }
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
+    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
+    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
+
+    for (const QNetworkCookie &raw : cookies) {
+        QNetworkCookie c = raw;
+        if (c.domain().isEmpty() && !originUrl.host().isEmpty()) {
+            c.setDomain(originUrl.host());
+        }
+        if (c.path().isEmpty()) {
+            c.setPath(QStringLiteral("/"));
+        }
+
+        if (c.domain().isEmpty()) {
+            continue;
+        }
+
+        const QByteArray domainBytes = c.domain().toUtf8();
+        const QByteArray pathBytes = c.path().toUtf8();
+
+        const bool includeSubdomains = domainBytes.startsWith('.');
+        const QByteArray includeSubdomainsBytes = includeSubdomains ? QByteArray("TRUE") : QByteArray("FALSE");
+        const QByteArray secureBytes = c.isSecure() ? QByteArray("TRUE") : QByteArray("FALSE");
+
+        qint64 expiresEpoch = 0;
+        if (c.expirationDate().isValid()) {
+            expiresEpoch = c.expirationDate().toSecsSinceEpoch();
+            if (expiresEpoch < 0) {
+                expiresEpoch = 0;
+            }
+        }
+
+        QByteArray cookieLineDomain = domainBytes;
+        if (c.isHttpOnly()) {
+            cookieLineDomain = QByteArray("#HttpOnly_") + cookieLineDomain;
+        }
+
+        const QByteArray cookieLine = cookieLineDomain + '\t' +
+                                      includeSubdomainsBytes + '\t' +
+                                      pathBytes + '\t' +
+                                      secureBytes + '\t' +
+                                      QByteArray::number(expiresEpoch) + '\t' +
+                                      c.name() + '\t' +
+                                      c.value();
+
+        const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, cookieLine.constData());
+        if (rc != CURLE_OK) {
+            if (outError) {
+                *outError = QStringLiteral("导入 cookie 失败（%1）")
+                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+            }
+            return false;
+        }
+    }
+
+    (void)curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH");
+    return true;
+}
+
+QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(const QCNetworkAccessManager *manager,
+                                                                  const QUrl &filterUrl,
+                                                                  QString *outError)
+{
+    if (!manager) {
+        if (outError) {
+            *outError = QStringLiteral("manager 为空");
+        }
+        return {};
+    }
+
+    const ShareConfig desired = toShareConfig(manager);
+    if (!desired.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("exportCookies 需要启用 ShareHandleConfig.shareCookies");
+        }
+        return {};
+    }
+
+    QMutexLocker locker(&m_mutex);
+    ShareContext *context = getOrCreateShareContextLocked(manager);
+    if (!context) {
+        if (outError) {
+            *outError = QStringLiteral("share context 不可用");
+        }
+        return {};
+    }
+
+    if (!context->share || (context->applied != desired)) {
+        if (context->activeUsers != 0) {
+            if (outError) {
+                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            }
+            return {};
+        }
+        QString err;
+        if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
+            if (outError) {
+                *outError = err;
+            }
+            return {};
+        }
+    }
+
+    if (!context->share || !context->applied.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("share cookie store 未启用");
+        }
+        return {};
+    }
+
+    CURL *easy = curl_easy_init();
+    if (!easy) {
+        if (outError) {
+            *outError = QStringLiteral("curl_easy_init 失败");
+        }
+        return {};
+    }
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
+    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
+    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
+
+    struct curl_slist *cookieList = nullptr;
+    const CURLcode rc = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
+    if (rc != CURLE_OK) {
+        if (outError) {
+            *outError = QStringLiteral("读取 cookie 列表失败（%1）")
+                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+        }
+        return {};
+    }
+
+    QList<QNetworkCookie> out;
+    const QString host = filterUrl.host();
+    const QString urlPath = filterUrl.path();
+    for (auto *it = cookieList; it; it = it->next) {
+        if (!it->data) {
+            continue;
+        }
+        const QByteArray line = QByteArray(it->data);
+        auto parsed = parseCurlCookieLine(line);
+        if (!parsed.has_value()) {
+            continue;
+        }
+        if (!host.isEmpty()) {
+            if (!domainMatchesHost(parsed->domain(), host)) {
+                continue;
+            }
+            if (!pathMatchesUrl(parsed->path(), urlPath)) {
+                continue;
+            }
+        }
+        out.append(*parsed);
+    }
+
+    curl_slist_free_all(cookieList);
+    return out;
+}
+
+bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager *manager,
+                                                   QString *outError)
+{
+    if (!manager) {
+        if (outError) {
+            *outError = QStringLiteral("manager 为空");
+        }
+        return false;
+    }
+
+    const ShareConfig desired = toShareConfig(manager);
+    if (!desired.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("clearAllCookies 需要启用 ShareHandleConfig.shareCookies");
+        }
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    ShareContext *context = getOrCreateShareContextLocked(manager);
+    if (!context) {
+        if (outError) {
+            *outError = QStringLiteral("share context 不可用");
+        }
+        return false;
+    }
+
+    if (!context->share || (context->applied != desired)) {
+        if (context->activeUsers != 0) {
+            if (outError) {
+                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            }
+            return false;
+        }
+        QString err;
+        if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
+            if (outError) {
+                *outError = err;
+            }
+            return false;
+        }
+    }
+
+    if (!context->share || !context->applied.cookies) {
+        if (outError) {
+            *outError = QStringLiteral("share cookie store 未启用");
+        }
+        return false;
+    }
+
+    CURL *easy = curl_easy_init();
+    if (!easy) {
+        if (outError) {
+            *outError = QStringLiteral("curl_easy_init 失败");
+        }
+        return false;
+    }
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
+    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
+    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
+
+    const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, "ALL");
+    if (rc != CURLE_OK) {
+        if (outError) {
+            if (isCapabilityRelatedCurlError(rc)) {
+                *outError = QStringLiteral("libcurl 不支持 CURLOPT_COOKIELIST（%1）")
+                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+            } else {
+                *outError = QStringLiteral("清空 cookies 失败（%1）")
+                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+            }
+        }
+        return false;
+    }
+    (void)curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH");
+    return true;
 }
 
 void QCCurlMultiManager::wakeup()

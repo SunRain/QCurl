@@ -738,6 +738,9 @@ void QCWebSocketPrivate::enableEventDrivenReceive()
         
         qInfo() << "QCWebSocket: 事件驱动模式已启用（socket fd:" 
                 << sockfd << "）延迟 <1ms";
+
+        // 重要：启用 notifier 后立即尝试 drain 一次，避免“数据已到达但未再触发可读事件”的死等。
+        processIncomingData();
     } else {
         // 降级到轮询模式
         fallbackToPollingMode();
