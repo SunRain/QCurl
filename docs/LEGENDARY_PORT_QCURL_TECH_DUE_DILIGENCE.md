@@ -64,6 +64,22 @@
 
 QCurl 的 `src/` 显示其架构定位非常明确：以 libcurl multi 为核心实现、以 Qt 的 QObject/信号槽作为异步抽象层，整体 API 形态接近 QtNetwork（存在 `QCNetworkAccessManager`/`QCNetworkRequest`/`QCNetworkReply` 三件套，分别位于 `src/QCNetworkAccessManager.*`、`src/QCNetworkRequest.h`、`src/QCNetworkReply.*`）。这对 Legendary 的 Qt/C++ 移植项目非常关键，因为上层可以用“请求对象 + reply 异步回调/信号”的方式替代 Python `requests.session()` 的习惯用法，并把 auth/header/cookie 等统一放到 manager 或上层 wrapper（例如 EgsClient）中实现（`src/QCNetworkRequestBuilder.*`、`src/QCRequestBuilder.*` 可直接注入 header）。需要注意的是：`src/QCNetworkMiddleware.*` 已在 `QCNetworkAccessManager` 的 `send* / send*Sync / schedule*` 路径中自动接入（请求前/响应后），并配套了纯离线门禁 `tests/tst_QCNetworkMiddlewareIntegration.cpp`。因此若移植项目计划依赖 middleware 作为统一注入点，当前可直接使用（仍需遵守 middleware 生命周期契约）。
 
+### 2.1 补充：schedule* 的 pre-send 时机与“出队/真正开始传输时再执行 pre-send”的可行性（待决）
+
+当前行为的关键证据链如下：`QCNetworkAccessManager::scheduleGet/schedulePost/schedulePut` 会在调用 `QCNetworkRequestScheduler::scheduleRequest` 之前执行 `QCNetworkMiddleware::onRequestPreSend`，随后调度器在出队时通过 `QCNetworkRequestScheduler::startRequest` 直接调用 `QCNetworkReply::execute()` 开始传输。这意味着 pre-send 发生在“创建 reply 并入队”时，队列等待期间不会再次触发（`src/QCNetworkAccessManager.cpp`、`src/QCNetworkRequestScheduler.cpp`）。
+
+需要注意的是，`QCNetworkReply` 在构造函数内立刻调用 `QCNetworkReplyPrivate::configureCurlOptions()`，而该函数会读取 `QCNetworkRequest` 的 headers 并构建 `CURLOPT_HTTPHEADER` 等易句柄配置（`src/QCNetworkReply.cpp`）。因此，即便在出队时再跑一次 `onRequestPreSend` 并修改 request，对真实网络请求也不会生效：curl 的关键选项已经在构造期固化。
+
+如果移植项目确实存在“token 在队列等待期间可能刷新，必须在真正开始传输前注入最新 header”这类需求（例如 OAuth token 刷新、临近发送签名等），QCurl 侧可考虑新增“额外 API/模式”以支持 late pre-send，但实现必须同时解决“延迟配置或重配 curl easy handle”的问题，并规避调度器锁的重入风险。可行路径大致有两类。
+
+第一类是延迟创建 reply：调度器队列存储 request/method/body/priority 等元数据，在出队/启动前执行 pre-send 后再创建 `QCNetworkReply`（从而让 configureCurlOptions 读取到最新 headers）。这会改变 schedule* 的返回值语义（可能需要返回占位句柄或可取消的 ticket），属于较大 API 改动。
+
+第二类是在现有 reply 结构上增加“启动前重配”能力：在 reply 仍处于 Idle（未 execute）时，允许替换 request（或至少替换 headers/URL 等可变部分），并在 `execute()` 前重建 header slist/相关 curl option。该方案 API 侵入较小，但需要严格限定可变字段、线程亲和与状态机边界，否则容易引入双重设置、资源泄漏或与重试逻辑冲突。
+
+此外，调度器当前会在持有内部互斥锁的路径上调用 `startRequest()->reply->execute()`（`src/QCNetworkRequestScheduler.cpp`），若 late pre-send 的 middleware 在执行过程中触发新的 schedule/config/cancel 等操作，存在自锁或重入风险。若后续实现 late pre-send，建议把“出队触发 pre-send/execute”的关键步骤改为在释放锁后执行（例如 `Qt::QueuedConnection`/`QMetaObject::invokeMethod`），以保证可维护性。
+
+基于当前移植推进节奏与风险控制，本次仅记录上述约束与可行方案，不在 QCurl 中默认实现；待移植项目出现明确的“队列等待期间 token 刷新导致请求签名失效”等用例后，再评估采用哪种路径并补齐对应纯离线门禁（MockHandler）。
+
 在事件循环集成方面，QCurl 明确走了“Qt EventLoop 驱动 libcurl multi”的路径：相关证据集中在 `src/QCCurlMultiManager.*`、`src/QCNetworkAccessManager.*` 与 `src/QCNetworkReply.cpp`，并且在 `src/**` 中可见 Qt 侧的 `QSocketNotifier` 与 `QTimer` 使用痕迹，以及 libcurl multi API（如 `curl_multi_socket`/`curl_multi_perform`/`curl_multi_setopt`）的调用文件命中。这种设计优点是线程与资源生命周期可控、易与 Qt UI/业务线程模型对齐，同时能自然支持并发与连接复用（`src/QCNetworkRequestScheduler.*`、`src/QCNetworkConnectionPoolManager.*`）。
 
 接口与错误策略方面，仓库证据倾向于“无异常、显式错误对象/状态机”：`src/**` 未检出 `throw`，且存在独立错误类型 `src/QCNetworkError.*`，并在 reply 侧暴露 `error`/`errorString` 等典型接口（见 `src/QCNetworkReply.h` 的方法名与信号名抽样，以及对应的 `tests/tst_QCNetworkError.cpp`、`tests/tst_QCNetworkReply.cpp`）。这对可维护性与跨语言移植是加分项，因为 Legendary 上层可以把错误统一映射到“可重试/不可重试/需要登录/限流”等业务状态。

@@ -51,11 +51,11 @@ message(STATUS "✅ Multipart/form-data 示例已启用（MultipartSimpleDemo）
 # 生产级增强和开发体验优化示例
 add_subdirectory(LoggingDemo)
 add_subdirectory(MiddlewareDemo)
+add_subdirectory(UnifiedPolicyMiddlewareOfflineDemo)
 add_subdirectory(CancelTokenDemo)
 add_subdirectory(RequestBuilderDemo)
-message(STATUS "示例已启用（Logger + Middleware + CancelToken + RequestBuilder）")
+message(STATUS "示例已启用（Logger + Middleware + UnifiedPolicyMiddlewareOffline + CancelToken + RequestBuilder）")
 
 # 综合功能演示（HTTP/3 + WebSocket 压缩 + 网络诊断）
 add_subdirectory(NetworkFeaturesDemo)
 message(STATUS "网络功能综合演示已启用（NetworkFeaturesDemo）")
-
