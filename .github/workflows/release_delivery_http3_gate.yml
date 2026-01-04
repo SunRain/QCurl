@@ -1,0 +1,348 @@
+name: Release Gate (Debian 12 + Arch snapshot, HTTP/3 required)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch_image_ref:
+        description: "Arch OCI image ref（建议使用 @sha256:<digest> 锁定；留空则使用仓库变量 ARCH_IMAGE_REF）"
+        required: false
+        default: ""
+      arch_repo_snapshot_date:
+        description: "Arch Linux Archive 快照日期（YYYY/MM/DD；留空则使用仓库变量 ARCH_REPO_SNAPSHOT_DATE）"
+        required: false
+        default: ""
+
+env:
+  BUILD_TYPE: Release
+  QCURL_REQUIRE_HTTP3: "1"
+  QCURL_LC_EXT: "1"
+
+jobs:
+  release_debian12:
+    name: "Release gate: Debian 12 (HTTP/3 required)"
+    runs-on: ubuntu-latest
+    container:
+      image: debian:12
+    timeout-minutes: 90
+
+    steps:
+      - name: Install base tools (git/ca-certificates)
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies (Debian 12)
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            python3 \
+            python3-pip \
+            qt6-base-dev \
+            apache2 \
+            apache2-dev \
+            libapache2-mod-http2 \
+            libevent-dev \
+            libgnutls28-dev \
+            libnghttp2-dev \
+            libnghttp3-dev \
+            zlib1g-dev \
+            dpkg-dev
+
+          # ngtcp2 在不同发行版/仓库的包名可能不同：优先 gnutls 后端，否则尝试 openssl 后端。
+          apt-get install -y --no-install-recommends libngtcp2-dev || true
+          apt-get install -y --no-install-recommends libngtcp2-crypto-gnutls-dev || true
+          apt-get install -y --no-install-recommends libngtcp2-crypto-openssl-dev || true
+
+      - name: Install Python dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest websockets
+
+      - name: Ensure curl testenv tool paths (httpd/apxs)
+        run: |
+          set -euo pipefail
+          if [ ! -x /usr/bin/httpd ] && command -v apache2 >/dev/null 2>&1; then
+            ln -sf "$(command -v apache2)" /usr/bin/httpd
+          fi
+          if [ ! -x /usr/bin/apxs ] && command -v apxs2 >/dev/null 2>&1; then
+            ln -sf "$(command -v apxs2)" /usr/bin/apxs
+          fi
+          /usr/bin/httpd -v || true
+          /usr/bin/apxs -q HTTPD_VERSION || true
+
+      - name: Build and install libcurl (vendored curl/, HTTP/3 enabled)
+        run: |
+          set -euo pipefail
+          CURL_INSTALL_PREFIX="${GITHUB_WORKSPACE}/.deps/curl-http3"
+          echo "CURL_INSTALL_PREFIX=${CURL_INSTALL_PREFIX}" >> "${GITHUB_ENV}"
+
+          cmake -S curl -B curl/build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_INSTALL_PREFIX="${CURL_INSTALL_PREFIX}" \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCURL_USE_GNUTLS=ON \
+            -DCURL_USE_OPENSSL=OFF \
+            -DUSE_NGTCP2=ON
+
+          cmake --build curl/build --target install --parallel
+
+          "${CURL_INSTALL_PREFIX}/bin/curl" -V
+          "${CURL_INSTALL_PREFIX}/bin/curl" -V | grep -q "HTTP3"
+
+          echo "PATH=${CURL_INSTALL_PREFIX}/bin:${PATH}" >> "${GITHUB_ENV}"
+          echo "PKG_CONFIG_PATH=${CURL_INSTALL_PREFIX}/lib/pkgconfig:${CURL_INSTALL_PREFIX}/lib64/pkgconfig:${PKG_CONFIG_PATH:-}" >> "${GITHUB_ENV}"
+          echo "CMAKE_PREFIX_PATH=${CURL_INSTALL_PREFIX}:${CMAKE_PREFIX_PATH:-}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=${CURL_INSTALL_PREFIX}/lib:${CURL_INSTALL_PREFIX}/lib64:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
+
+      - name: Preflight (socket bind)
+        run: |
+          python3 - <<'PY'
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.bind(("127.0.0.1", 0))
+          s.listen(1)
+          s.close()
+          print("socket_bind_ok")
+          PY
+
+      - name: Configure QCurl (CMake)
+        run: |
+          set -euo pipefail
+          extra=""
+          if [ -n "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            extra="-DQCURL_LC_NGHTTP2_ARCHIVE=${QCURL_LC_NGHTTP2_ARCHIVE}"
+          fi
+
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            ${extra}
+
+      - name: Build local nghttpx (h3-capable) for curl testenv
+        run: |
+          set -euo pipefail
+          cmake --build build --target qcurl_nghttpx_h3 --parallel
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version | grep -q "ngtcp2/"
+
+      - name: Run libcurl_consistency gate (all + ext, HTTP/3 required)
+        run: |
+          set -euo pipefail
+          python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+
+      - name: Package artifacts (DEB + TGZ)
+        run: |
+          set -euo pipefail
+          (cd build && cpack -G TGZ)
+          (cd build && cpack -G DEB)
+
+      - name: Upload gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-debian12-gate-reports-${{ github.sha }}
+          path: |
+            build/libcurl_consistency/reports/
+          retention-days: 14
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-debian12-packages-${{ github.sha }}
+          path: |
+            build/*.deb
+            build/*.tar.gz
+          retention-days: 14
+
+      - name: Upload service logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-debian12-service-logs-${{ github.sha }}
+          path: |
+            curl/tests/http/gen/artifacts/**/service_logs/
+          retention-days: 14
+
+  release_arch_snapshot:
+    name: "Release gate: Arch snapshot (HTTP/3 required)"
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.arch_image_ref || vars.ARCH_IMAGE_REF || 'archlinux:base' }}
+    timeout-minutes: 90
+
+    env:
+      ARCH_IMAGE_REF: ${{ inputs.arch_image_ref || vars.ARCH_IMAGE_REF || 'archlinux:base' }}
+      ARCH_REPO_SNAPSHOT_DATE: ${{ inputs.arch_repo_snapshot_date || vars.ARCH_REPO_SNAPSHOT_DATE }}
+
+    steps:
+      - name: Validate snapshot constraints
+        run: |
+          set -euo pipefail
+          if [[ -z "${ARCH_REPO_SNAPSHOT_DATE}" ]]; then
+            echo "::error::ARCH_REPO_SNAPSHOT_DATE 未设置。请在 workflow_dispatch 输入 arch_repo_snapshot_date，或在仓库变量中设置 ARCH_REPO_SNAPSHOT_DATE（YYYY/MM/DD）。"
+            exit 1
+          fi
+          if ! [[ "${ARCH_REPO_SNAPSHOT_DATE}" =~ ^[0-9]{4}/[0-9]{2}/[0-9]{2}$ ]]; then
+            echo "::error::ARCH_REPO_SNAPSHOT_DATE 格式错误：${ARCH_REPO_SNAPSHOT_DATE}（期望 YYYY/MM/DD）"
+            exit 1
+          fi
+          if [[ "${ARCH_IMAGE_REF}" != *@sha256:* ]]; then
+            echo "::error::Arch 镜像必须使用 digest 锁定（形如 archlinux:base@sha256:<digest>）。当前：${ARCH_IMAGE_REF}"
+            exit 1
+          fi
+          echo "ARCH_IMAGE_REF=${ARCH_IMAGE_REF}"
+          echo "ARCH_REPO_SNAPSHOT_DATE=${ARCH_REPO_SNAPSHOT_DATE}"
+
+      - name: Configure pacman mirrors (Arch Linux Archive snapshot)
+        run: |
+          set -euo pipefail
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_REPO_SNAPSHOT_DATE}/$repo/os/$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syu --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm
+
+      - name: Install base tools (git/ca-certificates)
+        run: |
+          set -euo pipefail
+          pacman -S --noconfirm --needed git ca-certificates
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies (Arch snapshot)
+        run: |
+          set -euo pipefail
+          pacman -S --noconfirm --needed \
+            base-devel \
+            cmake \
+            ninja \
+            pkgconf \
+            python \
+            python-pip \
+            qt6-base \
+            curl \
+            nghttp2 \
+            nghttp3 \
+            ngtcp2 \
+            openssl \
+            apache \
+            libevent
+
+      - name: Install Python dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pytest websockets
+
+      - name: Environment trace (os/pacman/curl)
+        run: |
+          set -euo pipefail
+          cat /etc/os-release
+          curl -V
+          curl -V | grep -q "HTTP3"
+          pacman -Q | sort > "${GITHUB_WORKSPACE}/arch_pacman_Q.txt"
+
+      - name: Preflight (socket bind)
+        run: |
+          python - <<'PY'
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.bind(("127.0.0.1", 0))
+          s.listen(1)
+          s.close()
+          print("socket_bind_ok")
+          PY
+
+      - name: Configure QCurl (CMake)
+        run: |
+          set -euo pipefail
+          extra=""
+          if [ -n "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            extra="-DQCURL_LC_NGHTTP2_ARCHIVE=${QCURL_LC_NGHTTP2_ARCHIVE}"
+          fi
+
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            ${extra}
+
+      - name: Build local nghttpx (h3-capable) for curl testenv
+        run: |
+          set -euo pipefail
+          cmake --build build --target qcurl_nghttpx_h3 --parallel
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version
+          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version | grep -q "ngtcp2/"
+
+      - name: Configure curl baseline (CMake)
+        run: |
+          set -euo pipefail
+          cmake -S curl -B curl/build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Run libcurl_consistency gate (all + ext, HTTP/3 required)
+        run: |
+          set -euo pipefail
+          python tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+
+      - name: Package artifacts (TGZ)
+        run: |
+          set -euo pipefail
+          (cd build && cpack -G TGZ)
+
+      - name: Upload gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-arch-gate-reports-${{ github.sha }}
+          path: |
+            build/libcurl_consistency/reports/
+          retention-days: 14
+
+      - name: Upload packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-arch-packages-${{ github.sha }}
+          path: |
+            build/*.tar.gz
+          retention-days: 14
+
+      - name: Upload Arch environment trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-arch-env-${{ github.sha }}
+          path: |
+            arch_pacman_Q.txt
+          retention-days: 14
+
+      - name: Upload service logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-arch-service-logs-${{ github.sha }}
+          path: |
+            curl/tests/http/gen/artifacts/**/service_logs/
+          retention-days: 14
