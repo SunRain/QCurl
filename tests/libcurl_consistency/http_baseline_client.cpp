@@ -616,18 +616,28 @@ int main(int argc, char **argv)
     if (args.verifyPeer && !args.caInfo.empty()) {
         curl_easy_setopt(curl, CURLOPT_CAINFO, args.caInfo.c_str());
     }
-#ifdef CURLOPT_PINNEDPUBLICKEY
     if (!args.pinnedPublicKey.empty()) {
-        curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, args.pinnedPublicKey.c_str());
-    }
+#if defined(LIBCURL_VERSION_NUM) && (LIBCURL_VERSION_NUM >= 0x072700)
+        const CURLcode pinnedRc = curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, args.pinnedPublicKey.c_str());
+        if (pinnedRc == CURLE_UNKNOWN_OPTION || pinnedRc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported pinned public key (no CURLOPT_PINNEDPUBLICKEY)\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        if (pinnedRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_PINNEDPUBLICKEY) failed: " << curl_easy_strerror(pinnedRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
 #else
-    if (!args.pinnedPublicKey.empty()) {
         std::cerr << "unsupported pinned public key (no CURLOPT_PINNEDPUBLICKEY)\n";
         curl_easy_cleanup(curl);
         curl_global_cleanup();
         return 6;
-    }
 #endif
+    }
     if (args.connectTimeoutMs > 0) {
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, args.connectTimeoutMs);
     }
