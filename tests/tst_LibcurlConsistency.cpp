@@ -970,6 +970,140 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
+    if (caseId == QStringLiteral("resp_headers_unfold_1940")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/resp_headers?scenario=1940").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        const QByteArray headerData = reply->rawHeaderData();
+        QVERIFY(writeAllToFile(QStringLiteral("response_headers_0.data"), headerData, QIODevice::WriteOnly | QIODevice::Truncate));
+
+        // 解析 raw headers（unfold + trim；保留重复头），并落盘为 JSON（供 pytest 对比）
+        auto parseUnfolded = [](const QByteArray &raw) -> QVector<QPair<QByteArray, QByteArray>> {
+            QVector<QPair<QByteArray, QByteArray>> out;
+
+            auto flush = [&](const QByteArray &name, const QList<QByteArray> &segments) {
+                if (name.isEmpty()) {
+                    return;
+                }
+                QByteArray value;
+                for (const QByteArray &seg : segments) {
+                    const QByteArray part = seg.trimmed();
+                    if (part.isEmpty()) {
+                        continue;
+                    }
+                    if (!value.isEmpty()) {
+                        value.append(' ');
+                    }
+                    value.append(part);
+                }
+                out.append(qMakePair(name, value));
+            };
+
+            QByteArray currentName;
+            QList<QByteArray> currentSegments;
+
+            const QList<QByteArray> lines = raw.split('\n');
+            for (QByteArray line : lines) {
+                if (line.endsWith('\r')) {
+                    line.chop(1);
+                }
+                if (line.isEmpty()) {
+                    flush(currentName, currentSegments);
+                    currentName.clear();
+                    currentSegments.clear();
+                    continue;
+                }
+                if (line.startsWith("HTTP/")) {
+                    flush(currentName, currentSegments);
+                    currentName.clear();
+                    currentSegments.clear();
+                    continue;
+                }
+
+                const bool isContinuation = !currentName.isEmpty()
+                                            && (line.startsWith(' ') || line.startsWith('\t'));
+                if (isContinuation) {
+                    currentSegments.append(line);
+                    continue;
+                }
+
+                const int colonPos = line.indexOf(':');
+                if (colonPos <= 0) {
+                    continue;
+                }
+                flush(currentName, currentSegments);
+                currentName = line.left(colonPos).trimmed();
+                currentSegments.clear();
+                currentSegments.append(line.mid(colonPos + 1));
+            }
+            flush(currentName, currentSegments);
+            return out;
+        };
+
+        const QVector<QPair<QByteArray, QByteArray>> unfoldedPairs = parseUnfolded(headerData);
+
+        QJsonObject unfoldedJson;
+        QMap<QString, QStringList> multi;
+        QMap<QString, QString> single;
+
+        for (const auto &p : unfoldedPairs) {
+            const QString name = QString::fromUtf8(p.first);
+            const QString value = QString::fromUtf8(p.second);
+            if (multi.contains(name)) {
+                multi[name].append(value);
+            } else if (single.contains(name)) {
+                // 第 2 次出现：转为 multi
+                const QString firstValue = single.take(name);
+                multi[name] = QStringList{firstValue, value};
+            } else {
+                single.insert(name, value);
+            }
+        }
+
+        for (auto it = single.cbegin(); it != single.cend(); ++it) {
+            unfoldedJson.insert(it.key(), it.value());
+        }
+        for (auto it = multi.cbegin(); it != multi.cend(); ++it) {
+            QJsonArray arr;
+            for (const QString &v : it.value()) {
+                arr.append(v);
+            }
+            unfoldedJson.insert(it.key(), arr);
+        }
+
+        // 关键字段 sanity check：确保 QCNetworkReply 的 header 解析已正确 unfold
+        const QList<RawHeaderPair> parsed = reply->rawHeaders();
+        auto headerValue = [&parsed](const QByteArray &key) -> QByteArray {
+            for (const auto &kv : parsed) {
+                if (kv.first == key) {
+                    return kv.second;
+                }
+            }
+            return QByteArray();
+        };
+        QCOMPARE(headerValue("Server"), QByteArray("test with trailing space"));
+        QCOMPARE(headerValue("Fold"), QByteArray("is folding a line"));
+        QCOMPARE(headerValue("Test"), QByteArray("word"));
+
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("headers_unfolded_1940.json"), unfoldedJson));
+        delete reply;
+        return;
+    }
+
     if (caseId == QStringLiteral("p1_progress_download")) {
         QVERIFY(httpsPort > 0);
         QVERIFY(!docname.isEmpty());
@@ -1962,7 +2096,8 @@ void TestLibcurlConsistency::testCase()
     }
 
     if (caseId == QStringLiteral("proxy_http_basic_auth") ||
-        caseId == QStringLiteral("proxy_https_connect_basic_auth")) {
+        caseId == QStringLiteral("proxy_https_connect_basic_auth") ||
+        caseId == QStringLiteral("proxy_connect_headers_1941")) {
         QVERIFY(proxyPort > 0);
         QVERIFY(!proxyUser.isEmpty());
         QVERIFY(!proxyPass.isEmpty());
@@ -1997,6 +2132,53 @@ void TestLibcurlConsistency::testCase()
         out.close();
 
         QCOMPARE(reply.error(), NetworkError::NoError);
+
+        // 诊断型采集：尽力落盘 CONNECT 阶段 header blocks（缺失/差异不作为门禁失败条件）
+        const QByteArray headerData = reply.rawHeaderData();
+        (void)writeAllToFile(QStringLiteral("response_headers_0.data"),
+                             headerData,
+                             QIODevice::WriteOnly | QIODevice::Truncate);
+
+        if (caseId != QStringLiteral("proxy_http_basic_auth")) {
+            QByteArray connectDump;
+            const QList<QByteArray> lines = headerData.split('\n');
+            QByteArray block;
+            bool inBlock = false;
+            bool isConnect = false;
+            for (QByteArray line : lines) {
+                if (line.endsWith('\r')) {
+                    line.chop(1);
+                }
+                if (line.startsWith("HTTP/")) {
+                    block.clear();
+                    inBlock = true;
+                    const QByteArray low = line.toLower();
+                    isConnect = low.contains("connection established");
+                    block.append(line);
+                    block.append('\n');
+                    continue;
+                }
+                if (!inBlock) {
+                    continue;
+                }
+                if (line.isEmpty()) {
+                    if (isConnect && !block.isEmpty()) {
+                        connectDump.append(block);
+                        connectDump.append('\n');
+                    }
+                    inBlock = false;
+                    isConnect = false;
+                    block.clear();
+                    continue;
+                }
+                block.append(line);
+                block.append('\n');
+            }
+            (void)writeAllToFile(QStringLiteral("connect_headers_0.data"),
+                                 connectDump,
+                                 QIODevice::WriteOnly | QIODevice::Truncate);
+        }
+
         QFile f(outFile);
         QVERIFY(f.exists());
         QVERIFY(f.size() > 0);
@@ -2416,6 +2598,30 @@ void TestLibcurlConsistency::testCase()
             QCOMPARE(reply->error(), NetworkError::NoError);
             delete reply;
         }
+
+        manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
+        {
+            QCNetworkRequest req(url);
+            req.setHttpVersion(httpVersion);
+            auto *reply = manager.sendGetSync(req);
+            QVERIFY(reply);
+            QCOMPARE(reply->error(), NetworkError::NoError);
+            delete reply;
+        }
+
+        QFile f(cookiePath);
+        QVERIFY(f.exists());
+        QVERIFY(f.size() > 0);
+        return;
+    }
+
+    if (caseId == QStringLiteral("cookiejar_1920")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(!cookiePath.isEmpty());
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/cookie?scenario=1920").arg(observeHttpPort)),
+            requestId);
 
         manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
         {

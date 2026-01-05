@@ -290,7 +290,18 @@ class ProxyServer:
 
         upstream = socket.create_connection((host, port), timeout=10.0)
         try:
-            conn.sendall(b"HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n")
+            # 覆盖 curl/tests/data/test1941：CONNECT 响应头允许折叠行（含 TAB/空白边界）
+            resp = (
+                "HTTP/1.1 200 Connection established\r\n"
+                "Connection: close\r\n"
+                "Fold: is\r\n"
+                "\tfolding a line\r\n"
+                "Tabs: tab-instead/\t\r\n"
+                "\tonly\r\n"
+                "\tmixed\r\n"
+                "\r\n"
+            )
+            conn.sendall(resp.encode("iso-8859-1"))
             self._relay_bidirectional(conn, upstream, timeout_s=30.0)
         finally:
             try:

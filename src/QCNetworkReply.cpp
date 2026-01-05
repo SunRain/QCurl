@@ -1653,20 +1653,73 @@ void QCNetworkReplyPrivate::parseHeaders()
 {
     headerMap.clear();
 
-    // 按行分割响应头数据
-    QList<QByteArray> lines = headerData.split('\n');
-
-    for (const QByteArray &line : lines) {
-        // 查找冒号分隔符
-        int colonPos = line.indexOf(':');
-        if (colonPos > 0) {
-            QByteArray key = line.left(colonPos).trimmed();
-            QByteArray value = line.mid(colonPos + 1).trimmed();
-
-            // 存储到 map 中（键值对转为 QString）
-            headerMap.insert(QString::fromUtf8(key), QString::fromUtf8(value));
+    // 解析并 unfold 响应头数据（兼容折叠行与 TAB；对齐 curl header API 的可观测语义）
+    //
+    // 规则（与 curl/tests/data/test1274/test1940/test798 的预期一致）：
+    // - continuation line：以 SP/HTAB 开头的行视为上一条 header 的延续（obsolete line folding）
+    // - unfold：将各段按“单空格”拼接，并对每段做 trim（去掉首尾空白与末尾多余空格）
+    //
+    // 说明：
+    // - headerMap 为单值 map，会覆盖重复头（如 Set-Cookie 多值）；重复头应通过 rawHeaderData() 观测。
+    auto flushCurrent = [&](const QByteArray &name, const QList<QByteArray> &segments) {
+        if (name.isEmpty()) {
+            return;
         }
+        QByteArray value;
+        for (const QByteArray &seg : segments) {
+            const QByteArray part = seg.trimmed();
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (!value.isEmpty()) {
+                value.append(' ');
+            }
+            value.append(part);
+        }
+        headerMap.insert(QString::fromUtf8(name), QString::fromUtf8(value));
+    };
+
+    QByteArray currentName;
+    QList<QByteArray> currentSegments;
+
+    const QList<QByteArray> lines = headerData.split('\n');
+    for (QByteArray line : lines) {
+        if (line.endsWith('\r')) {
+            line.chop(1);
+        }
+        if (line.isEmpty()) {
+            flushCurrent(currentName, currentSegments);
+            currentName.clear();
+            currentSegments.clear();
+            continue;
+        }
+        if (line.startsWith("HTTP/")) {
+            // 新的 header block（redirect/1xx/CONNECT 等）开始，先落盘上一段
+            flushCurrent(currentName, currentSegments);
+            currentName.clear();
+            currentSegments.clear();
+            continue;
+        }
+
+        const bool isContinuation = !currentName.isEmpty()
+                                    && (line.startsWith(' ') || line.startsWith('\t'));
+        if (isContinuation) {
+            currentSegments.append(line);
+            continue;
+        }
+
+        const int colonPos = line.indexOf(':');
+        if (colonPos <= 0) {
+            continue;
+        }
+
+        flushCurrent(currentName, currentSegments);
+        currentName = line.left(colonPos).trimmed();
+        currentSegments.clear();
+        currentSegments.append(line.mid(colonPos + 1));
     }
+
+    flushCurrent(currentName, currentSegments);
 }
 
 // ============================================================================
@@ -2985,14 +3038,62 @@ QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()
     Q_D(QCNetworkReply);
 
     QMap<QByteArray, QByteArray> headers;
-    QList<QByteArray> lines = d->headerData.split('\n');
-
-    for (const QByteArray &line : lines) {
-        int colonPos = line.indexOf(':');
-        if (colonPos > 0) {
-            headers[line.left(colonPos).trimmed()] = line.mid(colonPos + 1).trimmed();
+    auto flushCurrent = [&](const QByteArray &name, const QList<QByteArray> &segments) {
+        if (name.isEmpty()) {
+            return;
         }
+        QByteArray value;
+        for (const QByteArray &seg : segments) {
+            const QByteArray part = seg.trimmed();
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (!value.isEmpty()) {
+                value.append(' ');
+            }
+            value.append(part);
+        }
+        headers.insert(name, value);
+    };
+
+    QByteArray currentName;
+    QList<QByteArray> currentSegments;
+
+    const QList<QByteArray> lines = d->headerData.split('\n');
+    for (QByteArray line : lines) {
+        if (line.endsWith('\r')) {
+            line.chop(1);
+        }
+        if (line.isEmpty()) {
+            flushCurrent(currentName, currentSegments);
+            currentName.clear();
+            currentSegments.clear();
+            continue;
+        }
+        if (line.startsWith("HTTP/")) {
+            flushCurrent(currentName, currentSegments);
+            currentName.clear();
+            currentSegments.clear();
+            continue;
+        }
+        const bool isContinuation = !currentName.isEmpty()
+                                    && (line.startsWith(' ') || line.startsWith('\t'));
+        if (isContinuation) {
+            currentSegments.append(line);
+            continue;
+        }
+
+        const int colonPos = line.indexOf(':');
+        if (colonPos <= 0) {
+            continue;
+        }
+        flushCurrent(currentName, currentSegments);
+        currentName = line.left(colonPos).trimmed();
+        currentSegments.clear();
+        currentSegments.append(line.mid(colonPos + 1));
     }
+
+    flushCurrent(currentName, currentSegments);
 
     return headers;
 }

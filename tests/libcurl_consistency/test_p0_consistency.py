@@ -103,6 +103,14 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
     if not qt_path or not qt_path.exists():
         pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
 
+    require_http3 = (os.environ.get("QCURL_REQUIRE_HTTP3") or "").strip().lower()
+    require_http3_enabled = require_http3 in ("1", "true", "yes", "on")
+    if require_http3_enabled and not env.have_h3():
+        pytest.fail(
+            "QCURL_REQUIRE_HTTP3=1 但当前 testenv 无 HTTP/3 能力（env.have_h3()=False）。"
+            "请先确保 nghttpx-h3 可用并启用 h3 testenv，或在非强制 job 中移除该变量。"
+        )
+
     http_protos = ["http/1.1", "h2"]
     if env.have_h3():
         http_protos.append("h3")

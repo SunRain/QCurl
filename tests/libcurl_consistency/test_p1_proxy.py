@@ -18,7 +18,7 @@ from typing import Dict, List
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import artifacts_root, build_request_semantic, ensure_case_dir, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.case_defs import P1_PROXY_CASES
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
@@ -40,6 +40,36 @@ def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
         "ws_port": env.ws_port,
     })
     return [str(x).format(**ctx) for x in template]
+
+def _extract_connect_blocks(raw: bytes) -> list[list[str]]:
+    """
+    从 header callback 原始输出中提取 CONNECT 阶段的响应头 blocks（诊断用途，不入门禁）。
+    - block 以 `HTTP/...` 起始，空行结束
+    - 仅选择 status line 含 "Connection established" 的 blocks
+    """
+    text = raw.decode("iso-8859-1", errors="replace")
+    blocks: list[list[str]] = []
+    cur: list[str] = []
+    in_block = False
+    is_connect = False
+
+    for line in text.splitlines():
+        if line.startswith("HTTP/"):
+            cur = [line]
+            in_block = True
+            is_connect = ("connection established" in line.lower())
+            continue
+        if not in_block:
+            continue
+        if line == "":
+            if is_connect and cur:
+                blocks.append(cur)
+            cur = []
+            in_block = False
+            is_connect = False
+            continue
+        cur.append(line)
+    return blocks
 
 
 @pytest.mark.parametrize("case_id", sorted(P1_PROXY_CASES.keys()))
@@ -80,6 +110,11 @@ def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, 
     base_defaults["url"] = baseline_url
 
     args = _fmt_args(case["args_template"], base_defaults, env)
+    case_dir = ensure_case_dir(artifacts_root(env), suite=suite, case=case_variant)
+    baseline_header_file = case_dir / "baseline_response_headers.data"
+    if args:
+        # 将 --header-out 插入到 URL 参数前（args_template 约定 url 为最后一项）
+        args = [*args[:-1], "--header-out", str(baseline_header_file), args[-1]]
     req_meta = {"method": "GET", "url": baseline_url, "headers": {}, "body": b""}
     resp_meta = {"status": 200, "http_version": proto, "headers": {}, "body": None}
 
@@ -167,6 +202,31 @@ def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, 
         qcurl["payload"]["response"]["http_version"] = origin_obs.http_version
         write_json(qcurl["path"], qcurl["payload"])
 
+        # 诊断型采集：CONNECT 阶段响应头 blocks（不入门禁；缺失不失败）
+        if case_id != "proxy_http_basic_auth":
+            diag: Dict[str, object] = {}
+            try:
+                raw = baseline_header_file.read_bytes()
+                blocks = _extract_connect_blocks(raw)
+                diag["baseline_connect_blocks"] = blocks
+                diag["baseline_connect_block_count"] = len(blocks)
+            except Exception as exc:
+                diag["baseline_connect_blocks_error"] = str(exc)
+
+            try:
+                qcurl_header_file = qcurl["path"].parent / "qcurl_run" / "response_headers_0.data"
+                raw = qcurl_header_file.read_bytes()
+                blocks = _extract_connect_blocks(raw)
+                diag["qcurl_connect_blocks"] = blocks
+                diag["qcurl_connect_block_count"] = len(blocks)
+            except Exception as exc:
+                diag["qcurl_connect_blocks_error"] = str(exc)
+
+            baseline["payload"]["connect_headers_diag"] = diag
+            qcurl["payload"]["connect_headers_diag"] = diag
+            write_json(baseline["path"], baseline["payload"])
+            write_json(qcurl["path"], qcurl["payload"])
+
         assert_artifacts_match(baseline["path"], qcurl["path"])
     except Exception:
         if collect_logs:
@@ -185,4 +245,3 @@ def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, 
                 },
             )
         raise
-

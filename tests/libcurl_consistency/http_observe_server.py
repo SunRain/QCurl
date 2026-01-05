@@ -791,7 +791,42 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path.startswith("/resp_headers"):
-            # 返回确定性响应头集合（用于 LC-26：重复头/大小写/顺序）
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            scenario = (q.get("scenario", [""])[0] or "").strip().lower()
+
+            if scenario == "1940":
+                # 覆盖 curl/tests/data/test1940：折叠行 + TAB unfold 语义（curl_easy_header）
+                #
+                # 注意：这里用“手写响应头”以避免 BaseHTTPRequestHandler 自动注入 Date/Server
+                # 以及 send_header() 的格式化副作用，确保可复现。
+                #
+                # 约束：该分支仅用于一致性用例，禁止引入动态时间/随机内容。
+                self.close_connection = True
+                raw = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Date: Thu, 09 Nov 2010 14:49:00 GMT\r\n"
+                    "Server:       test with trailing space     \r\n"
+                    "Content-Type: text/html\r\n"
+                    "Fold: is\r\n"
+                    " folding a     \r\n"
+                    "   line\r\n"
+                    "Content-Length: 0\r\n"
+                    "Test:\t\r\n"
+                    "\t \r\n"
+                    "\tword\r\n"
+                    "Set-Cookie: onecookie=data;\r\n"
+                    "Set-Cookie: secondcookie=2data;\r\n"
+                    "Set-Cookie: cookie3=data3;\r\n"
+                    "Blank:\r\n"
+                    "Blank2:\r\n"
+                    "Location: /19400002\r\n"
+                    "\r\n"
+                ).encode("iso-8859-1", errors="replace")
+                self.wfile.write(raw)
+                self._write_log(200, {"Location": "/19400002", "Set-Cookie": "cookie3=data3;"})
+                return
+
+            # 默认：返回确定性响应头集合（用于 LC-26：重复头/大小写/顺序）
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", "0")
@@ -1042,10 +1077,18 @@ class Handler(BaseHTTPRequestHandler):
             body = b"cookie-ok\n"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
+            q = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            scenario = (q.get("scenario", [""])[0] or "").strip().lower()
+            if scenario == "1920":
+                # 覆盖 curl/tests/data/test1920：cookie set + reset + cookiejar 落盘语义
+                self.send_header("Set-Cookie", "cookiename=cookiecontent;")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-            self._write_log(200, {})
+            if scenario == "1920":
+                self._write_log(200, {"Set-Cookie": "cookiename=cookiecontent;"})
+            else:
+                self._write_log(200, {})
             return
 
         if self.path.startswith("/status/"):
