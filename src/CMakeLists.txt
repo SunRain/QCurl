@@ -98,7 +98,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND QCURL_MODERN_HEADERS
         QCWebSocket_p.h
     )
-    message(STATUS "✅ WebSocket 支持已启用（libcurl ${CURL_VERSION_STRING} + v2.4.0 重连 + v2.5.0 连接池 + v2.18.0 压缩）")
+    message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + v2.4.0 重连 + v2.5.0 连接池 + v2.18.0 压缩）")
 else()
     message(STATUS "⏭️ WebSocket 支持未启用（需要 libcurl 7.86.0+）")
 endif()
@@ -140,7 +140,6 @@ target_include_directories(QCurl
         $<INSTALL_INTERFACE:include/qcurl>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/private  # 用于 SingletonPointer.h
-        ${CURL_INCLUDE_DIRS}
 )
 
 # 编译定义

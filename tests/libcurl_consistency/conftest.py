@@ -22,8 +22,11 @@ import pytest
 # 将上游 http 测试目录放入 sys.path，直接复用 testenv 组件与 fixtures
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 # curl testenv 会在 import 阶段实例化 Env.CONFIG（会执行 ${TOP_PATH}/src/curlinfo）。
-# 因此必须先将 cwd 切到 out-of-source 的 `curl/build/src`，让其推导 TOP_PATH=curl/build。
-_CURL_BUILD_SRC_DIR = _REPO_ROOT / "curl" / "build" / "src"
+# 因此必须先将 cwd 切到 out-of-source 的 `<qcurl_build>/curl/src`（默认 build/curl/src），
+# 让其推导 TOP_PATH=<qcurl_build>/curl。
+_DEFAULT_CURL_BUILD_DIR = _REPO_ROOT / "build" / "curl"
+_CURL_BUILD_DIR_FROM_ENV = Path(os.environ.get("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))).resolve()
+_CURL_BUILD_SRC_DIR = _CURL_BUILD_DIR_FROM_ENV / "src"
 _TESTENV_IMPORT_CWD = _CURL_BUILD_SRC_DIR if _CURL_BUILD_SRC_DIR.exists() else _REPO_ROOT
 os.chdir(str(_TESTENV_IMPORT_CWD))
 CURL_HTTP_DIR = _REPO_ROOT / "curl" / "tests" / "http"
@@ -31,8 +34,8 @@ if str(CURL_HTTP_DIR) not in sys.path:
     sys.path.insert(0, str(CURL_HTTP_DIR))
 
 # 为 curl/tests/http/testenv 注入 out-of-source build 目录与二进制路径（若用户未显式设置）
-os.environ.setdefault("CURL_BUILD_DIR", str(_REPO_ROOT / "curl" / "build"))
-os.environ.setdefault("CURL", str(_REPO_ROOT / "curl" / "build" / "src" / "curl"))
+os.environ.setdefault("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))
+os.environ.setdefault("CURL", str(_DEFAULT_CURL_BUILD_DIR / "src" / "curl"))
 
 TESTENV_IMPORT_ERROR = None
 try:
@@ -57,22 +60,23 @@ pytest_plugins = ["conftest"]
 if TESTENV_IMPORT_ERROR:
     pytest.skip(f"testenv unavailable: {TESTENV_IMPORT_ERROR}", allow_module_level=True)
 
-_CURL_BUILD_DIR = _REPO_ROOT / "curl" / "build"
+_CURL_BUILD_DIR = Path(os.environ.get("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))).resolve()
 _CURLINFO_BIN = _CURL_BUILD_DIR / "src" / "curlinfo"
-_NGHTTPX_H3_BIN = _REPO_ROOT / "build" / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
+_QCURL_BUILD_DIR = _CURL_BUILD_DIR.parent
+_NGHTTPX_H3_BIN = _QCURL_BUILD_DIR / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
 
 
 def _patch_testenv_curlinfo_path() -> None:
     """
     curl testenv 的 EnvConfig 不支持通过环境变量覆盖 curlinfo 路径，只能改模块常量。
-    这里将其指向 out-of-source 的 curl/build/src/curlinfo，避免 import 时 cwd 影响。
+    这里将其指向 out-of-source 的 <qcurl_build>/curl/src/curlinfo（默认 build/curl/src/curlinfo），避免 import 时 cwd 影响。
     """
     if _CURLINFO_BIN.exists():
         testenv_env.CURLINFO = str(_CURLINFO_BIN)
 
 def _override_testenv_nghttpx_bin() -> None:
     """
-    curl testenv 默认会优先读取 curl/build/tests/http/config.ini（其中 nghttpx 通常指向 /usr/bin/nghttpx）。
+    curl testenv 默认会优先读取 <qcurl_build>/curl/tests/http/config.ini（其中 nghttpx 通常指向 /usr/bin/nghttpx）。
     为了覆盖 HTTP/3 场景，这里在不改 curl/tests/... 的前提下，将 Env.CONFIG.nghttpx 指向本仓库构建的 h3-capable nghttpx。
     """
     if not _NGHTTPX_H3_BIN.exists():
@@ -219,11 +223,11 @@ def testrun_uid() -> str:
 @pytest.fixture(scope="session")
 def env_config(pytestconfig, testrun_uid, worker_id) -> EnvConfig:
     """
-    覆盖上游 EnvConfig：将 build_dir 指向 out-of-source 的 `curl/build`，
-    使 LocalClient(name=...) 能正确定位 `curl/build/tests/libtest/libtests`。
+    覆盖上游 EnvConfig：将 build_dir 指向 out-of-source 的 `<qcurl_build>/curl`（默认 build/curl），
+    使 LocalClient(name=...) 能正确定位 `<qcurl_build>/curl/tests/libtest/libtests`。
     """
     cfg = EnvConfig(pytestconfig=pytestconfig, testrun_uid=testrun_uid, worker_id=worker_id)
-    cfg.build_dir = str(_REPO_ROOT / "curl" / "build")
+    cfg.build_dir = str(_CURL_BUILD_DIR)
     if _NGHTTPX_H3_BIN.exists():
         cfg.nghttpx = str(_NGHTTPX_H3_BIN)
         try:

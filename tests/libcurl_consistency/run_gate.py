@@ -47,9 +47,22 @@ def _print_cmd(cmd: List[str]) -> None:
     sys.stderr.write("+ " + " ".join(shlex.quote(x) for x in cmd) + "\n")
 
 
-def _run(cmd: List[str], *, cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+def _run(
+    cmd: List[str],
+    *,
+    cwd: Optional[Path] = None,
+    env: Optional[Dict[str, str]] = None,
+    capture: bool = False,
+) -> subprocess.CompletedProcess:
     _print_cmd(cmd)
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, check=False, text=True)
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=capture,
+    )
 
 
 def _ensure_parent(path: Path) -> None:
@@ -378,7 +391,7 @@ def _detect_repo_root() -> Path:
 def _resolve_config(args: argparse.Namespace) -> GateConfig:
     repo_root = _detect_repo_root()
     qcurl_build_dir = (repo_root / args.qcurl_build).resolve()
-    curl_build_dir = (repo_root / args.curl_build).resolve()
+    curl_build_dir = (repo_root / args.curl_build).resolve() if args.curl_build else (qcurl_build_dir / "curl").resolve()
 
     reports_dir = (repo_root / args.reports_dir).resolve() if args.reports_dir else _default_reports_dir(qcurl_build_dir)
     junit_xml = reports_dir / f"junit_{args.suite}.xml"
@@ -400,40 +413,25 @@ def _build_targets(cfg: GateConfig) -> None:
     if not cfg.qcurl_build_dir.exists():
         raise RuntimeError(f"QCurl build dir 不存在: {cfg.qcurl_build_dir}")
     if not cfg.curl_build_dir.exists():
-        raise RuntimeError(f"curl build dir 不存在: {cfg.curl_build_dir}")
+        raise RuntimeError(
+            "curl build dir 不存在（需要将 curl 构建到 <qcurl_build>/curl，例如默认 build/curl）。\n"
+            f"- 当前 qcurl_build_dir: {cfg.qcurl_build_dir}\n"
+            f"- 当前 curl_build_dir: {cfg.curl_build_dir}\n"
+            "请先配置：cmake -B <qcurl_build> -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON"
+        )
 
     jobs = str(os.cpu_count() or 4)
-    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "tst_LibcurlConsistency", "-j", jobs])
+    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_deps", "-j", jobs])
     if rc.returncode != 0:
-        raise RuntimeError(f"build tst_LibcurlConsistency failed:\n{rc.stdout}\n{rc.stderr}")
+        raise RuntimeError(
+            "build qcurl_lc_deps failed. "
+            "Please check the build log above for details."
+        )
 
-    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_range_resume_baseline", "-j", jobs])
+    # best-effort: 构建 h3-capable nghttpx（依赖不足时允许失败 -> h3 变体将 skip）
+    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_nghttpx_h3", "-j", jobs])
     if rc.returncode != 0:
-        raise RuntimeError(f"build qcurl_lc_range_resume_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-
-    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_postfields_binary_baseline", "-j", jobs])
-    if rc.returncode != 0:
-        raise RuntimeError(f"build qcurl_lc_postfields_binary_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-
-    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_http_baseline", "-j", jobs])
-    if rc.returncode != 0:
-        raise RuntimeError(f"build qcurl_lc_http_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-
-    rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_pause_resume_baseline", "-j", jobs])
-    if rc.returncode != 0:
-        raise RuntimeError(f"build qcurl_lc_pause_resume_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-
-    if cfg.with_ext:
-        rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_ws_baseline", "-j", jobs])
-        if rc.returncode != 0:
-            raise RuntimeError(f"build qcurl_lc_ws_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-        rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_lc_multi_get4_baseline", "-j", jobs])
-        if rc.returncode != 0:
-            raise RuntimeError(f"build qcurl_lc_multi_get4_baseline failed:\n{rc.stdout}\n{rc.stderr}")
-
-    rc = _run(["cmake", "--build", str(cfg.curl_build_dir), "--target", "libtests", "-j", jobs])
-    if rc.returncode != 0:
-        raise RuntimeError(f"build libtests failed:\n{rc.stdout}\n{rc.stderr}")
+        sys.stderr.write("[warn] build qcurl_nghttpx_h3 failed (h3 variants may be skipped)\n")
 
 
 def _pytest_files(cfg: GateConfig) -> List[str]:
@@ -486,6 +484,9 @@ def _gate_env(cfg: GateConfig) -> Dict[str, str]:
     env = os.environ.copy()
     qt_bin = cfg.qcurl_build_dir / "tests" / "tst_LibcurlConsistency"
     env["QCURL_QTTEST"] = str(qt_bin)
+    env["CURL_BUILD_DIR"] = str(cfg.curl_build_dir)
+    env["CURL"] = str(cfg.curl_build_dir / "src" / "curl")
+    env["CURLINFO"] = str(cfg.curl_build_dir / "src" / "curlinfo")
     env.setdefault("QCURL_LC_COLLECT_LOGS", "1")
     env.setdefault("QCURL_LC_QTTEST_TIMEOUT", str(cfg.qt_timeout_s))
     if cfg.with_ext:
@@ -497,9 +498,9 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(description="QCurl ↔ libcurl 一致性 Gate（P0 优先）")
     parser.add_argument("--suite", choices=["p0", "p1", "p2", "all"], default="p0", help="选择要跑的套件（默认 p0）")
     parser.add_argument("--with-ext", action="store_true", help="同时运行 ext suite（需要 QCURL_LC_EXT=1）")
-    parser.add_argument("--build", action="store_true", help="先构建 tst_LibcurlConsistency 与 curl libtests")
+    parser.add_argument("--build", action="store_true", help="先构建一致性门禁所需依赖（qcurl_lc_deps；含 curl testdeps/libtests；nghttpx-h3 best-effort）")
     parser.add_argument("--qcurl-build", default="build", help="QCurl CMake build 目录（默认 build）")
-    parser.add_argument("--curl-build", default="curl/build", help="curl CMake build 目录（默认 curl/build）")
+    parser.add_argument("--curl-build", default="", help="curl build 目录（默认 <qcurl_build>/curl，即 build/curl）")
     parser.add_argument("--reports-dir", default="", help="报告输出目录（默认 <qcurl_build>/libcurl_consistency/reports）")
     parser.add_argument("--qt-timeout-s", default="90", help="Qt Test 运行超时秒数（默认 90）")
     args = parser.parse_args(argv)
@@ -526,7 +527,11 @@ def main(argv: List[str]) -> int:
             "QCURL_LC_COLLECT_LOGS": "1",
             "QCURL_LC_QTTEST_TIMEOUT": str(cfg.qt_timeout_s),
             "QCURL_LC_EXT": "1" if cfg.with_ext else "0",
+            "CURL_BUILD_DIR": str(cfg.curl_build_dir),
+            "CURL": str(cfg.curl_build_dir / "src" / "curl"),
+            "CURLINFO": str(cfg.curl_build_dir / "src" / "curlinfo"),
         },
+        "warnings": [],
     }
 
     try:
@@ -548,6 +553,41 @@ def main(argv: List[str]) -> int:
         if cfg.build:
             _build_targets(cfg)
 
+        # 可追溯：记录 HTTP/3/WebSockets 覆盖是否可能缺失（不阻断，避免假失败）
+        nghttpx_h3 = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
+        if not nghttpx_h3.exists():
+            report["warnings"].append(
+                "nghttpx-h3 not found; env.have_h3_server() will be False and h3 variants will be skipped. "
+                "If you need HTTP/3 coverage, build target qcurl_nghttpx_h3 (may require deps/network or a local archive)."
+            )
+
+        curl_bin = cfg.curl_build_dir / "src" / "curl"
+        if not curl_bin.exists():
+            report["warnings"].append(
+                "bundled curl binary not found; cannot probe HTTP/3/WebSockets support (did you build qcurl_lc_deps?)"
+            )
+        else:
+            rc = _run([str(curl_bin), "-V"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+            out = (rc.stdout or "") + "\n" + (rc.stderr or "")
+            if out.strip():
+                sys.stderr.write(out.rstrip() + "\n")
+            if rc.returncode != 0:
+                report["warnings"].append(f"failed to probe `curl -V` (rc={rc.returncode})")
+            else:
+                features_line = next((line for line in out.splitlines() if line.startswith("Features:")), "")
+                h3_supported = any(tok.upper() == "HTTP3" for tok in features_line.replace("Features:", "").split())
+                if not h3_supported:
+                    report["warnings"].append(
+                        "bundled curl does not report HTTP3 in `curl -V`; env.have_h3_curl() will be False and h3 variants will be skipped."
+                    )
+                protocols_line = next((line for line in out.splitlines() if line.startswith("Protocols:")), "")
+                protocols = protocols_line.replace("Protocols:", "").split()
+                ws_supported = ("ws" in protocols) or ("wss" in protocols)
+                if not ws_supported:
+                    report["warnings"].append(
+                        "bundled curl does not report ws/wss in `curl -V`; WS cases may be skipped or fail."
+                    )
+
         env = _gate_env(cfg)
         pytest_cmd = [
             "pytest",
@@ -558,10 +598,16 @@ def main(argv: List[str]) -> int:
             *_pytest_files(cfg),
         ]
         report["commands"].append(pytest_cmd)
-        rc = _run(pytest_cmd, cwd=cfg.repo_root, env=env)
+        rc = _run(pytest_cmd, cwd=cfg.repo_root, env=env, capture=True)
         report["pytest_returncode"] = rc.returncode
-        report["pytest_stdout"] = _redact_text(rc.stdout)
-        report["pytest_stderr"] = _redact_text(rc.stderr)
+        redacted_stdout = _redact_text(rc.stdout)
+        redacted_stderr = _redact_text(rc.stderr)
+        report["pytest_stdout"] = redacted_stdout
+        report["pytest_stderr"] = redacted_stderr
+        if redacted_stdout:
+            sys.stdout.write(redacted_stdout)
+        if redacted_stderr:
+            sys.stderr.write(redacted_stderr)
     except Exception as exc:
         report["exception"] = _redact_text(str(exc))
         report["pytest_returncode"] = 2

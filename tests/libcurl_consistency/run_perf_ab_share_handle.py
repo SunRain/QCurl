@@ -65,11 +65,13 @@ def _default_reports_dir(qcurl_build_dir: Path) -> Path:
 def _setup_testenv_import(repo_root: Path) -> None:
     """
     复用 tests/libcurl_consistency/conftest.py 的关键策略：
-    - import testenv 前切 cwd，使 curl/tests/http/testenv 能推导 TOP_PATH=curl/build
+    - import testenv 前切 cwd，使 curl/tests/http/testenv 能推导 TOP_PATH=<qcurl_build>/curl（默认 build/curl）
     - 将 curl/tests/http 加入 sys.path
-    - 注入 out-of-source 的 curl/build 路径与 curl 二进制（若用户未显式设置）
+    - 注入 out-of-source 的 <qcurl_build>/curl 路径与 curl 二进制（若用户未显式设置）
     """
-    curl_build_src_dir = repo_root / "curl" / "build" / "src"
+    default_curl_build_dir = repo_root / "build" / "curl"
+    curl_build_dir = Path(os.environ.get("CURL_BUILD_DIR", str(default_curl_build_dir))).resolve()
+    curl_build_src_dir = curl_build_dir / "src"
     import_cwd = curl_build_src_dir if curl_build_src_dir.exists() else repo_root
     os.chdir(str(import_cwd))
 
@@ -77,15 +79,17 @@ def _setup_testenv_import(repo_root: Path) -> None:
     if str(curl_http_dir) not in sys.path:
         sys.path.insert(0, str(curl_http_dir))
 
-    os.environ.setdefault("CURL_BUILD_DIR", str(repo_root / "curl" / "build"))
-    os.environ.setdefault("CURL", str(repo_root / "curl" / "build" / "src" / "curl"))
+    os.environ.setdefault("CURL_BUILD_DIR", str(default_curl_build_dir))
+    os.environ.setdefault("CURL", str(default_curl_build_dir / "src" / "curl"))
 
 
 def _patch_testenv_paths(repo_root: Path) -> None:
     """
     curl testenv 的 EnvConfig 不支持通过环境变量覆盖 curlinfo 路径，这里按一致性 conftest 的做法 patch 常量。
     """
-    curlinfo_bin = repo_root / "curl" / "build" / "src" / "curlinfo"
+    default_curl_build_dir = repo_root / "build" / "curl"
+    curl_build_dir = Path(os.environ.get("CURL_BUILD_DIR", str(default_curl_build_dir))).resolve()
+    curlinfo_bin = curl_build_dir / "src" / "curlinfo"
     if not curlinfo_bin.exists():
         return
     try:

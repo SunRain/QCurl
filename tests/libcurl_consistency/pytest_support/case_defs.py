@@ -259,6 +259,28 @@ P1_PROXY_CASES = {
         "baseline_download_count": 1,
         "qcurl_download_count": 1,
     },
+    # P1：HTTPS over proxy（CONNECT + Basic auth）+ CONNECT 响应头折叠行（curl test1941 语义来源）
+    "proxy_connect_headers_1941": {
+        "suite": "p1_proxy",
+        "case": "lc_proxy_connect_headers_1941",
+        "client": "cli_lc_http",
+        "args_template": [
+            "-V",
+            "h2",
+            "--proxy",
+            "{proxy_url}",
+            "--proxy-user",
+            "{proxy_user}",
+            "--proxy-pass",
+            "{proxy_pass}",
+            "{url}",
+        ],
+        "defaults": {
+            "url": "https://localhost:{https_port}/proxy/ok.txt",
+        },
+        "baseline_download_count": 1,
+        "qcurl_download_count": 1,
+    },
 }
 
 # 可选扩展：默认不跑（由 pytest driver 控制），避免引入与数据无关的波动点（LC-11）

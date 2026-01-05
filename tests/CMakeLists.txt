@@ -81,47 +81,74 @@ if(QCURL_WEBSOCKET_SUPPORT)
 endif()
 
 add_qcurl_test(tst_Integration tst_Integration.cpp)
-# QCurl ↔ libcurl 一致性测试（pytest 驱动用）
-add_qcurl_test(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
-# libcurl_consistency：baseline WS 客户端（非 Qt Test，供 pytest ext suite 使用）
-add_executable(qcurl_lc_ws_baseline libcurl_consistency/ws_baseline_client.cpp)
-target_link_libraries(qcurl_lc_ws_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_ws_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：baseline Range 续传客户端（非 Qt Test，供 P0 download_range_resume 使用）
-add_executable(qcurl_lc_range_resume_baseline libcurl_consistency/range_resume_baseline_client.cpp)
-target_link_libraries(qcurl_lc_range_resume_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_range_resume_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：baseline POSTFIELDS 二进制客户端（非 Qt Test，供 P1 postfields_binary_1531 使用）
-add_executable(qcurl_lc_postfields_binary_baseline libcurl_consistency/postfields_binary_baseline_client.cpp)
-target_link_libraries(qcurl_lc_postfields_binary_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_postfields_binary_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：baseline multi-get4 客户端（非 Qt Test，供 ext_multi_get4_* 使用）
-add_executable(qcurl_lc_multi_get4_baseline libcurl_consistency/multi_get4_baseline_client.cpp)
-target_link_libraries(qcurl_lc_multi_get4_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_multi_get4_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：baseline HTTP 客户端（非 Qt Test，供 P1/P2 自建服务端场景使用）
-add_executable(qcurl_lc_http_baseline libcurl_consistency/http_baseline_client.cpp)
-target_link_libraries(qcurl_lc_http_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_http_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：baseline pause/resume 结构化事件客户端（LC-15b）
-add_executable(qcurl_lc_pause_resume_baseline libcurl_consistency/pause_resume_baseline_client.cpp)
-target_link_libraries(qcurl_lc_pause_resume_baseline PRIVATE CURL::libcurl)
-set_target_properties(qcurl_lc_pause_resume_baseline PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
-)
-# libcurl_consistency：从源码构建 h3-capable nghttpx（安装到 build/ 下，供 curl testenv 使用）
-add_subdirectory(libcurl_consistency/nghttpx_from_source)
-add_dependencies(tst_LibcurlConsistency qcurl_nghttpx_h3)
+
+# QCurl ↔ libcurl 可观测一致性门禁（仅在显式开启时构建）
+if(QCURL_BUILD_LIBCURL_CONSISTENCY)
+    # pytest 驱动：Qt Test 执行器（默认无 env 时会 skip）
+    add_qcurl_test(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
+
+    # baseline clients（非 Qt Test，供 pytest suite 使用）
+    add_executable(qcurl_lc_ws_baseline libcurl_consistency/ws_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_ws_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_ws_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_range_resume_baseline libcurl_consistency/range_resume_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_range_resume_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_range_resume_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_postfields_binary_baseline libcurl_consistency/postfields_binary_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_postfields_binary_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_postfields_binary_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_multi_get4_baseline libcurl_consistency/multi_get4_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_multi_get4_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_multi_get4_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_http_baseline libcurl_consistency/http_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_http_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_http_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_pause_resume_baseline libcurl_consistency/pause_resume_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_pause_resume_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_pause_resume_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    # h3-capable nghttpx（best-effort：不作为强依赖；失败将导致 h3 变体 skip，并由 gate 输出告警）
+    add_subdirectory(libcurl_consistency/nghttpx_from_source)
+
+    # 上游 curl/tests 最小依赖集合（随 tests/libcurl_consistency 用例演进而维护）
+    add_custom_target(qcurl_lc_upstream_testdeps)
+    if(TARGET testdeps)
+        add_dependencies(qcurl_lc_upstream_testdeps testdeps)
+    endif()
+    if(TARGET curl)
+        add_dependencies(qcurl_lc_upstream_testdeps curl)
+    endif()
+
+    # Gate 构建入口（run_gate.py --build 只需构建此 target）
+    add_custom_target(qcurl_lc_deps)
+    add_dependencies(qcurl_lc_deps
+        qcurl_lc_upstream_testdeps
+        tst_LibcurlConsistency
+        qcurl_lc_range_resume_baseline
+        qcurl_lc_postfields_binary_baseline
+        qcurl_lc_http_baseline
+        qcurl_lc_pause_resume_baseline
+        qcurl_lc_multi_get4_baseline
+        qcurl_lc_ws_baseline
+    )
+endif()
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量
