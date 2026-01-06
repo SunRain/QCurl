@@ -10,6 +10,7 @@
 #include <QList>
 #include <QPair>
 #include <QMutex>
+#include <optional>
 #include "QCGlobal.h"
 #include "QCNetworkError.h"
 
@@ -46,6 +47,7 @@ public:
         QByteArray response;
         int statusCode = 200;
         QMap<QByteArray, QByteArray> headers;
+        std::optional<QByteArray> rawHeaderData;  ///< 原始响应头数据（可包含折叠行/多 header blocks）
         NetworkError error = NetworkError::NoError;
         bool isError = false;
     };
@@ -79,6 +81,20 @@ public:
                       const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
 
     /**
+     * @brief 模拟成功响应（注入原始响应头块）
+     *
+     * 说明：
+     * - rawHeaderData 用于覆盖 d->headerData，以便离线门禁验证折叠行/unfold 等语义。
+     * - headers 仍可提供（用于便捷构造），但当 rawHeaderData 存在时优先使用 rawHeaderData。
+     */
+    void mockResponse(HttpMethod method,
+                      const QUrl &url,
+                      const QByteArray &response,
+                      int statusCode,
+                      const QMap<QByteArray, QByteArray> &headers,
+                      const QByteArray &rawHeaderData);
+
+    /**
      * @brief 追加模拟成功响应（序列）
      * @note 每次命中会“弹出队首”；当序列耗尽后复用最后一条。
      */
@@ -87,7 +103,19 @@ public:
                          const QByteArray &response,
                          int statusCode = 200,
                          const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
-    
+
+    /**
+     * @brief 追加模拟成功响应（序列，注入原始响应头块）
+     *
+     * 说明同 mockResponse(method, ..., rawHeaderData)。
+     */
+    void enqueueResponse(HttpMethod method,
+                         const QUrl &url,
+                         const QByteArray &response,
+                         int statusCode,
+                         const QMap<QByteArray, QByteArray> &headers,
+                         const QByteArray &rawHeaderData);
+
     /**
      * @brief 模拟错误响应
      * @param url 请求 URL

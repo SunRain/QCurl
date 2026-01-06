@@ -25,6 +25,7 @@
 #include <QTimer>
 #include <QFileInfo>  // 用于检查系统 CA 证书路径
 #include <cstdio>
+#include <ctime>
 #include <limits>
 
 namespace QCurl {
@@ -233,19 +234,43 @@ std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
 
 std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString, QString> &headers)
 {
-    // 最小实现：仅支持整数秒（RFC 9110：Retry-After = delta-seconds / HTTP-date）
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
             continue;
         }
 
-        bool ok = false;
-        const qint64 seconds = it.value().trimmed().toLongLong(&ok);
-        if (!ok || seconds < 0) {
+        const QString raw = it.value().trimmed();
+        if (raw.isEmpty()) {
             return std::nullopt;
         }
 
-        return std::chrono::milliseconds(seconds * 1000);
+        bool ok = false;
+        const qint64 seconds = raw.toLongLong(&ok);
+        if (ok) {
+            if (seconds < 0) {
+                return std::nullopt;
+            }
+            return std::chrono::milliseconds(seconds * 1000);
+        }
+
+        const QByteArray dateBytes = raw.toUtf8();
+        const time_t parsed = curl_getdate(dateBytes.constData(), nullptr);
+        if (parsed < 0) {
+            return std::nullopt;
+        }
+
+        const time_t now = std::time(nullptr);
+        if (parsed <= now) {
+            return std::chrono::milliseconds(0);
+        }
+
+        const qint64 deltaSeconds =
+            static_cast<qint64>(parsed) - static_cast<qint64>(now);
+        if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
+            return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
+        }
+
+        return std::chrono::milliseconds(deltaSeconds * 1000);
     }
     return std::nullopt;
 }
@@ -2178,6 +2203,24 @@ void QCNetworkReply::execute()
 
         // 仅当存在 mock 规则时才进入回放分支；否则继续走真实网络
         if (mock->hasMock(d->httpMethod, d->request.url())) {
+            // 离线回放同样应具备“可诊断配置冲突”能力（避免仅在真实网络路径提示）
+            bool hasExplicitAcceptEncodingHeader = false;
+            const QList<QByteArray> headerNames = d->request.rawHeaderList();
+            for (const QByteArray &headerName : headerNames) {
+                if (headerName.trimmed().toLower() == QByteArrayLiteral("accept-encoding")) {
+                    hasExplicitAcceptEncodingHeader = true;
+                    break;
+                }
+            }
+
+            if (hasExplicitAcceptEncodingHeader) {
+                if (d->request.autoDecompressionEnabled() || !d->request.acceptedEncodings().isEmpty()) {
+                    appendCapabilityWarning(
+                        d,
+                        QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 autoDecompression/acceptedEncodings（不会自动解压）"));
+                }
+            }
+
             const int responseDelayMs = mock->globalDelay();
 
             // 进入 Running（与真实网络保持一致）；完成/错误信号通过延迟触发，避免在连接信号前同步发射
@@ -2214,11 +2257,15 @@ void QCNetworkReply::execute()
                         d->bytesDownloaded = mockData.response.size();
                     }
 
-                    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
-                        d->headerData.append(it.key());
-                        d->headerData.append(": ");
-                        d->headerData.append(it.value());
-                        d->headerData.append('\n');
+                    if (mockData.rawHeaderData.has_value()) {
+                        d->headerData = mockData.rawHeaderData.value();
+                    } else {
+                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+                            d->headerData.append(it.key());
+                            d->headerData.append(": ");
+                            d->headerData.append(it.value());
+                            d->headerData.append('\n');
+                        }
                     }
 
                     d->httpStatusCode = mockData.statusCode;
@@ -2311,11 +2358,15 @@ void QCNetworkReply::execute()
                     emit safeThis->readyRead();
                 }
 
-                for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
-                    d->headerData.append(it.key());
-                    d->headerData.append(": ");
-                    d->headerData.append(it.value());
-                    d->headerData.append('\n');
+                if (mockData.rawHeaderData.has_value()) {
+                    d->headerData = mockData.rawHeaderData.value();
+                } else {
+                    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+                        d->headerData.append(it.key());
+                        d->headerData.append(": ");
+                        d->headerData.append(it.value());
+                        d->headerData.append('\n');
+                    }
                 }
 
                 d->httpStatusCode = mockData.statusCode;

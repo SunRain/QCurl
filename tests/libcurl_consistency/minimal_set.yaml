@@ -20,7 +20,7 @@ set:
   id: qcurl-libcurl-observable-minimal-v1
   title: QCurl ↔ libcurl 可观测一致性最小回归集合
   upstream_root: curl/tests
-  last_updated: "2025-12-24"
+  last_updated: "2026-01-06"
   ci_properties:
     offline_first: true
     flaky_excluded: true
@@ -318,6 +318,31 @@ cases:
       - curlcode（常见 97）在同一构建下应一致
     minimality_reason:
       - SOCKS 代理与 HTTP 代理选项/错误码完全不同，最易出现映射错误
+
+  # ---------------------------------------------------------------------------
+  # 本仓库自建：HTTP 错误重试序列（501 → 两次请求）
+  # ---------------------------------------------------------------------------
+  - id: lc_retry_501_sequence_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_retry_501_sequence_http_1_1"
+    capability_gates:
+      - http_observe_server
+    dimensions:
+      - http_error:501
+      - retry_sequence
+      - http_version:http_1_1
+    observation_points:
+      - 服务端观测同一 correlation id 下的两次请求（顺序敏感）
+      - requests[]/responses[] 序列语义一致（method/url/headers/status/http_version）
+      - error 归一化一致（kind=http/http_status=501）
+    minimality_reason:
+      - 最小成本覆盖“默认可重试集合包含 501 + 触发重试后产生两次请求”的集成回归点
+    prerequisites:
+      - "curl/tests/http/testenv 可运行（允许端口绑定）"
+      - "qcurl_lc_http_baseline 与 tst_LibcurlConsistency 已构建"
+    stability_notes:
+      - "不比较重试等待时间，仅比较序列与终态语义"
 
   # ---------------------------------------------------------------------------
   # 错误/超时/取消语义（可观测终态）

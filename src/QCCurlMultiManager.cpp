@@ -15,6 +15,8 @@
 #include <QTimeZone>
 #include <QTimer>
 
+#include <ctime>
+#include <limits>
 #include <memory>
 
 namespace QCurl {
@@ -33,13 +35,38 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
             continue;
         }
 
-        bool ok = false;
-        const qint64 seconds = it.value().trimmed().toLongLong(&ok);
-        if (!ok || seconds < 0) {
+        const QString raw = it.value().trimmed();
+        if (raw.isEmpty()) {
             return std::nullopt;
         }
 
-        return std::chrono::milliseconds(seconds * 1000);
+        bool ok = false;
+        const qint64 seconds = raw.toLongLong(&ok);
+        if (ok) {
+            if (seconds < 0) {
+                return std::nullopt;
+            }
+            return std::chrono::milliseconds(seconds * 1000);
+        }
+
+        const QByteArray dateBytes = raw.toUtf8();
+        const time_t parsed = curl_getdate(dateBytes.constData(), nullptr);
+        if (parsed < 0) {
+            return std::nullopt;
+        }
+
+        const time_t now = std::time(nullptr);
+        if (parsed <= now) {
+            return std::chrono::milliseconds(0);
+        }
+
+        const qint64 deltaSeconds =
+            static_cast<qint64>(parsed) - static_cast<qint64>(now);
+        if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
+            return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
+        }
+
+        return std::chrono::milliseconds(deltaSeconds * 1000);
     }
 
     return std::nullopt;

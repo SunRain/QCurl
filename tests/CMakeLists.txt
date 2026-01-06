@@ -42,6 +42,9 @@ add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
 add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp)  # v2.1.0: 重试机制测试
 add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp)  # v2.23.0: 离线重试/限流门禁（MockHandler）
+add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp)  # 离线门禁：响应头 unfold/原始头观测
+add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsOffline.cpp)  # 离线门禁：请求配置冲突可诊断（warnings）
+add_qcurl_test(tst_QCNetworkHttpErrorMappingOffline tst_QCNetworkHttpErrorMappingOffline.cpp)  # 离线门禁：HTTP 错误映射与终态语义
 add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp)  # v2.2.0: HTTP/2 功能测试
 add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp)  # v2.6.0: 请求优先级调度测试
 add_qcurl_test(tst_QCNetworkProxy tst_QCNetworkProxy.cpp)  # v2.2.1: 代理配置测试

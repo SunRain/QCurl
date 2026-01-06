@@ -111,6 +111,7 @@ public:
         NetworkError::HttpTimeout,
         NetworkError::HttpTooManyRequests,
         NetworkError::HttpInternalServerError,
+        NetworkError::HttpNotImplemented,
         NetworkError::HttpBadGateway,
         NetworkError::HttpServiceUnavailable,
         NetworkError::HttpGatewayTimeout

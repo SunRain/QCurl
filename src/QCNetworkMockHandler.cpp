@@ -49,6 +49,23 @@ void QCNetworkMockHandler::mockResponse(HttpMethod method,
     replaceSequence(m_sequences[makeKey(method, url)], data);
 }
 
+void QCNetworkMockHandler::mockResponse(HttpMethod method,
+                                       const QUrl &url,
+                                       const QByteArray &response,
+                                       int statusCode,
+                                       const QMap<QByteArray, QByteArray> &headers,
+                                       const QByteArray &rawHeaderData)
+{
+    QMutexLocker locker(&m_mutex);
+    MockData data;
+    data.response = response;
+    data.statusCode = statusCode;
+    data.headers = headers;
+    data.rawHeaderData = rawHeaderData;
+    data.isError = false;
+    replaceSequence(m_sequences[makeKey(method, url)], data);
+}
+
 void QCNetworkMockHandler::enqueueResponse(HttpMethod method,
                                           const QUrl &url,
                                           const QByteArray &response,
@@ -60,6 +77,23 @@ void QCNetworkMockHandler::enqueueResponse(HttpMethod method,
     data.response = response;
     data.statusCode = statusCode;
     data.headers = headers;
+    data.isError = false;
+    appendSequence(m_sequences[makeKey(method, url)], data);
+}
+
+void QCNetworkMockHandler::enqueueResponse(HttpMethod method,
+                                          const QUrl &url,
+                                          const QByteArray &response,
+                                          int statusCode,
+                                          const QMap<QByteArray, QByteArray> &headers,
+                                          const QByteArray &rawHeaderData)
+{
+    QMutexLocker locker(&m_mutex);
+    MockData data;
+    data.response = response;
+    data.statusCode = statusCode;
+    data.headers = headers;
+    data.rawHeaderData = rawHeaderData;
     data.isError = false;
     appendSequence(m_sequences[makeKey(method, url)], data);
 }

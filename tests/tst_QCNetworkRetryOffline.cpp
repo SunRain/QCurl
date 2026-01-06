@@ -30,8 +30,10 @@ private slots:
     void cleanup();
 
     void testRetry500Then200();
+    void testRetry501Then200();
     void testRetry503Exceeded();
     void testRetry429RetryAfterOverride();
+    void testRetry429RetryAfterHttpDateOverride();
     void testRetry429FallbackToBackoff();
     void testRetryHttpStatusGetOnlyGating();
 
@@ -84,6 +86,32 @@ void TestQCNetworkRetryOffline::testRetry500Then200()
     reply->deleteLater();
 }
 
+void TestQCNetworkRetryOffline::testRetry501Then200()
+{
+    const QUrl url("http://example.com/offline/retry/501_then_200");
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("fail"), 501);
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
+
+    QCNetworkRequest request(url);
+    QCNetworkRetryPolicy policy;
+    policy.maxRetries = 1;
+    policy.initialDelay = std::chrono::milliseconds(10);
+    policy.backoffMultiplier = 2.0;
+    policy.maxDelay = std::chrono::milliseconds(200);
+    request.setRetryPolicy(policy);
+
+    auto *reply = m_manager->sendGet(request);
+    QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+    QVERIFY(finishedSpy.wait(2000));
+    QCOMPARE(retrySpy.count(), 1);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->readAll().value_or(QByteArray()), QByteArray("ok"));
+
+    reply->deleteLater();
+}
+
 void TestQCNetworkRetryOffline::testRetry503Exceeded()
 {
     const QUrl url("http://example.com/offline/retry/503_exceeded");
@@ -114,6 +142,39 @@ void TestQCNetworkRetryOffline::testRetry429RetryAfterOverride()
 
     QMap<QByteArray, QByteArray> headers;
     headers.insert("Retry-After", "999");  // 999s，期望被 maxDelay cap
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("rate limited"), 429, headers);
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
+
+    QCNetworkRequest request(url);
+    QCNetworkRetryPolicy policy;
+    policy.maxRetries = 1;
+    policy.initialDelay = std::chrono::milliseconds(1);
+    policy.backoffMultiplier = 2.0;
+    policy.maxDelay = std::chrono::milliseconds(50);
+    request.setRetryPolicy(policy);
+
+    QElapsedTimer timer;
+    timer.start();
+
+    auto *reply = m_manager->sendGet(request);
+    QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+    QVERIFY(finishedSpy.wait(2000));
+    QVERIFY(timer.elapsed() >= 30);
+    QCOMPARE(retrySpy.count(), 1);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->readAll().value_or(QByteArray()), QByteArray("ok"));
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkRetryOffline::testRetry429RetryAfterHttpDateOverride()
+{
+    const QUrl url("http://example.com/offline/retry/429_retry_after_http_date");
+
+    QMap<QByteArray, QByteArray> headers;
+    headers.insert("Retry-After", "Thu, 31 Dec 2037 23:59:59 GMT");  // HTTP-date，期望被 maxDelay cap
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("rate limited"), 429, headers);
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
@@ -196,4 +257,3 @@ void TestQCNetworkRetryOffline::testRetryHttpStatusGetOnlyGating()
 
 QTEST_MAIN(TestQCNetworkRetryOffline)
 #include "tst_QCNetworkRetryOffline.moc"
-

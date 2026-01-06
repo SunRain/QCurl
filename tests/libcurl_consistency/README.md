@@ -140,6 +140,7 @@
 | curl_data_test1011_redirect_post_301_to_get | `curl/tests/data/test1011` | 重定向：POST 301 跟随 → GET（序列敏感） | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py`（LC-37） |
 | curl_data_test1024_redirect_with_cookies_path_match | `curl/tests/data/test1024` | 重定向链 + Cookie Path 匹配发送 | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py`（LC-38） |
 | curl_data_test703_socks5_connect_fail | `curl/tests/data/test703` | SOCKS5：失败终态/错误归一化 | 已覆盖 | `tests/libcurl_consistency/test_p2_socks5_proxy_fail.py`（LC-39） |
+| lc_retry_501_sequence_http_1_1 | （本仓库自建）`tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_retry_501_sequence_http_1_1` | HTTP 501：两次请求序列（retry），序列语义一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_fixed_http_errors.py`（case：`p2_retry_501_sequence_http_1.1`）+ `tests/tst_LibcurlConsistency.cpp`（caseId：`p2_retry_501_sequence`） |
 | curl_data_test357_expect_100_continue | `curl/tests/data/test357` | Expect: 100-continue（417→重试） | 已覆盖 | `tests/libcurl_consistency/test_p2_expect_100_continue.py`（LC-40） |
 | curl_data_test264_http_proxy_basic_from_proxy_url | `curl/tests/data/test264` | proxy URL 内嵌 user:pass 的解析/解码 | 不纳入（非 QCurl 公共 API 契约） | 已由 `tests/libcurl_consistency/test_p1_proxy.py` 覆盖 proxy 语义（不含该 CLI 解析分支） |
 | curl_data_test1630_https_proxy_basic | `curl/tests/data/test1630` | HTTPS-proxy + `--proxy-insecure` | 不纳入（QCurl 未暴露对应选项） | - |

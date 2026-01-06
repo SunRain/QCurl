@@ -53,6 +53,7 @@
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkRetryPolicy.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "QCMultipartFormData.h"
@@ -2058,6 +2059,32 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QVERIFY(reply->error() != NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        delete reply;
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_retry_501_sequence")) {
+        QVERIFY(observeHttpPort > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/status/501").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRetryPolicy policy;
+        policy.maxRetries = 1;
+        policy.initialDelay = std::chrono::milliseconds(1);
+        policy.maxDelay = std::chrono::milliseconds(1);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setRetryPolicy(policy);
+
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
