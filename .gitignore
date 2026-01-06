@@ -142,3 +142,5 @@ tmp/*
 
 # Third-party / nested repository
 legendary-python/
+helloagents/
+Testing/
