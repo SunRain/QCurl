@@ -47,6 +47,7 @@ add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsO
 add_qcurl_test(tst_QCNetworkHttpErrorMappingOffline tst_QCNetworkHttpErrorMappingOffline.cpp)  # 离线门禁：HTTP 错误映射与终态语义
 add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp)  # v2.2.0: HTTP/2 功能测试
 add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp)  # v2.6.0: 请求优先级调度测试
+add_qcurl_test(tst_QCNetworkActorThreadModel tst_QCNetworkActorThreadModel.cpp)  # v2.26.x: Actor/跨线程提交线程模型回归
 add_qcurl_test(tst_QCNetworkProxy tst_QCNetworkProxy.cpp)  # v2.2.1: 代理配置测试
 add_qcurl_test(tst_QCRequest tst_QCRequest.cpp)  # v2.9.0: 流式 Request API 测试
 add_qcurl_test(tst_QCRequestBuilder tst_QCRequestBuilder.cpp)  # v2.9.0: 传统 Builder API 测试
