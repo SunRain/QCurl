@@ -311,7 +311,11 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
     if (executionMode == ExecutionMode::Async
         && (state == ReplyState::Running || state == ReplyState::Paused)
         && q_ptr) {
-        QCCurlMultiManager::instance()->removeReply(q_ptr);
+        if (QThread::currentThread() == q_ptr->thread()) {
+            QCCurlMultiManager::instance()->removeReply(q_ptr);
+        } else {
+            qWarning() << "QCNetworkReplyPrivate: reply 在非所属线程销毁，无法安全从 multi engine 移除（请使用 deleteLater 或在 reply 线程销毁）";
+        }
     }
 
     if (ownedUploadFile) {
@@ -2116,6 +2120,19 @@ QCNetworkReply::~QCNetworkReply()
 
 void QCNetworkReply::execute()
 {
+    if (QThread::currentThread() != thread()) {
+        Q_D(QCNetworkReply);
+        if (d->executionMode == ExecutionMode::Async) {
+            QMetaObject::invokeMethod(this, [this]() { execute(); }, Qt::QueuedConnection);
+            return;
+        }
+
+        qWarning() << "QCNetworkReply::execute: Sync 模式不支持跨线程调用（需要在 reply 所在线程执行）";
+        abortWithError(NetworkError::InvalidRequest,
+                       QStringLiteral("QCNetworkReply::execute(Sync) 必须在 reply 所在线程调用"));
+        return;
+    }
+
     Q_D(QCNetworkReply);
 
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
@@ -2672,6 +2689,11 @@ void QCNetworkReply::execute()
 
 void QCNetworkReply::cancel()
 {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this]() { cancel(); }, Qt::QueuedConnection);
+        return;
+    }
+
     Q_D(QCNetworkReply);
 
     // 如果已经取消或已完成，不需要再操作

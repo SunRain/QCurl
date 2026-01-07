@@ -343,6 +343,14 @@ private:
      * @param reply 完成的响应对象
      */
     void onRequestFinished(QCNetworkReply *reply);
+
+    /**
+     * @brief Reply 对象销毁处理（兜底：避免队列/统计卡死）
+     *
+     * 当用户在 finished 槽中直接 delete reply（而非 deleteLater）时，
+     * finished 的 queued 回调可能无法执行；此处用于回收占用的并发槽位与主机计数。
+     */
+    void onReplyDestroyed(QObject *obj);
     
     /**
      * @brief 更新带宽统计

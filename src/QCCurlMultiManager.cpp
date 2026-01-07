@@ -268,8 +268,8 @@ QString QCCurlMultiManager::shareConfigSummary(const ShareConfig &config)
 
 QCCurlMultiManager* QCCurlMultiManager::instance()
 {
-    // C++11 静态局部变量，线程安全的单例初始化
-    static QCCurlMultiManager s_instance;
+    // 线程内单例：每个线程拥有独立的 multi engine，避免同一 CURLM* 被跨线程并发访问
+    static thread_local QCCurlMultiManager s_instance;
     return &s_instance;
 }
 
@@ -616,6 +616,19 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
         return;
     }
 
+    // multi engine 只允许在所属线程串行访问；跨线程调用应投递到本线程执行
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        QMetaObject::invokeMethod(this,
+                                  [this, safeReply]() {
+                                      if (safeReply) {
+                                          addReply(safeReply.data());
+                                      }
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
     QMutexLocker locker(&m_mutex);
 
     // 获取 curl easy handle
@@ -859,6 +872,19 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
     }
 
     if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    // multi engine 只允许在所属线程串行访问；跨线程调用应投递到本线程执行
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        QMetaObject::invokeMethod(this,
+                                  [this, safeReply]() {
+                                      if (safeReply) {
+                                          removeReply(safeReply.data());
+                                      }
+                                  },
+                                  Qt::QueuedConnection);
         return;
     }
 

@@ -295,7 +295,7 @@ public:
      */
     QCNetworkReply* uploadFile(const QUrl &url, 
                                const QString &filePath, 
-                               const QString &fieldName = QString("file"));
+                               const QString &fieldName = QStringLiteral("file"));
 
     /**
      * @brief 下载文件到指定路径
