@@ -3,11 +3,11 @@
 
 #include "QCGlobal.h"
 
+#include <QByteArray>
+#include <QList>
+#include <QSharedDataPointer>
 #include <QString>
 #include <QStringList>
-#include <QSharedDataPointer>
-#include <QList>
-#include <QByteArray>
 #include <QUrl>
 
 #include <chrono>
@@ -33,20 +33,20 @@ enum class QCNetworkCachePolicy;
  * - 默认使用 libcurl 的默认行为（不显式设置 CURLOPT_POSTREDIR）。
  */
 enum class QCNetworkPostRedirectPolicy {
-    Default,            ///< 使用 libcurl 默认行为（不设置 CURLOPT_POSTREDIR）
-    KeepPost301,        ///< 301 时保持 POST
-    KeepPost302,        ///< 302 时保持 POST
-    KeepPost303,        ///< 303 时保持 POST
-    KeepPostAll         ///< 301/302/303 均保持 POST（等价于 libcurl 的 ALL）
+    Default,     ///< 使用 libcurl 默认行为（不设置 CURLOPT_POSTREDIR）
+    KeepPost301, ///< 301 时保持 POST
+    KeepPost302, ///< 302 时保持 POST
+    KeepPost303, ///< 303 时保持 POST
+    KeepPostAll  ///< 301/302/303 均保持 POST（等价于 libcurl 的 ALL）
 };
 
 /**
  * @brief HTTP 认证方式（对外抽象，不暴露 libcurl 宏）
  */
 enum class QCNetworkHttpAuthMethod {
-    Basic,      ///< Basic（可预发送；仅建议在 HTTPS 下使用）
-    Any,        ///< 允许任意方法（可能触发挑战/协商，存在额外往返）
-    AnySafe     ///< 允许任意“非 Basic”方法（可能触发挑战/协商，存在额外往返）
+    Basic,  ///< Basic（可预发送；仅建议在 HTTPS 下使用）
+    Any,    ///< 允许任意方法（可能触发挑战/协商，存在额外往返）
+    AnySafe ///< 允许任意“非 Basic”方法（可能触发挑战/协商，存在额外往返）
 };
 
 /**
@@ -55,9 +55,9 @@ enum class QCNetworkHttpAuthMethod {
  * 映射到 libcurl 的 CURLOPT_IPRESOLVE。
  */
 enum class QCNetworkIpResolve {
-    Any,   ///< 不指定（libcurl 自行选择）
-    Ipv4,  ///< 优先 IPv4
-    Ipv6   ///< 优先 IPv6
+    Any,  ///< 不指定（libcurl 自行选择）
+    Ipv4, ///< 优先 IPv4
+    Ipv6  ///< 优先 IPv6
 };
 
 /**
@@ -68,12 +68,13 @@ enum class QCNetworkIpResolve {
  * - Basic 仅建议在 HTTPS 下使用；如在 HTTP 下使用，可选择仅告警不阻断
  * - `allowUnrestrictedAuth` 仅在 followLocation=true 时有意义（跨 host/port 重定向携带凭据）
  */
-struct QCNetworkHttpAuthConfig {
-    QString userName;                                ///< 用户名
-    QString password;                                ///< 密码
+struct QCNetworkHttpAuthConfig
+{
+    QString userName; ///< 用户名
+    QString password; ///< 密码
     QCNetworkHttpAuthMethod method = QCNetworkHttpAuthMethod::Basic;
-    bool allowUnrestrictedAuth = false;              ///< 映射到 CURLOPT_UNRESTRICTED_AUTH
-    bool warnIfBasicOverHttp = true;                 ///< Basic + http:// 时输出 Warning（不阻断）
+    bool allowUnrestrictedAuth     = false; ///< 映射到 CURLOPT_UNRESTRICTED_AUTH
+    bool warnIfBasicOverHttp       = true;  ///< Basic + http:// 时输出 Warning（不阻断）
 };
 
 /**
@@ -118,7 +119,7 @@ public:
      * @param followLocation true 为跟随重定向（默认），false 为不跟随
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setFollowLocation(bool followLocation = true);
+    QCNetworkRequest &setFollowLocation(bool followLocation = true);
     bool followLocation() const;
 
     // ========== 重定向策略（M1） ==========
@@ -127,25 +128,25 @@ public:
      * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
      * @param n 最大重定向次数（n>=0）
      */
-    QCNetworkRequest& setMaxRedirects(int n);
+    QCNetworkRequest &setMaxRedirects(int n);
     [[nodiscard]] std::optional<int> maxRedirects() const;
 
     /**
      * @brief 设置 POST 在 301/302/303 下的重定向策略（仅在 followLocation=true 时生效）
      */
-    QCNetworkRequest& setPostRedirectPolicy(QCNetworkPostRedirectPolicy policy);
+    QCNetworkRequest &setPostRedirectPolicy(QCNetworkPostRedirectPolicy policy);
     [[nodiscard]] QCNetworkPostRedirectPolicy postRedirectPolicy() const;
 
     /**
      * @brief 启用自动 Referer（仅在 followLocation=true 时生效）
      */
-    QCNetworkRequest& setAutoRefererEnabled(bool enabled = true);
+    QCNetworkRequest &setAutoRefererEnabled(bool enabled = true);
     [[nodiscard]] bool autoRefererEnabled() const;
 
     /**
      * @brief 设置 Referer（若用户显式 setRawHeader("Referer", ...) 则以用户 header 为准）
      */
-    QCNetworkRequest& setReferer(const QString &referer);
+    QCNetworkRequest &setReferer(const QString &referer);
     [[nodiscard]] QString referer() const;
 
     /**
@@ -156,7 +157,7 @@ public:
      * 注意：该开关映射到 CURLOPT_UNRESTRICTED_AUTH（对 HTTP 有效），会影响 libcurl 对
      * Authentication/Cookie 等敏感头在跨站重定向时的默认保护。
      */
-    QCNetworkRequest& setAllowUnrestrictedSensitiveHeadersOnRedirect(bool enabled = true);
+    QCNetworkRequest &setAllowUnrestrictedSensitiveHeadersOnRedirect(bool enabled = true);
     [[nodiscard]] bool allowUnrestrictedSensitiveHeadersOnRedirect() const;
 
     /**
@@ -166,7 +167,7 @@ public:
      * @note 相同 Header 会被覆盖
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setRawHeader(const QByteArray &headerName, const QByteArray &headerValue);
+    QCNetworkRequest &setRawHeader(const QByteArray &headerName, const QByteArray &headerValue);
     QList<QByteArray> rawHeaderList() const;
     QByteArray rawHeader(const QByteArray &headerName) const;
 
@@ -176,7 +177,7 @@ public:
      * @param end 结束字节位置
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setRange(int start, int end);
+    QCNetworkRequest &setRange(int start, int end);
     int rangeStart() const;
     int rangeEnd() const;
 
@@ -187,7 +188,7 @@ public:
      * @param config SSL 配置对象
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setSslConfig(const QCNetworkSslConfig &config);
+    QCNetworkRequest &setSslConfig(const QCNetworkSslConfig &config);
     [[nodiscard]] QCNetworkSslConfig sslConfig() const;
 
     /**
@@ -195,7 +196,7 @@ public:
      * @param config 代理配置对象
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setProxyConfig(const QCNetworkProxyConfig &config);
+    QCNetworkRequest &setProxyConfig(const QCNetworkProxyConfig &config);
     [[nodiscard]] std::optional<QCNetworkProxyConfig> proxyConfig() const;
 
     /**
@@ -203,7 +204,7 @@ public:
      * @param config 超时配置对象
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setTimeoutConfig(const QCNetworkTimeoutConfig &config);
+    QCNetworkRequest &setTimeoutConfig(const QCNetworkTimeoutConfig &config);
     [[nodiscard]] QCNetworkTimeoutConfig timeoutConfig() const;
 
     /**
@@ -211,7 +212,7 @@ public:
      * @param version HTTP 版本枚举（Http1_0/Http1_1/Http2/Http3）
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setHttpVersion(QCNetworkHttpVersion version);
+    QCNetworkRequest &setHttpVersion(QCNetworkHttpVersion version);
     [[nodiscard]] QCNetworkHttpVersion httpVersion() const;
     [[nodiscard]] bool isHttpVersionExplicit() const noexcept;
 
@@ -220,7 +221,7 @@ public:
      * @param policy 重试策略对象
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setRetryPolicy(const QCNetworkRetryPolicy &policy);
+    QCNetworkRequest &setRetryPolicy(const QCNetworkRetryPolicy &policy);
 
     /**
      * @brief 获取当前的重试策略
@@ -233,9 +234,10 @@ public:
 
     /**
      * @brief 设置请求级 HTTP 认证（用户名/密码 + 认证策略）
-     * @note 若请求中存在显式 `Authorization` header（大小写不敏感），则以该 header 为准，自动认证会被忽略
+     * @note 若请求中存在显式 `Authorization` header（大小写不敏感），则以该 header
+     * 为准，自动认证会被忽略
      */
-    QCNetworkRequest& setHttpAuth(const QCNetworkHttpAuthConfig &config);
+    QCNetworkRequest &setHttpAuth(const QCNetworkHttpAuthConfig &config);
 
     /**
      * @brief 获取请求级 HTTP 认证配置
@@ -245,7 +247,7 @@ public:
     /**
      * @brief 清除请求级 HTTP 认证配置
      */
-    QCNetworkRequest& clearHttpAuth();
+    QCNetworkRequest &clearHttpAuth();
 
     // ========== 便捷方法 ==========
 
@@ -254,14 +256,14 @@ public:
      * @param timeout 超时时长
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setTimeout(std::chrono::milliseconds timeout);
+    QCNetworkRequest &setTimeout(std::chrono::milliseconds timeout);
 
     /**
      * @brief 设置连接超时时间（便捷方法）
      * @param timeout 连接超时时长
      * @return 返回 *this 以支持方法链
      */
-    QCNetworkRequest& setConnectTimeout(std::chrono::milliseconds timeout);
+    QCNetworkRequest &setConnectTimeout(std::chrono::milliseconds timeout);
 
     // ========== 自动解压（M1） ==========
 
@@ -270,9 +272,10 @@ public:
      *
      * 说明：
      * - 启用后 QCurl 会通过 CURLOPT_ACCEPT_ENCODING 让 libcurl 托管 Accept-Encoding 与解压。
-     * - 若用户手写 Accept-Encoding header，则默认不自动解压（避免重复/冲突），并给出可诊断 warning。
+     * - 若用户手写 Accept-Encoding header，则默认不自动解压（避免重复/冲突），并给出可诊断
+     * warning。
      */
-    QCNetworkRequest& setAutoDecompressionEnabled(bool enabled = true);
+    QCNetworkRequest &setAutoDecompressionEnabled(bool enabled = true);
     [[nodiscard]] bool autoDecompressionEnabled() const;
 
     /**
@@ -281,7 +284,7 @@ public:
      * - encodings 为空：视为禁用（不设置 CURLOPT_ACCEPT_ENCODING）
      * - encodings 非空：隐式启用自动解压，并使用该列表（例如 {"gzip","br"}）
      */
-    QCNetworkRequest& setAcceptedEncodings(const QStringList &encodings);
+    QCNetworkRequest &setAcceptedEncodings(const QStringList &encodings);
     [[nodiscard]] QStringList acceptedEncodings() const;
 
     // ========== 传输限速（M1） ==========
@@ -293,7 +296,7 @@ public:
      * - bytesPerSec == 0：禁用限速（不设置对应 libcurl 选项）
      * - bytesPerSec < 0：视为无效输入，禁用并给出 warning
      */
-    QCNetworkRequest& setMaxDownloadBytesPerSec(qint64 bytesPerSec);
+    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
     [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
 
     /**
@@ -301,7 +304,7 @@ public:
      *
      * 语义同 setMaxDownloadBytesPerSec。
      */
-    QCNetworkRequest& setMaxUploadBytesPerSec(qint64 bytesPerSec);
+    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
     [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
 
     // ========== 流式上传（M2） ==========
@@ -317,15 +320,17 @@ public:
      * @param device 源设备（可为 nullptr，表示清除上传源）
      * @param sizeBytes 可选的请求体长度（bytes）。若为空则由实现决定是否使用 chunked/unknown size
      */
-    QCNetworkRequest& setUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
-    [[nodiscard]] QIODevice* uploadDevice() const;
+    QCNetworkRequest &setUploadDevice(QIODevice *device,
+                                      std::optional<qint64> sizeBytes = std::nullopt);
+    [[nodiscard]] QIODevice *uploadDevice() const;
 
     /**
      * @brief 设置流式上传的请求体来源（本地文件路径）
      *
      * 说明：由 QCurl 在请求执行时打开文件并读取。
      */
-    QCNetworkRequest& setUploadFile(const QString &filePath, std::optional<qint64> sizeBytes = std::nullopt);
+    QCNetworkRequest &setUploadFile(const QString &filePath,
+                                    std::optional<qint64> sizeBytes = std::nullopt);
     [[nodiscard]] std::optional<QString> uploadFilePath() const;
 
     /**
@@ -345,13 +350,13 @@ public:
      * - 仅支持 HTTP/1.1（Http1_1）；其它版本将以可诊断错误失败
      * - PUT 仍要求 sizeBytes（不启用 chunked）
      */
-    QCNetworkRequest& setAllowChunkedUploadForPost(bool enabled = true);
+    QCNetworkRequest &setAllowChunkedUploadForPost(bool enabled = true);
     [[nodiscard]] bool allowChunkedUploadForPost() const;
 
     /**
      * @brief 清除流式上传源配置
      */
-    QCNetworkRequest& clearUploadBody();
+    QCNetworkRequest &clearUploadBody();
 
     // ========== Expect: 100-continue（P1） ==========
 
@@ -364,7 +369,7 @@ public:
      *
      * @param timeout 等待超时（timeout>=0 有效；timeout<0 视为无效输入并禁用）
      */
-    QCNetworkRequest& setExpect100ContinueTimeout(std::chrono::milliseconds timeout);
+    QCNetworkRequest &setExpect100ContinueTimeout(std::chrono::milliseconds timeout);
     [[nodiscard]] std::optional<std::chrono::milliseconds> expect100ContinueTimeout() const;
 
     // ========== 网络路径与 DNS 控制（M4） ==========
@@ -372,7 +377,7 @@ public:
     /**
      * @brief 设置 IP 族选择策略（默认不设置，避免 silent behavior change）
      */
-    QCNetworkRequest& setIpResolve(QCNetworkIpResolve resolve);
+    QCNetworkRequest &setIpResolve(QCNetworkIpResolve resolve);
     [[nodiscard]] std::optional<QCNetworkIpResolve> ipResolve() const;
 
     /**
@@ -380,7 +385,7 @@ public:
      *
      * 映射到 CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS。
      */
-    QCNetworkRequest& setHappyEyeballsTimeout(std::chrono::milliseconds timeout);
+    QCNetworkRequest &setHappyEyeballsTimeout(std::chrono::milliseconds timeout);
     [[nodiscard]] std::optional<std::chrono::milliseconds> happyEyeballsTimeout() const;
 
     /**
@@ -388,7 +393,7 @@ public:
      *
      * 映射到 CURLOPT_INTERFACE。
      */
-    QCNetworkRequest& setNetworkInterface(const QString &interfaceName);
+    QCNetworkRequest &setNetworkInterface(const QString &interfaceName);
     [[nodiscard]] std::optional<QString> networkInterface() const;
 
     /**
@@ -399,7 +404,7 @@ public:
      * @param port 本地端口（1-65535）
      * @param range 范围（>= 0）
      */
-    QCNetworkRequest& setLocalPortRange(int port, int range = 0);
+    QCNetworkRequest &setLocalPortRange(int port, int range = 0);
     [[nodiscard]] std::optional<int> localPort() const;
     [[nodiscard]] std::optional<int> localPortRange() const;
 
@@ -408,7 +413,7 @@ public:
      *
      * 映射到 CURLOPT_RESOLVE。
      */
-    QCNetworkRequest& setResolveOverride(const QStringList &entries);
+    QCNetworkRequest &setResolveOverride(const QStringList &entries);
     [[nodiscard]] std::optional<QStringList> resolveOverride() const;
 
     /**
@@ -416,7 +421,7 @@ public:
      *
      * 映射到 CURLOPT_CONNECT_TO。
      */
-    QCNetworkRequest& setConnectTo(const QStringList &entries);
+    QCNetworkRequest &setConnectTo(const QStringList &entries);
     [[nodiscard]] std::optional<QStringList> connectTo() const;
 
     /**
@@ -424,7 +429,7 @@ public:
      *
      * 映射到 CURLOPT_DNS_SERVERS。
      */
-    QCNetworkRequest& setDnsServers(const QStringList &servers);
+    QCNetworkRequest &setDnsServers(const QStringList &servers);
     [[nodiscard]] std::optional<QStringList> dnsServers() const;
 
     /**
@@ -432,7 +437,7 @@ public:
      *
      * 映射到 CURLOPT_DOH_URL。
      */
-    QCNetworkRequest& setDohUrl(const QUrl &url);
+    QCNetworkRequest &setDohUrl(const QUrl &url);
     [[nodiscard]] std::optional<QUrl> dohUrl() const;
 
     // ========== 协议白名单（M5，安全） ==========
@@ -442,7 +447,7 @@ public:
      *
      * 映射到 CURLOPT_PROTOCOLS_STR。
      */
-    QCNetworkRequest& setAllowedProtocols(const QStringList &protocols);
+    QCNetworkRequest &setAllowedProtocols(const QStringList &protocols);
     [[nodiscard]] std::optional<QStringList> allowedProtocols() const;
 
     /**
@@ -450,7 +455,7 @@ public:
      *
      * 映射到 CURLOPT_REDIR_PROTOCOLS_STR。
      */
-    QCNetworkRequest& setAllowedRedirectProtocols(const QStringList &protocols);
+    QCNetworkRequest &setAllowedRedirectProtocols(const QStringList &protocols);
     [[nodiscard]] std::optional<QStringList> allowedRedirectProtocols() const;
 
     /**
@@ -458,7 +463,7 @@ public:
      *
      * 默认 Fail（更安全）。
      */
-    QCNetworkRequest& setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy);
+    QCNetworkRequest &setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy);
     [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy() const;
 
     // ========== 请求优先级 ==========
@@ -476,7 +481,7 @@ public:
      * request.setPriority(QCNetworkRequestPriority::High);
      * @endcode
      */
-    QCNetworkRequest& setPriority(QCNetworkRequestPriority priority);
+    QCNetworkRequest &setPriority(QCNetworkRequestPriority priority);
 
     /**
      * @brief 获取请求优先级
@@ -500,7 +505,7 @@ public:
      * request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
      * @endcode
      */
-    QCNetworkRequest& setCachePolicy(QCNetworkCachePolicy policy);
+    QCNetworkRequest &setCachePolicy(QCNetworkCachePolicy policy);
 
     /**
      * @brief 获取缓存策略
@@ -513,7 +518,7 @@ private:
     QSharedDataPointer<QCurl::QCNetworkRequestPrivate> d;
 };
 
-QDebug operator <<(QDebug dbg, const QCNetworkRequest &req);
+QDebug operator<<(QDebug dbg, const QCNetworkRequest &req);
 
-} //namespace QCurl
+} // namespace QCurl
 #endif // QCNETWORKREQUEST_H

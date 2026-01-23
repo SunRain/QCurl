@@ -1,4 +1,5 @@
 #include "QCCurlHandleManager.h"
+
 #include <utility> // for std::exchange
 
 QT_BEGIN_NAMESPACE
@@ -31,10 +32,9 @@ QCCurlHandleManager::~QCCurlHandleManager()
 QCCurlHandleManager::QCCurlHandleManager(QCCurlHandleManager &&other) noexcept
     : m_curlHandle(std::exchange(other.m_curlHandle, nullptr))
     , m_headerList(std::exchange(other.m_headerList, nullptr))
-{
-}
+{}
 
-QCCurlHandleManager& QCCurlHandleManager::operator=(QCCurlHandleManager &&other) noexcept
+QCCurlHandleManager &QCCurlHandleManager::operator=(QCCurlHandleManager &&other) noexcept
 {
     if (this != &other) {
         // 清理当前资源
@@ -60,7 +60,7 @@ void QCCurlHandleManager::appendHeader(const QString &header)
 
     // curl_slist_append 会复制字符串，所以临时的 QByteArray 生命周期没问题
     QByteArray headerBytes = header.toUtf8();
-    m_headerList = curl_slist_append(m_headerList, headerBytes.constData());
+    m_headerList           = curl_slist_append(m_headerList, headerBytes.constData());
 }
 
 } // namespace QCurl

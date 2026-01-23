@@ -2,9 +2,11 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkRequestBuilder.h"
+
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QIODevice>
 #include <QPointer>
 #include <QUrlQuery>
@@ -23,7 +25,7 @@ public:
     QPointer<QIODevice> uploadDevice;
     std::optional<QString> uploadFilePath;
     std::optional<qint64> uploadSizeBytes;
-    int timeout = -1;
+    int timeout         = -1;
     bool followLocation = false;
     QUrl proxy;
     bool sslVerify = true;
@@ -34,27 +36,30 @@ QCNetworkRequestBuilder::QCNetworkRequestBuilder(QCNetworkAccessManager *manager
     : d_ptr(std::make_unique<Private>())
 {
     d_ptr->manager = manager;
-    d_ptr->url = url;
+    d_ptr->url     = url;
 }
 
 QCNetworkRequestBuilder::QCNetworkRequestBuilder(QCNetworkRequestBuilder &&) noexcept = default;
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::operator=(QCNetworkRequestBuilder &&) noexcept = default;
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::operator=(QCNetworkRequestBuilder &&) noexcept
+    = default;
 
 QCNetworkRequestBuilder::~QCNetworkRequestBuilder() = default;
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::withHeader(const QString &name, const QString &value)
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withHeader(const QString &name,
+                                                             const QString &value)
 {
     d_ptr->headers.append(qMakePair(name, value));
     return *this;
 }
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::withBasicAuth(const QString &userName, const QString &password)
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withBasicAuth(const QString &userName,
+                                                                const QString &password)
 {
     QCNetworkHttpAuthConfig cfg;
-    cfg.userName = userName;
-    cfg.password = password;
-    cfg.method = QCNetworkHttpAuthMethod::Basic;
+    cfg.userName          = userName;
+    cfg.password          = password;
+    cfg.method            = QCNetworkHttpAuthMethod::Basic;
     d_ptr->httpAuthConfig = cfg;
     return *this;
 }
@@ -105,7 +110,8 @@ QCNetworkRequestBuilder &QCNetworkRequestBuilder::withCACert(const QString &cert
     return *this;
 }
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::withQueryParam(const QString &name, const QString &value)
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withQueryParam(const QString &name,
+                                                                 const QString &value)
 {
     d_ptr->queryParams.append(qMakePair(name, value));
     return *this;
@@ -113,14 +119,15 @@ QCNetworkRequestBuilder &QCNetworkRequestBuilder::withQueryParam(const QString &
 
 QCNetworkRequestBuilder &QCNetworkRequestBuilder::withBody(const QByteArray &body)
 {
-    d_ptr->body = body;
+    d_ptr->body         = body;
     d_ptr->uploadDevice = nullptr;
     d_ptr->uploadFilePath.reset();
     d_ptr->uploadSizeBytes.reset();
     return *this;
 }
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadDevice(QIODevice *device,
+                                                                   std::optional<qint64> sizeBytes)
 {
     d_ptr->uploadDevice = device;
     d_ptr->uploadFilePath.reset();
@@ -129,10 +136,11 @@ QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadDevice(QIODevice *de
     return *this;
 }
 
-QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
+QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadFile(const QString &filePath,
+                                                                 std::optional<qint64> sizeBytes)
 {
-    d_ptr->uploadDevice = nullptr;
-    d_ptr->uploadFilePath = filePath;
+    d_ptr->uploadDevice    = nullptr;
+    d_ptr->uploadFilePath  = filePath;
     d_ptr->uploadSizeBytes = sizeBytes;
     d_ptr->body.clear();
     return *this;

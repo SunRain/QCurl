@@ -75,15 +75,23 @@ enum class QCNetworkRequestPriority {
  * // str == "High"
  * @endcode
  */
-inline QString toString(QCNetworkRequestPriority priority) {
+inline QString toString(QCNetworkRequestPriority priority)
+{
     switch (priority) {
-    case QCNetworkRequestPriority::VeryLow:  return QStringLiteral("VeryLow");
-    case QCNetworkRequestPriority::Low:      return QStringLiteral("Low");
-    case QCNetworkRequestPriority::Normal:   return QStringLiteral("Normal");
-    case QCNetworkRequestPriority::High:     return QStringLiteral("High");
-    case QCNetworkRequestPriority::VeryHigh: return QStringLiteral("VeryHigh");
-    case QCNetworkRequestPriority::Critical: return QStringLiteral("Critical");
-    default:                                  return QStringLiteral("Unknown");
+        case QCNetworkRequestPriority::VeryLow:
+            return QStringLiteral("VeryLow");
+        case QCNetworkRequestPriority::Low:
+            return QStringLiteral("Low");
+        case QCNetworkRequestPriority::Normal:
+            return QStringLiteral("Normal");
+        case QCNetworkRequestPriority::High:
+            return QStringLiteral("High");
+        case QCNetworkRequestPriority::VeryHigh:
+            return QStringLiteral("VeryHigh");
+        case QCNetworkRequestPriority::Critical:
+            return QStringLiteral("Critical");
+        default:
+            return QStringLiteral("Unknown");
     }
 }
 
@@ -102,7 +110,8 @@ inline QString toString(QCNetworkRequestPriority priority) {
  * }
  * @endcode
  */
-inline QCNetworkRequestPriority fromString(const QString &str, bool *ok = nullptr) {
+inline QCNetworkRequestPriority fromString(const QString &str, bool *ok = nullptr)
+{
     QString lowerStr = str.toLower();
 
     if (lowerStr == QStringLiteral("verylow")) {
@@ -140,7 +149,7 @@ inline QCNetworkRequestPriority fromString(const QString &str, bool *ok = nullpt
     if (ok) {
         *ok = false;
     }
-    return QCNetworkRequestPriority::Normal;  // 默认返回 Normal
+    return QCNetworkRequestPriority::Normal; // 默认返回 Normal
 }
 
 } // namespace QCurl

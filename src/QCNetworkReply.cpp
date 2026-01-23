@@ -1,29 +1,31 @@
 #include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
+
+#include "CurlFeatureProbe.h"
 #include "QCCurlMultiManager.h"
-#include "QCNetworkError.h"
-#include "QCNetworkRetryPolicy.h"
-#include "QCNetworkProxyConfig.h"
-#include "QCUtility.h"
-#include "QCNetworkTimeoutConfig.h"
-#include "QCNetworkSslConfig.h"
-#include "QCNetworkHttpVersion.h"
+#include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
-#include "QCNetworkAccessManager.h"
 #include "QCNetworkConnectionPoolManager.h"
+#include "QCNetworkError.h"
+#include "QCNetworkHttpVersion.h"
+#include "QCNetworkLogRedaction.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMockHandler.h"
-#include "QCNetworkLogRedaction.h"
-#include "CurlFeatureProbe.h"
+#include "QCNetworkProxyConfig.h"
+#include "QCNetworkReply_p.h"
+#include "QCNetworkRetryPolicy.h"
+#include "QCNetworkSslConfig.h"
+#include "QCNetworkTimeoutConfig.h"
+#include "QCUtility.h"
 
 #include <QDebug>
 #include <QFile>
+#include <QFileInfo> // 用于检查系统 CA 证书路径
 #include <QIODevice>
-#include <QUrl>
 #include <QThread>
 #include <QTimer>
-#include <QFileInfo>  // 用于检查系统 CA 证书路径
+#include <QUrl>
+
 #include <cstdio>
 #include <ctime>
 #include <limits>
@@ -81,11 +83,8 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
     qWarning() << "QCNetworkReply capability warning:" << message;
 }
 
-bool setOptionalLongOption(QCNetworkReplyPrivate *d,
-                           CURL *handle,
-                           CURLoption option,
-                           const char *optionName,
-                           long value)
+bool setOptionalLongOption(
+    QCNetworkReplyPrivate *d, CURL *handle, CURLoption option, const char *optionName, long value)
 {
     if (!handle) {
         return false;
@@ -176,7 +175,7 @@ curl_slist *buildSlistFromStrings(const QStringList &entries)
     curl_slist *list = nullptr;
     for (const QString &e : entries) {
         const QByteArray bytes = e.toUtf8();
-        list = curl_slist_append(list, bytes.constData());
+        list                   = curl_slist_append(list, bytes.constData());
     }
     return list;
 }
@@ -214,19 +213,19 @@ bool setOptionalSlistOption(QCNetworkReplyPrivate *d,
 std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
 {
     switch (version) {
-    case QCNetworkTlsVersion::Default:
-        return std::nullopt;
-    case QCNetworkTlsVersion::Tls1_0:
-        return static_cast<long>(CURL_SSLVERSION_TLSv1);
-    case QCNetworkTlsVersion::Tls1_1:
-        return static_cast<long>(CURL_SSLVERSION_TLSv1_1);
-    case QCNetworkTlsVersion::Tls1_2:
-        return static_cast<long>(CURL_SSLVERSION_TLSv1_2);
-    case QCNetworkTlsVersion::Tls1_3:
+        case QCNetworkTlsVersion::Default:
+            return std::nullopt;
+        case QCNetworkTlsVersion::Tls1_0:
+            return static_cast<long>(CURL_SSLVERSION_TLSv1);
+        case QCNetworkTlsVersion::Tls1_1:
+            return static_cast<long>(CURL_SSLVERSION_TLSv1_1);
+        case QCNetworkTlsVersion::Tls1_2:
+            return static_cast<long>(CURL_SSLVERSION_TLSv1_2);
+        case QCNetworkTlsVersion::Tls1_3:
 #ifdef CURL_SSLVERSION_TLSv1_3
-        return static_cast<long>(CURL_SSLVERSION_TLSv1_3);
+            return static_cast<long>(CURL_SSLVERSION_TLSv1_3);
 #else
-        return std::nullopt;
+            return std::nullopt;
 #endif
     }
     return std::nullopt;
@@ -244,7 +243,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
             return std::nullopt;
         }
 
-        bool ok = false;
+        bool ok              = false;
         const qint64 seconds = raw.toLongLong(&ok);
         if (ok) {
             if (seconds < 0) {
@@ -254,7 +253,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
         }
 
         const QByteArray dateBytes = raw.toUtf8();
-        const time_t parsed = curl_getdate(dateBytes.constData(), nullptr);
+        const time_t parsed        = curl_getdate(dateBytes.constData(), nullptr);
         if (parsed < 0) {
             return std::nullopt;
         }
@@ -264,8 +263,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
             return std::chrono::milliseconds(0);
         }
 
-        const qint64 deltaSeconds =
-            static_cast<qint64>(parsed) - static_cast<qint64>(now);
+        const qint64 deltaSeconds = static_cast<qint64>(parsed) - static_cast<qint64>(now);
         if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
             return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
         }
@@ -286,22 +284,21 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              HttpMethod method,
                                              ExecutionMode mode,
                                              const QByteArray &body)
-    : q_ptr(q),
-      request(req),
-      httpMethod(method),
-      executionMode(mode),
-      requestBody(body),
-      multiProcessor(nullptr),
-      state(ReplyState::Idle),
-      errorCode(NetworkError::NoError),
-      bytesDownloaded(0),
-      bytesUploaded(0),
-      downloadTotal(-1),
-      uploadTotal(-1),
-      attemptCount(0),
-      cookieMode(0)
-{
-}
+    : q_ptr(q)
+    , request(req)
+    , httpMethod(method)
+    , executionMode(mode)
+    , requestBody(body)
+    , multiProcessor(nullptr)
+    , state(ReplyState::Idle)
+    , errorCode(NetworkError::NoError)
+    , bytesDownloaded(0)
+    , bytesUploaded(0)
+    , downloadTotal(-1)
+    , uploadTotal(-1)
+    , attemptCount(0)
+    , cookieMode(0)
+{}
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
@@ -309,12 +306,12 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
     // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理
     // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理
     if (executionMode == ExecutionMode::Async
-        && (state == ReplyState::Running || state == ReplyState::Paused)
-        && q_ptr) {
+        && (state == ReplyState::Running || state == ReplyState::Paused) && q_ptr) {
         if (QThread::currentThread() == q_ptr->thread()) {
             QCCurlMultiManager::instance()->removeReply(q_ptr);
         } else {
-            qWarning() << "QCNetworkReplyPrivate: reply 在非所属线程销毁，无法安全从 multi engine 移除（请使用 deleteLater 或在 reply 线程销毁）";
+            qWarning() << "QCNetworkReplyPrivate: reply 在非所属线程销毁，无法安全从 multi engine "
+                          "移除（请使用 deleteLater 或在 reply 线程销毁）";
         }
     }
 
@@ -358,8 +355,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     curl_easy_setopt(handle, CURLOPT_PRIVATE, this);
 
     // 跟随重定向
-    curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION,
-                    request.followLocation() ? 1L : 0L);
+    curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, request.followLocation() ? 1L : 0L);
 
     // ========================================================================
     // 1.1 重定向策略（M1）
@@ -375,20 +371,36 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
 
         switch (request.postRedirectPolicy()) {
-        case QCNetworkPostRedirectPolicy::Default:
-            break;
-        case QCNetworkPostRedirectPolicy::KeepPost301:
-            setOptionalLongOption(this, handle, CURLOPT_POSTREDIR, "CURLOPT_POSTREDIR", CURL_REDIR_POST_301);
-            break;
-        case QCNetworkPostRedirectPolicy::KeepPost302:
-            setOptionalLongOption(this, handle, CURLOPT_POSTREDIR, "CURLOPT_POSTREDIR", CURL_REDIR_POST_302);
-            break;
-        case QCNetworkPostRedirectPolicy::KeepPost303:
-            setOptionalLongOption(this, handle, CURLOPT_POSTREDIR, "CURLOPT_POSTREDIR", CURL_REDIR_POST_303);
-            break;
-        case QCNetworkPostRedirectPolicy::KeepPostAll:
-            setOptionalLongOption(this, handle, CURLOPT_POSTREDIR, "CURLOPT_POSTREDIR", CURL_REDIR_POST_ALL);
-            break;
+            case QCNetworkPostRedirectPolicy::Default:
+                break;
+            case QCNetworkPostRedirectPolicy::KeepPost301:
+                setOptionalLongOption(this,
+                                      handle,
+                                      CURLOPT_POSTREDIR,
+                                      "CURLOPT_POSTREDIR",
+                                      CURL_REDIR_POST_301);
+                break;
+            case QCNetworkPostRedirectPolicy::KeepPost302:
+                setOptionalLongOption(this,
+                                      handle,
+                                      CURLOPT_POSTREDIR,
+                                      "CURLOPT_POSTREDIR",
+                                      CURL_REDIR_POST_302);
+                break;
+            case QCNetworkPostRedirectPolicy::KeepPost303:
+                setOptionalLongOption(this,
+                                      handle,
+                                      CURLOPT_POSTREDIR,
+                                      "CURLOPT_POSTREDIR",
+                                      CURL_REDIR_POST_303);
+                break;
+            case QCNetworkPostRedirectPolicy::KeepPostAll:
+                setOptionalLongOption(this,
+                                      handle,
+                                      CURLOPT_POSTREDIR,
+                                      "CURLOPT_POSTREDIR",
+                                      CURL_REDIR_POST_ALL);
+                break;
         }
 
         if (request.autoRefererEnabled()) {
@@ -403,15 +415,15 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (const auto ipResolveOpt = request.ipResolve(); ipResolveOpt.has_value()) {
         long ipResolveValue = CURL_IPRESOLVE_WHATEVER;
         switch (ipResolveOpt.value()) {
-        case QCNetworkIpResolve::Any:
-            ipResolveValue = CURL_IPRESOLVE_WHATEVER;
-            break;
-        case QCNetworkIpResolve::Ipv4:
-            ipResolveValue = CURL_IPRESOLVE_V4;
-            break;
-        case QCNetworkIpResolve::Ipv6:
-            ipResolveValue = CURL_IPRESOLVE_V6;
-            break;
+            case QCNetworkIpResolve::Any:
+                ipResolveValue = CURL_IPRESOLVE_WHATEVER;
+                break;
+            case QCNetworkIpResolve::Ipv4:
+                ipResolveValue = CURL_IPRESOLVE_V4;
+                break;
+            case QCNetworkIpResolve::Ipv6:
+                ipResolveValue = CURL_IPRESOLVE_V6;
+                break;
         }
 
         setOptionalLongOption(this, handle, CURLOPT_IPRESOLVE, "CURLOPT_IPRESOLVE", ipResolveValue);
@@ -451,7 +463,11 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         if (!resolveSlist) {
             appendCapabilityWarning(this, QStringLiteral("CURLOPT_RESOLVE: 构造参数列表失败"));
         } else {
-            if (!setOptionalSlistOption(this, handle, CURLOPT_RESOLVE, "CURLOPT_RESOLVE", resolveSlist)) {
+            if (!setOptionalSlistOption(this,
+                                        handle,
+                                        CURLOPT_RESOLVE,
+                                        "CURLOPT_RESOLVE",
+                                        resolveSlist)) {
                 curl_slist_free_all(resolveSlist);
                 resolveSlist = nullptr;
             }
@@ -463,7 +479,11 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         if (!connectToSlist) {
             appendCapabilityWarning(this, QStringLiteral("CURLOPT_CONNECT_TO: 构造参数列表失败"));
         } else {
-            if (!setOptionalSlistOption(this, handle, CURLOPT_CONNECT_TO, "CURLOPT_CONNECT_TO", connectToSlist)) {
+            if (!setOptionalSlistOption(this,
+                                        handle,
+                                        CURLOPT_CONNECT_TO,
+                                        "CURLOPT_CONNECT_TO",
+                                        connectToSlist)) {
                 curl_slist_free_all(connectToSlist);
                 connectToSlist = nullptr;
             }
@@ -472,7 +492,11 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (const auto dnsServersOpt = request.dnsServers(); dnsServersOpt.has_value()) {
         dnsServersBytes = dnsServersOpt.value().join(QStringLiteral(",")).toUtf8();
-        setOptionalStringOption(this, handle, CURLOPT_DNS_SERVERS, "CURLOPT_DNS_SERVERS", dnsServersBytes);
+        setOptionalStringOption(this,
+                                handle,
+                                CURLOPT_DNS_SERVERS,
+                                "CURLOPT_DNS_SERVERS",
+                                dnsServersBytes);
     }
 
     if (const auto dohUrlOpt = request.dohUrl(); dohUrlOpt.has_value()) {
@@ -484,18 +508,20 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 1.4 协议白名单（M5，安全）
     // ========================================================================
 
-    const QCUnsupportedSecurityOptionPolicy securityPolicy = request.unsupportedSecurityOptionPolicy();
+    const QCUnsupportedSecurityOptionPolicy securityPolicy = request
+                                                                 .unsupportedSecurityOptionPolicy();
 
     if (const auto allowedOpt = request.allowedProtocols(); allowedOpt.has_value()) {
 #ifdef CURLOPT_PROTOCOLS_STR
         allowedProtocolsBytes = allowedOpt.value().join(QStringLiteral(",")).toUtf8();
-        const CURLcode rc =
-            curlEasySetoptWithTestHook(handle, CURLOPT_PROTOCOLS_STR, "CURLOPT_PROTOCOLS_STR", allowedProtocolsBytes.constData());
+        const CURLcode rc     = curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PROTOCOLS_STR,
+                                                       "CURLOPT_PROTOCOLS_STR",
+                                                       allowedProtocolsBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg =
-                    QStringLiteral("libcurl 不支持 CURLOPT_PROTOCOLS_STR（%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_PROTOCOLS_STR（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                 if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                     setError(NetworkError::InvalidRequest, msg);
                     return false;
@@ -521,16 +547,15 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (const auto redirOpt = request.allowedRedirectProtocols(); redirOpt.has_value()) {
 #ifdef CURLOPT_REDIR_PROTOCOLS_STR
         allowedRedirectProtocolsBytes = redirOpt.value().join(QStringLiteral(",")).toUtf8();
-        const CURLcode rc =
-            curlEasySetoptWithTestHook(handle,
-                                       CURLOPT_REDIR_PROTOCOLS_STR,
-                                       "CURLOPT_REDIR_PROTOCOLS_STR",
-                                       allowedRedirectProtocolsBytes.constData());
+        const CURLcode rc             = curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_REDIR_PROTOCOLS_STR,
+                                                       "CURLOPT_REDIR_PROTOCOLS_STR",
+                                                       allowedRedirectProtocolsBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg =
-                    QStringLiteral("libcurl 不支持 CURLOPT_REDIR_PROTOCOLS_STR（%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                const QString msg = QStringLiteral(
+                                        "libcurl 不支持 CURLOPT_REDIR_PROTOCOLS_STR（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                 if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                     setError(NetworkError::InvalidRequest, msg);
                     return false;
@@ -561,12 +586,12 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ========================================================================
 
     // 清理上一次配置残留（正常情况下构造期只会调用一次，但保持幂等）
-    uploadDevice = nullptr;
-    uploadDeviceSeekable = false;
-    uploadDeviceBasePos = 0;
-    uploadBodySizeBytes = -1;
-    uploadBytesRead = 0;
-    hasUploadErrorOverride = false;
+    uploadDevice            = nullptr;
+    uploadDeviceSeekable    = false;
+    uploadDeviceBasePos     = 0;
+    uploadBodySizeBytes     = -1;
+    uploadBytesRead         = 0;
+    hasUploadErrorOverride  = false;
     uploadErrorOverrideCode = NetworkError::NoError;
     uploadErrorOverrideMessage.clear();
 
@@ -607,8 +632,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         if (executionMode == ExecutionMode::Async) {
             auto *multiManager = QCCurlMultiManager::instance();
             if (q_ptr && q_ptr->thread() != multiManager->thread()) {
-                setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadDevice: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
+                setError(
+                    NetworkError::InvalidRequest,
+                    QStringLiteral(
+                        "uploadDevice: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
                 return false;
             }
         }
@@ -619,8 +646,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             return false;
         }
 
-        uploadDevice = reqUploadDevice;
-        uploadDeviceBasePos = reqUploadDevice->pos();
+        uploadDevice         = reqUploadDevice;
+        uploadDeviceBasePos  = reqUploadDevice->pos();
         uploadDeviceSeekable = !reqUploadDevice->isSequential();
 
         if (const auto sizeOpt = request.uploadBodySizeBytes(); sizeOpt.has_value()) {
@@ -633,16 +660,21 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
 
         if (uploadBodySizeBytes < 0) {
-            const bool allowChunkedPost = (httpMethod == HttpMethod::Post) && request.allowChunkedUploadForPost();
+            const bool allowChunkedPost = (httpMethod == HttpMethod::Post)
+                                          && request.allowChunkedUploadForPost();
             if (!allowChunkedPost) {
-                setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadDevice: 未指定 sizeBytes，且无法从设备推导长度（如需 unknown size 的 POST，请显式启用 request.setAllowChunkedUploadForPost(true)）"));
+                setError(
+                    NetworkError::InvalidRequest,
+                    QStringLiteral(
+                        "uploadDevice: 未指定 sizeBytes，且无法从设备推导长度（如需 unknown size "
+                        "的 POST，请显式启用 request.setAllowChunkedUploadForPost(true)）"));
                 return false;
             }
 
             if (request.httpVersion() != QCNetworkHttpVersion::Http1_1) {
                 setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadDevice: unknown size 的 POST chunked 仅支持 HTTP/1.1（请改为 Http1_1 或指定 sizeBytes）"));
+                         QStringLiteral("uploadDevice: unknown size 的 POST chunked 仅支持 "
+                                        "HTTP/1.1（请改为 Http1_1 或指定 sizeBytes）"));
                 return false;
             }
         }
@@ -656,7 +688,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (uploadDevice && request.retryPolicy().isEnabled() && !uploadDeviceSeekable) {
         setError(NetworkError::InvalidRequest,
-                 QStringLiteral("uploadDevice: non-seekable body 不支持自动重试（需要重发 body；请关闭 retryPolicy 或使用 seekable 来源）"));
+                 QStringLiteral("uploadDevice: non-seekable body 不支持自动重试（需要重发 "
+                                "body；请关闭 retryPolicy 或使用 seekable 来源）"));
         return false;
     }
 
@@ -679,15 +712,19 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             // POST 请求：发送数据
             curl_easy_setopt(handle, CURLOPT_POST, 1L);
             if (uploadDevice) {
-                curl_easy_setopt(handle, CURLOPT_READFUNCTION, QCNetworkReplyPrivate::curlReadCallback);
+                curl_easy_setopt(handle,
+                                 CURLOPT_READFUNCTION,
+                                 QCNetworkReplyPrivate::curlReadCallback);
                 curl_easy_setopt(handle, CURLOPT_READDATA, this);
                 curl_easy_setopt(handle, CURLOPT_POSTFIELDS, nullptr);
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE,
+                curl_easy_setopt(handle,
+                                 CURLOPT_POSTFIELDSIZE_LARGE,
                                  static_cast<curl_off_t>(uploadBodySizeBytes));
             } else {
                 curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE,
-                               static_cast<long>(requestBody.size()));
+                curl_easy_setopt(handle,
+                                 CURLOPT_POSTFIELDSIZE,
+                                 static_cast<long>(requestBody.size()));
             }
             break;
 
@@ -696,16 +733,20 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             if (uploadDevice) {
                 curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
                 curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PUT");
-                curl_easy_setopt(handle, CURLOPT_READFUNCTION, QCNetworkReplyPrivate::curlReadCallback);
+                curl_easy_setopt(handle,
+                                 CURLOPT_READFUNCTION,
+                                 QCNetworkReplyPrivate::curlReadCallback);
                 curl_easy_setopt(handle, CURLOPT_READDATA, this);
-                curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE,
+                curl_easy_setopt(handle,
+                                 CURLOPT_INFILESIZE_LARGE,
                                  static_cast<curl_off_t>(uploadBodySizeBytes));
             } else {
                 curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PUT");
                 if (!requestBody.isEmpty()) {
                     curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE,
-                                   static_cast<long>(requestBody.size()));
+                    curl_easy_setopt(handle,
+                                     CURLOPT_POSTFIELDSIZE,
+                                     static_cast<long>(requestBody.size()));
                 }
             }
             break;
@@ -716,8 +757,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             // 支持 DELETE 携带请求体（RFC 允许，部分服务端依赖该语义）
             if (!requestBody.isEmpty()) {
                 curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE,
-                               static_cast<long>(requestBody.size()));
+                curl_easy_setopt(handle,
+                                 CURLOPT_POSTFIELDSIZE,
+                                 static_cast<long>(requestBody.size()));
             }
             break;
 
@@ -727,8 +769,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PATCH");
             if (!requestBody.isEmpty()) {
                 curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE,
-                               static_cast<long>(requestBody.size()));
+                curl_easy_setopt(handle,
+                                 CURLOPT_POSTFIELDSIZE,
+                                 static_cast<long>(requestBody.size()));
             }
             break;
 
@@ -743,21 +786,26 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (const auto timeoutOpt = request.expect100ContinueTimeout(); timeoutOpt.has_value()) {
         const bool isPutOrPost = httpMethod == HttpMethod::Put || httpMethod == HttpMethod::Post;
-        const bool hasBody = uploadDevice || !requestBody.isEmpty();
+        const bool hasBody     = uploadDevice || !requestBody.isEmpty();
         if (!isPutOrPost || !hasBody) {
-            appendCapabilityWarning(this,
-                                    QStringLiteral("请求配置：Expect: 100-continue timeout 仅对 PUT/POST 且有 body 生效，已忽略"));
+            appendCapabilityWarning(
+                this,
+                QStringLiteral(
+                    "请求配置：Expect: 100-continue timeout 仅对 PUT/POST 且有 body 生效，已忽略"));
         } else {
             const long long timeoutMs = static_cast<long long>(timeoutOpt.value().count());
             if (timeoutMs < 0) {
-                appendCapabilityWarning(this,
-                                        QStringLiteral("请求配置：Expect: 100-continue timeout 必须 >= 0（已忽略）"));
+                appendCapabilityWarning(
+                    this,
+                    QStringLiteral("请求配置：Expect: 100-continue timeout 必须 >= 0（已忽略）"));
             } else {
                 long timeoutMsLong = 0;
                 if (timeoutMs > static_cast<long long>(std::numeric_limits<long>::max())) {
                     timeoutMsLong = std::numeric_limits<long>::max();
-                    appendCapabilityWarning(this,
-                                            QStringLiteral("请求配置：Expect: 100-continue timeout 过大，已截断为 LONG_MAX ms"));
+                    appendCapabilityWarning(
+                        this,
+                        QStringLiteral(
+                            "请求配置：Expect: 100-continue timeout 过大，已截断为 LONG_MAX ms"));
                 } else {
                     timeoutMsLong = static_cast<long>(timeoutMs);
                 }
@@ -774,16 +822,16 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 3. 自定义 HTTP Headers
     // ========================================================================
 
-    bool hasExplicitAuthorizationHeader = false;
-    bool hasExplicitRefererHeader = false;
+    bool hasExplicitAuthorizationHeader  = false;
+    bool hasExplicitRefererHeader        = false;
     bool hasExplicitAcceptEncodingHeader = false;
-    bool hasSensitiveHeader = false;
-    QList<QByteArray> headerNames = request.rawHeaderList();
+    bool hasSensitiveHeader              = false;
+    QList<QByteArray> headerNames        = request.rawHeaderList();
     for (const QByteArray &headerName : headerNames) {
         const QByteArray normalizedName = headerName.trimmed().toLower();
         if (normalizedName == QByteArray("authorization")) {
             hasExplicitAuthorizationHeader = true;
-            hasSensitiveHeader = true;
+            hasSensitiveHeader             = true;
         } else if (normalizedName == QByteArray("proxy-authorization")) {
             hasSensitiveHeader = true;
         } else if (normalizedName == QByteArray("cookie")) {
@@ -817,15 +865,18 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             setOptionalStringOption(this, handle, CURLOPT_REFERER, "CURLOPT_REFERER", refererBytes);
         }
     } else if (!request.referer().isEmpty()) {
-        appendCapabilityWarning(this,
-                                QStringLiteral("请求配置冲突：已显式设置 Referer header，将忽略 request.setReferer(...)"));
+        appendCapabilityWarning(
+            this,
+            QStringLiteral(
+                "请求配置冲突：已显式设置 Referer header，将忽略 request.setReferer(...)"));
     }
 
     if (hasExplicitAcceptEncodingHeader) {
         if (request.autoDecompressionEnabled() || !request.acceptedEncodings().isEmpty()) {
-            appendCapabilityWarning(
-                this,
-                QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 autoDecompression/acceptedEncodings（不会自动解压）"));
+            appendCapabilityWarning(this,
+                                    QStringLiteral(
+                                        "请求配置冲突：已显式设置 Accept-Encoding header，将忽略 "
+                                        "autoDecompression/acceptedEncodings（不会自动解压）"));
         }
     } else if (request.autoDecompressionEnabled()) {
         const QStringList encodings = request.acceptedEncodings();
@@ -841,13 +892,20 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
             if (!normalized.isEmpty()) {
                 acceptEncodingBytes = normalized.join(QLatin1Char(',')).toUtf8();
-                setOptionalStringOption(
-                    this, handle, CURLOPT_ACCEPT_ENCODING, "CURLOPT_ACCEPT_ENCODING", acceptEncodingBytes);
+                setOptionalStringOption(this,
+                                        handle,
+                                        CURLOPT_ACCEPT_ENCODING,
+                                        "CURLOPT_ACCEPT_ENCODING",
+                                        acceptEncodingBytes);
             }
         } else {
             // 空字符串：让 libcurl 使用其内置支持的编码列表，并启用自动解压
             acceptEncodingBytes = QByteArray("");
-            setOptionalStringOption(this, handle, CURLOPT_ACCEPT_ENCODING, "CURLOPT_ACCEPT_ENCODING", acceptEncodingBytes);
+            setOptionalStringOption(this,
+                                    handle,
+                                    CURLOPT_ACCEPT_ENCODING,
+                                    "CURLOPT_ACCEPT_ENCODING",
+                                    acceptEncodingBytes);
         }
     }
 
@@ -855,7 +913,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 3.2 传输限速（M1）
     // ========================================================================
 
-    if (const auto maxDownloadBytesPerSec = request.maxDownloadBytesPerSec(); maxDownloadBytesPerSec.has_value()) {
+    if (const auto maxDownloadBytesPerSec = request.maxDownloadBytesPerSec();
+        maxDownloadBytesPerSec.has_value()) {
         const qint64 bytesPerSec = maxDownloadBytesPerSec.value();
         if (bytesPerSec > 0) {
             setOptionalOffTOption(this,
@@ -866,7 +925,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    if (const auto maxUploadBytesPerSec = request.maxUploadBytesPerSec(); maxUploadBytesPerSec.has_value()) {
+    if (const auto maxUploadBytesPerSec = request.maxUploadBytesPerSec();
+        maxUploadBytesPerSec.has_value()) {
         const qint64 bytesPerSec = maxUploadBytesPerSec.value();
         if (bytesPerSec > 0) {
             setOptionalOffTOption(this,
@@ -888,10 +948,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         const auto &cfg = httpAuthOpt.value();
 
         // Basic over HTTP 风险提示（不阻断）
-        if (cfg.method == QCNetworkHttpAuthMethod::Basic
-            && cfg.warnIfBasicOverHttp
+        if (cfg.method == QCNetworkHttpAuthMethod::Basic && cfg.warnIfBasicOverHttp
             && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
-            qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider HTTPS. url="
+            qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider "
+                          "HTTPS. url="
                        << request.url().toString();
         }
 
@@ -902,7 +962,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 wantsUnrestrictedSensitiveHeaders = true;
             }
 
-            httpAuthUserBytes = cfg.userName.toUtf8();
+            httpAuthUserBytes     = cfg.userName.toUtf8();
             httpAuthPasswordBytes = cfg.password.toUtf8();
 
             curl_easy_setopt(handle, CURLOPT_USERNAME, httpAuthUserBytes.constData());
@@ -910,15 +970,15 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
             unsigned long httpAuth = CURLAUTH_BASIC;
             switch (cfg.method) {
-            case QCNetworkHttpAuthMethod::Basic:
-                httpAuth = CURLAUTH_BASIC;
-                break;
-            case QCNetworkHttpAuthMethod::Any:
-                httpAuth = CURLAUTH_ANY;
-                break;
-            case QCNetworkHttpAuthMethod::AnySafe:
-                httpAuth = CURLAUTH_ANYSAFE;
-                break;
+                case QCNetworkHttpAuthMethod::Basic:
+                    httpAuth = CURLAUTH_BASIC;
+                    break;
+                case QCNetworkHttpAuthMethod::Any:
+                    httpAuth = CURLAUTH_ANY;
+                    break;
+                case QCNetworkHttpAuthMethod::AnySafe:
+                    httpAuth = CURLAUTH_ANYSAFE;
+                    break;
             }
             curl_easy_setopt(handle, CURLOPT_HTTPAUTH, httpAuth);
         }
@@ -930,8 +990,13 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (request.followLocation() && wantsUnrestrictedSensitiveHeaders && hasSensitiveHeader) {
         appendCapabilityWarning(this,
-                                QStringLiteral("安全风险：已启用跨站发送敏感头（CURLOPT_UNRESTRICTED_AUTH=1），请确认重定向目标可信"));
-        setOptionalLongOption(this, handle, CURLOPT_UNRESTRICTED_AUTH, "CURLOPT_UNRESTRICTED_AUTH", 1L);
+                                QStringLiteral("安全风险：已启用跨站发送敏感头（CURLOPT_"
+                                               "UNRESTRICTED_AUTH=1），请确认重定向目标可信"));
+        setOptionalLongOption(this,
+                              handle,
+                              CURLOPT_UNRESTRICTED_AUTH,
+                              "CURLOPT_UNRESTRICTED_AUTH",
+                              1L);
     }
 
     // ========================================================================
@@ -939,9 +1004,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ========================================================================
 
     if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
-        QString rangeStr = QStringLiteral("%1-%2")
-                          .arg(request.rangeStart())
-                          .arg(request.rangeEnd());
+        QString rangeStr = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd());
         QByteArray rangeBytes = rangeStr.toUtf8();
         curl_easy_setopt(handle, CURLOPT_RANGE, rangeBytes.constData());
     }
@@ -960,60 +1023,61 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 curl_easy_setopt(handle, CURLOPT_PROXY, proxyHostBytes.constData());
 
                 if (proxyConfig.port > 0) {
-                    curl_easy_setopt(handle, CURLOPT_PROXYPORT,
-                                      static_cast<long>(proxyConfig.port));
+                    curl_easy_setopt(handle, CURLOPT_PROXYPORT, static_cast<long>(proxyConfig.port));
                 }
 
                 long proxyType = CURLPROXY_HTTP;
                 switch (proxyConfig.type) {
-                case QCNetworkProxyConfig::ProxyType::Http:
-                    proxyType = CURLPROXY_HTTP;
-                    break;
-                case QCNetworkProxyConfig::ProxyType::Https:
+                    case QCNetworkProxyConfig::ProxyType::Http:
+                        proxyType = CURLPROXY_HTTP;
+                        break;
+                    case QCNetworkProxyConfig::ProxyType::Https:
 #ifdef CURLPROXY_HTTPS
-                    proxyType = CURLPROXY_HTTPS;
+                        proxyType = CURLPROXY_HTTPS;
 #else
-                    if (proxyConfig.tlsConfig.has_value()
-                        && proxyConfig.tlsConfig->unsupportedSecurityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                        setError(NetworkError::InvalidRequest,
-                                 QStringLiteral("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）"));
-                        return false;
-                    }
-                    proxyType = CURLPROXY_HTTP;
-                    appendCapabilityWarning(this,
-                                            QStringLiteral("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义），已按 HTTP 代理处理"));
+                        if (proxyConfig.tlsConfig.has_value()
+                            && proxyConfig.tlsConfig->unsupportedSecurityPolicy
+                                   == QCUnsupportedSecurityOptionPolicy::Fail) {
+                            setError(NetworkError::InvalidRequest,
+                                     QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
+                                                    "代理（CURLPROXY_HTTPS 未定义）"));
+                            return false;
+                        }
+                        proxyType = CURLPROXY_HTTP;
+                        appendCapabilityWarning(
+                            this,
+                            QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
+                                           "代理（CURLPROXY_HTTPS 未定义），已按 HTTP 代理处理"));
 #endif
-                    break;
-                case QCNetworkProxyConfig::ProxyType::Socks4:
-                    proxyType = CURLPROXY_SOCKS4;
-                    break;
-                case QCNetworkProxyConfig::ProxyType::Socks4A:
-                    proxyType = CURLPROXY_SOCKS4A;
-                    break;
-                case QCNetworkProxyConfig::ProxyType::Socks5:
-                    proxyType = CURLPROXY_SOCKS5;
-                    break;
-                case QCNetworkProxyConfig::ProxyType::Socks5Hostname:
-                    proxyType = CURLPROXY_SOCKS5_HOSTNAME;
-                    break;
-                default:
-                    proxyType = CURLPROXY_HTTP;
-                    break;
+                        break;
+                    case QCNetworkProxyConfig::ProxyType::Socks4:
+                        proxyType = CURLPROXY_SOCKS4;
+                        break;
+                    case QCNetworkProxyConfig::ProxyType::Socks4A:
+                        proxyType = CURLPROXY_SOCKS4A;
+                        break;
+                    case QCNetworkProxyConfig::ProxyType::Socks5:
+                        proxyType = CURLPROXY_SOCKS5;
+                        break;
+                    case QCNetworkProxyConfig::ProxyType::Socks5Hostname:
+                        proxyType = CURLPROXY_SOCKS5_HOSTNAME;
+                        break;
+                    default:
+                        proxyType = CURLPROXY_HTTP;
+                        break;
                 }
                 curl_easy_setopt(handle, CURLOPT_PROXYTYPE, proxyType);
 
                 if (!proxyConfig.userName.isEmpty()) {
                     proxyUserBytes = proxyConfig.userName.toUtf8();
-                    curl_easy_setopt(handle, CURLOPT_PROXYUSERNAME,
-                                     proxyUserBytes.constData());
+                    curl_easy_setopt(handle, CURLOPT_PROXYUSERNAME, proxyUserBytes.constData());
                 } else {
                     proxyUserBytes.clear();
                 }
 
                 if (!proxyConfig.password.isEmpty()) {
                     proxyPasswordBytes = proxyConfig.password.toUtf8();
-                    curl_easy_setopt(handle, CURLOPT_PROXYPASSWORD,
-                                     proxyPasswordBytes.constData());
+                    curl_easy_setopt(handle, CURLOPT_PROXYPASSWORD, proxyPasswordBytes.constData());
                 } else {
                     proxyPasswordBytes.clear();
                 }
@@ -1028,23 +1092,24 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
 #ifdef CURLPROXY_HTTPS
                 if (proxyConfig.type == QCNetworkProxyConfig::ProxyType::Https
-                    && proxyConfig.tlsConfig.has_value()
-                    && proxyType == CURLPROXY_HTTPS) {
+                    && proxyConfig.tlsConfig.has_value() && proxyType == CURLPROXY_HTTPS) {
                     const auto &tlsCfg = proxyConfig.tlsConfig.value();
-                    const QCUnsupportedSecurityOptionPolicy tlsPolicy = tlsCfg.unsupportedSecurityPolicy;
+                    const QCUnsupportedSecurityOptionPolicy tlsPolicy
+                        = tlsCfg.unsupportedSecurityPolicy;
 
 #ifdef CURLOPT_PROXY_SSL_VERIFYPEER
                     {
-                        const CURLcode rc =
-                            curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PROXY_SSL_VERIFYPEER,
-                                                       "CURLOPT_PROXY_SSL_VERIFYPEER",
-                                                       tlsCfg.verifyPeer ? 1L : 0L);
+                        const CURLcode rc
+                            = curlEasySetoptWithTestHook(handle,
+                                                         CURLOPT_PROXY_SSL_VERIFYPEER,
+                                                         "CURLOPT_PROXY_SSL_VERIFYPEER",
+                                                         tlsCfg.verifyPeer ? 1L : 0L);
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
-                                const QString msg =
-                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                const QString msg
+                                    = QStringLiteral(
+                                          "libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER（%1）")
+                                          .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                                 if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                     setError(NetworkError::InvalidRequest, msg);
                                     return false;
@@ -1052,7 +1117,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                 appendCapabilityWarning(this, msg);
                             } else {
                                 setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_VERIFYPEER 失败（%1）")
+                                         QStringLiteral(
+                                             "设置 CURLOPT_PROXY_SSL_VERIFYPEER 失败（%1）")
                                              .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                                 return false;
                             }
@@ -1061,24 +1127,28 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #else
                     if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                         setError(NetworkError::InvalidRequest,
-                                 QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER"));
+                                 QStringLiteral(
+                                     "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER"));
                         return false;
                     }
-                    appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER"));
+                    appendCapabilityWarning(
+                        this,
+                        QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER"));
 #endif
 
 #ifdef CURLOPT_PROXY_SSL_VERIFYHOST
                     {
-                        const CURLcode rc =
-                            curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PROXY_SSL_VERIFYHOST,
-                                                       "CURLOPT_PROXY_SSL_VERIFYHOST",
-                                                       tlsCfg.verifyHost ? 2L : 0L);
+                        const CURLcode rc
+                            = curlEasySetoptWithTestHook(handle,
+                                                         CURLOPT_PROXY_SSL_VERIFYHOST,
+                                                         "CURLOPT_PROXY_SSL_VERIFYHOST",
+                                                         tlsCfg.verifyHost ? 2L : 0L);
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
-                                const QString msg =
-                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                const QString msg
+                                    = QStringLiteral(
+                                          "libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST（%1）")
+                                          .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                                 if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                     setError(NetworkError::InvalidRequest, msg);
                                     return false;
@@ -1086,7 +1156,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                 appendCapabilityWarning(this, msg);
                             } else {
                                 setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_VERIFYHOST 失败（%1）")
+                                         QStringLiteral(
+                                             "设置 CURLOPT_PROXY_SSL_VERIFYHOST 失败（%1）")
                                              .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                                 return false;
                             }
@@ -1095,22 +1166,29 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #else
                     if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                         setError(NetworkError::InvalidRequest,
-                                 QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST"));
+                                 QStringLiteral(
+                                     "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST"));
                         return false;
                     }
-                    appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST"));
+                    appendCapabilityWarning(
+                        this,
+                        QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST"));
 #endif
 
                     if (!tlsCfg.caCertPath.isEmpty()) {
 #ifdef CURLOPT_PROXY_CAINFO
                         proxySslCaCertPathBytes = tlsCfg.caCertPath.toUtf8();
-                        const CURLcode rc =
-                            curlEasySetoptWithTestHook(handle, CURLOPT_PROXY_CAINFO, "CURLOPT_PROXY_CAINFO", proxySslCaCertPathBytes.constData());
+                        const CURLcode rc
+                            = curlEasySetoptWithTestHook(handle,
+                                                         CURLOPT_PROXY_CAINFO,
+                                                         "CURLOPT_PROXY_CAINFO",
+                                                         proxySslCaCertPathBytes.constData());
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
-                                const QString msg =
-                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_CAINFO（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                const QString msg = QStringLiteral(
+                                                        "libcurl 不支持 CURLOPT_PROXY_CAINFO（%1）")
+                                                        .arg(QString::fromUtf8(
+                                                            curl_easy_strerror(rc)));
                                 if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                     setError(NetworkError::InvalidRequest, msg);
                                     return false;
@@ -1126,15 +1204,18 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                             setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_CAINFO"));
+                                     QStringLiteral(
+                                         "当前构建的 libcurl 不支持 CURLOPT_PROXY_CAINFO"));
                             return false;
                         }
-                        appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_CAINFO"));
+                        appendCapabilityWarning(
+                            this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_CAINFO"));
 #endif
                     }
 
                     if (tlsCfg.minTlsVersion.has_value()) {
-                        const std::optional<long> sslVer = toCurlSslVersionMin(tlsCfg.minTlsVersion.value());
+                        const std::optional<long> sslVer = toCurlSslVersionMin(
+                            tlsCfg.minTlsVersion.value());
                         if (!sslVer.has_value()) {
                             const QString msg = QStringLiteral("不支持的 TLS 版本配置（proxy）");
                             if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1144,13 +1225,17 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                             appendCapabilityWarning(this, msg);
                         } else {
 #ifdef CURLOPT_PROXY_SSLVERSION
-                            const CURLcode rc =
-                                curlEasySetoptWithTestHook(handle, CURLOPT_PROXY_SSLVERSION, "CURLOPT_PROXY_SSLVERSION", sslVer.value());
+                            const CURLcode rc
+                                = curlEasySetoptWithTestHook(handle,
+                                                             CURLOPT_PROXY_SSLVERSION,
+                                                             "CURLOPT_PROXY_SSLVERSION",
+                                                             sslVer.value());
                             if (rc != CURLE_OK) {
                                 if (isCapabilityRelatedCurlError(rc)) {
-                                    const QString msg =
-                                        QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSLVERSION（%1）")
-                                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                    const QString msg
+                                        = QStringLiteral(
+                                              "libcurl 不支持 CURLOPT_PROXY_SSLVERSION（%1）")
+                                              .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                                     if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                         setError(NetworkError::InvalidRequest, msg);
                                         return false;
@@ -1158,7 +1243,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                     appendCapabilityWarning(this, msg);
                                 } else {
                                     setError(NetworkError::InvalidRequest,
-                                             QStringLiteral("设置 CURLOPT_PROXY_SSLVERSION 失败（%1）")
+                                             QStringLiteral(
+                                                 "设置 CURLOPT_PROXY_SSLVERSION 失败（%1）")
                                                  .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                                     return false;
                                 }
@@ -1166,10 +1252,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #else
                             if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                 setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSLVERSION"));
+                                         QStringLiteral(
+                                             "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSLVERSION"));
                                 return false;
                             }
-                            appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSLVERSION"));
+                            appendCapabilityWarning(
+                                this,
+                                QStringLiteral(
+                                    "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSLVERSION"));
 #endif
                         }
                     }
@@ -1177,16 +1267,17 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     if (!tlsCfg.cipherList.isEmpty()) {
 #ifdef CURLOPT_PROXY_SSL_CIPHER_LIST
                         proxySslCipherListBytes = tlsCfg.cipherList.toUtf8();
-                        const CURLcode rc =
-                            curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PROXY_SSL_CIPHER_LIST,
-                                                       "CURLOPT_PROXY_SSL_CIPHER_LIST",
-                                                       proxySslCipherListBytes.constData());
+                        const CURLcode rc
+                            = curlEasySetoptWithTestHook(handle,
+                                                         CURLOPT_PROXY_SSL_CIPHER_LIST,
+                                                         "CURLOPT_PROXY_SSL_CIPHER_LIST",
+                                                         proxySslCipherListBytes.constData());
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
-                                const QString msg =
-                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                const QString msg
+                                    = QStringLiteral(
+                                          "libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST（%1）")
+                                          .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                                 if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                     setError(NetworkError::InvalidRequest, msg);
                                     return false;
@@ -1194,34 +1285,41 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                 appendCapabilityWarning(this, msg);
                             } else {
                                 setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("设置 CURLOPT_PROXY_SSL_CIPHER_LIST 失败（%1）")
+                                         QStringLiteral(
+                                             "设置 CURLOPT_PROXY_SSL_CIPHER_LIST 失败（%1）")
                                              .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                                 return false;
                             }
                         }
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST"));
+                            setError(
+                                NetworkError::InvalidRequest,
+                                QStringLiteral(
+                                    "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST"));
                             return false;
                         }
-                        appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST"));
+                        appendCapabilityWarning(
+                            this,
+                            QStringLiteral(
+                                "当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST"));
 #endif
                     }
 
                     if (!tlsCfg.tls13Ciphers.isEmpty()) {
 #ifdef CURLOPT_PROXY_TLS13_CIPHERS
                         proxySslTls13CiphersBytes = tlsCfg.tls13Ciphers.toUtf8();
-                        const CURLcode rc =
-                            curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PROXY_TLS13_CIPHERS,
-                                                       "CURLOPT_PROXY_TLS13_CIPHERS",
-                                                       proxySslTls13CiphersBytes.constData());
+                        const CURLcode rc
+                            = curlEasySetoptWithTestHook(handle,
+                                                         CURLOPT_PROXY_TLS13_CIPHERS,
+                                                         "CURLOPT_PROXY_TLS13_CIPHERS",
+                                                         proxySslTls13CiphersBytes.constData());
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
-                                const QString msg =
-                                    QStringLiteral("libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                                const QString msg
+                                    = QStringLiteral(
+                                          "libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS（%1）")
+                                          .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                                 if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                                     setError(NetworkError::InvalidRequest, msg);
                                     return false;
@@ -1229,7 +1327,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                 appendCapabilityWarning(this, msg);
                             } else {
                                 setError(NetworkError::InvalidRequest,
-                                         QStringLiteral("设置 CURLOPT_PROXY_TLS13_CIPHERS 失败（%1）")
+                                         QStringLiteral(
+                                             "设置 CURLOPT_PROXY_TLS13_CIPHERS 失败（%1）")
                                              .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                                 return false;
                             }
@@ -1237,10 +1336,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #else
                         if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                             setError(NetworkError::InvalidRequest,
-                                     QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS"));
+                                     QStringLiteral(
+                                         "当前构建的 libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS"));
                             return false;
                         }
-                        appendCapabilityWarning(this, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS"));
+                        appendCapabilityWarning(
+                            this,
+                            QStringLiteral(
+                                "当前构建的 libcurl 不支持 CURLOPT_PROXY_TLS13_CIPHERS"));
 #endif
                     }
                 }
@@ -1262,7 +1365,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ========================================================================
 
     // 先应用连接池的通用配置（DNS/复用等），再由请求级别配置覆盖（例如 HTTP 版本）。
-    auto *poolManager = QCNetworkConnectionPoolManager::instance();
+    auto *poolManager  = QCNetworkConnectionPoolManager::instance();
     const QString host = request.url().host();
     poolManager->configureCurlHandle(handle, host);
 
@@ -1271,35 +1374,43 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ========================================================================
 
     const QCNetworkHttpVersion requestedHttpVer = request.httpVersion();
-    QCNetworkHttpVersion effectiveHttpVer = requestedHttpVer;
+    QCNetworkHttpVersion effectiveHttpVer       = requestedHttpVer;
 
-    const long features = CurlFeatureProbe::instance().runtimeFeatures();
+    const long features        = CurlFeatureProbe::instance().runtimeFeatures();
     const bool runtimeHasHttp3 = (features & CURL_VERSION_HTTP3) != 0;
-    const bool requireHttp3 = qgetenv("QCURL_REQUIRE_HTTP3").trimmed() == "1";
+    const bool requireHttp3    = qgetenv("QCURL_REQUIRE_HTTP3").trimmed() == "1";
 
-    if (requireHttp3 &&
-        (requestedHttpVer == QCNetworkHttpVersion::Http3 || requestedHttpVer == QCNetworkHttpVersion::Http3Only) &&
-        !runtimeHasHttp3) {
+    if (requireHttp3
+        && (requestedHttpVer == QCNetworkHttpVersion::Http3
+            || requestedHttpVer == QCNetworkHttpVersion::Http3Only)
+        && !runtimeHasHttp3) {
         setError(NetworkError::InvalidRequest,
-                 QStringLiteral("交付门禁 QCURL_REQUIRE_HTTP3=1：运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），请求被拒绝"));
+                 QStringLiteral("交付门禁 QCURL_REQUIRE_HTTP3=1：运行时 libcurl 不支持 "
+                                "HTTP/3（CURL_VERSION_HTTP3 缺失），请求被拒绝"));
         return false;
     }
 
     if (requestedHttpVer == QCNetworkHttpVersion::Http3Only) {
         if (!runtimeHasHttp3) {
-            setError(NetworkError::InvalidRequest,
-                     QStringLiteral("运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），Http3Only 无法执行"));
+            setError(
+                NetworkError::InvalidRequest,
+                QStringLiteral(
+                    "运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），Http3Only 无法执行"));
             return false;
         }
 #if !defined(CURL_HTTP_VERSION_3ONLY)
         appendCapabilityWarning(this,
-                                QStringLiteral("当前构建的 libcurl 不支持 CURL_HTTP_VERSION_3ONLY，Http3Only 将退化为 Http3（可能发生协议降级）"));
+                                QStringLiteral(
+                                    "当前构建的 libcurl 不支持 CURL_HTTP_VERSION_3ONLY，Http3Only "
+                                    "将退化为 Http3（可能发生协议降级）"));
 #endif
     } else if (requestedHttpVer == QCNetworkHttpVersion::Http3) {
         if (!runtimeHasHttp3) {
             effectiveHttpVer = QCNetworkHttpVersion::Http2TLS;
-            appendCapabilityWarning(this,
-                                    QStringLiteral("运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），已降级为 HTTP/2TLS"));
+            appendCapabilityWarning(
+                this,
+                QStringLiteral(
+                    "运行时 libcurl 不支持 HTTP/3（CURL_VERSION_HTTP3 缺失），已降级为 HTTP/2TLS"));
         }
     }
 
@@ -1322,13 +1433,12 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     } else {
         // ✅ 修复：如果未指定 CA 证书路径，尝试使用系统默认路径
         // 优先使用常见的系统 CA 证书位置
-        static const char* systemCaPaths[] = {
-            "/etc/ssl/certs/ca-certificates.crt",  // Debian/Ubuntu/Arch
-            "/etc/pki/tls/certs/ca-bundle.crt",    // RHEL/CentOS
-            "/etc/ssl/cert.pem",                    // Alpine/OpenBSD
-            "/usr/local/share/certs/ca-root-nss.crt", // FreeBSD
-            nullptr
-        };
+        static const char *systemCaPaths[]
+            = {"/etc/ssl/certs/ca-certificates.crt",     // Debian/Ubuntu/Arch
+               "/etc/pki/tls/certs/ca-bundle.crt",       // RHEL/CentOS
+               "/etc/ssl/cert.pem",                      // Alpine/OpenBSD
+               "/usr/local/share/certs/ca-root-nss.crt", // FreeBSD
+               nullptr};
 
         bool caPathSet = false;
         for (int i = 0; systemCaPaths[i] != nullptr; ++i) {
@@ -1379,13 +1489,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (!sslConfig.pinnedPublicKey.isEmpty()) {
         sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey.toUtf8();
-        const CURLcode rc =
-            curlEasySetoptWithTestHook(handle, CURLOPT_PINNEDPUBLICKEY, "CURLOPT_PINNEDPUBLICKEY", sslPinnedPublicKeyBytes.constData());
+        const CURLcode rc       = curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_PINNEDPUBLICKEY,
+                                                       "CURLOPT_PINNEDPUBLICKEY",
+                                                       sslPinnedPublicKeyBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg =
-                    QStringLiteral("libcurl 不支持 CURLOPT_PINNEDPUBLICKEY（%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_PINNEDPUBLICKEY（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                 if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                     setError(NetworkError::InvalidRequest, msg);
                     return false;
@@ -1411,12 +1522,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             appendCapabilityWarning(this, msg);
         } else {
 #ifdef CURLOPT_SSLVERSION
-            const CURLcode rc = curlEasySetoptWithTestHook(handle, CURLOPT_SSLVERSION, "CURLOPT_SSLVERSION", sslVer.value());
+            const CURLcode rc = curlEasySetoptWithTestHook(handle,
+                                                           CURLOPT_SSLVERSION,
+                                                           "CURLOPT_SSLVERSION",
+                                                           sslVer.value());
             if (rc != CURLE_OK) {
                 if (isCapabilityRelatedCurlError(rc)) {
-                    const QString msg =
-                        QStringLiteral("libcurl 不支持 CURLOPT_SSLVERSION（%1）")
-                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                    const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_SSLVERSION（%1）")
+                                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                     if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                         setError(NetworkError::InvalidRequest, msg);
                         return false;
@@ -1443,13 +1556,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.cipherList.isEmpty()) {
 #ifdef CURLOPT_SSL_CIPHER_LIST
         sslCipherListBytes = sslConfig.cipherList.toUtf8();
-        const CURLcode rc =
-            curlEasySetoptWithTestHook(handle, CURLOPT_SSL_CIPHER_LIST, "CURLOPT_SSL_CIPHER_LIST", sslCipherListBytes.constData());
+        const CURLcode rc  = curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_SSL_CIPHER_LIST,
+                                                       "CURLOPT_SSL_CIPHER_LIST",
+                                                       sslCipherListBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg =
-                    QStringLiteral("libcurl 不支持 CURLOPT_SSL_CIPHER_LIST（%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_SSL_CIPHER_LIST（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                 if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                     setError(NetworkError::InvalidRequest, msg);
                     return false;
@@ -1475,13 +1589,14 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.tls13Ciphers.isEmpty()) {
 #ifdef CURLOPT_TLS13_CIPHERS
         sslTls13CiphersBytes = sslConfig.tls13Ciphers.toUtf8();
-        const CURLcode rc =
-            curlEasySetoptWithTestHook(handle, CURLOPT_TLS13_CIPHERS, "CURLOPT_TLS13_CIPHERS", sslTls13CiphersBytes.constData());
+        const CURLcode rc    = curlEasySetoptWithTestHook(handle,
+                                                       CURLOPT_TLS13_CIPHERS,
+                                                       "CURLOPT_TLS13_CIPHERS",
+                                                       sslTls13CiphersBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg =
-                    QStringLiteral("libcurl 不支持 CURLOPT_TLS13_CIPHERS（%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_TLS13_CIPHERS（%1）")
+                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
                 if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                     setError(NetworkError::InvalidRequest, msg);
                     return false;
@@ -1512,25 +1627,27 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     // 连接超时（TCP 三次握手超时）
     if (timeout.connectTimeout.has_value() && timeout.connectTimeout->count() > 0) {
-        curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT_MS,
-                        static_cast<long>(timeout.connectTimeout->count()));
+        curl_easy_setopt(handle,
+                         CURLOPT_CONNECTTIMEOUT_MS,
+                         static_cast<long>(timeout.connectTimeout->count()));
     }
 
     // 总超时（整个请求的最大时间）
     if (timeout.totalTimeout.has_value() && timeout.totalTimeout->count() > 0) {
-        curl_easy_setopt(handle, CURLOPT_TIMEOUT_MS,
-                        static_cast<long>(timeout.totalTimeout->count()));
+        curl_easy_setopt(handle,
+                         CURLOPT_TIMEOUT_MS,
+                         static_cast<long>(timeout.totalTimeout->count()));
     }
 
     // 低速检测：如果在 lowSpeedTime 内速度低于 lowSpeedLimit，则超时
     if (timeout.lowSpeedTime.has_value() && timeout.lowSpeedTime->count() > 0) {
-        curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME,
-                        static_cast<long>(timeout.lowSpeedTime->count()));
+        curl_easy_setopt(handle,
+                         CURLOPT_LOW_SPEED_TIME,
+                         static_cast<long>(timeout.lowSpeedTime->count()));
     }
 
     if (timeout.lowSpeedLimit.has_value() && *timeout.lowSpeedLimit > 0) {
-        curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT,
-                        static_cast<long>(*timeout.lowSpeedLimit));
+        curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(*timeout.lowSpeedLimit));
     }
 
     // ========================================================================
@@ -1555,7 +1672,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 进度回调
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, QCNetworkReplyPrivate::curlProgressCallback);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, this);
-    curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);  // 启用进度回调
+    curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L); // 启用进度回调
 
     return true;
 }
@@ -1574,10 +1691,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         if (!elapsedTimerStarted) {
             elapsedTimer.start();
             elapsedTimerStarted = true;
-            durationMs = -1;
+            durationMs          = -1;
         }
-    } else if (newState == ReplyState::Finished
-               || newState == ReplyState::Error
+    } else if (newState == ReplyState::Finished || newState == ReplyState::Error
                || newState == ReplyState::Cancelled) {
         if (elapsedTimerStarted && durationMs < 0) {
             durationMs = elapsedTimer.elapsed();
@@ -1599,9 +1715,12 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
             const CURLcode rc = curl_easy_setopt(curlManager.handle(), CURLOPT_COOKIELIST, "FLUSH");
             if (rc != CURLE_OK) {
                 if (isCapabilityRelatedCurlError(rc)) {
-                    appendCapabilityWarning(this,
-                                            QStringLiteral("libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST，%1），CookieJAR 可能不会立即落盘")
-                                                .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                    appendCapabilityWarning(
+                        this,
+                        QStringLiteral(
+                            "libcurl 不支持 Cookie "
+                            "flush（CURLOPT_COOKIELIST，%1），CookieJAR 可能不会立即落盘")
+                            .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                 } else {
                     appendCapabilityWarning(this,
                                             QStringLiteral("Cookie flush 失败（%1）")
@@ -1629,9 +1748,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // ========================================================================
         // 缓存集成 - 请求完成后自动写入缓存
         // ========================================================================
-        QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager*>(q->parent());
+        QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(q->parent());
         if (manager) {
-            QCNetworkCache *cache = manager->cache();
+            QCNetworkCache *cache       = manager->cache();
             QCNetworkCachePolicy policy = request.cachePolicy();
 
             // OnlyNetwork 策略：不缓存
@@ -1644,8 +1763,8 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
                     if (QCNetworkCache::isCacheable(headers)) {
                         // 准备元数据
                         QCNetworkCacheMetadata meta;
-                        meta.url = request.url();
-                        meta.headers = headers;
+                        meta.url            = request.url();
+                        meta.headers        = headers;
                         meta.expirationDate = QCNetworkCache::parseExpirationDate(headers);
 
                         // 获取响应数据（不移除缓冲区数据）
@@ -1653,12 +1772,14 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
 
                         // 写入缓存
                         cache->insert(request.url(), responseData, meta);
-                        qDebug() << "QCNetworkReply: Cached response for" << request.url().toString();
+                        qDebug() << "QCNetworkReply: Cached response for"
+                                 << request.url().toString();
 
                         // 重新放回缓冲区（确保 readAll() 仍可用）
                         bodyBuffer.append(responseData);
                     } else {
-                        qDebug() << "QCNetworkReply: Response not cacheable for" << request.url().toString();
+                        qDebug() << "QCNetworkReply: Response not cacheable for"
+                                 << request.url().toString();
                     }
                 }
             }
@@ -1678,7 +1799,7 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
 
 void QCNetworkReplyPrivate::setError(NetworkError error, const QString &message)
 {
-    errorCode = error;
+    errorCode    = error;
     errorMessage = message;
 }
 
@@ -1693,7 +1814,8 @@ void QCNetworkReplyPrivate::parseHeaders()
     // - unfold：将各段按“单空格”拼接，并对每段做 trim（去掉首尾空白与末尾多余空格）
     //
     // 说明：
-    // - headerMap 为单值 map，会覆盖重复头（如 Set-Cookie 多值）；重复头应通过 rawHeaderData() 观测。
+    // - headerMap 为单值 map，会覆盖重复头（如 Set-Cookie 多值）；重复头应通过 rawHeaderData()
+    // 观测。
     auto flushCurrent = [&](const QByteArray &name, const QList<QByteArray> &segments) {
         if (name.isEmpty()) {
             return;
@@ -1759,12 +1881,11 @@ void QCNetworkReplyPrivate::parseHeaders()
 // Curl 静态回调函数实现
 // ============================================================================
 
-size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size,
-                                                size_t nmemb, void *userdata)
+size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
     if (!d || !d->q_ptr) {
-        return 0;  // 对象已销毁，中止传输
+        return 0; // 对象已销毁，中止传输
     }
 
     const size_t totalSize = size * nmemb;
@@ -1796,12 +1917,14 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size,
     return totalSize;
 }
 
-size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr, size_t size,
-                                                 size_t nmemb, void *userdata)
+size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr,
+                                                 size_t size,
+                                                 size_t nmemb,
+                                                 void *userdata)
 {
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
     if (!d || !d->q_ptr) {
-        return 0;  // 对象已销毁，中止传输
+        return 0; // 对象已销毁，中止传输
     }
 
     const size_t totalSize = size * nmemb;
@@ -1817,12 +1940,11 @@ size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr, size_t size,
     return totalSize;
 }
 
-size_t QCNetworkReplyPrivate::curlReadCallback(char* ptr, size_t size,
-                                               size_t nmemb, void *userdata)
+size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
     if (!d || !d->q_ptr) {
-        return CURL_READFUNC_ABORT;  // 对象已销毁，中止传输
+        return CURL_READFUNC_ABORT; // 对象已销毁，中止传输
     }
 
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
@@ -1831,15 +1953,15 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char* ptr, size_t size,
 
     QIODevice *device = d->uploadDevice.data();
     if (!device) {
-        d->hasUploadErrorOverride = true;
-        d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
+        d->hasUploadErrorOverride     = true;
+        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
         d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 源 QIODevice 在传输中被销毁");
         return CURL_READFUNC_ABORT;
     }
 
     if (!device->isReadable()) {
-        d->hasUploadErrorOverride = true;
-        d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
+        d->hasUploadErrorOverride     = true;
+        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
         d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 源 QIODevice 已不可读");
         return CURL_READFUNC_ABORT;
     }
@@ -1852,14 +1974,14 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char* ptr, size_t size,
     if (d->uploadBodySizeBytes < 0) {
         const qint64 n = device->read(ptr, static_cast<qint64>(totalSize));
         if (n < 0) {
-            d->hasUploadErrorOverride = true;
-            d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage =
-                QStringLiteral("uploadDevice: 读取失败: %1").arg(device->errorString());
+            d->hasUploadErrorOverride     = true;
+            d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
+            d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 读取失败: %1")
+                                                .arg(device->errorString());
             return CURL_READFUNC_ABORT;
         }
         if (n == 0) {
-            return 0;  // unknown size：以 EOF 作为结束
+            return 0; // unknown size：以 EOF 作为结束
         }
         d->uploadBytesRead += n;
         return static_cast<size_t>(n);
@@ -1871,20 +1993,20 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char* ptr, size_t size,
     }
 
     const qint64 want = qMin(static_cast<qint64>(totalSize), remaining);
-    const qint64 n = device->read(ptr, want);
+    const qint64 n    = device->read(ptr, want);
     if (n < 0) {
-        d->hasUploadErrorOverride = true;
-        d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-        d->uploadErrorOverrideMessage =
-            QStringLiteral("uploadDevice: 读取失败: %1").arg(device->errorString());
+        d->hasUploadErrorOverride     = true;
+        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
+        d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 读取失败: %1")
+                                            .arg(device->errorString());
         return CURL_READFUNC_ABORT;
     }
 
     if (n == 0 && remaining > 0) {
-        d->hasUploadErrorOverride = true;
+        d->hasUploadErrorOverride  = true;
         d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-        d->uploadErrorOverrideMessage =
-            QStringLiteral("uploadDevice: 数据提前结束（期望剩余 %1 bytes）").arg(remaining);
+        d->uploadErrorOverrideMessage
+            = QStringLiteral("uploadDevice: 数据提前结束（期望剩余 %1 bytes）").arg(remaining);
         return CURL_READFUNC_ABORT;
     }
 
@@ -1892,12 +2014,11 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char* ptr, size_t size,
     return static_cast<size_t>(n);
 }
 
-int QCNetworkReplyPrivate::curlSeekCallback(void *userdata,
-                                            curl_off_t offset, int origin)
+int QCNetworkReplyPrivate::curlSeekCallback(void *userdata, curl_off_t offset, int origin)
 {
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
     if (!d || !d->q_ptr) {
-        return CURL_SEEKFUNC_FAIL;  // 对象已销毁
+        return CURL_SEEKFUNC_FAIL; // 对象已销毁
     }
 
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
@@ -1906,34 +2027,34 @@ int QCNetworkReplyPrivate::curlSeekCallback(void *userdata,
 
     if (QIODevice *device = d->uploadDevice.data()) {
         if (!d->uploadDeviceSeekable) {
-            d->hasUploadErrorOverride = true;
-            d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage =
-                QStringLiteral("uploadDevice: 无法重发 body：源 QIODevice 不支持 seek（重定向/重试/认证协商）");
+            d->hasUploadErrorOverride     = true;
+            d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
+            d->uploadErrorOverrideMessage = QStringLiteral(
+                "uploadDevice: 无法重发 body：源 QIODevice 不支持 seek（重定向/重试/认证协商）");
             return CURL_SEEKFUNC_CANTSEEK;
         }
 
         qint64 targetPos = -1;
         const qint64 off = static_cast<qint64>(offset);
         switch (origin) {
-        case SEEK_SET:
-            targetPos = d->uploadDeviceBasePos + off;
-            break;
-        case SEEK_CUR:
-            targetPos = device->pos() + off;
-            break;
-        case SEEK_END:
-            if (d->uploadBodySizeBytes < 0) {
-                d->hasUploadErrorOverride = true;
-                d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-                d->uploadErrorOverrideMessage =
-                    QStringLiteral("uploadDevice: unknown size 不支持 SEEK_END（无法重发 body）");
+            case SEEK_SET:
+                targetPos = d->uploadDeviceBasePos + off;
+                break;
+            case SEEK_CUR:
+                targetPos = device->pos() + off;
+                break;
+            case SEEK_END:
+                if (d->uploadBodySizeBytes < 0) {
+                    d->hasUploadErrorOverride     = true;
+                    d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
+                    d->uploadErrorOverrideMessage = QStringLiteral(
+                        "uploadDevice: unknown size 不支持 SEEK_END（无法重发 body）");
+                    return CURL_SEEKFUNC_FAIL;
+                }
+                targetPos = d->uploadDeviceBasePos + d->uploadBodySizeBytes + off;
+                break;
+            default:
                 return CURL_SEEKFUNC_FAIL;
-            }
-            targetPos = d->uploadDeviceBasePos + d->uploadBodySizeBytes + off;
-            break;
-        default:
-            return CURL_SEEKFUNC_FAIL;
         }
 
         if (targetPos < d->uploadDeviceBasePos) {
@@ -1945,10 +2066,10 @@ int QCNetworkReplyPrivate::curlSeekCallback(void *userdata,
         }
 
         if (!device->seek(targetPos)) {
-            d->hasUploadErrorOverride = true;
+            d->hasUploadErrorOverride  = true;
             d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage =
-                QStringLiteral("uploadDevice: 无法重发 body：seek(%1) 失败").arg(targetPos);
+            d->uploadErrorOverrideMessage
+                = QStringLiteral("uploadDevice: 无法重发 body：seek(%1) 失败").arg(targetPos);
             return CURL_SEEKFUNC_FAIL;
         }
 
@@ -1961,16 +2082,15 @@ int QCNetworkReplyPrivate::curlSeekCallback(void *userdata,
         return d->seekCallback(static_cast<qint64>(offset), origin);
     }
 
-    return CURL_SEEKFUNC_CANTSEEK;  // 不支持
+    return CURL_SEEKFUNC_CANTSEEK; // 不支持
 }
 
-int QCNetworkReplyPrivate::curlProgressCallback(void *userdata,
-                                                curl_off_t dltotal, curl_off_t dlnow,
-                                                curl_off_t ultotal, curl_off_t ulnow)
+int QCNetworkReplyPrivate::curlProgressCallback(
+    void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
 {
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userdata);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
     if (!d || !d->q_ptr) {
-        return 1;  // 对象已销毁，中止传输
+        return 1; // 对象已销毁，中止传输
     }
 
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
@@ -1979,10 +2099,10 @@ int QCNetworkReplyPrivate::curlProgressCallback(void *userdata,
     }
 
     // 更新进度数据
-    d->downloadTotal = static_cast<qint64>(dltotal);
+    d->downloadTotal   = static_cast<qint64>(dltotal);
     d->bytesDownloaded = static_cast<qint64>(dlnow);
-    d->uploadTotal = static_cast<qint64>(ultotal);
-    d->bytesUploaded = static_cast<qint64>(ulnow);
+    d->uploadTotal     = static_cast<qint64>(ultotal);
+    d->bytesUploaded   = static_cast<qint64>(ulnow);
 
     if (d->executionMode == ExecutionMode::Async) {
         // 异步模式：发射进度信号
@@ -1999,15 +2119,12 @@ int QCNetworkReplyPrivate::curlProgressCallback(void *userdata,
     return 0;
 }
 
-int QCNetworkReplyPrivate::curlDebugCallback(CURL *handle,
-                                             curl_infotype type,
-                                             char *data,
-                                             size_t size,
-                                             void *userptr)
+int QCNetworkReplyPrivate::curlDebugCallback(
+    CURL *handle, curl_infotype type, char *data, size_t size, void *userptr)
 {
     Q_UNUSED(handle);
 
-    auto *d = static_cast<QCNetworkReplyPrivate*>(userptr);
+    auto *d = static_cast<QCNetworkReplyPrivate *>(userptr);
     if (!d || !d->q_ptr) {
         return 0;
     }
@@ -2016,7 +2133,7 @@ int QCNetworkReplyPrivate::curlDebugCallback(CURL *handle,
         return 0;
     }
 
-    auto *manager = qobject_cast<QCNetworkAccessManager*>(d->q_ptr->parent());
+    auto *manager = qobject_cast<QCNetworkAccessManager *>(d->q_ptr->parent());
     if (!manager || !manager->debugTraceEnabled()) {
         return 0;
     }
@@ -2045,32 +2162,32 @@ int QCNetworkReplyPrivate::curlDebugCallback(CURL *handle,
     QString message;
 
     switch (type) {
-    case CURLINFO_TEXT:
-        message = QStringLiteral("TEXT: %1").arg(redactBlock(raw).trimmed());
-        break;
-    case CURLINFO_HEADER_IN:
-        message = QStringLiteral("HEADER_IN: %1").arg(redactBlock(raw).trimmed());
-        break;
-    case CURLINFO_HEADER_OUT:
-        message = QStringLiteral("HEADER_OUT: %1").arg(redactBlock(raw).trimmed());
-        break;
-    case CURLINFO_DATA_IN:
-        message = QStringLiteral("DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
-        break;
-    case CURLINFO_DATA_OUT:
-        message = QStringLiteral("DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
-        break;
-    case CURLINFO_SSL_DATA_IN:
-        message = QStringLiteral("SSL_DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
-        break;
-    case CURLINFO_SSL_DATA_OUT:
-        message = QStringLiteral("SSL_DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
-        break;
-    default:
-        message = QStringLiteral("TRACE_%1: len=%2")
-                      .arg(static_cast<int>(type))
-                      .arg(static_cast<qulonglong>(size));
-        break;
+        case CURLINFO_TEXT:
+            message = QStringLiteral("TEXT: %1").arg(redactBlock(raw).trimmed());
+            break;
+        case CURLINFO_HEADER_IN:
+            message = QStringLiteral("HEADER_IN: %1").arg(redactBlock(raw).trimmed());
+            break;
+        case CURLINFO_HEADER_OUT:
+            message = QStringLiteral("HEADER_OUT: %1").arg(redactBlock(raw).trimmed());
+            break;
+        case CURLINFO_DATA_IN:
+            message = QStringLiteral("DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
+            break;
+        case CURLINFO_DATA_OUT:
+            message = QStringLiteral("DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
+            break;
+        case CURLINFO_SSL_DATA_IN:
+            message = QStringLiteral("SSL_DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
+            break;
+        case CURLINFO_SSL_DATA_OUT:
+            message = QStringLiteral("SSL_DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
+            break;
+        default:
+            message = QStringLiteral("TRACE_%1: len=%2")
+                          .arg(static_cast<int>(type))
+                          .arg(static_cast<qulonglong>(size));
+            break;
     }
 
     if (message.size() > 4096) {
@@ -2090,8 +2207,8 @@ QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
                                ExecutionMode mode,
                                const QByteArray &requestBody,
                                QObject *parent)
-    : QObject(parent),
-      d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
+    : QObject(parent)
+    , d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
 {
     Q_D(QCNetworkReply);
 
@@ -2099,7 +2216,7 @@ QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
     if (!d->configureCurlOptions()) {
         if (d->errorCode == NetworkError::NoError) {
             d->setError(NetworkError::InvalidRequest,
-                       QStringLiteral("Failed to configure curl options"));
+                        QStringLiteral("Failed to configure curl options"));
         }
         d->setState(ReplyState::Error);
     }
@@ -2131,7 +2248,8 @@ void QCNetworkReply::execute()
             return;
         }
 
-        qWarning() << "QCNetworkReply::execute: Sync 模式不支持跨线程调用（需要在 reply 所在线程执行）";
+        qWarning()
+            << "QCNetworkReply::execute: Sync 模式不支持跨线程调用（需要在 reply 所在线程执行）";
         abortWithError(NetworkError::InvalidRequest,
                        QStringLiteral("QCNetworkReply::execute(Sync) 必须在 reply 所在线程调用"));
         return;
@@ -2144,8 +2262,7 @@ void QCNetworkReply::execute()
         return;
     }
 
-    if (d->state == ReplyState::Cancelled
-        || d->state == ReplyState::Finished
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
         || d->state == ReplyState::Error) {
         return;
     }
@@ -2153,8 +2270,8 @@ void QCNetworkReply::execute()
     // ========================================================================
     // 缓存集成 - 在发起网络请求前检查缓存
     // ========================================================================
-    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager*>(parent());
-    QCNetworkCache *cache = manager ? manager->cache() : nullptr;
+    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(parent());
+    QCNetworkCache *cache           = manager ? manager->cache() : nullptr;
     if (cache) {
         QCNetworkCachePolicy policy = d->request.cachePolicy();
 
@@ -2208,7 +2325,7 @@ void QCNetworkReply::execute()
         // 请求捕获：用于离线断言 middleware/header 注入、body 形态等
         if (mock->captureEnabled()) {
             QCNetworkMockHandler::CapturedRequest captured;
-            captured.url = d->request.url();
+            captured.url    = d->request.url();
             captured.method = d->httpMethod;
 
             const auto headerNames = d->request.rawHeaderList();
@@ -2216,9 +2333,10 @@ void QCNetworkReply::execute()
                 captured.headers.append(qMakePair(name, d->request.rawHeader(name)));
             }
 
-            captured.bodySize = d->requestBody.size();
+            captured.bodySize      = d->requestBody.size();
             const int previewLimit = mock->captureBodyPreviewLimit();
-            captured.bodyPreview = previewLimit > 0 ? d->requestBody.left(previewLimit) : QByteArray();
+            captured.bodyPreview   = previewLimit > 0 ? d->requestBody.left(previewLimit)
+                                                      : QByteArray();
             mock->recordRequest(captured);
         }
 
@@ -2226,7 +2344,7 @@ void QCNetworkReply::execute()
         if (mock->hasMock(d->httpMethod, d->request.url())) {
             // 离线回放同样应具备“可诊断配置冲突”能力（避免仅在真实网络路径提示）
             bool hasExplicitAcceptEncodingHeader = false;
-            const QList<QByteArray> headerNames = d->request.rawHeaderList();
+            const QList<QByteArray> headerNames  = d->request.rawHeaderList();
             for (const QByteArray &headerName : headerNames) {
                 if (headerName.trimmed().toLower() == QByteArrayLiteral("accept-encoding")) {
                     hasExplicitAcceptEncodingHeader = true;
@@ -2235,16 +2353,19 @@ void QCNetworkReply::execute()
             }
 
             if (hasExplicitAcceptEncodingHeader) {
-                if (d->request.autoDecompressionEnabled() || !d->request.acceptedEncodings().isEmpty()) {
+                if (d->request.autoDecompressionEnabled()
+                    || !d->request.acceptedEncodings().isEmpty()) {
                     appendCapabilityWarning(
                         d,
-                        QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 autoDecompression/acceptedEncodings（不会自动解压）"));
+                        QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 "
+                                       "autoDecompression/acceptedEncodings（不会自动解压）"));
                 }
             }
 
             const int responseDelayMs = mock->globalDelay();
 
-            // 进入 Running（与真实网络保持一致）；完成/错误信号通过延迟触发，避免在连接信号前同步发射
+            // 进入
+            // Running（与真实网络保持一致）；完成/错误信号通过延迟触发，避免在连接信号前同步发射
             d->setState(ReplyState::Running);
 
             // 同步模式：阻塞执行（支持重试）
@@ -2269,9 +2390,9 @@ void QCNetworkReply::execute()
                     d->headerData.clear();
                     d->headerMap.clear();
                     d->bytesDownloaded = 0;
-                    d->bytesUploaded = 0;
-                    d->downloadTotal = -1;
-                    d->uploadTotal = -1;
+                    d->bytesUploaded   = 0;
+                    d->downloadTotal   = -1;
+                    d->uploadTotal     = -1;
 
                     if (!mockData.response.isEmpty()) {
                         d->bodyBuffer.append(mockData.response);
@@ -2281,7 +2402,8 @@ void QCNetworkReply::execute()
                     if (mockData.rawHeaderData.has_value()) {
                         d->headerData = mockData.rawHeaderData.value();
                     } else {
-                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend();
+                             ++it) {
                             d->headerData.append(it.key());
                             d->headerData.append(": ");
                             d->headerData.append(it.value());
@@ -2294,10 +2416,10 @@ void QCNetworkReply::execute()
                     NetworkError error = NetworkError::NoError;
                     QString errorMsg;
                     if (mockData.isError && mockData.error != NetworkError::NoError) {
-                        error = mockData.error;
+                        error    = mockData.error;
                         errorMsg = QCurl::errorString(error);
                     } else if (mockData.statusCode >= 400) {
-                        error = fromHttpCode(mockData.statusCode);
+                        error    = fromHttpCode(mockData.statusCode);
                         errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
                     }
 
@@ -2310,18 +2432,18 @@ void QCNetworkReply::execute()
                     }
 
                     const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                                   && isHttpError(error)
-                                                   && (d->httpMethod != HttpMethod::Get);
+                                                    && isHttpError(error)
+                                                    && (d->httpMethod != HttpMethod::Get);
 
                     if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
                         d->attemptCount++;
                         emit retryAttempt(d->attemptCount, error);
 
                         d->parseHeaders();
-                        const std::optional<std::chrono::milliseconds> retryAfter =
-                            (error == NetworkError::HttpTooManyRequests)
-                                ? parseRetryAfterDelay(d->headerMap)
-                                : std::nullopt;
+                        const std::optional<std::chrono::milliseconds> retryAfter
+                            = (error == NetworkError::HttpTooManyRequests)
+                                  ? parseRetryAfterDelay(d->headerMap)
+                                  : std::nullopt;
 
                         const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
                         QThread::msleep(static_cast<unsigned long>(delay.count()));
@@ -2342,16 +2464,16 @@ void QCNetworkReply::execute()
                 }
 
                 auto *d = safeThis->d_func();
-                if (d->state == ReplyState::Cancelled
-                    || d->state == ReplyState::Finished
+                if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
                     || d->state == ReplyState::Error) {
                     return;
                 }
 
-                auto *manager = qobject_cast<QCNetworkAccessManager*>(safeThis->parent());
-                auto *mock = manager ? manager->mockHandler() : nullptr;
+                auto *manager = qobject_cast<QCNetworkAccessManager *>(safeThis->parent());
+                auto *mock    = manager ? manager->mockHandler() : nullptr;
                 if (!mock) {
-                    d->setError(NetworkError::InvalidRequest, QStringLiteral("MockHandler: not set"));
+                    d->setError(NetworkError::InvalidRequest,
+                                QStringLiteral("MockHandler: not set"));
                     d->setState(ReplyState::Error);
                     return;
                 }
@@ -2369,9 +2491,9 @@ void QCNetworkReply::execute()
                 d->headerData.clear();
                 d->headerMap.clear();
                 d->bytesDownloaded = 0;
-                d->bytesUploaded = 0;
-                d->downloadTotal = -1;
-                d->uploadTotal = -1;
+                d->bytesUploaded   = 0;
+                d->downloadTotal   = -1;
+                d->uploadTotal     = -1;
 
                 if (!mockData.response.isEmpty()) {
                     d->bodyBuffer.append(mockData.response);
@@ -2395,10 +2517,10 @@ void QCNetworkReply::execute()
                 NetworkError error = NetworkError::NoError;
                 QString errorMsg;
                 if (mockData.isError && mockData.error != NetworkError::NoError) {
-                    error = mockData.error;
+                    error    = mockData.error;
                     errorMsg = QCurl::errorString(error);
                 } else if (mockData.statusCode >= 400) {
-                    error = fromHttpCode(mockData.statusCode);
+                    error    = fromHttpCode(mockData.statusCode);
                     errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
                 }
 
@@ -2407,20 +2529,20 @@ void QCNetworkReply::execute()
                     return;
                 }
 
-                QCNetworkRetryPolicy policy = d->request.retryPolicy();
+                QCNetworkRetryPolicy policy   = d->request.retryPolicy();
                 const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                               && isHttpError(error)
-                                               && (d->httpMethod != HttpMethod::Get);
+                                                && isHttpError(error)
+                                                && (d->httpMethod != HttpMethod::Get);
 
                 if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
                     d->attemptCount++;
                     emit safeThis->retryAttempt(d->attemptCount, error);
 
                     d->parseHeaders();
-                    const std::optional<std::chrono::milliseconds> retryAfter =
-                        (error == NetworkError::HttpTooManyRequests)
-                            ? parseRetryAfterDelay(d->headerMap)
-                            : std::nullopt;
+                    const std::optional<std::chrono::milliseconds> retryAfter
+                        = (error == NetworkError::HttpTooManyRequests)
+                              ? parseRetryAfterDelay(d->headerMap)
+                              : std::nullopt;
 
                     const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
 
@@ -2434,16 +2556,16 @@ void QCNetworkReply::execute()
                         }
 
                         // 准备重试：不发射额外信号，保持与真实网络一致
-                        d->state = ReplyState::Idle;
+                        d->state     = ReplyState::Idle;
                         d->errorCode = NetworkError::NoError;
                         d->errorMessage.clear();
                         d->bodyBuffer.clear();
                         d->headerData.clear();
                         d->headerMap.clear();
                         d->bytesDownloaded = 0;
-                        d->bytesUploaded = 0;
-                        d->downloadTotal = -1;
-                        d->uploadTotal = -1;
+                        d->bytesUploaded   = 0;
+                        d->downloadTotal   = -1;
+                        d->uploadTotal     = -1;
 
                         safeReply->execute();
                     });
@@ -2473,7 +2595,7 @@ void QCNetworkReply::execute()
         const auto mode = manager->cookieFileMode();
         const auto path = manager->cookieFilePath();
         if (mode != QCNetworkAccessManager::NotOpen && !path.isEmpty()) {
-            d->cookieMode = static_cast<int>(mode);
+            d->cookieMode     = static_cast<int>(mode);
             d->cookieFilePath = path;
         }
     }
@@ -2497,8 +2619,8 @@ void QCNetworkReply::execute()
     // ========================================================================
 
     if (handle && manager) {
-        const auto cacheCfg = manager->hstsAltSvcCacheConfig();
-        d->hstsCachePathBytes = cacheCfg.hstsFilePath.toUtf8();
+        const auto cacheCfg     = manager->hstsAltSvcCacheConfig();
+        d->hstsCachePathBytes   = cacheCfg.hstsFilePath.toUtf8();
         d->altSvcCachePathBytes = cacheCfg.altSvcFilePath.toUtf8();
 
         if (!d->hstsCachePathBytes.isEmpty()) {
@@ -2511,7 +2633,11 @@ void QCNetworkReply::execute()
 
         if (!d->altSvcCachePathBytes.isEmpty()) {
 #ifdef CURLOPT_ALTSVC
-            setOptionalStringOption(d, handle, CURLOPT_ALTSVC, "CURLOPT_ALTSVC", d->altSvcCachePathBytes);
+            setOptionalStringOption(d,
+                                    handle,
+                                    CURLOPT_ALTSVC,
+                                    "CURLOPT_ALTSVC",
+                                    d->altSvcCachePathBytes);
 #else
             appendCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_ALTSVC"));
 #endif
@@ -2532,14 +2658,15 @@ void QCNetworkReply::execute()
     // 流式上传（M2）：重试前回滚上传源到起始位置
     // ========================================================================
 
-    d->hasUploadErrorOverride = false;
+    d->hasUploadErrorOverride  = false;
     d->uploadErrorOverrideCode = NetworkError::NoError;
     d->uploadErrorOverrideMessage.clear();
 
     if (d->uploadDevice && d->attemptCount > 0) {
         if (!d->uploadDeviceSeekable) {
             d->setError(NetworkError::InvalidRequest,
-                        QStringLiteral("uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
+                        QStringLiteral(
+                            "uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
             d->setState(ReplyState::Error);
             return;
         }
@@ -2565,8 +2692,7 @@ void QCNetworkReply::execute()
         // 同步模式：阻塞执行（支持重试）
         // ========================================================================
         if (!handle) {
-            d->setError(NetworkError::InvalidRequest,
-                       QStringLiteral("Invalid curl handle"));
+            d->setError(NetworkError::InvalidRequest, QStringLiteral("Invalid curl handle"));
             d->setState(ReplyState::Error);
             return;
         }
@@ -2576,14 +2702,16 @@ void QCNetworkReply::execute()
 
         // 重试循环（attemptCount 从 0 开始，表示首次尝试）
         while (true) {
-            d->hasUploadErrorOverride = false;
+            d->hasUploadErrorOverride  = false;
             d->uploadErrorOverrideCode = NetworkError::NoError;
             d->uploadErrorOverrideMessage.clear();
 
             if (d->uploadDevice && d->attemptCount > 0) {
                 if (!d->uploadDeviceSeekable) {
-                    d->setError(NetworkError::InvalidRequest,
-                                QStringLiteral("uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
+                    d->setError(
+                        NetworkError::InvalidRequest,
+                        QStringLiteral(
+                            "uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
                     d->setState(ReplyState::Error);
                     return;
                 }
@@ -2612,22 +2740,23 @@ void QCNetworkReply::execute()
 
             if (result != CURLE_OK) {
                 // libcurl 层面的错误
-                error = fromCurlCode(result);
+                error    = fromCurlCode(result);
                 errorMsg = QString::fromUtf8(curl_easy_strerror(result));
 #if defined(CURLE_SEND_FAIL_REWIND)
-                if (d->uploadDevice && !d->hasUploadErrorOverride && result == CURLE_SEND_FAIL_REWIND) {
-                    error = NetworkError::InvalidRequest;
+                if (d->uploadDevice && !d->hasUploadErrorOverride
+                    && result == CURLE_SEND_FAIL_REWIND) {
+                    error    = NetworkError::InvalidRequest;
                     errorMsg = QStringLiteral("uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
                                    .arg(QString::fromUtf8(curl_easy_strerror(result)));
                 }
 #endif
                 if (d->hasUploadErrorOverride) {
-                    error = d->uploadErrorOverrideCode;
+                    error    = d->uploadErrorOverrideCode;
                     errorMsg = d->uploadErrorOverrideMessage;
                 }
             } else if (httpCode >= 400) {
                 // HTTP 错误（4xx, 5xx）
-                error = fromHttpCode(httpCode);
+                error    = fromHttpCode(httpCode);
                 errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
             }
 
@@ -2640,8 +2769,8 @@ void QCNetworkReply::execute()
             }
 
             const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                           && isHttpError(error)
-                                           && (d->httpMethod != HttpMethod::Get);
+                                            && isHttpError(error)
+                                            && (d->httpMethod != HttpMethod::Get);
 
             // 检查是否应该重试
             if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
@@ -2672,17 +2801,17 @@ void QCNetworkReply::execute()
                 d->headerData.clear();
                 d->headerMap.clear();
                 d->bytesDownloaded = 0;
-                d->bytesUploaded = 0;
-                d->downloadTotal = -1;
-                d->uploadTotal = -1;
+                d->bytesUploaded   = 0;
+                d->downloadTotal   = -1;
+                d->uploadTotal     = -1;
 
                 // 继续循环重试
                 continue;
             }
 
             // 超过最大重试次数或错误不可重试
-            qDebug() << "QCNetworkReply::execute: Sync request failed after"
-                     << d->attemptCount << "attempts. Error:" << errorMsg;
+            qDebug() << "QCNetworkReply::execute: Sync request failed after" << d->attemptCount
+                     << "attempts. Error:" << errorMsg;
 
             d->setError(error, errorMsg);
             d->setState(ReplyState::Error);
@@ -2701,8 +2830,7 @@ void QCNetworkReply::cancel()
     Q_D(QCNetworkReply);
 
     // 如果已经取消或已完成，不需要再操作
-    if (d->state == ReplyState::Cancelled
-        || d->state == ReplyState::Finished
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
         || d->state == ReplyState::Error) {
         return;
     }
@@ -2727,7 +2855,8 @@ void QCNetworkReply::cancel()
     // 同步模式：无法真正取消阻塞的 curl_easy_perform()
 
     // 取消属于可观测错误语义：外部应能稳定区分“用户取消”与“空 body / 尚无数据”等情况
-    d->setError(NetworkError::OperationCancelled, QCurl::errorString(NetworkError::OperationCancelled));
+    d->setError(NetworkError::OperationCancelled,
+                QCurl::errorString(NetworkError::OperationCancelled));
 
     // 设置取消状态（这会发射 cancelled 信号）
     // 注意：即使在 Idle 状态（重试延迟期间）也允许取消
@@ -2737,16 +2866,16 @@ void QCNetworkReply::cancel()
 void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
 {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this,
-                                  [this, error, message]() { abortWithError(error, message); },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this,
+            [this, error, message]() { abortWithError(error, message); },
+            Qt::QueuedConnection);
         return;
     }
 
     Q_D(QCNetworkReply);
 
-    if (d->state == ReplyState::Cancelled
-        || d->state == ReplyState::Finished
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
         || d->state == ReplyState::Error) {
         return;
     }
@@ -2797,19 +2926,19 @@ void QCNetworkReply::pause(PauseMode mode)
     if (handle) {
         int flags = CURLPAUSE_ALL;
         switch (mode) {
-        case PauseMode::Recv:
-            flags = CURLPAUSE_RECV;
-            break;
-        case PauseMode::Send:
-            flags = CURLPAUSE_SEND;
-            break;
-        case PauseMode::All:
-            flags = CURLPAUSE_ALL;
-            break;
+            case PauseMode::Recv:
+                flags = CURLPAUSE_RECV;
+                break;
+            case PauseMode::Send:
+                flags = CURLPAUSE_SEND;
+                break;
+            case PauseMode::All:
+                flags = CURLPAUSE_ALL;
+                break;
         }
 
         auto *multiManager = QCCurlMultiManager::instance();
-        CURLcode result = CURLE_OK;
+        CURLcode result    = CURLE_OK;
         if (QThread::currentThread() == multiManager->thread()) {
             result = curl_easy_pause(handle, flags);
         } else {
@@ -2850,7 +2979,7 @@ void QCNetworkReply::resume()
     CURL *handle = d->curlManager.handle();
     if (handle) {
         auto *multiManager = QCCurlMultiManager::instance();
-        CURLcode result = CURLE_OK;
+        CURLcode result    = CURLE_OK;
         if (QThread::currentThread() == multiManager->thread()) {
             result = curl_easy_pause(handle, CURLPAUSE_CONT);
         } else {
@@ -2882,8 +3011,7 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     if (d->bodyBuffer.isEmpty()) {
         // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是 std::nullopt），
         // 否则会把“空 body”与“尚无数据可读”混为一谈，导致可观测层面不可区分。
-        if (d->state == ReplyState::Finished
-            || d->state == ReplyState::Error
+        if (d->state == ReplyState::Finished || d->state == ReplyState::Error
             || d->state == ReplyState::Cancelled) {
             return QByteArray();
         }
@@ -2891,7 +3019,7 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     }
 
     // 注意：这会清空缓冲区（对异步和同步模式都适用）
-    return const_cast<QCByteDataBuffer&>(d->bodyBuffer).readAll();
+    return const_cast<QCByteDataBuffer &>(d->bodyBuffer).readAll();
 }
 
 std::optional<QByteArray> QCNetworkReply::readBody() const
@@ -2905,7 +3033,7 @@ std::optional<QByteArray> QCNetworkReply::readBody() const
         return std::nullopt;
     }
 
-    return readAll();  // 别名方法
+    return readAll(); // 别名方法
 }
 
 QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
@@ -2916,7 +3044,7 @@ QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
     if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaders: Invalid state"
                    << (d ? static_cast<int>(d->state) : -1);
-        return QList<RawHeaderPair>();  // 返回空列表而非崩溃
+        return QList<RawHeaderPair>(); // 返回空列表而非崩溃
     }
 
     QList<RawHeaderPair> list;
@@ -3000,9 +3128,8 @@ QString QCNetworkReply::errorString() const
 bool QCNetworkReply::isFinished() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->state == ReplyState::Finished
-        || d->state == ReplyState::Cancelled
-        || d->state == ReplyState::Error;
+    return d->state == ReplyState::Finished || d->state == ReplyState::Cancelled
+           || d->state == ReplyState::Error;
 }
 
 bool QCNetworkReply::isRunning() const noexcept
@@ -3080,8 +3207,8 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
 {
     Q_D(QCNetworkReply);
 
-    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager*>(parent());
-    QCNetworkCache *cache = manager ? manager->cache() : nullptr;
+    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(parent());
+    QCNetworkCache *cache           = manager ? manager->cache() : nullptr;
     if (!cache) {
         return false;
     }

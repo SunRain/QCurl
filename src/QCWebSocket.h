@@ -5,10 +5,10 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
-#include <QObject>
-#include <QUrl>
 #include <QByteArray>
+#include <QObject>
 #include <QString>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 
@@ -97,11 +97,11 @@ public:
      * @brief WebSocket 连接状态
      */
     enum class State {
-        Unconnected,  ///< 未连接（初始状态）
-        Connecting,   ///< 连接中
-        Connected,    ///< 已连接（可以收发消息）
-        Closing,      ///< 关闭中（正在执行关闭握手）
-        Closed        ///< 已关闭
+        Unconnected, ///< 未连接（初始状态）
+        Connecting,  ///< 连接中
+        Connected,   ///< 已连接（可以收发消息）
+        Closing,     ///< 关闭中（正在执行关闭握手）
+        Closed       ///< 已关闭
     };
     Q_ENUM(State)
 
@@ -113,20 +113,20 @@ public:
      * @see https://datatracker.ietf.org/doc/html/rfc6455#section-7.4
      */
     enum class CloseCode {
-        Normal = 1000,           ///< 正常关闭
-        GoingAway = 1001,        ///< 端点离开（如浏览器页面关闭）
-        ProtocolError = 1002,    ///< 协议错误
-        UnsupportedData = 1003,  ///< 不支持的数据类型
-        NoStatusReceived = 1005, ///< 未收到状态码（保留，不应发送）
-        AbnormalClosure = 1006,  ///< 异常关闭（保留，不应发送）
-        InvalidPayload = 1007,   ///< 无效的载荷数据
-        PolicyViolation = 1008,  ///< 策略违规
-        MessageTooBig = 1009,    ///< 消息过大
+        Normal             = 1000, ///< 正常关闭
+        GoingAway          = 1001, ///< 端点离开（如浏览器页面关闭）
+        ProtocolError      = 1002, ///< 协议错误
+        UnsupportedData    = 1003, ///< 不支持的数据类型
+        NoStatusReceived   = 1005, ///< 未收到状态码（保留，不应发送）
+        AbnormalClosure    = 1006, ///< 异常关闭（保留，不应发送）
+        InvalidPayload     = 1007, ///< 无效的载荷数据
+        PolicyViolation    = 1008, ///< 策略违规
+        MessageTooBig      = 1009, ///< 消息过大
         MandatoryExtension = 1010, ///< 缺少必需的扩展
-        InternalError = 1011,    ///< 服务器内部错误
-        ServiceRestart = 1012,   ///< 服务重启
-        TryAgainLater = 1013,    ///< 稍后重试
-        TlsHandshake = 1015      ///< TLS 握手失败（保留，不应发送）
+        InternalError      = 1011, ///< 服务器内部错误
+        ServiceRestart     = 1012, ///< 服务重启
+        TryAgainLater      = 1013, ///< 稍后重试
+        TlsHandshake       = 1015  ///< TLS 握手失败（保留，不应发送）
     };
     Q_ENUM(CloseCode)
 
@@ -260,7 +260,8 @@ public:
      * @brief 设置是否启用自动 Pong
      *
      * - enabled=true（默认）：由 libcurl 自动处理 Ping→Pong
-     * - enabled=false：禁用自动 Pong（CURLWS_NOAUTOPONG），应用需在 pingReceived() 中自行回复 pong()
+     * - enabled=false：禁用自动 Pong（CURLWS_NOAUTOPONG），应用需在 pingReceived() 中自行回复
+     * pong()
      *
      * @note 必须在 open() 之前设置，连接建立后修改无效
      */

@@ -4,12 +4,13 @@
  */
 
 #include "QCMultipartFormData.h"
+
+#include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QMimeDatabase>
 #include <QMimeType>
 #include <QRandomGenerator>
-#include <QDebug>
 
 namespace QCurl {
 
@@ -18,28 +19,26 @@ namespace QCurl {
 QCMultipartFormData::QCMultipartFormData()
     : m_boundary(generateBoundary())
     , m_dirty(true)
-{
-}
+{}
 
-QCMultipartFormData::~QCMultipartFormData()
-{
-}
+QCMultipartFormData::~QCMultipartFormData() {}
 
 // ========== 公共方法：添加字段 ==========
 
 void QCMultipartFormData::addTextField(const QString &name, const QString &value)
 {
     Field field;
-    field.name = name;
-    field.value = value;
+    field.name   = name;
+    field.value  = value;
     field.isFile = false;
 
     m_fields.append(field);
     m_dirty = true;
 }
 
-bool QCMultipartFormData::addFileField(const QString &fieldName, const QString &filePath,
-                                        const QString &mimeType)
+bool QCMultipartFormData::addFileField(const QString &fieldName,
+                                       const QString &filePath,
+                                       const QString &mimeType)
 {
     // 检查文件是否存在和可读
     QFileInfo fileInfo(filePath);
@@ -69,23 +68,27 @@ bool QCMultipartFormData::addFileField(const QString &fieldName, const QString &
     return true;
 }
 
-void QCMultipartFormData::addFileField(const QString &fieldName, const QString &fileName,
-                                        const QByteArray &fileData, const QString &mimeType)
+void QCMultipartFormData::addFileField(const QString &fieldName,
+                                       const QString &fileName,
+                                       const QByteArray &fileData,
+                                       const QString &mimeType)
 {
     Field field;
-    field.name = fieldName;
-    field.fileName = fileName;
-    field.fileData = fileData;
-    field.mimeType = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
-    field.isFile = true;
+    field.name       = fieldName;
+    field.fileName   = fileName;
+    field.fileData   = fileData;
+    field.mimeType   = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
+    field.isFile     = true;
     field.fileStream = nullptr;
 
     m_fields.append(field);
     m_dirty = true;
 }
 
-bool QCMultipartFormData::addFileFieldStream(const QString &fieldName, QIODevice *device,
-                                              const QString &fileName, const QString &mimeType)
+bool QCMultipartFormData::addFileFieldStream(const QString &fieldName,
+                                             QIODevice *device,
+                                             const QString &fileName,
+                                             const QString &mimeType)
 {
     if (!device || !device->isReadable()) {
         qWarning() << "QCMultipartFormData: Device is null or not readable";
@@ -93,10 +96,10 @@ bool QCMultipartFormData::addFileFieldStream(const QString &fieldName, QIODevice
     }
 
     Field field;
-    field.name = fieldName;
-    field.fileName = fileName;
-    field.mimeType = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
-    field.isFile = true;
+    field.name       = fieldName;
+    field.fileName   = fileName;
+    field.mimeType   = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
+    field.isFile     = true;
     field.fileStream = device;
 
     m_fields.append(field);
@@ -133,13 +136,14 @@ QByteArray QCMultipartFormData::toByteArray() const
                     field.fileStream->seek(originalPos);
 
                     // 创建临时字段用于编码
-                    Field tempField = field;
-                    tempField.fileData = streamData;
+                    Field tempField      = field;
+                    tempField.fileData   = streamData;
                     tempField.fileStream = nullptr;
 
                     result.append(encodeFileField(tempField));
                 } else {
-                    qWarning() << "QCMultipartFormData: Stream is not open or not readable, skipping field:"
+                    qWarning() << "QCMultipartFormData: Stream is not open or not readable, "
+                                  "skipping field:"
                                << field.name;
                 }
                 continue;
@@ -154,7 +158,7 @@ QByteArray QCMultipartFormData::toByteArray() const
     result.append("--" + m_boundary.toUtf8() + "--\r\n");
 
     m_cachedData = result;
-    m_dirty = false;
+    m_dirty      = false;
 
     return result;
 }
@@ -206,9 +210,9 @@ qint64 QCMultipartFormData::size() const
         if (field.isFile) {
             if (field.fileStream != nullptr) {
                 // 流式字段：计算头部 + 文件大小 + 尾部
-                totalSize += encodeFileField(field).size();  // 头部
-                totalSize += field.fileStream->size();       // 文件内容
-                totalSize += 2;                              // "\r\n"
+                totalSize += encodeFileField(field).size(); // 头部
+                totalSize += field.fileStream->size();      // 文件内容
+                totalSize += 2;                             // "\r\n"
             } else {
                 totalSize += encodeFileField(field).size();
             }
@@ -218,7 +222,7 @@ qint64 QCMultipartFormData::size() const
     }
 
     // 结束 boundary
-    totalSize += m_boundary.toUtf8().size() + 6;  // "--boundary--\r\n"
+    totalSize += m_boundary.toUtf8().size() + 6; // "--boundary--\r\n"
 
     return totalSize;
 }

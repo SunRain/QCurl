@@ -6,6 +6,7 @@
 
 #include <QString>
 #include <QtGlobal>
+
 #include <optional>
 
 QT_BEGIN_NAMESPACE
@@ -45,13 +46,13 @@ public:
      * @brief 代理类型枚举
      */
     enum class ProxyType {
-        None,               ///< 无代理（直连）
-        Http,               ///< HTTP 代理
-        Https,              ///< HTTPS 代理（通过 CONNECT 方法）
-        Socks4,             ///< SOCKS4 代理
-        Socks4A,            ///< SOCKS4A 代理（支持域名解析）
-        Socks5,             ///< SOCKS5 代理
-        Socks5Hostname      ///< SOCKS5 代理（远程域名解析）
+        None,          ///< 无代理（直连）
+        Http,          ///< HTTP 代理
+        Https,         ///< HTTPS 代理（通过 CONNECT 方法）
+        Socks4,        ///< SOCKS4 代理
+        Socks4A,       ///< SOCKS4A 代理（支持域名解析）
+        Socks5,        ///< SOCKS5 代理
+        Socks5Hostname ///< SOCKS5 代理（远程域名解析）
     };
 
     /**
@@ -91,14 +92,16 @@ public:
      * 仅在 type == ProxyType::Https 且 tlsConfig.has_value() 时生效。
      * 默认不设置，避免 silent behavior change。
      */
-    struct ProxyTlsConfig {
+    struct ProxyTlsConfig
+    {
         bool verifyPeer = true;
         bool verifyHost = true;
         QString caCertPath;
         std::optional<QCNetworkTlsVersion> minTlsVersion = std::nullopt;
         QString cipherList;
         QString tls13Ciphers;
-        QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
+        QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy
+            = QCUnsupportedSecurityOptionPolicy::Fail;
     };
 
     std::optional<ProxyTlsConfig> tlsConfig = std::nullopt;

@@ -1,6 +1,3 @@
 #include "QCUtility.h"
 
-namespace QCurl {
-
-
-}
+namespace QCurl {}

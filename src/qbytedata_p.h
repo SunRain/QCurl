@@ -64,15 +64,14 @@ private:
     QList<QByteArray> buffers;
     qint64 bufferCompleteSize;
     qint64 firstPos;
-public:
-    QCByteDataBuffer() : bufferCompleteSize(0), firstPos(0)
-    {
-    }
 
-    ~QCByteDataBuffer()
-    {
-        clear();
-    }
+public:
+    QCByteDataBuffer()
+        : bufferCompleteSize(0)
+        , firstPos(0)
+    {}
+
+    ~QCByteDataBuffer() { clear(); }
 
     static inline void popFront(QByteArray &ba, qint64 n)
     {
@@ -87,7 +86,7 @@ public:
         }
     }
 
-    inline void append(const QCByteDataBuffer& other)
+    inline void append(const QCByteDataBuffer &other)
     {
         if (other.isEmpty()) {
             return;
@@ -101,8 +100,7 @@ public:
         }
     }
 
-
-    inline void append(const QByteArray& bd)
+    inline void append(const QByteArray &bd)
     {
         if (bd.isEmpty()) {
             return;
@@ -112,7 +110,7 @@ public:
         bufferCompleteSize += bd.size();
     }
 
-    inline void prepend(const QByteArray& bd)
+    inline void prepend(const QByteArray &bd)
     {
         if (bd.isEmpty()) {
             return;
@@ -135,10 +133,7 @@ public:
 
     // return everything. User of this function has to free() its .data!
     // avoid to use this, it might malloc and memcpy.
-    inline QByteArray readAll()
-    {
-        return read(byteAmount());
-    }
+    inline QByteArray readAll() { return read(byteAmount()); }
 
     // return amount. User of this function has to free() its .data!
     // avoid to use this, it might malloc and memcpy.
@@ -153,15 +148,15 @@ public:
 
     // return amount bytes. User of this function has to free() its .data!
     // avoid to use this, it will memcpy.
-    qint64 read(char* dst, qint64 amount)
+    qint64 read(char *dst, qint64 amount)
     {
-        amount = qMin(amount, byteAmount());
+        amount                = qMin(amount, byteAmount());
         qint64 originalAmount = amount;
-        char *writeDst = dst;
+        char *writeDst        = dst;
 
         while (amount > 0) {
             const QByteArray &first = buffers.first();
-            qint64 firstSize = first.size() - firstPos;
+            qint64 firstSize        = first.size() - firstPos;
             if (amount >= firstSize) {
                 // take it completely
                 bufferCompleteSize -= firstSize;
@@ -193,35 +188,26 @@ public:
     {
         buffers.clear();
         bufferCompleteSize = 0;
-        firstPos = 0;
+        firstPos           = 0;
     }
 
     // The byte count of all QByteArrays
-    inline qint64 byteAmount() const
-    {
-        return bufferCompleteSize;
-    }
+    inline qint64 byteAmount() const { return bufferCompleteSize; }
 
     // the number of QByteArrays
-    inline qint64 bufferCount() const
-    {
-        return buffers.length();
-    }
+    inline qint64 bufferCount() const { return buffers.length(); }
 
-    inline bool isEmpty() const
-    {
-        return byteAmount() == 0;
-    }
+    inline bool isEmpty() const { return byteAmount() == 0; }
 
     inline qint64 sizeNextBlock() const
     {
-        if(buffers.isEmpty()) {
+        if (buffers.isEmpty()) {
             return 0;
         }
         return buffers.first().size() - firstPos;
     }
 
-    inline QByteArray& operator[](int i)
+    inline QByteArray &operator[](int i)
     {
         if (i == 0) {
             squeezeFirst();
@@ -230,7 +216,8 @@ public:
         return buffers[i];
     }
 
-    inline bool canReadLine() const {
+    inline bool canReadLine() const
+    {
         int i = 0;
         if (i < buffers.length()) {
             if (buffers.at(i).indexOf('\n', firstPos) != -1) {
@@ -248,6 +235,6 @@ public:
     }
 };
 
-} //namespace QCurl
+} // namespace QCurl
 
 #endif // QBYTEDATA_P_H

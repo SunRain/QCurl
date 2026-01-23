@@ -12,10 +12,10 @@
 #define QCMULTIPARTFORMDATA_H
 
 #include <QByteArray>
-#include <QString>
-#include <QMap>
 #include <QIODevice>
+#include <QMap>
 #include <QSharedPointer>
+#include <QString>
 
 namespace QCurl {
 
@@ -83,7 +83,9 @@ public:
      * formData.addFileField("document", "/tmp/report.pdf", "application/pdf");
      * @endcode
      */
-    bool addFileField(const QString &fieldName, const QString &filePath, const QString &mimeType = QString());
+    bool addFileField(const QString &fieldName,
+                      const QString &filePath,
+                      const QString &mimeType = QString());
 
     /**
      * @brief 添加文件字段（从 QByteArray）
@@ -99,8 +101,10 @@ public:
      * formData.addFileField("avatar", "photo.jpg", imageData, "image/jpeg");
      * @endcode
      */
-    void addFileField(const QString &fieldName, const QString &fileName,
-                      const QByteArray &fileData, const QString &mimeType);
+    void addFileField(const QString &fieldName,
+                      const QString &fileName,
+                      const QByteArray &fileData,
+                      const QString &mimeType);
 
     /**
      * @brief 添加文件字段（从 QIODevice 流）
@@ -124,8 +128,10 @@ public:
      * }
      * @endcode
      */
-    bool addFileFieldStream(const QString &fieldName, QIODevice *device,
-                            const QString &fileName, const QString &mimeType);
+    bool addFileFieldStream(const QString &fieldName,
+                            QIODevice *device,
+                            const QString &fileName,
+                            const QString &mimeType);
 
     // ========== 编码和获取 ==========
 
@@ -206,16 +212,20 @@ public:
 private:
     // ========== 内部数据结构 ==========
 
-    struct Field {
-        QString name;           ///< 字段名
-        QString value;          ///< 文本值（文本字段）
-        QString fileName;       ///< 文件名（文件字段）
-        QString mimeType;       ///< MIME 类型
-        QByteArray fileData;    ///< 文件数据（内存文件）
-        QIODevice *fileStream;  ///< 文件流（流式文件）
-        bool isFile;            ///< 是否为文件字段
+    struct Field
+    {
+        QString name;          ///< 字段名
+        QString value;         ///< 文本值（文本字段）
+        QString fileName;      ///< 文件名（文件字段）
+        QString mimeType;      ///< MIME 类型
+        QByteArray fileData;   ///< 文件数据（内存文件）
+        QIODevice *fileStream; ///< 文件流（流式文件）
+        bool isFile;           ///< 是否为文件字段
 
-        Field() : fileStream(nullptr), isFile(false) {}
+        Field()
+            : fileStream(nullptr)
+            , isFile(false)
+        {}
     };
 
     // ========== 私有方法 ==========
@@ -242,10 +252,10 @@ private:
 
     // ========== 私有成员 ==========
 
-    QString m_boundary;                 ///< Boundary 字符串
-    QList<Field> m_fields;              ///< 所有字段列表
-    mutable QByteArray m_cachedData;    ///< 缓存的编码数据
-    mutable bool m_dirty;               ///< 是否需要重新编码
+    QString m_boundary;              ///< Boundary 字符串
+    QList<Field> m_fields;           ///< 所有字段列表
+    mutable QByteArray m_cachedData; ///< 缓存的编码数据
+    mutable bool m_dirty;            ///< 是否需要重新编码
 };
 
 } // namespace QCurl

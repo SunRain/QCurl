@@ -1,13 +1,13 @@
 #ifndef QCNETWORKACCESSMANAGERPRIVATE_H
 #define QCNETWORKACCESSMANAGERPRIVATE_H
 
-#include <curl/curl.h>
+#include "QCNetworkAccessManager.h"
 
 #include <QSet>
-#include <QTimer>
 #include <QSocketNotifier>
+#include <QTimer>
 
-#include "QCNetworkAccessManager.h"
+#include <curl/curl.h>
 
 namespace QCurl {
 
@@ -16,45 +16,42 @@ class QCNetworkAccessManagerPrivate
 {
 public:
     QCNetworkAccessManagerPrivate(QCNetworkAccessManager *self)
-        : cookieFilePath(),
-          replyList(),
-          curlMultiHandle(nullptr),
-          timer(nullptr),
-          socketDescriptor(CURL_SOCKET_BAD),
-          readNotifier(nullptr),
-          writeNotifier(nullptr),
-          errorNotifier(nullptr),
-          logger(nullptr),
-          middlewares(),
-          mockHandler(nullptr),
-          q_ptr(self)
-    {
-
-    }
+        : cookieFilePath()
+        , replyList()
+        , curlMultiHandle(nullptr)
+        , timer(nullptr)
+        , socketDescriptor(CURL_SOCKET_BAD)
+        , readNotifier(nullptr)
+        , writeNotifier(nullptr)
+        , errorNotifier(nullptr)
+        , logger(nullptr)
+        , middlewares()
+        , mockHandler(nullptr)
+        , q_ptr(self)
+    {}
 
     ~QCNetworkAccessManagerPrivate() = default;
 
-    QString                     cookieFilePath;
+    QString cookieFilePath;
 
+    QSet<QCNetworkAsyncReply *> replyList;
 
-    QSet<QCNetworkAsyncReply*>       replyList;
+    CURLM *curlMultiHandle;
 
-    CURLM                       *curlMultiHandle;
+    QTimer *timer;
 
-    QTimer                      *timer;
+    curl_socket_t socketDescriptor;
 
-    curl_socket_t               socketDescriptor;
+    QSocketNotifier *readNotifier;
 
-    QSocketNotifier             *readNotifier;
+    QSocketNotifier *writeNotifier;
 
-    QSocketNotifier             *writeNotifier;
-
-    QSocketNotifier             *errorNotifier;
+    QSocketNotifier *errorNotifier;
 
     // 高级功能成员
     QCNetworkLogger *logger;
     bool debugTraceEnabled = false;
-    QList<QCNetworkMiddleware*> middlewares;
+    QList<QCNetworkMiddleware *> middlewares;
     QCNetworkMockHandler *mockHandler;
 
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
@@ -63,7 +60,6 @@ private:
     QCNetworkAccessManager *q_ptr;
 };
 
-
-} //namespace QCurl
+} // namespace QCurl
 
 #endif // QCNETWORKACCESSMANAGERPRIVATE_H

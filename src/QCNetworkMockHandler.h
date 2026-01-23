@@ -4,15 +4,17 @@
 #ifndef QCNETWORKMOCKHANDLER_H
 #define QCNETWORKMOCKHANDLER_H
 
-#include <QUrl>
-#include <QByteArray>
-#include <QMap>
-#include <QList>
-#include <QPair>
-#include <QMutex>
-#include <optional>
 #include "QCGlobal.h"
 #include "QCNetworkError.h"
+
+#include <QByteArray>
+#include <QList>
+#include <QMap>
+#include <QMutex>
+#include <QPair>
+#include <QUrl>
+
+#include <optional>
 
 namespace QCurl {
 
@@ -43,16 +45,18 @@ public:
     QCNetworkMockHandler();
     ~QCNetworkMockHandler();
 
-    struct MockData {
+    struct MockData
+    {
         QByteArray response;
         int statusCode = 200;
         QMap<QByteArray, QByteArray> headers;
-        std::optional<QByteArray> rawHeaderData;  ///< 原始响应头数据（可包含折叠行/多 header blocks）
+        std::optional<QByteArray> rawHeaderData; ///< 原始响应头数据（可包含折叠行/多 header blocks）
         NetworkError error = NetworkError::NoError;
-        bool isError = false;
+        bool isError       = false;
     };
 
-    struct CapturedRequest {
+    struct CapturedRequest
+    {
         QUrl url;
         HttpMethod method;
         QList<QPair<QByteArray, QByteArray>> headers;
@@ -66,9 +70,7 @@ public:
      * @param response 响应数据
      * @param statusCode HTTP 状态码（默认 200）
      */
-    void mockResponse(const QUrl &url,
-                     const QByteArray &response,
-                     int statusCode = 200);
+    void mockResponse(const QUrl &url, const QByteArray &response, int statusCode = 200);
 
     /**
      * @brief 模拟成功响应（指定 HTTP method）
@@ -77,7 +79,7 @@ public:
     void mockResponse(HttpMethod method,
                       const QUrl &url,
                       const QByteArray &response,
-                      int statusCode = 200,
+                      int statusCode                              = 200,
                       const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
 
     /**
@@ -98,11 +100,12 @@ public:
      * @brief 追加模拟成功响应（序列）
      * @note 每次命中会“弹出队首”；当序列耗尽后复用最后一条。
      */
-    void enqueueResponse(HttpMethod method,
-                         const QUrl &url,
-                         const QByteArray &response,
-                         int statusCode = 200,
-                         const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
+    void enqueueResponse(
+        HttpMethod method,
+        const QUrl &url,
+        const QByteArray &response,
+        int statusCode                              = 200,
+        const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
 
     /**
      * @brief 追加模拟成功响应（序列，注入原始响应头块）
@@ -215,7 +218,8 @@ public:
     void clear();
 
 private:
-    struct MockSequence {
+    struct MockSequence
+    {
         QList<MockData> items;
         int cursor = 0;
     };
@@ -230,7 +234,7 @@ private:
     QMap<QString, MockSequence> m_sequences;
     int m_globalDelay = 0;
 
-    bool m_captureEnabled = false;
+    bool m_captureEnabled              = false;
     int m_captureBodyPreviewLimitBytes = 4096;
     QList<CapturedRequest> m_capturedRequests;
 };

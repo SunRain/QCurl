@@ -2,10 +2,11 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkLogger.h"
-#include <QFile>
-#include <QTextStream>
+
 #include <QDebug>
+#include <QFile>
 #include <QMutex>
+#include <QTextStream>
 #include <QVector>
 
 namespace QCurl {
@@ -36,10 +37,14 @@ QString NetworkLogEntry::toPlainText() const
 QString logLevelToString(NetworkLogLevel level)
 {
     switch (level) {
-    case NetworkLogLevel::Debug:    return "DEBUG";
-    case NetworkLogLevel::Info:     return "INFO";
-    case NetworkLogLevel::Warning:  return "WARN";
-    case NetworkLogLevel::Error:    return "ERROR";
+        case NetworkLogLevel::Debug:
+            return "DEBUG";
+        case NetworkLogLevel::Info:
+            return "INFO";
+        case NetworkLogLevel::Warning:
+            return "WARN";
+        case NetworkLogLevel::Error:
+            return "ERROR";
     }
     return "UNKNOWN";
 }
@@ -69,11 +74,11 @@ class QCNetworkDefaultLogger::Private
 {
 public:
     NetworkLogLevel minLevel = NetworkLogLevel::Info;
-    bool enableConsole = true;
+    bool enableConsole       = true;
     QString logFile;
     qint64 maxFileSize = 10 * 1024 * 1024; // 10MB
-    int backupCount = 5;
-    QString logFormat = "%{time} [%{level}] %{category}: %{message}";
+    int backupCount    = 5;
+    QString logFormat  = "%{time} [%{level}] %{category}: %{message}";
     std::function<void(const NetworkLogEntry &)> customCallback;
     QVector<NetworkLogEntry> entries;
     QMutex mutex;
@@ -122,8 +127,7 @@ public:
 
 QCNetworkDefaultLogger::QCNetworkDefaultLogger()
     : d_ptr(std::make_unique<Private>())
-{
-}
+{}
 
 QCNetworkDefaultLogger::~QCNetworkDefaultLogger() = default;
 
@@ -133,10 +137,12 @@ void QCNetworkDefaultLogger::enableConsoleOutput(bool enable)
     d_ptr->enableConsole = enable;
 }
 
-void QCNetworkDefaultLogger::enableFileOutput(const QString &filePath, qint64 maxSize, int backupCount)
+void QCNetworkDefaultLogger::enableFileOutput(const QString &filePath,
+                                              qint64 maxSize,
+                                              int backupCount)
 {
     QMutexLocker locker(&d_ptr->mutex);
-    d_ptr->logFile = filePath;
+    d_ptr->logFile     = filePath;
     d_ptr->maxFileSize = maxSize > 0 ? maxSize : (10 * 1024 * 1024);
     d_ptr->backupCount = backupCount;
 }
@@ -159,7 +165,9 @@ void QCNetworkDefaultLogger::setLogFormat(const QString &format)
     d_ptr->logFormat = format;
 }
 
-void QCNetworkDefaultLogger::log(NetworkLogLevel level, const QString &category, const QString &message)
+void QCNetworkDefaultLogger::log(NetworkLogLevel level,
+                                 const QString &category,
+                                 const QString &message)
 {
     QMutexLocker locker(&d_ptr->mutex);
 
@@ -168,9 +176,9 @@ void QCNetworkDefaultLogger::log(NetworkLogLevel level, const QString &category,
     }
 
     NetworkLogEntry entry;
-    entry.level = level;
-    entry.category = category;
-    entry.message = message;
+    entry.level     = level;
+    entry.category  = category;
+    entry.message   = message;
     entry.timestamp = QDateTime::currentDateTime();
 
     // Store entry
@@ -184,18 +192,18 @@ void QCNetworkDefaultLogger::log(NetworkLogLevel level, const QString &category,
     // Console output
     if (d_ptr->enableConsole) {
         switch (level) {
-        case NetworkLogLevel::Debug:
-            qDebug().noquote() << formatted;
-            break;
-        case NetworkLogLevel::Info:
-            qInfo().noquote() << formatted;
-            break;
-        case NetworkLogLevel::Warning:
-            qWarning().noquote() << formatted;
-            break;
-        case NetworkLogLevel::Error:
-            qCritical().noquote() << formatted;
-            break;
+            case NetworkLogLevel::Debug:
+                qDebug().noquote() << formatted;
+                break;
+            case NetworkLogLevel::Info:
+                qInfo().noquote() << formatted;
+                break;
+            case NetworkLogLevel::Warning:
+                qWarning().noquote() << formatted;
+                break;
+            case NetworkLogLevel::Error:
+                qCritical().noquote() << formatted;
+                break;
         }
     }
 

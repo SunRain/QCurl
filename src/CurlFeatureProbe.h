@@ -19,7 +19,8 @@ namespace QCurl {
 class CurlFeatureProbe
 {
 public:
-    struct Availability {
+    struct Availability
+    {
         bool supported = true;
         QString reason; // supported==false 时给出原因
     };
@@ -46,4 +47,3 @@ private:
 } // namespace QCurl
 
 #endif // CURLFEATUREPROBE_H
-

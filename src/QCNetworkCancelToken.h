@@ -4,12 +4,13 @@
 #ifndef QCNETWORKCANCELTOKEN_H
 #define QCNETWORKCANCELTOKEN_H
 
-#include <QObject>
+#include "QCGlobal.h"
+
 #include <QList>
+#include <QObject>
 #include <QPointer>
 #include <QScopedPointer>
 #include <QTimer>
-#include "QCGlobal.h"
 
 namespace QCurl {
 

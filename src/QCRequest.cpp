@@ -1,12 +1,14 @@
 #include "QCRequest.h"
-#include "QCNetworkSslConfig.h"
-#include "QCNetworkProxyConfig.h"
+
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequestPriority.h"
 #include "QCNetworkRetryPolicy.h"
-#include <QUrlQuery>
-#include <QJsonDocument>
+#include "QCNetworkSslConfig.h"
+
 #include <QDebug>
+#include <QJsonDocument>
+#include <QUrlQuery>
 
 namespace QCurl {
 
@@ -77,34 +79,33 @@ QCRequest QCRequest::head(const QUrl &url)
 QCRequest::QCRequest(const QUrl &url, const QString &method)
     : m_request(url)
     , m_method(method)
-{
-}
+{}
 
 // ========== 流式配置方法实现 ==========
 
-QCRequest& QCRequest::withHeader(const QString &key, const QString &value)
+QCRequest &QCRequest::withHeader(const QString &key, const QString &value)
 {
     m_request.setRawHeader(key.toUtf8(), value.toUtf8());
     return *this;
 }
 
-QCRequest& QCRequest::withBasicAuth(const QString &userName, const QString &password)
+QCRequest &QCRequest::withBasicAuth(const QString &userName, const QString &password)
 {
     QCNetworkHttpAuthConfig cfg;
     cfg.userName = userName;
     cfg.password = password;
-    cfg.method = QCNetworkHttpAuthMethod::Basic;
+    cfg.method   = QCNetworkHttpAuthMethod::Basic;
     m_request.setHttpAuth(cfg);
     return *this;
 }
 
-QCRequest& QCRequest::withHttpAuth(const QCNetworkHttpAuthConfig &config)
+QCRequest &QCRequest::withHttpAuth(const QCNetworkHttpAuthConfig &config)
 {
     m_request.setHttpAuth(config);
     return *this;
 }
 
-QCRequest& QCRequest::withQueryParam(const QString &key, const QString &value)
+QCRequest &QCRequest::withQueryParam(const QString &key, const QString &value)
 {
     QUrl url = m_request.url();
     QUrlQuery query(url);
@@ -117,19 +118,19 @@ QCRequest& QCRequest::withQueryParam(const QString &key, const QString &value)
     return *this;
 }
 
-QCRequest& QCRequest::withTimeout(std::chrono::seconds timeout)
+QCRequest &QCRequest::withTimeout(std::chrono::seconds timeout)
 {
     m_request.setTimeout(std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
     return *this;
 }
 
-QCRequest& QCRequest::withTimeout(std::chrono::milliseconds timeout)
+QCRequest &QCRequest::withTimeout(std::chrono::milliseconds timeout)
 {
     m_request.setTimeout(timeout);
     return *this;
 }
 
-QCRequest& QCRequest::withJson(const QJsonObject &json)
+QCRequest &QCRequest::withJson(const QJsonObject &json)
 {
     // 序列化 JSON 对象
     QJsonDocument doc(json);
@@ -143,7 +144,7 @@ QCRequest& QCRequest::withJson(const QJsonObject &json)
     return *this;
 }
 
-QCRequest& QCRequest::withBody(const QByteArray &data, const QString &contentType)
+QCRequest &QCRequest::withBody(const QByteArray &data, const QString &contentType)
 {
     m_postData = data;
 
@@ -158,51 +159,51 @@ QCRequest& QCRequest::withBody(const QByteArray &data, const QString &contentTyp
     return *this;
 }
 
-QCRequest& QCRequest::withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
+QCRequest &QCRequest::withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes)
 {
     m_request.setUploadDevice(device, sizeBytes);
     m_postData.clear();
     return *this;
 }
 
-QCRequest& QCRequest::withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
+QCRequest &QCRequest::withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes)
 {
     m_request.setUploadFile(filePath, sizeBytes);
     m_postData.clear();
     return *this;
 }
 
-QCRequest& QCRequest::withSslConfig(const QCNetworkSslConfig &config)
+QCRequest &QCRequest::withSslConfig(const QCNetworkSslConfig &config)
 {
     m_request.setSslConfig(config);
     return *this;
 }
 
-QCRequest& QCRequest::withProxyConfig(const QCNetworkProxyConfig &config)
+QCRequest &QCRequest::withProxyConfig(const QCNetworkProxyConfig &config)
 {
     m_request.setProxyConfig(config);
     return *this;
 }
 
-QCRequest& QCRequest::withHttpVersion(QCNetworkHttpVersion version)
+QCRequest &QCRequest::withHttpVersion(QCNetworkHttpVersion version)
 {
     m_request.setHttpVersion(version);
     return *this;
 }
 
-QCRequest& QCRequest::withPriority(QCNetworkRequestPriority priority)
+QCRequest &QCRequest::withPriority(QCNetworkRequestPriority priority)
 {
     m_request.setPriority(priority);
     return *this;
 }
 
-QCRequest& QCRequest::withRetryPolicy(const QCNetworkRetryPolicy &policy)
+QCRequest &QCRequest::withRetryPolicy(const QCNetworkRetryPolicy &policy)
 {
     m_request.setRetryPolicy(policy);
     return *this;
 }
 
-QCRequest& QCRequest::withFollowRedirects(bool follow)
+QCRequest &QCRequest::withFollowRedirects(bool follow)
 {
     m_request.setFollowLocation(follow);
     return *this;
@@ -210,7 +211,7 @@ QCRequest& QCRequest::withFollowRedirects(bool follow)
 
 // ========== 发送请求方法实现 ==========
 
-QCNetworkReply* QCRequest::send(QCNetworkAccessManager *manager)
+QCNetworkReply *QCRequest::send(QCNetworkAccessManager *manager)
 {
     if (!manager) {
         manager = defaultManager();
@@ -219,15 +220,13 @@ QCNetworkReply* QCRequest::send(QCNetworkAccessManager *manager)
     return sendInternal(manager);
 }
 
-QCNetworkReply* QCRequest::send(std::function<void(QCNetworkReply*)> callback)
+QCNetworkReply *QCRequest::send(std::function<void(QCNetworkReply *)> callback)
 {
     QCNetworkAccessManager *manager = defaultManager();
-    QCNetworkReply *reply = sendInternal(manager);
+    QCNetworkReply *reply           = sendInternal(manager);
 
     if (callback && reply) {
-        QObject::connect(reply, &QCNetworkReply::finished, [reply, callback]() {
-            callback(reply);
-        });
+        QObject::connect(reply, &QCNetworkReply::finished, [reply, callback]() { callback(reply); });
     }
 
     return reply;
@@ -235,14 +234,14 @@ QCNetworkReply* QCRequest::send(std::function<void(QCNetworkReply*)> callback)
 
 // ========== 内部辅助方法 ==========
 
-QCNetworkAccessManager* QCRequest::defaultManager()
+QCNetworkAccessManager *QCRequest::defaultManager()
 {
     // 使用函数级静态变量确保全局唯一实例
     static QCNetworkAccessManager s_manager;
     return &s_manager;
 }
 
-QCNetworkReply* QCRequest::sendInternal(QCNetworkAccessManager *manager)
+QCNetworkReply *QCRequest::sendInternal(QCNetworkAccessManager *manager)
 {
     QCNetworkReply *reply = nullptr;
 

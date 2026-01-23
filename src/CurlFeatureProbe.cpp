@@ -25,9 +25,9 @@ void CurlFeatureProbe::refresh()
         return;
     }
 
-    m_runtimeVersionNum = static_cast<int>(info->version_num);
+    m_runtimeVersionNum    = static_cast<int>(info->version_num);
     m_runtimeVersionString = QString::fromUtf8(info->version ? info->version : "");
-    m_runtimeFeatures = static_cast<long>(info->features);
+    m_runtimeFeatures      = static_cast<long>(info->features);
 }
 
 int CurlFeatureProbe::compiledVersionNum() const noexcept
@@ -54,13 +54,14 @@ CurlFeatureProbe::Availability CurlFeatureProbe::easyOptionAvailability(CURLopti
 {
     // 说明：仅对“需要显式 gate 的选项”提供结论；未纳入探测范围时默认按“可用”处理。
     switch (option) {
-    case CURLOPT_MAXLIFETIME_CONN:
-        if (m_runtimeVersionNum < 0x075000) {
-            return {false, QStringLiteral("运行时 libcurl < 7.80.0，不支持 CURLOPT_MAXLIFETIME_CONN")};
-        }
-        return {true, QString()};
-    default:
-        return {true, QString()};
+        case CURLOPT_MAXLIFETIME_CONN:
+            if (m_runtimeVersionNum < 0x075000) {
+                return {false,
+                        QStringLiteral("运行时 libcurl < 7.80.0，不支持 CURLOPT_MAXLIFETIME_CONN")};
+            }
+            return {true, QString()};
+        default:
+            return {true, QString()};
     }
 }
 
@@ -68,16 +69,16 @@ CurlFeatureProbe::Availability CurlFeatureProbe::multiOptionAvailability(CURLMop
 {
     // 说明：仅对“需要显式 gate 的选项”提供结论；未纳入探测范围时默认按“可用”处理。
     switch (option) {
-    case CURLMOPT_MAX_TOTAL_CONNECTIONS:
-        return {true, QString()};
-    case CURLMOPT_MAX_HOST_CONNECTIONS:
-        return {true, QString()};
-    case CURLMOPT_MAX_CONCURRENT_STREAMS:
-        return {true, QString()};
-    case CURLMOPT_MAXCONNECTS:
-        return {true, QString()};
-    default:
-        return {true, QString()};
+        case CURLMOPT_MAX_TOTAL_CONNECTIONS:
+            return {true, QString()};
+        case CURLMOPT_MAX_HOST_CONNECTIONS:
+            return {true, QString()};
+        case CURLMOPT_MAX_CONCURRENT_STREAMS:
+            return {true, QString()};
+        case CURLMOPT_MAXCONNECTS:
+            return {true, QString()};
+        default:
+            return {true, QString()};
     }
 }
 

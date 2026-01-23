@@ -2,6 +2,7 @@
 #define QCNETWORKMEMORYCACHE_H
 
 #include "QCNetworkCache.h"
+
 #include <QCache>
 #include <QMutex>
 
@@ -42,7 +43,8 @@ public:
     // QCNetworkCache 接口实现
     [[nodiscard]] QByteArray data(const QUrl &url) override;
     [[nodiscard]] QCNetworkCacheMetadata metadata(const QUrl &url) override;
-    void insert(const QUrl &url, const QByteArray &data,
+    void insert(const QUrl &url,
+                const QByteArray &data,
                 const QCNetworkCacheMetadata &meta) override;
     bool remove(const QUrl &url) override;
     void clear() override;
@@ -51,7 +53,8 @@ public:
     void setMaxCacheSize(qint64 size) override;
 
 private:
-    struct CacheEntry {
+    struct CacheEntry
+    {
         QByteArray data;
         QCNetworkCacheMetadata metadata;
         qint64 size() const { return data.size(); }

@@ -1,8 +1,9 @@
 #ifndef QCCURLHANDLEMANAGER_H
 #define QCCURLHANDLEMANAGER_H
 
-#include <curl/curl.h>
 #include <QString>
+
+#include <curl/curl.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -53,25 +54,25 @@ public:
     QCCurlHandleManager(QCCurlHandleManager &&other) noexcept;
 
     // 移动赋值运算符
-    QCCurlHandleManager& operator=(QCCurlHandleManager &&other) noexcept;
+    QCCurlHandleManager &operator=(QCCurlHandleManager &&other) noexcept;
 
     // 禁止拷贝
-    QCCurlHandleManager(const QCCurlHandleManager&) = delete;
-    QCCurlHandleManager& operator=(const QCCurlHandleManager&) = delete;
+    QCCurlHandleManager(const QCCurlHandleManager &)            = delete;
+    QCCurlHandleManager &operator=(const QCCurlHandleManager &) = delete;
 
     /**
      * @brief 获取 curl easy handle 指针
      *
      * @return CURL* curl 句柄指针，如果初始化失败则返回 nullptr
      */
-    [[nodiscard]] CURL* handle() const noexcept { return m_curlHandle; }
+    [[nodiscard]] CURL *handle() const noexcept { return m_curlHandle; }
 
     /**
      * @brief 获取 HTTP header 列表
      *
      * @return curl_slist* header 列表指针，初始为 nullptr
      */
-    [[nodiscard]] curl_slist* headerList() const noexcept { return m_headerList; }
+    [[nodiscard]] curl_slist *headerList() const noexcept { return m_headerList; }
 
     /**
      * @brief 添加 HTTP header
@@ -94,7 +95,7 @@ public:
     [[nodiscard]] bool isValid() const noexcept { return m_curlHandle != nullptr; }
 
 private:
-    CURL *m_curlHandle = nullptr;       ///< curl easy handle
+    CURL *m_curlHandle       = nullptr; ///< curl easy handle
     curl_slist *m_headerList = nullptr; ///< HTTP header 列表
 };
 

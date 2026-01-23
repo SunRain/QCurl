@@ -1,37 +1,38 @@
 #include "QCNetworkAccessManager.h"
 
-#include <curl/multi.h>
-#include <QSet>
-#include <QTimer>
-#include <QDebug>
-#include <QAbstractEventDispatcher>
-#include <QElapsedTimer>
-#include <QThread>
-#include <QSocketNotifier>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QStringList>
-#include <QUrl>
-#include <QFile>
-#include <QIODevice>
-#include <QPointer>
-#include <QSharedPointer>
-#include <QDir>
-
-#include "QCMultipartFormData.h"
 #include "CurlGlobalConstructor.h"
+#include "QCCurlMultiManager.h"
+#include "QCMultipartFormData.h"
 #include "QCNetworkAccessManager_p.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
-#include "QCUtility.h"
-#include "QCNetworkRequestScheduler.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkDiskCache.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMiddleware.h"
-#include "QCNetworkRequestBuilder.h"
 #include "QCNetworkMockHandler.h"
-#include "QCCurlMultiManager.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkReply_p.h"
+#include "QCNetworkRequestBuilder.h"
+#include "QCNetworkRequestScheduler.h"
+#include "QCUtility.h"
+
+#include <QAbstractEventDispatcher>
+#include <QDebug>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QIODevice>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QPointer>
+#include <QSet>
+#include <QSharedPointer>
+#include <QSocketNotifier>
+#include <QStringList>
+#include <QThread>
+#include <QTimer>
+#include <QUrl>
+
+#include <curl/multi.h>
 
 namespace {
 
@@ -40,14 +41,18 @@ static bool hasEventDispatcher(QThread *thread)
     return (thread != nullptr) && (QAbstractEventDispatcher::instance(thread) != nullptr);
 }
 
-static QCurl::QCNetworkReply* makeNoEventLoopErrorReply(const QCurl::QCNetworkRequest &request,
+static QCurl::QCNetworkReply *makeNoEventLoopErrorReply(const QCurl::QCNetworkRequest &request,
                                                         QCurl::HttpMethod method,
                                                         const QByteArray &body,
                                                         QObject *parent,
                                                         const char *apiName)
 {
     // 不依赖事件循环，直接返回可诊断的 Error reply（可能会同步发射 finished）
-    auto *reply = new QCurl::QCNetworkReply(request, method, QCurl::ExecutionMode::Async, body, parent);
+    auto *reply = new QCurl::QCNetworkReply(request,
+                                            method,
+                                            QCurl::ExecutionMode::Async,
+                                            body,
+                                            parent);
     reply->abortWithError(QCurl::NetworkError::InvalidRequest,
                           QStringLiteral("%1: owner 线程缺少 Qt 事件循环，无法执行异步请求")
                               .arg(QString::fromUtf8(apiName)));
@@ -63,7 +68,7 @@ namespace {
 constexpr const char kMiddlewareResponseInvokedProperty[] = "_qcurl_middleware_response_invoked";
 
 QCNetworkRequest applyRequestPreSendMiddlewares(const QCNetworkRequest &request,
-                                               const QList<QCNetworkMiddleware*> &middlewares)
+                                                const QList<QCNetworkMiddleware *> &middlewares)
 {
     if (middlewares.isEmpty()) {
         return request;
@@ -78,7 +83,8 @@ QCNetworkRequest applyRequestPreSendMiddlewares(const QCNetworkRequest &request,
     return modifiedRequest;
 }
 
-void runReplyCreatedMiddlewares(QCNetworkReply *reply, const QList<QCNetworkMiddleware*> &middlewares)
+void runReplyCreatedMiddlewares(QCNetworkReply *reply,
+                                const QList<QCNetworkMiddleware *> &middlewares)
 {
     if (!reply || middlewares.isEmpty()) {
         return;
@@ -91,7 +97,8 @@ void runReplyCreatedMiddlewares(QCNetworkReply *reply, const QList<QCNetworkMidd
     }
 }
 
-void runResponseMiddlewaresOnce(QCNetworkReply *reply, const QList<QCNetworkMiddleware*> &middlewares)
+void runResponseMiddlewaresOnce(QCNetworkReply *reply,
+                                const QList<QCNetworkMiddleware *> &middlewares)
 {
     if (!reply || middlewares.isEmpty()) {
         return;
@@ -111,7 +118,7 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply, const QList<QCNetworkMidd
 
 void wireResponseMiddlewares(QCNetworkAccessManager *manager,
                              QCNetworkReply *reply,
-                             const QList<QCNetworkMiddleware*> &middlewares)
+                             const QList<QCNetworkMiddleware *> &middlewares)
 {
     if (!manager || !reply || middlewares.isEmpty()) {
         return;
@@ -133,11 +140,11 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
 } // namespace
 
 QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
-    : QObject(parent),
-      d_ptr(new QCNetworkAccessManagerPrivate(this)),
-      m_cookieModeFlag(NotOpen),
-      m_schedulerEnabled(false),
-      m_cache(nullptr)
+    : QObject(parent)
+    , d_ptr(new QCNetworkAccessManagerPrivate(this))
+    , m_cookieModeFlag(NotOpen)
+    , m_schedulerEnabled(false)
+    , m_cache(nullptr)
 {
     CurlGlobalConstructor::instance();
 }
@@ -157,20 +164,22 @@ QCNetworkAccessManager::CookieFileModeFlag QCNetworkAccessManager::cookieFileMod
     return m_cookieModeFlag;
 }
 
-void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath, CookieFileModeFlag flag)
+void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath,
+                                               CookieFileModeFlag flag)
 {
     m_cookieFilePath = cookieFilePath;
     m_cookieModeFlag = flag;
 }
 
 bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
-                                          const QUrl &originUrl,
-                                          QString *error)
+                                           const QUrl &originUrl,
+                                           QString *error)
 {
     if (QThread::currentThread() != thread()) {
         if (!hasEventDispatcher(thread())) {
             if (error) {
-                *error = QStringLiteral("QCNetworkAccessManager::importCookies: manager 所在线程无事件循环，无法跨线程提交");
+                *error = QStringLiteral("QCNetworkAccessManager::importCookies: manager "
+                                        "所在线程无事件循环，无法跨线程提交");
             }
             return false;
         }
@@ -201,19 +210,20 @@ bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
 }
 
 QList<QNetworkCookie> QCNetworkAccessManager::exportCookies(const QUrl &filterUrl,
-                                                           QString *error) const
+                                                            QString *error) const
 {
     if (QThread::currentThread() != thread()) {
         if (!hasEventDispatcher(thread())) {
             if (error) {
-                *error = QStringLiteral("QCNetworkAccessManager::exportCookies: manager 所在线程无事件循环，无法跨线程提交");
+                *error = QStringLiteral("QCNetworkAccessManager::exportCookies: manager "
+                                        "所在线程无事件循环，无法跨线程提交");
             }
             return {};
         }
 
         QList<QNetworkCookie> cookies;
         QString localError;
-        auto *mutableThis = const_cast<QCNetworkAccessManager*>(this);
+        auto *mutableThis = const_cast<QCNetworkAccessManager *>(this);
         QMetaObject::invokeMethod(
             mutableThis,
             [this, filterUrl, &cookies, &localError]() {
@@ -242,7 +252,8 @@ bool QCNetworkAccessManager::clearAllCookies(QString *error)
     if (QThread::currentThread() != thread()) {
         if (!hasEventDispatcher(thread())) {
             if (error) {
-                *error = QStringLiteral("QCNetworkAccessManager::clearAllCookies: manager 所在线程无事件循环，无法跨线程提交");
+                *error = QStringLiteral("QCNetworkAccessManager::clearAllCookies: manager "
+                                        "所在线程无事件循环，无法跨线程提交");
             }
             return false;
         }
@@ -251,9 +262,7 @@ bool QCNetworkAccessManager::clearAllCookies(QString *error)
         QString localError;
         QMetaObject::invokeMethod(
             this,
-            [this, &ok, &localError]() {
-                ok = clearAllCookies(&localError);
-            },
+            [this, &ok, &localError]() { ok = clearAllCookies(&localError); },
             Qt::BlockingQueuedConnection);
 
         if (error) {
@@ -287,7 +296,8 @@ void QCNetworkAccessManager::setHstsAltSvcCacheConfig(const HstsAltSvcCacheConfi
     m_hstsAltSvcCacheConfig = config;
 }
 
-QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvcCacheConfig() const noexcept
+QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvcCacheConfig()
+    const noexcept
 {
     return m_hstsAltSvcCacheConfig;
 }
@@ -296,13 +306,13 @@ QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvc
 // 核心 API 实现
 // ============================================================================
 
-QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::sendHead(const QCNetworkRequest &request)
 {
-    const auto impl = [this, request]() -> QCNetworkReply* {
+    const auto impl = [this, request]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Head,
@@ -313,12 +323,12 @@ QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -334,10 +344,12 @@ QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendHead: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -353,13 +365,13 @@ QCNetworkReply* QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
 {
-    const auto impl = [this, request]() -> QCNetworkReply* {
+    const auto impl = [this, request]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Get,
@@ -370,12 +382,12 @@ QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -391,10 +403,12 @@ QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendGet: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -410,13 +424,14 @@ QCNetworkReply* QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request,
+                                                 const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Post,
@@ -427,12 +442,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -448,10 +463,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendPost: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -467,13 +484,14 @@ QCNetworkReply* QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
+                                                const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Put,
@@ -484,12 +502,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -505,10 +523,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendPut: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -524,18 +544,19 @@ QCNetworkReply* QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request)
 {
     return sendDelete(request, QByteArray());
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request,
+                                                   const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Delete,
@@ -546,12 +567,12 @@ QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -567,10 +588,12 @@ QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendDelete: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -586,13 +609,14 @@ QCNetworkReply* QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request,
+                                                  const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Patch,
@@ -603,12 +627,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 自动启动请求
+        reply->execute(); // 自动启动请求
         return reply;
     };
 
@@ -624,10 +648,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendPatch: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -643,13 +669,13 @@ QCNetworkReply* QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &request)
 {
-    const auto impl = [this, request]() -> QCNetworkReply* {
+    const auto impl = [this, request]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Get,
@@ -660,12 +686,12 @@ QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &requ
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 同步执行（会阻塞）
+        reply->execute(); // 同步执行（会阻塞）
         return reply;
     };
 
@@ -681,10 +707,12 @@ QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &requ
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendGetSync: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -692,13 +720,14 @@ QCNetworkReply* QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &requ
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request,
+                                                     const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         Q_D(QCNetworkAccessManager);
-        const auto middlewaresSnapshot = d->middlewares;
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+        const auto middlewaresSnapshot         = d->middlewares;
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
 
         auto *reply = new QCNetworkReply(modifiedRequest,
                                          HttpMethod::Post,
@@ -709,12 +738,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
-        reply->execute();  // 同步执行（会阻塞）
+        reply->execute(); // 同步执行（会阻塞）
         return reply;
     };
 
@@ -730,10 +759,12 @@ QCNetworkReply* QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::sendPostSync: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -755,19 +786,19 @@ bool QCNetworkAccessManager::isSchedulerEnabled() const
     return m_schedulerEnabled;
 }
 
-QCNetworkRequestScheduler* QCNetworkAccessManager::scheduler() const
+QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
 {
     return QCNetworkRequestScheduler::instance();
 }
 
-QCNetworkReply* QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &request)
 {
-    const auto impl = [this, request]() -> QCNetworkReply* {
+    const auto impl = [this, request]() -> QCNetworkReply * {
         if (m_schedulerEnabled) {
             Q_D(QCNetworkAccessManager);
             const auto middlewaresSnapshot = d->middlewares;
-            const QCNetworkRequest modifiedRequest =
-                applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+            const QCNetworkRequest modifiedRequest
+                = applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
 
             auto *reply = scheduler()->scheduleRequest(modifiedRequest,
                                                        HttpMethod::Get,
@@ -795,11 +826,13 @@ QCNetworkReply* QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &requ
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
 
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::scheduleGet: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -815,14 +848,15 @@ QCNetworkReply* QCNetworkAccessManager::scheduleGet(const QCNetworkRequest &requ
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::schedulePost(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::schedulePost(const QCNetworkRequest &request,
+                                                     const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         if (m_schedulerEnabled) {
             Q_D(QCNetworkAccessManager);
             const auto middlewaresSnapshot = d->middlewares;
-            const QCNetworkRequest modifiedRequest =
-                applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+            const QCNetworkRequest modifiedRequest
+                = applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
 
             auto *reply = scheduler()->scheduleRequest(modifiedRequest,
                                                        HttpMethod::Post,
@@ -850,11 +884,13 @@ QCNetworkReply* QCNetworkAccessManager::schedulePost(const QCNetworkRequest &req
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
 
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::schedulePost: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -870,14 +906,15 @@ QCNetworkReply* QCNetworkAccessManager::schedulePost(const QCNetworkRequest &req
     return impl();
 }
 
-QCNetworkReply* QCNetworkAccessManager::schedulePut(const QCNetworkRequest &request, const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::schedulePut(const QCNetworkRequest &request,
+                                                    const QByteArray &data)
 {
-    const auto impl = [this, request, data]() -> QCNetworkReply* {
+    const auto impl = [this, request, data]() -> QCNetworkReply * {
         if (m_schedulerEnabled) {
             Q_D(QCNetworkAccessManager);
             const auto middlewaresSnapshot = d->middlewares;
-            const QCNetworkRequest modifiedRequest =
-                applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+            const QCNetworkRequest modifiedRequest
+                = applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
 
             auto *reply = scheduler()->scheduleRequest(modifiedRequest,
                                                        HttpMethod::Put,
@@ -905,11 +942,13 @@ QCNetworkReply* QCNetworkAccessManager::schedulePut(const QCNetworkRequest &requ
         QCNetworkReply *result = nullptr;
         QElapsedTimer timer;
         timer.start();
-        QMetaObject::invokeMethod(this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
 
         if (timer.elapsed() > 1000) {
             qWarning() << "QCNetworkAccessManager::schedulePut: cross-thread blocking call took"
-                       << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+                       << timer.elapsed()
+                       << "ms (potential deadlock risk if owner thread is blocked)";
         }
         return result;
     }
@@ -929,7 +968,7 @@ QCNetworkReply* QCNetworkAccessManager::schedulePut(const QCNetworkRequest &requ
 // JSON 快捷方法实现
 // ============================================================================
 
-QCNetworkReply* QCNetworkAccessManager::postJson(const QUrl &url, const QJsonObject &json)
+QCNetworkReply *QCNetworkAccessManager::postJson(const QUrl &url, const QJsonObject &json)
 {
     // 序列化 JSON 对象
     QJsonDocument doc(json);
@@ -943,12 +982,13 @@ QCNetworkReply* QCNetworkAccessManager::postJson(const QUrl &url, const QJsonObj
     return sendPost(request, jsonData);
 }
 
-QCNetworkReply* QCNetworkAccessManager::postForm(const QUrl &url, const QMap<QString, QString> &formData)
+QCNetworkReply *QCNetworkAccessManager::postForm(const QUrl &url,
+                                                 const QMap<QString, QString> &formData)
 {
     // URL编码表单数据
     QStringList pairs;
     for (auto it = formData.constBegin(); it != formData.constEnd(); ++it) {
-        QString key = QUrl::toPercentEncoding(it.key());
+        QString key   = QUrl::toPercentEncoding(it.key());
         QString value = QUrl::toPercentEncoding(it.value());
         pairs.append(QStringLiteral("%1=%2").arg(key, value));
     }
@@ -966,7 +1006,8 @@ QCNetworkReply* QCNetworkAccessManager::postForm(const QUrl &url, const QMap<QSt
 // Multipart/form-data 支持
 // ========================================================================
 
-QCNetworkReply* QCNetworkAccessManager::postMultipart(const QUrl &url, const QCMultipartFormData &formData)
+QCNetworkReply *QCNetworkAccessManager::postMultipart(const QUrl &url,
+                                                      const QCMultipartFormData &formData)
 {
     // 编码 Multipart 表单数据
     QByteArray multipartData = formData.toByteArray();
@@ -979,8 +1020,8 @@ QCNetworkReply* QCNetworkAccessManager::postMultipart(const QUrl &url, const QCM
     return sendPost(request, multipartData);
 }
 
-QCNetworkReply* QCNetworkAccessManager::postMultipart(const QCNetworkRequest &request,
-                                                       const QCMultipartFormData &formData)
+QCNetworkReply *QCNetworkAccessManager::postMultipart(const QCNetworkRequest &request,
+                                                      const QCMultipartFormData &formData)
 {
     // 创建请求副本并设置 Content-Type
     QCNetworkRequest modifiedRequest = request;
@@ -997,7 +1038,7 @@ QCNetworkReply* QCNetworkAccessManager::postMultipart(const QCNetworkRequest &re
 // 文件操作便捷 API
 // ========================================================================
 
-QCNetworkReply* QCNetworkAccessManager::downloadFile(const QUrl &url, const QString &savePath)
+QCNetworkReply *QCNetworkAccessManager::downloadFile(const QUrl &url, const QString &savePath)
 {
     // 创建请求
     QCNetworkRequest request(url);
@@ -1027,14 +1068,15 @@ QCNetworkReply* QCNetworkAccessManager::downloadFile(const QUrl &url, const QStr
     return reply;
 }
 
-QCNetworkReply* QCNetworkAccessManager::uploadFile(const QUrl &url, const QString &filePath)
+QCNetworkReply *QCNetworkAccessManager::uploadFile(const QUrl &url, const QString &filePath)
 {
     // 使用默认字段名 "file"
     return uploadFile(url, "file", filePath);
 }
 
-QCNetworkReply* QCNetworkAccessManager::uploadFile(const QUrl &url, const QString &fieldName,
-                                                     const QString &filePath)
+QCNetworkReply *QCNetworkAccessManager::uploadFile(const QUrl &url,
+                                                   const QString &fieldName,
+                                                   const QString &filePath)
 {
     // 创建 Multipart 表单数据
     QCMultipartFormData formData;
@@ -1054,25 +1096,25 @@ QCNetworkReply* QCNetworkAccessManager::uploadFile(const QUrl &url, const QStrin
 // 流式下载/上传 API
 // ========================================================================
 
-QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
+QCNetworkReply *QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
 {
     Q_D(QCNetworkAccessManager);
     const auto middlewaresSnapshot = d->middlewares;
 
     QCNetworkRequest request(url);
-    const QCNetworkRequest modifiedRequest =
-        applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+    const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                            middlewaresSnapshot);
 
     auto *reply = new QCNetworkReply(modifiedRequest,
-                                      HttpMethod::Get,
-                                      ExecutionMode::Async,
-                                      QByteArray(),
-                                      this);
+                                     HttpMethod::Get,
+                                     ExecutionMode::Async,
+                                     QByteArray(),
+                                     this);
 
     // Cookie 配置传递
     if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
         reply->d_func()->cookieFilePath = m_cookieFilePath;
-        reply->d_func()->cookieMode = m_cookieModeFlag;
+        reply->d_func()->cookieMode     = m_cookieModeFlag;
     }
 
     wireResponseMiddlewares(this, reply, middlewaresSnapshot);
@@ -1080,65 +1122,65 @@ QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODev
 
     if (!device || !device->isWritable()) {
         qWarning() << "downloadToDevice: device is null or not writable";
-        QMetaObject::invokeMethod(reply,
-                                  [reply]() {
-                                      reply->abortWithError(
-                                          NetworkError::InvalidRequest,
-                                          QStringLiteral("downloadToDevice: 目标 QIODevice 为空或不可写"));
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            reply,
+            [reply]() {
+                reply->abortWithError(NetworkError::InvalidRequest,
+                                      QStringLiteral(
+                                          "downloadToDevice: 目标 QIODevice 为空或不可写"));
+            },
+            Qt::QueuedConnection);
         return reply;
     }
 
     if (device->thread() != thread()) {
         qWarning() << "downloadToDevice: device thread mismatch. deviceThread=" << device->thread()
                    << "managerThread=" << thread();
-        QMetaObject::invokeMethod(reply,
-                                  [reply]() {
-                                      reply->abortWithError(
-                                          NetworkError::InvalidRequest,
-                                          QStringLiteral("downloadToDevice: 目标 QIODevice 与 Reply 不在同一线程"));
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            reply,
+            [reply]() {
+                reply
+                    ->abortWithError(NetworkError::InvalidRequest,
+                                     QStringLiteral(
+                                         "downloadToDevice: 目标 QIODevice 与 Reply 不在同一线程"));
+            },
+            Qt::QueuedConnection);
         return reply;
     }
 
     QPointer<QIODevice> safeDevice(device);
 
     QObject::connect(device, &QObject::destroyed, reply, [reply]() {
-        reply->abortWithError(
-            NetworkError::InvalidRequest,
-            QStringLiteral("downloadToDevice: 目标 QIODevice 在传输中被销毁"));
+        reply->abortWithError(NetworkError::InvalidRequest,
+                              QStringLiteral("downloadToDevice: 目标 QIODevice 在传输中被销毁"));
     });
 
     // 连接 readyRead 信号实现流式写入
     QObject::connect(reply, &QCNetworkReply::readyRead, reply, [reply, safeDevice]() {
         if (!safeDevice) {
-            reply->abortWithError(
-                NetworkError::InvalidRequest,
-                QStringLiteral("downloadToDevice: 目标 QIODevice 在传输中被销毁"));
+            reply->abortWithError(NetworkError::InvalidRequest,
+                                  QStringLiteral(
+                                      "downloadToDevice: 目标 QIODevice 在传输中被销毁"));
             return;
         }
 
         if (!safeDevice->isWritable()) {
-            reply->abortWithError(
-                NetworkError::InvalidRequest,
-                QStringLiteral("downloadToDevice: 目标 QIODevice 已不可写"));
+            reply->abortWithError(NetworkError::InvalidRequest,
+                                  QStringLiteral("downloadToDevice: 目标 QIODevice 已不可写"));
             return;
         }
 
         auto data = reply->readAll();
         if (data.has_value() && !data->isEmpty()) {
             const QByteArray &buf = data.value();
-            qint64 totalWritten = 0;
+            qint64 totalWritten   = 0;
             while (totalWritten < buf.size()) {
                 const qint64 written = safeDevice->write(buf.constData() + totalWritten,
-                                                        buf.size() - totalWritten);
+                                                         buf.size() - totalWritten);
                 if (written <= 0) {
-                    reply->abortWithError(
-                        NetworkError::InvalidRequest,
-                        QStringLiteral("downloadToDevice: 写入目标设备失败: %1")
-                            .arg(safeDevice->errorString()));
+                    reply->abortWithError(NetworkError::InvalidRequest,
+                                          QStringLiteral("downloadToDevice: 写入目标设备失败: %1")
+                                              .arg(safeDevice->errorString()));
                     return;
                 }
                 totalWritten += written;
@@ -1146,13 +1188,15 @@ QCNetworkReply* QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODev
         }
     });
 
-    reply->execute();  // 自动启动请求
+    reply->execute(); // 自动启动请求
     return reply;
 }
 
-QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const QString &fieldName,
-                                                          QIODevice *device, const QString &fileName,
-                                                          const QString &mimeType)
+QCNetworkReply *QCNetworkAccessManager::uploadFromDevice(const QUrl &url,
+                                                         const QString &fieldName,
+                                                         QIODevice *device,
+                                                         const QString &fileName,
+                                                         const QString &mimeType)
 {
     Q_D(QCNetworkAccessManager);
     const auto middlewaresSnapshot = d->middlewares;
@@ -1160,30 +1204,31 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
     if (!device || !device->isReadable()) {
         qWarning() << "uploadFromDevice: device is null or not readable";
         QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
-        auto *reply = new QCNetworkReply(modifiedRequest,
-                                          HttpMethod::Post,
-                                          ExecutionMode::Async,
-                                          QByteArray(),
-                                          this);
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
+        auto *reply                            = new QCNetworkReply(modifiedRequest,
+                                         HttpMethod::Post,
+                                         ExecutionMode::Async,
+                                         QByteArray(),
+                                         this);
 
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
-        QMetaObject::invokeMethod(reply,
-                                  [reply]() {
-                                      reply->abortWithError(
-                                          NetworkError::InvalidRequest,
-                                          QStringLiteral("uploadFromDevice: 源 QIODevice 为空或不可读"));
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            reply,
+            [reply]() {
+                reply->abortWithError(NetworkError::InvalidRequest,
+                                      QStringLiteral(
+                                          "uploadFromDevice: 源 QIODevice 为空或不可读"));
+            },
+            Qt::QueuedConnection);
         return reply;
     }
 
@@ -1191,30 +1236,31 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
         qWarning() << "uploadFromDevice: device thread mismatch. deviceThread=" << device->thread()
                    << "managerThread=" << thread();
         QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
-        auto *reply = new QCNetworkReply(modifiedRequest,
-                                          HttpMethod::Post,
-                                          ExecutionMode::Async,
-                                          QByteArray(),
-                                          this);
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
+        auto *reply                            = new QCNetworkReply(modifiedRequest,
+                                         HttpMethod::Post,
+                                         ExecutionMode::Async,
+                                         QByteArray(),
+                                         this);
 
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
-        QMetaObject::invokeMethod(reply,
-                                  [reply]() {
-                                      reply->abortWithError(
-                                          NetworkError::InvalidRequest,
-                                          QStringLiteral("uploadFromDevice: 源 QIODevice 与 Reply 不在同一线程"));
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            reply,
+            [reply]() {
+                reply->abortWithError(NetworkError::InvalidRequest,
+                                      QStringLiteral(
+                                          "uploadFromDevice: 源 QIODevice 与 Reply 不在同一线程"));
+            },
+            Qt::QueuedConnection);
         return reply;
     }
 
@@ -1223,30 +1269,32 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
     if (!formData.addFileFieldStream(fieldName, device, fileName, mimeType)) {
         qWarning() << "uploadFromDevice: cannot add stream field to form";
         QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest =
-            applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
-        auto *reply = new QCNetworkReply(modifiedRequest,
-                                          HttpMethod::Post,
-                                          ExecutionMode::Async,
-                                          QByteArray(),
-                                          this);
+        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
+                                                                                middlewaresSnapshot);
+        auto *reply                            = new QCNetworkReply(modifiedRequest,
+                                         HttpMethod::Post,
+                                         ExecutionMode::Async,
+                                         QByteArray(),
+                                         this);
 
         // Cookie 配置传递
         if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
             reply->d_func()->cookieFilePath = m_cookieFilePath;
-            reply->d_func()->cookieMode = m_cookieModeFlag;
+            reply->d_func()->cookieMode     = m_cookieModeFlag;
         }
 
         wireResponseMiddlewares(this, reply, middlewaresSnapshot);
         runReplyCreatedMiddlewares(reply, middlewaresSnapshot);
 
-        QMetaObject::invokeMethod(reply,
-                                  [reply]() {
-                                      reply->abortWithError(
-                                          NetworkError::InvalidRequest,
-                                          QStringLiteral("uploadFromDevice: 无法从 QIODevice 构建 multipart 表单"));
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            reply,
+            [reply]() {
+                reply
+                    ->abortWithError(NetworkError::InvalidRequest,
+                                     QStringLiteral(
+                                         "uploadFromDevice: 无法从 QIODevice 构建 multipart 表单"));
+            },
+            Qt::QueuedConnection);
         return reply;
     }
 
@@ -1254,9 +1302,9 @@ QCNetworkReply* QCNetworkAccessManager::uploadFromDevice(const QUrl &url, const 
     return postMultipart(url, formData);
 }
 
-QCNetworkReply* QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
-                                                                const QString &savePath,
-                                                                bool overwrite)
+QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
+                                                              const QString &savePath,
+                                                              bool overwrite)
 {
     // 检查文件是否存在，用于断点续传
     QFile file(savePath);
@@ -1280,12 +1328,9 @@ QCNetworkReply* QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
     // 使用 QSharedPointer 管理文件句柄生命周期
     auto filePtr = QSharedPointer<QFile>::create(savePath);
 
-    QObject::connect(reply, &QCNetworkReply::readyRead, reply,
-                     [reply, filePtr, existingSize]() {
+    QObject::connect(reply, &QCNetworkReply::readyRead, reply, [reply, filePtr, existingSize]() {
         if (!filePtr->isOpen()) {
-            QIODevice::OpenMode mode = existingSize > 0
-                ? QIODevice::Append
-                : QIODevice::WriteOnly;
+            QIODevice::OpenMode mode = existingSize > 0 ? QIODevice::Append : QIODevice::WriteOnly;
 
             if (!filePtr->open(mode)) {
                 qWarning() << "Cannot open file:" << filePtr->fileName();
@@ -1301,8 +1346,7 @@ QCNetworkReply* QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
         }
     });
 
-    QObject::connect(reply, &QCNetworkReply::finished, reply,
-                     [reply, filePtr, savePath]() {
+    QObject::connect(reply, &QCNetworkReply::finished, reply, [reply, filePtr, savePath]() {
         if (filePtr->isOpen()) {
             filePtr->close();
         }
@@ -1326,7 +1370,7 @@ void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
     m_cache = cache;
 }
 
-QCNetworkCache* QCNetworkAccessManager::cache() const
+QCNetworkCache *QCNetworkAccessManager::cache() const
 {
     return m_cache;
 }
@@ -1349,7 +1393,7 @@ void QCNetworkAccessManager::setLogger(QCNetworkLogger *logger)
     d->logger = logger;
 }
 
-QCNetworkLogger* QCNetworkAccessManager::logger() const
+QCNetworkLogger *QCNetworkAccessManager::logger() const
 {
     Q_D(const QCNetworkAccessManager);
     return d->logger;
@@ -1391,7 +1435,7 @@ void QCNetworkAccessManager::clearMiddlewares()
     d->middlewares.clear();
 }
 
-QList<QCNetworkMiddleware*> QCNetworkAccessManager::middlewares() const
+QList<QCNetworkMiddleware *> QCNetworkAccessManager::middlewares() const
 {
     Q_D(const QCNetworkAccessManager);
     return d->middlewares;
@@ -1406,7 +1450,6 @@ QCNetworkRequestBuilder QCNetworkAccessManager::newRequest(const QUrl &url)
     return QCNetworkRequestBuilder(this, url);
 }
 
-
 // ============================================================================
 // Mock 工具
 // ============================================================================
@@ -1417,7 +1460,7 @@ void QCNetworkAccessManager::setMockHandler(QCNetworkMockHandler *handler)
     d->mockHandler = handler;
 }
 
-QCNetworkMockHandler* QCNetworkAccessManager::mockHandler() const
+QCNetworkMockHandler *QCNetworkAccessManager::mockHandler() const
 {
     Q_D(const QCNetworkAccessManager);
     return d->mockHandler;

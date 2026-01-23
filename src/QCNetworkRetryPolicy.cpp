@@ -1,6 +1,7 @@
 #include "QCNetworkRetryPolicy.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 QT_BEGIN_NAMESPACE
 
@@ -15,16 +16,14 @@ QCNetworkRetryPolicy::QCNetworkRetryPolicy()
     , initialDelay(1000)
     , backoffMultiplier(2.0)
     , maxDelay(30000)
-{
-}
+{}
 
 QCNetworkRetryPolicy::QCNetworkRetryPolicy(int retries, int initialDelayMs, double backoff)
     : maxRetries(retries)
     , initialDelay(initialDelayMs)
     , backoffMultiplier(backoff)
     , maxDelay(30000)
-{
-}
+{}
 
 // ============================================================================
 // 核心重试逻辑
@@ -74,8 +73,7 @@ std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(int attemptCount
 }
 
 std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(
-    int attemptCount,
-    std::optional<std::chrono::milliseconds> serverDelay) const
+    int attemptCount, std::optional<std::chrono::milliseconds> serverDelay) const
 {
     if (serverDelay.has_value()) {
         const auto raw = serverDelay.value();
@@ -93,26 +91,26 @@ std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(
 
 QCNetworkRetryPolicy QCNetworkRetryPolicy::noRetry()
 {
-    return QCNetworkRetryPolicy();  // maxRetries = 0
+    return QCNetworkRetryPolicy(); // maxRetries = 0
 }
 
 QCNetworkRetryPolicy QCNetworkRetryPolicy::standardRetry()
 {
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 3;
-    policy.initialDelay = std::chrono::milliseconds(1000);   // 1 秒
+    policy.maxRetries        = 3;
+    policy.initialDelay      = std::chrono::milliseconds(1000); // 1 秒
     policy.backoffMultiplier = 2.0;
-    policy.maxDelay = std::chrono::milliseconds(30000);      // 30 秒
+    policy.maxDelay          = std::chrono::milliseconds(30000); // 30 秒
     return policy;
 }
 
 QCNetworkRetryPolicy QCNetworkRetryPolicy::aggressiveRetry()
 {
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 5;
-    policy.initialDelay = std::chrono::milliseconds(500);    // 500 毫秒
+    policy.maxRetries        = 5;
+    policy.initialDelay      = std::chrono::milliseconds(500); // 500 毫秒
     policy.backoffMultiplier = 1.5;
-    policy.maxDelay = std::chrono::milliseconds(20000);      // 20 秒
+    policy.maxDelay          = std::chrono::milliseconds(20000); // 20 秒
     return policy;
 }
 

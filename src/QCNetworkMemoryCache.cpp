@@ -1,12 +1,15 @@
 #include "QCNetworkMemoryCache.h"
-#include <QMutexLocker>
+
 #include <QCryptographicHash>
+#include <QMutexLocker>
+
+#include <memory>
 
 namespace QCurl {
 
 QCNetworkMemoryCache::QCNetworkMemoryCache(QObject *parent)
     : QCNetworkCache(parent)
-    , m_maxSize(10 * 1024 * 1024)  // 默认 10MB
+    , m_maxSize(10 * 1024 * 1024) // 默认 10MB
     , m_currentSize(0)
 {
     m_cache.setMaxCost(m_maxSize);
@@ -52,8 +55,9 @@ QCNetworkCacheMetadata QCNetworkMemoryCache::metadata(const QUrl &url)
     return entry->metadata;
 }
 
-void QCNetworkMemoryCache::insert(const QUrl &url, const QByteArray &data,
-                                   const QCNetworkCacheMetadata &meta)
+void QCNetworkMemoryCache::insert(const QUrl &url,
+                                  const QByteArray &data,
+                                  const QCNetworkCacheMetadata &meta)
 {
     QMutexLocker locker(&m_mutex);
 
@@ -62,7 +66,7 @@ void QCNetworkMemoryCache::insert(const QUrl &url, const QByteArray &data,
         return;
     }
 
-    QString key = cacheKey(url);
+    QString key     = cacheKey(url);
     qint64 dataSize = data.size();
 
     // 如果数据太大，不缓存
@@ -79,19 +83,16 @@ void QCNetworkMemoryCache::insert(const QUrl &url, const QByteArray &data,
         m_cache.remove(key);
     }
 
-    // 创建新条目
-    auto *entry = new CacheEntry();
-    entry->data = data;
-    entry->metadata = meta;
-    entry->metadata.size = dataSize;
+    auto entry                   = std::make_unique<CacheEntry>();
+    entry->data                  = data;
+    entry->metadata              = meta;
+    entry->metadata.size         = dataSize;
     entry->metadata.creationDate = QDateTime::currentDateTime();
 
     // 插入缓存（QCache 会自动处理 LRU 淘汰）
-    bool inserted = m_cache.insert(key, entry, dataSize);
-    if (inserted) {
+    if (m_cache.insert(key, entry.get(), dataSize)) {
         m_currentSize += dataSize;
-    } else {
-        delete entry;  // 如果插入失败，需要手动删除
+        static_cast<void>(entry.release());
     }
 }
 
@@ -99,7 +100,7 @@ bool QCNetworkMemoryCache::remove(const QUrl &url)
 {
     QMutexLocker locker(&m_mutex);
 
-    QString key = cacheKey(url);
+    QString key       = cacheKey(url);
     CacheEntry *entry = m_cache.object(key);
     if (entry) {
         m_currentSize -= entry->size();

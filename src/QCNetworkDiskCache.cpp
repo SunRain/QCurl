@@ -1,34 +1,33 @@
 #include "QCNetworkDiskCache.h"
-#include <QMutexLocker>
+
 #include <QCryptographicHash>
+#include <QDirIterator>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
+#include <QMutexLocker>
 #include <QStandardPaths>
-#include <QDirIterator>
 
 namespace QCurl {
 
 QCNetworkDiskCache::QCNetworkDiskCache(QObject *parent)
     : QCNetworkCache(parent)
-    , m_maxSize(50 * 1024 * 1024)  // 默认 50MB
-    , m_currentSize(-1)  // 延迟计算
+    , m_maxSize(50 * 1024 * 1024) // 默认 50MB
+    , m_currentSize(-1)           // 延迟计算
 {
     // 默认缓存目录
     m_cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/QCurl";
     ensureCacheDirectory();
 }
 
-QCNetworkDiskCache::~QCNetworkDiskCache()
-{
-}
+QCNetworkDiskCache::~QCNetworkDiskCache() {}
 
 void QCNetworkDiskCache::setCacheDirectory(const QString &path)
 {
     QMutexLocker locker(&m_mutex);
-    m_cacheDir = path;
-    m_currentSize = -1;  // 重新计算
+    m_cacheDir    = path;
+    m_currentSize = -1; // 重新计算
     ensureCacheDirectory();
 }
 
@@ -40,8 +39,7 @@ QString QCNetworkDiskCache::cacheDirectory() const
 
 QString QCNetworkDiskCache::cacheKey(const QUrl &url) const
 {
-    QByteArray hash = QCryptographicHash::hash(
-        url.toString().toUtf8(), QCryptographicHash::Md5);
+    QByteArray hash = QCryptographicHash::hash(url.toString().toUtf8(), QCryptographicHash::Md5);
     return QString::fromLatin1(hash.toHex());
 }
 
@@ -66,7 +64,7 @@ void QCNetworkDiskCache::ensureCacheDirectory()
 void QCNetworkDiskCache::updateCacheSize() const
 {
     if (m_currentSize >= 0) {
-        return;  // 已计算
+        return; // 已计算
     }
 
     m_currentSize = 0;
@@ -82,11 +80,12 @@ void QCNetworkDiskCache::evictIfNeeded(qint64 newDataSize)
     updateCacheSize();
 
     if (m_currentSize + newDataSize <= m_maxSize) {
-        return;  // 空间足够
+        return; // 空间足够
     }
 
     // 收集所有缓存文件及其访问时间
-    struct CacheFile {
+    struct CacheFile
+    {
         QString key;
         QDateTime lastAccess;
         qint64 size;
@@ -97,7 +96,7 @@ void QCNetworkDiskCache::evictIfNeeded(qint64 newDataSize)
     while (it.hasNext()) {
         it.next();
         QString metaPath = it.filePath();
-        QString key = it.fileInfo().baseName();
+        QString key      = it.fileInfo().baseName();
 
         QCNetworkCacheMetadata meta = readMetadata(key);
         if (!meta.url.isEmpty()) {
@@ -126,11 +125,11 @@ void QCNetworkDiskCache::evictIfNeeded(qint64 newDataSize)
 bool QCNetworkDiskCache::writeMetadata(const QString &key, const QCNetworkCacheMetadata &meta)
 {
     QJsonObject json;
-    json["url"] = meta.url.toString();
-    json["size"] = meta.size;
-    json["creationDate"] = meta.creationDate.toString(Qt::ISODate);
+    json["url"]            = meta.url.toString();
+    json["size"]           = meta.size;
+    json["creationDate"]   = meta.creationDate.toString(Qt::ISODate);
     json["expirationDate"] = meta.expirationDate.toString(Qt::ISODate);
-    json["lastModified"] = meta.lastModified.toString(Qt::ISODate);
+    json["lastModified"]   = meta.lastModified.toString(Qt::ISODate);
 
     // 保存响应头
     QJsonObject headersObj;
@@ -162,11 +161,11 @@ QCNetworkCacheMetadata QCNetworkDiskCache::readMetadata(const QString &key) cons
 
     QJsonObject json = doc.object();
     QCNetworkCacheMetadata meta;
-    meta.url = QUrl(json["url"].toString());
-    meta.size = json["size"].toInteger();
-    meta.creationDate = QDateTime::fromString(json["creationDate"].toString(), Qt::ISODate);
+    meta.url            = QUrl(json["url"].toString());
+    meta.size           = json["size"].toInteger();
+    meta.creationDate   = QDateTime::fromString(json["creationDate"].toString(), Qt::ISODate);
     meta.expirationDate = QDateTime::fromString(json["expirationDate"].toString(), Qt::ISODate);
-    meta.lastModified = QDateTime::fromString(json["lastModified"].toString(), Qt::ISODate);
+    meta.lastModified   = QDateTime::fromString(json["lastModified"].toString(), Qt::ISODate);
 
     // 读取响应头
     QJsonObject headersObj = json["headers"].toObject();
@@ -181,7 +180,7 @@ QByteArray QCNetworkDiskCache::data(const QUrl &url)
 {
     QMutexLocker locker(&m_mutex);
 
-    QString key = cacheKey(url);
+    QString key                 = cacheKey(url);
     QCNetworkCacheMetadata meta = readMetadata(key);
 
     if (meta.url.isEmpty()) {
@@ -210,8 +209,9 @@ QCNetworkCacheMetadata QCNetworkDiskCache::metadata(const QUrl &url)
     return readMetadata(cacheKey(url));
 }
 
-void QCNetworkDiskCache::insert(const QUrl &url, const QByteArray &data,
-                                 const QCNetworkCacheMetadata &meta)
+void QCNetworkDiskCache::insert(const QUrl &url,
+                                const QByteArray &data,
+                                const QCNetworkCacheMetadata &meta)
 {
     QMutexLocker locker(&m_mutex);
 
@@ -220,7 +220,7 @@ void QCNetworkDiskCache::insert(const QUrl &url, const QByteArray &data,
         return;
     }
 
-    QString key = cacheKey(url);
+    QString key     = cacheKey(url);
     qint64 dataSize = data.size();
 
     // 如果数据太大，不缓存
@@ -243,8 +243,8 @@ void QCNetworkDiskCache::insert(const QUrl &url, const QByteArray &data,
 
     // 写入元数据
     QCNetworkCacheMetadata metaCopy = meta;
-    metaCopy.size = dataSize;
-    metaCopy.creationDate = QDateTime::currentDateTime();
+    metaCopy.size                   = dataSize;
+    metaCopy.creationDate           = QDateTime::currentDateTime();
     writeMetadata(key, metaCopy);
 
     // 更新缓存大小
@@ -302,7 +302,7 @@ void QCNetworkDiskCache::setMaxCacheSize(qint64 size)
 {
     QMutexLocker locker(&m_mutex);
     m_maxSize = size;
-    evictIfNeeded(0);  // 立即淘汰超出的数据
+    evictIfNeeded(0); // 立即淘汰超出的数据
 }
 
 } // namespace QCurl

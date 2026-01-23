@@ -2,16 +2,18 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkMiddleware.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
+
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkLogger.h"
 #include "QCNetworkLogRedaction.h"
+#include "QCNetworkLogger.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
+
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QDebug>
 
 namespace QCurl {
 
@@ -20,25 +22,25 @@ namespace {
 QString httpMethodToString(HttpMethod method)
 {
     switch (method) {
-    case HttpMethod::Head:
-        return QStringLiteral("HEAD");
-    case HttpMethod::Get:
-        return QStringLiteral("GET");
-    case HttpMethod::Post:
-        return QStringLiteral("POST");
-    case HttpMethod::Put:
-        return QStringLiteral("PUT");
-    case HttpMethod::Delete:
-        return QStringLiteral("DELETE");
-    case HttpMethod::Patch:
-        return QStringLiteral("PATCH");
+        case HttpMethod::Head:
+            return QStringLiteral("HEAD");
+        case HttpMethod::Get:
+            return QStringLiteral("GET");
+        case HttpMethod::Post:
+            return QStringLiteral("POST");
+        case HttpMethod::Put:
+            return QStringLiteral("PUT");
+        case HttpMethod::Delete:
+            return QStringLiteral("DELETE");
+        case HttpMethod::Patch:
+            return QStringLiteral("PATCH");
     }
     return QStringLiteral("UNKNOWN");
 }
 
 QCNetworkLogger *loggerFromReply(QCNetworkReply *reply)
 {
-    auto *manager = reply ? qobject_cast<QCNetworkAccessManager*>(reply->parent()) : nullptr;
+    auto *manager = reply ? qobject_cast<QCNetworkAccessManager *>(reply->parent()) : nullptr;
     return manager ? manager->logger() : nullptr;
 }
 
@@ -52,8 +54,7 @@ constexpr const char kObservabilityRetryCountProperty[] = "_qcurl_observe_retry_
 
 void QCLoggingMiddleware::onRequestPreSend(QCNetworkRequest &request)
 {
-    qDebug() << "[QCurl Middleware] Sending request:"
-             << request.url().toString();
+    qDebug() << "[QCurl Middleware] Sending request:" << request.url().toString();
 }
 
 void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
@@ -63,11 +64,9 @@ void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 
     if (reply->error() == NetworkError::NoError) {
-        qDebug() << "[QCurl Middleware] Response received:"
-                 << reply->url().toString();
+        qDebug() << "[QCurl Middleware] Response received:" << reply->url().toString();
     } else {
-        qWarning() << "[QCurl Middleware] Response error:"
-                   << reply->url().toString()
+        qWarning() << "[QCurl Middleware] Response error:" << reply->url().toString()
                    << "Error:" << reply->errorString();
     }
 }
@@ -114,7 +113,7 @@ void QCSigningMiddleware::onRequestPreSend(QCNetworkRequest &request)
     }
 
     // Generate signature (simple example: SHA256 hash of key + timestamp)
-    QString timestamp = QString::number(QDateTime::currentMSecsSinceEpoch());
+    QString timestamp  = QString::number(QDateTime::currentMSecsSinceEpoch());
     QString signString = m_signingKey + timestamp;
 
     QCryptographicHash hash(QCryptographicHash::Sha256);
@@ -130,10 +129,10 @@ void QCSigningMiddleware::onRequestPreSend(QCNetworkRequest &request)
 // QCUnifiedRetryPolicyMiddleware Implementation
 // ============================================================================
 
-QCUnifiedRetryPolicyMiddleware::QCUnifiedRetryPolicyMiddleware(const QCNetworkRetryPolicy &defaultPolicy)
+QCUnifiedRetryPolicyMiddleware::QCUnifiedRetryPolicyMiddleware(
+    const QCNetworkRetryPolicy &defaultPolicy)
     : m_defaultPolicy(defaultPolicy)
-{
-}
+{}
 
 void QCUnifiedRetryPolicyMiddleware::setDefaultPolicy(const QCNetworkRetryPolicy &policy)
 {
@@ -170,7 +169,7 @@ void QCRedactingLoggingMiddleware::onReplyCreated(QCNetworkReply *reply)
     }
 
     const QString method = httpMethodToString(reply->method());
-    const QString url = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
 
     logger->log(NetworkLogLevel::Debug,
                 QStringLiteral("Request"),
@@ -189,14 +188,15 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 
     const QString method = httpMethodToString(reply->method());
-    const QString url = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
 
-    const int httpStatus = reply->httpStatusCode();
+    const int httpStatus  = reply->httpStatusCode();
     const qint64 duration = reply->durationMs();
-    const int errorCode = static_cast<int>(reply->error());
+    const int errorCode   = static_cast<int>(reply->error());
 
-    const NetworkLogLevel level =
-        (reply->error() == NetworkError::NoError) ? NetworkLogLevel::Info : NetworkLogLevel::Warning;
+    const NetworkLogLevel level = (reply->error() == NetworkError::NoError)
+                                      ? NetworkLogLevel::Info
+                                      : NetworkLogLevel::Warning;
 
     logger->log(level,
                 QStringLiteral("Response"),
@@ -222,9 +222,12 @@ void QCObservabilityMiddleware::onReplyCreated(QCNetworkReply *reply)
     }
 
     reply->setProperty(kObservabilityRetryCountProperty, 0);
-    QObject::connect(reply, &QCNetworkReply::retryAttempt, reply, [reply](int attemptCount, NetworkError) {
-        reply->setProperty(kObservabilityRetryCountProperty, attemptCount);
-    });
+    QObject::connect(reply,
+                     &QCNetworkReply::retryAttempt,
+                     reply,
+                     [reply](int attemptCount, NetworkError) {
+                         reply->setProperty(kObservabilityRetryCountProperty, attemptCount);
+                     });
 }
 
 void QCObservabilityMiddleware::onResponseReceived(QCNetworkReply *reply)
@@ -238,7 +241,7 @@ void QCObservabilityMiddleware::onResponseReceived(QCNetworkReply *reply)
         return;
     }
 
-    const QString url = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
     const QString method = httpMethodToString(reply->method());
 
     const int retryCount = reply->property(kObservabilityRetryCountProperty).toInt();

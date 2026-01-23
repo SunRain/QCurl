@@ -1,15 +1,15 @@
 #ifndef QCNETWORKACCESSMANAGER_H
 #define QCNETWORKACCESSMANAGER_H
 
-#include <curl/curl.h>
+#include "QCNetworkRequestBuilder.h"
 
-#include <QObject>
-#include <QSet>
 #include <QJsonObject>
 #include <QMap>
 #include <QNetworkCookie>
+#include <QObject>
+#include <QSet>
 
-#include "QCNetworkRequestBuilder.h"
+#include <curl/curl.h>
 
 class QTimer;
 class QSocketNotifier;
@@ -33,8 +33,8 @@ public:
     virtual ~QCNetworkAccessManager();
 
     enum CookieFileModeFlag {
-        NotOpen = 0x0,
-        ReadOnly = 0x1,
+        NotOpen   = 0x0,
+        ReadOnly  = 0x1,
         WriteOnly = 0x2,
         ReadWrite = ReadOnly | WriteOnly
     };
@@ -43,7 +43,8 @@ public:
 
     CookieFileModeFlag cookieFileMode() const;
 
-    void setCookieFilePath(const QString &cookieFilePath, CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
+    void setCookieFilePath(const QString &cookieFilePath,
+                           CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
     // ========================================================================
     // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通；不引入 WebEngine 依赖）
@@ -63,7 +64,7 @@ public:
      */
     bool importCookies(const QList<QNetworkCookie> &cookies,
                        const QUrl &originUrl = QUrl(),
-                       QString *error = nullptr);
+                       QString *error        = nullptr);
 
     /**
      * @brief 导出当前 manager 的 cookies（仅在 shareCookies 开启时可用）
@@ -73,7 +74,7 @@ public:
      * @return QList<QNetworkCookie> 导出的 cookies（失败返回空列表）
      */
     [[nodiscard]] QList<QNetworkCookie> exportCookies(const QUrl &filterUrl = QUrl(),
-                                                      QString *error = nullptr) const;
+                                                      QString *error        = nullptr) const;
 
     /**
      * @brief 清空当前 manager 的 cookie store（仅在 shareCookies 开启时可用）
@@ -83,9 +84,10 @@ public:
      */
     bool clearAllCookies(QString *error = nullptr);
 
-    struct ShareHandleConfig {
-        bool shareDnsCache = false;
-        bool shareCookies = false;
+    struct ShareHandleConfig
+    {
+        bool shareDnsCache   = false;
+        bool shareCookies    = false;
         bool shareSslSession = false;
 
         [[nodiscard]] bool enabled() const noexcept
@@ -94,7 +96,8 @@ public:
         }
     };
 
-    struct HstsAltSvcCacheConfig {
+    struct HstsAltSvcCacheConfig
+    {
         QString hstsFilePath;
         QString altSvcFilePath;
 
@@ -142,7 +145,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendHead(const QCNetworkRequest &request);
+    QCNetworkReply *sendHead(const QCNetworkRequest &request);
 
     /**
      * @brief 发送 GET 请求（异步）
@@ -150,7 +153,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendGet(const QCNetworkRequest &request);
+    QCNetworkReply *sendGet(const QCNetworkRequest &request);
 
     /**
      * @brief 发送 POST 请求（异步）
@@ -159,7 +162,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendPost(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *sendPost(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 PUT 请求（异步）
@@ -168,7 +171,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendPut(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *sendPut(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 DELETE 请求（异步）
@@ -176,7 +179,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendDelete(const QCNetworkRequest &request);
+    QCNetworkReply *sendDelete(const QCNetworkRequest &request);
 
     /**
      * @brief 发送 DELETE 请求（异步，可携带请求体）
@@ -185,7 +188,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendDelete(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *sendDelete(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 PATCH 请求（异步）
@@ -194,7 +197,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @note 请求会自动启动（已调用 execute()）
      */
-    QCNetworkReply* sendPatch(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 GET 请求（同步，阻塞）
@@ -202,7 +205,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @warning 会阻塞当前线程直到请求完成，不要在 UI 线程中调用
      */
-    QCNetworkReply* sendGetSync(const QCNetworkRequest &request);
+    QCNetworkReply *sendGetSync(const QCNetworkRequest &request);
 
     /**
      * @brief 发送 POST 请求（同步，阻塞）
@@ -211,7 +214,7 @@ public:
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      * @warning 会阻塞当前线程直到请求完成，不要在 UI 线程中调用
      */
-    QCNetworkReply* sendPostSync(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *sendPostSync(const QCNetworkRequest &request, const QByteArray &data);
 
     // ========================================================================
     // 日志系统、中间件、取消令牌
@@ -227,7 +230,7 @@ public:
      * @brief 获取当前日志记录器
      * @return 日志记录器指针，如果未设置则返回 nullptr
      */
-    QCNetworkLogger* logger() const;
+    QCNetworkLogger *logger() const;
 
     /**
      * @brief 启用/关闭 libcurl verbose/debug trace（强制脱敏）
@@ -265,7 +268,7 @@ public:
      * @brief 获取所有中间件
      * @return 中间件列表
      */
-    QList<QCNetworkMiddleware*> middlewares() const;
+    QList<QCNetworkMiddleware *> middlewares() const;
 
     // ========================================================================
     // 流式构建器、快捷方法、Mock 工具
@@ -284,7 +287,7 @@ public:
      * @param json JSON 对象
      * @return 网络响应对象
      */
-    QCNetworkReply* postJson(const QUrl &url, const QJsonObject &json);
+    QCNetworkReply *postJson(const QUrl &url, const QJsonObject &json);
 
     /**
      * @brief 上传单个文件
@@ -293,7 +296,7 @@ public:
      * @param fieldName 字段名（默认为 "file"）
      * @return 网络响应对象
      */
-    QCNetworkReply* uploadFile(const QUrl &url,
+    QCNetworkReply *uploadFile(const QUrl &url,
                                const QString &filePath,
                                const QString &fieldName = QStringLiteral("file"));
 
@@ -303,7 +306,7 @@ public:
      * @param savePath 保存路径
      * @return 网络响应对象（文件自动保存在 finished 信号触发时）
      */
-    QCNetworkReply* downloadFile(const QUrl &url, const QString &savePath);
+    QCNetworkReply *downloadFile(const QUrl &url, const QString &savePath);
 
     /**
      * @brief 设置 Mock 处理器（用于单元测试）
@@ -315,7 +318,7 @@ public:
      * @brief 获取当前 Mock 处理器
      * @return Mock 处理器指针，如果未设置则返回 nullptr
      */
-    QCNetworkMockHandler* mockHandler() const;
+    QCNetworkMockHandler *mockHandler() const;
 
     // ========================================================================
     // 请求优先级调度
@@ -354,50 +357,49 @@ public:
      * scheduler->setConfig(config);
      * @endcode
      */
-    QCNetworkRequestScheduler* scheduler() const;
+    QCNetworkRequestScheduler *scheduler() const;
 
     /**
      * @brief 使用调度器发送 GET 请求
      *
      * 请求会根据优先级（request.priority()）加入队列。
      *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
-     *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
-     *       或调整调度器在开始传输前重新执行 pre-send。
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
+     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      *
      * @note 如果调度器未启用，会回退到 sendGet() 方法
      */
-    QCNetworkReply* scheduleGet(const QCNetworkRequest &request);
+    QCNetworkReply *scheduleGet(const QCNetworkRequest &request);
 
     /**
      * @brief 使用调度器发送 POST 请求
      *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
-     *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
-     *       或调整调度器在开始传输前重新执行 pre-send。
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
+     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      */
-    QCNetworkReply* schedulePost(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *schedulePost(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 使用调度器发送 PUT 请求
      *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
-     *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
-     *       或调整调度器在开始传输前重新执行 pre-send。
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
+     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      */
-    QCNetworkReply* schedulePut(const QCNetworkRequest &request, const QByteArray &data);
-
+    QCNetworkReply *schedulePut(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief POST URL-encoded 表单数据（快捷方法）
@@ -417,7 +419,7 @@ public:
      * @endcode
      *
      */
-    QCNetworkReply* postForm(const QUrl &url, const QMap<QString, QString> &formData);
+    QCNetworkReply *postForm(const QUrl &url, const QMap<QString, QString> &formData);
 
     // ========================================================================
     // Multipart/form-data 支持
@@ -445,7 +447,7 @@ public:
      * @endcode
      *
      */
-    QCNetworkReply* postMultipart(const QUrl &url, const QCMultipartFormData &formData);
+    QCNetworkReply *postMultipart(const QUrl &url, const QCMultipartFormData &formData);
 
     /**
      * @brief POST Multipart/form-data 数据（带请求配置）
@@ -466,13 +468,12 @@ public:
      * @endcode
      *
      */
-    QCNetworkReply* postMultipart(const QCNetworkRequest &request,
-                                   const QCMultipartFormData &formData);
+    QCNetworkReply *postMultipart(const QCNetworkRequest &request,
+                                  const QCMultipartFormData &formData);
 
     // ========================================================================
     // 文件操作便捷 API
     // ========================================================================
-
 
     /**
      * @brief 上传文件（简单版）
@@ -492,8 +493,7 @@ public:
      * @endcode
      *
      */
-    QCNetworkReply* uploadFile(const QUrl &url, const QString &filePath);
-
+    QCNetworkReply *uploadFile(const QUrl &url, const QString &filePath);
 
     // ========================================================================
     // 流式下载/上传 API
@@ -527,10 +527,11 @@ public:
      * @endcode
      *
      * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
-     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可写/写入失败，Reply 将以可诊断错误结束
+     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可写/写入失败，Reply
+     * 将以可诊断错误结束
      * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
      */
-    QCNetworkReply* downloadToDevice(const QUrl &url, QIODevice *device);
+    QCNetworkReply *downloadToDevice(const QUrl &url, QIODevice *device);
 
     /**
      * @brief 从 QIODevice 上传数据（流式上传）
@@ -565,12 +566,15 @@ public:
      * @endcode
      *
      * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
-     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可读/读取失败，Reply 将以可诊断错误结束
+     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可读/读取失败，Reply
+     * 将以可诊断错误结束
      * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
      */
-    QCNetworkReply* uploadFromDevice(const QUrl &url, const QString &fieldName,
-                                      QIODevice *device, const QString &fileName,
-                                      const QString &mimeType);
+    QCNetworkReply *uploadFromDevice(const QUrl &url,
+                                     const QString &fieldName,
+                                     QIODevice *device,
+                                     const QString &fileName,
+                                     const QString &mimeType);
 
     /**
      * @brief 下载文件（支持断点续传）
@@ -614,9 +618,9 @@ public:
      * @note 服务器必须支持 HTTP Range 请求（检查响应头 Accept-Ranges: bytes）
      * @warning 如果服务器不支持 Range 请求，会从头开始下载（覆盖现有文件）
      */
-    QCNetworkReply* downloadFileResumable(const QUrl &url,
-                                           const QString &savePath,
-                                           bool overwrite = false);
+    QCNetworkReply *downloadFileResumable(const QUrl &url,
+                                          const QString &savePath,
+                                          bool overwrite = false);
 
     // ========================================================================
     // 缓存管理
@@ -643,7 +647,7 @@ public:
      * @brief 获取当前缓存实例
      * @return 缓存指针，如果未设置返回 nullptr
      */
-    QCNetworkCache* cache() const;
+    QCNetworkCache *cache() const;
 
     /**
      * @brief 设置磁盘缓存路径（便捷方法）
@@ -669,12 +673,12 @@ private:
     QCNetworkAccessManagerPrivate *const d_ptr;
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     CookieFileModeFlag m_cookieModeFlag;
-    QString                     m_cookieFilePath;
-    bool                        m_schedulerEnabled;
-    QCNetworkCache             *m_cache;
+    QString m_cookieFilePath;
+    bool m_schedulerEnabled;
+    QCNetworkCache *m_cache;
     ShareHandleConfig m_shareHandleConfig;
     HstsAltSvcCacheConfig m_hstsAltSvcCacheConfig;
 };
 
-} //namespace QCurl
+} // namespace QCurl
 #endif // QCNETWORKACCESSMANAGER_H

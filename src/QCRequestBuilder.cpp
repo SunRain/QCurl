@@ -1,12 +1,14 @@
 #include "QCRequestBuilder.h"
-#include "QCNetworkSslConfig.h"
-#include "QCNetworkProxyConfig.h"
+
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequestPriority.h"
 #include "QCNetworkRetryPolicy.h"
-#include <QUrlQuery>
-#include <QJsonDocument>
+#include "QCNetworkSslConfig.h"
+
 #include <QDebug>
+#include <QJsonDocument>
+#include <QUrlQuery>
 
 namespace QCurl {
 
@@ -14,31 +16,30 @@ namespace QCurl {
 
 QCRequestBuilder::QCRequestBuilder()
     : m_method(GET)
-    , m_timeoutMs(-1)  // -1 表示使用默认超时
+    , m_timeoutMs(-1) // -1 表示使用默认超时
     , m_followRedirects(true)
     , m_hasSslConfig(false)
     , m_hasProxyConfig(false)
     , m_hasHttpVersion(false)
     , m_hasPriority(false)
     , m_hasRetryPolicy(false)
-{
-}
+{}
 
 // ========== 基本配置方法实现 ==========
 
-QCRequestBuilder& QCRequestBuilder::setUrl(const QString &url)
+QCRequestBuilder &QCRequestBuilder::setUrl(const QString &url)
 {
     m_url = QUrl(url);
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setUrl(const QUrl &url)
+QCRequestBuilder &QCRequestBuilder::setUrl(const QUrl &url)
 {
     m_url = url;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setMethod(Method method)
+QCRequestBuilder &QCRequestBuilder::setMethod(Method method)
 {
     m_method = method;
     return *this;
@@ -46,13 +47,13 @@ QCRequestBuilder& QCRequestBuilder::setMethod(Method method)
 
 // ========== Header 和查询参数实现 ==========
 
-QCRequestBuilder& QCRequestBuilder::addHeader(const QString &key, const QString &value)
+QCRequestBuilder &QCRequestBuilder::addHeader(const QString &key, const QString &value)
 {
     m_headers[key] = value;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::addQueryParam(const QString &key, const QString &value)
+QCRequestBuilder &QCRequestBuilder::addQueryParam(const QString &key, const QString &value)
 {
     m_queryParams.insert(key, value);
     return *this;
@@ -60,13 +61,13 @@ QCRequestBuilder& QCRequestBuilder::addQueryParam(const QString &key, const QStr
 
 // ========== 超时配置实现 ==========
 
-QCRequestBuilder& QCRequestBuilder::setTimeout(int seconds)
+QCRequestBuilder &QCRequestBuilder::setTimeout(int seconds)
 {
     m_timeoutMs = seconds * 1000;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setTimeoutMs(int milliseconds)
+QCRequestBuilder &QCRequestBuilder::setTimeoutMs(int milliseconds)
 {
     m_timeoutMs = milliseconds;
     return *this;
@@ -74,13 +75,13 @@ QCRequestBuilder& QCRequestBuilder::setTimeoutMs(int milliseconds)
 
 // ========== 请求体配置实现 ==========
 
-QCRequestBuilder& QCRequestBuilder::setBody(const QByteArray &data)
+QCRequestBuilder &QCRequestBuilder::setBody(const QByteArray &data)
 {
     m_body = data;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setJsonBody(const QJsonObject &json)
+QCRequestBuilder &QCRequestBuilder::setJsonBody(const QJsonObject &json)
 {
     // 序列化 JSON 对象
     QJsonDocument doc(json);
@@ -92,7 +93,7 @@ QCRequestBuilder& QCRequestBuilder::setJsonBody(const QJsonObject &json)
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setContentType(const QString &contentType)
+QCRequestBuilder &QCRequestBuilder::setContentType(const QString &contentType)
 {
     m_headers["Content-Type"] = contentType;
     return *this;
@@ -100,42 +101,42 @@ QCRequestBuilder& QCRequestBuilder::setContentType(const QString &contentType)
 
 // ========== 高级配置实现 ==========
 
-QCRequestBuilder& QCRequestBuilder::setSslConfig(const QCNetworkSslConfig &config)
+QCRequestBuilder &QCRequestBuilder::setSslConfig(const QCNetworkSslConfig &config)
 {
-    m_sslConfig = config;
+    m_sslConfig    = config;
     m_hasSslConfig = true;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setProxyConfig(const QCNetworkProxyConfig &config)
+QCRequestBuilder &QCRequestBuilder::setProxyConfig(const QCNetworkProxyConfig &config)
 {
-    m_proxyConfig = config;
+    m_proxyConfig    = config;
     m_hasProxyConfig = true;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setHttpVersion(QCNetworkHttpVersion version)
+QCRequestBuilder &QCRequestBuilder::setHttpVersion(QCNetworkHttpVersion version)
 {
-    m_httpVersion = version;
+    m_httpVersion    = version;
     m_hasHttpVersion = true;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setPriority(QCNetworkRequestPriority priority)
+QCRequestBuilder &QCRequestBuilder::setPriority(QCNetworkRequestPriority priority)
 {
-    m_priority = priority;
+    m_priority    = priority;
     m_hasPriority = true;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setRetryPolicy(const QCNetworkRetryPolicy &policy)
+QCRequestBuilder &QCRequestBuilder::setRetryPolicy(const QCNetworkRetryPolicy &policy)
 {
-    m_retryPolicy = policy;
+    m_retryPolicy    = policy;
     m_hasRetryPolicy = true;
     return *this;
 }
 
-QCRequestBuilder& QCRequestBuilder::setFollowRedirects(bool follow)
+QCRequestBuilder &QCRequestBuilder::setFollowRedirects(bool follow)
 {
     m_followRedirects = follow;
     return *this;
@@ -212,10 +213,10 @@ void QCRequestBuilder::reset()
     m_followRedirects = true;
 
     // 重置高级配置标志
-    m_hasSslConfig = false;
+    m_hasSslConfig   = false;
     m_hasProxyConfig = false;
     m_hasHttpVersion = false;
-    m_hasPriority = false;
+    m_hasPriority    = false;
     m_hasRetryPolicy = false;
 }
 

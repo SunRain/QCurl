@@ -6,12 +6,14 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCCurlHandleManager.h"
-#include "QCWebSocketReconnectPolicy.h"
 #include "QCNetworkSslConfig.h"
 #include "QCWebSocketCompressionConfig.h"
-#include <QTimer>
-#include <QSocketNotifier>
+#include "QCWebSocketReconnectPolicy.h"
+
 #include <QByteArray>
+#include <QSocketNotifier>
+#include <QTimer>
+
 #include <curl/curl.h>
 #include <curl/websockets.h>
 

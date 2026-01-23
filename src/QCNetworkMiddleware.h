@@ -4,10 +4,12 @@
 #ifndef QCNETWORKMIDDLEWARE_H
 #define QCNETWORKMIDDLEWARE_H
 
-#include <QString>
-#include <memory>
 #include "QCGlobal.h"
 #include "QCNetworkRetryPolicy.h"
+
+#include <QString>
+
+#include <memory>
 
 namespace QCurl {
 
@@ -45,9 +47,7 @@ public:
      *
      * 在请求发送前调用，可以修改请求参数。
      */
-    virtual void onRequestPreSend(QCNetworkRequest &request) {
-        Q_UNUSED(request);
-    }
+    virtual void onRequestPreSend(QCNetworkRequest &request) { Q_UNUSED(request); }
 
     /**
      * @brief Reply 创建后拦截
@@ -56,9 +56,7 @@ public:
      * 在 QCNetworkReply 构造完成后、执行前调用。
      * 适合用于挂接观测/日志（例如订阅 retryAttempt/finished 等信号）。
      */
-    virtual void onReplyCreated(QCNetworkReply *reply) {
-        Q_UNUSED(reply);
-    }
+    virtual void onReplyCreated(QCNetworkReply *reply) { Q_UNUSED(reply); }
 
     /**
      * @brief 响应接收后拦截
@@ -66,17 +64,13 @@ public:
      *
      * 在响应接收后调用，可以读取和处理响应数据。
      */
-    virtual void onResponseReceived(QCNetworkReply *reply) {
-        Q_UNUSED(reply);
-    }
+    virtual void onResponseReceived(QCNetworkReply *reply) { Q_UNUSED(reply); }
 
     /**
      * @brief 中间件名称
      * @return 中间件的标识名称
      */
-    virtual QString name() const {
-        return "QCNetworkMiddleware";
-    }
+    virtual QString name() const { return "QCNetworkMiddleware"; }
 };
 
 /**

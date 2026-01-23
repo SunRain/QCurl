@@ -2,6 +2,7 @@
 #define QCNETWORKERROR_H
 
 #include <QString>
+
 #include <curl/curl.h>
 
 QT_BEGIN_NAMESPACE
@@ -26,33 +27,33 @@ enum class NetworkError {
     NoError = 0,
 
     // 连接错误
-    ConnectionRefused = 7,        ///< 连接被拒绝
-    ConnectionTimeout = 28,       ///< 连接超时
-    HostNotFound = 6,             ///< 主机名解析失败
-    SslHandshakeFailed = 60,      ///< SSL 握手失败
-    TooManyRedirects = 47,        ///< 重定向次数过多
+    ConnectionRefused  = 7,  ///< 连接被拒绝
+    ConnectionTimeout  = 28, ///< 连接超时
+    HostNotFound       = 6,  ///< 主机名解析失败
+    SslHandshakeFailed = 60, ///< SSL 握手失败
+    TooManyRedirects   = 47, ///< 重定向次数过多
 
     // HTTP 状态码错误（直接映射）
-    HttpBadRequest = 400,         ///< HTTP 400 Bad Request
-    HttpUnauthorized = 401,       ///< HTTP 401 Unauthorized
-    HttpForbidden = 403,          ///< HTTP 403 Forbidden
-    HttpNotFound = 404,           ///< HTTP 404 Not Found
-    HttpMethodNotAllowed = 405,   ///< HTTP 405 Method Not Allowed
-    HttpTimeout = 408,            ///< HTTP 408 Request Timeout
-    HttpTooManyRequests = 429,    ///< HTTP 429 Too Many Requests
-    HttpInternalServerError = 500,///< HTTP 500 Internal Server Error
-    HttpNotImplemented = 501,     ///< HTTP 501 Not Implemented
-    HttpBadGateway = 502,         ///< HTTP 502 Bad Gateway
-    HttpServiceUnavailable = 503, ///< HTTP 503 Service Unavailable
-    HttpGatewayTimeout = 504,     ///< HTTP 504 Gateway Timeout
+    HttpBadRequest          = 400, ///< HTTP 400 Bad Request
+    HttpUnauthorized        = 401, ///< HTTP 401 Unauthorized
+    HttpForbidden           = 403, ///< HTTP 403 Forbidden
+    HttpNotFound            = 404, ///< HTTP 404 Not Found
+    HttpMethodNotAllowed    = 405, ///< HTTP 405 Method Not Allowed
+    HttpTimeout             = 408, ///< HTTP 408 Request Timeout
+    HttpTooManyRequests     = 429, ///< HTTP 429 Too Many Requests
+    HttpInternalServerError = 500, ///< HTTP 500 Internal Server Error
+    HttpNotImplemented      = 501, ///< HTTP 501 Not Implemented
+    HttpBadGateway          = 502, ///< HTTP 502 Bad Gateway
+    HttpServiceUnavailable  = 503, ///< HTTP 503 Service Unavailable
+    HttpGatewayTimeout      = 504, ///< HTTP 504 Gateway Timeout
 
     // libcurl 错误（基数 1000）
-    CurlErrorBase = 1000,         ///< libcurl 错误起始值（CURLE_* + 1000）
+    CurlErrorBase = 1000, ///< libcurl 错误起始值（CURLE_* + 1000）
 
     // 应用层错误
-    OperationCancelled = 42,      ///< 操作被用户取消
-    InvalidRequest = 3,           ///< 无效的请求（URL 格式错误等）
-    Unknown = 99                  ///< 未知错误
+    OperationCancelled = 42, ///< 操作被用户取消
+    InvalidRequest     = 3,  ///< 无效的请求（URL 格式错误等）
+    Unknown            = 99  ///< 未知错误
 };
 
 /**

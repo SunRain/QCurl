@@ -3,6 +3,7 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCWebSocketReconnectPolicy.h"
+
 #include <QDebug>
 #include <QEventLoop>
 
@@ -15,12 +16,13 @@ namespace QCurl {
 // ============================================================================
 
 QCWebSocketPool::QCWebSocketPool(const Config &config, QObject *parent)
-    : QObject(parent), m_config(config)
+    : QObject(parent)
+    , m_config(config)
 {
     // 创建清理定时器（每 60 秒检查一次空闲连接）
     m_cleanupTimer = new QTimer(this);
     connect(m_cleanupTimer, &QTimer::timeout, this, &QCWebSocketPool::onCleanupTimer);
-    m_cleanupTimer->start(60000);  // 60 秒
+    m_cleanupTimer->start(60000); // 60 秒
 
     // 创建心跳定时器
     if (m_config.enableKeepAlive) {
@@ -30,18 +32,17 @@ QCWebSocketPool::QCWebSocketPool(const Config &config, QObject *parent)
     }
 
     qDebug() << "QCWebSocketPool: 连接池已创建，配置:"
-             << "maxPoolSize=" << m_config.maxPoolSize
-             << "maxIdleTime=" << m_config.maxIdleTime << "s";
+             << "maxPoolSize=" << m_config.maxPoolSize << "maxIdleTime=" << m_config.maxIdleTime
+             << "s";
 }
 
 QCWebSocketPool::QCWebSocketPool(QObject *parent)
     : QCWebSocketPool(Config(), parent)
-{
-}
+{}
 
 QCWebSocketPool::~QCWebSocketPool()
 {
-    clearPool();  // 清理所有连接
+    clearPool(); // 清理所有连接
     qDebug() << "QCWebSocketPool: 连接池已销毁";
 }
 
@@ -49,7 +50,7 @@ QCWebSocketPool::~QCWebSocketPool()
 // 核心 API 实现
 // ============================================================================
 
-QCWebSocket* QCWebSocketPool::acquire(const QUrl &url)
+QCWebSocket *QCWebSocketPool::acquire(const QUrl &url)
 {
     QMutexLocker locker(&m_mutex);
 
@@ -58,7 +59,7 @@ QCWebSocket* QCWebSocketPool::acquire(const QUrl &url)
         auto &pool = m_pools[url];
         for (auto &conn : pool) {
             if (!conn.inUse && conn.socket->state() == QCWebSocket::State::Connected) {
-                conn.inUse = true;
+                conn.inUse        = true;
                 conn.lastUsedTime = QDateTime::currentDateTime();
                 conn.reuseCount++;
 
@@ -88,11 +89,11 @@ QCWebSocket* QCWebSocketPool::acquire(const QUrl &url)
 
     // 4. 添加到池中
     PooledConnection conn;
-    conn.socket = socket;
+    conn.socket       = socket;
     conn.lastUsedTime = QDateTime::currentDateTime();
-    conn.createdTime = QDateTime::currentDateTime();
-    conn.inUse = true;
-    conn.reuseCount = 0;
+    conn.createdTime  = QDateTime::currentDateTime();
+    conn.inUse        = true;
+    conn.reuseCount   = 0;
 
     m_pools[url].append(conn);
     m_socketToUrl[socket] = url;
@@ -119,7 +120,7 @@ void QCWebSocketPool::release(QCWebSocket *socket)
         return;
     }
 
-    QUrl url = m_socketToUrl[socket];
+    QUrl url   = m_socketToUrl[socket];
     auto &pool = m_pools[url];
 
     for (auto &conn : pool) {
@@ -129,7 +130,7 @@ void QCWebSocketPool::release(QCWebSocket *socket)
                 return;
             }
 
-            conn.inUse = false;
+            conn.inUse        = false;
             conn.lastUsedTime = QDateTime::currentDateTime();
 
             qDebug() << "QCWebSocketPool: 归还连接" << url.toString();
@@ -194,7 +195,7 @@ void QCWebSocketPool::preWarm(const QUrl &url, int count)
     for (int i = 0; i < count; ++i) {
         auto *socket = acquire(url);
         if (socket) {
-            release(socket);  // 立即归还（变为空闲状态）
+            release(socket); // 立即归还（变为空闲状态）
         } else {
             qWarning() << "QCWebSocketPool: 预热失败，已创建" << i << "个连接";
             break;
@@ -271,7 +272,7 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
             }
         }
 
-        stats.hitCount = m_hitCounts.value(url, 0);
+        stats.hitCount  = m_hitCounts.value(url, 0);
         stats.missCount = m_missCounts.value(url, 0);
     }
 
@@ -288,15 +289,15 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
 // 私有方法实现
 // ============================================================================
 
-QCWebSocket* QCWebSocketPool::createNewConnection(const QUrl &url)
+QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
 {
     QCWebSocket *socket = new QCWebSocket(url, this);
 
     // 应用 v2.4.0 自动重连策略（如果启用）
     if (m_config.autoReconnect) {
         QCWebSocketReconnectPolicy policy;
-        policy.maxRetries = 3;
-        policy.initialDelay = std::chrono::milliseconds(1000);
+        policy.maxRetries        = 3;
+        policy.initialDelay      = std::chrono::milliseconds(1000);
         policy.backoffMultiplier = 2.0;
         socket->setReconnectPolicy(policy);
     }
@@ -355,7 +356,7 @@ void QCWebSocketPool::cleanupIdleConnections()
     QDateTime now = QDateTime::currentDateTime();
 
     for (auto it = m_pools.begin(); it != m_pools.end();) {
-        QUrl url = it.key();
+        QUrl url   = it.key();
         auto &pool = it.value();
 
         // 计算空闲连接数
@@ -455,7 +456,7 @@ void QCWebSocketPool::onKeepAliveTimer()
 
 void QCWebSocketPool::onSocketDisconnected()
 {
-    QCWebSocket *socket = qobject_cast<QCWebSocket*>(sender());
+    QCWebSocket *socket = qobject_cast<QCWebSocket *>(sender());
     if (!socket) {
         return;
     }

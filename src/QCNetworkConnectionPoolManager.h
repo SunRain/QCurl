@@ -4,12 +4,12 @@
 #ifndef QCNETWORKCONNECTIONPOOLMANAGER_H
 #define QCNETWORKCONNECTIONPOOLMANAGER_H
 
-#include <QMutex>
-#include <QHash>
-#include <QString>
-
 #include "QCGlobal.h"
 #include "QCNetworkConnectionPoolConfig.h"
+
+#include <QHash>
+#include <QMutex>
+#include <QString>
 
 #include <curl/curl.h>
 
@@ -20,7 +20,8 @@ namespace QCurl {
  *
  * 用于追踪连接池的效果和性能。
  */
-struct QCNetworkConnectionPoolStatistics {
+struct QCNetworkConnectionPoolStatistics
+{
     /**
      * @brief 总请求数
      *
@@ -110,7 +111,7 @@ public:
      *
      * @note 线程安全
      */
-    static QCNetworkConnectionPoolManager* instance();
+    static QCNetworkConnectionPoolManager *instance();
 
     /**
      * @brief 设置连接池配置
@@ -198,16 +199,16 @@ private:
     ~QCNetworkConnectionPoolManager();
 
     // 禁止拷贝和赋值
-    QCNetworkConnectionPoolManager(const QCNetworkConnectionPoolManager &) = delete;
+    QCNetworkConnectionPoolManager(const QCNetworkConnectionPoolManager &)            = delete;
     QCNetworkConnectionPoolManager &operator=(const QCNetworkConnectionPoolManager &) = delete;
 
-    mutable QMutex m_mutex;  ///< 保护所有成员变量
-    QCNetworkConnectionPoolConfig m_config;  ///< 当前配置
+    mutable QMutex m_mutex;                 ///< 保护所有成员变量
+    QCNetworkConnectionPoolConfig m_config; ///< 当前配置
 
     // 统计信息
-    qint64 m_totalRequests;        ///< 总请求数
-    qint64 m_reusedConnections;    ///< 复用的连接数
-    QHash<QString, int> m_activeConnectionsPerHost;  ///< 每主机活跃连接数
+    qint64 m_totalRequests;                         ///< 总请求数
+    qint64 m_reusedConnections;                     ///< 复用的连接数
+    QHash<QString, int> m_activeConnectionsPerHost; ///< 每主机活跃连接数
 };
 
 } // namespace QCurl

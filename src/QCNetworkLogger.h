@@ -4,10 +4,12 @@
 #ifndef QCNETWORKLOGGER_H
 #define QCNETWORKLOGGER_H
 
-#include <QString>
-#include <QDateTime>
-#include <functional>
 #include "QCGlobal.h"
+
+#include <QDateTime>
+#include <QString>
+
+#include <functional>
 
 namespace QCurl {
 
@@ -15,22 +17,23 @@ namespace QCurl {
  * @brief HTTP 网络日志级别
  */
 enum class NetworkLogLevel {
-    Debug,      ///< 调试日志
-    Info,       ///< 信息日志
-    Warning,    ///< 警告日志
-    Error       ///< 错误日志
+    Debug,   ///< 调试日志
+    Info,    ///< 信息日志
+    Warning, ///< 警告日志
+    Error    ///< 错误日志
 };
 
 /**
  * @brief 网络日志记录结构体
  */
-struct NetworkLogEntry {
-    NetworkLogLevel level;      ///< 日志级别
-    QString category;           ///< 日志分类（如 "Request", "Response"）
-    QString message;            ///< 日志消息
-    QDateTime timestamp;        ///< 时间戳
-    QString sourceFile;         ///< 源文件名（可选）
-    int sourceLine = -1;        ///< 源代码行号（可选）
+struct NetworkLogEntry
+{
+    NetworkLogLevel level; ///< 日志级别
+    QString category;      ///< 日志分类（如 "Request", "Response"）
+    QString message;       ///< 日志消息
+    QDateTime timestamp;   ///< 时间戳
+    QString sourceFile;    ///< 源文件名（可选）
+    int sourceLine = -1;   ///< 源代码行号（可选）
 
     /**
      * @brief 将日志转换为 JSON 格式
@@ -77,7 +80,8 @@ public:
      * @brief 记录带详细信息的日志
      * @param entry 日志条目
      */
-    virtual void logEntry(const NetworkLogEntry &entry) {
+    virtual void logEntry(const NetworkLogEntry &entry)
+    {
         log(entry.level, entry.category, entry.message);
     }
 

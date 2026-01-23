@@ -2,8 +2,9 @@
 #define QCNETWORKDISKCACHE_H
 
 #include "QCNetworkCache.h"
-#include <QMutex>
+
 #include <QDir>
+#include <QMutex>
 
 QT_BEGIN_NAMESPACE
 
@@ -62,7 +63,8 @@ public:
     // QCNetworkCache 接口实现
     [[nodiscard]] QByteArray data(const QUrl &url) override;
     [[nodiscard]] QCNetworkCacheMetadata metadata(const QUrl &url) override;
-    void insert(const QUrl &url, const QByteArray &data,
+    void insert(const QUrl &url,
+                const QByteArray &data,
                 const QCNetworkCacheMetadata &meta) override;
     bool remove(const QUrl &url) override;
     void clear() override;

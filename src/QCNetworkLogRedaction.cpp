@@ -9,26 +9,18 @@ namespace QCurl::QCNetworkLogRedaction {
 
 bool isSensitiveQueryKey(const QString &keyLower)
 {
-    return keyLower == QStringLiteral("token")
-           || keyLower == QStringLiteral("access_token")
-           || keyLower == QStringLiteral("id_token")
-           || keyLower == QStringLiteral("refresh_token")
-           || keyLower == QStringLiteral("api_key")
-           || keyLower == QStringLiteral("apikey")
-           || keyLower == QStringLiteral("key")
-           || keyLower == QStringLiteral("secret")
-           || keyLower == QStringLiteral("signature")
-           || keyLower == QStringLiteral("sig")
-           || keyLower == QStringLiteral("password")
-           || keyLower == QStringLiteral("passwd")
+    return keyLower == QStringLiteral("token") || keyLower == QStringLiteral("access_token")
+           || keyLower == QStringLiteral("id_token") || keyLower == QStringLiteral("refresh_token")
+           || keyLower == QStringLiteral("api_key") || keyLower == QStringLiteral("apikey")
+           || keyLower == QStringLiteral("key") || keyLower == QStringLiteral("secret")
+           || keyLower == QStringLiteral("signature") || keyLower == QStringLiteral("sig")
+           || keyLower == QStringLiteral("password") || keyLower == QStringLiteral("passwd")
            || keyLower == QStringLiteral("pwd");
 }
 
 bool isSensitiveHeaderKey(const QByteArray &keyLower)
 {
-    if (keyLower == "authorization"
-        || keyLower == "proxy-authorization"
-        || keyLower == "cookie"
+    if (keyLower == "authorization" || keyLower == "proxy-authorization" || keyLower == "cookie"
         || keyLower == "set-cookie") {
         return true;
     }
@@ -37,12 +29,8 @@ bool isSensitiveHeaderKey(const QByteArray &keyLower)
         return true;
     }
 
-    if (keyLower.contains("token")
-        || keyLower.contains("secret")
-        || keyLower.contains("signature")
-        || keyLower == "sig"
-        || keyLower.contains("password")
-        || keyLower.contains("passwd")
+    if (keyLower.contains("token") || keyLower.contains("secret") || keyLower.contains("signature")
+        || keyLower == "sig" || keyLower.contains("password") || keyLower.contains("passwd")
         || keyLower == "pwd") {
         return true;
     }
@@ -69,8 +57,8 @@ QString redactSensitiveQueryParams(const QString &line)
     }
 
     const QString before = line.left(qpos + 1);
-    const QString query = line.mid(qpos + 1, end - qpos - 1);
-    const QString after = line.mid(end);
+    const QString query  = line.mid(qpos + 1, end - qpos - 1);
+    const QString after  = line.mid(end);
 
     QStringList parts = query.split(QLatin1Char('&'));
     for (QString &part : parts) {
@@ -105,7 +93,7 @@ QString redactSensitiveTraceLine(const QByteArray &line)
         return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
     }
 
-    const QByteArray key = trimmed.left(colonPos).trimmed();
+    const QByteArray key      = trimmed.left(colonPos).trimmed();
     const QByteArray keyLower = key.toLower();
     if (isSensitiveHeaderKey(keyLower)) {
         return QString::fromUtf8(key) + QStringLiteral(": [REDACTED]");

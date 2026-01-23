@@ -4,19 +4,19 @@
 #ifndef QCNETWORKREQUESTSCHEDULER_H
 #define QCNETWORKREQUESTSCHEDULER_H
 
-#include <QObject>
-#include <QMutex>
-#include <QMap>
-#include <QQueue>
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "QCNetworkRequestPriority.h"
+
+#include <QDateTime>
 #include <QHash>
 #include <QList>
+#include <QMap>
+#include <QMutex>
+#include <QObject>
 #include <QPointer>
-#include <QDateTime>
+#include <QQueue>
 #include <QTimer>
-
-#include "QCNetworkRequestPriority.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 
 namespace QCurl {
 
@@ -61,7 +61,8 @@ public:
     /**
      * @brief 调度器配置
      */
-    struct Config {
+    struct Config
+    {
         /**
          * @brief 全局最大并发请求数
          *
@@ -98,14 +99,15 @@ public:
     /**
      * @brief 调度器统计信息
      */
-    struct Statistics {
-        int pendingRequests = 0;        ///< 等待中的请求数
-        int runningRequests = 0;        ///< 执行中的请求数
-        int completedRequests = 0;      ///< 已完成的请求数
-        int cancelledRequests = 0;      ///< 已取消的请求数
-        qint64 totalBytesReceived = 0;  ///< 总接收字节数
-        qint64 totalBytesSent = 0;      ///< 总发送字节数
-        double avgResponseTime = 0.0;   ///< 平均响应时间（毫秒）
+    struct Statistics
+    {
+        int pendingRequests       = 0;   ///< 等待中的请求数
+        int runningRequests       = 0;   ///< 执行中的请求数
+        int completedRequests     = 0;   ///< 已完成的请求数
+        int cancelledRequests     = 0;   ///< 已取消的请求数
+        qint64 totalBytesReceived = 0;   ///< 总接收字节数
+        qint64 totalBytesSent     = 0;   ///< 总发送字节数
+        double avgResponseTime    = 0.0; ///< 平均响应时间（毫秒）
     };
 
     /**
@@ -113,7 +115,7 @@ public:
      *
      * @return 调度器实例指针
      */
-    static QCNetworkRequestScheduler* instance();
+    static QCNetworkRequestScheduler *instance();
 
     /**
      * @brief 设置调度器配置
@@ -142,12 +144,11 @@ public:
      *
      * @note 返回的 QCNetworkReply 对象的生命周期由调用者管理
      */
-    QCNetworkReply* scheduleRequest(
+    QCNetworkReply *scheduleRequest(
         const QCNetworkRequest &request,
         HttpMethod method,
         QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal,
-        const QByteArray &body = QByteArray()
-    );
+        const QByteArray &body            = QByteArray());
 
     /**
      * @brief 调度一个网络请求（显式指定 replyParent）
@@ -157,13 +158,11 @@ public:
      *
      * @note 该重载不提供默认参数，避免与现有带默认参数的 scheduleRequest 产生重载二义性。
      */
-    QCNetworkReply* scheduleRequest(
-        const QCNetworkRequest &request,
-        HttpMethod method,
-        QCNetworkRequestPriority priority,
-        const QByteArray &body,
-        QObject *replyParent
-    );
+    QCNetworkReply *scheduleRequest(const QCNetworkRequest &request,
+                                    HttpMethod method,
+                                    QCNetworkRequestPriority priority,
+                                    const QByteArray &body,
+                                    QObject *replyParent);
 
     /**
      * @brief 延后调度请求（非传输级暂停）
@@ -221,14 +220,14 @@ public:
      *
      * @return 等待中的请求列表
      */
-    QList<QCNetworkReply*> pendingRequests() const;
+    QList<QCNetworkReply *> pendingRequests() const;
 
     /**
      * @brief 获取所有执行中的请求
      *
      * @return 执行中的请求列表
      */
-    QList<QCNetworkReply*> runningRequests() const;
+    QList<QCNetworkReply *> runningRequests() const;
 
 signals:
     /**
@@ -286,34 +285,35 @@ private:
     /**
      * @brief 队列中的请求项
      */
-    struct QueuedRequest {
-        QPointer<QCNetworkReply> reply;  ///< 响应对象（使用 QPointer 防止悬空指针）
-        QCNetworkRequestPriority priority;  ///< 请求优先级
-        QDateTime queueTime;  ///< 加入队列的时间
-        QString host;  ///< 主机名
+    struct QueuedRequest
+    {
+        QPointer<QCNetworkReply> reply;    ///< 响应对象（使用 QPointer 防止悬空指针）
+        QCNetworkRequestPriority priority; ///< 请求优先级
+        QDateTime queueTime;               ///< 加入队列的时间
+        QString host;                      ///< 主机名
     };
 
-    mutable QMutex m_mutex;  ///< 保护所有成员变量的互斥锁
-    Config m_config;  ///< 调度器配置
+    mutable QMutex m_mutex; ///< 保护所有成员变量的互斥锁
+    Config m_config;        ///< 调度器配置
 
     // 优先级队列
     QMap<QCNetworkRequestPriority, QQueue<QueuedRequest>> m_pendingQueue;
 
     // 运行中的请求
     QList<QPointer<QCNetworkReply>> m_runningRequests;
-    QHash<QString, int> m_hostConnectionCount;  ///< 主机连接计数
+    QHash<QString, int> m_hostConnectionCount; ///< 主机连接计数
 
     // 延后调度的请求（非传输级 pause）
     QList<QPointer<QCNetworkReply>> m_deferredRequests;
 
     // 统计信息
     Statistics m_stats;
-    QHash<QCNetworkReply*, QDateTime> m_requestStartTimes;  ///< 请求开始时间
-    QHash<QCNetworkReply*, QString> m_replyHosts;  ///< Reply 对应的主机名
+    QHash<QCNetworkReply *, QDateTime> m_requestStartTimes; ///< 请求开始时间
+    QHash<QCNetworkReply *, QString> m_replyHosts;          ///< Reply 对应的主机名
 
     // 带宽控制
-    QTimer *m_throttleTimer;  ///< 带宽重置定时器
-    qint64 m_bytesTransferredInWindow;  ///< 当前窗口内传输的字节数
+    QTimer *m_throttleTimer;           ///< 带宽重置定时器
+    qint64 m_bytesTransferredInWindow; ///< 当前窗口内传输的字节数
 
     /**
      * @brief 处理队列

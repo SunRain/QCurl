@@ -1,4 +1,5 @@
 #include "QCNetworkCache.h"
+
 #include <QStringList>
 
 namespace QCurl {
@@ -13,12 +14,12 @@ QDateTime QCNetworkCache::parseExpirationDate(const QMap<QByteArray, QByteArray>
         }
 
         // 解析 max-age=秒数
-        QString ccStr = QString::fromLatin1(cacheControl);
+        QString ccStr          = QString::fromLatin1(cacheControl);
         QStringList directives = ccStr.split(',', Qt::SkipEmptyParts);
         for (const QString &directive : directives) {
             QString trimmed = directive.trimmed();
             if (trimmed.startsWith("max-age=", Qt::CaseInsensitive)) {
-                bool ok = false;
+                bool ok    = false;
                 int maxAge = trimmed.mid(8).toInt(&ok);
                 if (ok && maxAge > 0) {
                     return QDateTime::currentDateTime().addSecs(maxAge);
@@ -35,8 +36,7 @@ QDateTime QCNetworkCache::parseExpirationDate(const QMap<QByteArray, QByteArray>
         }
 
         // 解析 HTTP 日期格式（RFC 2616）
-        QDateTime expiresDate = QDateTime::fromString(
-            QString::fromLatin1(expires), Qt::RFC2822Date);
+        QDateTime expiresDate = QDateTime::fromString(QString::fromLatin1(expires), Qt::RFC2822Date);
         if (expiresDate.isValid()) {
             return expiresDate;
         }

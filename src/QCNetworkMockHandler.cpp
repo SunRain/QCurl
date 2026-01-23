@@ -3,14 +3,15 @@
 
 #include "QCNetworkMockHandler.h"
 
-#include "QCNetworkReply.h"  // HttpMethod
+#include "QCNetworkReply.h" // HttpMethod
 
 #include <QMutexLocker>
+
 #include <algorithm>
 
 namespace QCurl {
 
-QCNetworkMockHandler::QCNetworkMockHandler() = default;
+QCNetworkMockHandler::QCNetworkMockHandler()  = default;
 QCNetworkMockHandler::~QCNetworkMockHandler() = default;
 
 void QCNetworkMockHandler::mockResponse(const QUrl &url, const QByteArray &response, int statusCode)
@@ -18,9 +19,9 @@ void QCNetworkMockHandler::mockResponse(const QUrl &url, const QByteArray &respo
     QMutexLocker locker(&m_mutex);
     // 兼容旧 API：url-only 作为“Any method”
     MockData data;
-    data.response = response;
+    data.response   = response;
     data.statusCode = statusCode;
-    data.isError = false;
+    data.isError    = false;
     replaceSequence(m_sequences[makeKey(url)], data);
 }
 
@@ -29,96 +30,96 @@ void QCNetworkMockHandler::mockError(const QUrl &url, NetworkError error)
     QMutexLocker locker(&m_mutex);
     // 兼容旧 API：url-only 作为“Any method”
     MockData data;
-    data.error = error;
+    data.error   = error;
     data.isError = true;
     replaceSequence(m_sequences[makeKey(url)], data);
 }
 
 void QCNetworkMockHandler::mockResponse(HttpMethod method,
-                                       const QUrl &url,
-                                       const QByteArray &response,
-                                       int statusCode,
-                                       const QMap<QByteArray, QByteArray> &headers)
+                                        const QUrl &url,
+                                        const QByteArray &response,
+                                        int statusCode,
+                                        const QMap<QByteArray, QByteArray> &headers)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.response = response;
+    data.response   = response;
     data.statusCode = statusCode;
-    data.headers = headers;
-    data.isError = false;
+    data.headers    = headers;
+    data.isError    = false;
     replaceSequence(m_sequences[makeKey(method, url)], data);
 }
 
 void QCNetworkMockHandler::mockResponse(HttpMethod method,
-                                       const QUrl &url,
-                                       const QByteArray &response,
-                                       int statusCode,
-                                       const QMap<QByteArray, QByteArray> &headers,
-                                       const QByteArray &rawHeaderData)
+                                        const QUrl &url,
+                                        const QByteArray &response,
+                                        int statusCode,
+                                        const QMap<QByteArray, QByteArray> &headers,
+                                        const QByteArray &rawHeaderData)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.response = response;
-    data.statusCode = statusCode;
-    data.headers = headers;
+    data.response      = response;
+    data.statusCode    = statusCode;
+    data.headers       = headers;
     data.rawHeaderData = rawHeaderData;
-    data.isError = false;
+    data.isError       = false;
     replaceSequence(m_sequences[makeKey(method, url)], data);
 }
 
 void QCNetworkMockHandler::enqueueResponse(HttpMethod method,
-                                          const QUrl &url,
-                                          const QByteArray &response,
-                                          int statusCode,
-                                          const QMap<QByteArray, QByteArray> &headers)
+                                           const QUrl &url,
+                                           const QByteArray &response,
+                                           int statusCode,
+                                           const QMap<QByteArray, QByteArray> &headers)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.response = response;
+    data.response   = response;
     data.statusCode = statusCode;
-    data.headers = headers;
-    data.isError = false;
+    data.headers    = headers;
+    data.isError    = false;
     appendSequence(m_sequences[makeKey(method, url)], data);
 }
 
 void QCNetworkMockHandler::enqueueResponse(HttpMethod method,
-                                          const QUrl &url,
-                                          const QByteArray &response,
-                                          int statusCode,
-                                          const QMap<QByteArray, QByteArray> &headers,
-                                          const QByteArray &rawHeaderData)
+                                           const QUrl &url,
+                                           const QByteArray &response,
+                                           int statusCode,
+                                           const QMap<QByteArray, QByteArray> &headers,
+                                           const QByteArray &rawHeaderData)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.response = response;
-    data.statusCode = statusCode;
-    data.headers = headers;
+    data.response      = response;
+    data.statusCode    = statusCode;
+    data.headers       = headers;
     data.rawHeaderData = rawHeaderData;
-    data.isError = false;
+    data.isError       = false;
     appendSequence(m_sequences[makeKey(method, url)], data);
 }
 
 void QCNetworkMockHandler::mockError(HttpMethod method,
-                                    const QUrl &url,
-                                    NetworkError error,
-                                    const QMap<QByteArray, QByteArray> &headers)
+                                     const QUrl &url,
+                                     NetworkError error,
+                                     const QMap<QByteArray, QByteArray> &headers)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.error = error;
+    data.error   = error;
     data.headers = headers;
     data.isError = true;
     replaceSequence(m_sequences[makeKey(method, url)], data);
 }
 
 void QCNetworkMockHandler::enqueueError(HttpMethod method,
-                                       const QUrl &url,
-                                       NetworkError error,
-                                       const QMap<QByteArray, QByteArray> &headers)
+                                        const QUrl &url,
+                                        NetworkError error,
+                                        const QMap<QByteArray, QByteArray> &headers)
 {
     QMutexLocker locker(&m_mutex);
     MockData data;
-    data.error = error;
+    data.error   = error;
     data.headers = headers;
     data.isError = true;
     appendSequence(m_sequences[makeKey(method, url)], data);
@@ -170,7 +171,7 @@ QByteArray QCNetworkMockHandler::getMockResponse(const QUrl &url, int &statusCod
         const auto &seq = m_sequences.value(anyKey);
         if (!seq.items.isEmpty()) {
             const auto &data = seq.items.first();
-            statusCode = data.statusCode;
+            statusCode       = data.statusCode;
             return data.response;
         }
     }
@@ -183,7 +184,7 @@ QByteArray QCNetworkMockHandler::getMockResponse(const QUrl &url, int &statusCod
         const auto &seq = it.value();
         if (!seq.items.isEmpty()) {
             const auto &data = seq.items.first();
-            statusCode = data.statusCode;
+            statusCode       = data.statusCode;
             return data.response;
         }
     }
@@ -224,7 +225,7 @@ bool QCNetworkMockHandler::consumeMock(HttpMethod method, const QUrl &url, MockD
 {
     QMutexLocker locker(&m_mutex);
     const QString methodKey = makeKey(method, url);
-    const QString anyKey = makeKey(url);
+    const QString anyKey    = makeKey(url);
 
     auto it = m_sequences.find(methodKey);
     if (it == m_sequences.end()) {
@@ -240,8 +241,8 @@ bool QCNetworkMockHandler::consumeMock(HttpMethod method, const QUrl &url, MockD
     }
 
     const int lastIndex = static_cast<int>(seq.items.size() - 1);
-    const int index = std::min(seq.cursor, lastIndex);
-    out = seq.items.at(index);
+    const int index     = std::min(seq.cursor, lastIndex);
+    out                 = seq.items.at(index);
     if (seq.cursor < lastIndex) {
         seq.cursor += 1;
     }

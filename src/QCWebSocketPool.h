@@ -6,14 +6,15 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCWebSocket.h"
-#include <QObject>
-#include <QUrl>
-#include <QMap>
-#include <QList>
-#include <QHash>
-#include <QMutex>
-#include <QTimer>
+
 #include <QDateTime>
+#include <QHash>
+#include <QList>
+#include <QMap>
+#include <QMutex>
+#include <QObject>
+#include <QTimer>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 
@@ -76,26 +77,28 @@ public:
     /**
      * @brief 连接池配置
      */
-    struct Config {
-        int maxPoolSize = 10;           ///< 最大连接数（每个 URL）
-        int maxIdleTime = 300;          ///< 空闲超时（秒），超时连接将被清理
-        int minIdleConnections = 2;     ///< 最小空闲连接数（保留热连接）
+    struct Config
+    {
+        int maxPoolSize         = 10;   ///< 最大连接数（每个 URL）
+        int maxIdleTime         = 300;  ///< 空闲超时（秒），超时连接将被清理
+        int minIdleConnections  = 2;    ///< 最小空闲连接数（保留热连接）
         int maxTotalConnections = 50;   ///< 全局最大连接数（所有 URL 总和）
-        bool enableKeepAlive = true;    ///< 启用心跳保活（发送 Ping 帧）
-        int keepAliveInterval = 30;     ///< 心跳间隔（秒）
-        bool autoReconnect = true;      ///< 空闲连接断开时自动重连
+        bool enableKeepAlive    = true; ///< 启用心跳保活（发送 Ping 帧）
+        int keepAliveInterval   = 30;   ///< 心跳间隔（秒）
+        bool autoReconnect      = true; ///< 空闲连接断开时自动重连
     };
 
     /**
      * @brief 统计信息
      */
-    struct Stats {
-        int totalConnections = 0;       ///< 总连接数（活跃 + 空闲）
-        int activeConnections = 0;      ///< 活跃连接数（正在使用）
-        int idleConnections = 0;        ///< 空闲连接数（可复用）
-        int hitCount = 0;               ///< 复用命中次数
-        int missCount = 0;              ///< 未命中次数（需创建新连接）
-        double hitRate = 0.0;           ///< 命中率（百分比）
+    struct Stats
+    {
+        int totalConnections  = 0;   ///< 总连接数（活跃 + 空闲）
+        int activeConnections = 0;   ///< 活跃连接数（正在使用）
+        int idleConnections   = 0;   ///< 空闲连接数（可复用）
+        int hitCount          = 0;   ///< 复用命中次数
+        int missCount         = 0;   ///< 未命中次数（需创建新连接）
+        double hitRate        = 0.0; ///< 命中率（百分比）
     };
 
     /**
@@ -132,7 +135,7 @@ public:
      *
      * @note 获取的连接必须通过 release() 归还，否则会导致资源泄漏
      */
-    QCWebSocket* acquire(const QUrl &url);
+    QCWebSocket *acquire(const QUrl &url);
 
     /**
      * @brief 归还连接
@@ -233,28 +236,29 @@ private:
     /**
      * @brief 池中的连接记录
      */
-    struct PooledConnection {
-        QCWebSocket *socket = nullptr;  ///< WebSocket 连接
-        QDateTime lastUsedTime;         ///< 最后使用时间
-        QDateTime createdTime;          ///< 创建时间
-        bool inUse = false;             ///< 是否正在使用
-        int reuseCount = 0;             ///< 复用次数
+    struct PooledConnection
+    {
+        QCWebSocket *socket = nullptr; ///< WebSocket 连接
+        QDateTime lastUsedTime;        ///< 最后使用时间
+        QDateTime createdTime;         ///< 创建时间
+        bool inUse     = false;        ///< 是否正在使用
+        int reuseCount = 0;            ///< 复用次数
     };
 
     // 数据成员
-    QMap<QUrl, QList<PooledConnection>> m_pools;  ///< 连接池（按 URL 分组）
-    QHash<QCWebSocket*, QUrl> m_socketToUrl;     ///< Socket 到 URL 的映射
-    Config m_config;                              ///< 配置
-    QTimer *m_cleanupTimer = nullptr;             ///< 清理定时器
-    QTimer *m_keepAliveTimer = nullptr;           ///< 心跳定时器
-    mutable QMutex m_mutex;                       ///< 线程安全保护
+    QMap<QUrl, QList<PooledConnection>> m_pools; ///< 连接池（按 URL 分组）
+    QHash<QCWebSocket *, QUrl> m_socketToUrl;    ///< Socket 到 URL 的映射
+    Config m_config;                             ///< 配置
+    QTimer *m_cleanupTimer   = nullptr;          ///< 清理定时器
+    QTimer *m_keepAliveTimer = nullptr;          ///< 心跳定时器
+    mutable QMutex m_mutex;                      ///< 线程安全保护
 
     // 统计数据
-    QHash<QUrl, int> m_hitCounts;     ///< 命中次数
-    QHash<QUrl, int> m_missCounts;    ///< 未命中次数
+    QHash<QUrl, int> m_hitCounts;  ///< 命中次数
+    QHash<QUrl, int> m_missCounts; ///< 未命中次数
 
     // 内部方法
-    QCWebSocket* createNewConnection(const QUrl &url);
+    QCWebSocket *createNewConnection(const QUrl &url);
     void removeConnection(QCWebSocket *socket);
     void cleanupIdleConnections();
     void sendKeepAlive();

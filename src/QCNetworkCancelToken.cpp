@@ -2,7 +2,9 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkCancelToken.h"
+
 #include "QCNetworkReply.h"
+
 #include <QDebug>
 
 namespace QCurl {
@@ -12,14 +14,13 @@ class QCNetworkCancelToken::Private
 public:
     QList<QPointer<QCNetworkReply>> attachedReplies;
     QTimer *autoTimeoutTimer = nullptr;
-    bool cancelled = false;
+    bool cancelled           = false;
 };
 
 QCNetworkCancelToken::QCNetworkCancelToken(QObject *parent)
     : QObject(parent)
     , d_ptr(new Private)
-{
-}
+{}
 
 QCNetworkCancelToken::~QCNetworkCancelToken()
 {
@@ -107,8 +108,10 @@ void QCNetworkCancelToken::setAutoTimeout(int msecs)
 
     if (!d_ptr->autoTimeoutTimer) {
         d_ptr->autoTimeoutTimer = new QTimer(this);
-        connect(d_ptr->autoTimeoutTimer, &QTimer::timeout,
-                this, &QCNetworkCancelToken::onAutoTimeoutTriggered);
+        connect(d_ptr->autoTimeoutTimer,
+                &QTimer::timeout,
+                this,
+                &QCNetworkCancelToken::onAutoTimeoutTriggered);
     }
 
     d_ptr->autoTimeoutTimer->start(msecs);

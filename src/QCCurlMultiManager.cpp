@@ -1,12 +1,13 @@
 #include "QCCurlMultiManager.h"
+
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkConnectionPoolConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
-#include "QCNetworkConnectionPoolConfig.h"
 
-#include <QDebug>
 #include <QDateTime>
+#include <QDebug>
 #include <QList>
 #include <QMutexLocker>
 #include <QNetworkCookie>
@@ -40,7 +41,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
             return std::nullopt;
         }
 
-        bool ok = false;
+        bool ok              = false;
         const qint64 seconds = raw.toLongLong(&ok);
         if (ok) {
             if (seconds < 0) {
@@ -50,7 +51,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
         }
 
         const QByteArray dateBytes = raw.toUtf8();
-        const time_t parsed = curl_getdate(dateBytes.constData(), nullptr);
+        const time_t parsed        = curl_getdate(dateBytes.constData(), nullptr);
         if (parsed < 0) {
             return std::nullopt;
         }
@@ -60,8 +61,7 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
             return std::chrono::milliseconds(0);
         }
 
-        const qint64 deltaSeconds =
-            static_cast<qint64>(parsed) - static_cast<qint64>(now);
+        const qint64 deltaSeconds = static_cast<qint64>(parsed) - static_cast<qint64>(now);
         if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
             return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
         }
@@ -141,21 +141,21 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
         return std::nullopt;
     }
 
-    QByteArray domainBytes = parts.at(0);
+    QByteArray domainBytes                  = parts.at(0);
     const QByteArray includeSubdomainsBytes = parts.at(1);
-    const bool includeSubdomains = includeSubdomainsBytes.trimmed().toUpper() == "TRUE";
-    bool httpOnly = false;
+    const bool includeSubdomains            = includeSubdomainsBytes.trimmed().toUpper() == "TRUE";
+    bool httpOnly                           = false;
     static const QByteArray kHttpOnlyPrefix = "#HttpOnly_";
     if (domainBytes.startsWith(kHttpOnlyPrefix)) {
-        httpOnly = true;
+        httpOnly    = true;
         domainBytes = domainBytes.mid(kHttpOnlyPrefix.size());
     }
 
-    const QByteArray pathBytes = parts.at(2);
-    const QByteArray secureBytes = parts.at(3);
+    const QByteArray pathBytes    = parts.at(2);
+    const QByteArray secureBytes  = parts.at(3);
     const QByteArray expiresBytes = parts.at(4);
-    const QByteArray nameBytes = parts.at(5);
-    const QByteArray valueBytes = parts.at(6);
+    const QByteArray nameBytes    = parts.at(5);
+    const QByteArray valueBytes   = parts.at(6);
 
     QNetworkCookie cookie(nameBytes, valueBytes);
     QString domain = QString::fromUtf8(domainBytes);
@@ -173,7 +173,7 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
     cookie.setSecure(secureBytes.trimmed().toUpper() == "TRUE");
     cookie.setHttpOnly(httpOnly);
 
-    bool ok = false;
+    bool ok            = false;
     const qint64 epoch = expiresBytes.trimmed().toLongLong(&ok);
     if (ok && epoch > 0) {
         cookie.setExpirationDate(QDateTime::fromSecsSinceEpoch(epoch, QTimeZone::utc()));
@@ -183,53 +183,57 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
 
 } // namespace
 
-void QCCurlMultiManager::shareLockCallback(CURL *, curl_lock_data data, curl_lock_access, void *userptr)
+void QCCurlMultiManager::shareLockCallback(CURL *,
+                                           curl_lock_data data,
+                                           curl_lock_access,
+                                           void *userptr)
 {
-    auto *context = static_cast<ShareContext*>(userptr);
+    auto *context = static_cast<ShareContext *>(userptr);
     if (!context) {
         return;
     }
 
     switch (data) {
-    case CURL_LOCK_DATA_DNS:
-        context->dnsMutex.lock();
-        return;
-    case CURL_LOCK_DATA_COOKIE:
-        context->cookieMutex.lock();
-        return;
-    case CURL_LOCK_DATA_SSL_SESSION:
-        context->sslMutex.lock();
-        return;
-    default:
-        context->otherMutex.lock();
-        return;
+        case CURL_LOCK_DATA_DNS:
+            context->dnsMutex.lock();
+            return;
+        case CURL_LOCK_DATA_COOKIE:
+            context->cookieMutex.lock();
+            return;
+        case CURL_LOCK_DATA_SSL_SESSION:
+            context->sslMutex.lock();
+            return;
+        default:
+            context->otherMutex.lock();
+            return;
     }
 }
 
 void QCCurlMultiManager::shareUnlockCallback(CURL *, curl_lock_data data, void *userptr)
 {
-    auto *context = static_cast<ShareContext*>(userptr);
+    auto *context = static_cast<ShareContext *>(userptr);
     if (!context) {
         return;
     }
 
     switch (data) {
-    case CURL_LOCK_DATA_DNS:
-        context->dnsMutex.unlock();
-        return;
-    case CURL_LOCK_DATA_COOKIE:
-        context->cookieMutex.unlock();
-        return;
-    case CURL_LOCK_DATA_SSL_SESSION:
-        context->sslMutex.unlock();
-        return;
-    default:
-        context->otherMutex.unlock();
-        return;
+        case CURL_LOCK_DATA_DNS:
+            context->dnsMutex.unlock();
+            return;
+        case CURL_LOCK_DATA_COOKIE:
+            context->cookieMutex.unlock();
+            return;
+        case CURL_LOCK_DATA_SSL_SESSION:
+            context->sslMutex.unlock();
+            return;
+        default:
+            context->otherMutex.unlock();
+            return;
     }
 }
 
-QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(const QCNetworkAccessManager *manager)
+QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(
+    const QCNetworkAccessManager *manager)
 {
     ShareConfig out;
     if (!manager) {
@@ -237,9 +241,9 @@ QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(const QCNetwor
     }
 
     const auto config = manager->shareHandleConfig();
-    out.dnsCache = config.shareDnsCache;
-    out.cookies = config.shareCookies;
-    out.sslSession = config.shareSslSession;
+    out.dnsCache      = config.shareDnsCache;
+    out.cookies       = config.shareCookies;
+    out.sslSession    = config.shareSslSession;
     return out;
 }
 
@@ -266,7 +270,7 @@ QString QCCurlMultiManager::shareConfigSummary(const ShareConfig &config)
 // QCCurlMultiManager 实现
 // ============================================================================
 
-QCCurlMultiManager* QCCurlMultiManager::instance()
+QCCurlMultiManager *QCCurlMultiManager::instance()
 {
     // 线程内单例：每个线程拥有独立的 multi engine，避免同一 CURLM* 被跨线程并发访问
     static thread_local QCCurlMultiManager s_instance;
@@ -274,9 +278,9 @@ QCCurlMultiManager* QCCurlMultiManager::instance()
 }
 
 QCCurlMultiManager::QCCurlMultiManager(QObject *parent)
-    : QObject(parent),
-      m_multiHandle(nullptr),
-      m_socketTimer(nullptr)
+    : QObject(parent)
+    , m_multiHandle(nullptr)
+    , m_socketTimer(nullptr)
 {
     qDebug() << "QCCurlMultiManager: Initializing global instance";
 
@@ -340,17 +344,18 @@ QCCurlMultiManager::~QCCurlMultiManager()
         m_socketTimer->stop();
     }
 
-    QList<CURL*> activeHandles;
-    QList<SocketInfo*> sockets;
-    QList<ShareContext*> shareContexts;
+    QList<CURL *> activeHandles;
+    QList<QSharedPointer<SocketInfo>> sockets;
+    QList<QSharedPointer<ShareContext>> shareContexts;
     {
         QMutexLocker locker(&m_mutex);
         activeHandles = m_activeReplies.keys();
-        sockets = m_socketMap.values();
+        sockets       = m_socketMap.values();
+        shareContexts = m_shareContexts.values();
         m_activeReplies.clear();
         m_socketMap.clear();
-        shareContexts = m_shareContexts.values();
         m_shareContexts.clear();
+
         m_easyToShareContext.clear();
         m_easyShareOptionSet.clear();
     }
@@ -366,7 +371,8 @@ QCCurlMultiManager::~QCCurlMultiManager()
         curl_multi_remove_handle(m_multiHandle, easy);
     }
 
-    for (SocketInfo *info : sockets) {
+    for (const auto &infoHolder : sockets) {
+        SocketInfo *info = infoHolder.data();
         if (!info) {
             continue;
         }
@@ -376,10 +382,10 @@ QCCurlMultiManager::~QCCurlMultiManager()
         if (info->writeNotifier) {
             info->writeNotifier->setEnabled(false);
         }
-        delete info;
     }
 
-    for (ShareContext *context : shareContexts) {
+    for (const auto &contextHolder : shareContexts) {
+        ShareContext *context = contextHolder.data();
         if (!context) {
             continue;
         }
@@ -387,7 +393,6 @@ QCCurlMultiManager::~QCCurlMultiManager()
             curl_share_cleanup(context->share);
             context->share = nullptr;
         }
-        delete context;
     }
 
     // 清理 multi handle
@@ -399,7 +404,8 @@ QCCurlMultiManager::~QCCurlMultiManager()
     qDebug() << "QCCurlMultiManager: Destruction complete";
 }
 
-QCCurlMultiManager::ShareContext *QCCurlMultiManager::getOrCreateShareContextLocked(const QCNetworkAccessManager *manager)
+QCCurlMultiManager::ShareContext *QCCurlMultiManager::getOrCreateShareContextLocked(
+    const QCNetworkAccessManager *manager)
 {
     if (!manager) {
         return nullptr;
@@ -407,19 +413,23 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::getOrCreateShareContextLoc
 
     auto it = m_shareContexts.find(manager);
     if (it != m_shareContexts.end()) {
-        return it.value();
+        return it.value().data();
     }
 
-    auto *context = new ShareContext;
-    context->scopeKey = manager;
+    auto context             = QSharedPointer<ShareContext>::create();
+    context->scopeKey        = manager;
+    ShareContext *contextPtr = context.data();
     m_shareContexts.insert(manager, context);
 
-    QObject::connect(const_cast<QCNetworkAccessManager*>(manager), &QObject::destroyed, this, [this, manager]() {
-        QMutexLocker locker(&m_mutex);
-        onAccessManagerDestroyedLocked(manager);
-    });
+    QObject::connect(const_cast<QCNetworkAccessManager *>(manager),
+                     &QObject::destroyed,
+                     this,
+                     [this, manager]() {
+                         QMutexLocker locker(&m_mutex);
+                         onAccessManagerDestroyedLocked(manager);
+                     });
 
-    return context;
+    return contextPtr;
 }
 
 void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessManager *manager)
@@ -429,14 +439,14 @@ void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessMan
         return;
     }
 
-    ShareContext *context = it.value();
+    ShareContext *context = it.value().data();
     if (!context) {
         m_shareContexts.erase(it);
         return;
     }
 
     context->scopeDestroyed = true;
-    context->pendingDelete = true;
+    context->pendingDelete  = true;
 
     if (context->activeUsers == 0) {
         if (context->share) {
@@ -444,14 +454,15 @@ void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessMan
             context->share = nullptr;
         }
         m_shareContexts.erase(it);
-        delete context;
         return;
     }
 
     context->pending = ShareConfig{};
 }
 
-bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, const ShareConfig &desired, QString *outError)
+bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context,
+                                                      const ShareConfig &desired,
+                                                      QString *outError)
 {
     if (!context || context->activeUsers != 0) {
         if (outError) {
@@ -467,9 +478,9 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, con
             curl_share_cleanup(context->share);
             context->share = nullptr;
         }
-        context->applied = ShareConfig{};
+        context->applied         = ShareConfig{};
         context->lastInitAttempt = desired;
-        context->lastInitFailed = false;
+        context->lastInitFailed  = false;
         context->lastInitError.clear();
         return true;
     }
@@ -486,15 +497,15 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, con
         context->share = nullptr;
     }
 
-    context->applied = ShareConfig{};
+    context->applied         = ShareConfig{};
     context->lastInitAttempt = desired;
-    context->lastInitFailed = false;
+    context->lastInitFailed  = false;
     context->lastInitError.clear();
 
     CURLSH *share = curl_share_init();
     if (!share) {
         context->lastInitFailed = true;
-        context->lastInitError = QStringLiteral("curl_share_init 失败");
+        context->lastInitError  = QStringLiteral("curl_share_init 失败");
         if (outError) {
             *outError = context->lastInitError;
         }
@@ -504,7 +515,7 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, con
     auto failHard = [context, share, outError](const QString &message) {
         curl_share_cleanup(share);
         context->lastInitFailed = true;
-        context->lastInitError = message;
+        context->lastInitError  = message;
         if (outError) {
             *outError = message;
         }
@@ -553,7 +564,8 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context, con
     }
 
     if (!context->applied.enabled()) {
-        failHard(QStringLiteral("curl_share_setopt(CURLSHOPT_SHARE) 全部失败，share handle 不可用"));
+        failHard(
+            QStringLiteral("curl_share_setopt(CURLSHOPT_SHARE) 全部失败，share handle 不可用"));
         return false;
     }
 
@@ -601,7 +613,6 @@ void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
         context->share = nullptr;
     }
     m_shareContexts.remove(context->scopeKey);
-    delete context;
 }
 
 void QCCurlMultiManager::addReply(QCNetworkReply *reply)
@@ -619,13 +630,14 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     // multi engine 只允许在所属线程串行访问；跨线程调用应投递到本线程执行
     if (QThread::currentThread() != thread()) {
         QPointer<QCNetworkReply> safeReply(reply);
-        QMetaObject::invokeMethod(this,
-                                  [this, safeReply]() {
-                                      if (safeReply) {
-                                          addReply(safeReply.data());
-                                      }
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    addReply(safeReply.data());
+                }
+            },
+            Qt::QueuedConnection);
         return;
     }
 
@@ -642,7 +654,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     // Share handle（M6+，可选）：默认关闭；显式开启时才设置 CURLOPT_SHARE
     // ========================================================================
 
-    auto *accessManager = qobject_cast<QCNetworkAccessManager*>(reply->parent());
+    auto *accessManager                  = qobject_cast<QCNetworkAccessManager *>(reply->parent());
     const ShareConfig desiredShareConfig = toShareConfig(accessManager);
 
     ShareContext *shareContext = nullptr;
@@ -653,13 +665,15 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                 if (shareContext->activeUsers > 0) {
                     shareContext->pending = desiredShareConfig;
                     reply->d_func()->capabilityWarnings.append(
-                        QStringLiteral("share handle 配置变更延迟生效：当前仍按 %1 生效，待在途请求结束后切换为 %2")
+                        QStringLiteral("share handle 配置变更延迟生效：当前仍按 %1 "
+                                       "生效，待在途请求结束后切换为 %2")
                             .arg(shareConfigSummary(shareContext->applied))
                             .arg(shareConfigSummary(desiredShareConfig)));
                 } else {
                     QString initError;
                     if (!applyShareConfigIfIdleLocked(shareContext, desiredShareConfig, &initError)) {
-                        const QString reason = initError.isEmpty() ? shareContext->lastInitError : initError;
+                        const QString reason = initError.isEmpty() ? shareContext->lastInitError
+                                                                   : initError;
                         reply->d_func()->capabilityWarnings.append(
                             QStringLiteral("share handle 不可用（%1），已降级为不共享缓存")
                                 .arg(reason.isEmpty() ? QStringLiteral("unknown") : reason));
@@ -677,7 +691,8 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
         }
     }
 
-    const bool canApplyShare = shareContext && shareContext->share && shareContext->applied.enabled();
+    const bool canApplyShare = shareContext && shareContext->share
+                               && shareContext->applied.enabled();
     if (canApplyShare) {
         const CURLcode rc = curl_easy_setopt(easy, CURLOPT_SHARE, shareContext->share);
         if (rc == CURLE_OK) {
@@ -686,7 +701,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
             m_easyShareOptionSet.insert(easy, true);
 
             if (shareContext->applied.cookies) {
-                auto *d = reply->d_func();
+                auto *d                 = reply->d_func();
                 const bool hasCookieJar = (d->cookieMode != 0) && !d->cookieFilePath.isEmpty();
                 if (!hasCookieJar) {
                     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
@@ -718,137 +733,146 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
 
     // 连接完成信号（每个 reply 只会添加一次，无需 Qt::UniqueConnection）
     // 注意：Lambda 不支持 Qt::UniqueConnection（需要成员函数指针）
-    connect(this, &QCCurlMultiManager::requestFinished,
-            reply, [reply](QCNetworkReply *finishedReply, int curlCode) {
-        if (reply == finishedReply) {
-            // 处理完成逻辑（设置错误、发射信号）
-            auto *d = reply->d_func();
+    connect(this,
+            &QCCurlMultiManager::requestFinished,
+            reply,
+            [reply](QCNetworkReply *finishedReply, int curlCode) {
+                if (reply == finishedReply) {
+                    // 处理完成逻辑（设置错误、发射信号）
+                    auto *d = reply->d_func();
 
-            // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
-            if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
-                return;
-            }
-
-            // ========================================================
-            // 检查 HTTP 状态码（即使 CURLcode 成功）
-            // ========================================================
-            CURL *handle = d->curlManager.handle();
-            long httpCode = 0;
-            if (handle) {
-                curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
-            }
-            d->httpStatusCode = static_cast<int>(httpCode);
-
-            // 确定最终错误：优先使用 HTTP 错误，否则使用 curl 错误
-            NetworkError error = NetworkError::NoError;
-            QString errorMsg;
-
-            if (curlCode != CURLE_OK) {
-                // libcurl 层面的错误
-                error = fromCurlCode(static_cast<CURLcode>(curlCode));
-                errorMsg = QString::fromUtf8(curl_easy_strerror(static_cast<CURLcode>(curlCode)));
-            } else if (httpCode >= 400) {
-                // HTTP 错误（4xx, 5xx）
-                error = fromHttpCode(httpCode);
-                errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
-            }
-
-#if defined(CURLE_SEND_FAIL_REWIND)
-            if (curlCode == CURLE_SEND_FAIL_REWIND && d->uploadDevice && !d->hasUploadErrorOverride) {
-                error = NetworkError::InvalidRequest;
-                errorMsg = QStringLiteral("uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
-                               .arg(QString::fromUtf8(curl_easy_strerror(static_cast<CURLcode>(curlCode))));
-            }
-#endif
-
-            if (d->hasUploadErrorOverride) {
-                error = d->uploadErrorOverrideCode;
-                errorMsg = d->uploadErrorOverrideMessage;
-            }
-
-            // 如果没有错误，标记为完成
-            if (error == NetworkError::NoError) {
-                d->setState(ReplyState::Finished);
-                return;
-            }
-
-            // ========================================================
-            // 异步重试逻辑
-            // ========================================================
-
-            // 获取重试策略
-            QCNetworkRetryPolicy policy = d->request.retryPolicy();
-
-            const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                           && isHttpError(error)
-                                           && (d->httpMethod != HttpMethod::Get);
-
-            // 检查是否应该重试
-            if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
-                // 增加重试计数
-                d->attemptCount++;
-
-                // 发射重试尝试信号
-                emit reply->retryAttempt(d->attemptCount, error);
-
-                // 计算延迟时间（注意：attemptCount 已经++，所以使用 attemptCount-1）
-                std::optional<std::chrono::milliseconds> retryAfter;
-                if (error == NetworkError::HttpTooManyRequests) {
-                    d->parseHeaders();
-                    retryAfter = parseRetryAfterDelay(d->headerMap);
-                }
-
-                auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
-
-                qDebug() << "QCCurlMultiManager: Retry scheduled for reply" << reply
-                         << "Attempt" << d->attemptCount << "after" << delay.count() << "ms"
-                         << "Error:" << errorMsg;
-
-                // 使用 QPointer 防止在延迟期间 reply 被销毁
-                QPointer<QCNetworkReply> safeReply(reply);
-
-                // 延迟后重新执行
-                QTimer::singleShot(delay.count(), reply, [safeReply, d]() {
-                    if (!safeReply) {
-                        qWarning() << "QCCurlMultiManager: Reply destroyed during retry delay";
+                    // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
+                    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
                         return;
                     }
 
-                    // ⚠️ v2.1.0: 检查是否在重试延迟期间被取消
-                    if (d->state == ReplyState::Cancelled) {
-                        qDebug() << "QCCurlMultiManager: Retry cancelled for reply" << safeReply.data();
-                        return;  // 不继续重试
+                    // ========================================================
+                    // 检查 HTTP 状态码（即使 CURLcode 成功）
+                    // ========================================================
+                    CURL *handle  = d->curlManager.handle();
+                    long httpCode = 0;
+                    if (handle) {
+                        curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
+                    }
+                    d->httpStatusCode = static_cast<int>(httpCode);
+
+                    // 确定最终错误：优先使用 HTTP 错误，否则使用 curl 错误
+                    NetworkError error = NetworkError::NoError;
+                    QString errorMsg;
+
+                    if (curlCode != CURLE_OK) {
+                        // libcurl 层面的错误
+                        error    = fromCurlCode(static_cast<CURLcode>(curlCode));
+                        errorMsg = QString::fromUtf8(
+                            curl_easy_strerror(static_cast<CURLcode>(curlCode)));
+                    } else if (httpCode >= 400) {
+                        // HTTP 错误（4xx, 5xx）
+                        error    = fromHttpCode(httpCode);
+                        errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
                     }
 
-                    // 重置状态和缓冲区（准备重试）
-                    d->state = ReplyState::Idle;
-                    d->errorCode = NetworkError::NoError;
-                    d->errorMessage.clear();
-                    d->bodyBuffer.clear();
-                    d->headerData.clear();
-                    d->headerMap.clear();
-                    d->bytesDownloaded = 0;
-                    d->bytesUploaded = 0;
-                    d->downloadTotal = -1;
-                    d->uploadTotal = -1;
+#if defined(CURLE_SEND_FAIL_REWIND)
+                    if (curlCode == CURLE_SEND_FAIL_REWIND && d->uploadDevice
+                        && !d->hasUploadErrorOverride) {
+                        error    = NetworkError::InvalidRequest;
+                        errorMsg = QStringLiteral(
+                                       "uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
+                                       .arg(QString::fromUtf8(
+                                           curl_easy_strerror(static_cast<CURLcode>(curlCode))));
+                    }
+#endif
 
-                    qDebug() << "QCCurlMultiManager: Retrying request for reply" << safeReply.data();
+                    if (d->hasUploadErrorOverride) {
+                        error    = d->uploadErrorOverrideCode;
+                        errorMsg = d->uploadErrorOverrideMessage;
+                    }
 
-                    // 重新执行请求
-                    safeReply->execute();
-                });
+                    // 如果没有错误，标记为完成
+                    if (error == NetworkError::NoError) {
+                        d->setState(ReplyState::Finished);
+                        return;
+                    }
 
-                return;  // ⚠️ 关键：不调用 setState(Error)，避免发射错误信号
-            }
+                    // ========================================================
+                    // 异步重试逻辑
+                    // ========================================================
 
-            // 超过最大重试次数或错误不可重试，标记为错误
-            qDebug() << "QCCurlMultiManager: Request failed after" << d->attemptCount
-                     << "attempts. Error:" << errorMsg;
+                    // 获取重试策略
+                    QCNetworkRetryPolicy policy = d->request.retryPolicy();
 
-            d->setError(error, errorMsg);
-            d->setState(ReplyState::Error);
-        }
-    });
+                    const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                                    && isHttpError(error)
+                                                    && (d->httpMethod != HttpMethod::Get);
+
+                    // 检查是否应该重试
+                    if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
+                        // 增加重试计数
+                        d->attemptCount++;
+
+                        // 发射重试尝试信号
+                        emit reply->retryAttempt(d->attemptCount, error);
+
+                        // 计算延迟时间（注意：attemptCount 已经++，所以使用 attemptCount-1）
+                        std::optional<std::chrono::milliseconds> retryAfter;
+                        if (error == NetworkError::HttpTooManyRequests) {
+                            d->parseHeaders();
+                            retryAfter = parseRetryAfterDelay(d->headerMap);
+                        }
+
+                        auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
+
+                        qDebug() << "QCCurlMultiManager: Retry scheduled for reply" << reply
+                                 << "Attempt" << d->attemptCount << "after" << delay.count() << "ms"
+                                 << "Error:" << errorMsg;
+
+                        // 使用 QPointer 防止在延迟期间 reply 被销毁
+                        QPointer<QCNetworkReply> safeReply(reply);
+
+                        // 延迟后重新执行
+                        QTimer::singleShot(delay.count(), reply, [safeReply, d]() {
+                            if (!safeReply) {
+                                qWarning()
+                                    << "QCCurlMultiManager: Reply destroyed during retry delay";
+                                return;
+                            }
+
+                            // ⚠️ v2.1.0: 检查是否在重试延迟期间被取消
+                            if (d->state == ReplyState::Cancelled) {
+                                qDebug() << "QCCurlMultiManager: Retry cancelled for reply"
+                                         << safeReply.data();
+                                return; // 不继续重试
+                            }
+
+                            // 重置状态和缓冲区（准备重试）
+                            d->state     = ReplyState::Idle;
+                            d->errorCode = NetworkError::NoError;
+                            d->errorMessage.clear();
+                            d->bodyBuffer.clear();
+                            d->headerData.clear();
+                            d->headerMap.clear();
+                            d->bytesDownloaded = 0;
+                            d->bytesUploaded   = 0;
+                            d->downloadTotal   = -1;
+                            d->uploadTotal     = -1;
+
+                            qDebug() << "QCCurlMultiManager: Retrying request for reply"
+                                     << safeReply.data();
+
+                            // 重新执行请求
+                            safeReply->execute();
+                        });
+
+                        return; // ⚠️ 关键：不调用 setState(Error)，避免发射错误信号
+                    }
+
+                    // 超过最大重试次数或错误不可重试，标记为错误
+                    qDebug() << "QCCurlMultiManager: Request failed after" << d->attemptCount
+                             << "attempts. Error:" << errorMsg;
+
+                    d->setError(error, errorMsg);
+                    d->setState(ReplyState::Error);
+                }
+            });
 
     // 添加到 multi handle
     CURLMcode ret = curl_multi_add_handle(m_multiHandle, easy);
@@ -878,13 +902,14 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
     // multi engine 只允许在所属线程串行访问；跨线程调用应投递到本线程执行
     if (QThread::currentThread() != thread()) {
         QPointer<QCNetworkReply> safeReply(reply);
-        QMetaObject::invokeMethod(this,
-                                  [this, safeReply]() {
-                                      if (safeReply) {
-                                          removeReply(safeReply.data());
-                                      }
-                                  },
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    removeReply(safeReply.data());
+                }
+            },
+            Qt::QueuedConnection);
         return;
     }
 
@@ -921,9 +946,9 @@ int QCCurlMultiManager::runningRequestsCount() const noexcept
 }
 
 bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *manager,
-                                                const QList<QNetworkCookie> &cookies,
-                                                const QUrl &originUrl,
-                                                QString *outError)
+                                                 const QList<QNetworkCookie> &cookies,
+                                                 const QUrl &originUrl,
+                                                 QString *outError)
 {
     if (!manager) {
         if (outError) {
@@ -998,10 +1023,11 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         }
 
         const QByteArray domainBytes = c.domain().toUtf8();
-        const QByteArray pathBytes = c.path().toUtf8();
+        const QByteArray pathBytes   = c.path().toUtf8();
 
-        const bool includeSubdomains = domainBytes.startsWith('.');
-        const QByteArray includeSubdomainsBytes = includeSubdomains ? QByteArray("TRUE") : QByteArray("FALSE");
+        const bool includeSubdomains            = domainBytes.startsWith('.');
+        const QByteArray includeSubdomainsBytes = includeSubdomains ? QByteArray("TRUE")
+                                                                    : QByteArray("FALSE");
         const QByteArray secureBytes = c.isSecure() ? QByteArray("TRUE") : QByteArray("FALSE");
 
         qint64 expiresEpoch = 0;
@@ -1017,13 +1043,10 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
             cookieLineDomain = QByteArray("#HttpOnly_") + cookieLineDomain;
         }
 
-        const QByteArray cookieLine = cookieLineDomain + '\t' +
-                                      includeSubdomainsBytes + '\t' +
-                                      pathBytes + '\t' +
-                                      secureBytes + '\t' +
-                                      QByteArray::number(expiresEpoch) + '\t' +
-                                      c.name() + '\t' +
-                                      c.value();
+        const QByteArray cookieLine = cookieLineDomain + '\t' + includeSubdomainsBytes + '\t'
+                                      + pathBytes + '\t' + secureBytes + '\t'
+                                      + QByteArray::number(expiresEpoch) + '\t' + c.name() + '\t'
+                                      + c.value();
 
         const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, cookieLine.constData());
         if (rc != CURLE_OK) {
@@ -1039,9 +1062,8 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
     return true;
 }
 
-QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(const QCNetworkAccessManager *manager,
-                                                                  const QUrl &filterUrl,
-                                                                  QString *outError)
+QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
+    const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *outError)
 {
     if (!manager) {
         if (outError) {
@@ -1103,7 +1125,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(const QCNetwor
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
     struct curl_slist *cookieList = nullptr;
-    const CURLcode rc = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
+    const CURLcode rc             = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
     if (rc != CURLE_OK) {
         if (outError) {
             *outError = QStringLiteral("读取 cookie 列表失败（%1）")
@@ -1113,14 +1135,14 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(const QCNetwor
     }
 
     QList<QNetworkCookie> out;
-    const QString host = filterUrl.host();
+    const QString host    = filterUrl.host();
     const QString urlPath = filterUrl.path();
     for (auto *it = cookieList; it; it = it->next) {
         if (!it->data) {
             continue;
         }
         const QByteArray line = QByteArray(it->data);
-        auto parsed = parseCurlCookieLine(line);
+        auto parsed           = parseCurlCookieLine(line);
         if (!parsed.has_value()) {
             continue;
         }
@@ -1250,7 +1272,8 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
     }
 
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this, config]() { applyLimitsConfig(config); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [this, config]() { applyLimitsConfig(config); }, Qt::QueuedConnection);
         return;
     }
 
@@ -1258,20 +1281,21 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
         return;
     }
 
-    const std::optional<long> newMaxTotal = config.multiMaxTotalConnections;
-    const std::optional<long> newMaxHost = config.multiMaxHostConnections;
-    const std::optional<long> newMaxStreams = config.multiMaxConcurrentStreams;
+    const std::optional<long> newMaxTotal    = config.multiMaxTotalConnections;
+    const std::optional<long> newMaxHost     = config.multiMaxHostConnections;
+    const std::optional<long> newMaxStreams  = config.multiMaxConcurrentStreams;
     const std::optional<long> newMaxConnects = config.multiMaxConnects;
 
-    const bool clearRequested = (!newMaxTotal.has_value() && m_multiMaxTotalConnections.has_value()) ||
-                                (!newMaxHost.has_value() && m_multiMaxHostConnections.has_value()) ||
-                                (!newMaxStreams.has_value() && m_multiMaxConcurrentStreams.has_value()) ||
-                                (!newMaxConnects.has_value() && m_multiMaxConnects.has_value());
+    const bool clearRequested = (!newMaxTotal.has_value() && m_multiMaxTotalConnections.has_value())
+                                || (!newMaxHost.has_value() && m_multiMaxHostConnections.has_value())
+                                || (!newMaxStreams.has_value()
+                                    && m_multiMaxConcurrentStreams.has_value())
+                                || (!newMaxConnects.has_value() && m_multiMaxConnects.has_value());
 
     auto canRecreateMultiHandle = [this]() -> bool {
         QMutexLocker locker(&m_mutex);
-        return m_activeReplies.isEmpty() && m_socketMap.isEmpty() &&
-               (m_runningRequests.load(std::memory_order_relaxed) == 0);
+        return m_activeReplies.isEmpty() && m_socketMap.isEmpty()
+               && (m_runningRequests.load(std::memory_order_relaxed) == 0);
     };
 
     auto recreateMultiHandle = [this]() -> bool {
@@ -1290,28 +1314,37 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
 
         m_multiHandle = curl_multi_init();
         if (!m_multiHandle) {
-            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
+            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl "
+                           "multi handle";
             return false;
         }
 
         CURLMcode ret = curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETDATA, this);
         if (ret != CURLM_OK) {
-            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETDATA:" << ret;
+            qCritical()
+                << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETDATA:"
+                << ret;
         }
 
         ret = curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETFUNCTION, curlSocketCallback);
         if (ret != CURLM_OK) {
-            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETFUNCTION:" << ret;
+            qCritical()
+                << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_SOCKETFUNCTION:"
+                << ret;
         }
 
         ret = curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERDATA, this);
         if (ret != CURLM_OK) {
-            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERDATA:" << ret;
+            qCritical()
+                << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERDATA:"
+                << ret;
         }
 
         ret = curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, curlTimerCallback);
         if (ret != CURLM_OK) {
-            qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERFUNCTION:" << ret;
+            qCritical()
+                << "QCCurlMultiManager::applyLimitsConfig: Failed to set CURLMOPT_TIMERFUNCTION:"
+                << ret;
         }
 
         return true;
@@ -1319,11 +1352,14 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
 
     if (clearRequested) {
         if (!canRecreateMultiHandle()) {
-            qWarning() << "QCCurlMultiManager::applyLimitsConfig: Some multi limits were cleared, but active requests exist; "
-                          "cannot reset multi handle safely (limits keep previous values until restart)";
+            qWarning()
+                << "QCCurlMultiManager::applyLimitsConfig: Some multi limits were cleared, but "
+                   "active requests exist; "
+                   "cannot reset multi handle safely (limits keep previous values until restart)";
         } else {
             if (!recreateMultiHandle()) {
-                qWarning() << "QCCurlMultiManager::applyLimitsConfig: Failed to reset multi handle; keeping previous limits";
+                qWarning() << "QCCurlMultiManager::applyLimitsConfig: Failed to reset multi "
+                              "handle; keeping previous limits";
             } else {
                 m_multiMaxTotalConnections.reset();
                 m_multiMaxHostConnections.reset();
@@ -1344,12 +1380,13 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
         }
 
         if (rc == CURLM_UNKNOWN_OPTION) {
-            qWarning() << "QCCurlMultiManager capability warning: libcurl 不支持"
-                       << optionName << "(" << curl_multi_strerror(rc) << ")";
+            qWarning() << "QCCurlMultiManager capability warning: libcurl 不支持" << optionName
+                       << "(" << curl_multi_strerror(rc) << ")";
             return;
         }
 
-        qWarning() << "QCCurlMultiManager: Failed to set" << optionName << "(" << curl_multi_strerror(rc) << ")";
+        qWarning() << "QCCurlMultiManager: Failed to set" << optionName << "("
+                   << curl_multi_strerror(rc) << ")";
     };
 
     if (newMaxTotal.has_value()) {
@@ -1391,10 +1428,14 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
              << "events=" << eventsBitmask;
 
     int runningHandles = 0;
-    CURLMcode ret = curl_multi_socket_action(m_multiHandle, socketfd, eventsBitmask, &runningHandles);
+    CURLMcode ret      = curl_multi_socket_action(m_multiHandle,
+                                             socketfd,
+                                             eventsBitmask,
+                                             &runningHandles);
 
     if (ret != CURLM_OK) {
-        qWarning() << "QCCurlMultiManager::handleSocketAction: curl_multi_socket_action failed:" << ret;
+        qWarning() << "QCCurlMultiManager::handleSocketAction: curl_multi_socket_action failed:"
+                   << ret;
         // 不要直接返回，继续检查完成的请求
     }
 
@@ -1450,8 +1491,7 @@ void QCCurlMultiManager::checkMultiInfo()
         curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &redirectUrl);
 
         qDebug() << "QCCurlMultiManager::checkMultiInfo: Request finished"
-                 << "Reply:" << reply
-                 << "CURLcode:" << message->data.result
+                 << "Reply:" << reply << "CURLcode:" << message->data.result
                  << "HTTP code:" << responseCode
                  << "Redirect:" << (redirectUrl ? redirectUrl : "none");
 
@@ -1474,10 +1514,11 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
 {
     QMutexLocker locker(&m_mutex);
 
-    SocketInfo *info = m_socketMap.value(socketfd, nullptr);
-    if (!info) {
+    auto it = m_socketMap.find(socketfd);
+    if (it == m_socketMap.end()) {
         return;
     }
+    SocketInfo *info = it.value().data();
 
     qDebug() << "QCCurlMultiManager::cleanupSocket: Cleaning socket" << socketfd;
 
@@ -1496,12 +1537,12 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
         info->writeNotifier = nullptr;
     }
 
-    // 删除 SocketInfo（notifier 由 QObject 生命周期管理）
-    delete info;
-    m_socketMap.remove(socketfd);
+    m_socketMap.erase(it);
 }
 
-int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, SocketInfo *socketInfo)
+int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
+                                              int what,
+                                              SocketInfo *socketInfo)
 {
     if (m_isShuttingDown.load(std::memory_order_relaxed)) {
         return 0;
@@ -1523,11 +1564,16 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, 
 
     // 创建 SocketInfo（如果不存在）
     if (!socketInfo) {
-        socketInfo = new SocketInfo;
-        socketInfo->socketfd = socketfd;
-
         QMutexLocker locker(&m_mutex);
-        m_socketMap.insert(socketfd, socketInfo);
+        auto it = m_socketMap.find(socketfd);
+        if (it != m_socketMap.end()) {
+            socketInfo = it.value().data();
+        } else {
+            auto newInfo      = QSharedPointer<SocketInfo>::create();
+            newInfo->socketfd = socketfd;
+            socketInfo        = newInfo.data();
+            m_socketMap.insert(socketfd, newInfo);
+        }
 
         curl_multi_assign(m_multiHandle, socketfd, socketInfo);
     }
@@ -1537,8 +1583,7 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, 
         if (!socketInfo->readNotifier) {
             socketInfo->readNotifier = new QSocketNotifier(socketfd, QSocketNotifier::Read, this);
 
-            connect(socketInfo->readNotifier, &QSocketNotifier::activated,
-                    this, [this, socketfd]() {
+            connect(socketInfo->readNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
                 qDebug() << "QCCurlMultiManager: Read event on socket" << socketfd;
                 handleSocketAction(socketfd, CURL_CSELECT_IN);
             });
@@ -1555,8 +1600,7 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, 
         if (!socketInfo->writeNotifier) {
             socketInfo->writeNotifier = new QSocketNotifier(socketfd, QSocketNotifier::Write, this);
 
-            connect(socketInfo->writeNotifier, &QSocketNotifier::activated,
-                    this, [this, socketfd]() {
+            connect(socketInfo->writeNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
                 qDebug() << "QCCurlMultiManager: Write event on socket" << socketfd;
                 handleSocketAction(socketfd, CURL_CSELECT_OUT);
             });
@@ -1575,18 +1619,18 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd, int what, 
 // libcurl 静态回调
 // ============================================================================
 
-int QCCurlMultiManager::curlSocketCallback(CURL *easy, curl_socket_t socketfd, int what,
-                                           void *userp, void *socketp)
+int QCCurlMultiManager::curlSocketCallback(
+    CURL *easy, curl_socket_t socketfd, int what, void *userp, void *socketp)
 {
     Q_UNUSED(easy);
 
-    auto *manager = static_cast<QCCurlMultiManager*>(userp);
+    auto *manager = static_cast<QCCurlMultiManager *>(userp);
     if (!manager) {
         qCritical() << "QCCurlMultiManager::curlSocketCallback: Invalid manager pointer";
         return -1;
     }
 
-    auto *socketInfo = static_cast<SocketInfo*>(socketp);
+    auto *socketInfo = static_cast<SocketInfo *>(socketp);
 
     return manager->manageSocketNotifiers(socketfd, what, socketInfo);
 }
@@ -1595,7 +1639,7 @@ int QCCurlMultiManager::curlTimerCallback(CURLM *multi, long timeout_ms, void *u
 {
     Q_UNUSED(multi);
 
-    auto *manager = static_cast<QCCurlMultiManager*>(userp);
+    auto *manager = static_cast<QCCurlMultiManager *>(userp);
     if (!manager) {
         qCritical() << "QCCurlMultiManager::curlTimerCallback: Invalid manager pointer";
         return -1;

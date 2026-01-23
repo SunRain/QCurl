@@ -1,10 +1,12 @@
 #ifndef QCNETWORKRETRYPOLICY_H
 #define QCNETWORKRETRYPOLICY_H
 
+#include "QCNetworkError.h"
+
+#include <QSet>
+
 #include <chrono>
 #include <optional>
-#include <QSet>
-#include "QCNetworkError.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -114,8 +116,7 @@ public:
         NetworkError::HttpNotImplemented,
         NetworkError::HttpBadGateway,
         NetworkError::HttpServiceUnavailable,
-        NetworkError::HttpGatewayTimeout
-    };
+        NetworkError::HttpGatewayTimeout};
 
     /**
      * @brief HTTP 状态码重试的 method 限制（与 legendary 迁移语义对齐）
@@ -174,8 +175,7 @@ public:
      * @param serverDelay 服务端建议延迟（例如 Retry-After）；若存在则优先使用，并以 maxDelay 为上限
      */
     [[nodiscard]] std::chrono::milliseconds delayForAttempt(
-        int attemptCount,
-        std::optional<std::chrono::milliseconds> serverDelay) const;
+        int attemptCount, std::optional<std::chrono::milliseconds> serverDelay) const;
 
     /**
      * @brief 检查重试功能是否启用

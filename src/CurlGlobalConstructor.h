@@ -14,7 +14,6 @@ public:
 
 private:
     explicit CurlGlobalConstructor(QObject *parent = nullptr);
-
 };
 
 } // namespace QCurl

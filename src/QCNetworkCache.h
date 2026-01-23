@@ -1,11 +1,11 @@
 #ifndef QCNETWORKCACHE_H
 #define QCNETWORKCACHE_H
 
-#include <QObject>
-#include <QUrl>
 #include <QByteArray>
 #include <QDateTime>
 #include <QMap>
+#include <QObject>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 
@@ -17,19 +17,21 @@ namespace QCurl {
  * 存储缓存条目的元信息，包括 URL、响应头、过期时间等。
  *
  */
-struct QCNetworkCacheMetadata {
-    QUrl url;                                    ///< 请求 URL
-    QMap<QByteArray, QByteArray> headers;        ///< HTTP 响应头
-    QDateTime expirationDate;                    ///< 缓存过期时间
-    QDateTime lastModified;                      ///< 最后修改时间
-    QDateTime creationDate;                      ///< 缓存创建时间
-    qint64 size = 0;                             ///< 数据大小（字节）
+struct QCNetworkCacheMetadata
+{
+    QUrl url;                             ///< 请求 URL
+    QMap<QByteArray, QByteArray> headers; ///< HTTP 响应头
+    QDateTime expirationDate;             ///< 缓存过期时间
+    QDateTime lastModified;               ///< 最后修改时间
+    QDateTime creationDate;               ///< 缓存创建时间
+    qint64 size = 0;                      ///< 数据大小（字节）
 
     /**
      * @brief 检查缓存是否有效（未过期）
      * @return true 如果缓存仍然有效
      */
-    [[nodiscard]] bool isValid() const {
+    [[nodiscard]] bool isValid() const
+    {
         return expirationDate.isNull() || QDateTime::currentDateTime() < expirationDate;
     }
 };
@@ -52,7 +54,9 @@ class QCNetworkCache : public QObject
     Q_OBJECT
 
 public:
-    explicit QCNetworkCache(QObject *parent = nullptr) : QObject(parent) {}
+    explicit QCNetworkCache(QObject *parent = nullptr)
+        : QObject(parent)
+    {}
     ~QCNetworkCache() override = default;
 
     /**
@@ -75,8 +79,8 @@ public:
      * @param data 响应数据
      * @param meta 元数据
      */
-    virtual void insert(const QUrl &url, const QByteArray &data,
-                        const QCNetworkCacheMetadata &meta) = 0;
+    virtual void insert(const QUrl &url, const QByteArray &data, const QCNetworkCacheMetadata &meta)
+        = 0;
 
     /**
      * @brief 从缓存中移除指定 URL 的数据

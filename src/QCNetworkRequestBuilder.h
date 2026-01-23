@@ -4,13 +4,15 @@
 #ifndef QCNETWORKREQUESTBUILDER_H
 #define QCNETWORKREQUESTBUILDER_H
 
-#include <QUrl>
-#include <QString>
+#include "QCGlobal.h"
+
 #include <QPair>
+#include <QString>
+#include <QUrl>
+
 #include <functional>
 #include <memory>
 #include <optional>
-#include "QCGlobal.h"
 
 class QIODevice;
 
@@ -47,7 +49,7 @@ public:
      */
     QCNetworkRequestBuilder(QCNetworkAccessManager *manager, const QUrl &url);
 
-    QCNetworkRequestBuilder(const QCNetworkRequestBuilder &) = delete;
+    QCNetworkRequestBuilder(const QCNetworkRequestBuilder &)            = delete;
     QCNetworkRequestBuilder &operator=(const QCNetworkRequestBuilder &) = delete;
     QCNetworkRequestBuilder(QCNetworkRequestBuilder &&) noexcept;
     QCNetworkRequestBuilder &operator=(QCNetworkRequestBuilder &&) noexcept;
@@ -138,12 +140,14 @@ public:
      * - 所有权：device 由调用方管理，QCurl 不会 close/delete
      * - 生命周期：device 必须在请求完成前保持有效且可读
      */
-    QCNetworkRequestBuilder &withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
+    QCNetworkRequestBuilder &withUploadDevice(QIODevice *device,
+                                              std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 设置流式上传的请求体来源（本地文件路径，仅 PUT/POST）
      */
-    QCNetworkRequestBuilder &withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes = std::nullopt);
+    QCNetworkRequestBuilder &withUploadFile(const QString &filePath,
+                                            std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 发送 GET 请求

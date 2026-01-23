@@ -10,11 +10,12 @@
 #define QCNETWORKDIAGNOSTICS_H
 
 #include "QCurlConfig.h"
-#include <QString>
-#include <QUrl>
+
 #include <QDateTime>
-#include <QVariantMap>
+#include <QString>
 #include <QStringList>
+#include <QUrl>
+#include <QVariantMap>
 
 QT_BEGIN_NAMESPACE
 
@@ -25,12 +26,12 @@ namespace QCurl {
  */
 struct DiagResult
 {
-    bool success;                ///< 诊断是否成功
-    QString summary;             ///< 简要总结
-    QVariantMap details;         ///< 详细信息（键值对）
-    qint64 durationMs;           ///< 诊断耗时（毫秒）
-    QDateTime timestamp;         ///< 诊断时间戳
-    QString errorString;         ///< 错误描述（失败时）
+    bool success;        ///< 诊断是否成功
+    QString summary;     ///< 简要总结
+    QVariantMap details; ///< 详细信息（键值对）
+    qint64 durationMs;   ///< 诊断耗时（毫秒）
+    QDateTime timestamp; ///< 诊断时间戳
+    QString errorString; ///< 错误描述（失败时）
 
     /**
      * @brief 转换为易读的字符串格式
@@ -308,7 +309,7 @@ public:
     static DiagResult traceroute(const QString &host, int maxHops = 30, int timeout = 1000);
 
 private:
-    QCNetworkDiagnostics() = delete;  // 静态类，禁止实例化
+    QCNetworkDiagnostics() = delete; // 静态类，禁止实例化
 };
 
 } // namespace QCurl

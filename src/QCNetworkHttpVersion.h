@@ -2,6 +2,7 @@
 #define QCNETWORKHTTPVERSION_H
 
 #include "QCurlConfig.h"
+
 #include <curl/curl.h>
 
 QT_BEGIN_NAMESPACE
@@ -37,13 +38,13 @@ namespace QCurl {
  *
  */
 enum class QCNetworkHttpVersion {
-    Http1_0,      ///< HTTP/1.0
-    Http1_1,      ///< HTTP/1.1（默认）
-    Http2,        ///< HTTP/2（需要 libcurl >= 7.33.0 + nghttp2）
-    Http2TLS,     ///< HTTP/2 over TLS（自动协商）
-    Http3,        ///< HTTP/3（需要 libcurl >= 7.66.0 + nghttp3）尝试 HTTP/3，失败则降级
-    Http3Only,    ///< 仅 HTTP/3，失败则报错（v2.17.0）
-    HttpAny       ///< 让 libcurl 自动选择最优版本
+    Http1_0,   ///< HTTP/1.0
+    Http1_1,   ///< HTTP/1.1（默认）
+    Http2,     ///< HTTP/2（需要 libcurl >= 7.33.0 + nghttp2）
+    Http2TLS,  ///< HTTP/2 over TLS（自动协商）
+    Http3,     ///< HTTP/3（需要 libcurl >= 7.66.0 + nghttp3）尝试 HTTP/3，失败则降级
+    Http3Only, ///< 仅 HTTP/3，失败则报错（v2.17.0）
+    HttpAny    ///< 让 libcurl 自动选择最优版本
 };
 
 /**

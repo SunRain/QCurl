@@ -4,6 +4,7 @@
 #include "QCGlobal.h"
 
 #include <QString>
+
 #include <optional>
 
 QT_BEGIN_NAMESPACE
@@ -134,7 +135,8 @@ public:
      *
      * 默认 Fail（更安全）。
      */
-    QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
+    QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy
+        = QCUnsupportedSecurityOptionPolicy::Fail;
 
     /**
      * @brief 返回默认的安全配置

@@ -1,12 +1,14 @@
 #ifndef QCREQUEST_H
 #define QCREQUEST_H
 
-#include "QCNetworkRequest.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
+#include <QJsonObject>
 #include <QString>
 #include <QUrl>
-#include <QJsonObject>
+
 #include <chrono>
 #include <optional>
 
@@ -113,19 +115,19 @@ public:
      * @param value Header 值
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withHeader(const QString &key, const QString &value);
+    QCRequest &withHeader(const QString &key, const QString &value);
 
     /**
      * @brief 设置 HTTP Basic 认证（请求级，libcurl 生成 Authorization 头）
      * @note Basic 仅建议在 HTTPS 下使用
      */
-    QCRequest& withBasicAuth(const QString &userName, const QString &password);
+    QCRequest &withBasicAuth(const QString &userName, const QString &password);
 
     /**
      * @brief 设置请求级 HTTP 认证（用户名/密码 + 认证策略）
      * @note 若同时显式设置了 `Authorization` header，则以 header 为准
      */
-    QCRequest& withHttpAuth(const QCNetworkHttpAuthConfig &config);
+    QCRequest &withHttpAuth(const QCNetworkHttpAuthConfig &config);
 
     /**
      * @brief 添加 URL 查询参数
@@ -133,7 +135,7 @@ public:
      * @param value 参数值
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withQueryParam(const QString &key, const QString &value);
+    QCRequest &withQueryParam(const QString &key, const QString &value);
 
     /**
      * @brief 设置超时时间
@@ -145,8 +147,8 @@ public:
      * request.withTimeout(std::chrono::milliseconds(5000));
      * @endcode
      */
-    QCRequest& withTimeout(std::chrono::seconds timeout);
-    QCRequest& withTimeout(std::chrono::milliseconds timeout);
+    QCRequest &withTimeout(std::chrono::seconds timeout);
+    QCRequest &withTimeout(std::chrono::milliseconds timeout);
 
     /**
      * @brief 设置请求体为 JSON 对象
@@ -154,7 +156,7 @@ public:
      * @return 返回 *this 以支持方法链
      * @note 自动设置 Content-Type: application/json
      */
-    QCRequest& withJson(const QJsonObject &json);
+    QCRequest &withJson(const QJsonObject &json);
 
     /**
      * @brief 设置请求体为原始二进制数据
@@ -162,7 +164,7 @@ public:
      * @param contentType 可选的 Content-Type(默认 application/octet-stream)
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withBody(const QByteArray &data, const QString &contentType = QString());
+    QCRequest &withBody(const QByteArray &data, const QString &contentType = QString());
 
     /**
      * @brief 设置流式上传的请求体来源（QIODevice，仅 PUT/POST）
@@ -171,54 +173,55 @@ public:
      * - 所有权：device 由调用方管理，QCurl 不会 close/delete
      * - 生命周期：device 必须在请求完成前保持有效且可读
      */
-    QCRequest& withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
+    QCRequest &withUploadDevice(QIODevice *device, std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 设置流式上传的请求体来源（本地文件路径，仅 PUT/POST）
      */
-    QCRequest& withUploadFile(const QString &filePath, std::optional<qint64> sizeBytes = std::nullopt);
+    QCRequest &withUploadFile(const QString &filePath,
+                              std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 设置 SSL/TLS 配置
      * @param config SSL 配置对象
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withSslConfig(const QCNetworkSslConfig &config);
+    QCRequest &withSslConfig(const QCNetworkSslConfig &config);
 
     /**
      * @brief 设置代理配置
      * @param config 代理配置对象
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withProxyConfig(const QCNetworkProxyConfig &config);
+    QCRequest &withProxyConfig(const QCNetworkProxyConfig &config);
 
     /**
      * @brief 设置 HTTP 版本
      * @param version HTTP 版本枚举(Http1_1/Http2/Http3)
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withHttpVersion(QCNetworkHttpVersion version);
+    QCRequest &withHttpVersion(QCNetworkHttpVersion version);
 
     /**
      * @brief 设置请求优先级
      * @param priority 优先级枚举(VeryLow/Low/Normal/High/VeryHigh/Critical)
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withPriority(QCNetworkRequestPriority priority);
+    QCRequest &withPriority(QCNetworkRequestPriority priority);
 
     /**
      * @brief 设置重试策略
      * @param policy 重试策略对象
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withRetryPolicy(const QCNetworkRetryPolicy &policy);
+    QCRequest &withRetryPolicy(const QCNetworkRetryPolicy &policy);
 
     /**
      * @brief 设置是否跟随 HTTP 重定向
      * @param follow true 为跟随(默认),false 为不跟随
      * @return 返回 *this 以支持方法链
      */
-    QCRequest& withFollowRedirects(bool follow = true);
+    QCRequest &withFollowRedirects(bool follow = true);
 
     // ========== 发送请求方法 ==========
 
@@ -232,7 +235,7 @@ public:
      * connect(reply, &QCNetworkReply::finished, ...);
      * @endcode
      */
-    QCNetworkReply* send(QCNetworkAccessManager *manager = nullptr);
+    QCNetworkReply *send(QCNetworkAccessManager *manager = nullptr);
 
     /**
      * @brief 发送请求并在完成时调用回调函数
@@ -246,7 +249,7 @@ public:
      * });
      * @endcode
      */
-    QCNetworkReply* send(std::function<void(QCNetworkReply*)> callback);
+    QCNetworkReply *send(std::function<void(QCNetworkReply *)> callback);
 
 private:
     /**
@@ -260,19 +263,19 @@ private:
      * @brief 获取或创建全局默认的 QCNetworkAccessManager
      * @return 全局 manager 指针
      */
-    static QCNetworkAccessManager* defaultManager();
+    static QCNetworkAccessManager *defaultManager();
 
     /**
      * @brief 内部发送请求的实现
      * @param manager 使用的 manager
      * @return QCNetworkReply 指针
      */
-    QCNetworkReply* sendInternal(QCNetworkAccessManager *manager);
+    QCNetworkReply *sendInternal(QCNetworkAccessManager *manager);
 
 private:
-    QCNetworkRequest m_request;   ///< 内部的 QCNetworkRequest 对象
-    QString m_method;             ///< HTTP 方法("GET", "POST", ...)
-    QByteArray m_postData;        ///< POST/PUT/PATCH/DELETE 的请求体数据
+    QCNetworkRequest m_request; ///< 内部的 QCNetworkRequest 对象
+    QString m_method;           ///< HTTP 方法("GET", "POST", ...)
+    QByteArray m_postData;      ///< POST/PUT/PATCH/DELETE 的请求体数据
 };
 
 } // namespace QCurl

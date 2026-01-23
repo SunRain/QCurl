@@ -1,19 +1,19 @@
 #ifndef QCNETWORKREPLY_H
 #define QCNETWORKREPLY_H
 
-#include <QObject>
-#include <QUrl>
+#include "QCNetworkError.h"
+#include "QCNetworkRequest.h"
+#include "QCUtility.h"
+
 #include <QByteArray>
 #include <QList>
+#include <QObject>
 #include <QPair>
 #include <QStringList>
+#include <QUrl>
 
-#include <optional>
 #include <functional>
-
-#include "QCNetworkRequest.h"
-#include "QCNetworkError.h"
-#include "QCUtility.h"
+#include <optional>
 
 namespace QCurl {
 
@@ -21,7 +21,7 @@ namespace QCurl {
 // 前向声明
 // ============================================================================
 
-class QCNetworkReplyPrivate;  // 私有实现类（定义在 QCNetworkReply_p.h）
+class QCNetworkReplyPrivate; // 私有实现类（定义在 QCNetworkReply_p.h）
 
 // ============================================================================
 // 枚举定义
@@ -79,8 +79,8 @@ using DataFunction = std::function<size_t(char *buffer, size_t size)>;
 /// 定位回调函数类型（同步模式）
 using SeekFunction = std::function<int(qint64 offset, int origin)>;
 /// 进度回调函数类型（同步模式）
-using ProgressFunction = std::function<void(qint64 dltotal, qint64 dlnow,
-                                            qint64 ultotal, qint64 ulnow)>;
+using ProgressFunction
+    = std::function<void(qint64 dltotal, qint64 dlnow, qint64 ultotal, qint64 ulnow)>;
 
 // ============================================================================
 // QCNetworkReply 类
@@ -126,8 +126,8 @@ class QCNetworkReply : public QObject
 {
     Q_OBJECT
     friend class QCNetworkAccessManager;
-    friend class CurlMultiHandleProcesser;  // 旧实现（待删除）
-    friend class QCCurlMultiManager;        // 新实现（v2.0）
+    friend class CurlMultiHandleProcesser; // 旧实现（待删除）
+    friend class QCCurlMultiManager;       // 新实现（v2.0）
 
 public:
     // ========================================================================
@@ -146,16 +146,16 @@ public:
      * @note 通常不直接构造，而是通过 QCNetworkAccessManager 工厂方法创建
      */
     explicit QCNetworkReply(const QCNetworkRequest &request,
-                           HttpMethod method,
-                           ExecutionMode mode,
-                           const QByteArray &requestBody = QByteArray(),
-                           QObject *parent = nullptr);
+                            HttpMethod method,
+                            ExecutionMode mode,
+                            const QByteArray &requestBody = QByteArray(),
+                            QObject *parent               = nullptr);
 
     ~QCNetworkReply() override;
 
     // 禁止拷贝
-    QCNetworkReply(const QCNetworkReply&) = delete;
-    QCNetworkReply& operator=(const QCNetworkReply&) = delete;
+    QCNetworkReply(const QCNetworkReply &)            = delete;
+    QCNetworkReply &operator=(const QCNetworkReply &) = delete;
 
     // ========================================================================
     // 执行控制

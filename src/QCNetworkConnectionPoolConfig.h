@@ -193,16 +193,13 @@ public:
      */
     bool isValid() const
     {
-        return maxConnectionsPerHost > 0 &&
-               maxTotalConnections > 0 &&
-               maxConnectionsPerHost <= maxTotalConnections &&
-               maxIdleTime >= 0 &&
-               maxConnectionLifetime >= 0 &&
-               dnsCacheTimeout >= -1 &&
-               (!multiMaxTotalConnections.has_value() || multiMaxTotalConnections.value() >= 0) &&
-               (!multiMaxHostConnections.has_value() || multiMaxHostConnections.value() >= 0) &&
-               (!multiMaxConcurrentStreams.has_value() || multiMaxConcurrentStreams.value() >= 0) &&
-               (!multiMaxConnects.has_value() || multiMaxConnects.value() >= 0);
+        return maxConnectionsPerHost > 0 && maxTotalConnections > 0
+               && maxConnectionsPerHost <= maxTotalConnections && maxIdleTime >= 0
+               && maxConnectionLifetime >= 0 && dnsCacheTimeout >= -1
+               && (!multiMaxTotalConnections.has_value() || multiMaxTotalConnections.value() >= 0)
+               && (!multiMaxHostConnections.has_value() || multiMaxHostConnections.value() >= 0)
+               && (!multiMaxConcurrentStreams.has_value() || multiMaxConcurrentStreams.value() >= 0)
+               && (!multiMaxConnects.has_value() || multiMaxConnects.value() >= 0);
     }
 
     /**
@@ -216,11 +213,11 @@ public:
     {
         QCNetworkConnectionPoolConfig config;
         config.maxConnectionsPerHost = 2;
-        config.maxTotalConnections = 10;
-        config.maxIdleTime = 30;
+        config.maxTotalConnections   = 10;
+        config.maxIdleTime           = 30;
         config.maxConnectionLifetime = 60;
-        config.enablePipelining = false;
-        config.enableMultiplexing = false;  // 兼容模式
+        config.enablePipelining      = false;
+        config.enableMultiplexing    = false; // 兼容模式
         return config;
     }
 
@@ -234,12 +231,12 @@ public:
     static QCNetworkConnectionPoolConfig aggressive()
     {
         QCNetworkConnectionPoolConfig config;
-        config.maxConnectionsPerHost = 10;
-        config.maxTotalConnections = 100;
-        config.maxIdleTime = 120;
-        config.maxConnectionLifetime = 300;
-        config.enablePipelining = false;  // 仍然不推荐
-        config.enableMultiplexing = true;
+        config.maxConnectionsPerHost   = 10;
+        config.maxTotalConnections     = 100;
+        config.maxIdleTime             = 120;
+        config.maxConnectionLifetime   = 300;
+        config.enablePipelining        = false; // 仍然不推荐
+        config.enableMultiplexing      = true;
         config.enableConnectionWarming = true;
         return config;
     }
@@ -254,12 +251,12 @@ public:
     static QCNetworkConnectionPoolConfig http2Optimized()
     {
         QCNetworkConnectionPoolConfig config;
-        config.maxConnectionsPerHost = 2;  // HTTP/2 多路复用，不需要太多连接
-        config.maxTotalConnections = 20;
-        config.maxIdleTime = 90;
+        config.maxConnectionsPerHost = 2; // HTTP/2 多路复用，不需要太多连接
+        config.maxTotalConnections   = 20;
+        config.maxIdleTime           = 90;
         config.maxConnectionLifetime = 180;
-        config.enablePipelining = false;
-        config.enableMultiplexing = true;  // HTTP/2 核心特性
+        config.enablePipelining      = false;
+        config.enableMultiplexing    = true; // HTTP/2 核心特性
         return config;
     }
 };

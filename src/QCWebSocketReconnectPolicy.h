@@ -3,9 +3,10 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
-#include <chrono>
 #include <QSet>
 #include <QtGlobal>
+
+#include <chrono>
 
 namespace QCurl {
 
@@ -114,9 +115,9 @@ public:
      * - 1008 (PolicyViolation): 策略违规
      */
     QSet<int> retriableCloseCodes = {
-        1001,  // GoingAway
-        1006,  // AbnormalClosure
-        1011   // InternalError
+        1001, // GoingAway
+        1006, // AbnormalClosure
+        1011  // InternalError
     };
 
     // ============================================================

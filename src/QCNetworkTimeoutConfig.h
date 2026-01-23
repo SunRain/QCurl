@@ -1,9 +1,10 @@
 #ifndef QCNETWORKTIMEOUTCONFIG_H
 #define QCNETWORKTIMEOUTCONFIG_H
 
+#include <QtGlobal>
+
 #include <chrono>
 #include <optional>
-#include <QtGlobal>
 
 QT_BEGIN_NAMESPACE
 
