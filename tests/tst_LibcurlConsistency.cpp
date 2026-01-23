@@ -30,6 +30,7 @@
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
 #include <QFile>
@@ -86,6 +87,28 @@ QCNetworkHttpVersion toHttpVersion(const QString &proto)
 QByteArray makeUploadBody(int size)
 {
     return QByteArray(size, 'x');
+}
+
+bool waitForSpyCountAtLeast(QSignalSpy &spy, int targetCount, int timeoutMs)
+{
+    if (targetCount <= 0) {
+        return true;
+    }
+    if (spy.count() >= targetCount) {
+        return true;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    while (spy.count() < targetCount) {
+        const int remainingMs = timeoutMs - static_cast<int>(timer.elapsed());
+        if (remainingMs <= 0) {
+            break;
+        }
+        const int stepMs = std::min(remainingMs, 50);
+        spy.wait(stepMs);
+    }
+    return spy.count() >= targetCount;
 }
 
 class SequentialReadDevice final : public QIODevice
@@ -2061,7 +2084,7 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
         QSignalSpy sendPausedSpy(reply, &QCNetworkReply::uploadSendPausedChanged);
 
-        QVERIFY(finishedSpy.wait(15000));
+        QVERIFY(waitForSpyCountAtLeast(finishedSpy, 1, 15000));
         QCOMPARE(reply->error(), NetworkError::NoError);
 
         for (const auto &args : stateSpy) {
@@ -2953,10 +2976,12 @@ void TestLibcurlConsistency::testCase()
         QCWebSocket ws(withRequestId(QUrl(QStringLiteral("ws://localhost:%1/").arg(wsPort)), requestId));
         QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
         QSignalSpy pongSpy(&ws, &QCWebSocket::pongReceived);
+        const int connectedTarget = connectedSpy.count() + 1;
         ws.open();
-        QVERIFY(connectedSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
+        const int pongTarget = pongSpy.count() + 1;
         ws.ping(payload);
-        QVERIFY(pongSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(pongSpy, pongTarget, 5000));
         const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pongPayload, payload);
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), pongPayload, QIODevice::WriteOnly | QIODevice::Truncate));
@@ -2969,8 +2994,9 @@ void TestLibcurlConsistency::testCase()
         QCWebSocket ws(withRequestId(QUrl(QStringLiteral("ws://localhost:%1/").arg(wsPort)), requestId));
         QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
         QSignalSpy binSpy(&ws, &QCWebSocket::binaryMessageReceived);
+        const int connectedTarget = connectedSpy.count() + 1;
         ws.open();
-        QVERIFY(connectedSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
 
         QByteArray received;
         QByteArray expected;
@@ -2986,8 +3012,9 @@ void TestLibcurlConsistency::testCase()
                 msg.append(pattern.at(i % pattern.size()));
             }
             for (int r = 0; r < repeats; ++r) {
+                const int binTarget = binSpy.count() + 1;
                 ws.sendBinaryMessage(msg);
-                QVERIFY(binSpy.wait(5000));
+                QVERIFY(waitForSpyCountAtLeast(binSpy, binTarget, 5000));
                 const QByteArray echoed = binSpy.takeFirst().at(0).toByteArray();
                 QCOMPARE(echoed, msg);
                 received.append(echoed);
@@ -3013,21 +3040,17 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy pingSpy(&ws, &QCWebSocket::pingReceived);
         QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
 
+        const int connectedTarget = connectedSpy.count() + 1;
+        const int pingTarget = pingSpy.count() + 1;
+        const int closeTarget = closeSpy.count() + 1;
         ws.open();
-        QVERIFY(connectedSpy.wait(5000));
-
-        if (pingSpy.count() == 0) {
-            QVERIFY(pingSpy.wait(5000));
-        }
+        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
+        QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload.size(), 0);
         ws.pong(pingPayload);
 
-        // close frame 可能在其它等待窗口内已到达（例如在等待 pong 时已收到 close），
-        // QSignalSpy::wait 仅等待“新发射”的信号，因此这里先检查已捕获次数以避免假失败。
-        if (closeSpy.count() == 0) {
-            QVERIFY(closeSpy.wait(5000));
-        }
+        QVERIFY(waitForSpyCountAtLeast(closeSpy, closeTarget, 5000));
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
         const int closeCode = closeArgs.at(0).toInt();
         const QString closeReason = closeArgs.at(1).toString();
@@ -3059,17 +3082,17 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy pingSpy(&ws, &QCWebSocket::pingReceived);
         QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
 
+        const int connectedTarget = connectedSpy.count() + 1;
+        const int pingTarget = pingSpy.count() + 1;
+        const int closeTarget = closeSpy.count() + 1;
         ws.open();
-        QVERIFY(connectedSpy.wait(5000));
-
-        if (pingSpy.count() == 0) {
-            QVERIFY(pingSpy.wait(5000));
-        }
+        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
+        QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload.size(), 0);
         ws.pong(pingPayload);
 
-        QVERIFY(closeSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(closeSpy, closeTarget, 5000));
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
         const int closeCode = closeArgs.at(0).toInt();
         const QString closeReason = closeArgs.at(1).toString();
@@ -3103,32 +3126,32 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy pongSpy(&ws, &QCWebSocket::pongReceived);
         QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
 
+        const int connectedTarget = connectedSpy.count() + 1;
+        const int textTarget = textSpy.count() + 1;
+        const int binTarget = binSpy.count() + 1;
+        const int pingTarget = pingSpy.count() + 1;
+        const int pongTarget = pongSpy.count() + 1;
+        const int closeTarget = closeSpy.count() + 1;
         ws.open();
-        QVERIFY(connectedSpy.wait(5000));
-
-        QVERIFY(textSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
+        QVERIFY(waitForSpyCountAtLeast(textSpy, textTarget, 5000));
         const QString text = textSpy.takeFirst().at(0).toString();
         QCOMPARE(text, QStringLiteral("txt"));
 
-        QVERIFY(binSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(binSpy, binTarget, 5000));
         const QByteArray bin = binSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(bin, QByteArrayLiteral("bin"));
 
-        QVERIFY(pingSpy.wait(5000));
+        QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload, QByteArrayLiteral("ping"));
         ws.pong(pingPayload);
 
-        if (pongSpy.count() == 0) {
-            QVERIFY(pongSpy.wait(5000));
-        }
+        QVERIFY(waitForSpyCountAtLeast(pongSpy, pongTarget, 5000));
         const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pongPayload, QByteArrayLiteral("pong"));
 
-        // close frame 可能在等待 pong 时已到达；避免错过导致 wait 超时。
-        if (closeSpy.count() == 0) {
-            QVERIFY(closeSpy.wait(5000));
-        }
+        QVERIFY(waitForSpyCountAtLeast(closeSpy, closeTarget, 5000));
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
         const int closeCode = closeArgs.at(0).toInt();
         const QString closeReason = closeArgs.at(1).toString();

@@ -24,6 +24,10 @@
   - 命令：`env -u QCURL_QTTEST QCURL_LC_EXT=1 python3 -m pytest tests/libcurl_consistency`（需 escalated）  
   - 结果：`80 passed in 45.96s`  
   - 环境摘要：Python 3.14.2 / pytest 8.4.2 / curl 8.18.0-DEV / httpd 2.4.66 / nghttpx nghttp2/1.68.0 ngtcp2/1.19.0 nghttp3/1.14.0
+- 2026-01-20T22:10:00+08:00：全量回归（all + ext）通过（强制 HTTP/3 覆盖）  
+  - 命令：`QCURL_REQUIRE_HTTP3=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build --qcurl-build build --reports-dir build/libcurl_consistency/reports_require_http3_all_ext_v2`（需 escalated）  
+  - 结果：`81 passed in 71.31s`  
+  - 报告：`build/libcurl_consistency/reports_require_http3_all_ext_v2/gate_all.json`、`build/libcurl_consistency/reports_require_http3_all_ext_v2/junit_all.xml`（含 `pip_freeze_all.txt`、`nghttpx_version_all.txt`）
 
 ## 1. 一致性定义（本候选集覆盖范围）
 

@@ -113,7 +113,15 @@ def httpd_observed_for_id(access_log: Path,
                           *,
                           require_range: bool,
                           include_content_length: bool = True) -> HttpdObserved:
-    entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
+    # ⚠️ 注意：httpd/nghttpx 的 access_log 写入存在 flush 延迟（尤其是 CONNECT + h2 场景）。
+    # 为避免“请求已完成但日志尚未落盘”导致的假失败，这里做短暂轮询等待。
+    deadline = time.time() + 2.0
+    entries: List[Dict[str, str]] = []
+    while time.time() < deadline:
+        entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
+        if entries:
+            break
+        time.sleep(0.05)
     if not entries:
         raise AssertionError(f"httpd access_log 无匹配记录：id={req_id}")
 
@@ -123,13 +131,18 @@ def httpd_observed_for_id(access_log: Path,
 
     chosen = None
     if require_range:
-        for e in entries:
-            if has_range(e):
-                chosen = e
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            for e in entries:
+                if has_range(e):
+                    chosen = e
+                    break
+            if chosen is not None and any(not has_range(e) for e in entries):
                 break
+            time.sleep(0.05)
+            entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
         if chosen is None:
             raise AssertionError(f"httpd access_log 未观察到 Range 请求：id={req_id}")
-        # 中断+续传应至少包含一次非 Range 与一次 Range
         if not any(not has_range(e) for e in entries):
             raise AssertionError(f"httpd access_log 未观察到首段（非 Range）请求：id={req_id}")
     else:
@@ -162,7 +175,13 @@ def httpd_observed_list_for_id(access_log: Path,
     - 用于 multi 场景（同一 case 内多次请求）
     - 返回结果按 url（去掉 id 后）排序以稳定对比
     """
-    entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
+    deadline = time.time() + 2.0
+    entries: List[Dict[str, str]] = []
+    while time.time() < deadline:
+        entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
+        if entries and (expected_count <= 0 or len(entries) >= expected_count):
+            break
+        time.sleep(0.05)
     if not entries:
         raise AssertionError(f"httpd access_log 无匹配记录：id={req_id}")
     if expected_count > 0 and len(entries) != expected_count:
@@ -226,7 +245,13 @@ def nghttpx_observed_for_id(access_log: Path,
                             *,
                             require_range: bool,
                             include_content_length: bool = True) -> HttpdObserved:
-    entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
+    deadline = time.time() + 2.0
+    entries: List[Dict[str, str]] = []
+    while time.time() < deadline:
+        entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
+        if entries:
+            break
+        time.sleep(0.05)
     if not entries:
         raise AssertionError(f"nghttpx access_log 无匹配记录：id={req_id}")
 
@@ -236,10 +261,16 @@ def nghttpx_observed_for_id(access_log: Path,
 
     chosen = None
     if require_range:
-        for e in entries:
-            if has_range(e):
-                chosen = e
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            for e in entries:
+                if has_range(e):
+                    chosen = e
+                    break
+            if chosen is not None and any(not has_range(e) for e in entries):
                 break
+            time.sleep(0.05)
+            entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
         if chosen is None:
             raise AssertionError(f"nghttpx access_log 未观察到 Range 请求：id={req_id}")
         if not any(not has_range(e) for e in entries):
@@ -273,7 +304,13 @@ def nghttpx_observed_list_for_id(access_log: Path,
     返回同一 correlation id 下的所有 HTTP/3 请求观测记录（来自 nghttpx access_log）。
     - 返回结果按 url（去掉 id 后）排序以稳定对比
     """
-    entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
+    deadline = time.time() + 2.0
+    entries: List[Dict[str, str]] = []
+    while time.time() < deadline:
+        entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
+        if entries and (expected_count <= 0 or len(entries) >= expected_count):
+            break
+        time.sleep(0.05)
     if not entries:
         raise AssertionError(f"nghttpx access_log 无匹配记录：id={req_id}")
     if expected_count > 0 and len(entries) != expected_count:
