@@ -23,6 +23,7 @@
 #include <QElapsedTimer>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 #include "QCNetworkAccessManager.h"
@@ -66,6 +67,8 @@ private slots:
     void testStateCancellation();
     void testSyncPauseResumeNoOp();
     void testAsyncTransferPauseResumeCrossThread();
+    void testAsyncDownloadBackpressure();
+    void testAsyncStreamingUploadPauseResume();
 
     // ========== 数据访问测试 ==========
     void testReadAll();
@@ -788,6 +791,353 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     QVERIFY(dataOpt.has_value());
     QCOMPARE(dataOpt->size(), payload.size());
     QCOMPARE(*dataOpt, payload);
+
+    reply->deleteLater();
+    server.close();
+}
+
+void TestQCNetworkReply::testAsyncDownloadBackpressure()
+{
+    constexpr qsizetype kPayloadSize = 256 * 1024;
+    constexpr qsizetype kChunkSize = 4096;
+    constexpr int kChunkIntervalMs = 1;
+
+    constexpr qint64 kLimitBytes = 16 * 1024;
+    constexpr qint64 kResumeBytes = 8 * 1024;
+
+    const QByteArray payload(kPayloadSize, 'b');
+
+    QTcpServer server;
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("Cannot bind local port for test HTTP server");
+    }
+
+    const quint16 port = server.serverPort();
+
+    QPointer<QTcpSocket> clientSocket;
+    QTimer sendTimer;
+    sendTimer.setInterval(kChunkIntervalMs);
+
+    qsizetype bytesSent = 0;
+
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        clientSocket = server.nextPendingConnection();
+        if (!clientSocket) {
+            return;
+        }
+
+        bytesSent = 0;
+
+        const QByteArray header =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+
+        clientSocket->write(header);
+        clientSocket->flush();
+        sendTimer.start();
+    });
+
+    connect(&sendTimer, &QTimer::timeout, this, [&]() {
+        if (!clientSocket) {
+            sendTimer.stop();
+            return;
+        }
+
+        if (bytesSent >= payload.size()) {
+            sendTimer.stop();
+            clientSocket->disconnectFromHost();
+            clientSocket->deleteLater();
+            clientSocket = nullptr;
+            return;
+        }
+
+        const qsizetype remaining = payload.size() - bytesSent;
+        const qsizetype toSend = std::min(kChunkSize, remaining);
+
+        const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
+        if (written > 0) {
+            bytesSent += static_cast<qsizetype>(written);
+            clientSocket->flush();
+        }
+    });
+
+    {
+        QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/no_bp").arg(port)));
+        auto *reply = m_manager->sendGet(request);
+
+        QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+        QByteArray received;
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                received.append(*dataOpt);
+            }
+        });
+
+        QVERIFY(finishedSpy.wait(10000));
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            received.append(*tailOpt);
+        }
+
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(received.size(), payload.size());
+        QCOMPARE(received, payload);
+        QCOMPARE(backpressureSpy.count(), 0);
+
+        reply->deleteLater();
+    }
+
+    {
+        QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp").arg(port)));
+        request.setAsyncBodyBufferLimitBytes(kLimitBytes);
+        request.setAsyncBodyBufferResumeBytes(kResumeBytes);
+
+        auto *reply = m_manager->sendGet(request);
+
+        QCOMPARE(reply->backpressureLimitBytes(), kLimitBytes);
+        QCOMPARE(reply->backpressureResumeBytes(), kResumeBytes);
+
+        QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+        QByteArray received;
+
+        bool sawActive = false;
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        while (waitTimer.elapsed() < 5000 && !sawActive) {
+            if (!backpressureSpy.wait(500)) {
+                continue;
+            }
+            const auto args = backpressureSpy.takeLast();
+            if (!args.isEmpty() && args.at(0).toBool()) {
+                sawActive = true;
+            }
+        }
+
+        QVERIFY(sawActive);
+        QVERIFY(reply->isBackpressureActive());
+        QVERIFY(reply->bytesAvailable() <= kLimitBytes);
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                received.append(*dataOpt);
+            }
+        });
+
+        const auto firstDrain = reply->readAll();
+        if (firstDrain.has_value() && !firstDrain->isEmpty()) {
+            received.append(*firstDrain);
+        }
+
+        bool sawInactive = false;
+        waitTimer.restart();
+        while (waitTimer.elapsed() < 5000 && !sawInactive) {
+            if (!backpressureSpy.wait(500)) {
+                continue;
+            }
+            const auto args = backpressureSpy.takeLast();
+            if (!args.isEmpty() && !args.at(0).toBool()) {
+                sawInactive = true;
+            }
+        }
+
+        QVERIFY(sawInactive);
+        QVERIFY(finishedSpy.wait(10000));
+
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            received.append(*tailOpt);
+        }
+
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(received.size(), payload.size());
+        QCOMPARE(received, payload);
+
+        reply->deleteLater();
+    }
+
+    server.close();
+}
+
+void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
+{
+    class ChunkedUploadDevice : public QIODevice
+    {
+    public:
+        explicit ChunkedUploadDevice(QObject *parent = nullptr)
+            : QIODevice(parent)
+        {}
+
+        void appendChunk(const QByteArray &chunk)
+        {
+            if (chunk.isEmpty()) {
+                return;
+            }
+            m_buffer.append(chunk);
+            emit readyRead();
+        }
+
+        void markFinished()
+        {
+            m_finished = true;
+            emit readyRead();
+        }
+
+        [[nodiscard]] int zeroReadCount() const { return m_zeroReads; }
+
+        bool isSequential() const override { return true; }
+
+        qint64 bytesAvailable() const override
+        {
+            return static_cast<qint64>(m_buffer.size()) + QIODevice::bytesAvailable();
+        }
+
+    protected:
+        qint64 readData(char *data, qint64 maxlen) override
+        {
+            if (maxlen <= 0) {
+                return 0;
+            }
+
+            if (m_buffer.isEmpty()) {
+                if (!m_finished) {
+                    ++m_zeroReads;
+                }
+                return 0;
+            }
+
+            const qint64 n = std::min<qint64>(maxlen, m_buffer.size());
+            memcpy(data, m_buffer.constData(), static_cast<size_t>(n));
+            m_buffer.remove(0, static_cast<int>(n));
+            return n;
+        }
+
+        qint64 writeData(const char *, qint64) override { return -1; }
+
+        bool atEnd() const override { return m_finished && m_buffer.isEmpty(); }
+
+    private:
+        QByteArray m_buffer;
+        bool m_finished = false;
+        int m_zeroReads = 0;
+    };
+
+    constexpr qsizetype kPayloadSize = 64 * 1024;
+    const QByteArray payload(kPayloadSize, 'u');
+
+    QTcpServer server;
+    if (!server.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("Cannot bind local port for test HTTP server");
+    }
+
+    QByteArray requestBuffer;
+    QByteArray receivedBody;
+    bool headerParsed = false;
+    qint64 expectedContentLength = -1;
+
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        QTcpSocket *socket = server.nextPendingConnection();
+        if (!socket) {
+            return;
+        }
+
+        connect(socket, &QTcpSocket::readyRead, this, [&, socket]() {
+            requestBuffer.append(socket->readAll());
+
+            if (!headerParsed) {
+                const int headerEnd = requestBuffer.indexOf("\r\n\r\n");
+                if (headerEnd < 0) {
+                    return;
+                }
+
+                const QByteArray headers = requestBuffer.left(headerEnd + 4);
+                requestBuffer.remove(0, headerEnd + 4);
+
+                const QList<QByteArray> lines = headers.split('\n');
+                static const QByteArray kContentLengthPrefix = "content-length:";
+                for (const QByteArray &line : lines) {
+                    const QByteArray trimmed = line.trimmed();
+                    const QByteArray lower = trimmed.toLower();
+                    if (lower.startsWith(kContentLengthPrefix)) {
+                        const QByteArray value
+                            = trimmed.mid(kContentLengthPrefix.size()).trimmed();
+                        bool ok = false;
+                        const qint64 v = value.toLongLong(&ok);
+                        if (ok) {
+                            expectedContentLength = v;
+                        }
+                    }
+                }
+
+                headerParsed = true;
+            }
+
+            if (headerParsed && !requestBuffer.isEmpty()) {
+                receivedBody.append(requestBuffer);
+                requestBuffer.clear();
+            }
+
+            if (headerParsed && expectedContentLength >= 0
+                && receivedBody.size() >= expectedContentLength) {
+                const QByteArray response =
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Length: 2\r\n"
+                    "Connection: close\r\n"
+                    "\r\n"
+                    "OK";
+                socket->write(response);
+                socket->flush();
+                socket->disconnectFromHost();
+            }
+        });
+
+        connect(socket, &QTcpSocket::disconnected, this, [socket]() { socket->deleteLater(); });
+    });
+
+    const quint16 port = server.serverPort();
+
+    ChunkedUploadDevice device;
+    QVERIFY(device.open(QIODevice::ReadOnly));
+
+    const QByteArray chunk1 = payload.left(4096);
+    const QByteArray chunk2 = payload.mid(4096, 4096);
+    const QByteArray chunk3 = payload.mid(8192);
+
+    device.appendChunk(chunk1);
+    QTimer::singleShot(200, this, [&]() { device.appendChunk(chunk2); });
+    QTimer::singleShot(400, this, [&]() {
+        device.appendChunk(chunk3);
+        device.markFinished();
+    });
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/upload").arg(port)));
+    request.setUploadDevice(&device, payload.size());
+
+    auto *reply = m_manager->sendPut(request, QByteArray());
+    QVERIFY(reply);
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+
+    QVERIFY(finishedSpy.wait(15000));
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    for (const auto &args : stateSpy) {
+        QVERIFY(!args.isEmpty());
+        const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+        QVERIFY(st != ReplyState::Paused);
+    }
+
+    QCOMPARE(receivedBody.size(), payload.size());
+    QCOMPARE(receivedBody, payload);
+    QVERIFY(device.zeroReadCount() > 0);
 
     reply->deleteLater();
     server.close();
