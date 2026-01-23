@@ -105,6 +105,19 @@ private:
 
 bool TestQCNetworkReply::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
+    if (!obj) {
+        return false;
+    }
+
+    // 抗竞态：若信号已发射（例如 finished 极快到达），QSignalSpy 后置创建会产生假阴性。
+    if (auto *reply = qobject_cast<QCNetworkReply *>(obj)) {
+        if (signal == QMetaMethod::fromSignal(&QCNetworkReply::finished)) {
+            if (reply->isFinished()) {
+                return true;
+            }
+        }
+    }
+
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
 }

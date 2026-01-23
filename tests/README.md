@@ -28,16 +28,19 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex env
 
 ## 📋 测试列表
 
-| 测试文件 | 类型 | 测试数量 | 需要网络 | 说明 |
-|---------|------|---------|---------|------|
-| `tst_QCNetworkRequest.cpp` | 单元测试 | 31 | ❌ | 请求配置和流式接口 |
-| `tst_QCNetworkReply.cpp` | 单元测试 | 27 | ✅ | Reply 功能、信号、错误处理（部分用例依赖本地 httpbin：`QCURL_HTTPBIN_URL`） |
-| `tst_QCNetworkError.cpp` | 单元测试 | 15 | ❌ | 错误码转换和字符串 |
-| `tst_QCNetworkFileTransfer.cpp` | 功能测试 | 3 | ✅ | 流式下载/上传 + 断点续传 |
-| `tst_Integration.cpp` | 集成测试 | 27 | ✅ | 真实网络请求和完整功能验证 |
-| `tst_LargeFileDownload.cpp` | 外网回归 | 1 | ✅ | 外部 HTTPS 大文件下载（非门禁） |
+测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。  
+测试项的唯一准确来源是 `ctest`（由 `tests/CMakeLists.txt` 收集并标注 LABELS）。
 
-**总计：100 个测试用例**
+推荐查看方式：
+
+```bash
+# 列出全部测试（不执行）
+ctest --test-dir build -N
+
+# 仅列出某类证据集合（LABELS）
+ctest --test-dir build -N -L offline
+ctest --test-dir build -N -L env
+```
 
 ---
 
@@ -85,7 +88,16 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
   python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
 ```
 
-### 3. 查看详细输出
+---
+
+## 🧪 WebSocket 测试说明（smoke vs evidence）
+
+- `tests/websocket-fragment-server.js`：**message-level** echo smoke（基于 `ws`，只能证明回显链路；不提供帧级证据）。
+- `tests/websocket-evidence-server.js`：**frame-level** evidence（零外部依赖；显式发送 fragmentation/close，并输出 JSONL 工件供复核）。
+
+在证据口径下，帧级语义（continuation frames / close code&reason）以 evidence server 的工件为准，避免“通过但不证明”的误读。
+
+## 🔍 查看详细输出
 
 ```bash
 # 运行单个测试并显示详细信息

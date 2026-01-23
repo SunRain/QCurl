@@ -1,8 +1,11 @@
 /*
  * QtTest WebSocket 本地测试服务器 helper。
  *
- * 封装 node tests/websocket-fragment-server.js 的启动/停止、READY marker 解析与端口就绪探测，
- * 支持 ws/wss 两种模式并提供 CA 证书路径，供多个 WebSocket 测试复用。
+ * 封装本地 node WebSocket 测试服务器的启动/停止、READY marker 解析与端口就绪探测。
+ *
+ * 当前包含两类 server：
+ * - Fragment Echo（message-level）：tests/websocket-fragment-server.js（依赖 ws；仅用于回显 smoke）
+ * - Evidence Server（frame-level）：tests/websocket-evidence-server.js（零外部依赖；用于 fragmentation/close 证据链）
  */
 
 #pragma once
@@ -12,6 +15,8 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTcpSocket>
@@ -28,6 +33,11 @@ public:
         Wss,
     };
 
+    enum class ServerKind {
+        FragmentEcho,
+        Evidence,
+    };
+
     QCWebSocketTestServer() = default;
     ~QCWebSocketTestServer() { stop(); }
 
@@ -36,6 +46,7 @@ public:
 
     [[nodiscard]] QString skipReason() const { return m_skipReason; }
     [[nodiscard]] quint16 port() const { return m_port; }
+    [[nodiscard]] QString artifactsPath() const { return m_artifactsPath; }
 
     [[nodiscard]] QString baseUrl() const
     {
@@ -65,18 +76,22 @@ public:
         return QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.crt"));
     }
 
-    bool start(Mode mode)
+    bool start(Mode mode, ServerKind kind = ServerKind::FragmentEcho)
     {
         stop();
 
         m_mode       = mode;
+        m_kind       = kind;
         m_port       = 0;
+        m_artifactsPath.clear();
         m_skipReason = {};
 
         const QString appDir     = QCoreApplication::applicationDirPath();
-        const QString scriptPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/websocket-fragment-server.js"));
+        const QString scriptPath = QDir(appDir).absoluteFilePath(
+            (m_kind == ServerKind::Evidence) ? QStringLiteral("../../tests/websocket-evidence-server.js")
+                                             : QStringLiteral("../../tests/websocket-fragment-server.js"));
         if (!QFileInfo::exists(scriptPath)) {
-            m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本（tests/websocket-fragment-server.js）。");
+            m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本：%1").arg(scriptPath);
             return false;
         }
 
@@ -95,10 +110,23 @@ public:
         m_process.setProgram(QStringLiteral("node"));
         m_process.setArguments(args);
         m_process.setProcessChannelMode(QProcess::SeparateChannels);
+
+        // 统一将工件写入 build/<...>/test-artifacts（由 appDir 推导，避免硬编码 build 目录名）。
+        const QString artifactRoot = QDir(appDir).absoluteFilePath(QStringLiteral("../test-artifacts"));
+        QProcessEnvironment env    = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("QCURL_TEST_ARTIFACT_DIR"), artifactRoot);
+        env.insert(QStringLiteral("QCURL_WEBSOCKET_EVIDENCE_DIR"), artifactRoot);
+        m_process.setProcessEnvironment(env);
+
         m_process.start();
 
         if (!m_process.waitForStarted(2000)) {
-            m_skipReason = QStringLiteral("无法启动本地 WebSocket 测试服务器（node）。请确认已安装 node，且 tests/node_modules 依赖可用。");
+            m_skipReason = QStringLiteral(
+                "无法启动本地 WebSocket 测试服务器（node）。请确认已安装 node。"
+                "%1")
+                               .arg((m_kind == ServerKind::FragmentEcho)
+                                        ? QStringLiteral("（Fragment Echo 依赖 tests/node_modules，可尝试 `cd tests && npm ci`）")
+                                        : QString());
             return false;
         }
 
@@ -107,9 +135,6 @@ public:
         QString stderrBuf;
         QElapsedTimer timer;
         timer.start();
-
-        static const QRegularExpression readyRe(
-            QStringLiteral(R"(QCURL_WEBSOCKET_TEST_SERVER_READY\s+\{"port":(\d+)\})"));
 
         while (timer.elapsed() < 5000) {
             if (m_process.state() == QProcess::NotRunning) {
@@ -120,14 +145,12 @@ public:
             stdoutBuf += QString::fromUtf8(m_process.readAllStandardOutput());
             stderrBuf += QString::fromUtf8(m_process.readAllStandardError());
 
-            const QRegularExpressionMatch m = readyRe.match(stdoutBuf);
-            if (m.hasMatch()) {
-                bool ok = false;
-                const int p = m.captured(1).toInt(&ok);
-                if (ok && p > 0 && p <= 65535) {
-                    readyPort = static_cast<quint16>(p);
-                    break;
+            QString artifactsPath;
+            if (tryParseReady(stdoutBuf, readyPort, artifactsPath)) {
+                if (!artifactsPath.isEmpty()) {
+                    m_artifactsPath = artifactsPath;
                 }
+                break;
             }
         }
 
@@ -158,6 +181,38 @@ public:
     }
 
 private:
+    static bool tryParseReady(const QString &stdoutBuf, quint16 &outPort, QString &outArtifactsPath)
+    {
+        const QString marker = QStringLiteral("QCURL_WEBSOCKET_TEST_SERVER_READY ");
+        const QStringList lines = stdoutBuf.split('\n');
+        for (const QString &rawLine : lines) {
+            const QString line = rawLine.trimmed();
+            if (!line.startsWith(marker)) {
+                continue;
+            }
+
+            const QString jsonText = line.mid(marker.size()).trimmed();
+            QJsonParseError parseError{};
+            const QJsonDocument doc = QJsonDocument::fromJson(jsonText.toUtf8(), &parseError);
+            if (!doc.isObject()) {
+                continue;
+            }
+            const QJsonObject obj = doc.object();
+            const int p = obj.value(QStringLiteral("port")).toInt(0);
+            if (p <= 0 || p > 65535) {
+                continue;
+            }
+            outPort = static_cast<quint16>(p);
+
+            const QString ap = obj.value(QStringLiteral("artifactsPath")).toString();
+            if (!ap.isEmpty()) {
+                outArtifactsPath = ap;
+            }
+            return true;
+        }
+        return false;
+    }
+
     static bool waitForPortReady(quint16 port, int timeoutMs)
     {
         QElapsedTimer timer;
@@ -189,11 +244,12 @@ private:
     }
 
     Mode m_mode = Mode::Ws;
+    ServerKind m_kind = ServerKind::FragmentEcho;
     quint16 m_port = 0;
     QString m_skipReason;
+    QString m_artifactsPath;
     QProcess m_process;
 };
 
 } // namespace QCurl
 QT_END_NAMESPACE
-

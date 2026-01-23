@@ -10,6 +10,9 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequestBuilder.h"
+#include "QCNetworkMockHandler.h"
+
+#include <optional>
 
 using namespace QCurl;
 
@@ -46,6 +49,7 @@ private slots:
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkMockHandler m_mock;
 };
 
 void TestQCNetworkRequestBuilder::initTestCase()
@@ -61,6 +65,12 @@ void TestQCNetworkRequestBuilder::cleanupTestCase()
 void TestQCNetworkRequestBuilder::init()
 {
     m_manager = new QCNetworkAccessManager(this);
+
+    m_mock.clear();
+    m_mock.clearCapturedRequests();
+    m_mock.setCaptureEnabled(true);
+    m_mock.setGlobalDelay(0);
+    m_manager->setMockHandler(&m_mock);
 }
 
 void TestQCNetworkRequestBuilder::cleanup()
@@ -70,6 +80,18 @@ void TestQCNetworkRequestBuilder::cleanup()
         m_manager = nullptr;
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+}
+
+static std::optional<QByteArray> findHeaderValue(
+    const QList<QPair<QByteArray, QByteArray>> &headers,
+    const QByteArray &nameLower)
+{
+    for (const auto &kv : headers) {
+        if (kv.first.trimmed().toLower() == nameLower) {
+            return kv.second;
+        }
+    }
+    return std::nullopt;
 }
 
 /**
@@ -111,17 +133,31 @@ void TestQCNetworkRequestBuilder::testChainedCalls()
 void TestQCNetworkRequestBuilder::testWithHeader()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com"));
+    QUrl url("http://example.com/with-header");
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto builder = m_manager->newRequest(url);
 
     // Act
     builder.withHeader("User-Agent", "TestAgent")
            .withHeader("Accept", "text/html");
 
-    // Assert - 验证链式调用成功
-    // Note: Builder 内部存储了 headers，但没有公共 getter
-    // 这里只验证方法调用不崩溃
+    auto *reply = builder.sendGet();
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
-    Q_UNUSED(builder);
+    // Assert - 通过 MockHandler 请求捕获做离线可观测断言
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent")).value(),
+             QByteArray("TestAgent"));
+    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("accept")).value(),
+             QByteArray("text/html"));
+
+    reply->deleteLater();
 }
 
 /**
@@ -130,15 +166,25 @@ void TestQCNetworkRequestBuilder::testWithHeader()
 void TestQCNetworkRequestBuilder::testWithTimeout()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com"));
+    QUrl url("http://example.com/with-timeout");
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto builder = m_manager->newRequest(url);
 
     // Act
     builder.withTimeout(3000);  // 3 秒超时
 
-    // Assert - 验证方法调用成功
-    // Note: 实际超时值存储在私有成员中
+    auto *reply = builder.sendGet();
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
-    Q_UNUSED(builder);
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+
+    reply->deleteLater();
 }
 
 /**
@@ -147,16 +193,28 @@ void TestQCNetworkRequestBuilder::testWithTimeout()
 void TestQCNetworkRequestBuilder::testWithQueryParams()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com/api"));
+    QUrl baseUrl("http://example.com/api");
+    auto builder = m_manager->newRequest(baseUrl);
 
     // Act
     builder.withQueryParam("page", "1")
            .withQueryParam("limit", "20")
            .withQueryParam("sort", "desc");
 
-    // Assert - 验证链式调用成功
+    const QUrl expectedUrl("http://example.com/api?page=1&limit=20&sort=desc");
+    m_mock.mockResponse(HttpMethod::Get, expectedUrl, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
 
-    Q_UNUSED(builder);
+    auto *reply = builder.sendGet();
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, expectedUrl);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+
+    reply->deleteLater();
 }
 
 /**
@@ -182,7 +240,11 @@ void TestQCNetworkRequestBuilder::testWithFollowLocation()
 void TestQCNetworkRequestBuilder::testSendGet()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com/test"));
+    QUrl url("http://example.com/test");
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto builder = m_manager->newRequest(url);
     builder.withHeader("User-Agent", "QCurl Test")
            .withTimeout(5000);
 
@@ -191,7 +253,14 @@ void TestQCNetworkRequestBuilder::testSendGet()
 
     // Assert
     QVERIFY(reply != nullptr);
-    QCOMPARE(reply->url().toString(), QString("http://example.com/test"));
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent")).value(),
+             QByteArray("QCurl Test"));
 
     // Cleanup
     reply->deleteLater();
@@ -203,7 +272,11 @@ void TestQCNetworkRequestBuilder::testSendGet()
 void TestQCNetworkRequestBuilder::testSendPost()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com/submit"));
+    QUrl url("http://example.com/submit");
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto builder = m_manager->newRequest(url);
     QByteArray postData = "test=data";
 
     builder.withHeader("Content-Type", "application/x-www-form-urlencoded")
@@ -214,7 +287,16 @@ void TestQCNetworkRequestBuilder::testSendPost()
 
     // Assert
     QVERIFY(reply != nullptr);
-    QCOMPARE(reply->url().toString(), QString("http://example.com/submit"));
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize, postData.size());
+    QCOMPARE(captured.first().bodyPreview, postData);
+    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type")).value(),
+             QByteArray("application/x-www-form-urlencoded"));
 
     // Cleanup
     reply->deleteLater();
@@ -226,7 +308,13 @@ void TestQCNetworkRequestBuilder::testSendPost()
 void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com/delete"));
+    QUrl url1("http://example.com/delete");
+    QUrl url2("http://example.com/delete2");
+    m_mock.mockResponse(HttpMethod::Delete, url1, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Delete, url2, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto builder = m_manager->newRequest(url1);
     QByteArray body = "test=data";
     builder.withBody(body);
 
@@ -235,15 +323,26 @@ void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
 
     // Assert
     QVERIFY(reply != nullptr);
-    QCOMPARE(reply->url().toString(), QString("http://example.com/delete"));
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     reply->deleteLater();
 
     // Act（显式传入 body）
-    auto builder2 = m_manager->newRequest(QUrl("http://example.com/delete2"));
+    auto builder2 = m_manager->newRequest(url2);
     auto *reply2 = builder2.sendDelete(body);
     QVERIFY(reply2 != nullptr);
-    QCOMPARE(reply2->url().toString(), QString("http://example.com/delete2"));
+    QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
     reply2->deleteLater();
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 2);
+    QCOMPARE(captured.at(0).method, HttpMethod::Delete);
+    QCOMPARE(captured.at(0).url, url1);
+    QCOMPARE(captured.at(0).bodySize, body.size());
+    QCOMPARE(captured.at(0).bodyPreview, body);
+    QCOMPARE(captured.at(1).method, HttpMethod::Delete);
+    QCOMPARE(captured.at(1).url, url2);
+    QCOMPARE(captured.at(1).bodySize, body.size());
+    QCOMPARE(captured.at(1).bodyPreview, body);
 }
 
 QTEST_MAIN(TestQCNetworkRequestBuilder)

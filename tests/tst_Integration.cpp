@@ -126,6 +126,19 @@ private:
 
 bool TestIntegration::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
+    if (!obj) {
+        return false;
+    }
+
+    // 抗竞态：避免“信号已到达但 QSignalSpy 后置创建导致 wait 超时”的假阴性
+    if (auto *reply = qobject_cast<QCNetworkReply *>(obj)) {
+        if (signal == QMetaMethod::fromSignal(&QCNetworkReply::finished)) {
+            if (reply->isFinished()) {
+                return true;
+            }
+        }
+    }
+
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
 }

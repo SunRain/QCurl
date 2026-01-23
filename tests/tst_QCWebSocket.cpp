@@ -159,7 +159,7 @@ void TestQCWebSocket::testConnect()
     socket.open();
 
     // 等待连接成功信号
-    if (!waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000)) {
+    if (!connectedSpy.wait(10000)) {
         QSKIP("无法连接到本地 WebSocket 测试服务器，跳过连接测试。");
     }
     QCOMPARE(connectedSpy.count(), 1);
@@ -212,7 +212,9 @@ void TestQCWebSocket::testConnectInvalidUrl()
     socket.open();
 
     // 等待错误信号
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::errorOccurred), 10000));
+    if (errorSpy.count() == 0) {
+        QVERIFY(errorSpy.wait(10000));
+    }
     QVERIFY(errorSpy.count() >= 1);
     QVERIFY(!socket.errorString().isEmpty());
     QCOMPARE(socket.state(), QCWebSocket::State::Unconnected);
@@ -234,15 +236,20 @@ void TestQCWebSocket::testAutoReconnect()
     
     // 监听重连尝试信号
     QSignalSpy reconnectSpy(&socket, &QCWebSocket::reconnectAttempt);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
     
     // 尝试连接（会失败）
     socket.open();
     
     // 等待初始连接失败
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::errorOccurred), 2000));
+    if (errorSpy.count() == 0) {
+        QVERIFY(errorSpy.wait(2000));
+    }
     
     // 等待第一次重连尝试（延迟 1 秒）
-    QTest::qWait(1500);
+    if (reconnectSpy.count() == 0) {
+        QVERIFY(reconnectSpy.wait(2500));
+    }
     
     // 验证至少有一次重连尝试
     QVERIFY2(reconnectSpy.count() >= 1, "应该至少有一次重连尝试");
@@ -289,7 +296,9 @@ void TestQCWebSocket::testSendTextMessage()
     qDebug() << "发送字节数:" << sent;
 
     // 等待本地 echo 服务器回显
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::textMessageReceived), 10000));
+    if (textSpy.count() == 0) {
+        QVERIFY(textSpy.wait(10000));
+    }
     QCOMPARE(textSpy.count(), 1);
 
     QString received = textSpy.first().first().toString();
@@ -324,7 +333,9 @@ void TestQCWebSocket::testSendBinaryMessage()
     qDebug() << "发送字节数:" << sent;
 
     // 等待 Echo 服务器回显
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::binaryMessageReceived), 10000));
+    if (binarySpy.count() == 0) {
+        QVERIFY(binarySpy.wait(10000));
+    }
     QCOMPARE(binarySpy.count(), 1);
 
     QByteArray received = binarySpy.first().first().toByteArray();
@@ -354,7 +365,9 @@ void TestQCWebSocket::testReceiveTextMessage()
     const QString testMessage = QStringLiteral("Receive Test");
     socket.sendTextMessage(testMessage);
 
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::textMessageReceived), 10000));
+    if (textSpy.count() == 0) {
+        QVERIFY(textSpy.wait(10000));
+    }
     QCOMPARE(textSpy.count(), 1);
     QCOMPARE(textSpy.first().first().toString(), testMessage);
 
@@ -434,7 +447,9 @@ void TestQCWebSocket::testLargeMessage()
     QVERIFY(sent > 0);
 
     // 等待服务器回显（可能需要更长时间）
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::textMessageReceived), 20000));
+    if (textSpy.count() == 0) {
+        QVERIFY(textSpy.wait(20000));
+    }
     QCOMPARE(textSpy.count(), 1);
 
     QString received = textSpy.first().first().toString();
@@ -473,7 +488,7 @@ void TestQCWebSocket::testPingPong()
 
     // 等待 Pong 响应
     // 注意：有些服务器可能不发送 Pong 响应，或者 libcurl 自动处理了
-    if (waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::pongReceived), 5000)) {
+    if (pongSpy.count() > 0 || pongSpy.wait(5000)) {
         qDebug() << "收到 Pong 响应";
         QVERIFY(pongSpy.count() >= 1);
     } else {
@@ -505,7 +520,9 @@ void TestQCWebSocket::testCloseHandshake()
     socket.close(QCWebSocket::CloseCode::Normal, QStringLiteral("Test Close"));
 
     // 等待断开连接信号
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::disconnected), 10000));
+    if (disconnectedSpy.count() == 0) {
+        QVERIFY(disconnectedSpy.wait(10000));
+    }
     QCOMPARE(disconnectedSpy.count(), 1);
     QCOMPARE(socket.state(), QCWebSocket::State::Closed);
 
@@ -530,7 +547,7 @@ void TestQCWebSocket::testFragmentedMessage()
     socket.open();
     
     // 验证连接
-    if (!waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 5000)) {
+    if (connectedSpy.count() == 0 && !connectedSpy.wait(5000)) {
         QSKIP("无法连接到本地 WebSocket 测试服务器，跳过分片测试。");
         return;
     }
@@ -549,7 +566,9 @@ void TestQCWebSocket::testFragmentedMessage()
     socket.sendTextMessage(testMessage);
     
     // 等待回显消息
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::textMessageReceived), 10000));
+    if (textSpy.count() == 0) {
+        QVERIFY(textSpy.wait(10000));
+    }
     QCOMPARE(textSpy.count(), 1);
     
     QString receivedText = textSpy.at(0).at(0).toString();
@@ -569,7 +588,9 @@ void TestQCWebSocket::testFragmentedMessage()
     socket.sendBinaryMessage(largeBinary);
     
     // 等待回显消息
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::binaryMessageReceived), 15000));
+    if (binarySpy.count() == 0) {
+        QVERIFY(binarySpy.wait(15000));
+    }
     QCOMPARE(binarySpy.count(), 1);
     
     QByteArray receivedBinary = binarySpy.at(0).at(0).toByteArray();
@@ -588,7 +609,9 @@ void TestQCWebSocket::testFragmentedMessage()
     binarySpy.clear();
     socket.sendBinaryMessage(boundaryBinary);
     
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::binaryMessageReceived), 10000));
+    if (binarySpy.count() == 0) {
+        QVERIFY(binarySpy.wait(10000));
+    }
     QCOMPARE(binarySpy.count(), 1);
     
     QByteArray receivedBoundary = binarySpy.at(0).at(0).toByteArray();
@@ -608,8 +631,16 @@ void TestQCWebSocket::testFragmentedMessage()
         socket.sendTextMessage(QString::fromUtf8(msg));
     }
     
-    // 等待所有消息返回
-    QTest::qWait(5000);
+    // 等待所有消息返回（避免固定 sleep 导致 flaky）
+    const int expectedMessages = 3;
+    while (textSpy.count() < expectedMessages) {
+        if (!textSpy.wait(5000)) {
+            qWarning() << "Fragmented message timeout. Expected:" << expectedMessages
+                       << "Actual:" << textSpy.count();
+            socket.close();
+            QFAIL("WebSocket 分片/连续消息回显超时（5s），按取证口径视为失败。");
+        }
+    }
     QVERIFY(textSpy.count() >= 3);
     
     qDebug() << "✅ 连续大消息测试通过，收到" << textSpy.count() << "个消息";
@@ -635,7 +666,9 @@ void TestQCWebSocket::testConnectionRefused()
     socket.open();
 
     // 等待错误信号
-    QVERIFY(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::errorOccurred), 10000));
+    if (errorSpy.count() == 0) {
+        QVERIFY(errorSpy.wait(10000));
+    }
     QVERIFY(errorSpy.count() >= 1);
     QVERIFY(!socket.errorString().isEmpty());
 
@@ -740,6 +773,28 @@ void TestQCWebSocket::testServerClosedConnection()
 
 bool TestQCWebSocket::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
+    if (!obj) {
+        return false;
+    }
+
+    // 抗竞态：connected/disconnected/errorOccurred 属于“可由状态反推”的信号，
+    // 若信号在 waitForSignal 调用前已触发，QSignalSpy 后置创建会造成假阴性。
+    if (auto *socket = qobject_cast<QCWebSocket *>(obj)) {
+        if (signal == QMetaMethod::fromSignal(&QCWebSocket::connected)) {
+            if (socket->state() == QCWebSocket::State::Connected) {
+                return true;
+            }
+        } else if (signal == QMetaMethod::fromSignal(&QCWebSocket::disconnected)) {
+            if (socket->state() == QCWebSocket::State::Closed) {
+                return true;
+            }
+        } else if (signal == QMetaMethod::fromSignal(&QCWebSocket::errorOccurred)) {
+            if (!socket->errorString().isEmpty()) {
+                return true;
+            }
+        }
+    }
+
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
 }

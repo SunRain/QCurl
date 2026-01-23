@@ -11,6 +11,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkCancelToken.h"
+#include "QCNetworkMockHandler.h"
 
 using namespace QCurl;
 
@@ -47,6 +48,7 @@ private slots:
 private:
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkCancelToken *m_token = nullptr;
+    QCNetworkMockHandler m_mock;
 };
 
 void TestQCNetworkCancelToken::initTestCase()
@@ -63,6 +65,18 @@ void TestQCNetworkCancelToken::init()
 {
     m_manager = new QCNetworkAccessManager(this);
     m_token = new QCNetworkCancelToken(this);
+
+    m_mock.clear();
+    m_mock.clearCapturedRequests();
+    m_mock.setCaptureEnabled(false);
+    m_mock.setGlobalDelay(0);
+
+    // 离线门禁：该套件不应触发真实网络。为 test case 中使用的 URL 配置 mock 回放。
+    m_mock.mockResponse(QUrl("http://example.com"), QByteArray("OK"));
+    m_mock.mockResponse(QUrl("http://example.com/1"), QByteArray("OK"));
+    m_mock.mockResponse(QUrl("http://example.com/2"), QByteArray("OK"));
+    m_mock.mockResponse(QUrl("http://example.com/3"), QByteArray("OK"));
+    m_manager->setMockHandler(&m_mock);
 }
 
 void TestQCNetworkCancelToken::cleanup()
@@ -101,7 +115,7 @@ void TestQCNetworkCancelToken::testCreateToken()
  */
 void TestQCNetworkCancelToken::testAttachReply()
 {
-    // Arrange - 创建一个请求（不实际发送）
+    // Arrange - 创建一个请求（使用 MockHandler 离线回放）
     QCNetworkRequest request(QUrl("http://example.com"));
     auto *reply = m_manager->sendGet(request);
 
@@ -110,6 +124,7 @@ void TestQCNetworkCancelToken::testAttachReply()
 
     // Assert
     QCOMPARE(m_token->attachedCount(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
     // Cleanup
     reply->deleteLater();
@@ -131,6 +146,7 @@ void TestQCNetworkCancelToken::testDetachReply()
 
     // Assert
     QCOMPARE(m_token->attachedCount(), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
     // Cleanup
     reply->deleteLater();
@@ -157,6 +173,9 @@ void TestQCNetworkCancelToken::testAttachMultiple()
 
     // Assert
     QCOMPARE(m_token->attachedCount(), 3);
+    for (auto *reply : replies) {
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    }
 
     // Cleanup
     reply1->deleteLater();
@@ -189,6 +208,9 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
+    // 使用 mock 延迟制造“in-flight”窗口，确保 cancel 覆盖 Running 语义
+    m_mock.setGlobalDelay(5000);
+
     auto *reply1 = m_manager->sendGet(request1);
     auto *reply2 = m_manager->sendGet(request2);
 
@@ -207,12 +229,21 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     QCOMPARE(m_token->isCancelled(), true);
     QCOMPARE(m_token->attachedCount(), 0);  // 取消后应该清空
 
-    // Note: 信号可能需要事件循环才能触发
-    // 这里主要验证 token 的状态变化
+    // 注意：cancel() 可能同步发射 cancelled 信号；QSignalSpy::wait() 会以“等待新信号”为准，
+    // 可能导致已发射但 wait 超时的假阴性。这里用 count + QTRY* 保证确定性。
+    QTRY_VERIFY_WITH_TIMEOUT(cancelSpy1.count() >= 1, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(cancelSpy2.count() >= 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(reply1->error(), NetworkError::OperationCancelled, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(reply2->error(), NetworkError::OperationCancelled, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(reply1->isFinished(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
 
     // Cleanup
     reply1->deleteLater();
     reply2->deleteLater();
+
+    // 恢复为默认（避免影响其他用例）
+    m_mock.setGlobalDelay(0);
 }
 
 /**
@@ -254,19 +285,17 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     // Act - 设置 100ms 自动超时
     m_token->setAutoTimeout(100);
 
-    // Wait for timeout
-    QTest::qWait(150);
-
     // Assert - 应该已自动取消
-    QVERIFY(spy.count() >= 1);
+    QVERIFY(spy.wait(1000));
     QCOMPARE(m_token->isCancelled(), true);
 
     // Test disabling auto-timeout
     auto *token2 = new QCNetworkCancelToken(this);
+    QSignalSpy spy2(token2, &QCNetworkCancelToken::cancelled);
     token2->setAutoTimeout(100);
     token2->setAutoTimeout(0);  // 禁用
 
-    QTest::qWait(150);
+    QVERIFY(!spy2.wait(200));
     QCOMPARE(token2->isCancelled(), false);  // 应该未取消
 
     // Cleanup
