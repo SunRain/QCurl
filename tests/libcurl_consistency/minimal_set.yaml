@@ -55,6 +55,7 @@ observability_contract:
       - 默认不比较头字段大小写（键名按 lower 归一化）
       - 除 Set-Cookie 外，默认按“键值集合”比较（不保留重复头）
       - Set-Cookie 若纳入对比，需保留多条与出现顺序（否则应从断言中剔除）
+      - 例外：raw 响应头（顺序/重复头）仅在专用用例中严格对齐（跳过 Date/Server），见 `tests/libcurl_consistency/test_p1_resp_headers.py`
     transfer:
       - 默认不强制 Content-Length vs Transfer-Encoding: chunked（除非用例明确要求）
     timing:

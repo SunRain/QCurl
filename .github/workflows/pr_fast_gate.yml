@@ -1,0 +1,73 @@
+# PR 快速门禁（高价值 + 高稳定 + 低依赖）
+name: PR Gate (fast, build + ctest_strict offline)
+
+on:
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - '.github/workflows/pr_fast_gate.yml'
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - '.github/workflows/pr_fast_gate.yml'
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  pr_fast_gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies (minimal)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            qt6-base-dev \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            python3
+
+      - name: Configure (CMake)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel
+
+      - name: QtTest offline (skip=fail)
+        run: |
+          set -euo pipefail
+          python3 scripts/ctest_strict.py --build-dir build --label-regex offline --max-skips 0
+

@@ -10,4 +10,4 @@
 
 - 代码风格：`Qt6_CPP17_Coding_Style.md`
 - 注释规范（含 Doxygen 约定）：`CPP_Code_Comment_Guidelines.md`
-- 工程知识库（维护者 SSOT）：`helloagents/project.md`
+- 工程知识库（维护者 SSOT）：`helloagents/INDEX.md`（入口）/ `helloagents/modules/project.md`（工程约定与门禁）

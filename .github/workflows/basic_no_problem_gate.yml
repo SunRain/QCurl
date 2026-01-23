@@ -1,0 +1,109 @@
+# “基本无问题”验收门禁（可复核 + 强制归档工件）
+name: Acceptance Gate (basic-no-problem)
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - '.github/workflows/basic_no_problem_gate.yml'
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  basic_no_problem:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            qt6-base-dev \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            python3-pip \
+            apache2 \
+            apache2-dev \
+            libapache2-mod-http2 \
+            libevent-dev \
+            libnghttp3-dev
+
+          # best-effort：HTTP/3 依赖（P0 默认不强制 h3，但允许能力覆盖；缺失时会降级告警）
+          sudo apt-get install -y libngtcp2-dev || sudo apt-get install -y libngtcp2-crypto-openssl-dev || sudo apt-get install -y libngtcp2-crypto-gnutls-dev
+
+      - name: Install Python dependencies (locked)
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt
+
+      - name: Ensure curl testenv tool paths (httpd/apxs)
+        run: |
+          set -euo pipefail
+
+          if [ ! -x /usr/bin/httpd ] && command -v apache2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apache2)" /usr/bin/httpd
+          fi
+
+          if [ ! -x /usr/bin/apxs ] && command -v apxs2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apxs2)" /usr/bin/apxs
+          fi
+
+          /usr/bin/httpd -v || true
+          /usr/bin/apxs -q HTTPD_VERSION || true
+
+      - name: Configure QCurl (CMake)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cmake --build build --parallel
+
+      - name: Run acceptance gate (basic-no-problem) + archive evidence
+        env:
+          QCURL_BASIC_GATE_RUN_ID: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "${QCURL_BASIC_GATE_RUN_ID}"
+
+      - name: QtTest capability suite (skip=fail)
+        run: |
+          set -euo pipefail
+          python3 scripts/ctest_strict.py --build-dir build --label-regex capability --max-skips 0
+
+      - name: Upload evidence (manifest + tar.gz) [required]
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basic-no-problem-evidence-${{ github.sha }}
+          path: |
+            build/evidence/basic-no-problem/${{ github.sha }}/manifest.json
+            build/evidence/basic-no-problem/${{ github.sha }}.tar.gz
+          retention-days: 14
+          if-no-files-found: error

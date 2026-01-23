@@ -26,6 +26,20 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex env
 - ctest：终端输出（含每个 QtTest 的 `Totals:` 行；无 `SKIP:`）。
 - `libcurl_consistency`（可选 gate）：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`，以及 `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
 
+### ✅ “基本无问题”验收门禁（强制归档）
+
+当需要给出可作为工程证据链的“基本无问题”结论时，必须使用统一 runner：
+
+```bash
+python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-run-id>"
+```
+
+该 runner 会强制产出并归档关键工件：
+- `build/evidence/basic-no-problem/<run-id>/manifest.json`
+- `build/evidence/basic-no-problem/<run-id>.tar.gz`
+
+门禁组合与前置条件见：[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “基本无问题”章节。
+
 ## 📋 测试列表
 
 测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。  

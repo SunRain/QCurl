@@ -94,6 +94,8 @@
 | Cookie 发送 | 服务端看到的 `Cookie:` 一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_cookie_request_header.py` | - |
 | 重定向 | 多跳 302 序列与最终落点一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
 | Proxy | proxy 视角（GET absolute-form / CONNECT authority）一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_proxy.py` | - |
+| 网络路径（M4） | `RESOLVE/CONNECT_TO`：服务端可观测（Host/路径/状态）一致 | 已覆盖 | `tests/libcurl_consistency/test_p1_resolve_connect_to.py` + `tests/tst_LibcurlConsistency.cpp`（caseId：`p1_resolve_override/p1_connect_to`） | - |
+| 协议白名单（M5） | `allowedProtocols/allowedRedirectProtocols`：fail-closed + 可观测一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_protocol_restrictions.py` + `tests/tst_LibcurlConsistency.cpp`（caseId：`p2_protocols_block_http/p2_redir_protocols_block_http`） | - |
 | 响应头 | `Location/Set-Cookie/WWW-Authenticate`（白名单）一致 | 部分覆盖 | `tests/libcurl_consistency/http_observe_server.py` + `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
 | 响应头字节级 | 原始响应头字节/重复头一致性 | 已覆盖（跳过 `Date/Server`） | `tests/libcurl_consistency/test_p1_resp_headers.py` + `src/QCNetworkReply.cpp`（`rawHeaderData()`） | - |
 | HTTP 方法面 | HEAD/PATCH/DELETE（无 body）的可观测语义对齐 | 已覆盖（HEAD/PATCH/DELETE） | `tests/libcurl_consistency/test_p1_http_methods.py` + `tests/tst_LibcurlConsistency.cpp` | - |
@@ -110,13 +112,15 @@
 | 取消 | `CURLE_ABORTED_BY_CALLBACK` ↔ `NetworkError::OperationCancelled` | 已覆盖（基础） | `tests/libcurl_consistency/test_p1_cancel.py` + `src/QCNetworkReply.cpp`（cancel） | - |
 | Proxy 认证失败 | 407/认证缺失/错误凭据的可观测语义 | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py` + `tests/libcurl_consistency/http_proxy_server.py` | - |
 | URL 非法 | `CURLE_URL_MALFORMAT` ↔ `NetworkError::InvalidRequest` | 已覆盖 | `tests/libcurl_consistency/test_p2_error_paths.py` + `src/QCNetworkError.cpp`（映射） | - |
+| 协议白名单（M5） | `CURLE_UNSUPPORTED_PROTOCOL`（禁止协议/禁止重定向协议）错误归一化一致 | 已覆盖 | `tests/libcurl_consistency/test_p2_protocol_restrictions.py` + `src/QCNetworkError.cpp`（默认映射） | - |
+| 限速（ext） | `MAX_RECV/MAX_SEND_SPEED_LARGE` + 取消终态一致（不做耗时断言） | 已覆盖（ext） | `tests/libcurl_consistency/test_ext_speed_limit_smoke.py` + `tests/libcurl_consistency/http_baseline_client.cpp` | - |
 
 #### 时序语义 / 生命周期
 
 | 分类 | 可观测点 | 覆盖结论 | 证据（测试/代码位置） | 缺口任务 |
 |---|---|---|---|---|
 | 重定向序列 | 多跳请求序列一致（顺序敏感） | 已覆盖 | `tests/libcurl_consistency/test_p1_redirect_and_login_flow.py` | - |
-| 并发多请求 | 多请求集合等价（按 URL 稳定排序）+ keep-alive 复用统计（ext） | 部分覆盖 | `tests/libcurl_consistency/test_ext_suite.py`（ext_multi_get4_* + ext_reuse_keepalive_http_1_1） | - |
+| 并发多请求 | 多请求集合等价（稳定排序）+ keep-alive 复用统计（HTTP/1.1） | 已覆盖（P0 基础覆盖；ext 另含压力覆盖） | `tests/libcurl_consistency/test_p0_consistency.py`（多请求 `requests/responses` 工件）+ `tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py`（`connection_observed`）+ `tests/libcurl_consistency/test_ext_suite.py`（并发压力/多路复用覆盖） | - |
 | WS 事件序列 | 帧类型/顺序一致 | 已覆盖（ext） | `tests/libcurl_consistency/test_ext_ws_suite.py` | - |
 | HTTP 回调/信号序列 | `readyRead/finished/error/cancelled/progress` 的序列与约束 | 已覆盖（取消后无事件约束 + 进度稳定摘要 + pause/resume 弱判据 + pause/resume 强判据/语义合同） | `tests/libcurl_consistency/test_p1_cancel.py` + `tests/libcurl_consistency/test_p1_progress.py` + `tests/libcurl_consistency/test_p2_pause_resume.py` + `tests/libcurl_consistency/test_p2_pause_resume_strict.py` | - |
 | 空 body 语义 | `readAll()` 的 `nullopt`/空字节一致性规则 | 已覆盖 | `tests/libcurl_consistency/test_p1_empty_body.py` + `src/QCNetworkReply.cpp`（readAll） | - |
@@ -127,7 +131,7 @@
 - **空响应体与 `readAll()` 语义**：已修复 `readAll()` 在“终态且 body 为空”时返回 empty QByteArray（不再是 `std::nullopt`），并通过 `tests/libcurl_consistency/test_p1_empty_body.py` 覆盖 `200 + Content-Length: 0` 与 `204 No Content`；`p1_redirect_nofollow` 不再需要绕过逻辑。
 - **chunked vs `Content-Length`**：`test_07_17_hx_post_reuse` 的 baseline 在 http/1.1 路径下可能走 chunked（无 `Content-Length`），而 QCurl（`POSTFIELDS+SIZE`）会显式带 `Content-Length`；当前已将该头从默认断言中排除（`tests/libcurl_consistency/test_p0_consistency.py` 的 `include_content_length`），如需 header 严格对齐需单独任务补齐。
 - **multipart 编码细节差异**：boundary 字符串与 `Content-Type: multipart/form-data; boundary=...`、`Content-Length` 等属于实现细节，可在可观测层面被区分但并非稳定契约；当前一致性用例以“服务端可解析 parts 语义摘要”对齐，明确不比较 boundary/原始请求体字节（见 `tests/libcurl_consistency/test_p1_multipart_formdata.py`）。
-- **并发多请求“顺序语义”**：ext_multi 用例采用集合等价（按 URL 排序）而不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
+- **并发多请求“顺序语义”**：P0/ext 的多请求对比默认采用集合等价（稳定排序）而不比较完成顺序；若业务依赖时序（回调顺序/首包先后），需新增任务采集并对齐“完成顺序/关键事件序列”。
 - **HTTP/3 覆盖的可见盲区**：h3 变体会在 `env.have_h3()` 为 False 时自动跳过；需在 Gate 报告/产物中显式呈现“是否覆盖 h3”，避免误以为已覆盖（见 6.3 的 gate 输出）。
 
 ---

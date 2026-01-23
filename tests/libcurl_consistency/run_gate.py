@@ -489,7 +489,13 @@ def _build_targets(cfg: GateConfig) -> None:
 def _pytest_files(cfg: GateConfig) -> List[str]:
     base = [
         "tests/libcurl_consistency/test_p0_consistency.py",
+        "tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py",
     ]
+    # P0 gate 补充：raw response headers（顺序/重复头）一致性。
+    # - 该用例本质上属于 P1 维度，但作为“证据链”对外解释时经常被问及；
+    # - 因此将其纳入 p0 gate，避免“p0 通过但并未对齐 raw headers”的误读。
+    if cfg.suite == "p0":
+        base.append("tests/libcurl_consistency/test_p1_resp_headers.py")
     if cfg.suite in ("p1", "all"):
         base.extend([
             "tests/libcurl_consistency/test_p1_proxy.py",

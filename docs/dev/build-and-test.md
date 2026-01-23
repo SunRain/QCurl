@@ -174,3 +174,39 @@ env -u QCURL_QTTEST QCURL_LC_EXT=1 python3 -m pytest tests/libcurl_consistency
 
 - 性能基准：`benchmarks/`（运行方式与 CI 口径：`docs/reference/performance.md`）
 - CI workflow：`.github/workflows/benchmark.yml`
+
+## 6. “基本无问题”验收门禁（basic-no-problem，强制归档）
+
+> 目标：给出一个**可复核、可复跑、可归档**的最低验收口径。  
+> 约束：该口径只在“前置条件成立”的 runner 上有效（见下方前置条件）。
+
+### 6.1 门禁组合（必须全部通过）
+
+1) QtTest 离线证据门禁：`LABELS=offline`（skip=fail + `--max-skips=0`）  
+2) QtTest 环境证据门禁：`LABELS=env`（依赖本地 httpbin + 本机端口 + node；skip=fail + `--max-skips=0`）  
+3) QCurl↔libcurl 可观测一致性门禁：`tests/libcurl_consistency/run_gate.py --suite p0 --build`（policy：no skipped/no_tests + schema + redaction）
+
+判定标准：
+- 任一门禁返回非 0 → “基本无问题”不成立；
+- 任何 skipped（QtTest skipped / pytest skipped）→ 视为无证据 → 失败；
+- 一致性门禁 `policy_violations` 非空 → 失败。
+
+### 6.2 一键入口（同时产出工件包）
+
+```bash
+# 先按 1) 构建完成 build/（需要启用 QCURL_BUILD_LIBCURL_CONSISTENCY=ON）
+python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-run-id>"
+```
+
+### 6.3 关键工件（必须归档）
+
+runner 会在 `build/evidence/basic-no-problem/` 下生成：
+
+- `build/evidence/basic-no-problem/<run-id>/manifest.json`（门禁清单 + 命令 + 返回码 + 日志路径 + 环境快照）
+- `build/evidence/basic-no-problem/<run-id>.tar.gz`（完整证据包；CI 侧要求强制上传）
+
+### 6.4 前置条件（不满足则结论不成立）
+
+- `LABELS=env`：需要 Docker（启动固定 digest 的 httpbin）、允许本机端口绑定、安装 `node`；
+- `libcurl_consistency`：需要允许本机端口绑定/启动 curl testenv（httpd/nghttpx），并安装 `tests/libcurl_consistency/requirements.lock.txt` 锁定的 Python 依赖；
+- 构建配置必须包含 `-DQCURL_BUILD_LIBCURL_CONSISTENCY=ON`（否则无法运行一致性门禁）。

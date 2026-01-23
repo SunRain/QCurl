@@ -1,0 +1,34 @@
+# policy_violations 稳定字典校验（禁止未登记 code）
+name: CI (policy_violations dictionary)
+
+on:
+  pull_request:
+    branches: [ master, main, develop ]
+    paths:
+      - 'scripts/**'
+      - 'tests/libcurl_consistency/**'
+      - 'helloagents/modules/policy_violations_dictionary.*'
+      - '.github/workflows/policy_violations_dictionary.yml'
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'scripts/**'
+      - 'tests/libcurl_consistency/**'
+      - 'helloagents/modules/policy_violations_dictionary.*'
+      - '.github/workflows/policy_violations_dictionary.yml'
+  workflow_dispatch:
+
+jobs:
+  validate_policy_violations_dictionary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate policy_violations dictionary (no unregistered codes)
+        run: |
+          set -euo pipefail
+          python3 --version
+          python3 scripts/validate_policy_violations_dictionary.py

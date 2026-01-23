@@ -16,8 +16,14 @@ import pytest
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.case_defs import P0_CASES
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
-from tests.libcurl_consistency.pytest_support.artifacts import write_json
-from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id, nghttpx_observed_for_id, ws_observed_for_id
+from tests.libcurl_consistency.pytest_support.artifacts import sha256_file, write_json
+from tests.libcurl_consistency.pytest_support.observed import (
+    httpd_observed_for_id,
+    httpd_observed_list_for_id,
+    nghttpx_observed_for_id,
+    nghttpx_observed_list_for_id,
+    ws_observed_for_id,
+)
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
@@ -42,6 +48,29 @@ def _ws_expected_data_small() -> bytes:
         for _ in range(repeats):
             out.extend(msg)
     return bytes(out)
+
+def _download_files_for_baseline(env, client_name: str, count: int) -> List[Path]:
+    run_dir = Path(env.gen_dir) / client_name
+    return [run_dir / f"download_{i}.data" for i in range(count)]
+
+
+def _download_files_for_qcurl(qcurl_artifact_path: Path, count: int) -> List[Path]:
+    run_dir = qcurl_artifact_path.parent / "qcurl_run"
+    return [run_dir / f"download_{i}.data" for i in range(count)]
+
+
+def _response_items_from_files(files: List[Path], *, proto: str, status: int) -> List[Dict]:
+    items: List[Dict] = []
+    for f in files:
+        body_len, body_sha256 = sha256_file(f)
+        items.append({
+            "status": int(status),
+            "http_version": str(proto),
+            "headers": {},
+            "body_len": int(body_len),
+            "body_sha256": str(body_sha256),
+        })
+    return items
 
 
 def _build_request_proto(case_id: str, defaults: Dict) -> Dict:
@@ -209,6 +238,52 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
                 baseline["payload"]["request"]["headers"] = obs.headers
                 baseline["payload"]["response"]["status"] = obs.status
                 baseline["payload"]["response"]["http_version"] = obs.http_version
+
+                expected_requests = int(resolved_defaults.get("count", 1))
+                if case_id == "download_range_resume":
+                    expected_requests = 2  # 首段（非 Range）+ 续传（Range）
+                if expected_requests > 1:
+                    if expected_proto == "h3":
+                        obs_list = nghttpx_observed_list_for_id(
+                            Path(lc_logs["nghttpx_access_log"]),
+                            baseline_req_id,
+                            expected_count=expected_requests,
+                            include_content_length=include_content_length,
+                        )
+                    else:
+                        obs_list = httpd_observed_list_for_id(
+                            Path(lc_logs["httpd_access_log"]),
+                            baseline_req_id,
+                            expected_count=expected_requests,
+                            include_content_length=include_content_length,
+                        )
+                    # 以 key 排序稳定化（避免并发/完成顺序差异造成假失败）
+                    obs_list_sorted = sorted(
+                        obs_list,
+                        key=lambda o: (
+                            o.url,
+                            o.method,
+                            str(sorted((o.headers or {}).items())),
+                        ),
+                    )
+                    body = req_meta.get("body") or b""
+                    import hashlib
+                    body_sha256 = hashlib.sha256(body).hexdigest() if body else ""
+                    baseline["payload"]["requests"] = [{
+                        "method": o.method,
+                        "url": o.url,
+                        "headers": o.headers,
+                        "body_len": int(len(body)),
+                        "body_sha256": body_sha256,
+                    } for o in obs_list_sorted]
+
+                expected_responses = int(baseline_download_count or 0)
+                if expected_responses > 1:
+                    files = _download_files_for_baseline(env, case["client"], expected_responses)
+                    missing = [str(p) for p in files if not p.exists()]
+                    if missing:
+                        raise AssertionError(f"baseline missing download files: {missing}")
+                    baseline["payload"]["responses"] = _response_items_from_files(files, proto=expected_proto, status=obs.status)
             # 重写 baseline artifacts
             write_json(baseline["path"], baseline["payload"])
 
@@ -257,6 +332,51 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
                 qcurl["payload"]["request"]["headers"] = obs.headers
                 qcurl["payload"]["response"]["status"] = obs.status
                 qcurl["payload"]["response"]["http_version"] = obs.http_version
+
+                expected_requests = int(resolved_defaults.get("count", 1))
+                if case_id == "download_range_resume":
+                    expected_requests = 2
+                if expected_requests > 1:
+                    if expected_proto == "h3":
+                        obs_list = nghttpx_observed_list_for_id(
+                            Path(lc_logs["nghttpx_access_log"]),
+                            qcurl_req_id,
+                            expected_count=expected_requests,
+                            include_content_length=include_content_length,
+                        )
+                    else:
+                        obs_list = httpd_observed_list_for_id(
+                            Path(lc_logs["httpd_access_log"]),
+                            qcurl_req_id,
+                            expected_count=expected_requests,
+                            include_content_length=include_content_length,
+                        )
+                    obs_list_sorted = sorted(
+                        obs_list,
+                        key=lambda o: (
+                            o.url,
+                            o.method,
+                            str(sorted((o.headers or {}).items())),
+                        ),
+                    )
+                    body = req_meta.get("body") or b""
+                    import hashlib
+                    body_sha256 = hashlib.sha256(body).hexdigest() if body else ""
+                    qcurl["payload"]["requests"] = [{
+                        "method": o.method,
+                        "url": o.url,
+                        "headers": o.headers,
+                        "body_len": int(len(body)),
+                        "body_sha256": body_sha256,
+                    } for o in obs_list_sorted]
+
+                expected_responses = int(qcurl_download_count or 0)
+                if expected_responses > 1:
+                    files = _download_files_for_qcurl(Path(qcurl["path"]), expected_responses)
+                    missing = [str(p) for p in files if not p.exists()]
+                    if missing:
+                        raise AssertionError(f"qcurl missing download files: {missing}")
+                    qcurl["payload"]["responses"] = _response_items_from_files(files, proto=expected_proto, status=obs.status)
             write_json(qcurl["path"], qcurl["payload"])
 
             assert_artifacts_match(baseline["path"], qcurl["path"])

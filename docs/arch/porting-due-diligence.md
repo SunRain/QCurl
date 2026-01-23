@@ -112,7 +112,7 @@ QCurl 的 `src/` 显示其架构定位非常明确：以 libcurl multi 为核心
 
 下表聚焦“作为 Legendary 移植基础网络库是否完备”的判定口径，已把与 Legendary 当前需求弱相关但 QCurl 已实现的能力（例如 WebSocket、HTTP/3）标注为“非阻塞”。
 
-注：本表中的“未满足（按边界推荐）”并非库侧缺陷，而是 **明确不纳入 QCurl 边界** 的业务能力（建议在 Legendary 侧实现）。责任矩阵（SSOT）见 `helloagents/wiki/legendary_port_responsibility_matrix.md`。
+注：本表中的“未满足（按边界推荐）”并非库侧缺陷，而是 **明确不纳入 QCurl 边界** 的业务能力（建议在 Legendary 侧实现）。责任矩阵（SSOT）见 `helloagents/modules/legendary_port_responsibility_matrix.md`。
 
 | 能力项（面向 legendary 移植） | 状态 | 缺口/说明 | 证据文件路径（示例） |
 |---|---|---|---|
@@ -188,8 +188,8 @@ QCurl 已补齐：已在 `src/QCNetworkRetryPolicy.*` 增加 `delayForAttempt(at
 
 Legendary 迁移的核心难点通常不在“能不能发 HTTP”，而在“围绕 Epic 的认证、会话与下载语义如何工程化”。结合 `legendary-python/legendary/api/egs.py`（oauth、graphql、多个 host 模板）与 `legendary-python/legendary/downloader/mp/*`（下载与 resume 语义），建议额外实现但放在 QCurl 之上的能力如下，并保持清晰边界以降低长期维护成本。
 
-建议实现边界与 QCurl 侧支撑能力清单：见 `helloagents/wiki/legendary_port_responsibility_matrix.md`（SSOT）。
-Legendary 侧最小接口清单/WBS（到类与测试用例）：见 `helloagents/wiki/legendary_port_minimal_interfaces_wbs.md`（SSOT）。
+建议实现边界与 QCurl 侧支撑能力清单：见 `helloagents/modules/legendary_port_responsibility_matrix.md`（SSOT）。
+Legendary 侧最小接口清单/WBS（到类与测试用例）：见 `helloagents/modules/legendary_port_minimal_interfaces_wbs.md`（SSOT）。
 
 首先是 OAuth/设备码登录与 token 刷新辅助。QCurl 不应该内置 Epic OAuth 流程，因为这会把第三方业务语义固化进基础库；推荐在移植项目上层实现“认证服务”，把 token 以可替换存储（内存/磁盘/系统钥匙串）管理，并通过上层 EgsClient/request builder 统一注入 `Authorization` 头（`src/QCNetworkRequestBuilder.*`、`src/QCRequestBuilder.*` 可直接设置 header）。若移植项目希望把“统一注入点”下沉到 middleware，`src/QCNetworkMiddleware.*` 已完成与请求执行链路的集成，可直接作为稳定落点（见 `src/QCNetworkAccessManager.cpp` 与离线门禁 `tests/tst_QCNetworkMiddlewareIntegration.cpp`）。
 

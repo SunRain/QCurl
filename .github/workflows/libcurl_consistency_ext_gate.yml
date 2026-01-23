@@ -1,15 +1,7 @@
-# libcurl_consistency ext PR gate
-name: PR Gate (libcurl_consistency, HTTP/3 required + ext)
+# libcurl_consistency ext gate（HTTP/3 required + ext）
+name: Acceptance Gate (libcurl_consistency, HTTP/3 required + ext)
 
 on:
-  pull_request:
-    branches: [ master, main, develop ]
-    paths:
-      - 'CMakeLists.txt'
-      - 'src/**'
-      - 'tests/**'
-      - 'curl/**'
-      - '.github/workflows/libcurl_consistency_ext_gate.yml'
   push:
     branches: [ master, main, develop ]
     paths:

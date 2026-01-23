@@ -10,4 +10,4 @@
 ## 相关入口
 
 - 系统全量文档：`SYSTEM_DOCUMENTATION.md`
-- 工程知识库（SSOT）：`helloagents/wiki/arch.md`
+- 工程知识库（SSOT）：`helloagents/modules/arch.md`

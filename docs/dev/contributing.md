@@ -24,7 +24,7 @@
 当变更涉及行为契约、模块边界或新增能力时：
 
 - 更新 `docs/` 中对应分层文档（使用者/贡献者/维护者/参考）
-- 若涉及工程 SSOT，同步更新 `helloagents/wiki/` 与 `helloagents/project.md`
+- 若涉及工程 SSOT，同步更新 `helloagents/modules/` 与 `helloagents/modules/project.md`
 
 ## 5. 安全与隐私
 
