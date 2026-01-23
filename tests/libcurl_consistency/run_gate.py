@@ -468,6 +468,8 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py",
             "tests/libcurl_consistency/test_p2_pause_resume.py",
             "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
+            "tests/libcurl_consistency/test_p2_backpressure_contract.py",
+            "tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py",
             "tests/libcurl_consistency/test_p2_connection_limits.py",
             "tests/libcurl_consistency/test_p2_share_handle.py",
         ])

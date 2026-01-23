@@ -128,6 +128,18 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
+    add_executable(qcurl_lc_backpressure_baseline libcurl_consistency/backpressure_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_backpressure_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_backpressure_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_upload_pause_resume_baseline libcurl_consistency/upload_pause_resume_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_upload_pause_resume_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_upload_pause_resume_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
     # h3-capable nghttpx（best-effort：不作为强依赖；失败将导致 h3 变体 skip，并由 gate 输出告警）
     add_subdirectory(libcurl_consistency/nghttpx_from_source)
 
@@ -149,6 +161,8 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         qcurl_lc_postfields_binary_baseline
         qcurl_lc_http_baseline
         qcurl_lc_pause_resume_baseline
+        qcurl_lc_backpressure_baseline
+        qcurl_lc_upload_pause_resume_baseline
         qcurl_lc_multi_get4_baseline
         qcurl_lc_ws_baseline
     )

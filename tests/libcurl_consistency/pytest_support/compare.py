@@ -115,6 +115,54 @@ def _validate_pause_resume_contract(pr: Dict, *, side: str, body_len: int) -> Li
     return diffs
 
 
+def _validate_backpressure_contract(bp: Dict, *, side: str) -> List[str]:
+    diffs: List[str] = []
+    if bp.get("schema") != "qcurl-lc/backpressure@v1":
+        diffs.append(f"{side} backpressure_contract.schema mismatch: {bp.get('schema')!r}")
+        return diffs
+
+    limit_bytes = bp.get("limit_bytes")
+    resume_bytes = bp.get("resume_bytes")
+    if not isinstance(limit_bytes, int) or limit_bytes <= 0:
+        diffs.append(f"{side} backpressure_contract.limit_bytes invalid: {limit_bytes!r}")
+        return diffs
+    if not isinstance(resume_bytes, int) or resume_bytes <= 0 or resume_bytes >= limit_bytes:
+        diffs.append(f"{side} backpressure_contract.resume_bytes invalid: {resume_bytes!r}")
+
+    event_seq = bp.get("event_seq")
+    if not isinstance(event_seq, list) or event_seq != ["bp_on", "bp_off"]:
+        diffs.append(f"{side} backpressure_contract.event_seq invalid: {event_seq!r}")
+
+    peak = bp.get("peak_buffered_bytes")
+    if isinstance(peak, int) and peak < 0:
+        diffs.append(f"{side} backpressure_contract.peak_buffered_bytes invalid: {peak!r}")
+    if isinstance(peak, int) and isinstance(limit_bytes, int) and peak > limit_bytes:
+        diffs.append(f"{side} backpressure_contract.peak_buffered_bytes exceeds limit: {peak} > {limit_bytes}")
+
+    return diffs
+
+
+def _validate_upload_pause_resume_contract(upr: Dict, *, side: str) -> List[str]:
+    diffs: List[str] = []
+    if upr.get("schema") != "qcurl-lc/upload-pause-resume@v1":
+        diffs.append(f"{side} upload_pause_resume.schema mismatch: {upr.get('schema')!r}")
+        return diffs
+
+    payload_size = upr.get("payload_size")
+    if not isinstance(payload_size, int) or payload_size <= 0:
+        diffs.append(f"{side} upload_pause_resume.payload_size invalid: {payload_size!r}")
+
+    zero_reads = upr.get("zero_read_count")
+    if not isinstance(zero_reads, int) or zero_reads <= 0:
+        diffs.append(f"{side} upload_pause_resume.zero_read_count invalid: {zero_reads!r}")
+
+    event_seq = upr.get("event_seq")
+    if not isinstance(event_seq, list) or event_seq != ["pause", "resume"]:
+        diffs.append(f"{side} upload_pause_resume.event_seq invalid: {event_seq!r}")
+
+    return diffs
+
+
 def _cmp_dict(lhs: Dict, rhs: Dict, fields: List[str]) -> List[str]:
     diffs = []
     for f in fields:
@@ -281,6 +329,36 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
             q_len = int((q_resp or {}).get("body_len") or 0)
             diffs.extend(_validate_pause_resume_contract(b_prs, side="baseline", body_len=b_len))
             diffs.extend(_validate_pause_resume_contract(q_prs, side="qcurl", body_len=q_len))
+
+    # 可选：下载 backpressure 一致性（P2 最小合同）
+    b_bp = base.get("backpressure_contract")
+    q_bp = qc.get("backpressure_contract")
+    if b_bp is not None or q_bp is not None:
+        if b_bp is None or q_bp is None:
+            diffs.append("backpressure_contract missing in one side")
+        else:
+            diffs.extend(_cmp_dict(
+                b_bp,
+                q_bp,
+                ["schema", "proto", "limit_bytes", "resume_bytes", "event_seq"],
+            ))
+            diffs.extend(_validate_backpressure_contract(b_bp, side="baseline"))
+            diffs.extend(_validate_backpressure_contract(q_bp, side="qcurl"))
+
+    # 可选：上传 READFUNC_PAUSE 自动恢复（P2 最小合同）
+    b_upr = base.get("upload_pause_resume")
+    q_upr = qc.get("upload_pause_resume")
+    if b_upr is not None or q_upr is not None:
+        if b_upr is None or q_upr is None:
+            diffs.append("upload_pause_resume missing in one side")
+        else:
+            diffs.extend(_cmp_dict(
+                b_upr,
+                q_upr,
+                ["schema", "proto", "payload_size", "event_seq"],
+            ))
+            diffs.extend(_validate_upload_pause_resume_contract(b_upr, side="baseline"))
+            diffs.extend(_validate_upload_pause_resume_contract(q_upr, side="qcurl"))
 
     return (len(diffs) == 0, diffs)
 

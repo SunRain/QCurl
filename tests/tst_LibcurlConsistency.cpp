@@ -42,6 +42,7 @@
 #include <QUrlQuery>
 #include <QVector>
 
+#include <algorithm>
 #include <cstring>
 #include <optional>
 
@@ -372,6 +373,8 @@ void TestLibcurlConsistency::testCase()
     const QString authUser = qEnvironmentVariable("QCURL_LC_AUTH_USER");
     const QString authPass = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
     const QString referer = qEnvironmentVariable("QCURL_LC_REFERER");
+    const int bpLimitBytes = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_LIMIT_BYTES"));
+    const int bpResumeBytes = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_RESUME_BYTES"));
 
     const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
     if (!outDir.isEmpty()) {
@@ -1821,6 +1824,239 @@ void TestLibcurlConsistency::testCase()
         root.insert(QStringLiteral("result"), result);
         root.insert(QStringLiteral("events"), events);
         QVERIFY(writeJsonObjectToFile(QStringLiteral("pause_resume_events.json"), root));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_backpressure_contract")) {
+        QVERIFY(!docname.isEmpty());
+        QVERIFY(httpsPort > 0);
+        QVERIFY(bpLimitBytes > 0);
+        QVERIFY(bpResumeBytes > 0);
+        QVERIFY(bpResumeBytes < bpLimitBytes);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("https://localhost:%1/%2").arg(httpsPort).arg(docname)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+        req.setHttpVersion(httpVersion);
+        req.setAsyncBodyBufferLimitBytes(bpLimitBytes);
+        req.setAsyncBodyBufferResumeBytes(bpResumeBytes);
+
+        QFile out(QStringLiteral("download_0.data"));
+        QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+
+        QCNetworkReply *reply = manager.sendGet(req);
+        QVERIFY(reply);
+
+        QJsonArray eventSeq;
+        bool sawOn = false;
+        bool sawOff = false;
+
+        QPointer<QCNetworkReply> safeReply(reply);
+
+        auto drainToFile = [&]() {
+            if (!safeReply) {
+                return;
+            }
+            while (true) {
+                const auto dataOpt = safeReply->readAll();
+                if (!dataOpt.has_value() || dataOpt->isEmpty()) {
+                    break;
+                }
+                const qint64 w = out.write(*dataOpt);
+                QVERIFY(w == dataOpt->size());
+            }
+        };
+
+        connect(reply, &QCNetworkReply::backpressureStateChanged, this,
+                [&](bool active, qint64 /*bufferedBytes*/, qint64 /*limitBytes*/) {
+                    if (active && !sawOn) {
+                        sawOn = true;
+                        eventSeq.append(QStringLiteral("bp_on"));
+                        QTimer::singleShot(0, this, drainToFile);
+                        return;
+                    }
+                    if (!active && sawOn && !sawOff) {
+                        sawOff = true;
+                        eventSeq.append(QStringLiteral("bp_off"));
+                        return;
+                    }
+                });
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            if (!sawOn) {
+                return;
+            }
+            drainToFile();
+        });
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        connect(reply, &QCNetworkReply::finished, this, [&]() {
+            drainToFile();
+            loop.quit();
+        });
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for backpressure contract download");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QVERIFY(sawOn);
+        QVERIFY(sawOff);
+
+        out.close();
+
+        QJsonObject root;
+        root.insert(QStringLiteral("schema"), QStringLiteral("qcurl-lc/backpressure@v1"));
+        root.insert(QStringLiteral("proto"), proto);
+        root.insert(QStringLiteral("url"), url.toString());
+        root.insert(QStringLiteral("limit_bytes"), bpLimitBytes);
+        root.insert(QStringLiteral("resume_bytes"), bpResumeBytes);
+        root.insert(QStringLiteral("peak_buffered_bytes"),
+                    static_cast<qint64>(reply->backpressureBufferedBytesPeak()));
+        root.insert(QStringLiteral("event_seq"), eventSeq);
+        QJsonObject result;
+        result.insert(QStringLiteral("qcurl_error"), static_cast<int>(reply->error()));
+        root.insert(QStringLiteral("result"), result);
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("backpressure_events.json"), root));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_upload_readfunc_pause_resume")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(uploadSize > 0);
+
+        class ChunkedUploadDevice final : public QIODevice
+        {
+        public:
+            explicit ChunkedUploadDevice(QObject *parent = nullptr)
+                : QIODevice(parent)
+            {}
+
+            void appendChunk(const QByteArray &chunk)
+            {
+                if (chunk.isEmpty()) {
+                    return;
+                }
+                m_buffer.append(chunk);
+                emit readyRead();
+            }
+
+            void markFinished()
+            {
+                m_finished = true;
+                emit readyRead();
+            }
+
+            [[nodiscard]] int zeroReadCount() const { return m_zeroReads; }
+
+            bool isSequential() const override { return true; }
+
+            qint64 bytesAvailable() const override
+            {
+                return static_cast<qint64>(m_buffer.size()) + QIODevice::bytesAvailable();
+            }
+
+        protected:
+            qint64 readData(char *data, qint64 maxlen) override
+            {
+                if (maxlen <= 0) {
+                    return 0;
+                }
+                if (m_buffer.isEmpty()) {
+                    if (!m_finished) {
+                        ++m_zeroReads;
+                    }
+                    return 0;
+                }
+                const qint64 n = std::min<qint64>(maxlen, m_buffer.size());
+                std::memcpy(data, m_buffer.constData(), static_cast<size_t>(n));
+                m_buffer.remove(0, static_cast<int>(n));
+                return n;
+            }
+
+            qint64 writeData(const char *, qint64) override { return -1; }
+
+            bool atEnd() const override { return m_finished && m_buffer.isEmpty(); }
+
+        private:
+            QByteArray m_buffer;
+            bool m_finished = false;
+            int m_zeroReads = 0;
+        };
+
+        const QByteArray payload(uploadSize, 'u');
+
+        ChunkedUploadDevice device;
+        QVERIFY(device.open(QIODevice::ReadOnly));
+
+        const QByteArray chunk1 = payload.left(4096);
+        const QByteArray chunk2 = payload.mid(4096, 4096);
+        const QByteArray chunk3 = payload.mid(8192);
+
+        device.appendChunk(chunk1);
+        QTimer::singleShot(200, this, [&]() { device.appendChunk(chunk2); });
+        QTimer::singleShot(400, this, [&]() {
+            device.appendChunk(chunk3);
+            device.markFinished();
+        });
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/method").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setUploadDevice(&device, static_cast<qint64>(uploadSize));
+
+        auto *reply = manager.sendPut(req, QByteArray());
+        QVERIFY(reply);
+
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+
+        QVERIFY(finishedSpy.wait(15000));
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        for (const auto &args : stateSpy) {
+            QVERIFY(!args.isEmpty());
+            const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+            QVERIFY(st != ReplyState::Paused);
+        }
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QCOMPARE(dataOpt.value(), payload);
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), dataOpt.value(),
+                               QIODevice::WriteOnly | QIODevice::Truncate));
+
+        QJsonObject root;
+        root.insert(QStringLiteral("schema"), QStringLiteral("qcurl-lc/upload-pause-resume@v1"));
+        root.insert(QStringLiteral("proto"), proto);
+        root.insert(QStringLiteral("url"), url.toString());
+        root.insert(QStringLiteral("payload_size"), uploadSize);
+        root.insert(QStringLiteral("zero_read_count"), device.zeroReadCount());
+        QJsonArray seq;
+        if (device.zeroReadCount() > 0) {
+            seq.append(QStringLiteral("pause"));
+            seq.append(QStringLiteral("resume"));
+        }
+        root.insert(QStringLiteral("event_seq"), seq);
+        QJsonObject result;
+        result.insert(QStringLiteral("qcurl_error"), static_cast<int>(reply->error()));
+        root.insert(QStringLiteral("result"), result);
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("upload_pause_resume.json"), root));
+
+        QVERIFY(device.zeroReadCount() > 0);
 
         reply->deleteLater();
         return;

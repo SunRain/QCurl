@@ -213,6 +213,12 @@
   - 覆盖：相同 cookiefile 输入下，服务端看到的 `Cookie:` 值一致（做稳定归一化）。
 - **固定 HTTP 错误码一致性（404/401/503）**
   - 覆盖：状态码/响应 body 字节一致，并输出统一的错误归一化字段（`kind/http_status`）。
+- **下载 backpressure 最小合同一致性（异步）**
+  - 覆盖：bp_on→bp_off 事件序列 + 响应 body 字节一致（len/sha256）。
+  - 对应用例：`tests/libcurl_consistency/test_p2_backpressure_contract.py`（suite `p2`/`all`）。
+- **上传 READFUNC_PAUSE 自动恢复最小合同**
+  - 覆盖：上传源短暂空窗（read=0, 非 EOF）不提前失败；最终响应 body 字节一致；`zero_read_count>0`。
+  - 对应用例：`tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py`（suite `p2`/`all`）。
 
 ---
 
