@@ -1,10 +1,11 @@
-#include <QCoreApplication>
-#include <QTextStream>
-#include <QDebug>
-#include <QTimer>
-#include <QJsonObject>
-#include <QJsonArray>
 #include "ApiClient.h"
+
+#include <QCoreApplication>
+#include <QDebug>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QTextStream>
+#include <QTimer>
 
 class ApiClientDemo : public QObject
 {
@@ -26,13 +27,16 @@ private slots:
             qDebug() << "[请求开始]" << endpoint;
         });
 
-        connect(m_client, &ApiClient::requestCompleted, this, [](const QString &endpoint, bool success) {
-            if (success) {
-                qDebug() << "[✓ 请求成功]" << endpoint;
-            } else {
-                qDebug() << "[✗ 请求失败]" << endpoint;
-            }
-        });
+        connect(m_client,
+                &ApiClient::requestCompleted,
+                this,
+                [](const QString &endpoint, bool success) {
+                    if (success) {
+                        qDebug() << "[✓ 请求成功]" << endpoint;
+                    } else {
+                        qDebug() << "[✗ 请求失败]" << endpoint;
+                    }
+                });
     }
 
     void showMenu()
@@ -102,7 +106,8 @@ private slots:
     {
         qDebug() << "\n[GET /posts] 获取所有文章...";
 
-        m_client->get("posts",
+        m_client->get(
+            "posts",
             // Success callback
             [this](const QJsonDocument &response) {
                 QJsonArray posts = response.array();
@@ -127,15 +132,15 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void getPost()
     {
         qDebug() << "\n[GET /posts/1] 获取单个文章...";
 
-        m_client->get("posts/1",
+        m_client->get(
+            "posts/1",
             [this](const QJsonDocument &response) {
                 QJsonObject post = response.object();
                 qDebug() << "\n文章详情:";
@@ -149,8 +154,7 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void createPost()
@@ -158,11 +162,13 @@ private slots:
         qDebug() << "\n[POST /posts] 创建新文章...";
 
         QJsonObject data;
-        data["title"] = "QCurl Test Post";
-        data["body"] = "This is a test post created by QCurl ApiClient.";
+        data["title"]  = "QCurl Test Post";
+        data["body"]   = "This is a test post created by QCurl ApiClient.";
         data["userId"] = 1;
 
-        m_client->post("posts", data,
+        m_client->post(
+            "posts",
+            data,
             [this](const QJsonDocument &response) {
                 QJsonObject post = response.object();
                 qDebug() << "\n✓ 文章创建成功:";
@@ -175,8 +181,7 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void updatePost()
@@ -184,12 +189,14 @@ private slots:
         qDebug() << "\n[PUT /posts/1] 更新文章...";
 
         QJsonObject data;
-        data["id"] = 1;
-        data["title"] = "Updated Title";
-        data["body"] = "This post has been updated by QCurl ApiClient.";
+        data["id"]     = 1;
+        data["title"]  = "Updated Title";
+        data["body"]   = "This post has been updated by QCurl ApiClient.";
         data["userId"] = 1;
 
-        m_client->put("posts/1", data,
+        m_client->put(
+            "posts/1",
+            data,
             [this](const QJsonDocument &response) {
                 QJsonObject post = response.object();
                 qDebug() << "\n✓ 文章更新成功:";
@@ -202,15 +209,15 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void deletePost()
     {
         qDebug() << "\n[DELETE /posts/1] 删除文章...";
 
-        m_client->del("posts/1",
+        m_client->del(
+            "posts/1",
             [this](const QJsonDocument &response) {
                 Q_UNUSED(response);
                 qDebug() << "\n✓ 文章删除成功";
@@ -220,15 +227,15 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void getAllUsers()
     {
         qDebug() << "\n[GET /users] 获取所有用户...";
 
-        m_client->get("users",
+        m_client->get(
+            "users",
             [this](const QJsonDocument &response) {
                 QJsonArray users = response.array();
                 qDebug() << "\n收到" << users.size() << "个用户:";
@@ -246,8 +253,7 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void customGet()
@@ -267,7 +273,8 @@ private slots:
 
         qDebug() << "\n[GET /" + endpoint + "]";
 
-        m_client->get(endpoint,
+        m_client->get(
+            endpoint,
             [this](const QJsonDocument &response) {
                 qDebug() << "\n响应:";
                 qDebug() << response.toJson(QJsonDocument::Indented);
@@ -277,8 +284,7 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void customPost()
@@ -311,7 +317,9 @@ private slots:
 
         qDebug() << "\n[POST /" + endpoint + "]";
 
-        m_client->post(endpoint, doc.object(),
+        m_client->post(
+            endpoint,
+            doc.object(),
             [this](const QJsonDocument &response) {
                 qDebug() << "\n响应:";
                 qDebug() << response.toJson(QJsonDocument::Indented);
@@ -321,8 +329,7 @@ private slots:
             [this](int code, const QString &error) {
                 qDebug() << "错误:" << code << error;
                 showMenu();
-            }
-        );
+            });
     }
 
     void setBearerToken()

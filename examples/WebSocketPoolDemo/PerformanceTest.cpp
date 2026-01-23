@@ -1,22 +1,21 @@
 #include "PerformanceTest.h"
-#include "QCWebSocketPool.h"
+
 #include "QCWebSocket.h"
+#include "QCWebSocketPool.h"
+
 #include <QDebug>
-#include <QThread>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QThread>
 #include <QTimer>
 
 using namespace QCurl;
 
 PerformanceTest::PerformanceTest(QObject *parent)
     : QObject(parent)
-{
-}
+{}
 
-PerformanceTest::~PerformanceTest()
-{
-}
+PerformanceTest::~PerformanceTest() {}
 
 bool PerformanceTest::waitForConnection(QCWebSocket *socket, int timeout)
 {
@@ -49,17 +48,20 @@ void PerformanceTest::printSeparator(const QString &title)
     qDebug() << "==========================================";
 }
 
-void PerformanceTest::printPerformanceResult(const QString &metric, qint64 without, qint64 with, const QString &unit)
+void PerformanceTest::printPerformanceResult(const QString &metric,
+                                             qint64 without,
+                                             qint64 with,
+                                             const QString &unit)
 {
     qDebug() << "";
     qDebug() << "📊 性能对比 -" << metric;
     qDebug() << "   ├─ 无连接池:" << without << unit;
     qDebug() << "   ├─ 有连接池:" << with << unit;
-    
+
     if (with > 0 && without > 0) {
-        double improvement = ((double)(without - with) / without) * 100;
-        double speedup = (double)without / with;
-        
+        double improvement = ((double) (without - with) / without) * 100;
+        double speedup     = (double) without / with;
+
         if (improvement > 0) {
             qDebug() << "   ├─ 性能提升:" << QString::number(improvement, 'f', 1) << "%";
             qDebug() << "   └─ 加速比:" << QString::number(speedup, 'f', 1) << "x";
@@ -84,7 +86,7 @@ void PerformanceTest::testConnectionTime()
     // ========== 无连接池（每次新建连接）==========
     qDebug() << "1. 测试无连接池（每次新建连接）...";
     qint64 timeWithoutPool = 0;
-    int successWithout = 0;
+    int successWithout     = 0;
 
     for (int i = 0; i < iterations; ++i) {
         QElapsedTimer timer;
@@ -97,11 +99,11 @@ void PerformanceTest::testConnectionTime()
             qint64 elapsed = timer.elapsed();
             timeWithoutPool += elapsed;
             successWithout++;
-            qDebug() << "   第" << (i+1) << "次:" << elapsed << "ms";
+            qDebug() << "   第" << (i + 1) << "次:" << elapsed << "ms";
             socket.close();
-            QThread::msleep(500);  // 等待关闭
+            QThread::msleep(500); // 等待关闭
         } else {
-            qWarning() << "   第" << (i+1) << "次: 连接超时";
+            qWarning() << "   第" << (i + 1) << "次: 连接超时";
         }
     }
 
@@ -116,16 +118,16 @@ void PerformanceTest::testConnectionTime()
     // ========== 有连接池（连接复用）==========
     qDebug() << "";
     qDebug() << "2. 测试有连接池（连接复用）...";
-    
+
     QCWebSocketPool pool;
-    
+
     // 预热 1 个连接
     qDebug() << "   预热连接中...";
     pool.preWarm(url, 1);
     QThread::sleep(2);
 
     qint64 timeWithPool = 0;
-    int successWith = 0;
+    int successWith     = 0;
 
     for (int i = 0; i < iterations; ++i) {
         QElapsedTimer timer;
@@ -136,12 +138,13 @@ void PerformanceTest::testConnectionTime()
             qint64 elapsed = timer.elapsed();
             timeWithPool += elapsed;
             successWith++;
-            qDebug() << "   第" << (i+1) << "次:" << elapsed << "ms（复用）";
+            qDebug() << "   第" << (i + 1) << "次:" << elapsed << "ms（复用）";
             pool.release(socket);
             QThread::msleep(100);
         } else {
-            qWarning() << "   第" << (i+1) << "次: 获取连接失败";
-            if (socket) pool.release(socket);
+            qWarning() << "   第" << (i + 1) << "次: 获取连接失败";
+            if (socket)
+                pool.release(socket);
         }
     }
 
@@ -165,7 +168,7 @@ void PerformanceTest::testThroughput()
     printSeparator("性能测试 2：高频短消息吞吐量对比");
 
     const QUrl url("wss://echo.websocket.org");
-    const int messageCount = 10;  // 减少到 10 次以节省时间
+    const int messageCount = 10; // 减少到 10 次以节省时间
 
     qDebug() << "测试配置:";
     qDebug() << "   - 测试 URL:" << url.toString();
@@ -188,7 +191,7 @@ void PerformanceTest::testThroughput()
             socket.close();
             QThread::msleep(200);
         } else {
-            qWarning() << "   第" << (i+1) << "条消息发送失败";
+            qWarning() << "   第" << (i + 1) << "条消息发送失败";
         }
     }
 
@@ -224,8 +227,9 @@ void PerformanceTest::testThroughput()
             pool.release(socket);
             QThread::msleep(50);
         } else {
-            qWarning() << "   第" << (i+1) << "条消息发送失败";
-            if (socket) pool.release(socket);
+            qWarning() << "   第" << (i + 1) << "条消息发送失败";
+            if (socket)
+                pool.release(socket);
         }
     }
 
@@ -239,8 +243,8 @@ void PerformanceTest::testThroughput()
     if (time2 > 0 && time1 > 0) {
         qDebug() << "";
         qDebug() << "📈 吞吐量对比:";
-        double throughput1 = (double)sentWithout * 1000 / time1;
-        double throughput2 = (double)sentWith * 1000 / time2;
+        double throughput1 = (double) sentWithout * 1000 / time1;
+        double throughput2 = (double) sentWith * 1000 / time2;
         qDebug() << "   - 无连接池:" << QString::number(throughput1, 'f', 2) << "条/秒";
         qDebug() << "   - 有连接池:" << QString::number(throughput2, 'f', 2) << "条/秒";
     }

@@ -16,16 +16,16 @@
  *
  */
 
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkMiddleware.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QCoreApplication>
 #include <QDebug>
-#include <QUrl>
 #include <QEventLoop>
 #include <QTimer>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkMiddleware.h"
+#include <QUrl>
 
 using namespace QCurl;
 
@@ -35,20 +35,19 @@ using namespace QCurl;
 class TimingMiddleware : public QCNetworkMiddleware
 {
 public:
-    void onRequestPreSend(QCNetworkRequest &request) override {
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
         qDebug() << "[Timing] 请求开始:" << request.url().toString();
         startTime = QDateTime::currentMSecsSinceEpoch();
     }
 
-    void onResponseReceived(QCNetworkReply *reply) override {
+    void onResponseReceived(QCNetworkReply *reply) override
+    {
         qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - startTime;
-        qDebug() << "[Timing] 请求完成:" << reply->url().toString()
-                 << "耗时:" << elapsed << "ms";
+        qDebug() << "[Timing] 请求完成:" << reply->url().toString() << "耗时:" << elapsed << "ms";
     }
 
-    QString name() const override {
-        return "TimingMiddleware";
-    }
+    QString name() const override { return "TimingMiddleware"; }
 
 private:
     qint64 startTime = 0;
@@ -61,15 +60,17 @@ class StatisticsMiddleware : public QCNetworkMiddleware
 {
 public:
     int totalRequests = 0;
-    int successCount = 0;
-    int errorCount = 0;
+    int successCount  = 0;
+    int errorCount    = 0;
 
-    void onRequestPreSend(QCNetworkRequest &request) override {
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
         Q_UNUSED(request);
         totalRequests++;
     }
 
-    void onResponseReceived(QCNetworkReply *reply) override {
+    void onResponseReceived(QCNetworkReply *reply) override
+    {
         if (reply->error() == NetworkError::NoError) {
             successCount++;
         } else {
@@ -77,17 +78,17 @@ public:
         }
     }
 
-    QString name() const override {
-        return "StatisticsMiddleware";
-    }
+    QString name() const override { return "StatisticsMiddleware"; }
 
-    void printStats() {
+    void printStats()
+    {
         qDebug() << "\n=== 请求统计 ===";
         qDebug() << "总请求数:" << totalRequests;
         qDebug() << "成功:" << successCount;
         qDebug() << "失败:" << errorCount;
         if (totalRequests > 0) {
-            qDebug() << "成功率:" << QString::number((double)successCount / totalRequests * 100, 'f', 2) << "%";
+            qDebug() << "成功率:"
+                     << QString::number((double) successCount / totalRequests * 100, 'f', 2) << "%";
         }
     }
 };
@@ -104,9 +105,9 @@ int main(int argc, char *argv[])
 
     qDebug() << ">>> 示例 1: 使用内置中间件";
 
-    auto *manager1 = new QCNetworkAccessManager();
+    auto *manager1          = new QCNetworkAccessManager();
     auto *loggingMiddleware = new QCLoggingMiddleware();
-    auto *errorMiddleware = new QCErrorHandlingMiddleware();
+    auto *errorMiddleware   = new QCErrorHandlingMiddleware();
 
     manager1->addMiddleware(loggingMiddleware);
     manager1->addMiddleware(errorMiddleware);
@@ -123,8 +124,8 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 2: 中间件链式执行";
 
     auto *manager2 = new QCNetworkAccessManager();
-    auto *timing = new TimingMiddleware();
-    auto *logging = new QCLoggingMiddleware();
+    auto *timing   = new TimingMiddleware();
+    auto *logging  = new QCLoggingMiddleware();
 
     manager2->addMiddleware(timing);
     manager2->addMiddleware(logging);
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 3: 自定义统计中间件";
 
     auto *manager3 = new QCNetworkAccessManager();
-    auto *stats = new StatisticsMiddleware();
+    auto *stats    = new StatisticsMiddleware();
 
     manager3->addMiddleware(stats);
 
@@ -165,8 +166,8 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 4: 中间件管理";
 
     auto *manager4 = new QCNetworkAccessManager();
-    auto *m1 = new QCLoggingMiddleware();
-    auto *m2 = new QCErrorHandlingMiddleware();
+    auto *m1       = new QCLoggingMiddleware();
+    auto *m2       = new QCErrorHandlingMiddleware();
 
     manager4->addMiddleware(m1);
     manager4->addMiddleware(m2);
@@ -184,9 +185,9 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 5: 真实网络请求 + 中间件";
 
-    auto *manager5 = new QCNetworkAccessManager();
+    auto *manager5  = new QCNetworkAccessManager();
     auto *timingMw5 = new TimingMiddleware();
-    auto *statsMw5 = new StatisticsMiddleware();
+    auto *statsMw5  = new StatisticsMiddleware();
 
     manager5->addMiddleware(timingMw5);
     manager5->addMiddleware(statsMw5);
@@ -201,7 +202,7 @@ int main(int argc, char *argv[])
 
     QEventLoop loop;
     int pendingRequests = requests.size();
-    QList<QCNetworkReply*> activeReplies;
+    QList<QCNetworkReply *> activeReplies;
 
     for (const QCNetworkRequest &req : requests) {
         auto *r = manager5->sendGet(req);

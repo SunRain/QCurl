@@ -15,15 +15,15 @@
  *
  */
 
-#include <QCoreApplication>
-#include <QDebug>
-#include <QTimer>
-#include <QEventLoop>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCancelToken.h"
-#include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
+#include <QCoreApplication>
+#include <QDebug>
+#include <QEventLoop>
+#include <QTimer>
 
 using namespace QCurl;
 
@@ -40,9 +40,9 @@ int main(int argc, char *argv[])
     qDebug() << ">>> 示例 1: 创建5个延迟请求，2秒后取消所有";
 
     auto *manager = new QCNetworkAccessManager();
-    auto *token = new QCNetworkCancelToken();
+    auto *token   = new QCNetworkCancelToken();
 
-    QList<QCNetworkReply*> replies;
+    QList<QCNetworkReply *> replies;
 
     // 创建5个延迟请求
     for (int i = 1; i <= 5; ++i) {
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
         qDebug() << "\n>>> 示例 2: 自动超时取消（3秒后自动取消）";
 
         auto *token2 = new QCNetworkCancelToken();
-        token2->setAutoTimeout(3000);  // 3秒后自动取消
+        token2->setAutoTimeout(3000); // 3秒后自动取消
 
         // 监听取消信号
         QObject::connect(token2, &QCNetworkCancelToken::cancelled, []() {

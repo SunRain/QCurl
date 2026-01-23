@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QCoreApplication>
-#include <QTimer>
-#include <QElapsedTimer>
-#include <QDebug>
-#include <QDateTime>
-#include <vector>
-#include <atomic>
-
 #include "../../src/QCNetworkAccessManager.h"
-#include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkReply.h"
-#include "../../src/QCNetworkRequestScheduler.h"
+#include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkRequestPriority.h"
+#include "../../src/QCNetworkRequestScheduler.h"
+
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QTimer>
+
+#include <atomic>
+#include <vector>
 
 using namespace QCurl;
 
@@ -82,18 +83,18 @@ private slots:
 
     void printProgress()
     {
-        int completed = successCount + failureCount;
-        double progress = (double)completed / totalRequests * 100.0;
-        
+        int completed   = successCount + failureCount;
+        double progress = (double) completed / totalRequests * 100.0;
+
         qInfo() << QString("[%1] 进度: %2% (%3/%4) | 成功: %5 | 失败: %6 | 等待: %7 | 运行: %8")
-                   .arg(QTime::currentTime().toString("HH:mm:ss"))
-                   .arg(progress, 0, 'f', 1)
-                   .arg(completed)
-                   .arg(totalRequests)
-                   .arg(successCount.load())
-                   .arg(failureCount.load())
-                   .arg(scheduler->statistics().pendingRequests)
-                   .arg(scheduler->statistics().runningRequests);
+                       .arg(QTime::currentTime().toString("HH:mm:ss"))
+                       .arg(progress, 0, 'f', 1)
+                       .arg(completed)
+                       .arg(totalRequests)
+                       .arg(successCount.load())
+                       .arg(failureCount.load())
+                       .arg(scheduler->statistics().pendingRequests)
+                       .arg(scheduler->statistics().runningRequests);
 
         // 检查是否完成
         if (completed >= totalRequests) {
@@ -104,7 +105,7 @@ private slots:
 
     void printFinalResults()
     {
-        qint64 elapsed = timer.elapsed();
+        qint64 elapsed    = timer.elapsed();
         double elapsedSec = elapsed / 1000.0;
 
         qInfo() << "\n========================================";
@@ -115,11 +116,11 @@ private slots:
         qInfo() << "📊 基本统计：";
         qInfo() << QString("  总请求数: %1").arg(totalRequests);
         qInfo() << QString("  成功: %1 (%2%)")
-                   .arg(successCount.load())
-                   .arg((double)successCount / totalRequests * 100.0, 0, 'f', 2);
+                       .arg(successCount.load())
+                       .arg((double) successCount / totalRequests * 100.0, 0, 'f', 2);
         qInfo() << QString("  失败: %1 (%2%)")
-                   .arg(failureCount.load())
-                   .arg((double)failureCount / totalRequests * 100.0, 0, 'f', 2);
+                       .arg(failureCount.load())
+                       .arg((double) failureCount / totalRequests * 100.0, 0, 'f', 2);
         qInfo() << QString("  总耗时: %1 秒").arg(elapsedSec, 0, 'f', 2);
 
         // 性能指标
@@ -138,8 +139,8 @@ private slots:
 
         // 稳定性评估
         qInfo() << "\n✅ 稳定性评估：";
-        double successRate = (double)successCount / totalRequests * 100.0;
-        
+        double successRate = (double) successCount / totalRequests * 100.0;
+
         if (successRate >= 95.0) {
             qInfo() << "  ⭐⭐⭐⭐⭐ 优秀 - 成功率 ≥ 95%";
         } else if (successRate >= 90.0) {
@@ -185,17 +186,18 @@ private:
         manager->enableRequestScheduler(true);
 
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests = 50;  // 高并发
-        config.maxRequestsPerHost = 20;
-        config.maxBandwidthBytesPerSec = 10 * 1024 * 1024;  // 10 MB/s
-        config.enableThrottling = true;
+        config.maxConcurrentRequests   = 50; // 高并发
+        config.maxRequestsPerHost      = 20;
+        config.maxBandwidthBytesPerSec = 10 * 1024 * 1024; // 10 MB/s
+        config.enableThrottling        = true;
 
         scheduler->setConfig(config);
 
         qInfo() << "✓ 调度器已配置";
         qInfo() << "  - maxConcurrentRequests:" << config.maxConcurrentRequests;
         qInfo() << "  - maxRequestsPerHost:" << config.maxRequestsPerHost;
-        qInfo() << "  - maxBandwidthBytesPerSec:" << config.maxBandwidthBytesPerSec / 1024 / 1024 << "MB/s\n";
+        qInfo() << "  - maxBandwidthBytesPerSec:" << config.maxBandwidthBytesPerSec / 1024 / 1024
+                << "MB/s\n";
     }
 
     void createStressRequest(int index)
@@ -203,13 +205,13 @@ private:
         // 根据索引分配优先级
         QCNetworkRequestPriority priority;
         if (index % 10 == 0) {
-            priority = QCNetworkRequestPriority::VeryHigh;  // 10% 极高优先级
+            priority = QCNetworkRequestPriority::VeryHigh; // 10% 极高优先级
         } else if (index % 5 == 0) {
-            priority = QCNetworkRequestPriority::High;  // 20% 高优先级
+            priority = QCNetworkRequestPriority::High; // 20% 高优先级
         } else if (index % 3 == 0) {
-            priority = QCNetworkRequestPriority::Low;  // 33% 低优先级
+            priority = QCNetworkRequestPriority::Low; // 33% 低优先级
         } else {
-            priority = QCNetworkRequestPriority::Normal;  // 其余正常优先级
+            priority = QCNetworkRequestPriority::Normal; // 其余正常优先级
         }
 
         // 创建请求（使用无效 URL 快速失败）
@@ -226,12 +228,12 @@ private:
                 successCount++;
             } else {
                 failureCount++;
-                
+
                 // 记录第一个失败的详细信息
                 if (failureCount == 1) {
                     qWarning() << QString("第一个失败: #%1, 错误: %2")
-                                  .arg(index)
-                                  .arg(reply->errorString());
+                                      .arg(index)
+                                      .arg(reply->errorString());
                 }
             }
 

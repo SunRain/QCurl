@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QCoreApplication>
-#include <QTimer>
-#include <QDebug>
-#include <QDateTime>
-
 #include "../../src/QCNetworkAccessManager.h"
-#include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkReply.h"
-#include "../../src/QCNetworkRequestScheduler.h"
+#include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkRequestPriority.h"
+#include "../../src/QCNetworkRequestScheduler.h"
+
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDebug>
+#include <QTimer>
 
 using namespace QCurl;
 
@@ -72,10 +72,14 @@ private slots:
         createRequest("https://httpbin.org/delay/1", QCNetworkRequestPriority::Low, "低优先级");
         createRequest("https://httpbin.org/delay/1", QCNetworkRequestPriority::Normal, "普通优先级");
         createRequest("https://httpbin.org/delay/1", QCNetworkRequestPriority::High, "高优先级");
-        createRequest("https://httpbin.org/delay/1", QCNetworkRequestPriority::VeryHigh, "极高优先级");
-        
+        createRequest("https://httpbin.org/delay/1",
+                      QCNetworkRequestPriority::VeryHigh,
+                      "极高优先级");
+
         // Critical 优先级应该跳过队列立即执行
-        createRequest("https://httpbin.org/delay/1", QCNetworkRequestPriority::Critical, "紧急优先级（立即执行）");
+        createRequest("https://httpbin.org/delay/1",
+                      QCNetworkRequestPriority::Critical,
+                      "紧急优先级（立即执行）");
 
         qInfo() << "提示：观察输出，Critical 会立即执行，其他按优先级从高到低执行\n";
     }
@@ -88,15 +92,15 @@ private slots:
 
         // 修改配置
         QCNetworkRequestScheduler::Config config = scheduler->config();
-        config.maxConcurrentRequests = 3;
-        config.maxRequestsPerHost = 2;
+        config.maxConcurrentRequests             = 3;
+        config.maxRequestsPerHost                = 2;
         scheduler->setConfig(config);
 
         // 创建多个请求到同一主机
         for (int i = 0; i < 5; ++i) {
-            createRequest("https://httpbin.org/get", 
-                         QCNetworkRequestPriority::Normal, 
-                         QString("并发请求 #%1").arg(i+1));
+            createRequest("https://httpbin.org/get",
+                          QCNetworkRequestPriority::Normal,
+                          QString("并发请求 #%1").arg(i + 1));
         }
 
         printStatistics();
@@ -109,8 +113,8 @@ private slots:
 
         QCNetworkRequest request(QUrl("https://httpbin.org/delay/2"));
         request.setPriority(QCNetworkRequestPriority::High);
-        
-        auto *reply = manager->scheduleGet(request);
+
+        auto *reply     = manager->scheduleGet(request);
         pauseResumeDemo = reply;
 
         connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
@@ -164,10 +168,10 @@ private:
 
         // 配置调度器
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests = 3;
-        config.maxRequestsPerHost = 2;
-        config.maxBandwidthBytesPerSec = 0;  // 无带宽限制
-        config.enableThrottling = false;
+        config.maxConcurrentRequests   = 3;
+        config.maxRequestsPerHost      = 2;
+        config.maxBandwidthBytesPerSec = 0; // 无带宽限制
+        config.enableThrottling        = false;
 
         scheduler->setConfig(config);
 
@@ -179,34 +183,39 @@ private:
     void setupSignals()
     {
         // 请求加入队列
-        connect(scheduler, &QCNetworkRequestScheduler::requestQueued,
-                this, [](QCNetworkReply *reply, QCNetworkRequestPriority priority) {
-            Q_UNUSED(reply);
-            qInfo() << QString("📥 [%1] 请求加入队列").arg(toString(priority));
-        });
+        connect(scheduler,
+                &QCNetworkRequestScheduler::requestQueued,
+                this,
+                [](QCNetworkReply *reply, QCNetworkRequestPriority priority) {
+                    Q_UNUSED(reply);
+                    qInfo() << QString("📥 [%1] 请求加入队列").arg(toString(priority));
+                });
 
         // 请求开始执行
-        connect(scheduler, &QCNetworkRequestScheduler::requestStarted,
-                this, [](QCNetworkReply *reply) {
-            qInfo() << QString("🚀 请求开始执行: %1").arg(reply->url().toString());
-        });
+        connect(scheduler,
+                &QCNetworkRequestScheduler::requestStarted,
+                this,
+                [](QCNetworkReply *reply) {
+                    qInfo() << QString("🚀 请求开始执行: %1").arg(reply->url().toString());
+                });
 
         // 请求完成
-        connect(scheduler, &QCNetworkRequestScheduler::requestFinished,
-                this, [](QCNetworkReply *reply) {
-            qInfo() << QString("✅ 请求完成: %1").arg(reply->url().toString());
-        });
+        connect(scheduler,
+                &QCNetworkRequestScheduler::requestFinished,
+                this,
+                [](QCNetworkReply *reply) {
+                    qInfo() << QString("✅ 请求完成: %1").arg(reply->url().toString());
+                });
 
         // 队列已清空
-        connect(scheduler, &QCNetworkRequestScheduler::queueEmpty,
-                this, []() {
+        connect(scheduler, &QCNetworkRequestScheduler::queueEmpty, this, []() {
             qInfo() << "ℹ️  队列已清空";
         });
     }
 
-    QCNetworkReply* createRequest(const QString &url, 
-                                   QCNetworkRequestPriority priority,
-                                   const QString &description)
+    QCNetworkReply *createRequest(const QString &url,
+                                  QCNetworkRequestPriority priority,
+                                  const QString &description)
     {
         QUrl requestUrl(url);
         QCNetworkRequest request(requestUrl);
@@ -221,9 +230,7 @@ private:
             if (reply->error() == NetworkError::NoError) {
                 qInfo() << QString("✓ [%1] 完成").arg(description);
             } else {
-                qWarning() << QString("✗ [%1] 失败: %2")
-                              .arg(description)
-                              .arg(reply->errorString());
+                qWarning() << QString("✗ [%1] 失败: %2").arg(description).arg(reply->errorString());
             }
             reply->deleteLater();
         });

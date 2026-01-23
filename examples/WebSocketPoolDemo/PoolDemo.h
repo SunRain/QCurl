@@ -7,7 +7,7 @@
 namespace QCurl {
 class QCWebSocketPool;
 class QCWebSocket;
-}
+} // namespace QCurl
 
 /**
  * @brief WebSocket 连接池演示类

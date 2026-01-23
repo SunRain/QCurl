@@ -1,8 +1,9 @@
-#include <QCoreApplication>
-#include <QTextStream>
-#include <QDebug>
-#include <QTimer>
 #include "DownloadManager.h"
+
+#include <QCoreApplication>
+#include <QDebug>
+#include <QTextStream>
+#include <QTimer>
 
 // 工具函数：格式化文件大小
 QString formatSize(qint64 bytes)
@@ -32,20 +33,20 @@ QString formatSpeed(double bytesPerSecond)
 QString stateToString(DownloadTask::State state)
 {
     switch (state) {
-    case DownloadTask::State::Idle:
-        return "空闲";
-    case DownloadTask::State::Downloading:
-        return "下载中";
-    case DownloadTask::State::Paused:
-        return "已暂停";
-    case DownloadTask::State::Completed:
-        return "已完成";
-    case DownloadTask::State::Failed:
-        return "失败";
-    case DownloadTask::State::Cancelled:
-        return "已取消";
-    default:
-        return "未知";
+        case DownloadTask::State::Idle:
+            return "空闲";
+        case DownloadTask::State::Downloading:
+            return "下载中";
+        case DownloadTask::State::Paused:
+            return "已暂停";
+        case DownloadTask::State::Completed:
+            return "已完成";
+        case DownloadTask::State::Failed:
+            return "失败";
+        case DownloadTask::State::Cancelled:
+            return "已取消";
+        default:
+            return "未知";
     }
 }
 
@@ -181,21 +182,23 @@ private slots:
         DownloadTask *task = m_manager->addDownload(QUrl(url), savePath);
 
         // 连接进度信号
-        connect(task, &DownloadTask::progressChanged, this,
+        connect(task,
+                &DownloadTask::progressChanged,
+                this,
                 [task](qint64 received, qint64 total, double percentage) {
-            Q_UNUSED(received);
-            Q_UNUSED(total);
-            static int lastPercentage = -1;
-            int currentPercentage = static_cast<int>(percentage);
+                    Q_UNUSED(received);
+                    Q_UNUSED(total);
+                    static int lastPercentage = -1;
+                    int currentPercentage     = static_cast<int>(percentage);
 
-            // 每5%输出一次进度
-            if (currentPercentage != lastPercentage && currentPercentage % 5 == 0) {
-                qDebug() << "[进度]" << task->url().fileName()
-                         << QString::number(currentPercentage, 'f', 1) + "%"
-                         << formatSpeed(task->downloadSpeed());
-                lastPercentage = currentPercentage;
-            }
-        });
+                    // 每5%输出一次进度
+                    if (currentPercentage != lastPercentage && currentPercentage % 5 == 0) {
+                        qDebug() << "[进度]" << task->url().fileName()
+                                 << QString::number(currentPercentage, 'f', 1) + "%"
+                                 << formatSpeed(task->downloadSpeed());
+                        lastPercentage = currentPercentage;
+                    }
+                });
 
         qDebug() << "[已添加任务]" << url << "->" << savePath;
         showMenu();
@@ -206,11 +209,11 @@ private slots:
         QTextStream out(stdout);
         out << "\n========== 任务列表 ==========\n";
         out << QString("总计: %1 | 运行: %2 | 队列: %3 | 完成: %4 | 失败: %5\n")
-                .arg(m_manager->taskCount())
-                .arg(m_manager->runningCount())
-                .arg(m_manager->queuedCount())
-                .arg(m_manager->completedCount())
-                .arg(m_manager->failedCount());
+                   .arg(m_manager->taskCount())
+                   .arg(m_manager->runningCount())
+                   .arg(m_manager->queuedCount())
+                   .arg(m_manager->completedCount())
+                   .arg(m_manager->failedCount());
         out << "==============================\n";
 
         const auto &tasks = m_manager->allTasks();
@@ -218,10 +221,10 @@ private slots:
             DownloadTask *task = tasks[i];
             out << QString("[%1] %2\n").arg(i + 1).arg(task->url().toString());
             out << QString("    状态: %1 | 进度: %2% | 大小: %3/%4\n")
-                    .arg(stateToString(task->state()))
-                    .arg(QString::number(task->progress(), 'f', 1))
-                    .arg(formatSize(task->bytesReceived()))
-                    .arg(formatSize(task->bytesTotal()));
+                       .arg(stateToString(task->state()))
+                       .arg(QString::number(task->progress(), 'f', 1))
+                       .arg(formatSize(task->bytesReceived()))
+                       .arg(formatSize(task->bytesTotal()));
 
             if (task->state() == DownloadTask::State::Downloading) {
                 out << QString("    速度: %1\n").arg(formatSpeed(task->downloadSpeed()));
@@ -262,22 +265,14 @@ private slots:
         qDebug() << "\n[快速测试] 添加3个示例下载任务...\n";
 
         // 小文件测试
-        m_manager->addDownload(
-            QUrl("https://httpbin.org/bytes/1024"),
-            "./downloads/test_1KB.bin"
-        );
+        m_manager->addDownload(QUrl("https://httpbin.org/bytes/1024"), "./downloads/test_1KB.bin");
 
         // 中等文件测试
-        m_manager->addDownload(
-            QUrl("https://httpbin.org/bytes/102400"),
-            "./downloads/test_100KB.bin"
-        );
+        m_manager->addDownload(QUrl("https://httpbin.org/bytes/102400"),
+                               "./downloads/test_100KB.bin");
 
         // JSON 测试
-        m_manager->addDownload(
-            QUrl("https://httpbin.org/json"),
-            "./downloads/test.json"
-        );
+        m_manager->addDownload(QUrl("https://httpbin.org/json"), "./downloads/test.json");
 
         qDebug() << "[提示] 3个测试任务已添加，请在菜单选择'2'查看进度\n";
 

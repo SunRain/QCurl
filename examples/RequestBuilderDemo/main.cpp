@@ -15,17 +15,17 @@
  *
  */
 
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "QCNetworkRequestBuilder.h"
+
 #include <QCoreApplication>
 #include <QDebug>
-#include <QJsonObject>
-#include <QJsonDocument>
 #include <QEventLoop>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTimer>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequestBuilder.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 
 using namespace QCurl;
 
@@ -44,9 +44,9 @@ int main(int argc, char *argv[])
     qDebug() << ">>> 示例 1: 基础 GET 请求";
 
     auto *reply1 = manager->newRequest(QUrl("https://httpbin.org/get"))
-        .withHeader("User-Agent", "QCurl/2.16.0")
-        .withTimeout(30000)
-        .sendGet();
+                       .withHeader("User-Agent", "QCurl/2.16.0")
+                       .withTimeout(30000)
+                       .sendGet();
 
     qDebug() << "请求已发送，等待响应...";
 
@@ -73,17 +73,17 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 2: POST JSON 数据";
 
     QJsonObject json;
-    json["name"] = "QCurl";
-    json["version"] = "2.16.0";
+    json["name"]     = "QCurl";
+    json["version"]  = "2.16.0";
     json["features"] = "RequestBuilder";
 
     QByteArray jsonData = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
     auto *reply2 = manager->newRequest(QUrl("https://httpbin.org/post"))
-        .withHeader("Content-Type", "application/json")
-        .withHeader("User-Agent", "QCurl/2.16.0")
-        .withTimeout(30000)
-        .sendPost(jsonData);
+                       .withHeader("Content-Type", "application/json")
+                       .withHeader("User-Agent", "QCurl/2.16.0")
+                       .withTimeout(30000)
+                       .sendPost(jsonData);
 
     qDebug() << "发送 JSON POST 请求...";
 
@@ -109,14 +109,14 @@ int main(int argc, char *argv[])
     qDebug() << "\n>>> 示例 3: 复杂请求构建";
 
     auto *reply3 = manager->newRequest(QUrl("https://httpbin.org/get"))
-        .withQueryParam("page", "1")
-        .withQueryParam("limit", "20")
-        .withQueryParam("sort", "desc")
-        .withHeader("Authorization", "Bearer fake-token-123")
-        .withHeader("Accept", "application/json")
-        .withFollowLocation(true)
-        .withTimeout(15000)
-        .sendGet();
+                       .withQueryParam("page", "1")
+                       .withQueryParam("limit", "20")
+                       .withQueryParam("sort", "desc")
+                       .withHeader("Authorization", "Bearer fake-token-123")
+                       .withHeader("Accept", "application/json")
+                       .withFollowLocation(true)
+                       .withTimeout(15000)
+                       .sendGet();
 
     qDebug() << "发送复杂请求...";
 

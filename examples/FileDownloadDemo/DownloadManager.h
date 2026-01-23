@@ -1,10 +1,11 @@
 #ifndef DOWNLOADMANAGER_H
 #define DOWNLOADMANAGER_H
 
-#include <QObject>
-#include <QList>
-#include <QQueue>
 #include "DownloadTask.h"
+
+#include <QList>
+#include <QObject>
+#include <QQueue>
 
 /**
  * @brief 下载管理器 - 管理多个下载任务的队列
@@ -28,7 +29,7 @@ public:
     int maxConcurrentDownloads() const { return m_maxConcurrentDownloads; }
 
     // 任务管理
-    DownloadTask* addDownload(const QUrl &url, const QString &savePath);
+    DownloadTask *addDownload(const QUrl &url, const QString &savePath);
     void removeTask(DownloadTask *task);
     void clearCompleted();
     void clearAll();
@@ -45,7 +46,7 @@ public:
     int completedCount() const;
     int failedCount() const;
 
-    QList<DownloadTask*> allTasks() const { return m_allTasks; }
+    QList<DownloadTask *> allTasks() const { return m_allTasks; }
 
 signals:
     void taskAdded(DownloadTask *task);
@@ -67,9 +68,9 @@ private:
 private:
     int m_maxConcurrentDownloads;
 
-    QList<DownloadTask*> m_allTasks;       ///< 所有任务
-    QList<DownloadTask*> m_runningTasks;   ///< 正在下载的任务
-    QQueue<DownloadTask*> m_queuedTasks;   ///< 等待队列
+    QList<DownloadTask *> m_allTasks;     ///< 所有任务
+    QList<DownloadTask *> m_runningTasks; ///< 正在下载的任务
+    QQueue<DownloadTask *> m_queuedTasks; ///< 等待队列
 };
 
 #endif // DOWNLOADMANAGER_H

@@ -1,6 +1,8 @@
 #include "BatchRequest.h"
+
 #include <QDebug>
 #include <QTimer>
+
 #include <chrono>
 
 BatchRequest::BatchRequest(QObject *parent)
@@ -11,8 +13,7 @@ BatchRequest::BatchRequest(QObject *parent)
     , m_timeout(30)
     , m_paused(false)
     , m_requestCounter(0)
-{
-}
+{}
 
 BatchRequest::~BatchRequest()
 {
@@ -48,15 +49,15 @@ QString BatchRequest::addRequest(const QUrl &url,
     QString id = generateRequestId();
 
     RequestInfo info;
-    info.id = id;
-    info.url = url;
-    info.method = method;
-    info.priority = priority;
-    info.postData = postData;
+    info.id         = id;
+    info.url        = url;
+    info.method     = method;
+    info.priority   = priority;
+    info.postData   = postData;
     info.retryCount = 0;
     info.maxRetries = m_maxRetries;
-    info.completed = false;
-    info.success = false;
+    info.completed  = false;
+    info.success    = false;
 
     m_requests.append(info);
 
@@ -215,15 +216,15 @@ void BatchRequest::startRequest(const QString &id)
     QCurl::QCNetworkReply *reply = nullptr;
 
     switch (info->method) {
-    case RequestMethod::GET:
-        reply = m_manager->sendGet(request);
-        break;
-    case RequestMethod::POST:
-        reply = m_manager->sendPost(request, info->postData);
-        break;
-    case RequestMethod::HEAD:
-        reply = m_manager->sendHead(request);
-        break;
+        case RequestMethod::GET:
+            reply = m_manager->sendGet(request);
+            break;
+        case RequestMethod::POST:
+            reply = m_manager->sendPost(request, info->postData);
+            break;
+        case RequestMethod::HEAD:
+            reply = m_manager->sendHead(request);
+            break;
     }
 
     if (!reply) {
@@ -232,10 +233,11 @@ void BatchRequest::startRequest(const QString &id)
     }
 
     // 连接信号
-    connect(reply, &QCurl::QCNetworkReply::finished,
-            this, &BatchRequest::onRequestFinished);
-    connect(reply, qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
-            this, &BatchRequest::onRequestError);
+    connect(reply, &QCurl::QCNetworkReply::finished, this, &BatchRequest::onRequestFinished);
+    connect(reply,
+            qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
+            this,
+            &BatchRequest::onRequestError);
 
     // 保存请求映射
     reply->setProperty("requestId", QVariant(id));
@@ -247,8 +249,9 @@ void BatchRequest::startRequest(const QString &id)
     emit requestStarted(id);
 
     // 更新进度
-    emit requestProgress(completedCount(), totalCount(),
-                        (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+    emit requestProgress(completedCount(),
+                         totalCount(),
+                         (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 }
 
 void BatchRequest::retryRequest(const QString &id)
@@ -268,7 +271,8 @@ void BatchRequest::retryRequest(const QString &id)
 
     if (info->retryCount < info->maxRetries) {
         info->retryCount++;
-        qDebug() << "[BatchRequest] 重试请求" << id << "(" << info->retryCount << "/" << info->maxRetries << ")";
+        qDebug() << "[BatchRequest] 重试请求" << id << "(" << info->retryCount << "/"
+                 << info->maxRetries << ")";
 
         // 重新加入队列（保持原优先级）
         m_pendingRequests.prepend(id);
@@ -276,11 +280,12 @@ void BatchRequest::retryRequest(const QString &id)
     } else {
         qWarning() << "[BatchRequest] 请求失败，超过最大重试次数:" << id;
         info->completed = true;
-        info->success = false;
+        info->success   = false;
 
         emit requestCompleted(id, false);
-        emit requestProgress(completedCount(), totalCount(),
-                            (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+        emit requestProgress(completedCount(),
+                             totalCount(),
+                             (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 
         processQueue();
     }
@@ -293,7 +298,7 @@ QString BatchRequest::generateRequestId()
 
 void BatchRequest::onRequestFinished()
 {
-    auto *reply = qobject_cast<QCurl::QCNetworkReply*>(sender());
+    auto *reply = qobject_cast<QCurl::QCNetworkReply *>(sender());
     if (!reply) {
         return;
     }
@@ -317,7 +322,7 @@ void BatchRequest::onRequestFinished()
         }
 
         info->completed = true;
-        info->success = true;
+        info->success   = true;
 
         emit requestCompleted(id, true);
     }
@@ -327,8 +332,9 @@ void BatchRequest::onRequestFinished()
     reply->deleteLater();
 
     // 更新进度
-    emit requestProgress(completedCount(), totalCount(),
-                        (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+    emit requestProgress(completedCount(),
+                         totalCount(),
+                         (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 
     // 处理下一个请求
     processQueue();
@@ -336,15 +342,16 @@ void BatchRequest::onRequestFinished()
 
 void BatchRequest::onRequestError(QCurl::NetworkError errorCode)
 {
-    auto *reply = qobject_cast<QCurl::QCNetworkReply*>(sender());
+    auto *reply = qobject_cast<QCurl::QCNetworkReply *>(sender());
     if (!reply) {
         return;
     }
 
-    QString id = reply->property("requestId").toString();
+    QString id          = reply->property("requestId").toString();
     QString errorString = reply->errorString();
 
-    qWarning() << "[BatchRequest] 请求失败:" << id << errorString << "(" << static_cast<int>(errorCode) << ")";
+    qWarning() << "[BatchRequest] 请求失败:" << id << errorString << "("
+               << static_cast<int>(errorCode) << ")";
 
     // 查找请求信息
     RequestInfo *info = nullptr;

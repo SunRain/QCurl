@@ -10,16 +10,16 @@
  */
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QTextStream>
 #include <QTimer>
-#include <QDebug>
 
 // QCurl 核心头文件
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkHttpVersion.h"
 #include "QCNetworkDiagnostics.h"
+#include "QCNetworkHttpVersion.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 #include "QCWebSocket.h"
@@ -84,74 +84,75 @@ private slots:
 #endif
 
         // 创建 HTTP/3 请求
-        QUrl url("https://www.cloudflare.com");  // Cloudflare 支持 HTTP/3
+        QUrl url("https://www.cloudflare.com"); // Cloudflare 支持 HTTP/3
         QCNetworkRequest request(url);
 
-	        // 尝试使用 HTTP/3（如果不支持会自动降级）
-	        request.setHttpVersion(QCNetworkHttpVersion::Http3);
+        // 尝试使用 HTTP/3（如果不支持会自动降级）
+        request.setHttpVersion(QCNetworkHttpVersion::Http3);
 
         m_output << "发送 HTTP/3 请求到: " << url.toString() << "\n";
         m_output << "HTTP 版本: Http3（尝试 HTTP/3，失败则降级）\n";
 
-	        QCNetworkReply *reply = m_manager->sendGet(request);
+        QCNetworkReply *reply = m_manager->sendGet(request);
 
-	        connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
-	            if (reply->error() == NetworkError::NoError) {
-	                m_output << "\n✅ HTTP/3 请求成功!\n";
-	                int statusCode = -1;
-	                const QList<QByteArray> headerLines = reply->rawHeaderData().split('\n');
-	                for (const QByteArray &line : headerLines) {
-	                    const QByteArray trimmedLine = line.trimmed();
-	                    if (!trimmedLine.startsWith("HTTP/")) {
-	                        continue;
-	                    }
+        connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
+            if (reply->error() == NetworkError::NoError) {
+                m_output << "\n✅ HTTP/3 请求成功!\n";
+                int statusCode                      = -1;
+                const QList<QByteArray> headerLines = reply->rawHeaderData().split('\n');
+                for (const QByteArray &line : headerLines) {
+                    const QByteArray trimmedLine = line.trimmed();
+                    if (!trimmedLine.startsWith("HTTP/")) {
+                        continue;
+                    }
 
-	                    const QList<QByteArray> parts = trimmedLine.split(' ');
-	                    if (parts.size() < 2) {
-	                        continue;
-	                    }
+                    const QList<QByteArray> parts = trimmedLine.split(' ');
+                    if (parts.size() < 2) {
+                        continue;
+                    }
 
-	                    bool ok = false;
-	                    const int code = parts.at(1).toInt(&ok);
-	                    if (ok) {
-	                        statusCode = code;
-	                    }
-	                }
+                    bool ok        = false;
+                    const int code = parts.at(1).toInt(&ok);
+                    if (ok) {
+                        statusCode = code;
+                    }
+                }
 
-	                if (statusCode > 0) {
-	                    m_output << "状态码: " << statusCode << "\n";
-	                } else {
-	                    m_output << "状态码: （未获取到）\n";
-	                }
+                if (statusCode > 0) {
+                    m_output << "状态码: " << statusCode << "\n";
+                } else {
+                    m_output << "状态码: （未获取到）\n";
+                }
 
-	                m_output << "响应大小: " << reply->bytesReceived() << " 字节\n";
+                m_output << "响应大小: " << reply->bytesReceived() << " 字节\n";
 
-	                // 尝试获取实际使用的 HTTP 版本
-	                QString altSvc;
-	                const QList<RawHeaderPair> headers = reply->rawHeaders();
-	                for (const auto &header : headers) {
-	                    if (QString::fromUtf8(header.first)
-	                            .compare(QStringLiteral("Alt-Svc"), Qt::CaseInsensitive) != 0) {
-	                        continue;
-	                    }
+                // 尝试获取实际使用的 HTTP 版本
+                QString altSvc;
+                const QList<RawHeaderPair> headers = reply->rawHeaders();
+                for (const auto &header : headers) {
+                    if (QString::fromUtf8(header.first)
+                            .compare(QStringLiteral("Alt-Svc"), Qt::CaseInsensitive)
+                        != 0) {
+                        continue;
+                    }
 
-	                    altSvc = QString::fromUtf8(header.second);
-	                    break;
-	                }
+                    altSvc = QString::fromUtf8(header.second);
+                    break;
+                }
 
-	                if (!altSvc.isEmpty()) {
-	                    m_output << "Alt-Svc 头: " << altSvc << "\n";
-	                }
-	            } else {
-	                m_output << "\n❌ HTTP/3 请求失败: " << reply->errorString() << "\n";
-	            }
+                if (!altSvc.isEmpty()) {
+                    m_output << "Alt-Svc 头: " << altSvc << "\n";
+                }
+            } else {
+                m_output << "\n❌ HTTP/3 请求失败: " << reply->errorString() << "\n";
+            }
             m_output << "\n";
             reply->deleteLater();
 
             // 继续下一个演示
-	            demoWebSocketCompression();
-	        });
-	    }
+            demoWebSocketCompression();
+        });
+    }
 
     /**
      * @brief WebSocket 压缩示例
@@ -185,14 +186,16 @@ private slots:
 
             if (socket->isCompressionNegotiated()) {
                 m_output << "✅ 压缩协商成功!\n";
-                m_output << "协商后的配置: " << socket->compressionConfig().toExtensionHeader() << "\n";
+                m_output << "协商后的配置: " << socket->compressionConfig().toExtensionHeader()
+                         << "\n";
             } else {
                 m_output << "ℹ️  服务器不支持压缩或拒绝了压缩请求\n";
             }
 
             // 发送测试消息
-            QString testMessage = QString("测试消息 - ").repeated(50);  // 重复内容以测试压缩效果
-            m_output << "\n发送测试消息 (原始大小: " << testMessage.toUtf8().size() << " 字节)...\n";
+            QString testMessage = QString("测试消息 - ").repeated(50); // 重复内容以测试压缩效果
+            m_output << "\n发送测试消息 (原始大小: " << testMessage.toUtf8().size()
+                     << " 字节)...\n";
             socket->sendTextMessage(testMessage);
         });
 

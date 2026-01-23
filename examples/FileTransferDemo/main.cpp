@@ -1,16 +1,16 @@
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
-#include <QDebug>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkError.h"
 
 using namespace QCurl;
 
@@ -20,7 +20,7 @@ public:
     explicit FileTransferDemo(QObject *parent = nullptr)
         : QObject(parent)
     {
-        m_streamFilePath = QDir::temp().filePath("qcurl_stream_download.bin");
+        m_streamFilePath    = QDir::temp().filePath("qcurl_stream_download.bin");
         m_resumableFilePath = QDir::temp().filePath("qcurl_resumable_download.bin");
     }
 
@@ -52,15 +52,13 @@ private:
         qDebug() << "[1/3] 开始流式下载:" << url.toString();
 
         auto *reply = m_manager.downloadToDevice(url, file);
-        connect(reply, &QCNetworkReply::downloadProgress, this,
-                [](qint64 received, qint64 total) {
+        connect(reply, &QCNetworkReply::downloadProgress, this, [](qint64 received, qint64 total) {
             if (total > 0) {
                 qDebug() << "  -> 下载进度" << received << "/" << total;
             }
         });
 
-        connect(reply, &QCNetworkReply::finished, this,
-                [this, reply, file]() {
+        connect(reply, &QCNetworkReply::finished, this, [this, reply, file]() {
             file->close();
             if (reply->error() == NetworkError::NoError) {
                 qDebug() << "  ✓ 流式下载完成，文件位于" << m_streamFilePath;
@@ -86,26 +84,25 @@ private:
         qDebug() << "[2/3] 从文件流式上传:" << url.toString();
 
         auto *reply = m_manager.uploadFromDevice(url,
-                                                QStringLiteral("file"),
-                                                file,
-                                                QFileInfo(*file).fileName(),
-                                                QStringLiteral("application/octet-stream"));
+                                                 QStringLiteral("file"),
+                                                 file,
+                                                 QFileInfo(*file).fileName(),
+                                                 QStringLiteral("application/octet-stream"));
 
-        connect(reply, &QCNetworkReply::uploadProgress, this,
-                [](qint64 sent, qint64 total) {
+        connect(reply, &QCNetworkReply::uploadProgress, this, [](qint64 sent, qint64 total) {
             if (total > 0) {
                 qDebug() << "  -> 上传进度" << sent << "/" << total;
             }
         });
 
-        connect(reply, &QCNetworkReply::finished, this,
-                [this, reply, file]() {
+        connect(reply, &QCNetworkReply::finished, this, [this, reply, file]() {
             if (reply->error() == NetworkError::NoError) {
                 auto data = reply->readAll();
                 if (data.has_value()) {
                     QJsonDocument doc = QJsonDocument::fromJson(data.value());
                     qDebug() << "  ✓ 上传成功，httpbin 回显大小"
-                             << doc["files"].toObject()["file"].toString().toUtf8().size() << "字节";
+                             << doc["files"].toObject()["file"].toString().toUtf8().size()
+                             << "字节";
                 }
                 runResumableDownload();
             } else {
@@ -133,19 +130,20 @@ private:
         auto *reply = m_manager.downloadFileResumable(url, m_resumableFilePath);
 
         if (!resume) {
-            connect(reply, &QCNetworkReply::downloadProgress, this,
+            connect(reply,
+                    &QCNetworkReply::downloadProgress,
+                    this,
                     [this, reply, totalBytes](qint64 received, qint64 total) {
-                Q_UNUSED(total);
-                if (!m_cancelledOnce && received >= totalBytes / 3) {
-                    m_cancelledOnce = true;
-                    qDebug() << "  -> 模拟网络中断，主动取消";
-                    reply->cancel();
-                }
-            });
+                        Q_UNUSED(total);
+                        if (!m_cancelledOnce && received >= totalBytes / 3) {
+                            m_cancelledOnce = true;
+                            qDebug() << "  -> 模拟网络中断，主动取消";
+                            reply->cancel();
+                        }
+                    });
         }
 
-        connect(reply, &QCNetworkReply::finished, this,
-                [this, reply, resume, totalBytes]() {
+        connect(reply, &QCNetworkReply::finished, this, [this, reply, resume, totalBytes]() {
             QFileInfo info(m_resumableFilePath);
             if (!resume && reply->error() != NetworkError::NoError) {
                 qDebug() << "  -> 首次下载被取消，已写入" << info.size() << "字节";
@@ -155,8 +153,8 @@ private:
             }
 
             if (reply->error() == NetworkError::NoError) {
-                qDebug() << "  ✓ 断点续传完成，最终大小" << info.size()
-                         << "/" << totalBytes << "字节";
+                qDebug() << "  ✓ 断点续传完成，最终大小" << info.size() << "/" << totalBytes
+                         << "字节";
                 finishDemo();
             } else {
                 qWarning() << "  ✗ 断点续传失败:" << reply->errorString();
@@ -184,9 +182,7 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
 
     FileTransferDemo demo;
-    QTimer::singleShot(0, [&demo]() {
-        demo.start();
-    });
+    QTimer::singleShot(0, [&demo]() { demo.start(); });
 
     return app.exec();
 }

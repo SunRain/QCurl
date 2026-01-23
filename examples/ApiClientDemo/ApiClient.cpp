@@ -1,7 +1,9 @@
 #include "ApiClient.h"
+
 #include <QDebug>
-#include <QUrlQuery>
 #include <QJsonParseError>
+#include <QUrlQuery>
+
 #include <chrono>
 
 ApiClient::ApiClient(const QString &baseUrl, QObject *parent)
@@ -23,7 +25,7 @@ void ApiClient::setBaseUrl(const QString &url)
 {
     m_baseUrl = url;
     if (m_baseUrl.endsWith('/')) {
-        m_baseUrl.chop(1);  // 移除末尾的斜杠
+        m_baseUrl.chop(1); // 移除末尾的斜杠
     }
 }
 
@@ -53,7 +55,7 @@ void ApiClient::clearDefaultHeaders()
 
 void ApiClient::setBearerToken(const QString &token)
 {
-    m_bearerToken = token;
+    m_bearerToken                     = token;
     m_defaultHeaders["Authorization"] = "Bearer " + token;
 }
 
@@ -64,9 +66,9 @@ void ApiClient::clearBearerToken()
 }
 
 void ApiClient::get(const QString &endpoint,
-                   SuccessCallback onSuccess,
-                   ErrorCallback onError,
-                   const QMap<QString, QString> &queryParams)
+                    SuccessCallback onSuccess,
+                    ErrorCallback onError,
+                    const QMap<QString, QString> &queryParams)
 {
     // 构建 URL
     QString urlStr = m_baseUrl + "/" + endpoint;
@@ -90,21 +92,21 @@ void ApiClient::get(const QString &endpoint,
     }
 
     RequestContext context;
-    context.endpoint = endpoint;
+    context.endpoint  = endpoint;
     context.onSuccess = onSuccess;
-    context.onError = onError;
+    context.onError   = onError;
 
     sendRequest(request, "GET", context);
 }
 
 void ApiClient::post(const QString &endpoint,
-                    const QJsonObject &data,
-                    SuccessCallback onSuccess,
-                    ErrorCallback onError)
+                     const QJsonObject &data,
+                     SuccessCallback onSuccess,
+                     ErrorCallback onError)
 {
     QString urlStr = m_baseUrl + "/" + endpoint;
     QUrl url(urlStr);
-    QCurl::QCNetworkRequest request{url};  // 使用 {} 初始化
+    QCurl::QCNetworkRequest request{url}; // 使用 {} 初始化
     request.setTimeout(std::chrono::seconds(m_timeout));
 
     // 设置请求头
@@ -117,21 +119,21 @@ void ApiClient::post(const QString &endpoint,
     QByteArray postData = doc.toJson(QJsonDocument::Compact);
 
     RequestContext context;
-    context.endpoint = endpoint;
+    context.endpoint  = endpoint;
     context.onSuccess = onSuccess;
-    context.onError = onError;
+    context.onError   = onError;
 
     sendRequest(request, "POST", context, postData);
 }
 
 void ApiClient::put(const QString &endpoint,
-                   const QJsonObject &data,
-                   SuccessCallback onSuccess,
-                   ErrorCallback onError)
+                    const QJsonObject &data,
+                    SuccessCallback onSuccess,
+                    ErrorCallback onError)
 {
     QString urlStr = m_baseUrl + "/" + endpoint;
     QUrl url(urlStr);
-    QCurl::QCNetworkRequest request{url};  // 使用 {} 初始化
+    QCurl::QCNetworkRequest request{url}; // 使用 {} 初始化
     request.setTimeout(std::chrono::seconds(m_timeout));
 
     // 设置请求头
@@ -144,9 +146,9 @@ void ApiClient::put(const QString &endpoint,
     QByteArray putData = doc.toJson(QJsonDocument::Compact);
 
     RequestContext context;
-    context.endpoint = endpoint;
+    context.endpoint  = endpoint;
     context.onSuccess = onSuccess;
-    context.onError = onError;
+    context.onError   = onError;
 
     // 设置 PUT 方法
     request.setRawHeader("X-HTTP-Method-Override", "PUT");
@@ -154,13 +156,11 @@ void ApiClient::put(const QString &endpoint,
     sendRequest(request, "PUT", context, putData);
 }
 
-void ApiClient::del(const QString &endpoint,
-                   SuccessCallback onSuccess,
-                   ErrorCallback onError)
+void ApiClient::del(const QString &endpoint, SuccessCallback onSuccess, ErrorCallback onError)
 {
     QString urlStr = m_baseUrl + "/" + endpoint;
     QUrl url(urlStr);
-    QCurl::QCNetworkRequest request{url};  // 使用 {} 初始化
+    QCurl::QCNetworkRequest request{url}; // 使用 {} 初始化
     request.setTimeout(std::chrono::seconds(m_timeout));
 
     // 设置请求头
@@ -172,9 +172,9 @@ void ApiClient::del(const QString &endpoint,
     request.setRawHeader("X-HTTP-Method-Override", "DELETE");
 
     RequestContext context;
-    context.endpoint = endpoint;
+    context.endpoint  = endpoint;
     context.onSuccess = onSuccess;
-    context.onError = onError;
+    context.onError   = onError;
 
     sendRequest(request, "DELETE", context);
 }
@@ -191,9 +191,9 @@ void ApiClient::cancelAll()
 }
 
 void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
-                           const QString &method,
-                           const RequestContext &context,
-                           const QByteArray &postData)
+                            const QString &method,
+                            const RequestContext &context,
+                            const QByteArray &postData)
 {
     emit requestStarted(context.endpoint);
 
@@ -223,25 +223,26 @@ void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
     reply->setProperty("context_endpoint", QVariant(context.endpoint));
 
     // 连接信号
-    connect(reply, &QCurl::QCNetworkReply::finished,
-            this, [this, reply, context]() {
+    connect(reply, &QCurl::QCNetworkReply::finished, this, [this, reply, context]() {
         handleResponse(reply, context);
     });
 
-    connect(reply, qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
-            this, [this, reply, context](QCurl::NetworkError errorCode) {
-        QString errorMsg = reply->errorString();
-        qWarning() << "[ApiClient] 请求错误:" << context.endpoint << errorMsg;
+    connect(reply,
+            qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
+            this,
+            [this, reply, context](QCurl::NetworkError errorCode) {
+                QString errorMsg = reply->errorString();
+                qWarning() << "[ApiClient] 请求错误:" << context.endpoint << errorMsg;
 
-        if (context.onError) {
-            context.onError(static_cast<int>(errorCode), errorMsg);
-        }
+                if (context.onError) {
+                    context.onError(static_cast<int>(errorCode), errorMsg);
+                }
 
-        m_activeRequests.removeOne(reply);
-        reply->deleteLater();
+                m_activeRequests.removeOne(reply);
+                reply->deleteLater();
 
-        emit requestCompleted(context.endpoint, false);
-    });
+                emit requestCompleted(context.endpoint, false);
+            });
 
     m_activeRequests.append(reply);
 
@@ -249,8 +250,7 @@ void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
     reply->execute();
 }
 
-void ApiClient::handleResponse(QCurl::QCNetworkReply *reply,
-                               const RequestContext &context)
+void ApiClient::handleResponse(QCurl::QCNetworkReply *reply, const RequestContext &context)
 {
     // 读取响应数据
     auto dataOpt = reply->readAll();

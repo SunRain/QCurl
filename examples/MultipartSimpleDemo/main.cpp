@@ -7,10 +7,10 @@
  * 演示 QCMultipartFormData 的基本用法，不需要实际发送网络请求
  */
 
+#include <QCMultipartFormData.h>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
-#include <QCMultipartFormData.h>
 
 using namespace QCurl;
 
@@ -144,7 +144,10 @@ int main(int argc, char *argv[])
         if (streamFile->open(QIODevice::ReadOnly)) {
             QCMultipartFormData formData2;
             formData2.addTextField("name", "stream-test");
-            formData2.addFileFieldStream("bigfile", streamFile, "large.bin", "application/octet-stream");
+            formData2.addFileFieldStream("bigfile",
+                                         streamFile,
+                                         "large.bin",
+                                         "application/octet-stream");
 
             qDebug() << "formData2 包含流式字段:" << (formData2.hasStreamFields() ? "是" : "否");
             qDebug() << "注意：流式字段不会包含在 toByteArray() 返回的数据中";

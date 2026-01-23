@@ -1,8 +1,9 @@
 #include "DownloadTask.h"
+
 #include <QDebug>
-#include <QFileInfo>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
 
 DownloadTask::DownloadTask(const QUrl &url, const QString &savePath, QObject *parent)
     : QObject(parent)
@@ -45,10 +46,10 @@ void DownloadTask::start()
     qint64 existingSize = getExistingFileSize();
     if (existingSize > 0) {
         qDebug() << "Resuming download from" << existingSize << "bytes";
-        m_rangeStart = existingSize;
+        m_rangeStart    = existingSize;
         m_bytesReceived = existingSize;
     } else {
-        m_rangeStart = 0;
+        m_rangeStart    = 0;
         m_bytesReceived = 0;
     }
 
@@ -82,7 +83,7 @@ void DownloadTask::resume()
         return;
     }
 
-    start();  // 断点续传
+    start(); // 断点续传
 }
 
 void DownloadTask::cancel()
@@ -150,20 +151,23 @@ void DownloadTask::startDownloadInternal(qint64 rangeStart)
     m_reply = m_manager->sendGet(request);
 
     // 连接信号
-    connect(m_reply, &QCurl::QCNetworkReply::downloadProgress,
-            this, &DownloadTask::onDownloadProgress);
-    connect(m_reply, &QCurl::QCNetworkReply::finished,
-            this, &DownloadTask::onFinished);
-    connect(m_reply, qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
-            this, &DownloadTask::onError);
+    connect(m_reply,
+            &QCurl::QCNetworkReply::downloadProgress,
+            this,
+            &DownloadTask::onDownloadProgress);
+    connect(m_reply, &QCurl::QCNetworkReply::finished, this, &DownloadTask::onFinished);
+    connect(m_reply,
+            qOverload<QCurl::NetworkError>(&QCurl::QCNetworkReply::error),
+            this,
+            &DownloadTask::onError);
 
     // 打开文件（追加模式用于断点续传）
-    m_file = new QFile(m_savePath);
+    m_file                   = new QFile(m_savePath);
     QIODevice::OpenMode mode = QIODevice::WriteOnly;
     if (rangeStart > 0) {
         mode |= QIODevice::Append;
     } else {
-        mode |= QIODevice::Truncate;  // 全新下载，清空文件
+        mode |= QIODevice::Truncate; // 全新下载，清空文件
     }
 
     if (!m_file->open(mode)) {
@@ -188,10 +192,10 @@ void DownloadTask::onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
     // 处理断点续传的情况
     if (m_rangeStart > 0) {
         m_bytesReceived = m_rangeStart + bytesReceived;
-        m_bytesTotal = m_rangeStart + bytesTotal;
+        m_bytesTotal    = m_rangeStart + bytesTotal;
     } else {
         m_bytesReceived = bytesReceived;
-        m_bytesTotal = bytesTotal;
+        m_bytesTotal    = bytesTotal;
     }
 
     // 写入数据到文件
@@ -247,10 +251,10 @@ void DownloadTask::onError(QCurl::NetworkError errorCode)
 void DownloadTask::updateDownloadSpeed()
 {
     qint64 elapsed = m_speedTimer.elapsed();
-    if (elapsed >= 1000) {  // 每秒更新一次速度
+    if (elapsed >= 1000) { // 每秒更新一次速度
         qint64 bytesDownloaded = m_bytesReceived - m_lastBytesReceived;
-        double seconds = elapsed / 1000.0;
-        m_downloadSpeed = bytesDownloaded / seconds;
+        double seconds         = elapsed / 1000.0;
+        m_downloadSpeed        = bytesDownloaded / seconds;
 
         emit speedChanged(m_downloadSpeed);
 

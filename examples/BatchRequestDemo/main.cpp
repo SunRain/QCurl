@@ -1,21 +1,22 @@
-#include <QCoreApplication>
-#include <QTextStream>
-#include <QDebug>
-#include <QTimer>
 #include "BatchRequest.h"
+
+#include <QCoreApplication>
+#include <QDebug>
+#include <QTextStream>
+#include <QTimer>
 
 // 工具函数：优先级转字符串
 QString priorityToString(BatchRequest::Priority priority)
 {
     switch (priority) {
-    case BatchRequest::Priority::High:
-        return "高";
-    case BatchRequest::Priority::Normal:
-        return "中";
-    case BatchRequest::Priority::Low:
-        return "低";
-    default:
-        return "未知";
+        case BatchRequest::Priority::High:
+            return "高";
+        case BatchRequest::Priority::Normal:
+            return "中";
+        case BatchRequest::Priority::Low:
+            return "低";
+        default:
+            return "未知";
     }
 }
 
@@ -23,14 +24,14 @@ QString priorityToString(BatchRequest::Priority priority)
 QString methodToString(BatchRequest::RequestMethod method)
 {
     switch (method) {
-    case BatchRequest::RequestMethod::GET:
-        return "GET";
-    case BatchRequest::RequestMethod::POST:
-        return "POST";
-    case BatchRequest::RequestMethod::HEAD:
-        return "HEAD";
-    default:
-        return "未知";
+        case BatchRequest::RequestMethod::GET:
+            return "GET";
+        case BatchRequest::RequestMethod::POST:
+            return "POST";
+        case BatchRequest::RequestMethod::HEAD:
+            return "HEAD";
+        default:
+            return "未知";
     }
 }
 
@@ -72,33 +73,41 @@ private slots:
             qDebug() << "[开始请求]" << id;
         });
 
-        connect(m_batchRequest, &BatchRequest::requestCompleted, this, [](const QString &id, bool success) {
-            if (success) {
-                qDebug() << "[✓ 请求成功]" << id;
-            } else {
-                qDebug() << "[✗ 请求失败]" << id;
-            }
-        });
+        connect(m_batchRequest,
+                &BatchRequest::requestCompleted,
+                this,
+                [](const QString &id, bool success) {
+                    if (success) {
+                        qDebug() << "[✓ 请求成功]" << id;
+                    } else {
+                        qDebug() << "[✗ 请求失败]" << id;
+                    }
+                });
 
-        connect(m_batchRequest, &BatchRequest::error, this, [](const QString &id, const QString &errorString) {
-            qDebug() << "[请求错误]" << id << ":" << errorString;
-        });
+        connect(m_batchRequest,
+                &BatchRequest::error,
+                this,
+                [](const QString &id, const QString &errorString) {
+                    qDebug() << "[请求错误]" << id << ":" << errorString;
+                });
 
         // 进度信号
-        connect(m_batchRequest, &BatchRequest::requestProgress, this,
+        connect(m_batchRequest,
+                &BatchRequest::requestProgress,
+                this,
                 [](int completed, int total, double percentage) {
-            static int lastPercentage = -1;
-            int currentPercentage = static_cast<int>(percentage);
+                    static int lastPercentage = -1;
+                    int currentPercentage     = static_cast<int>(percentage);
 
-            // 每10%输出一次进度
-            if (currentPercentage != lastPercentage && currentPercentage % 10 == 0) {
-                qDebug() << QString("[进度] %1/%2 (%3%)")
-                                .arg(completed)
-                                .arg(total)
-                                .arg(QString::number(currentPercentage, 'f', 0));
-                lastPercentage = currentPercentage;
-            }
-        });
+                    // 每10%输出一次进度
+                    if (currentPercentage != lastPercentage && currentPercentage % 10 == 0) {
+                        qDebug() << QString("[进度] %1/%2 (%3%)")
+                                        .arg(completed)
+                                        .arg(total)
+                                        .arg(QString::number(currentPercentage, 'f', 0));
+                        lastPercentage = currentPercentage;
+                    }
+                });
     }
 
     void showMenu()
@@ -226,12 +235,12 @@ private slots:
         QTextStream out(stdout);
         out << "\n========== 请求列表 ==========\n";
         out << QString("总计: %1 | 运行: %2 | 待处理: %3 | 完成: %4 | 成功: %5 | 失败: %6\n")
-                .arg(m_batchRequest->totalCount())
-                .arg(m_batchRequest->runningCount())
-                .arg(m_batchRequest->pendingCount())
-                .arg(m_batchRequest->completedCount())
-                .arg(m_batchRequest->successCount())
-                .arg(m_batchRequest->failedCount());
+                   .arg(m_batchRequest->totalCount())
+                   .arg(m_batchRequest->runningCount())
+                   .arg(m_batchRequest->pendingCount())
+                   .arg(m_batchRequest->completedCount())
+                   .arg(m_batchRequest->successCount())
+                   .arg(m_batchRequest->failedCount());
         out << "==============================\n";
 
         const auto &requests = m_batchRequest->allRequests();
@@ -240,18 +249,17 @@ private slots:
             out << QString("[%1] ID:%2\n").arg(i + 1).arg(info.id);
             out << QString("    URL: %1\n").arg(info.url.toString());
             out << QString("    方法: %1 | 优先级: %2 | 重试: %3/%4\n")
-                    .arg(methodToString(info.method))
-                    .arg(priorityToString(info.priority))
-                    .arg(info.retryCount)
-                    .arg(info.maxRetries);
+                       .arg(methodToString(info.method))
+                       .arg(priorityToString(info.priority))
+                       .arg(info.retryCount)
+                       .arg(info.maxRetries);
 
             if (info.completed) {
                 if (info.success) {
                     out << QString("    状态: ✓ 成功 | 响应大小: %1 字节\n")
-                            .arg(info.responseData.size());
+                               .arg(info.responseData.size());
                 } else {
-                    out << QString("    状态: ✗ 失败 | 错误: %1\n")
-                            .arg(info.errorString);
+                    out << QString("    状态: ✗ 失败 | 错误: %1\n").arg(info.errorString);
                 }
             } else {
                 out << "    状态: 待处理\n";
@@ -310,47 +318,35 @@ private slots:
         qDebug() << "\n[快速测试] 添加10个示例请求...\n";
 
         // 高优先级请求
-        m_batchRequest->addRequest(
-            QUrl("https://httpbin.org/get"),
-            BatchRequest::RequestMethod::GET,
-            BatchRequest::Priority::High
-        );
+        m_batchRequest->addRequest(QUrl("https://httpbin.org/get"),
+                                   BatchRequest::RequestMethod::GET,
+                                   BatchRequest::Priority::High);
 
-        m_batchRequest->addRequest(
-            QUrl("https://httpbin.org/headers"),
-            BatchRequest::RequestMethod::GET,
-            BatchRequest::Priority::High
-        );
+        m_batchRequest->addRequest(QUrl("https://httpbin.org/headers"),
+                                   BatchRequest::RequestMethod::GET,
+                                   BatchRequest::Priority::High);
 
         // 普通优先级请求
         for (int i = 0; i < 5; ++i) {
-            m_batchRequest->addRequest(
-                QUrl(QString("https://httpbin.org/delay/%1").arg(i)),
-                BatchRequest::RequestMethod::GET,
-                BatchRequest::Priority::Normal
-            );
+            m_batchRequest->addRequest(QUrl(QString("https://httpbin.org/delay/%1").arg(i)),
+                                       BatchRequest::RequestMethod::GET,
+                                       BatchRequest::Priority::Normal);
         }
 
         // 低优先级请求
-        m_batchRequest->addRequest(
-            QUrl("https://httpbin.org/status/200"),
-            BatchRequest::RequestMethod::HEAD,
-            BatchRequest::Priority::Low
-        );
+        m_batchRequest->addRequest(QUrl("https://httpbin.org/status/200"),
+                                   BatchRequest::RequestMethod::HEAD,
+                                   BatchRequest::Priority::Low);
 
-        m_batchRequest->addRequest(
-            QUrl("https://httpbin.org/json"),
-            BatchRequest::RequestMethod::GET,
-            BatchRequest::Priority::Low
-        );
+        m_batchRequest->addRequest(QUrl("https://httpbin.org/json"),
+                                   BatchRequest::RequestMethod::GET,
+                                   BatchRequest::Priority::Low);
 
         // POST 请求
-        m_batchRequest->addRequest(
-            QUrl("https://httpbin.org/post"),
-            BatchRequest::RequestMethod::POST,
-            BatchRequest::Priority::Normal,
-            "{\"test\":\"data\"}"
-        );
+        m_batchRequest->addRequest(QUrl("https://httpbin.org/post"),
+                                   BatchRequest::RequestMethod::POST,
+                                   BatchRequest::Priority::Normal,
+                                   "{\"test\":\"data\"}");
 
         qDebug() << "[提示] 10个测试请求已添加，请选择'3'开始执行\n";
 

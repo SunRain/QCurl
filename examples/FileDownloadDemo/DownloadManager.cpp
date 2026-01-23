@@ -1,11 +1,11 @@
 #include "DownloadManager.h"
+
 #include <QDebug>
 
 DownloadManager::DownloadManager(QObject *parent)
     : QObject(parent)
-    , m_maxConcurrentDownloads(3)  // 默认最多3个并发下载
-{
-}
+    , m_maxConcurrentDownloads(3) // 默认最多3个并发下载
+{}
 
 DownloadManager::~DownloadManager()
 {
@@ -22,17 +22,14 @@ void DownloadManager::setMaxConcurrentDownloads(int max)
     processQueue();
 }
 
-DownloadTask* DownloadManager::addDownload(const QUrl &url, const QString &savePath)
+DownloadTask *DownloadManager::addDownload(const QUrl &url, const QString &savePath)
 {
     auto *task = new DownloadTask(url, savePath, this);
 
     // 连接信号
-    connect(task, &DownloadTask::stateChanged,
-            this, &DownloadManager::onTaskStateChanged);
-    connect(task, &DownloadTask::finished,
-            this, &DownloadManager::onTaskFinished);
-    connect(task, &DownloadTask::error,
-            this, &DownloadManager::onTaskError);
+    connect(task, &DownloadTask::stateChanged, this, &DownloadManager::onTaskStateChanged);
+    connect(task, &DownloadTask::finished, this, &DownloadManager::onTaskFinished);
+    connect(task, &DownloadTask::error, this, &DownloadManager::onTaskError);
 
     m_allTasks.append(task);
     emit taskAdded(task);
@@ -71,11 +68,11 @@ void DownloadManager::removeTask(DownloadTask *task)
 
 void DownloadManager::clearCompleted()
 {
-    QList<DownloadTask*> toRemove;
+    QList<DownloadTask *> toRemove;
 
     for (DownloadTask *task : m_allTasks) {
-        if (task->state() == DownloadTask::State::Completed ||
-            task->state() == DownloadTask::State::Cancelled) {
+        if (task->state() == DownloadTask::State::Completed
+            || task->state() == DownloadTask::State::Cancelled) {
             toRemove.append(task);
         }
     }
@@ -157,7 +154,7 @@ int DownloadManager::failedCount() const
 
 void DownloadManager::onTaskStateChanged(DownloadTask::State newState)
 {
-    auto *task = qobject_cast<DownloadTask*>(sender());
+    auto *task = qobject_cast<DownloadTask *>(sender());
     if (!task) {
         return;
     }
@@ -170,9 +167,8 @@ void DownloadManager::onTaskStateChanged(DownloadTask::State newState)
             emit taskStarted(task);
             emit queueChanged();
         }
-    } else if (newState == DownloadTask::State::Completed ||
-               newState == DownloadTask::State::Failed ||
-               newState == DownloadTask::State::Cancelled) {
+    } else if (newState == DownloadTask::State::Completed || newState == DownloadTask::State::Failed
+               || newState == DownloadTask::State::Cancelled) {
         // 任务结束
         m_runningTasks.removeOne(task);
         m_queuedTasks.removeOne(task);
@@ -185,7 +181,7 @@ void DownloadManager::onTaskStateChanged(DownloadTask::State newState)
 
 void DownloadManager::onTaskFinished()
 {
-    auto *task = qobject_cast<DownloadTask*>(sender());
+    auto *task = qobject_cast<DownloadTask *>(sender());
     if (task) {
         emit taskCompleted(task);
     }
@@ -193,7 +189,7 @@ void DownloadManager::onTaskFinished()
 
 void DownloadManager::onTaskError(const QString &errorString)
 {
-    auto *task = qobject_cast<DownloadTask*>(sender());
+    auto *task = qobject_cast<DownloadTask *>(sender());
     if (task) {
         qWarning() << "Task failed:" << task->url() << "-" << errorString;
         emit taskFailed(task);

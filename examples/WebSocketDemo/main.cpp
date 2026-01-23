@@ -1,9 +1,9 @@
-#include <QCoreApplication>
 #include <QCWebSocket.h>
-#include <QTextStream>
-#include <QTimer>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QTextStream>
 #include <QThread>
+#include <QTimer>
 
 using namespace QCurl;
 
@@ -63,44 +63,35 @@ private slots:
     {
         QString stateStr;
         switch (state) {
-        case QCWebSocket::State::Unconnected:
-            stateStr = "未连接";
-            break;
-        case QCWebSocket::State::Connecting:
-            stateStr = "连接中...";
-            break;
-        case QCWebSocket::State::Connected:
-            stateStr = "已连接";
-            break;
-        case QCWebSocket::State::Closing:
-            stateStr = "关闭中...";
-            break;
-        case QCWebSocket::State::Closed:
-            stateStr = "已关闭";
-            break;
+            case QCWebSocket::State::Unconnected:
+                stateStr = "未连接";
+                break;
+            case QCWebSocket::State::Connecting:
+                stateStr = "连接中...";
+                break;
+            case QCWebSocket::State::Connected:
+                stateStr = "已连接";
+                break;
+            case QCWebSocket::State::Closing:
+                stateStr = "关闭中...";
+                break;
+            case QCWebSocket::State::Closed:
+                stateStr = "已关闭";
+                break;
         }
         qDebug() << "📡 状态变化:" << stateStr;
     }
 
-    void onTextMessageReceived(const QString &message)
-    {
-        qInfo() << "📩 收到消息:" << message;
-    }
+    void onTextMessageReceived(const QString &message) { qInfo() << "📩 收到消息:" << message; }
 
     void onBinaryMessageReceived(const QByteArray &data)
     {
         qInfo() << "📦 收到二进制数据:" << data.size() << "字节";
     }
 
-    void onPongReceived(const QByteArray &payload)
-    {
-        qDebug() << "🏓 收到 Pong 响应:" << payload;
-    }
+    void onPongReceived(const QByteArray &payload) { qDebug() << "🏓 收到 Pong 响应:" << payload; }
 
-    void onErrorOccurred(const QString &error)
-    {
-        qWarning() << "❌ 错误:" << error;
-    }
+    void onErrorOccurred(const QString &error) { qWarning() << "❌ 错误:" << error; }
 
     void onSslErrors(const QStringList &errors)
     {
@@ -159,8 +150,14 @@ private:
         connect(m_socket, &QCWebSocket::connected, this, &WebSocketDemo::onConnected);
         connect(m_socket, &QCWebSocket::disconnected, this, &WebSocketDemo::onDisconnected);
         connect(m_socket, &QCWebSocket::stateChanged, this, &WebSocketDemo::onStateChanged);
-        connect(m_socket, &QCWebSocket::textMessageReceived, this, &WebSocketDemo::onTextMessageReceived);
-        connect(m_socket, &QCWebSocket::binaryMessageReceived, this, &WebSocketDemo::onBinaryMessageReceived);
+        connect(m_socket,
+                &QCWebSocket::textMessageReceived,
+                this,
+                &WebSocketDemo::onTextMessageReceived);
+        connect(m_socket,
+                &QCWebSocket::binaryMessageReceived,
+                this,
+                &WebSocketDemo::onBinaryMessageReceived);
         connect(m_socket, &QCWebSocket::pongReceived, this, &WebSocketDemo::onPongReceived);
         connect(m_socket, &QCWebSocket::errorOccurred, this, &WebSocketDemo::onErrorOccurred);
         connect(m_socket, &QCWebSocket::sslErrors, this, &WebSocketDemo::onSslErrors);
@@ -168,7 +165,7 @@ private:
 
     void setupInputTimer()
     {
-        m_inputTimer->setInterval(100);  // 每 100ms 检查一次输入
+        m_inputTimer->setInterval(100); // 每 100ms 检查一次输入
         connect(m_inputTimer, &QTimer::timeout, this, &WebSocketDemo::checkInput);
     }
 

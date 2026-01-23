@@ -16,16 +16,16 @@
  *
  */
 
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkLogger.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QCoreApplication>
 #include <QDebug>
+#include <QEventLoop>
 #include <QTimer>
 #include <QUrl>
-#include <QEventLoop>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkLogger.h"
 
 using namespace QCurl;
 
@@ -37,11 +37,12 @@ using namespace QCurl;
 class StatisticsLogger : public QCNetworkLogger
 {
 public:
-    int totalRequests = 0;
-    int errorRequests = 0;
+    int totalRequests          = 0;
+    int errorRequests          = 0;
     NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
 
-    void log(NetworkLogLevel level, const QString &category, const QString &message) override {
+    void log(NetworkLogLevel level, const QString &category, const QString &message) override
+    {
         totalRequests++;
 
         if (level == NetworkLogLevel::Error) {
@@ -51,28 +52,35 @@ public:
         // 打印日志
         QString levelStr;
         switch (level) {
-        case NetworkLogLevel::Debug:   levelStr = "DEBUG"; break;
-        case NetworkLogLevel::Info:    levelStr = "INFO"; break;
-        case NetworkLogLevel::Warning: levelStr = "WARNING"; break;
-        case NetworkLogLevel::Error:   levelStr = "ERROR"; break;
+            case NetworkLogLevel::Debug:
+                levelStr = "DEBUG";
+                break;
+            case NetworkLogLevel::Info:
+                levelStr = "INFO";
+                break;
+            case NetworkLogLevel::Warning:
+                levelStr = "WARNING";
+                break;
+            case NetworkLogLevel::Error:
+                levelStr = "ERROR";
+                break;
         }
 
         qDebug().noquote() << QString("[%1] %2: %3").arg(levelStr, category, message);
     }
 
-    void setMinLogLevel(NetworkLogLevel level) override {
-        m_minLevel = level;
-    }
+    void setMinLogLevel(NetworkLogLevel level) override { m_minLevel = level; }
 
-    NetworkLogLevel minLogLevel() const override {
-        return m_minLevel;
-    }
+    NetworkLogLevel minLogLevel() const override { return m_minLevel; }
 
-    void printStatistics() {
+    void printStatistics()
+    {
         qDebug() << "\n=== 统计信息 ===";
         qDebug() << "总请求数:" << totalRequests;
         qDebug() << "错误数:" << errorRequests;
-        qDebug() << "成功率:" << QString::number((1.0 - (double)errorRequests / totalRequests) * 100, 'f', 2) << "%";
+        qDebug() << "成功率:"
+                 << QString::number((1.0 - (double) errorRequests / totalRequests) * 100, 'f', 2)
+                 << "%";
     }
 };
 
@@ -88,7 +96,7 @@ int main(int argc, char *argv[])
 
     qDebug() << ">>> 示例 1: 使用默认 Logger";
 
-    auto *manager1 = new QCNetworkAccessManager();
+    auto *manager1      = new QCNetworkAccessManager();
     auto *defaultLogger = new QCNetworkDefaultLogger();
 
     defaultLogger->setMinLogLevel(NetworkLogLevel::Info);
@@ -96,7 +104,7 @@ int main(int argc, char *argv[])
 
     manager1->setLogger(defaultLogger);
 
-    qDebug() << "Logger 已设置，最小日志级别:" << (int)defaultLogger->minLogLevel();
+    qDebug() << "Logger 已设置，最小日志级别:" << (int) defaultLogger->minLogLevel();
 
     // ========================================================================
     // 示例 2: 启用文件日志
@@ -104,11 +112,11 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 2: 启用文件日志";
 
-    auto *manager2 = new QCNetworkAccessManager();
+    auto *manager2   = new QCNetworkAccessManager();
     auto *fileLogger = new QCNetworkDefaultLogger();
 
     fileLogger->setMinLogLevel(NetworkLogLevel::Debug);
-    fileLogger->enableFileOutput("/tmp/qcurl-demo.log", 1024 * 1024, 3);  // 1MB, 3 个备份
+    fileLogger->enableFileOutput("/tmp/qcurl-demo.log", 1024 * 1024, 3); // 1MB, 3 个备份
 
     manager2->setLogger(fileLogger);
 
@@ -120,7 +128,7 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 3: 自定义 Logger (统计)";
 
-    auto *manager3 = new QCNetworkAccessManager();
+    auto *manager3    = new QCNetworkAccessManager();
     auto *statsLogger = new StatisticsLogger();
 
     manager3->setLogger(statsLogger);
@@ -142,7 +150,7 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 4: 自定义日志格式";
 
-    auto *manager4 = new QCNetworkAccessManager();
+    auto *manager4        = new QCNetworkAccessManager();
     auto *formattedLogger = new QCNetworkDefaultLogger();
 
     formattedLogger->setLogFormat("[%{time}] %{level} - %{message}");
@@ -158,12 +166,12 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 5: 真实网络请求 + 日志记录";
 
-    auto *manager5 = new QCNetworkAccessManager();
+    auto *manager5      = new QCNetworkAccessManager();
     auto *requestLogger = new QCNetworkDefaultLogger();
 
     requestLogger->setMinLogLevel(NetworkLogLevel::Debug);
     requestLogger->enableConsoleOutput(true);
-    requestLogger->enableFileOutput("/tmp/qcurl-requests.log", 1024*1024, 3);
+    requestLogger->enableFileOutput("/tmp/qcurl-requests.log", 1024 * 1024, 3);
 
     manager5->setLogger(requestLogger);
 

@@ -14,14 +14,6 @@
  *   - QCObservabilityMiddleware（结构化观测事件，脱敏 URL）
  */
 
-#include <QCoreApplication>
-#include <QDebug>
-#include <QEventLoop>
-#include <QTimer>
-#include <QUrl>
-
-#include <chrono>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMiddleware.h"
@@ -29,6 +21,14 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
+
+#include <QCoreApplication>
+#include <QDebug>
+#include <QEventLoop>
+#include <QTimer>
+#include <QUrl>
+
+#include <chrono>
 
 using namespace QCurl;
 
@@ -72,10 +72,10 @@ int main(int argc, char *argv[])
 
     // 3) Middleware：显式注入（库默认行为不变）
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries = 1;
-    defaultPolicy.initialDelay = std::chrono::milliseconds(10);
+    defaultPolicy.maxRetries        = 1;
+    defaultPolicy.initialDelay      = std::chrono::milliseconds(10);
     defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay = std::chrono::milliseconds(100);
+    defaultPolicy.maxDelay          = std::chrono::milliseconds(100);
 
     QCUnifiedRetryPolicyMiddleware retryPolicyMw(defaultPolicy);
     QCRedactingLoggingMiddleware redactingLogMw;
@@ -102,8 +102,10 @@ int main(int argc, char *argv[])
     requestRetry.setRawHeader("Authorization", QByteArray("Bearer ") + secretToken);
 
     auto *replyRetry = manager.sendGet(requestRetry);
-    int retryCount = 0;
-    QObject::connect(replyRetry, &QCNetworkReply::retryAttempt, replyRetry,
+    int retryCount   = 0;
+    QObject::connect(replyRetry,
+                     &QCNetworkReply::retryAttempt,
+                     replyRetry,
                      [&retryCount](int, NetworkError) { retryCount++; });
 
     if (!waitForFinished(replyRetry, 2000)) {
@@ -129,8 +131,10 @@ int main(int argc, char *argv[])
     requestNoRetry.setRetryPolicy(QCNetworkRetryPolicy::noRetry()); // 显式禁用重试
 
     auto *replyNoRetry = manager.sendGet(requestNoRetry);
-    int retryCount2 = 0;
-    QObject::connect(replyNoRetry, &QCNetworkReply::retryAttempt, replyNoRetry,
+    int retryCount2    = 0;
+    QObject::connect(replyNoRetry,
+                     &QCNetworkReply::retryAttempt,
+                     replyNoRetry,
                      [&retryCount2](int, NetworkError) { retryCount2++; });
 
     if (!waitForFinished(replyNoRetry, 2000)) {

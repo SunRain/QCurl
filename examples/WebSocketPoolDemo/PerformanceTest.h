@@ -66,7 +66,10 @@ public slots:
 private:
     bool waitForConnection(QCurl::QCWebSocket *socket, int timeout = 5000);
     void printSeparator(const QString &title);
-    void printPerformanceResult(const QString &metric, qint64 without, qint64 with, const QString &unit = "ms");
+    void printPerformanceResult(const QString &metric,
+                                qint64 without,
+                                qint64 with,
+                                const QString &unit = "ms");
 };
 
 #endif // PERFORMANCETEST_H

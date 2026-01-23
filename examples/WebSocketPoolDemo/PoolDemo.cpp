@@ -1,21 +1,20 @@
 #include "PoolDemo.h"
-#include "QCWebSocketPool.h"
+
 #include "QCWebSocket.h"
+#include "QCWebSocketPool.h"
+
 #include <QDebug>
-#include <QThread>
 #include <QEventLoop>
+#include <QThread>
 #include <QTimer>
 
 using namespace QCurl;
 
 PoolDemo::PoolDemo(QObject *parent)
     : QObject(parent)
-{
-}
+{}
 
-PoolDemo::~PoolDemo()
-{
-}
+PoolDemo::~PoolDemo() {}
 
 bool PoolDemo::waitForConnection(QCWebSocket *socket, int timeout)
 {
@@ -75,9 +74,9 @@ void PoolDemo::demoBasicUsage()
         return;
     }
 
-    qDebug() << "   ✅ 连接成功！socket 地址:" << (void*)socket1;
-    qDebug() << "   - 状态:" << (int)socket1->state();
-    
+    qDebug() << "   ✅ 连接成功！socket 地址:" << (void *) socket1;
+    qDebug() << "   - 状态:" << (int) socket1->state();
+
     // 发送消息
     qDebug() << "";
     qDebug() << "3. 发送测试消息...";
@@ -108,9 +107,9 @@ void PoolDemo::demoBasicUsage()
         return;
     }
 
-    qDebug() << "   ✅ 获取成功！socket 地址:" << (void*)socket2;
+    qDebug() << "   ✅ 获取成功！socket 地址:" << (void *) socket2;
     qDebug() << "   - 连接复用:" << (socket1 == socket2 ? "是 ✅" : "否 ❌");
-    qDebug() << "   - 状态:" << (int)socket2->state();
+    qDebug() << "   - 状态:" << (int) socket2->state();
 
     // 查看统计（应有命中记录）
     stats = pool.statistics(url);
@@ -154,7 +153,7 @@ void PoolDemo::demoPreWarm()
     auto *socket = pool.acquire(url);
     if (socket) {
         qDebug() << "   ✅ 立即获取到连接！";
-        qDebug() << "   - 状态:" << (int)socket->state();
+        qDebug() << "   - 状态:" << (int) socket->state();
         pool.release(socket);
     }
 
@@ -181,7 +180,7 @@ void PoolDemo::demoStatistics()
     for (int i = 0; i < 10; ++i) {
         auto *socket = pool.acquire(url);
         if (!socket) {
-            qWarning() << "   第" << (i+1) << "次获取失败";
+            qWarning() << "   第" << (i + 1) << "次获取失败";
             continue;
         }
 
@@ -191,7 +190,7 @@ void PoolDemo::demoStatistics()
             break;
         }
 
-        qDebug() << "   操作" << (i+1) << "- socket:" << (void*)socket;
+        qDebug() << "   操作" << (i + 1) << "- socket:" << (void *) socket;
         QThread::msleep(100);
         pool.release(socket);
     }
@@ -228,7 +227,8 @@ void PoolDemo::demoMultipleUrls()
     auto *socket1 = pool.acquire(url1);
     if (!socket1 || !waitForConnection(socket1, 10000)) {
         qWarning() << "❌ URL1 连接失败";
-        if (socket1) pool.release(socket1);
+        if (socket1)
+            pool.release(socket1);
         return;
     }
     qDebug() << "   ✅ URL1 连接成功";
@@ -238,7 +238,8 @@ void PoolDemo::demoMultipleUrls()
     auto *socket2 = pool.acquire(url2);
     if (!socket2 || !waitForConnection(socket2, 10000)) {
         qWarning() << "❌ URL2 连接失败";
-        if (socket2) pool.release(socket2);
+        if (socket2)
+            pool.release(socket2);
         pool.release(socket1);
         return;
     }
@@ -246,8 +247,8 @@ void PoolDemo::demoMultipleUrls()
 
     qDebug() << "";
     qDebug() << "3. 验证连接独立性:";
-    qDebug() << "   - socket1 地址:" << (void*)socket1;
-    qDebug() << "   - socket2 地址:" << (void*)socket2;
+    qDebug() << "   - socket1 地址:" << (void *) socket1;
+    qDebug() << "   - socket2 地址:" << (void *) socket2;
     qDebug() << "   - 是否相同:" << (socket1 == socket2 ? "是 ❌" : "否 ✅");
 
     qDebug() << "";
