@@ -7,6 +7,10 @@
 # 说明：
 # - 本锁文件面向 `tests/libcurl_consistency/run_gate.py`
 # - 版本选择与上游 curl testenv 的 requirements 对齐（见 curl/tests/http/requirements.txt），并补充 brotli
+#
+# 供应链强化（评估项）：
+# - 如需更强可重复性/审计口径，可升级为 `pip install --require-hashes` 形态，或提供 wheelhouse/离线镜像；
+#   当前仍使用“版本锁 + gate 产出 pip_freeze 工件”的最小策略。
 
 cryptography==46.0.3
 filelock==3.20.1

@@ -33,6 +33,15 @@
 
 - `cmake -S . -B build -DQCURL_LC_NGHTTP2_ARCHIVE="/path/to/nghttp2-1.68.0.tar.gz"`
 
+为保证输入可审计/可重复，离线 tarball **必须与锁文件一致**：
+
+- 锁文件：`tests/libcurl_consistency/nghttpx_from_source/nghttp2.lock`
+  - `url=...`：上游下载地址（在线模式使用）
+  - `sha256=...`：期望的 tarball sha256（离线/在线都应一致）
+- 校验命令（示例）：
+  - `sha256sum /path/to/nghttp2-1.68.0.tar.gz`
+  - 将输出与 `nghttp2.lock` 的 `sha256=` 对比；不一致应视为“输入漂移”，禁止继续构建（避免镜像漂移/篡改导致不可复现）。
+
 ## 前置依赖（Arch Linux）
 
 需要系统已安装 `libngtcp2` 与 `libnghttp3`（HTTP/3/QUIC 依赖），以及常见编译工具链。

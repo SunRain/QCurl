@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -595,6 +596,21 @@ def main(argv: List[str]) -> int:
             "violations": [],
         },
     }
+
+    # 供应链/复跑证据：记录 Python 锁文件摘要（安装口径 + sha256），避免“同命令不同依赖输入”不可追溯。
+    lock_path = cfg.repo_root / "tests" / "libcurl_consistency" / "requirements.lock.txt"
+    report["python_deps_lock"] = {
+        "path": str(lock_path),
+        "exists": lock_path.exists(),
+        "install_mode": "python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt",
+    }
+    try:
+        if lock_path.exists():
+            raw = lock_path.read_bytes()
+            report["python_deps_lock"]["sha256"] = hashlib.sha256(raw).hexdigest()
+            report["python_deps_lock"]["lines"] = len(raw.splitlines())
+    except Exception as exc:
+        report["warnings"].append(f"failed to read requirements.lock.txt for sha256: {exc}")
 
     try:
         violations = _preflight_forbid_local_httpbin(cfg)
