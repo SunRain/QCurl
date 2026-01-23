@@ -161,7 +161,7 @@ QByteArray QCMultipartFormData::toByteArray() const
 
 QString QCMultipartFormData::contentType() const
 {
-    return QString("multipart/form-data; boundary=%1").arg(m_boundary);
+    return QStringLiteral("multipart/form-data; boundary=%1").arg(m_boundary);
 }
 
 QString QCMultipartFormData::boundary() const
@@ -258,7 +258,7 @@ QString QCMultipartFormData::generateBoundary() const
         randomPart.append(QString::number(QRandomGenerator::global()->bounded(16), 16));
     }
 
-    return QString("----QCurlBoundary%1").arg(randomPart);
+    return QStringLiteral("----QCurlBoundary%1").arg(randomPart);
 }
 
 QString QCMultipartFormData::guessMimeType(const QString &fileName) const

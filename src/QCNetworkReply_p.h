@@ -200,7 +200,7 @@ public:
     // ========================================================================
 
     QPointer<QIODevice> uploadDevice;   ///< 上传来源（调用方/内部文件，所有权不在 Reply）
-    QFile *ownedUploadFile = nullptr;    ///< 若来源为 uploadFilePath，则由 Reply 打开并持有
+    QPointer<QFile> ownedUploadFile;    ///< 若来源为 uploadFilePath，则由 Reply 打开并持有（父子树/事件循环析构）
     qint64 uploadDeviceBasePos = 0;      ///< 首次执行时记录的起始位置（支持非 0 起点）
     qint64 uploadBodySizeBytes = -1;     ///< 约定：-1 表示未知/未设置
     qint64 uploadBytesRead = 0;          ///< 已从 uploadDevice 读取的字节数（相对 basePos）

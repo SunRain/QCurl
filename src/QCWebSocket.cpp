@@ -357,7 +357,7 @@ void QCWebSocket::open()
         if (d->compressionConfig.enabled) {
             QString extHeader = d->compressionConfig.toExtensionHeader();
             if (!extHeader.isEmpty()) {
-                QString headerStr = QString("Sec-WebSocket-Extensions: %1").arg(extHeader);
+                QString headerStr = QStringLiteral("Sec-WebSocket-Extensions: %1").arg(extHeader);
                 QByteArray headerBytes = headerStr.toUtf8();
                 headers = curl_slist_append(headers, headerBytes.constData());
                 curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -390,7 +390,7 @@ void QCWebSocket::open()
                 long sslVerifyResult = 0;
                 curl_easy_getinfo(curl, CURLINFO_SSL_VERIFYRESULT, &sslVerifyResult);
                 if (sslVerifyResult != 0) {
-                    sslErrorList << QString("SSL 验证结果码: %1").arg(sslVerifyResult);
+                    sslErrorList << QStringLiteral("SSL 验证结果码: %1").arg(sslVerifyResult);
                 }
                 
                 // 发射详细 SSL 错误信号
@@ -679,7 +679,7 @@ QString QCWebSocket::compressionStats() const
         recvRatio = 100.0 * (1.0 - static_cast<double>(d->receivedBytesCompressed) / d->receivedBytesRaw);
     }
     
-    return QString("Sent: %1 bytes -> %2 bytes (%.1f%% compression)\n"
+    return QStringLiteral("Sent: %1 bytes -> %2 bytes (%.1f%% compression)\n"
                    "Recv: %3 bytes <- %4 bytes (%.1f%% compression)")
             .arg(d->sentBytesRaw)
             .arg(d->sentBytesCompressed)

@@ -322,7 +322,8 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
         if (ownedUploadFile->isOpen()) {
             ownedUploadFile->close();
         }
-        delete ownedUploadFile;
+        // 事件循环析构，避免手动 delete QObject
+        ownedUploadFile->deleteLater();
         ownedUploadFile = nullptr;
     }
 
@@ -573,7 +574,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         if (ownedUploadFile->isOpen()) {
             ownedUploadFile->close();
         }
-        delete ownedUploadFile;
+        // 事件循环析构，避免手动 delete QObject
+        ownedUploadFile->deleteLater();
         ownedUploadFile = nullptr;
     }
 
@@ -581,11 +583,13 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!reqUploadDevice) {
         const auto filePathOpt = request.uploadFilePath();
         if (filePathOpt.has_value()) {
-            ownedUploadFile = new QFile(filePathOpt.value());
+            ownedUploadFile = new QFile(filePathOpt.value(), q_ptr);
             if (!ownedUploadFile->open(QIODevice::ReadOnly)) {
                 setError(NetworkError::InvalidRequest,
                          QStringLiteral("uploadFile: 无法打开文件：%1")
                              .arg(ownedUploadFile->errorString()));
+                ownedUploadFile->deleteLater();
+                ownedUploadFile = nullptr;
                 return false;
             }
             reqUploadDevice = ownedUploadFile;
@@ -935,7 +939,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ========================================================================
 
     if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
-        QString rangeStr = QString("%1-%2")
+        QString rangeStr = QStringLiteral("%1-%2")
                           .arg(request.rangeStart())
                           .arg(request.rangeEnd());
         QByteArray rangeBytes = rangeStr.toUtf8();
@@ -2624,7 +2628,7 @@ void QCNetworkReply::execute()
             } else if (httpCode >= 400) {
                 // HTTP 错误（4xx, 5xx）
                 error = fromHttpCode(httpCode);
-                errorMsg = QString("HTTP error %1").arg(httpCode);
+                errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
             }
 
             // 如果没有错误，标记为成功
@@ -3078,7 +3082,9 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
 
     QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager*>(parent());
     QCNetworkCache *cache = manager ? manager->cache() : nullptr;
-    if (!cache) return false;
+    if (!cache) {
+        return false;
+    }
 
     auto meta = cache->metadata(d->request.url());
 

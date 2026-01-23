@@ -2,7 +2,7 @@
 #define QCGLOBAL_H
 
 #include "QCurlConfig.h"
-#include <QtCore/qglobal.h>
+#include <QtGlobal>
 #include <curl/curl.h>
 
 // Qt 6 检查（在 QCurlConfig.h 中已包含）

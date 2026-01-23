@@ -5,7 +5,7 @@
 #include "QCNetworkSslConfig.h"
 
 #include <QString>
-#include <QtCore/qglobal.h>
+#include <QtGlobal>
 #include <optional>
 
 QT_BEGIN_NAMESPACE

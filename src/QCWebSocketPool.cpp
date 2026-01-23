@@ -278,7 +278,7 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
     // 计算命中率
     int totalRequests = stats.hitCount + stats.missCount;
     if (totalRequests > 0) {
-        stats.hitRate = (double)stats.hitCount / totalRequests * 100.0;
+        stats.hitRate = static_cast<double>(stats.hitCount) / totalRequests * 100.0;
     }
 
     return stats;

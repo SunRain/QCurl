@@ -89,21 +89,24 @@ public:
 
     inline void append(const QCByteDataBuffer& other)
     {
-        if (other.isEmpty())
+        if (other.isEmpty()) {
             return;
+        }
 
         buffers.append(other.buffers);
         bufferCompleteSize += other.byteAmount();
 
-        if (other.firstPos > 0)
+        if (other.firstPos > 0) {
             popFront(buffers[bufferCount() - other.bufferCount()], other.firstPos);
+    }
     }
 
 
     inline void append(const QByteArray& bd)
     {
-        if (bd.isEmpty())
+        if (bd.isEmpty()) {
             return;
+        }
 
         buffers.append(bd);
         bufferCompleteSize += bd.size();
@@ -111,8 +114,9 @@ public:
 
     inline void prepend(const QByteArray& bd)
     {
-        if (bd.isEmpty())
+        if (bd.isEmpty()) {
             return;
+        }
 
         squeezeFirst();
 
@@ -211,16 +215,17 @@ public:
 
     inline qint64 sizeNextBlock() const
     {
-        if(buffers.isEmpty())
+        if(buffers.isEmpty()) {
             return 0;
-        else
+        }
             return buffers.first().size() - firstPos;
     }
 
     inline QByteArray& operator[](int i)
     {
-        if (i == 0)
+        if (i == 0) {
             squeezeFirst();
+        }
 
         return buffers[i];
     }
@@ -228,13 +233,16 @@ public:
     inline bool canReadLine() const {
         int i = 0;
         if (i < buffers.length()) {
-            if (buffers.at(i).indexOf('\n', firstPos) != -1)
+            if (buffers.at(i).indexOf('\n', firstPos) != -1) {
                 return true;
+            }
             ++i;
 
-            for (; i < buffers.length(); i++)
-                if (buffers.at(i).contains('\n'))
+            for (; i < buffers.length(); i++) {
+                if (buffers.at(i).contains('\n')) {
                     return true;
+        }
+            }
         }
         return false;
     }

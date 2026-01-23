@@ -106,26 +106,40 @@ inline QCNetworkRequestPriority fromString(const QString &str, bool *ok = nullpt
     QString lowerStr = str.toLower();
     
     if (lowerStr == QStringLiteral("verylow")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::VeryLow;
     } else if (lowerStr == QStringLiteral("low")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::Low;
     } else if (lowerStr == QStringLiteral("normal")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::Normal;
     } else if (lowerStr == QStringLiteral("high")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::High;
     } else if (lowerStr == QStringLiteral("veryhigh")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::VeryHigh;
     } else if (lowerStr == QStringLiteral("critical")) {
-        if (ok) *ok = true;
+        if (ok) {
+            *ok = true;
+        }
         return QCNetworkRequestPriority::Critical;
     }
     
-    if (ok) *ok = false;
+    if (ok) {
+        *ok = false;
+    }
     return QCNetworkRequestPriority::Normal;  // 默认返回 Normal
 }
 

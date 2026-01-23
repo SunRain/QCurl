@@ -588,7 +588,7 @@ void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
 
     if (context->pending.has_value()) {
         QString error;
-        (void)applyShareConfigIfIdleLocked(context, context->pending.value(), &error);
+        static_cast<void>(applyShareConfigIfIdleLocked(context, context->pending.value(), &error));
         context->pending.reset();
     }
 
@@ -750,7 +750,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
             } else if (httpCode >= 400) {
                 // HTTP 错误（4xx, 5xx）
                 error = fromHttpCode(httpCode);
-                errorMsg = QString("HTTP error %1").arg(httpCode);
+                errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
             }
 
 #if defined(CURLE_SEND_FAIL_REWIND)
@@ -1035,7 +1035,7 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         }
     }
 
-    (void)curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH");
+    static_cast<void>(curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH"));
     return true;
 }
 
@@ -1214,7 +1214,7 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
         }
         return false;
     }
-    (void)curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH");
+    static_cast<void>(curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH"));
     return true;
 }
 

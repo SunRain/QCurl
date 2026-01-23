@@ -22,7 +22,7 @@ QString NetworkLogEntry::toJson() const
 
 QString NetworkLogEntry::toPlainText() const
 {
-    return QString("%1 [%2] %3: %4")
+    return QStringLiteral("%1 [%2] %3: %4")
         .arg(timestamp.toString("yyyy-MM-dd hh:mm:ss.zzz"),
              logLevelToString(level),
              category,
@@ -46,10 +46,18 @@ QString logLevelToString(NetworkLogLevel level)
 
 NetworkLogLevel stringToLogLevel(const QString &str)
 {
-    if (str == "DEBUG") return NetworkLogLevel::Debug;
-    if (str == "INFO") return NetworkLogLevel::Info;
-    if (str == "WARN" || str == "WARNING") return NetworkLogLevel::Warning;
-    if (str == "ERROR") return NetworkLogLevel::Error;
+    if (str == "DEBUG") {
+        return NetworkLogLevel::Debug;
+    }
+    if (str == "INFO") {
+        return NetworkLogLevel::Info;
+    }
+    if (str == "WARN" || str == "WARNING") {
+        return NetworkLogLevel::Warning;
+    }
+    if (str == "ERROR") {
+        return NetworkLogLevel::Error;
+    }
     return NetworkLogLevel::Info;
 }
 
@@ -82,18 +90,20 @@ public:
     
     void writeToFile(const QString &text)
     {
-        if (logFile.isEmpty()) return;
+        if (logFile.isEmpty()) {
+            return;
+        }
         
         QFile file(logFile);
         if (file.size() > maxFileSize && maxFileSize > 0) {
             // Rotate log files
             for (int i = backupCount - 1; i > 0; --i) {
-                QString oldFile = QString("%1.%2").arg(logFile, QString::number(i));
-                QString newFile = QString("%1.%2").arg(logFile, QString::number(i + 1));
+                QString oldFile = QStringLiteral("%1.%2").arg(logFile, QString::number(i));
+                QString newFile = QStringLiteral("%1.%2").arg(logFile, QString::number(i + 1));
                 QFile::remove(newFile);
                 QFile::rename(oldFile, newFile);
             }
-            QString backupFile = QString("%1.1").arg(logFile);
+            QString backupFile = QStringLiteral("%1.1").arg(logFile);
             QFile::remove(backupFile);
             QFile::rename(logFile, backupFile);
         }

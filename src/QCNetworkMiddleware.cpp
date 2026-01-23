@@ -58,7 +58,9 @@ void QCLoggingMiddleware::onRequestPreSend(QCNetworkRequest &request)
 
 void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
 {
-    if (!reply) return;
+    if (!reply) {
+        return;
+    }
     
     if (reply->error() == NetworkError::NoError) {
         qDebug() << "[QCurl Middleware] Response received:"
@@ -81,7 +83,9 @@ void QCErrorHandlingMiddleware::setErrorCallback(std::function<void(const QStrin
 
 void QCErrorHandlingMiddleware::onResponseReceived(QCNetworkReply *reply)
 {
-    if (!reply) return;
+    if (!reply) {
+        return;
+    }
     
     if (reply->error() != NetworkError::NoError) {
         QString errorMsg = reply->errorString();

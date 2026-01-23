@@ -3,7 +3,7 @@
 
 #include <chrono>
 #include <optional>
-#include <QtCore/qglobal.h>
+#include <QtGlobal>
 
 QT_BEGIN_NAMESPACE
 

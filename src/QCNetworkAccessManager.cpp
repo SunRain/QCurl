@@ -950,7 +950,7 @@ QCNetworkReply* QCNetworkAccessManager::postForm(const QUrl &url, const QMap<QSt
     for (auto it = formData.constBegin(); it != formData.constEnd(); ++it) {
         QString key = QUrl::toPercentEncoding(it.key());
         QString value = QUrl::toPercentEncoding(it.value());
-        pairs.append(QString("%1=%2").arg(key, value));
+        pairs.append(QStringLiteral("%1=%2").arg(key, value));
     }
     QByteArray encodedData = pairs.join("&").toUtf8();
 
@@ -1271,7 +1271,7 @@ QCNetworkReply* QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
 
     // 断点续传：设置 Range 头（RFC 7233）
     if (existingSize > 0) {
-        QString rangeHeader = QString("bytes=%1-").arg(existingSize);
+        QString rangeHeader = QStringLiteral("bytes=%1-").arg(existingSize);
         request.setRawHeader("Range", rangeHeader.toUtf8());
     }
 

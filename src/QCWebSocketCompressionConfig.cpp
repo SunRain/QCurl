@@ -19,12 +19,12 @@ QString QCWebSocketCompressionConfig::toExtensionHeader() const
     
     // 客户端窗口位数
     if (clientMaxWindowBits < 15) {
-        parts << QString("client_max_window_bits=%1").arg(clientMaxWindowBits);
+        parts << QStringLiteral("client_max_window_bits=%1").arg(clientMaxWindowBits);
     }
     
     // 服务器窗口位数
     if (serverMaxWindowBits < 15) {
-        parts << QString("server_max_window_bits=%1").arg(serverMaxWindowBits);
+        parts << QStringLiteral("server_max_window_bits=%1").arg(serverMaxWindowBits);
     }
     
     // 客户端无上下文接管
