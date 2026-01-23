@@ -1,5 +1,5 @@
 # libcurl_consistency ext PR gate
-name: PR Gate (libcurl_consistency ext)
+name: PR Gate (libcurl_consistency, HTTP/3 required + ext)
 
 on:
   pull_request:
@@ -22,9 +22,11 @@ on:
 
 env:
   BUILD_TYPE: Release
+  QCURL_REQUIRE_HTTP3: "1"
+  QCURL_LC_EXT: "1"
 
 jobs:
-  libcurl_consistency_ext:
+  libcurl_consistency_gate:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -87,6 +89,46 @@ jobs:
           print("socket_bind_ok")
           PY
 
+      - name: Verify offline nghttp2 archive (sha256, optional)
+        run: |
+          set -euo pipefail
+          if [ -z "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            echo "QCURL_LC_NGHTTP2_ARCHIVE not set; using upstream download (per nghttp2.lock)."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import sys
+
+          archive = pathlib.Path(os.environ["QCURL_LC_NGHTTP2_ARCHIVE"])
+          if not archive.is_file():
+              print(f"::error::QCURL_LC_NGHTTP2_ARCHIVE not found: {archive}")
+              sys.exit(1)
+
+          lock = pathlib.Path("tests/libcurl_consistency/nghttpx_from_source/nghttp2.lock").read_text(encoding="utf-8", errors="replace")
+          m = re.search(r"^sha256=(?P<sha>[0-9a-fA-F]{64})\\s*$", lock, re.MULTILINE)
+          if not m:
+              print("::error::failed to parse sha256 from nghttp2.lock")
+              sys.exit(1)
+          expected = m.group("sha").lower()
+
+          h = hashlib.sha256()
+          with archive.open("rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  h.update(chunk)
+          actual = h.hexdigest().lower()
+
+          print(f"expected_sha256={expected}")
+          print(f"actual_sha256={actual}")
+          if actual != expected:
+              print("::error::nghttp2 archive sha256 mismatch (refuse to build with untrusted input)")
+              sys.exit(1)
+          print("nghttp2 archive sha256 ok")
+          PY
+
       - name: Configure QCurl (CMake)
         run: |
           set -euo pipefail
@@ -116,9 +158,9 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
-      - name: Run libcurl_consistency gate (all + ext)
+      - name: Run libcurl_consistency gate (all + ext, HTTP/3 required)
         run: |
-          QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+          QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
 
       - name: Upload gate reports
         if: always()
@@ -128,6 +170,7 @@ jobs:
           path: |
             build/libcurl_consistency/reports/
           retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload service logs (on failure)
         if: failure()
@@ -137,107 +180,14 @@ jobs:
           path: |
             curl/tests/http/gen/artifacts/**/service_logs/
           retention-days: 14
+          if-no-files-found: ignore
 
-  libcurl_consistency_p0_http3_required:
-    name: PR Gate (libcurl_consistency p0, HTTP/3 required)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    env:
-      BUILD_TYPE: Release
-      QCURL_REQUIRE_HTTP3: "1"
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            ninja-build \
-            pkg-config \
-            qt6-base-dev \
-            libcurl4-openssl-dev \
-            libssl-dev \
-            zlib1g-dev \
-            python3-pip \
-            apache2 \
-            apache2-dev \
-            libapache2-mod-http2 \
-            libevent-dev \
-            libnghttp3-dev
-
-          # ngtcp2 的包名在不同 Ubuntu 版本可能不同：优先 libngtcp2-dev，否则退回 crypto 后端包。
-          sudo apt-get install -y libngtcp2-dev || sudo apt-get install -y libngtcp2-crypto-openssl-dev || sudo apt-get install -y libngtcp2-crypto-gnutls-dev
-
-      - name: Install Python dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt
-
-      - name: Ensure curl testenv tool paths (httpd/apxs)
-        run: |
-          set -euo pipefail
-
-          if [ ! -x /usr/bin/httpd ] && command -v apache2 >/dev/null 2>&1; then
-            sudo ln -sf "$(command -v apache2)" /usr/bin/httpd
-          fi
-
-          if [ ! -x /usr/bin/apxs ] && command -v apxs2 >/dev/null 2>&1; then
-            sudo ln -sf "$(command -v apxs2)" /usr/bin/apxs
-          fi
-
-          /usr/bin/httpd -v || true
-          /usr/bin/apxs -q HTTPD_VERSION || true
-
-      - name: Configure QCurl (CMake)
-        run: |
-          set -euo pipefail
-          extra=""
-          if [ -n "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
-            extra="-DQCURL_LC_NGHTTP2_ARCHIVE=${QCURL_LC_NGHTTP2_ARCHIVE}"
-          fi
-
-          cmake -S . -B build \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DBUILD_TESTING=ON \
-            -DBUILD_EXAMPLES=OFF \
-            -DBUILD_BENCHMARKS=OFF \
-            ${extra}
-
-      - name: Build local nghttpx (h3-capable) for curl testenv
-        run: |
-          set -euo pipefail
-          cmake --build build --target qcurl_nghttpx_h3 --parallel
-          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version
-          build/libcurl_consistency/nghttpx-h3/bin/nghttpx --version | grep -q "ngtcp2/"
-
-      - name: Run libcurl_consistency gate (p0, HTTP/3 required)
-        run: |
-          set -euo pipefail
-          QCURL_REQUIRE_HTTP3=1 python3 tests/libcurl_consistency/run_gate.py --suite p0 --build
-
-      - name: Upload gate reports
+      - name: Upload test artifacts (optional)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: libcurl-consistency-p0-http3-required-reports-${{ github.sha }}
+          name: test-artifacts-${{ github.sha }}
           path: |
-            build/libcurl_consistency/reports/
-            curl/tests/http/gen/artifacts/p0/
+            build/test-artifacts/
           retention-days: 14
-
-      - name: Upload service logs (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: libcurl-consistency-p0-http3-required-service-logs-${{ github.sha }}
-          path: |
-            curl/tests/http/gen/artifacts/**/service_logs/
-          retention-days: 14
+          if-no-files-found: ignore

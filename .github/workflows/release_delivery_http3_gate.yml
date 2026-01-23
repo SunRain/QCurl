@@ -118,6 +118,46 @@ jobs:
           print("socket_bind_ok")
           PY
 
+      - name: Verify offline nghttp2 archive (sha256, optional)
+        run: |
+          set -euo pipefail
+          if [ -z "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            echo "QCURL_LC_NGHTTP2_ARCHIVE not set; using upstream download (per nghttp2.lock)."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import sys
+
+          archive = pathlib.Path(os.environ["QCURL_LC_NGHTTP2_ARCHIVE"])
+          if not archive.is_file():
+              print(f"::error::QCURL_LC_NGHTTP2_ARCHIVE not found: {archive}")
+              sys.exit(1)
+
+          lock = pathlib.Path("tests/libcurl_consistency/nghttpx_from_source/nghttp2.lock").read_text(encoding="utf-8", errors="replace")
+          m = re.search(r"^sha256=(?P<sha>[0-9a-fA-F]{64})\\s*$", lock, re.MULTILINE)
+          if not m:
+              print("::error::failed to parse sha256 from nghttp2.lock")
+              sys.exit(1)
+          expected = m.group("sha").lower()
+
+          h = hashlib.sha256()
+          with archive.open("rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  h.update(chunk)
+          actual = h.hexdigest().lower()
+
+          print(f"expected_sha256={expected}")
+          print(f"actual_sha256={actual}")
+          if actual != expected:
+              print("::error::nghttp2 archive sha256 mismatch (refuse to build with untrusted input)")
+              sys.exit(1)
+          print("nghttp2 archive sha256 ok")
+          PY
+
       - name: Configure QCurl (CMake)
         run: |
           set -euo pipefail
@@ -269,6 +309,46 @@ jobs:
           s.listen(1)
           s.close()
           print("socket_bind_ok")
+          PY
+
+      - name: Verify offline nghttp2 archive (sha256, optional)
+        run: |
+          set -euo pipefail
+          if [ -z "${QCURL_LC_NGHTTP2_ARCHIVE:-}" ]; then
+            echo "QCURL_LC_NGHTTP2_ARCHIVE not set; using upstream download (per nghttp2.lock)."
+            exit 0
+          fi
+          python - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import sys
+
+          archive = pathlib.Path(os.environ["QCURL_LC_NGHTTP2_ARCHIVE"])
+          if not archive.is_file():
+              print(f"::error::QCURL_LC_NGHTTP2_ARCHIVE not found: {archive}")
+              sys.exit(1)
+
+          lock = pathlib.Path("tests/libcurl_consistency/nghttpx_from_source/nghttp2.lock").read_text(encoding="utf-8", errors="replace")
+          m = re.search(r"^sha256=(?P<sha>[0-9a-fA-F]{64})\\s*$", lock, re.MULTILINE)
+          if not m:
+              print("::error::failed to parse sha256 from nghttp2.lock")
+              sys.exit(1)
+          expected = m.group("sha").lower()
+
+          h = hashlib.sha256()
+          with archive.open("rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  h.update(chunk)
+          actual = h.hexdigest().lower()
+
+          print(f"expected_sha256={expected}")
+          print(f"actual_sha256={actual}")
+          if actual != expected:
+              print("::error::nghttp2 archive sha256 mismatch (refuse to build with untrusted input)")
+              sys.exit(1)
+          print("nghttp2 archive sha256 ok")
           PY
 
       - name: Configure QCurl (CMake)
