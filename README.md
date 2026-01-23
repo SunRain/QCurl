@@ -163,11 +163,7 @@ auto *reply = manager->postMultipart(QUrl("https://api.example.com/upload"), for
 - **13 个示例程序** - 涵盖各种使用场景
 - **6 个性能基准** - HTTP/2、HTTP/3、WebSocket、连接池、调度器
 
-```bash
-# 运行测试
-docker run -d -p 8935:80 --name httpbin kennethreitz/httpbin
-cd build && ctest --output-on-failure
-```
+测试运行与门禁（offline/env/全量回归/libcurl_consistency）请以 `docs/dev/build-and-test.md` 为准；测试目录入口见 `tests/README.md`。
 
 ---
 

@@ -22,6 +22,7 @@
 - 代码格式（4 空格缩进、单语句必须加括号）
 - Qt 6 专属约定（新式信号槽、`QStringLiteral`、`Q_OBJECT` 宏）
 - 禁止项（异常、RTTI、`dynamic_cast`、默认禁止裸 `new`/`delete`（`QObject` 派生允许裸 `new`，但必须父子树或 `deleteLater()`；禁止手动 `delete` `QObject`）、C 风格转换）
+- `QObject` 派生语义：禁止 copy/move/按值容器；仅使用指针/引用语义，并用 parent ownership / `deleteLater()` 管理生命周期（详见 `Qt6_CPP17_Coding_Style.md` 第 6 章）
 
 **示例**：
 ```cpp
@@ -102,7 +103,7 @@ bool getColor(QColor *outColor) {
 涉及对象生命周期管理？
          ├─ 否 → 继续
          └─ 是 → 先判断是否为 QObject 派生
-                ├─ 是 → 优先 new T(parent)，必要时 deleteLater()，禁止手动 delete
+                ├─ 是 → 禁止 copy/move/按值容器；优先 new T(parent)，必要时 deleteLater()，禁止手动 delete
                 └─ 否 → 使用 RAII/智能指针，禁止裸 new/delete
                      ↓
 是新代码还是维护旧代码？
@@ -320,5 +321,5 @@ QPair<QMap<QString, int>::iterator, bool> insertValue(
 
 ---
 
-**文档包版本**：v1.0.3
-**最后更新**：2026-01-13
+**文档包版本**：v1.0.6
+**最后更新**：2026-01-17

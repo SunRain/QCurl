@@ -18,11 +18,7 @@
 
 ## 3. 本地构建与测试（最小门禁）
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-ctest --test-dir build --output-on-failure
-```
+请按 `docs/dev/build-and-test.md` 完成本地构建与测试（包含 offline/env/全量回归/libcurl_consistency）。
 
 > 如你的改动涉及一致性 gate，请参考 `docs/dev/build-and-test.md` 的 `libcurl_consistency` 章节。
 

@@ -12,7 +12,7 @@
 
 - 已阅读 `docs/README.md` 与相关模块文档
 - 能用最小示例复现（尽量去除业务代码）
-- 已在本地运行基础门禁：`ctest --test-dir build --output-on-failure`
+- 已在本地运行基础门禁（见 `docs/dev/build-and-test.md`）
 
 Issue 内容建议包含：
 

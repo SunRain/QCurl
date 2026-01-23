@@ -1458,42 +1458,7 @@ QCNetworkReply* sendGet(const QCNetworkRequest &request);
 
 ### 运行测试
 
-#### 准备测试环境
-
-```bash
-# 启动 httpbin 服务 (集成测试需要)
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-
-# 启动 WebSocket 服务器 (WebSocket 测试需要)
-cd tests
-npm install ws
-node websocket_server.js &
-```
-
-#### 运行所有测试
-
-```bash
-cd build
-ctest --output-on-failure
-```
-
-#### 运行特定测试
-
-```bash
-# 单元测试 (无需网络)
-./tests/tst_QCNetworkRequest
-./tests/tst_QCNetworkReply
-./tests/tst_QCNetworkError
-
-# 集成测试 (需要 httpbin)
-./tests/tst_Integration
-
-# 显示详细输出
-./tests/tst_Integration -v2
-
-# 只运行特定测试用例
-./tests/tst_Integration testRealHttpGetRequest
-```
+测试运行命令与依赖（offline/env/httpbin/websocket/libcurl_consistency）请以 `docs/dev/build-and-test.md` 为准；测试目录入口见 `tests/README.md`。
 
 #### 代码覆盖率
 
@@ -1847,10 +1812,7 @@ request.setSslConfig(ssl);
 
 **原因**: httpbin 服务未启动
 
-**解决方法**:
-```bash
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-```
+**解决方法**: 启动并验证本地 httpbin（默认 `http://localhost:8935`），请参考 `docs/dev/build-and-test.md` 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）”。
 
 #### Q8: 内存泄漏
 
@@ -2095,7 +2057,7 @@ private slots:
 
 ```bash
 cmake --build build
-cd build && ctest --output-on-failure
+# 测试运行命令与依赖（offline/env/全量回归/libcurl_consistency）见 docs/dev/build-and-test.md
 ```
 
 #### 6. 提交代码

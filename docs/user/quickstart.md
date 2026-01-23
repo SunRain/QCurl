@@ -18,9 +18,7 @@ cmake --build build -j"$(nproc)"
 
 运行单元测试：
 
-```bash
-ctest --test-dir build --output-on-failure
-```
+测试运行与门禁（offline/env/全量回归/libcurl_consistency）请参考：[`docs/dev/build-and-test.md`](../dev/build-and-test.md)。
 
 ## 3. 安装（可选）
 

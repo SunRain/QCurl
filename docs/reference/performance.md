@@ -253,14 +253,7 @@ done
 
 **原因**: 测试服务器未启动或网络问题
 
-**解决**:
-```bash
-# 启动 httpbin
-docker run -d -p 8935:80 kennethreitz/httpbin
-
-# 检查连接
-curl http://localhost:8935/get
-```
+**解决**: 启动本地 httpbin 与健康检查请参考：[`docs/dev/build-and-test.md`](../dev/build-and-test.md)。
 
 ### 问题：结果波动大
 

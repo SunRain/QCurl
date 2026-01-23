@@ -8,6 +8,7 @@
 
 - 快速开始：`docs/user/quickstart.md`
 - 常见配置（超时/重试/代理/TLS）：`docs/user/configuration.md`
+- FlowControl（pause/resume、backpressure、上传 source pause）：`docs/user/flow-control.md`
 - 示例集合：`examples/README.md`
 
 > 如果你只想先跑通一个最小示例，建议从 `quickstart.md` 开始。

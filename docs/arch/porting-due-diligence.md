@@ -2,7 +2,7 @@
 
 生成时间：2026-01-02（更新：2026-01-06）  
 范围与证据口径：本结论严格基于仓库可见证据（`legendary-python/README.md`、`legendary-python/legendary/**`、`src/**`、`tests/**`），不引入外部网络信息；当信息不足时会明确标注“不足以判断”及建议补充的文件/用例。  
-已执行的本地验证（更新：2026-01-06）：在现有构建目录 `build/` 运行 `ctest --output-on-failure`，38/38 通过；本环境运行 `python -m pytest -q tests/libcurl_consistency/test_env_smoke.py` 仍受端口/权限限制失败（PermissionError: Operation not permitted），建议在具备端口绑定权限的 CI runner 上执行（见 `.github/workflows/*gate*.yml`）；受限环境的关键语义回归门禁已补齐为纯离线 QtTest（见第 3 节）。
+已执行的本地验证（更新：2026-01-06）：在现有构建目录 `build/` 运行回归（命令单一入口：[`docs/dev/build-and-test.md`](../dev/build-and-test.md)），38/38 通过；本环境运行 `python -m pytest -q tests/libcurl_consistency/test_env_smoke.py` 仍受端口/权限限制失败（PermissionError: Operation not permitted），建议在具备端口绑定权限的 CI runner 上执行（见 `.github/workflows/*gate*.yml`）；受限环境的关键语义回归门禁已补齐为纯离线 QtTest（见第 3 节）。
 
 ## 1) 需求映射
 

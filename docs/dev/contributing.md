@@ -17,7 +17,7 @@
 ## 3. 测试要求
 
 - 变更需补齐/调整对应测试（Qt Test / 集成测试）
-- 提交前至少确保 `ctest --test-dir build --output-on-failure` 通过
+- 提交前至少确保离线门禁通过（见 `docs/dev/build-and-test.md`）
 
 ## 4. 文档与知识库同步
 
