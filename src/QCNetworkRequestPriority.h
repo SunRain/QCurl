@@ -13,6 +13,8 @@ namespace QCurl {
  *
  * 定义了请求的执行优先级，用于请求调度器按优先级排序和执行请求。
  *
+ * @note 调度契约为非抢占（non-preemptive）：优先级仅影响 pending 出队顺序；已 Running 的请求不会因更高优先级到来而被中断。
+ *
  */
 enum class QCNetworkRequestPriority {
     /**
@@ -55,14 +57,15 @@ enum class QCNetworkRequestPriority {
      */
     VeryHigh = 4,
 
-    /**
-     * @brief 紧急优先级
-     *
-     * 最高优先级，跳过队列立即执行。
-     * 用于紧急通知、实时数据更新、安全相关请求等。
-     */
-    Critical = 5
-};
+	    /**
+	     * @brief 紧急优先级
+	     *
+	     * 最高优先级，绕过 pending 队列立即启动（不会抢占已 Running 的请求）。
+	     * 当前实现允许 Critical 突破并发/每主机限制：用于极少数“必须立即发出”的控制类请求。
+	     * 用于紧急通知、实时数据更新、安全相关请求等。
+	     */
+	    Critical = 5
+	};
 
 /**
  * @brief 将优先级枚举转换为字符串

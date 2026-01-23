@@ -32,6 +32,13 @@ namespace QCurl {
  * - 请求管理：暂停、恢复、取消请求
  * - 统计信息：实时追踪请求状态和流量
  *
+ * ## 优先级契约（非抢占 / non-preemptive）
+ *
+ * - 调度器是**非抢占式**：一旦请求进入 Running，后续更高优先级请求不会中断/暂停/取消它。
+ * - 优先级只影响 pending 队列在“并发槽位释放时”的出队顺序；同一优先级内部为 FIFO。
+ * - `Critical` 优先级会绕过 pending 队列并立即启动；它不会抢占已 Running 的请求，但可能突破并发/每主机限制。
+ * - 若调用方需要“让出槽位/终止执行”，必须显式调用 `cancelRequest()`/`deferRequest()` 等 API（Running 下 defer 会通过 cancel 终止并转入 deferred）。
+ *
  * @note 线程安全：所有公共方法都使用互斥锁保护
  *
  * @code
@@ -131,14 +138,17 @@ public:
      */
     Config config() const;
 
-    /**
-     * @brief 调度一个网络请求
-     *
-     * 根据优先级将请求加入队列。Critical 优先级的请求会跳过队列立即执行。
-     *
-     * @param request 网络请求
-     * @param method HTTP 方法
-     * @param priority 请求优先级（默认：Normal）
+	    /**
+	     * @brief 调度一个网络请求
+	     *
+	     * 根据优先级将请求加入队列（调度器为**非抢占式**：已 Running 的请求不会被更高优先级请求中断）。
+	     *
+	     * - 非 Critical：进入 pending 队列，等待并发槽位释放后按优先级出队执行。
+	     * - Critical：绕过 pending 队列并立即启动；不会抢占 Running，但可能突破并发/每主机限制。
+	     *
+	     * @param request 网络请求
+	     * @param method HTTP 方法
+	     * @param priority 请求优先级（默认：Normal）
      * @param body 请求体（对于 POST/PUT/PATCH）
      * @return 网络响应对象
      *
@@ -198,15 +208,15 @@ public:
      */
     void cancelAllRequests();
 
-    /**
-     * @brief 动态调整请求优先级
-     *
-     * @param reply 要调整优先级的响应对象
-     * @param newPriority 新的优先级
-     *
-     * @note 只能调整等待中的请求，无法调整正在执行的请求
-     */
-    void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
+	    /**
+	     * @brief 动态调整请求优先级
+	     *
+	     * @param reply 要调整优先级的响应对象
+	     * @param newPriority 新的优先级
+	     *
+	     * @note 只能调整 pending 中的请求；不会抢占/影响已 Running 的请求，也不会触发对 Running 的隐式 cancel/pause。
+	     */
+	    void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
 
     /**
      * @brief 获取统计信息

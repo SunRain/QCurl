@@ -517,25 +517,30 @@ void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
         return;
     }
 
-    QMutexLocker locker(&m_mutex);
+    bool requeued = false;
+    {
+        QMutexLocker locker(&m_mutex);
 
-    // 只能调整队列中的请求
-    if (!removeFromQueue(reply)) {
-        return; // 请求不在队列中
+        // 只能调整队列中的请求
+        if (!removeFromQueue(reply)) {
+            return; // 请求不在队列中
+        }
+
+        // 重新加入队列（使用新优先级）
+        QueuedRequest req;
+        req.reply     = reply;
+        req.priority  = newPriority;
+        req.queueTime = QDateTime::currentDateTime();
+        req.host      = reply->url().host(); // 从 reply 的 url() 获取
+
+        m_pendingQueue[newPriority].enqueue(req);
+        requeued = true;
     }
 
-    // 重新加入队列（使用新优先级）
-    QueuedRequest req;
-    req.reply     = reply;
-    req.priority  = newPriority;
-    req.queueTime = QDateTime::currentDateTime();
-    req.host      = reply->url().host(); // 从 reply 的 url() 获取
-
-    m_pendingQueue[newPriority].enqueue(req);
-
-    emit requestQueued(reply, newPriority);
-
-    processQueue();
+    if (requeued) {
+        emit requestQueued(reply, newPriority);
+        processQueue();
+    }
 }
 
 QCNetworkRequestScheduler::Statistics QCNetworkRequestScheduler::statistics() const
