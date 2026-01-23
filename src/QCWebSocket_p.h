@@ -77,6 +77,9 @@ public:
     /// 分片消息的累积缓冲区（用于处理 CURLWS_CONT 标志）
     QByteArray fragmentBuffer;
 
+    /// 当前分片消息类型（0=无；值为 CURLWS_TEXT / CURLWS_BINARY）
+    unsigned int fragmentTypeFlags = 0;
+
     // ==================
     // 自动重连状态（v2.4.0）
     // ==================

@@ -8,14 +8,19 @@
 #include <QDebug>
 #include <QMetaMethod>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QThread>
+#include <QUrlQuery>
 
 #include "QCWebSocketTestServer.h"
 
@@ -25,8 +30,9 @@ using namespace QCurl;
  * @brief QCWebSocket 单元测试
  *
  * 说明：
- * - 使用本地 WebSocket 测试服务器（tests/websocket-fragment-server.js），端口由测试启动时动态分配并由 READY marker 回传，
- *   避免固定端口导致的并发/占用冲突。
+ * - message-level 回显 smoke：tests/websocket-fragment-server.js（依赖 ws；仅用于 echo/兼容性验证）。
+ * - frame-level 证据链：tests/websocket-evidence-server.js（零外部依赖；显式发送 fragmentation/close 并输出工件）。
+ * - 两类 server 均使用动态端口（0）并通过 READY marker 回传，避免固定端口导致的并发/占用冲突。
  * - 依赖 node 环境；若本地服务器无法启动则相关用例会 QSKIP。
  *   注意：本仓库的 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt 的 FAIL_REGULAR_EXPRESSION "SKIP\\s*:"），
  *   因此 QSKIP 代表“无证据”，在门禁口径下会导致失败而非“软通过”。
@@ -66,6 +72,7 @@ private slots:
     void testPingPong();
     void testCloseHandshake();
     void testFragmentedMessage();
+    void testFragmentedFramesReassembly();
 
     // ========================================================================
     // 错误处理
@@ -94,6 +101,11 @@ private:
 
     QCWebSocketTestServer m_wsServer;
     QCWebSocketTestServer m_wssServer;
+
+    QString m_localEvidenceServerSkipReason;
+    QString m_testEvidenceServerUrl;
+    QString m_evidenceArtifactsPath;
+    QCWebSocketTestServer m_wsEvidenceServer;
 };
 
 void TestQCWebSocket::initTestCase()
@@ -109,6 +121,9 @@ void TestQCWebSocket::initTestCase()
     m_localWssServerSkipReason.clear();
     m_testWssServerUrl.clear();
     m_caCertPath.clear();
+    m_localEvidenceServerSkipReason.clear();
+    m_testEvidenceServerUrl.clear();
+    m_evidenceArtifactsPath.clear();
 
     if (m_wsServer.start(QCWebSocketTestServer::Mode::Ws)) {
         m_testServerUrl = m_wsServer.baseUrl();
@@ -128,12 +143,24 @@ void TestQCWebSocket::initTestCase()
         qWarning().noquote() << "Local WSS server unavailable, tests will be skipped:"
                              << m_localWssServerSkipReason;
     }
+
+    if (m_wsEvidenceServer.start(QCWebSocketTestServer::Mode::Ws, QCWebSocketTestServer::ServerKind::Evidence)) {
+        m_testEvidenceServerUrl = m_wsEvidenceServer.baseUrl();
+        m_evidenceArtifactsPath = m_wsEvidenceServer.artifactsPath();
+        qDebug() << "本地 WS Evidence Server:" << m_testEvidenceServerUrl;
+        qDebug() << "Evidence artifacts:" << m_evidenceArtifactsPath;
+    } else {
+        m_localEvidenceServerSkipReason = m_wsEvidenceServer.skipReason();
+        qWarning().noquote() << "Local WS evidence server unavailable, tests will be skipped:"
+                             << m_localEvidenceServerSkipReason;
+    }
 }
 
 void TestQCWebSocket::cleanupTestCase()
 {
     m_wsServer.stop();
     m_wssServer.stop();
+    m_wsEvidenceServer.stop();
     qDebug();
     qDebug() << "========================================";
     qDebug() << "测试完成";
@@ -537,7 +564,7 @@ void TestQCWebSocket::testFragmentedMessage()
         QSKIP(qPrintable(m_localServerSkipReason));
     }
 
-    // 分片消息完整性测试（本地 echo server）
+    // message-level 回显测试：验证“大消息收发链路”可用，但不证明 continuation frames（帧级分片）一定发生。
     QCWebSocket socket{QUrl(m_testServerUrl)};
     
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
@@ -651,6 +678,168 @@ void TestQCWebSocket::testFragmentedMessage()
     qDebug() << "✅ 分片消息完整性测试全部通过";
 }
 
+static QString sha256Hex(const QByteArray &data)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
+}
+
+static QByteArray generateDeterministicBytes(int len, int seed)
+{
+    QByteArray out;
+    out.resize(qMax(0, len));
+    for (int i = 0; i < out.size(); ++i) {
+        out[i] = static_cast<char>((seed + i) & 0xFF);
+    }
+    return out;
+}
+
+static QList<int> splitParts(int totalLen, int parts)
+{
+    const int n    = qBound(1, parts, 128);
+    const int base = totalLen / n;
+    const int rem  = totalLen % n;
+    QList<int> sizes;
+    sizes.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        const int size = base + ((i < rem) ? 1 : 0);
+        if (size > 0) {
+            sizes.append(size);
+        }
+    }
+    return sizes;
+}
+
+static QList<QJsonObject> readEvidenceFramesByCaseOnce(const QString &jsonlPath, const QString &caseId)
+{
+    QList<QJsonObject> out;
+    QFile f(jsonlPath);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return out;
+    }
+
+    while (!f.atEnd()) {
+        const QByteArray line = f.readLine().trimmed();
+        if (line.isEmpty()) {
+            continue;
+        }
+        QJsonParseError err{};
+        const QJsonDocument doc = QJsonDocument::fromJson(line, &err);
+        if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+            continue;
+        }
+        const QJsonObject obj = doc.object();
+        if (obj.value(QStringLiteral("event")).toString() != QStringLiteral("ws_frame")) {
+            continue;
+        }
+        if (obj.value(QStringLiteral("case")).toString() != caseId) {
+            continue;
+        }
+        if (obj.value(QStringLiteral("direction")).toString() != QStringLiteral("send")) {
+            continue;
+        }
+        out.append(obj);
+    }
+    return out;
+}
+
+static QList<QJsonObject> waitEvidenceFramesByCase(const QString &jsonlPath,
+                                                   const QString &caseId,
+                                                   int minCount,
+                                                   int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+
+    QList<QJsonObject> frames;
+    while (timer.elapsed() < timeoutMs) {
+        frames = readEvidenceFramesByCaseOnce(jsonlPath, caseId);
+        if (frames.size() >= minCount) {
+            return frames;
+        }
+        QThread::msleep(50);
+    }
+    return frames;
+}
+
+void TestQCWebSocket::testFragmentedFramesReassembly()
+{
+    qDebug() << "========== testFragmentedFramesReassembly ==========";
+
+    if (!m_localEvidenceServerSkipReason.isEmpty()) {
+        QSKIP(qPrintable(m_localEvidenceServerSkipReason));
+    }
+    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(), "Evidence server artifactsPath 为空，无法复核帧级证据。");
+
+    const int totalLen  = 8192;
+    const int parts     = 3;
+    const int seed      = 7;
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/fragment"));
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("type"), QStringLiteral("binary"));
+    q.addQueryItem(QStringLiteral("len"), QString::number(totalLen));
+    q.addQueryItem(QStringLiteral("parts"), QString::number(parts));
+    q.addQueryItem(QStringLiteral("seed"), QString::number(seed));
+    q.addQueryItem(QStringLiteral("case"), caseId);
+    url.setQuery(q);
+
+    QCWebSocket socket{url};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
+
+    socket.open();
+    QVERIFY2(connectedSpy.wait(10000),
+             qPrintable(QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+
+    if (binarySpy.count() == 0) {
+        QVERIFY(binarySpy.wait(10000));
+    }
+    QCOMPARE(binarySpy.count(), 1);
+
+    const QByteArray received = binarySpy.at(0).at(0).toByteArray();
+    QCOMPARE(received.size(), totalLen);
+    const QByteArray expected = generateDeterministicBytes(totalLen, seed);
+    QCOMPARE(sha256Hex(received), sha256Hex(expected));
+
+    // 复核证据：服务端工件必须记录“确实发送了 continuation frames”。
+    const QList<QJsonObject> frames
+        = waitEvidenceFramesByCase(m_evidenceArtifactsPath, caseId, parts, 2000);
+    QCOMPARE(frames.size(), parts);
+
+    const QList<int> sizes = splitParts(totalLen, parts);
+    QCOMPARE(sizes.size(), parts);
+
+    int offset = 0;
+    for (int i = 0; i < frames.size(); ++i) {
+        const QJsonObject obj = frames.at(i);
+        const int opcode      = obj.value(QStringLiteral("opcode")).toInt(-1);
+        const int fin         = obj.value(QStringLiteral("fin")).toInt(-1);
+        const int payloadLen  = obj.value(QStringLiteral("payload_len")).toInt(-1);
+        const QString sha     = obj.value(QStringLiteral("payload_sha256")).toString();
+
+        QCOMPARE(payloadLen, sizes.at(i));
+        const QByteArray chunk = expected.mid(offset, payloadLen);
+        offset += payloadLen;
+        QCOMPARE(sha, sha256Hex(chunk));
+
+        if (i == 0) {
+            QCOMPARE(opcode, 0x2); // binary
+        } else {
+            QCOMPARE(opcode, 0x0); // continuation
+        }
+        if (i == frames.size() - 1) {
+            QCOMPARE(fin, 1);
+        } else {
+            QCOMPARE(fin, 0);
+        }
+    }
+    QCOMPARE(offset, totalLen);
+
+    socket.close();
+    qDebug() << "✅ 帧级分片重组测试通过（len/sha256 + 服务器帧日志）";
+}
+
 // ============================================================================
 // 错误处理
 // ============================================================================
@@ -742,27 +931,55 @@ void TestQCWebSocket::testServerClosedConnection()
 {
     qDebug() << "========== testServerClosedConnection ==========";
 
-    if (!m_localServerSkipReason.isEmpty()) {
-        QSKIP(qPrintable(m_localServerSkipReason));
+    if (!m_localEvidenceServerSkipReason.isEmpty()) {
+        QSKIP(qPrintable(m_localEvidenceServerSkipReason));
     }
+    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(), "Evidence server artifactsPath 为空，无法复核 close 证据。");
 
-    QCWebSocket socket{QUrl(m_testServerUrl)};
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/close"));
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("code"), QStringLiteral("1001"));
+    q.addQueryItem(QStringLiteral("reason"), QStringLiteral("bye"));
+    q.addQueryItem(QStringLiteral("case"), caseId);
+    url.setQuery(q);
+
+    QCWebSocket socket{url};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
     QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
     socket.open();
-    if (!waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000)) {
-        QSKIP("无法连接到本地 WebSocket 测试服务器，跳过服务器关闭连接测试。");
+    QVERIFY2(connectedSpy.wait(10000),
+             qPrintable(QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+
+    // server-initiated close：服务端发送 close(code/reason) 并断开；禁止用 abort() 伪装。
+    if (closeSpy.count() == 0) {
+        QVERIFY(closeSpy.wait(10000));
+    }
+    QCOMPARE(closeSpy.count(), 1);
+    QCOMPARE(closeSpy.at(0).at(0).toInt(), 1001);
+    QCOMPARE(closeSpy.at(0).at(1).toString(), QStringLiteral("bye"));
+
+    if (disconnectedSpy.count() == 0) {
+        QVERIFY(disconnectedSpy.wait(10000));
+    }
+    QCOMPARE(disconnectedSpy.count(), 1);
+    QCOMPARE(socket.state(), QCWebSocket::State::Closed);
+
+    // 允许实现差异：close 期间不应出现 error；若出现则输出用于定位。
+    if (errorSpy.count() > 0) {
+        qWarning() << "Unexpected error during server close:" << socket.errorString();
     }
 
-    // 发送一条消息
-    socket.sendTextMessage(QStringLiteral("Hello"));
-
-    // 等待一会儿，然后中止连接（模拟服务器关闭）
-    QTest::qWait(1000);
-    socket.abort();
-
-    // 检查状态
-    QCOMPARE(socket.state(), QCWebSocket::State::Closed);
+    const QList<QJsonObject> frames
+        = waitEvidenceFramesByCase(m_evidenceArtifactsPath, caseId, 1, 2000);
+    QVERIFY2(!frames.isEmpty(), "未在 evidence 工件中找到 close 帧记录。");
+    const QJsonObject last = frames.last();
+    QCOMPARE(last.value(QStringLiteral("opcode")).toInt(-1), 0x8);
+    QCOMPARE(last.value(QStringLiteral("close_code")).toInt(-1), 1001);
+    QCOMPARE(last.value(QStringLiteral("close_reason")).toString(), QStringLiteral("bye"));
 
     qDebug() << "✅ 服务器关闭连接测试通过";
 }

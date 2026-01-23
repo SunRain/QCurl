@@ -112,42 +112,36 @@ void QCWebSocketPrivate::processIncomingData()
             }
         }
 
-        // 处理文本帧
-        if (meta->flags & CURLWS_TEXT) {
-            if (meta->bytesleft > 0) {
-                fragmentBuffer.append(data);
-                qDebug() << "QCWebSocket: Text fragment received, offset:" << meta->offset
-                         << "received:" << received << "bytesleft:" << meta->bytesleft
-                         << "buffer size:" << fragmentBuffer.size();
-            } else {
-                if (!fragmentBuffer.isEmpty()) {
-                    fragmentBuffer.append(data);
-                    qDebug() << "QCWebSocket: Text message complete, total size:"
-                             << fragmentBuffer.size() << "bytes";
-                    emit q->textMessageReceived(QString::fromUtf8(fragmentBuffer));
-                    fragmentBuffer.clear();
-                } else {
-                    emit q->textMessageReceived(QString::fromUtf8(data));
-                }
+        // TEXT/BINARY：既可能是“单帧消息”，也可能是“多帧分片消息”（CURLWS_CONT）或“单帧大 payload 的分段读取”（bytesleft）。
+        const bool isText   = (meta->flags & CURLWS_TEXT) != 0;
+        const bool isBinary = (meta->flags & CURLWS_BINARY) != 0;
+        if (isText || isBinary) {
+            const unsigned int msgType = isText ? CURLWS_TEXT : CURLWS_BINARY;
+
+            // 进入/继续一条分片消息（包含：CURLWS_CONT 多帧分片；或 bytesleft>0 的单帧分段读取）。
+            if (fragmentTypeFlags == 0) {
+                fragmentTypeFlags = msgType;
+            } else if (fragmentTypeFlags != msgType) {
+                // 防御：理论上不应发生（协议错误/实现差异）。避免混合污染，重置缓冲。
+                qWarning() << "QCWebSocket: Mixed fragmented message types; resetting fragment buffer";
+                fragmentBuffer.clear();
+                fragmentTypeFlags = msgType;
             }
-        }
-        // 处理二进制帧
-        else if (meta->flags & CURLWS_BINARY) {
-            if (meta->bytesleft > 0) {
-                fragmentBuffer.append(data);
-                qDebug() << "QCWebSocket: Binary fragment received, offset:" << meta->offset
-                         << "received:" << received << "bytesleft:" << meta->bytesleft
-                         << "buffer size:" << fragmentBuffer.size();
-            } else {
-                if (!fragmentBuffer.isEmpty()) {
-                    fragmentBuffer.append(data);
-                    qDebug() << "QCWebSocket: Binary message complete, total size:"
-                             << fragmentBuffer.size() << "bytes";
-                    emit q->binaryMessageReceived(fragmentBuffer);
-                    fragmentBuffer.clear();
+
+            fragmentBuffer.append(data);
+
+            const bool frameComplete    = (meta->bytesleft <= 0);
+            const bool messageContinues = (meta->flags & CURLWS_CONT) != 0;
+
+            // 仅当“当前帧已完整接收”且“本消息已结束”时才发射 message signal。
+            if (frameComplete && !messageContinues) {
+                if (fragmentTypeFlags == CURLWS_TEXT) {
+                    emit q->textMessageReceived(QString::fromUtf8(fragmentBuffer));
                 } else {
-                    emit q->binaryMessageReceived(data);
+                    emit q->binaryMessageReceived(fragmentBuffer);
                 }
+                fragmentBuffer.clear();
+                fragmentTypeFlags = 0;
             }
         }
         // 处理 Pong 响应
@@ -210,6 +204,7 @@ void QCWebSocketPrivate::cleanupConnection()
     // 清空缓冲区
     receiveBuffer.clear();
     fragmentBuffer.clear();
+    fragmentTypeFlags = 0;
 
     // 处理重连逻辑
     // 如果启用了重连且应该重连，则调用 handleDisconnection
