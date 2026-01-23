@@ -1,0 +1,42 @@
+# Doxygen configuration for QCurl
+#
+# 目标：生成可本地查阅的 API 参考文档（不提交生成产物）。
+
+PROJECT_NAME           = "QCurl"
+PROJECT_NUMBER         = "2.0.0"
+
+OUTPUT_DIRECTORY       = build
+CREATE_SUBDIRS         = NO
+
+OPTIMIZE_OUTPUT_FOR_C  = NO
+OPTIMIZE_OUTPUT_JAVA   = NO
+OPTIMIZE_FOR_FORTRAN   = NO
+OPTIMIZE_OUTPUT_VHDL   = NO
+
+INPUT                  = src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp
+EXCLUDE_PATTERNS       = */private/*
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = doxygen
+GENERATE_TREEVIEW      = YES
+
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+
+JAVADOC_AUTOBRIEF      = YES
+MULTILINE_CPP_IS_BRIEF = YES
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO

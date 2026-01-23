@@ -175,8 +175,9 @@ cd build && ctest --output-on-failure
 
 | 文档                                                 | 说明                    |
 | -------------------------------------------------- | --------------------- |
-| [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) | 详细系统文档                |
-| [docs/](docs/)                                     | 技术文档（HTTP/3 指南、缓存设计等） |
+| [docs/README.md](docs/README.md)                   | 文档入口（按读者角色分层）        |
+| [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) | 详细系统文档（全量说明/实现细节）     |
+| [examples/README.md](examples/README.md)           | 示例集合与运行方式              |
 
 ---
 
@@ -199,11 +200,12 @@ g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
 
 ## 🤝 贡献
 
-欢迎 Pull Request！请确保：
+欢迎 Pull Request！
 
-1. 遵循 [编码规范](Qt6_CPP17_Coding_Style.md)
-2. 添加测试覆盖新功能
-3. 通过所有测试 (`ctest`)
+- 贡献指南：`CONTRIBUTING.md`
+- 行为准则：`CODE_OF_CONDUCT.md`
+- 安全策略：`SECURITY.md`
+- 支持与反馈：`SUPPORT.md`
 
 ---
 

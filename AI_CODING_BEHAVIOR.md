@@ -84,7 +84,7 @@ bool getColor(QColor *outColor) {
 - 🔍 **分析现有代码**：学习项目的实际编码风格
 - 📊 **统计分析**：如果现有代码库中 90% 使用某种写法，优先沿用
 - 🆕 **新模块**：可以适度引入现代化写法
-- 📝 **文档更新**：建议用户将新约定补充到 `CLAUDE.md`
+- 📝 **文档更新**：将新约定补充到发布包内对应规范文档（优先 `Qt6_CPP17_Coding_Style.md` / `CPP_Code_Comment_Guidelines.md`），并同步更新本文档的决策说明（如适用）
 
 ---
 
@@ -297,12 +297,28 @@ QPair<QMap<QString, int>::iterator, bool> insertValue(
 
 ## 📚 相关文档
 
-- **完整编码规范**：[Qt6_CPP17_Coding_Style.md](./Qt6_CPP17_Coding_Style.md)
-- **项目架构文档**：[CLAUDE.md](./CLAUDE.md)（含 AI 行为规范章节）
-- **强制规范摘要**：`CLAUDE.md` 第 "AI 使用指引" 章节
-- **可选推荐详情**：`Qt6_CPP17_Coding_Style.md` 第 5 章
+### 发布包入口（统一入口）
+
+本仓库发布包仅包含以下文件（建议保持位于仓库根目录，便于复制到业务仓库使用）：
+- [`Qt6_CPP17_Coding_Style.md`](./Qt6_CPP17_Coding_Style.md)（代码规范；可选推荐见第 5 章）
+- [`Qt6_CPP17_CLANG-FORMAT`](./Qt6_CPP17_CLANG-FORMAT)（clang-format 配置；格式 SSOT）
+- [`CPP_Code_Comment_Guidelines.md`](./CPP_Code_Comment_Guidelines.md)（注释规范）
+- [`AI_CODING_BEHAVIOR.md`](./AI_CODING_BEHAVIOR.md)（AI 行为与决策树）
+
+#### SSOT 与阅读顺序
+1. 格式（SSOT）：`./Qt6_CPP17_CLANG-FORMAT`
+2. 代码规范：`./Qt6_CPP17_Coding_Style.md`
+3. 注释规范：`./CPP_Code_Comment_Guidelines.md`
+4. AI 行为：本文档
+
+#### 链接规范
+- 仅使用相对链接，且仅指向发布包内文件/锚点；禁止引用非发布路径或仅在特定工具中存在的入口文件名。
+- 标题调整导致锚点变化时，需同步更新引用链接，避免失效引用。
+
+#### 版本联动规则
+- 发布包作为一个整体维护统一的 `文档包版本`；四件发布物随发布一起更新版本。
 
 ---
 
-**最后更新**：2025-10-28
-**文档版本**：v1.0
+**文档包版本**：v1.0.3
+**最后更新**：2026-01-13
