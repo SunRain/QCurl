@@ -25,7 +25,7 @@ from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_ma
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
-from tests.libcurl_consistency.pytest_support.artifacts import sha256_bytes, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, sha256_bytes, write_json
 
 
 _CURLINFO_RE = re.compile(r"curlcode=(\d+)\s+http_code=(\d+)")
@@ -42,15 +42,6 @@ def _parse_curlcode_http_code(stderr_lines: list[str]) -> tuple[int, int]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return -1, -1
-
-
-def _error_http(*, http_status: int, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": "http",
-        "http_status": int(http_status),
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
 
 
 def _normalize_req_headers(headers: dict) -> dict:
@@ -341,7 +332,13 @@ def test_p1_httpauth_any_basic_wrong_pass(env, lc_observe_http):
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
         _assert_expected_response_body(response_payload=baseline["payload"]["response"], expected_body=expected_body)
-        baseline["payload"]["error"] = _error_http(http_status=401, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="http",
+            http_status=401,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -391,7 +388,13 @@ def test_p1_httpauth_any_basic_wrong_pass(env, lc_observe_http):
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
         _assert_expected_response_body(response_payload=qcurl["payload"]["response"], expected_body=expected_body)
-        qcurl["payload"]["error"] = _error_http(http_status=401, curlcode=0, http_code=401)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="http",
+            http_status=401,
+            curlcode=0,
+            http_code=401,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])
@@ -639,7 +642,13 @@ def test_p1_httpauth_anysafe_digest_wrong_pass(env, lc_observe_http):
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
         _assert_expected_response_body(response_payload=baseline["payload"]["response"], expected_body=expected_body)
-        baseline["payload"]["error"] = _error_http(http_status=401, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="http",
+            http_status=401,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -689,7 +698,13 @@ def test_p1_httpauth_anysafe_digest_wrong_pass(env, lc_observe_http):
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
         _assert_expected_response_body(response_payload=qcurl["payload"]["response"], expected_body=expected_body)
-        qcurl["payload"]["error"] = _error_http(http_status=401, curlcode=0, http_code=401)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="http",
+            http_status=401,
+            curlcode=0,
+            http_code=401,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

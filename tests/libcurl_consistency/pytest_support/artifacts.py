@@ -10,6 +10,42 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 
 ARTIFACTS_SCHEMA = "qcurl-lc/artifacts@v1"
 
+def apply_error_namespaces(payload: Dict[str, Any],
+                           *,
+                           kind: str,
+                           http_status: int,
+                           curlcode: Optional[int] = None,
+                           http_code: Optional[int] = None) -> None:
+    """
+    为 artifacts 增加 error 的 observed/derived 命名空间（并保留 legacy `error` 兼容视图）。
+
+    口径：
+    - observed：来自服务端/协议栈可直接观测的数据（如 http_status/http_code）
+    - derived：由测试/对照逻辑推导或归一化的数据（如 kind/curlcode）
+    """
+    legacy: Dict[str, Any] = {
+        "kind": str(kind),
+        "http_status": int(http_status),
+    }
+    if curlcode is not None:
+        legacy["curlcode"] = int(curlcode)
+    if http_code is not None:
+        legacy["http_code"] = int(http_code)
+    payload["error"] = legacy
+
+    observed: Dict[str, Any] = payload.get("observed") if isinstance(payload.get("observed"), dict) else {}
+    derived: Dict[str, Any] = payload.get("derived") if isinstance(payload.get("derived"), dict) else {}
+    observed["error"] = {
+        "http_status": int(http_status),
+        **({"http_code": int(http_code)} if http_code is not None else {}),
+    }
+    derived["error"] = {
+        "kind": str(kind),
+        **({"curlcode": int(curlcode)} if curlcode is not None else {}),
+    }
+    payload["observed"] = observed
+    payload["derived"] = derived
+
 
 def artifacts_root(env) -> Path:
     """默认将 artifacts 放在 testenv 的 gen_dir 下，避免污染源码树。"""

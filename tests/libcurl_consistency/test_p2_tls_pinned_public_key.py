@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import write_json
+from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
@@ -136,7 +136,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
         if mode != "match":
             curlcode = _parse_curlcode(baseline["payload"].get("stderr"))
             assert curlcode == 90, f"unexpected curlcode: {curlcode}"
-            baseline["payload"]["error"] = {"kind": "tls", "http_status": 0}
+            apply_error_namespaces(baseline["payload"], kind="tls", http_status=0)
         write_json(baseline["path"], baseline["payload"])
 
         qcurl_env = {
@@ -158,7 +158,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
             case_env=qcurl_env,
         )
         if mode != "match":
-            qcurl["payload"]["error"] = {"kind": "tls", "http_status": 0}
+            apply_error_namespaces(qcurl["payload"], kind="tls", http_status=0)
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QTcpSocket>
 #include <QThread>
 
@@ -22,8 +23,11 @@ using namespace QCurl;
  * @brief QCWebSocket 单元测试
  *
  * 说明：
- * - 默认使用本地 WebSocket 测试服务器（tests/websocket-fragment-server.js，端口 8765）以保证 ctest 稳定性。
- * - 依赖 node 环境；若本地服务器无法启动则相关用例会 QSKIP（不阻断自动门禁）。
+ * - 使用本地 WebSocket 测试服务器（tests/websocket-fragment-server.js），端口由测试启动时动态分配并由 READY marker 回传，
+ *   避免固定端口导致的并发/占用冲突。
+ * - 依赖 node 环境；若本地服务器无法启动则相关用例会 QSKIP。
+ *   注意：本仓库的 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt 的 FAIL_REGULAR_EXPRESSION "SKIP\\s*:"），
+ *   因此 QSKIP 代表“无证据”，在门禁口径下会导致失败而非“软通过”。
  * - 外部网络相关用例（如 WSS/SSL）默认跳过；可通过环境变量显式启用。
  */
 class TestQCWebSocket : public QObject
@@ -88,8 +92,8 @@ private:
     QString m_localServerSkipReason;
     QProcess m_localServer;
 
-    const quint16 m_localTestServerPort = 8765;
-    const QString m_testServerUrl = QStringLiteral("ws://localhost:8765");
+    quint16 m_localTestServerPort = 0;
+    QString m_testServerUrl;
     const QString m_externalTestServerUrl = QStringLiteral("wss://echo.websocket.org");
 };
 
@@ -98,10 +102,12 @@ void TestQCWebSocket::initTestCase()
     qDebug() << "========================================";
     qDebug() << "QCurl WebSocket 测试套件";
     qDebug() << "========================================";
-    qDebug() << "本地测试服务器:" << m_testServerUrl;
+    qDebug() << "本地测试服务器: (启动后回填实际端口)";
     qDebug();
 
-    if (!startLocalTestServer()) {
+    if (startLocalTestServer()) {
+        qDebug() << "本地测试服务器:" << m_testServerUrl;
+    } else {
         qWarning().noquote() << "Local WebSocket server unavailable, tests will be skipped:"
                              << m_localServerSkipReason;
     }
@@ -749,6 +755,8 @@ bool TestQCWebSocket::startLocalTestServer()
 {
     stopLocalTestServer();
     m_localServerSkipReason.clear();
+    m_localTestServerPort = 0;
+    m_testServerUrl.clear();
 
     const QString appDir = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/websocket-fragment-server.js"));
@@ -759,8 +767,8 @@ bool TestQCWebSocket::startLocalTestServer()
     }
 
     m_localServer.setProgram(QStringLiteral("node"));
-    m_localServer.setArguments({scriptPath});
-    m_localServer.setProcessChannelMode(QProcess::MergedChannels);
+    m_localServer.setArguments({scriptPath, QStringLiteral("--port"), QStringLiteral("0")});
+    m_localServer.setProcessChannelMode(QProcess::SeparateChannels);
     m_localServer.start();
 
     if (!m_localServer.waitForStarted(2000)) {
@@ -769,17 +777,59 @@ bool TestQCWebSocket::startLocalTestServer()
         return false;
     }
 
-    if (!waitForPortReady(m_localTestServerPort, 3000)) {
-        const QString output = QString::fromUtf8(m_localServer.readAll());
-        if (!output.isEmpty()) {
-            qWarning() << "Local WebSocket server output:\n" << output;
+    // 解析 READY marker（含实际端口），避免固定端口冲突
+    quint16 readyPort = 0;
+    QString stdoutBuf;
+    QString stderrBuf;
+    QElapsedTimer timer;
+    timer.start();
+
+    static const QRegularExpression readyRe(
+        QStringLiteral(R"(QCURL_WEBSOCKET_TEST_SERVER_READY\s+\{"port":(\d+)\})"));
+
+    while (timer.elapsed() < 5000) {
+        if (m_localServer.state() == QProcess::NotRunning) {
+            break;
         }
+
+        m_localServer.waitForReadyRead(100);
+        stdoutBuf += QString::fromUtf8(m_localServer.readAllStandardOutput());
+        stderrBuf += QString::fromUtf8(m_localServer.readAllStandardError());
+
+        const QRegularExpressionMatch m = readyRe.match(stdoutBuf);
+        if (m.hasMatch()) {
+            bool ok = false;
+            const int p = m.captured(1).toInt(&ok);
+            if (ok && p > 0 && p <= 65535) {
+                readyPort = static_cast<quint16>(p);
+                break;
+            }
+        }
+    }
+
+    if (readyPort == 0 || !waitForPortReady(readyPort, 3000)) {
+        const auto tail = [](const QString &s) -> QString {
+            constexpr int kMax = 4096;
+            if (s.size() <= kMax) {
+                return s;
+            }
+            return QStringLiteral("...(truncated)...\n") + s.right(kMax);
+        };
+
+        const QString outTail = tail(stdoutBuf);
+        const QString errTail = tail(stderrBuf);
 
         stopLocalTestServer();
         m_localServerSkipReason = QStringLiteral(
-            "本地 WebSocket 测试服务器未在预期时间内就绪（端口 8765）。可能端口被占用或 node 环境不可用。");
+            "本地 WebSocket 测试服务器未在预期时间内就绪（未收到 READY marker 或端口不可达）。\n"
+            "stdout:\n%1\nstderr:\n%2")
+                                     .arg(outTail.isEmpty() ? QStringLiteral("(empty)") : outTail,
+                                          errTail.isEmpty() ? QStringLiteral("(empty)") : errTail);
         return false;
     }
+
+    m_localTestServerPort = readyPort;
+    m_testServerUrl = QStringLiteral("ws://localhost:%1").arg(m_localTestServerPort);
 
     return true;
 }

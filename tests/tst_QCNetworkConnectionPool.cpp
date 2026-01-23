@@ -13,6 +13,8 @@
 #include "QCNetworkConnectionPoolConfig.h"
 #include "QCNetworkHttpVersion.h"
 
+#include "test_httpbin_env.h"
+
 using namespace QCurl;
 
 /**
@@ -196,7 +198,12 @@ void TestConnectionPool::testStatisticsReset()
 void TestConnectionPool::testConnectionReuse()
 {
     // 检查网络可用性
-    QUrl testUrl("http://localhost:8935/get");
+    const QString httpbinBaseUrl = TestEnv::httpbinBaseUrl();
+    if (httpbinBaseUrl.isEmpty()) {
+        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
+    }
+
+    QUrl testUrl(httpbinBaseUrl + "/get");
     QCNetworkRequest testRequest(testUrl);
     testRequest.setFollowLocation(true);
     
@@ -205,14 +212,14 @@ void TestConnectionPool::testConnectionReuse()
     
     if (!testSpy.wait(10000)) {
         testReply->deleteLater();
-        QSKIP("httpbin 不可达，跳过连接复用测试");
+        QSKIP(qPrintable(QStringLiteral("httpbin 不可达：%1").arg(httpbinBaseUrl)));
         return;
     }
     
     if (testReply->error() != NetworkError::NoError) {
         qWarning() << "Network test failed:" << testReply->errorString();
         testReply->deleteLater();
-        QSKIP("httpbin 健康检查失败，跳过连接复用测试");
+        QSKIP(qPrintable(QStringLiteral("httpbin 健康检查失败：%1").arg(httpbinBaseUrl)));
         return;
     }
     
@@ -223,7 +230,7 @@ void TestConnectionPool::testConnectionReuse()
     poolManager->resetStatistics();
     
     // 向同一主机发送多个请求
-    QUrl url("http://localhost:8935/get");
+    QUrl url(httpbinBaseUrl + "/get");
     const int requestCount = 5;
     int successCount = 0;
     

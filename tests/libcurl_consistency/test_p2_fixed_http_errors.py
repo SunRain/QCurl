@@ -18,7 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import (
+    apply_error_namespaces,
+    build_request_semantic,
+    write_json,
+)
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import (
@@ -32,12 +36,6 @@ from tests.libcurl_consistency.pytest_support.service_logs import collect_servic
 def _append_req_id(url: str, req_id: str) -> str:
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}id={req_id}"
-
-
-def _error_from_status(status: int) -> dict:
-    if status >= 400:
-        return {"kind": "http", "http_status": int(status)}
-    return {"kind": "none", "http_status": 0}
 
 
 @pytest.mark.parametrize("status_code", [404, 401, 503])
@@ -87,7 +85,12 @@ def test_p2_fixed_http_errors(status_code: int, env, lc_logs, lc_observe_http, t
         baseline["payload"]["response"]["status"] = obs.status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = obs.response_headers
-        baseline["payload"]["error"] = _error_from_status(obs.status)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="http",
+            http_status=obs.status,
+            http_code=obs.status,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -115,7 +118,12 @@ def test_p2_fixed_http_errors(status_code: int, env, lc_logs, lc_observe_http, t
         qcurl["payload"]["response"]["status"] = obs.status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = obs.response_headers
-        qcurl["payload"]["error"] = _error_from_status(obs.status)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="http",
+            http_status=obs.status,
+            http_code=obs.status,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])
@@ -198,7 +206,12 @@ def test_p2_retry_501_sequence_http_1_1(env, lc_logs, lc_observe_http, tmp_path)
         baseline["payload"]["response"]["status"] = last.status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = last.response_headers
-        baseline["payload"]["error"] = _error_from_status(status_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="http",
+            http_status=status_code,
+            http_code=status_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -233,7 +246,12 @@ def test_p2_retry_501_sequence_http_1_1(env, lc_logs, lc_observe_http, tmp_path)
         qcurl["payload"]["response"]["status"] = last.status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = last.response_headers
-        qcurl["payload"]["error"] = _error_from_status(status_code)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="http",
+            http_status=status_code,
+            http_code=status_code,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

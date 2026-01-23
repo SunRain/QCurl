@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import write_json
+from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
@@ -36,15 +36,6 @@ def _parse_curlcode_http_code(stderr_lines: list[str]) -> tuple[int, int]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return -1, -1
-
-
-def _proxy_error(*, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": "proxy",
-        "http_status": 0,
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
 
 
 def _log_lines_count(path: Path) -> int:
@@ -98,7 +89,13 @@ def test_p2_socks5_proxy_connect_fail(env, lc_logs, lc_socks5_proxy):
         if curlcode < 0:
             raise AssertionError("baseline stderr 未包含 curlcode/http_code")
         assert curlcode == 97, f"unexpected curlcode: {curlcode}"
-        baseline["payload"]["error"] = _proxy_error(curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="proxy",
+            http_status=0,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
         assert _log_lines_count(proxy_log) >= 1, "baseline 未触发 SOCKS5 stub 连接（proxy log 为空）"
 
@@ -119,7 +116,13 @@ def test_p2_socks5_proxy_connect_fail(env, lc_logs, lc_socks5_proxy):
                 "QCURL_LC_SOCKS5_PORT": str(proxy_port),
             },
         )
-        qcurl["payload"]["error"] = _proxy_error(curlcode=97, http_code=0)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="proxy",
+            http_status=0,
+            curlcode=97,
+            http_code=0,
+        )
         write_json(qcurl["path"], qcurl["payload"])
         assert _log_lines_count(proxy_log) >= 1, "QCurl 未触发 SOCKS5 stub 连接（proxy log 为空）"
 
@@ -142,4 +145,3 @@ def test_p2_socks5_proxy_connect_fail(env, lc_logs, lc_socks5_proxy):
                 },
             )
         raise
-

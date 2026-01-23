@@ -24,7 +24,7 @@ from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_ma
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
-from tests.libcurl_consistency.pytest_support.artifacts import sha256_bytes, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, sha256_bytes, write_json
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -362,7 +362,11 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_base[-1].response_headers)
         if not expect_success:
-            baseline["payload"]["error"] = replay_error
+            apply_error_namespaces(
+                baseline["payload"],
+                kind=replay_error["kind"],
+                http_status=int(replay_error["http_status"]),
+            )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -429,7 +433,11 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_q[-1].response_headers)
         if not expect_success:
-            qcurl["payload"]["error"] = replay_error
+            apply_error_namespaces(
+                qcurl["payload"],
+                kind=replay_error["kind"],
+                http_status=int(replay_error["http_status"]),
+            )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

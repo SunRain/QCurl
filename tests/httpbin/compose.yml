@@ -1,0 +1,7 @@
+services:
+  httpbin:
+    image: ${QCURL_HTTPBIN_IMAGE_REF:-kennethreitz/httpbin@sha256:599fe5e5073102dbb0ee3dbb65f049dab44fa9fc251f6835c9990f8fb196a72b}
+    ports:
+      # 默认 published=0 让 Docker 随机分配可用端口（避免固定 8935）
+      - "127.0.0.1:${QCURL_HTTPBIN_PORT:-0}:80"
+    restart: "no"

@@ -31,6 +31,8 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkError.h"
 
+#include "test_httpbin_env.h"
+
 using namespace QCurl;
 
 class TestQCNetworkReply : public QObject
@@ -91,13 +93,11 @@ private slots:
 private:
     QCNetworkAccessManager *m_manager = nullptr;
     bool m_isHttpbinReachable = false;
-    static const QString HTTPBIN_BASE_URL;
+    QString m_httpbinBaseUrl;
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 5000);
 };
-
-const QString TestQCNetworkReply::HTTPBIN_BASE_URL = QStringLiteral("http://localhost:8935");
 
 // ============================================================================
 // 辅助方法实现
@@ -118,9 +118,15 @@ void TestQCNetworkReply::initTestCase()
     qDebug() << "初始化 QCNetworkReply 测试套件";
     m_manager = new QCNetworkAccessManager(this);
 
-    qDebug() << "httpbin 服务地址:" << HTTPBIN_BASE_URL;
+    m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
+    if (m_httpbinBaseUrl.isEmpty()) {
+        qWarning().noquote() << TestEnv::httpbinMissingReason();
+        m_isHttpbinReachable = false;
+        return;
+    }
+    qDebug() << "httpbin 服务地址:" << m_httpbinBaseUrl;
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/200"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/200"));
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
 
@@ -129,8 +135,7 @@ void TestQCNetworkReply::initTestCase()
     if (finishedSpy.wait(4000) && reply->error() == NetworkError::NoError) {
         m_isHttpbinReachable = true;
     } else {
-        qWarning() << "httpbin 服务不可用:" << reply->errorString();
-        qWarning() << "请先启动服务：docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin";
+        qWarning() << "httpbin 服务不可用:" << m_httpbinBaseUrl << reply->errorString();
     }
     reply->deleteLater();
 }
@@ -157,7 +162,7 @@ void TestQCNetworkReply::cleanup()
 
 void TestQCNetworkReply::testConstructor()
 {
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
 
     QCOMPARE(reply.state(), ReplyState::Idle);
@@ -169,7 +174,7 @@ void TestQCNetworkReply::testConstructor()
 
 void TestQCNetworkReply::testConstructorWithDifferentMethods()
 {
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
 
     // 测试各种 HTTP 方法
     QCNetworkReply replyHead(request, HttpMethod::Head, ExecutionMode::Async);
@@ -194,7 +199,7 @@ void TestQCNetworkReply::testSyncGetRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     QVERIFY(reply != nullptr);
@@ -215,7 +220,7 @@ void TestQCNetworkReply::testSyncPostRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"test\": \"data\"}";
 
     auto *reply = m_manager->sendPostSync(request, postData);
@@ -237,7 +242,7 @@ void TestQCNetworkReply::testSyncHeadRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     QCNetworkReply reply(request, HttpMethod::Head, ExecutionMode::Sync);
 
     reply.execute();
@@ -287,7 +292,7 @@ void TestQCNetworkReply::testAsyncGetRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -317,7 +322,7 @@ void TestQCNetworkReply::testAsyncPostRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/post"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"async\": \"test\"}";
 
     auto *reply = m_manager->sendPost(request, postData);
@@ -531,7 +536,7 @@ void TestQCNetworkReply::testAsyncHeadRequest()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendHead(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -556,9 +561,9 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
     }
 
     // 测试并发请求
-    auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/get")));
-    auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/delay/1")));
-    auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl(HTTPBIN_BASE_URL + "/uuid")));
+    auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/get")));
+    auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/delay/1")));
+    auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/uuid")));
 
     QList<QCNetworkReply*> replies{reply1, reply2, reply3};
 
@@ -601,7 +606,7 @@ void TestQCNetworkReply::testStateTransitionIdleToFinished()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
@@ -636,23 +641,40 @@ void TestQCNetworkReply::testStateTransitionIdleToError()
 
 void TestQCNetworkReply::testStateCancellation()
 {
-    // 注意：取消功能可能尚未实现，此测试可能失败
     if (!m_isHttpbinReachable) {
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/delay/5"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/5"));
     auto *reply = m_manager->sendGet(request);
 
-    QTest::qWait(100);  // 等待请求开始
+    QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+    QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QSignalSpy readyReadSpy(reply, &QCNetworkReply::readyRead);
+    QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
+
+    // 等待进入 Running（事件驱动，避免关键路径使用 qWait 引入 flaky）
+    QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running || stateSpy.count() > 0, 3000);
 
     reply->cancel();
 
-    // 等待取消完成
-    QTest::qWait(500);
+    // 注意：cancel() 可能同步发射信号，QSignalSpy::wait 仅等待“新发射”的信号，
+    // 因此这里以计数断言为准（兼容同步/异步两种时序）。
+    QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() > 0, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() > 0, 5000);
 
-    // 验证状态（实现后应为 Cancelled）
-    // QCOMPARE(reply->state(), ReplyState::Cancelled);
+    // 取消属于终态：状态与错误口径必须稳定可判定
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+
+    // 合同：取消后不应再有 readyRead/progress 等事件（避免“取消后仍继续回调”的假象）
+    readyReadSpy.clear();
+    progressSpy.clear();
+    stateSpy.clear();
+    QVERIFY(!readyReadSpy.wait(300));
+    QVERIFY(!progressSpy.wait(300));
+    QVERIFY(!stateSpy.wait(300));
 
     reply->deleteLater();
 }
@@ -1243,7 +1265,7 @@ void TestQCNetworkReply::testReadAll()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto data = reply->readAll();
@@ -1260,7 +1282,7 @@ void TestQCNetworkReply::testReadBody()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto body = reply->readBody();
@@ -1276,7 +1298,7 @@ void TestQCNetworkReply::testRawHeaders()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     auto headers = reply->rawHeaders();
@@ -1302,7 +1324,7 @@ void TestQCNetworkReply::testBytesAvailable()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
     qint64 available = reply->bytesAvailable();
@@ -1351,7 +1373,7 @@ void TestQCNetworkReply::testHttpError404()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/404"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/404"));
     auto *reply = m_manager->sendGetSync(request);
 
     // 注意：libcurl 的 CURLOPT_FAILONERROR 会将 HTTP 错误转为 curl 错误
@@ -1386,7 +1408,7 @@ void TestQCNetworkReply::testFinishedSignal()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy spy(reply, &QCNetworkReply::finished);
@@ -1423,7 +1445,7 @@ void TestQCNetworkReply::testProgressSignal()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/bytes/10240"));  // 下载 10KB
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/10240"));  // 下载 10KB
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
@@ -1450,7 +1472,7 @@ void TestQCNetworkReply::testStateChangedSignal()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);

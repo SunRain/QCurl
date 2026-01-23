@@ -27,6 +27,8 @@
 #include "QCNetworkError.h"
 #include "QCNetworkRetryPolicy.h"
 
+#include "test_httpbin_env.h"
+
 using namespace QCurl;
 
 class TestQCNetworkRetry : public QObject
@@ -57,14 +59,12 @@ private slots:
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
-    static const QString HTTPBIN_BASE_URL;
+    QString m_httpbinBaseUrl;
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
     QCNetworkRequest createRequestWithRetry(const QUrl &url, int maxRetries);
 };
-
-const QString TestQCNetworkRetry::HTTPBIN_BASE_URL = QStringLiteral("http://localhost:8935");
 
 // ============================================================================
 // 测试初始化和清理
@@ -74,23 +74,26 @@ void TestQCNetworkRetry::initTestCase()
 {
     qDebug() << "========================================";
     qDebug() << "QCNetworkRetry 单元测试开始";
-    qDebug() << "httpbin 服务地址:" << HTTPBIN_BASE_URL;
+    m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
+    if (m_httpbinBaseUrl.isEmpty()) {
+        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
+    }
+    qDebug() << "httpbin 服务地址:" << m_httpbinBaseUrl;
     qDebug() << "========================================";
 
     // 创建网络管理器
     m_manager = new QCNetworkAccessManager(this);
 
     // 验证 httpbin 服务可用
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/get"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     if (reply->error() != NetworkError::NoError) {
         reply->deleteLater();
-        qCritical() << "httpbin 服务不可用！请启动服务：";
-        qCritical() << "docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin";
-        QSKIP("httpbin 服务不可用，跳过重试机制测试。");
+        qCritical() << "httpbin 服务不可用:" << m_httpbinBaseUrl;
+        QSKIP(qPrintable(QStringLiteral("httpbin 服务不可用：%1").arg(m_httpbinBaseUrl)));
     }
 
     reply->deleteLater();
@@ -221,7 +224,7 @@ void TestQCNetworkRetry::testRetryPolicyShouldRetry()
 void TestQCNetworkRetry::testNoRetry()
 {
     // 验证默认不重试行为
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/503"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     // 不设置 retryPolicy，使用默认的 noRetry()
 
     auto *reply = m_manager->sendGet(request);
@@ -240,7 +243,7 @@ void TestQCNetworkRetry::testBasicRetry()
 {
     // 基本重试场景：503 错误重试 3 次
     QCNetworkRequest request = createRequestWithRetry(
-        QUrl(HTTPBIN_BASE_URL + "/status/503"), 3);
+        QUrl(m_httpbinBaseUrl + "/status/503"), 3);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -270,7 +273,7 @@ void TestQCNetworkRetry::testMaxRetriesExceeded()
 {
     // 测试达到最大重试次数后停止
     QCNetworkRequest request = createRequestWithRetry(
-        QUrl(HTTPBIN_BASE_URL + "/status/503"), 2);  // 最多重试 2 次
+        QUrl(m_httpbinBaseUrl + "/status/503"), 2);  // 最多重试 2 次
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -288,7 +291,7 @@ void TestQCNetworkRetry::testNonRetryableError()
 {
     // 测试不可重试错误（如 404）不会触发重试
     QCNetworkRequest request = createRequestWithRetry(
-        QUrl(HTTPBIN_BASE_URL + "/status/404"), 3);
+        QUrl(m_httpbinBaseUrl + "/status/404"), 3);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -305,7 +308,7 @@ void TestQCNetworkRetry::testNonRetryableError()
 void TestQCNetworkRetry::testExponentialBackoff()
 {
     // 测试延迟时间符合指数退避算法
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/503"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
     policy.maxRetries = 2;
     policy.initialDelay = std::chrono::milliseconds(200);
@@ -333,7 +336,7 @@ void TestQCNetworkRetry::testCancelDuringRetry()
 {
     // 测试在重试延迟期间取消请求
     QCNetworkRequest request = createRequestWithRetry(
-        QUrl(HTTPBIN_BASE_URL + "/status/503"), 5);
+        QUrl(m_httpbinBaseUrl + "/status/503"), 5);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -363,7 +366,7 @@ void TestQCNetworkRetry::testCancelDuringRetry()
 void TestQCNetworkRetry::testCustomRetryPolicy()
 {
     // 测试自定义重试策略
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/500"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
     policy.maxRetries = 4;
     policy.initialDelay = std::chrono::milliseconds(50);
@@ -387,7 +390,7 @@ void TestQCNetworkRetry::testCustomRetryPolicy()
 void TestQCNetworkRetry::testSyncRetry()
 {
     // 测试同步模式重试
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/503"));
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
     policy.maxRetries = 2;
     policy.initialDelay = std::chrono::milliseconds(100);

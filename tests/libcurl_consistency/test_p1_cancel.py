@@ -22,7 +22,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import (
+    apply_error_namespaces,
+    build_request_semantic,
+    write_json,
+)
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_for_id
@@ -44,15 +48,6 @@ def _parse_curlcode_http_code(stderr_lines: list[str]) -> tuple[int, int]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return -1, -1
-
-
-def _cancel_error(*, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": "cancel",
-        "http_status": 0,
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
 
 
 def test_p1_cancel_after_first_chunk(env, lc_logs, lc_observe_http, tmp_path):
@@ -108,7 +103,13 @@ def test_p1_cancel_after_first_chunk(env, lc_logs, lc_observe_http, tmp_path):
         baseline["payload"]["response"]["status"] = obs.status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = obs.response_headers
-        baseline["payload"]["error"] = _cancel_error(curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="cancel",
+            http_status=0,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -134,13 +135,19 @@ def test_p1_cancel_after_first_chunk(env, lc_logs, lc_observe_http, tmp_path):
         qcurl["payload"]["response"]["status"] = obs.status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = obs.response_headers
-        qcurl["payload"]["error"] = _cancel_error(curlcode=42, http_code=obs.status)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="cancel",
+            http_status=0,
+            curlcode=42,
+            http_code=obs.status,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
-        assert baseline["payload"]["error"]["curlcode"] == 42
-        assert baseline["payload"]["error"]["http_code"] == 200
-        assert qcurl["payload"]["error"]["curlcode"] == 42
-        assert qcurl["payload"]["error"]["http_code"] == 200
+        assert baseline["payload"]["derived"]["error"]["curlcode"] == 42
+        assert baseline["payload"]["observed"]["error"]["http_code"] == 200
+        assert qcurl["payload"]["derived"]["error"]["curlcode"] == 42
+        assert qcurl["payload"]["observed"]["error"]["http_code"] == 200
         assert_artifacts_match(baseline["path"], qcurl["path"])
     except Exception:
         if collect_logs:
@@ -159,4 +166,3 @@ def test_p1_cancel_after_first_chunk(env, lc_logs, lc_observe_http, tmp_path):
                 },
             )
         raise
-

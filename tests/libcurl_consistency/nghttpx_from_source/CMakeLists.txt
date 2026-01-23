@@ -9,6 +9,10 @@ set(QCURL_LC_NGHTTP2_VERSION
     "1.68.0"
     CACHE STRING "nghttp2 release version used to build nghttpx")
 
+set(QCURL_LC_NGHTTP2_SHA256
+    "2c16ffc588ad3f9e2613c3fad72db48ecb5ce15bc362fcc85b342e48daf51013"
+    CACHE STRING "SHA256 of nghttp2-${QCURL_LC_NGHTTP2_VERSION}.tar.gz (supply-chain lock; see nghttp2.lock)")
+
 set(QCURL_LC_NGHTTP2_ARCHIVE
     ""
     CACHE FILEPATH "Optional local nghttp2-<ver>.tar.gz archive for offline builds")
@@ -37,8 +41,15 @@ else()
 
     set(_qcurl_lc_nghttpx_bin "${QCURL_LC_NGHTTPX_H3_PREFIX}/bin/nghttpx")
 
+    if(NOT QCURL_LC_NGHTTP2_SHA256)
+        message(FATAL_ERROR
+                "QCURL_LC_NGHTTP2_SHA256 is required for supply-chain verification. "
+                "Please set -DQCURL_LC_NGHTTP2_SHA256=<sha256> (see tests/libcurl_consistency/nghttpx_from_source/nghttp2.lock).")
+    endif()
+
     ExternalProject_Add(qcurl_nghttpx_h3_ep
                         URL "${_qcurl_lc_nghttp2_url}"
+                        URL_HASH "SHA256=${QCURL_LC_NGHTTP2_SHA256}"
                         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
                         UPDATE_DISCONNECTED TRUE
                         INSTALL_DIR "${QCURL_LC_NGHTTPX_H3_PREFIX}"

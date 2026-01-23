@@ -18,7 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import (
+    apply_error_namespaces,
+    build_request_semantic,
+    write_json,
+)
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
@@ -63,15 +67,6 @@ def _responses_from_observed(*, observed_list, final_response, proto: str) -> li
                 "body_sha256": "",
             })
     return items
-
-
-def _error(kind: str, *, http_status: int, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": kind,
-        "http_status": int(http_status),
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
 
 
 def test_p1_redirect_max_redirs_too_many_http_1_1(env, lc_observe_http):
@@ -132,7 +127,13 @@ def test_p1_redirect_max_redirs_too_many_http_1_1(env, lc_observe_http):
         baseline["payload"]["response"]["status"] = obs_list[-1].status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
-        baseline["payload"]["error"] = _error("redirect", http_status=obs_list[-1].status, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="redirect",
+            http_status=int(obs_list[-1].status),
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -168,7 +169,13 @@ def test_p1_redirect_max_redirs_too_many_http_1_1(env, lc_observe_http):
         qcurl["payload"]["response"]["status"] = obs_list[-1].status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_list[-1].response_headers)
-        qcurl["payload"]["error"] = _error("redirect", http_status=obs_list[-1].status, curlcode=47, http_code=obs_list[-1].status)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="redirect",
+            http_status=int(obs_list[-1].status),
+            curlcode=47,
+            http_code=int(obs_list[-1].status),
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

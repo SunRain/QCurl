@@ -19,9 +19,9 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkError.h"
 
-using namespace QCurl;
+#include "test_httpbin_env.h"
 
-static const QString HTTPBIN_BASE_URL = QStringLiteral("http://localhost:8935");
+using namespace QCurl;
 
 namespace {
 
@@ -185,6 +185,7 @@ private slots:
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
+    QString m_httpbinBaseUrl;
 
     // ✅ 增加超时时间到 40 秒 (之前是 20 秒)
     bool waitForFinished(QCNetworkReply *reply, int timeout = 40000);
@@ -195,16 +196,22 @@ void TestQCNetworkFileTransfer::initTestCase()
 {
     qDebug() << "========================================";
     qDebug() << "文件传输 API 测试";
-    qDebug() << "需要本地 httpbin (docker run -p 8935:80 kennethreitz/httpbin)";
     qDebug() << "========================================";
 
     m_manager = new QCNetworkAccessManager(this);
 
-    QCNetworkRequest healthCheck(QUrl(HTTPBIN_BASE_URL + "/status/200"));
+    m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
+    if (m_httpbinBaseUrl.isEmpty()) {
+        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
+    }
+    qDebug() << "httpbin base URL:" << m_httpbinBaseUrl;
+
+    QCNetworkRequest healthCheck(QUrl(m_httpbinBaseUrl + "/status/200"));
     auto *reply = m_manager->sendGet(healthCheck);
     QVERIFY(waitForFinished(reply, 5000));
     if (reply->error() != NetworkError::NoError) {
-        const QString message = QStringLiteral("无法连接 httpbin 服务: %1").arg(reply->errorString());
+        const QString message = QStringLiteral("无法连接 httpbin 服务: %1 (%2)")
+                                    .arg(m_httpbinBaseUrl, reply->errorString());
         reply->deleteLater();
         QSKIP(qPrintable(message));
     }
@@ -238,7 +245,7 @@ void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
     QVERIFY(buffer.open(QIODevice::ReadWrite));
 
     const int expectedBytes = 4096;
-    QUrl url(HTTPBIN_BASE_URL + QStringLiteral("/bytes/%1?seed=42").arg(expectedBytes));
+    QUrl url(m_httpbinBaseUrl + QStringLiteral("/bytes/%1?seed=42").arg(expectedBytes));
 
     auto *reply = m_manager->downloadToDevice(url, &buffer);
     QVERIFY(waitForFinished(reply));
@@ -262,7 +269,7 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
     QBuffer buffer(&payload);
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
-    QUrl url(HTTPBIN_BASE_URL + "/post");
+    QUrl url(m_httpbinBaseUrl + "/post");
     auto *reply = m_manager->uploadFromDevice(url,
                                             QStringLiteral("file"),
                                             &buffer,

@@ -191,6 +191,29 @@ def _cmp_list_dict(lhs_list: List[Dict], rhs_list: List[Dict], fields: List[str]
     return diffs
 
 
+def _extract_error_namespaces(payload: Dict) -> Tuple[Dict, Dict]:
+    """
+    提取 error 的 observed/derived 命名空间。
+
+    兼容策略：
+    - 优先使用 payload.observed.error / payload.derived.error
+    - 若缺失则回退到 legacy payload.error（v1 兼容视图）
+    """
+    legacy = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+    observed = payload.get("observed") if isinstance(payload.get("observed"), dict) else {}
+    derived = payload.get("derived") if isinstance(payload.get("derived"), dict) else {}
+
+    obs_err = observed.get("error") if isinstance(observed.get("error"), dict) else {}
+    der_err = derived.get("error") if isinstance(derived.get("error"), dict) else {}
+
+    if (not obs_err) and legacy:
+        obs_err = {k: legacy.get(k) for k in ("http_status", "http_code") if k in legacy}
+    if (not der_err) and legacy:
+        der_err = {k: legacy.get(k) for k in ("kind", "curlcode") if k in legacy}
+
+    return obs_err, der_err
+
+
 def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List[str]]:
     """
     比较 baseline 与 QCurl artifacts。返回 (是否一致, 差异列表)。
@@ -262,22 +285,31 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
             diffs.extend(_cmp_dict(b_cookiejar, q_cookiejar, ["records", "sha256"]))
 
     # 可选：错误归一化输出一致性（P2）
-    b_err = base.get("error")
-    q_err = qc.get("error")
-    if b_err is not None or q_err is not None:
-        if b_err is None or q_err is None:
+    b_obs_err, b_der_err = _extract_error_namespaces(base)
+    q_obs_err, q_der_err = _extract_error_namespaces(qc)
+    b_has_err = bool(b_obs_err or b_der_err)
+    q_has_err = bool(q_obs_err or q_der_err)
+    if b_has_err or q_has_err:
+        if not b_has_err or not q_has_err:
             diffs.append("error missing in one side")
         else:
-            fields = ["kind", "http_status"]
-            for opt in ("curlcode", "http_code"):
-                b_has = opt in b_err
-                q_has = opt in q_err
+            for f in ("http_status", "http_code"):
+                b_has = f in b_obs_err
+                q_has = f in q_obs_err
                 if b_has != q_has:
-                    diffs.append(f"error.{opt} missing in one side")
+                    diffs.append(f"observed.error.{f} missing in one side")
                     continue
-                if b_has and q_has:
-                    fields.append(opt)
-            diffs.extend(_cmp_dict(b_err, q_err, fields))
+                if b_has and (b_obs_err.get(f) != q_obs_err.get(f)):
+                    diffs.append(f"observed.error.{f} mismatch: {b_obs_err.get(f)} != {q_obs_err.get(f)}")
+
+            for f in ("kind", "curlcode"):
+                b_has = f in b_der_err
+                q_has = f in q_der_err
+                if b_has != q_has:
+                    diffs.append(f"derived.error.{f} missing in one side")
+                    continue
+                if b_has and (b_der_err.get(f) != q_der_err.get(f)):
+                    diffs.append(f"derived.error.{f} mismatch: {b_der_err.get(f)} != {q_der_err.get(f)}")
 
     # 可选：进度摘要一致性（LC-30）
     b_prog = base.get("progress_summary")

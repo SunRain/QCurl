@@ -7,13 +7,13 @@
  * - Echo 服务器：回显所有收到的消息
  * - 自动处理 WebSocket 分片（由 ws 库自动处理）
  * - 支持文本和二进制消息
- * - 监听端口：8765
+ * - 监听端口：默认使用动态端口（0）；可通过 `--port` 或 `QCURL_WEBSOCKET_TEST_PORT` 覆盖
  * 
  * 依赖：
  *   npm install ws
  * 
  * 运行：
- *   node tests/websocket-fragment-server.js
+ *   node tests/websocket-fragment-server.js --port 0
  * 
  * 测试：
  *   cd build && ctest -R testFragmentedMessage -V
@@ -23,21 +23,76 @@
  */
 
 const WebSocket = require('ws');
-const port = 8765;
+
+function parsePort() {
+    const args = process.argv.slice(2);
+    let raw = '';
+    for (let i = 0; i < args.length; i += 1) {
+        const a = args[i];
+        if (a === '--port' && i + 1 < args.length) {
+            raw = args[i + 1];
+            i += 1;
+            continue;
+        }
+        if (a.startsWith('--port=')) {
+            raw = a.substring('--port='.length);
+            continue;
+        }
+    }
+    if (!raw) {
+        raw = process.env.QCURL_WEBSOCKET_TEST_PORT || '';
+    }
+
+    // 默认 0：让 OS 分配可用端口，避免固定端口冲突
+    if (!raw) {
+        return 0;
+    }
+
+    const port = Number.parseInt(String(raw), 10);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error(`invalid port: ${raw}`);
+    }
+    return port;
+}
+
+let port = 0;
+try {
+    port = parsePort();
+} catch (err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    console.error(`QCURL_WEBSOCKET_TEST_SERVER_ERROR invalid_args ${msg}`);
+    process.exit(2);
+}
 
 // 创建 WebSocket 服务器
 const wss = new WebSocket.Server({ 
+    host: '127.0.0.1',
     port,
     perMessageDeflate: false  // 禁用压缩，简化测试
 });
 
-console.log('=====================================');
-console.log('  WebSocket 分片测试服务器');
-console.log('=====================================');
-console.log(`监听地址: ws://localhost:${port}`);
-console.log('功能: Echo 服务器（回显所有消息）');
-console.log('按 Ctrl+C 停止服务器');
-console.log('=====================================\n');
+let actualPort = port;
+wss.on('listening', () => {
+    try {
+        const addr = wss.address();
+        if (addr && typeof addr === 'object' && addr.port) {
+            actualPort = addr.port;
+        }
+    } catch (err) {
+        // ignore
+    }
+
+    console.log('=====================================');
+    console.log('  WebSocket 分片测试服务器');
+    console.log('=====================================');
+    console.log(`监听地址: ws://localhost:${actualPort}`);
+    console.log('功能: Echo 服务器（回显所有消息）');
+    console.log('按 Ctrl+C 停止服务器');
+    console.log('=====================================\n');
+
+    // 供测试端解析的 READY marker（必须稳定、单行）
+    console.log(`QCURL_WEBSOCKET_TEST_SERVER_READY {"port":${actualPort}}`);
+});
 
 let clientCount = 0;
 
@@ -93,9 +148,11 @@ wss.on('connection', (ws, req) => {
 wss.on('error', (error) => {
     console.error('❌ 服务器错误:', error.message);
     if (error.code === 'EADDRINUSE') {
-        console.error(`端口 ${port} 已被占用，请先关闭占用该端口的程序`);
+        console.error(`端口 ${port} 已被占用，请先关闭占用该端口的程序或改用 --port 0`);
         process.exit(1);
     }
+    console.error(`QCURL_WEBSOCKET_TEST_SERVER_ERROR listen_failed ${error.message}`);
+    process.exit(1);
 });
 
 // 优雅关闭

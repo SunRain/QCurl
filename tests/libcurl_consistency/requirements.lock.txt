@@ -1,0 +1,19 @@
+# libcurl_consistency Python 依赖锁（证据口径）
+#
+# 目标：
+# - 固定 pytest/websockets/brotli 等版本，避免“同样命令不同结果”
+# - 便于 CI 与本地复跑一致
+#
+# 说明：
+# - 本锁文件面向 `tests/libcurl_consistency/run_gate.py`
+# - 版本选择与上游 curl testenv 的 requirements 对齐（见 curl/tests/http/requirements.txt），并补充 brotli
+
+cryptography==46.0.3
+filelock==3.20.1
+psutil==7.1.3
+pytest==9.0.2
+pytest-xdist==3.8.0
+websockets==15.0.1
+
+# http_observe_server.py 的可选 Brotli 支持（Accept-Encoding: br）
+brotli==1.2.0

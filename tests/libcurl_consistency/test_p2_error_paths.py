@@ -23,7 +23,11 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import (
+    apply_error_namespaces,
+    build_request_semantic,
+    write_json,
+)
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
@@ -52,16 +56,6 @@ def _strip_query_id_keep_origin(url: str) -> str:
 def _append_req_id(url: str, req_id: str) -> str:
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}id={req_id}"
-
-
-def _error(kind: str, *, http_status: int, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": kind,
-        "http_status": int(http_status),
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
-
 
 def _proxy_observed_for_id_any(proxy_log: Path, req_id: str) -> tuple[str, str, dict]:
     if not proxy_log.exists():
@@ -128,7 +122,13 @@ def test_p2_error_connect_refused(env, lc_logs, free_tcp_port, tmp_path):
         curlcode, http_code = _parse_curlcode_http_code(list(baseline["payload"].get("stderr") or []))
         if curlcode < 0:
             raise AssertionError("baseline stderr 未包含 curlcode/http_code")
-        baseline["payload"]["error"] = _error("connect", http_status=0, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="connect",
+            http_status=0,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         qcurl = run_qt_test(
@@ -147,7 +147,13 @@ def test_p2_error_connect_refused(env, lc_logs, free_tcp_port, tmp_path):
             },
         )
         # QCurl 对该错误的可观测输出为 NetworkError::ConnectionRefused（映射自 CURLE_COULDNT_CONNECT=7）
-        qcurl["payload"]["error"] = _error("connect", http_status=0, curlcode=7, http_code=0)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="connect",
+            http_status=0,
+            curlcode=7,
+            http_code=0,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])
@@ -201,7 +207,13 @@ def test_p2_error_url_malformat(env, lc_logs, tmp_path):
         curlcode, http_code = _parse_curlcode_http_code(list(baseline["payload"].get("stderr") or []))
         if curlcode < 0:
             raise AssertionError("baseline stderr 未包含 curlcode/http_code")
-        baseline["payload"]["error"] = _error("url", http_status=0, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="url",
+            http_status=0,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         qcurl = run_qt_test(
@@ -220,7 +232,13 @@ def test_p2_error_url_malformat(env, lc_logs, tmp_path):
             },
         )
         # QCurl 对该错误的可观测输出为 NetworkError::InvalidRequest（映射自 CURLE_URL_MALFORMAT=3）
-        qcurl["payload"]["error"] = _error("url", http_status=0, curlcode=3, http_code=0)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="url",
+            http_status=0,
+            curlcode=3,
+            http_code=0,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])
@@ -290,7 +308,13 @@ def test_p2_error_proxy_407(env, lc_logs, lc_http_proxy, tmp_path):
         baseline["payload"]["requests"] = [build_request_semantic(method, url_no_id, hdrs, b"")]
         baseline["payload"]["response"]["status"] = 407
         baseline["payload"]["response"]["http_version"] = proto
-        baseline["payload"]["error"] = _error("http", http_status=407, curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="http",
+            http_status=407,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         proxy_log.write_text("", encoding="utf-8")
@@ -314,7 +338,13 @@ def test_p2_error_proxy_407(env, lc_logs, lc_http_proxy, tmp_path):
         qcurl["payload"]["requests"] = [build_request_semantic(method, url_no_id, hdrs, b"")]
         qcurl["payload"]["response"]["status"] = 407
         qcurl["payload"]["response"]["http_version"] = proto
-        qcurl["payload"]["error"] = _error("http", http_status=407, curlcode=0, http_code=407)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="http",
+            http_status=407,
+            curlcode=0,
+            http_code=407,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

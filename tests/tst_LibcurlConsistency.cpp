@@ -3023,7 +3023,11 @@ void TestLibcurlConsistency::testCase()
         QCOMPARE(pingPayload.size(), 0);
         ws.pong(pingPayload);
 
-        QVERIFY(closeSpy.wait(5000));
+        // close frame 可能在其它等待窗口内已到达（例如在等待 pong 时已收到 close），
+        // QSignalSpy::wait 仅等待“新发射”的信号，因此这里先检查已捕获次数以避免假失败。
+        if (closeSpy.count() == 0) {
+            QVERIFY(closeSpy.wait(5000));
+        }
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
         const int closeCode = closeArgs.at(0).toInt();
         const QString closeReason = closeArgs.at(1).toString();
@@ -3115,11 +3119,16 @@ void TestLibcurlConsistency::testCase()
         QCOMPARE(pingPayload, QByteArrayLiteral("ping"));
         ws.pong(pingPayload);
 
-        QVERIFY(pongSpy.wait(5000));
+        if (pongSpy.count() == 0) {
+            QVERIFY(pongSpy.wait(5000));
+        }
         const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pongPayload, QByteArrayLiteral("pong"));
 
-        QVERIFY(closeSpy.wait(5000));
+        // close frame 可能在等待 pong 时已到达；避免错过导致 wait 超时。
+        if (closeSpy.count() == 0) {
+            QVERIFY(closeSpy.wait(5000));
+        }
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
         const int closeCode = closeArgs.at(0).toInt();
         const QString closeReason = closeArgs.at(1).toString();

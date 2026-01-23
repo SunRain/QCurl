@@ -563,6 +563,8 @@ def main(argv: List[str]) -> int:
     _ensure_parent(cfg.json_report)
 
     started = time.time()
+    require_http3_raw = (os.environ.get("QCURL_REQUIRE_HTTP3") or "").strip()
+    require_http3_enabled = require_http3_raw.lower() in ("1", "true", "yes", "on")
     report: Dict[str, object] = {
         "suite": cfg.suite,
         "with_ext": cfg.with_ext,
@@ -580,11 +582,18 @@ def main(argv: List[str]) -> int:
             "QCURL_LC_COLLECT_LOGS": "1",
             "QCURL_LC_QTTEST_TIMEOUT": str(cfg.qt_timeout_s),
             "QCURL_LC_EXT": "1" if cfg.with_ext else "0",
+            "QCURL_REQUIRE_HTTP3": require_http3_raw if require_http3_raw else "0",
             "CURL_BUILD_DIR": str(cfg.curl_build_dir),
             "CURL": str(cfg.curl_build_dir / "src" / "curl"),
             "CURLINFO": str(cfg.curl_build_dir / "src" / "curlinfo"),
         },
         "warnings": [],
+        "preflight_http3_required": {
+            "enabled": require_http3_enabled,
+            "have_h3_server": None,
+            "have_h3_curl": None,
+            "violations": [],
+        },
     }
 
     try:
@@ -606,9 +615,49 @@ def main(argv: List[str]) -> int:
         if cfg.build:
             _build_targets(cfg)
 
+        # 供应链/复跑证据：记录 Python 环境（版本 + pip freeze）并落盘到报告目录，便于审计复核。
+        try:
+            reports_dir = cfg.json_report.parent
+            py_ver = _run(["python3", "--version"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+            pip_freeze = _run(["python3", "-m", "pip", "freeze"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+            env_text = []
+            env_text.append("# python environment snapshot (for reproducibility/audit)\n")
+            env_text.append(f"python3 --version: {(py_ver.stdout or py_ver.stderr or '').strip()}\n")
+            env_text.append("\n# pip freeze\n")
+            env_text.append(_redact_text((pip_freeze.stdout or "").strip()))
+            env_text.append("\n")
+            env_path = reports_dir / f"pip_freeze_{cfg.suite}.txt"
+            env_path.write_text("".join(env_text), encoding="utf-8")
+            report["pip_freeze_artifact"] = str(env_path)
+        except Exception as exc:
+            report["warnings"].append(f"failed to write pip_freeze artifact: {exc}")
+
+        # 供应链/复跑证据：记录 nghttpx-h3 版本（若存在），便于跨时间复核。
+        try:
+            reports_dir = cfg.json_report.parent
+            nghttpx_h3_bin = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
+            if nghttpx_h3_bin.exists():
+                ng_ver = _run([str(nghttpx_h3_bin), "--version"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+                out = (ng_ver.stdout or "") + "\n" + (ng_ver.stderr or "")
+                text = []
+                text.append("# nghttpx-h3 version snapshot (for reproducibility/audit)\n\n")
+                text.append(f"command: {nghttpx_h3_bin} --version\n")
+                text.append(f"returncode: {ng_ver.returncode}\n\n")
+                text.append(out.strip() + "\n" if out.strip() else "<no output>\n")
+                ng_path = reports_dir / f"nghttpx_version_{cfg.suite}.txt"
+                ng_path.write_text(_redact_text("".join(text)), encoding="utf-8")
+                report["nghttpx_version_artifact"] = str(ng_path)
+        except Exception as exc:
+            report["warnings"].append(f"failed to write nghttpx version artifact: {exc}")
+
         # 可追溯：记录 HTTP/3/WebSockets 覆盖是否可能缺失（不阻断，避免假失败）
         nghttpx_h3 = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
-        if not nghttpx_h3.exists():
+        have_h3_server = nghttpx_h3.exists()
+        (report["preflight_http3_required"] or {})["have_h3_server"] = have_h3_server
+        if require_http3_enabled and not have_h3_server:
+            (report["preflight_http3_required"] or {})["violations"].append("missing_h3_server")
+
+        if not have_h3_server:
             report["warnings"].append(
                 "nghttpx-h3 not found; env.have_h3_server() will be False and h3 variants will be skipped. "
                 "If you need HTTP/3 coverage, build target qcurl_nghttpx_h3 (may require deps/network or a local archive)."
@@ -616,6 +665,9 @@ def main(argv: List[str]) -> int:
 
         curl_bin = cfg.curl_build_dir / "src" / "curl"
         if not curl_bin.exists():
+            (report["preflight_http3_required"] or {})["have_h3_curl"] = False
+            if require_http3_enabled:
+                (report["preflight_http3_required"] or {})["violations"].append("missing_curl_bin")
             report["warnings"].append(
                 "bundled curl binary not found; cannot probe HTTP/3/WebSockets support (did you build qcurl_lc_deps?)"
             )
@@ -625,10 +677,16 @@ def main(argv: List[str]) -> int:
             if out.strip():
                 sys.stderr.write(out.rstrip() + "\n")
             if rc.returncode != 0:
+                (report["preflight_http3_required"] or {})["have_h3_curl"] = None
+                if require_http3_enabled:
+                    (report["preflight_http3_required"] or {})["violations"].append("curl_probe_failed")
                 report["warnings"].append(f"failed to probe `curl -V` (rc={rc.returncode})")
             else:
                 features_line = next((line for line in out.splitlines() if line.startswith("Features:")), "")
                 h3_supported = any(tok.upper() == "HTTP3" for tok in features_line.replace("Features:", "").split())
+                (report["preflight_http3_required"] or {})["have_h3_curl"] = bool(h3_supported)
+                if require_http3_enabled and not h3_supported:
+                    (report["preflight_http3_required"] or {})["violations"].append("missing_curl_http3")
                 if not h3_supported:
                     report["warnings"].append(
                         "bundled curl does not report HTTP3 in `curl -V`; env.have_h3_curl() will be False and h3 variants will be skipped."
@@ -686,6 +744,9 @@ def main(argv: List[str]) -> int:
             policy_violations.append("artifacts_schema")
         if (report.get("postflight_redaction_scan") or {}).get("violations"):
             policy_violations.append("redaction")
+        preflight_http3 = report.get("preflight_http3_required") or {}
+        if isinstance(preflight_http3, dict) and preflight_http3.get("enabled") and preflight_http3.get("violations"):
+            policy_violations.append("http3_required")
         report["policy_violations"] = policy_violations
         if policy_violations:
             gate_rc = 3

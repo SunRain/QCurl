@@ -24,7 +24,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.libcurl_consistency.pytest_support.artifacts import build_request_semantic, write_json
+from tests.libcurl_consistency.pytest_support.artifacts import (
+    apply_error_namespaces,
+    build_request_semantic,
+    write_json,
+)
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_for_id
@@ -46,15 +50,6 @@ def _parse_curlcode_http_code(stderr_lines: list[str]) -> tuple[int, int]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return -1, -1
-
-
-def _timeout_error(*, curlcode: int, http_code: int) -> dict:
-    return {
-        "kind": "timeout",
-        "http_status": 0,
-        "curlcode": int(curlcode),
-        "http_code": int(http_code),
-    }
 
 
 @pytest.mark.parametrize(
@@ -135,7 +130,13 @@ def test_p1_timeouts(case_id: str,
         baseline["payload"]["response"]["status"] = obs.status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = obs.response_headers
-        baseline["payload"]["error"] = _timeout_error(curlcode=curlcode, http_code=http_code)
+        apply_error_namespaces(
+            baseline["payload"],
+            kind="timeout",
+            http_status=0,
+            curlcode=curlcode,
+            http_code=http_code,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -163,11 +164,17 @@ def test_p1_timeouts(case_id: str,
         qcurl["payload"]["response"]["headers"] = obs.response_headers
 
         # QCurl 的可观测输出不暴露 curlcode，但其 NetworkError::ConnectionTimeout 映射自 CURLE_OPERATION_TIMEDOUT(28)
-        qcurl["payload"]["error"] = _timeout_error(curlcode=28, http_code=obs.status)
+        apply_error_namespaces(
+            qcurl["payload"],
+            kind="timeout",
+            http_status=0,
+            curlcode=28,
+            http_code=obs.status,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
-        assert baseline["payload"]["error"]["http_code"] == expected_http_code
-        assert qcurl["payload"]["error"]["http_code"] == expected_http_code
+        assert baseline["payload"]["observed"]["error"]["http_code"] == expected_http_code
+        assert qcurl["payload"]["observed"]["error"]["http_code"] == expected_http_code
         assert_artifacts_match(baseline["path"], qcurl["path"])
     except Exception:
         if collect_logs:

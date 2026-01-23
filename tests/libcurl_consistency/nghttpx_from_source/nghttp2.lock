@@ -1,0 +1,17 @@
+# nghttp2 source lock（供 qcurl_nghttpx_h3 ExternalProject 使用）
+#
+# 目标：
+# - 固定下载 URL 与 sha256，提供供应链可审计证据
+# - 避免“上游 tarball 变更/镜像劫持/中间人”导致不可追溯输入
+#
+# 使用位置：
+# - tests/libcurl_consistency/nghttpx_from_source/CMakeLists.txt
+#
+# 升级流程（必须同步更新）：
+# 1) 更新 QCURL_LC_NGHTTP2_VERSION
+# 2) 下载对应 tarball 并计算 sha256
+# 3) 更新 QCURL_LC_NGHTTP2_SHA256（以及本文件）
+
+version=1.68.0
+url=https://github.com/nghttp2/nghttp2/releases/download/v1.68.0/nghttp2-1.68.0.tar.gz
+sha256=2c16ffc588ad3f9e2613c3fad72db48ecb5ce15bc362fcc85b342e48daf51013
