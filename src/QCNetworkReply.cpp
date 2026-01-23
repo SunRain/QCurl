@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <ctime>
 #include <limits>
+#include <optional>
 
 namespace QCurl {
 
@@ -81,6 +82,205 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
 
     d->capabilityWarnings.append(message);
     qWarning() << "QCNetworkReply capability warning:" << message;
+}
+
+std::optional<long> protocolMaskFromList(const QStringList &protocols, QString *badToken)
+{
+    long mask = 0;
+    auto addToken = [&](const QString &t) -> bool {
+        if (t.isEmpty()) {
+            return false;
+        }
+        if (t == QStringLiteral("all")) {
+            mask = CURLPROTO_ALL;
+            return true;
+        }
+
+        if (t == QStringLiteral("http")) {
+            mask |= CURLPROTO_HTTP;
+            return true;
+        }
+        if (t == QStringLiteral("https")) {
+            mask |= CURLPROTO_HTTPS;
+            return true;
+        }
+#ifdef CURLPROTO_WS
+        if (t == QStringLiteral("ws")) {
+            mask |= CURLPROTO_WS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_WSS
+        if (t == QStringLiteral("wss")) {
+            mask |= CURLPROTO_WSS;
+            return true;
+        }
+#endif
+        if (t == QStringLiteral("ftp")) {
+            mask |= CURLPROTO_FTP;
+            return true;
+        }
+        if (t == QStringLiteral("ftps")) {
+            mask |= CURLPROTO_FTPS;
+            return true;
+        }
+        if (t == QStringLiteral("file")) {
+            mask |= CURLPROTO_FILE;
+            return true;
+        }
+#ifdef CURLPROTO_SCP
+        if (t == QStringLiteral("scp")) {
+            mask |= CURLPROTO_SCP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_SFTP
+        if (t == QStringLiteral("sftp")) {
+            mask |= CURLPROTO_SFTP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_TELNET
+        if (t == QStringLiteral("telnet")) {
+            mask |= CURLPROTO_TELNET;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_DICT
+        if (t == QStringLiteral("dict")) {
+            mask |= CURLPROTO_DICT;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_LDAP
+        if (t == QStringLiteral("ldap")) {
+            mask |= CURLPROTO_LDAP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_LDAPS
+        if (t == QStringLiteral("ldaps")) {
+            mask |= CURLPROTO_LDAPS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_IMAP
+        if (t == QStringLiteral("imap")) {
+            mask |= CURLPROTO_IMAP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_IMAPS
+        if (t == QStringLiteral("imaps")) {
+            mask |= CURLPROTO_IMAPS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_POP3
+        if (t == QStringLiteral("pop3")) {
+            mask |= CURLPROTO_POP3;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_POP3S
+        if (t == QStringLiteral("pop3s")) {
+            mask |= CURLPROTO_POP3S;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_SMTP
+        if (t == QStringLiteral("smtp")) {
+            mask |= CURLPROTO_SMTP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_SMTPS
+        if (t == QStringLiteral("smtps")) {
+            mask |= CURLPROTO_SMTPS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_RTSP
+        if (t == QStringLiteral("rtsp")) {
+            mask |= CURLPROTO_RTSP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_GOPHER
+        if (t == QStringLiteral("gopher")) {
+            mask |= CURLPROTO_GOPHER;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_GOPHERS
+        if (t == QStringLiteral("gophers")) {
+            mask |= CURLPROTO_GOPHERS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_TFTP
+        if (t == QStringLiteral("tftp")) {
+            mask |= CURLPROTO_TFTP;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_MQTT
+        if (t == QStringLiteral("mqtt")) {
+            mask |= CURLPROTO_MQTT;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_IPFS
+        if (t == QStringLiteral("ipfs")) {
+            mask |= CURLPROTO_IPFS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_IPNS
+        if (t == QStringLiteral("ipns")) {
+            mask |= CURLPROTO_IPNS;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_SMB
+        if (t == QStringLiteral("smb")) {
+            mask |= CURLPROTO_SMB;
+            return true;
+        }
+#endif
+#ifdef CURLPROTO_SMBS
+        if (t == QStringLiteral("smbs")) {
+            mask |= CURLPROTO_SMBS;
+            return true;
+        }
+#endif
+
+        if (badToken) {
+            *badToken = t;
+        }
+        return false;
+    };
+
+    for (const QString &raw : protocols) {
+        const QStringList parts = raw.split(QChar(','), Qt::SkipEmptyParts);
+        for (const QString &p : parts) {
+            const QString t = p.trimmed().toLower();
+            if (t.isEmpty()) {
+                continue;
+            }
+            if (!addToken(t)) {
+                return std::nullopt;
+            }
+            if (mask == CURLPROTO_ALL) {
+                return mask;
+            }
+        }
+    }
+
+    if (mask == 0) {
+        return std::nullopt;
+    }
+    return mask;
 }
 
 bool setOptionalLongOption(
@@ -541,70 +741,107 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                                                  .unsupportedSecurityOptionPolicy();
 
     if (const auto allowedOpt = request.allowedProtocols(); allowedOpt.has_value()) {
+        bool applied = false;
+
 #if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedProtocolsBytes = allowedOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc     = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_PROTOCOLS_STR,
                                                        "CURLOPT_PROTOCOLS_STR",
                                                        allowedProtocolsBytes.constData());
-        if (rc != CURLE_OK) {
-            if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_PROTOCOLS_STR（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-                if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                    setError(NetworkError::InvalidRequest, msg);
-                    return false;
-                }
-                appendCapabilityWarning(this, msg);
-            } else {
-                setError(NetworkError::InvalidRequest,
-                         QStringLiteral("设置 CURLOPT_PROTOCOLS_STR 失败（%1）")
-                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                return false;
-            }
-        }
-#else
-        const QString msg = QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROTOCOLS_STR");
-        if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-            setError(NetworkError::InvalidRequest, msg);
+        if (rc == CURLE_OK) {
+            applied = true;
+        } else if (!isCapabilityRelatedCurlError(rc)) {
+            setError(NetworkError::InvalidRequest,
+                     QStringLiteral("设置 CURLOPT_PROTOCOLS_STR 失败（%1）")
+                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
             return false;
         }
-        appendCapabilityWarning(this, msg);
-#endif
+#endif  // LIBCURL_VERSION_NUM >= 7.85.0
+
+        if (!applied) {
+            QString badToken;
+            const auto maskOpt = protocolMaskFromList(allowedOpt.value(), &badToken);
+            if (!maskOpt.has_value()) {
+                setError(NetworkError::InvalidRequest,
+                         QStringLiteral("allowedProtocols 包含不支持的协议：%1").arg(badToken));
+                return false;
+            }
+
+            appendCapabilityWarning(this, QStringLiteral("CURLOPT_PROTOCOLS_STR 不可用，fallback to CURLOPT_PROTOCOLS"));
+            const CURLcode maskRc = curlEasySetoptWithTestHook(handle,
+                                                               CURLOPT_PROTOCOLS,
+                                                               "CURLOPT_PROTOCOLS",
+                                                               maskOpt.value());
+            if (maskRc != CURLE_OK) {
+                if (isCapabilityRelatedCurlError(maskRc)) {
+                    const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_PROTOCOLS（%1）")
+                                            .arg(QString::fromUtf8(curl_easy_strerror(maskRc)));
+                    if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                        setError(NetworkError::InvalidRequest, msg);
+                        return false;
+                    }
+                    appendCapabilityWarning(this, msg);
+                } else {
+                    setError(NetworkError::InvalidRequest,
+                             QStringLiteral("设置 CURLOPT_PROTOCOLS 失败（%1）")
+                                 .arg(QString::fromUtf8(curl_easy_strerror(maskRc))));
+                    return false;
+                }
+            }
+        }
     }
 
     if (const auto redirOpt = request.allowedRedirectProtocols(); redirOpt.has_value()) {
+        bool applied = false;
+
 #if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedRedirectProtocolsBytes = redirOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc             = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_REDIR_PROTOCOLS_STR,
                                                        "CURLOPT_REDIR_PROTOCOLS_STR",
                                                        allowedRedirectProtocolsBytes.constData());
-        if (rc != CURLE_OK) {
-            if (isCapabilityRelatedCurlError(rc)) {
-                const QString msg = QStringLiteral(
-                                        "libcurl 不支持 CURLOPT_REDIR_PROTOCOLS_STR（%1）")
-                                        .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-                if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-                    setError(NetworkError::InvalidRequest, msg);
-                    return false;
-                }
-                appendCapabilityWarning(this, msg);
-            } else {
-                setError(NetworkError::InvalidRequest,
-                         QStringLiteral("设置 CURLOPT_REDIR_PROTOCOLS_STR 失败（%1）")
-                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
-                return false;
-            }
-        }
-#else
-        const QString msg = QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_REDIR_PROTOCOLS_STR");
-        if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
-            setError(NetworkError::InvalidRequest, msg);
+        if (rc == CURLE_OK) {
+            applied = true;
+        } else if (!isCapabilityRelatedCurlError(rc)) {
+            setError(NetworkError::InvalidRequest,
+                     QStringLiteral("设置 CURLOPT_REDIR_PROTOCOLS_STR 失败（%1）")
+                         .arg(QString::fromUtf8(curl_easy_strerror(rc))));
             return false;
         }
-        appendCapabilityWarning(this, msg);
-#endif
+#endif  // LIBCURL_VERSION_NUM >= 7.85.0
+
+        if (!applied) {
+            QString badToken;
+            const auto maskOpt = protocolMaskFromList(redirOpt.value(), &badToken);
+            if (!maskOpt.has_value()) {
+                setError(NetworkError::InvalidRequest,
+                         QStringLiteral("allowedRedirectProtocols 包含不支持的协议：%1").arg(badToken));
+                return false;
+            }
+
+            appendCapabilityWarning(this, QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR 不可用，fallback to CURLOPT_REDIR_PROTOCOLS"));
+            const CURLcode maskRc = curlEasySetoptWithTestHook(handle,
+                                                               CURLOPT_REDIR_PROTOCOLS,
+                                                               "CURLOPT_REDIR_PROTOCOLS",
+                                                               maskOpt.value());
+            if (maskRc != CURLE_OK) {
+                if (isCapabilityRelatedCurlError(maskRc)) {
+                    const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_REDIR_PROTOCOLS（%1）")
+                                            .arg(QString::fromUtf8(curl_easy_strerror(maskRc)));
+                    if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
+                        setError(NetworkError::InvalidRequest, msg);
+                        return false;
+                    }
+                    appendCapabilityWarning(this, msg);
+                } else {
+                    setError(NetworkError::InvalidRequest,
+                             QStringLiteral("设置 CURLOPT_REDIR_PROTOCOLS 失败（%1）")
+                                 .arg(QString::fromUtf8(curl_easy_strerror(maskRc))));
+                    return false;
+                }
+            }
+        }
     }
 
     // 多线程安全（禁用信号处理）

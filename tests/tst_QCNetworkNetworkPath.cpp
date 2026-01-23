@@ -173,13 +173,11 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
 void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
 {
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
-    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
-#else
-    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#endif
 
     {
+        // STR 不可用时应 fallback 到 legacy bitmask（仍然 enforce，Fail 策略不应 hard fail）。
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
+
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
         request.setAllowedProtocols(QStringList{QStringLiteral("https")});
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
@@ -189,17 +187,16 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            HttpMethod::Get,
                                            ExecutionMode::Sync,
                                            QByteArray());
-        QVERIFY(!replyPrivate.configureCurlOptions());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
-#if LIBCURL_VERSION_NUM < 0x075500 /* 7.85.0 */
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("当前构建的 libcurl 不支持")));
-#else
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("libcurl 不支持")));
-#endif
+        QVERIFY(replyPrivate.configureCurlOptions());
+        QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+        QVERIFY(replyPrivate.capabilityWarnings.join(QStringLiteral("\n"))
+                    .contains(QStringLiteral("fallback to CURLOPT_PROTOCOLS")));
     }
 
     {
+        // Warn 策略同样应走 fallback，并形成 capability warning（不影响成功）。
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
+
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
         request.setAllowedProtocols(QStringList{QStringLiteral("https")});
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
@@ -212,6 +209,25 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QVERIFY(replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
         QVERIFY(replyPrivate.capabilityWarnings.join(QStringLiteral("\n")).contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+    }
+
+    {
+        // STR 与 legacy 均不可用时：Fail 策略必须 hard fail（回归：禁止 silent pass）。
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR",
+                QByteArray("CURLOPT_PROTOCOLS_STR,CURLOPT_PROTOCOLS"));
+
+        QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
+        request.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
+
+        QCNetworkReplyPrivate replyPrivate(nullptr,
+                                           request,
+                                           HttpMethod::Get,
+                                           ExecutionMode::Sync,
+                                           QByteArray());
+        QVERIFY(!replyPrivate.configureCurlOptions());
+        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
+        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS")));
     }
 
     if (oldEnv.isEmpty()) {
