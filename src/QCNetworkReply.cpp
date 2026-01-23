@@ -3208,7 +3208,19 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     QByteArray out           = buffer.readAll();
 
     // P2-1：backpressure 自动恢复（仅在启用且处于内部 pause 时触发）
-    const_cast<QCNetworkReplyPrivate *>(d)->maybeResumeRecvFromBackpressure();
+    if (d->executionMode == ExecutionMode::Async && d->backpressureLimitBytes > 0
+        && (d->internalPauseMask & CURLPAUSE_RECV)) {
+        QPointer<QCNetworkReply> safeThis(const_cast<QCNetworkReply *>(this));
+        QMetaObject::invokeMethod(
+            const_cast<QCNetworkReply *>(this),
+            [safeThis]() {
+                if (!safeThis) {
+                    return;
+                }
+                safeThis->d_func()->maybeResumeRecvFromBackpressure();
+            },
+            Qt::QueuedConnection);
+    }
     return out;
 }
 
