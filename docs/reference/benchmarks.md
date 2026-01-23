@@ -17,7 +17,7 @@ HTTP/2 相对于 HTTP/1.1 的性能提升：
 - **libcurl 8.16.0** (nghttp2/1.68.0)
 ### 1.2 测试服务器
 - **HTTP/1.1**: https://www.google.com
-- **HTTP/2**: https://http2.akamai.com/demo
+- **HTTP/2**: https://nghttp2.org/httpbin/get
 ### 1.3 测试场景
 #### 场景 1: 单个请求延迟
 - **目的**: 测量协议握手和单次请求的总延迟
@@ -101,7 +101,13 @@ QCurl 的 HTTP/2 实现在实际测试中表现优异：
 对于需要高并发、低延迟网络请求的应用，强烈建议启用 HTTP/2。
 ---
 ## 附录 A: 原始测试数据
-详细基准测试输出请参见 `http2_benchmark_results.txt`
+本报告基于一次基准运行输出生成。可通过以下命令生成并保存原始输出（文件名可自定）：
+
+```bash
+./build/benchmarks/benchmark_http2 -iterations 100 > http2_benchmark_results.txt 2>&1
+```
+
+如需解析/生成报告，可参考 `scripts/analyze_http2_benchmark.py` 的用法说明。
 ## 附录 B: 测试脚本
 `benchmark_http2.cpp` - HTTP/2 基准测试实现
 ---

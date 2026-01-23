@@ -72,8 +72,6 @@ connect(reply, &QCNetworkReply::finished, [reply]() {
     }
     reply->deleteLater();
 });
-
-reply->execute();
 ```
 
 ### 2. Http3Only 模式（严格）
@@ -136,9 +134,10 @@ auto *reply2 = manager.sendGet(request2);
 ```cpp
 // HTTP/3 配合连接池效果更好
 #include "QCNetworkConnectionPoolConfig.h"
+#include "QCNetworkConnectionPoolManager.h"
 
-auto poolConfig = QCNetworkConnectionPoolConfig::http2OptimizedConfig();
-// HTTP/3 也会受益于连接池优化
+auto *poolManager = QCNetworkConnectionPoolManager::instance();
+poolManager->setConfig(QCNetworkConnectionPoolConfig::http2Optimized());
 ```
 
 ---

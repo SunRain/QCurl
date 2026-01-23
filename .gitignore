@@ -39,6 +39,7 @@ target_wrapper.*
 # 构建目录和文件
 build*/
 *build-*
+!docs/dev/build-and-test.md
 Makefile*
 
 # =============================================================================
