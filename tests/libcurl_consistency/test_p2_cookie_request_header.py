@@ -63,7 +63,7 @@ def _cookie_summary_sha256(summary: str) -> str:
     return ""
 
 
-def test_p2_cookie_request_header(env, lc_services, lc_logs, lc_observe_http, tmp_path):
+def test_p2_cookie_request_header(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():

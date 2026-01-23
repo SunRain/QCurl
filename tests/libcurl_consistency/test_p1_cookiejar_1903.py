@@ -85,7 +85,7 @@ def _cookiejar_payload(records: List[str]) -> Dict[str, object]:
     }
 
 
-def test_p1_cookiejar_1903(env, lc_services, lc_logs, tmp_path):
+def test_p1_cookiejar_1903(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -151,8 +151,6 @@ def test_p1_cookiejar_1903(env, lc_services, lc_logs, tmp_path):
             "QCURL_LC_CASE_ID": "cookiejar_1903",
             "QCURL_LC_PROTO": proto,
             "QCURL_LC_HTTP_PORT": str(env.http_port),
-            "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": "1",
             "QCURL_LC_DOCNAME": "",
             "QCURL_LC_UPLOAD_SIZE": "0",

@@ -44,7 +44,6 @@ def test_ext_tls_policy_and_cache_persistence(env, lc_httpd_cache_headers):
             "QCURL_LC_CASE_ID": "ext_tls_policy_and_cache",
             "QCURL_LC_PROTO": "h2",
             "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": "1",
             "QCURL_LC_DOCNAME": "",
             "QCURL_LC_UPLOAD_SIZE": "0",
@@ -68,4 +67,3 @@ def test_ext_tls_policy_and_cache_persistence(env, lc_httpd_cache_headers):
             download_count=None,
             case_env=case_env,
         )
-

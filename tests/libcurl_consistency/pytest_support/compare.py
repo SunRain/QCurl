@@ -129,6 +129,10 @@ def _validate_backpressure_contract(bp: Dict, *, side: str) -> List[str]:
     if not isinstance(resume_bytes, int) or resume_bytes <= 0 or resume_bytes >= limit_bytes:
         diffs.append(f"{side} backpressure_contract.resume_bytes invalid: {resume_bytes!r}")
 
+    curl_max_write_size = bp.get("curl_max_write_size")
+    if not isinstance(curl_max_write_size, int) or curl_max_write_size <= 0:
+        diffs.append(f"{side} backpressure_contract.curl_max_write_size invalid: {curl_max_write_size!r}")
+
     event_seq = bp.get("event_seq")
     if not isinstance(event_seq, list) or event_seq != ["bp_on", "bp_off"]:
         diffs.append(f"{side} backpressure_contract.event_seq invalid: {event_seq!r}")
@@ -136,8 +140,12 @@ def _validate_backpressure_contract(bp: Dict, *, side: str) -> List[str]:
     peak = bp.get("peak_buffered_bytes")
     if isinstance(peak, int) and peak < 0:
         diffs.append(f"{side} backpressure_contract.peak_buffered_bytes invalid: {peak!r}")
-    if isinstance(peak, int) and isinstance(limit_bytes, int) and peak > limit_bytes:
-        diffs.append(f"{side} backpressure_contract.peak_buffered_bytes exceeds limit: {peak} > {limit_bytes}")
+    if (isinstance(peak, int) and isinstance(limit_bytes, int) and isinstance(curl_max_write_size, int)
+            and curl_max_write_size > 0 and peak > limit_bytes + curl_max_write_size):
+        diffs.append(
+            f"{side} backpressure_contract.peak_buffered_bytes exceeds soft-limit bound: "
+            f"{peak} > {limit_bytes} + {curl_max_write_size}"
+        )
 
     return diffs
 
@@ -340,7 +348,7 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
             diffs.extend(_cmp_dict(
                 b_bp,
                 q_bp,
-                ["schema", "proto", "limit_bytes", "resume_bytes", "event_seq"],
+                ["schema", "proto", "limit_bytes", "resume_bytes", "curl_max_write_size", "event_seq"],
             ))
             diffs.extend(_validate_backpressure_contract(b_bp, side="baseline"))
             diffs.extend(_validate_backpressure_contract(q_bp, side="qcurl"))

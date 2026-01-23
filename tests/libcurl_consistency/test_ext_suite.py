@@ -36,13 +36,8 @@ if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
     pytest.skip("set QCURL_LC_EXT=1 to enable libcurl_consistency ext suite", allow_module_level=True)
 
 
-def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
-    ctx = defaults.copy()
-    ctx.update({
-        "https_port": env.https_port,
-        "ws_port": env.ws_port,
-    })
-    return [str(x).format(**ctx) for x in template]
+def _fmt_args(template: List[str], defaults: Dict) -> List[str]:
+    return [str(x).format(**defaults) for x in template]
 
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -122,7 +117,7 @@ def _response_items_from_files(files: List[Path], *, proto: str, status: int, ur
 
 
 @pytest.mark.parametrize("case_id", sorted(EXT_CASES.keys()))
-def test_ext_suite(case_id, env, lc_services, lc_logs, tmp_path):
+def test_ext_suite(case_id, env, lc_logs, tmp_path):
     case = EXT_CASES[case_id]
     collect_logs = should_collect_service_logs()
     qt_bin = os.environ.get("QCURL_QTTEST")
@@ -149,16 +144,14 @@ def test_ext_suite(case_id, env, lc_services, lc_logs, tmp_path):
         if "url" in resolved_defaults:
             resolved_defaults["url"] = str(resolved_defaults["url"]).format(
                 https_port=env.https_port,
-                ws_port=env.ws_port,
             )
             resolved_defaults["url"] = _append_req_id(resolved_defaults["url"], baseline_req_id)
         if "url_prefix" in resolved_defaults:
             resolved_defaults["url_prefix"] = str(resolved_defaults["url_prefix"]).format(
                 https_port=env.https_port,
-                ws_port=env.ws_port,
             )
 
-        args = _fmt_args(case["args_template"], resolved_defaults, env)
+        args = _fmt_args(case["args_template"], resolved_defaults)
         req_url = resolved_defaults.get("url")
         if not req_url and resolved_defaults.get("url_prefix"):
             req_url = _append_req_id(f"{resolved_defaults['url_prefix']}0001", baseline_req_id)
@@ -180,7 +173,6 @@ def test_ext_suite(case_id, env, lc_services, lc_logs, tmp_path):
             "QCURL_LC_CASE_ID": case_id,
             "QCURL_LC_PROTO": proto,
             "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": str(resolved_defaults.get("count", 1)),
             "QCURL_LC_DOCNAME": str(resolved_defaults.get("docname", "")),
             "QCURL_LC_UPLOAD_SIZE": "0",

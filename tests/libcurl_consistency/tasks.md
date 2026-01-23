@@ -2,6 +2,13 @@
 
 > 目标：落地 “QCurl ↔ libcurl（含 libtest 工具）数据一致性测试候选集”，采用 **Qt Test（C++）+ pytest（Python）混合** 的方式实现与编排。
 
+## 回归记录（本地）
+
+- 2026-01-16T20:26:38+08:00：全量回归（含 ext）通过  
+  - 命令：`env -u QCURL_QTTEST QCURL_LC_EXT=1 python3 -m pytest tests/libcurl_consistency`（需 escalated）  
+  - 结果：`80 passed in 45.96s`  
+  - 环境摘要：Python 3.14.2 / pytest 8.4.2 / curl 8.18.0-DEV / httpd 2.4.66 / nghttpx nghttp2/1.68.0 ngtcp2/1.19.0 nghttp3/1.14.0
+
 | ID | 任务描述 | 优先级 | 依赖关系 | 状态 | 执行日志 |
 |---|---|---|---|---|---|
 | LC-0 | 明确“一致性”的可观测断言与 `artifacts` 最小字段（下载/上传/WS：status、协议族(h1/h2/h3)、body 长度+hash、关键响应头；**P0 必做：请求语义摘要**（method/url/关键头规范化）+ request body 的 len/hash；不强制记录“服务端看到的原始请求字节”；错误码/超时归一化规则）。 | 高 | 无 | 已完成 | 2025-12-16：已在 README 固化字段，确认请求语义摘要为 P0 必做，不记录服务端原始字节。 |
@@ -85,7 +92,7 @@
 - 背景：`cli_hx_download -P` 的 `PAUSE/RESUMED` 属于 stderr 文本打点，且 `RESUMED` 打点发生在 `curl_easy_pause(..., CONT)` 之后；在该调用期间可能出现 RECV 日志，导致用 stderr 窗口推断 “pause window 内无数据事件” 不稳定。为保证门禁稳定，先落地弱判据。
 - 覆盖点（libcurl API / QCurl 行为点）：
   - libcurl：`cli_hx_download -P <offset>`（write callback 触发 `CURL_WRITEFUNC_PAUSE` + `curl_easy_pause(CURLPAUSE_CONT)`）
-  - QCurl：`QCNetworkReply::pause(PauseMode::Recv)/resume()`、`stateChanged(Paused/Running)`、终态 `finished`
+  - QCurl：`QCNetworkReply::pauseTransport(PauseMode::Recv)/resumeTransport()`（旧 API `pause/resume` 已弃用）、`stateChanged(Paused/Running)`、终态 `finished`
 - 输入场景：
   - 下载固定资源 `data-1m`，在“累计下载到达 offset”时触发 pause，并在短延迟后 resume（触发必须基于 bytesReceived 阈值，避免纯 sleep）。
   - baseline 与 QCurl 使用同一 offset（对齐 `-P <offset>`）。
@@ -461,6 +468,7 @@
   - 最终响应体字节一致（服务端回显）
 执行过程：
 - 关键修正：不再显式设置 `Expect: 100-continue`。原因：手工添加该头会绕开 libcurl 的 `http_exp100_*` 选择逻辑（`http_exp100_is_selected()`），导致 417→重试不发生；同时上传体必须 **> 1MB** 才会触发 libcurl 自动注入（`EXPECT_100_THRESHOLD=1MB`）。
+- 稳定性增强：baseline 与 QCurl 两侧对该用例显式设置 `CURLOPT_EXPECT_100_TIMEOUT_MS`（避免调度抖动导致 body 提前发送，从而不走 417→重试路径）。
 - `tests/libcurl_consistency/http_observe_server.py`：将 `/expect_417` 抽象为 `_handle_expect_417()`，并同时支持 `PUT/POST`；遇 `Expect: 100-continue` 立即返回 417（保持连接可复用以触发 libcurl 自动重试），否则回显 body 返回 200。
 - QCurl：`tests/tst_LibcurlConsistency.cpp` 中 `p2_expect_100_continue` 改为 `sendPut`，移除手工 `Expect` 头。
 - pytest：`tests/libcurl_consistency/test_p2_expect_100_continue.py` 改为 `PUT` + `upload_size=1053700`，断言观测序列 `PUT(Present Expect)->PUT(No Expect)` 与状态链一致；并在 artifacts 中写入 `requests/responses` 序列，且仅在“无 Expect 的第二次请求”写入 request body（与语义一致）。

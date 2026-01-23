@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <algorithm>
@@ -107,19 +109,19 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--limit-bytes" && i + 1 < argc) {
-            try {
-                out.limitBytes = std::stoll(argv[++i]);
-            } catch (...) {
+            const auto limit = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!limit.has_value()) {
                 return std::nullopt;
             }
+            out.limitBytes = *limit;
             continue;
         }
         if (arg == "--resume-bytes" && i + 1 < argc) {
-            try {
-                out.resumeBytes = std::stoll(argv[++i]);
-            } catch (...) {
+            const auto resume = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!resume.has_value()) {
                 return std::nullopt;
             }
+            out.resumeBytes = *resume;
             continue;
         }
         if (!arg.empty() && arg[0] == '-') {
@@ -265,6 +267,7 @@ bool writeEventsJson(const std::string &path,
     fp << "\"url\":\"" << jsonEscape(args.url) << "\",";
     fp << "\"limit_bytes\":" << args.limitBytes << ",";
     fp << "\"resume_bytes\":" << args.resumeBytes << ",";
+    fp << "\"curl_max_write_size\":" << static_cast<long long>(CURL_MAX_WRITE_SIZE) << ",";
     fp << "\"peak_buffered_bytes\":" << ctx.peakBufferedBytes << ",";
     fp << "\"result\":{"
        << "\"curlcode\":" << static_cast<int>(curlcode) << ","

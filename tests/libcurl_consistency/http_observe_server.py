@@ -25,6 +25,7 @@ import gzip
 import hashlib
 import json
 import logging
+import socket
 import ssl
 import time
 import zlib
@@ -253,6 +254,61 @@ class Handler(BaseHTTPRequestHandler):
         # 禁止默认 stdout 访问日志（用 JSONL 代替）
         return
 
+    def _drain_request_body_best_effort(self) -> int:
+        """
+        best-effort drain 当前请求剩余 body（避免 keep-alive 下“未消费的 body 字节污染下一次请求解析”）。
+
+        ⚠️ 约束：
+        - 不能阻塞：对于 Expect: 100-continue 场景，客户端可能根本不会发送 body（等待服务端响应），
+          若服务端在这里阻塞读取将导致死锁。
+        - 仅用于稳定性增强：只尝试在短窗口内读取“已到达/已缓冲”的字节；不保证一定读满 Content-Length。
+        """
+        try:
+            length = int(self.headers.get("content-length") or "0")
+        except ValueError:
+            return 0
+        if length <= 0:
+            return 0
+
+        sock = getattr(self, "connection", None)
+        if sock is None:
+            return 0
+
+        drained = 0
+        original_timeout = sock.gettimeout()
+        try:
+            # 置为非阻塞读取：无数据时立即抛出 BlockingIOError/timeout
+            sock.settimeout(0.0)
+            # 本地回环下 1MB body 通常会在极短时间内到达；这里用“短窗口 + 有进展才继续”的策略：
+            # - 若持续一段时间没有任何新字节到达，则认为客户端并未发送 body（或已停止发送），提前结束。
+            # - 若持续有字节到达，则尽量读满 Content-Length，降低残留污染概率。
+            idle_deadline_s = 0.2
+            hard_deadline_s = 1.5
+            started = time.monotonic()
+            last_progress = started
+            while drained < length and (time.monotonic() - started) < hard_deadline_s:
+                remaining = min(64 * 1024, length - drained)
+                try:
+                    # read1：优先消费 rfile 缓冲区（避免绕过 buffer 导致残留），并最多读 remaining。
+                    chunk = self.rfile.read1(remaining)
+                except (BlockingIOError, InterruptedError, TimeoutError, socket.timeout):
+                    if (time.monotonic() - last_progress) >= idle_deadline_s:
+                        break
+                    time.sleep(0.005)
+                    continue
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                drained += len(chunk)
+                last_progress = time.monotonic()
+        finally:
+            try:
+                sock.settimeout(original_timeout)
+            except Exception:
+                pass
+        return drained
+
     def _read_chunked_body(self) -> bytes:
         """
         读取 HTTP/1.1 chunked 请求体（Transfer-Encoding: chunked）。
@@ -370,6 +426,7 @@ class Handler(BaseHTTPRequestHandler):
 
         语义：
         - 当请求头包含 `Expect: 100-continue` 时：立即返回 417（保持连接可复用以触发 libcurl 的 417→重试路径）
+          - 稳定性增强：best-effort drain 可能已发送/已缓冲的 request body（避免 keep-alive 下污染后续请求解析）
         - 否则：读取请求体并 200 回显
         """
         if not self.path.startswith("/expect_417"):
@@ -381,6 +438,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             self._write_log(417, {})
+            self._drain_request_body_best_effort()
             return True
 
         body = self._read_body()

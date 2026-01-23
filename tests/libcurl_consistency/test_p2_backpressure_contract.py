@@ -7,7 +7,7 @@ P2：下载 backpressure 一致性（可观测数据层面最小合同）。
 
 说明：
 - 不比较时序与耗时（不稳定）
-- 不比较 buffered 峰值等实现细节（仅做单侧合同校验）
+- peak_buffered_bytes 仅做单侧上界校验（soft limit：limit_bytes + curl_max_write_size）
 """
 
 from __future__ import annotations
@@ -142,4 +142,3 @@ def test_p2_backpressure_contract_h2(env, lc_logs):
                 },
             )
         raise
-

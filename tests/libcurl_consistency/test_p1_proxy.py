@@ -32,14 +32,8 @@ def _append_req_id(url: str, req_id: str) -> str:
     return f"{url}{sep}id={req_id}"
 
 
-def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
-    ctx = defaults.copy()
-    ctx.update({
-        "http_port": env.http_port,
-        "https_port": env.https_port,
-        "ws_port": env.ws_port,
-    })
-    return [str(x).format(**ctx) for x in template]
+def _fmt_args(template: List[str], defaults: Dict) -> List[str]:
+    return [str(x).format(**defaults) for x in template]
 
 def _extract_connect_blocks(raw: bytes) -> list[list[str]]:
     """
@@ -73,7 +67,7 @@ def _extract_connect_blocks(raw: bytes) -> list[list[str]]:
 
 
 @pytest.mark.parametrize("case_id", sorted(P1_PROXY_CASES.keys()))
-def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, tmp_path):
+def test_p1_proxy_basic_auth(case_id, env, lc_logs, lc_http_proxy, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -109,7 +103,7 @@ def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, 
     baseline_url = _append_req_id(base_target_url, baseline_req_id)
     base_defaults["url"] = baseline_url
 
-    args = _fmt_args(case["args_template"], base_defaults, env)
+    args = _fmt_args(case["args_template"], base_defaults)
     case_dir = ensure_case_dir(artifacts_root(env), suite=suite, case=case_variant)
     baseline_header_file = case_dir / "baseline_response_headers.data"
     if args:
@@ -160,9 +154,6 @@ def test_p1_proxy_basic_auth(case_id, env, lc_services, lc_logs, lc_http_proxy, 
         case_env = {
             "QCURL_LC_CASE_ID": case_id,
             "QCURL_LC_PROTO": proto,
-            "QCURL_LC_HTTP_PORT": str(env.http_port),
-            "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": "1",
             "QCURL_LC_DOCNAME": "",
             "QCURL_LC_UPLOAD_SIZE": "0",

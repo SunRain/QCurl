@@ -174,4 +174,3 @@ def test_p2_upload_readfunc_pause_resume_http_1_1(env, lc_observe_http):
                 },
             )
         raise
-

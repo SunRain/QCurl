@@ -65,6 +65,45 @@ _CURLINFO_BIN = _CURL_BUILD_DIR / "src" / "curlinfo"
 _QCURL_BUILD_DIR = _CURL_BUILD_DIR.parent
 _NGHTTPX_H3_BIN = _QCURL_BUILD_DIR / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
 
+def _ensure_qcurl_qttest_env() -> None:
+    """
+    为 QCURL_QTTEST 提供“可用即用”的默认值，并确保为绝对路径。
+
+    背景：
+    - pytest 的 Qt 执行器会在 artifacts 子目录下以 cwd=run_dir 启动子进程；
+      若 QCURL_QTTEST 为相对路径，将导致 FileNotFoundError（相对路径不再指向 repo root）。
+    - 允许用户显式覆盖 QCURL_QTTEST；但若用户提供相对路径，将按 repo root 解析并转为绝对路径。
+    """
+    raw = os.environ.get("QCURL_QTTEST", "").strip()
+    if raw:
+        p = Path(raw).expanduser()
+        if not p.is_absolute():
+            p = (_REPO_ROOT / p).resolve()
+        else:
+            p = p.resolve()
+        os.environ["QCURL_QTTEST"] = str(p)
+        return
+
+    candidates = [
+        _QCURL_BUILD_DIR / "tests" / "tst_LibcurlConsistency",
+        _QCURL_BUILD_DIR / "tests" / "tst_LibcurlConsistency.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            os.environ["QCURL_QTTEST"] = str(c.resolve())
+            return
+
+    # 兜底：用户可能使用 build_xxx 作为构建目录（如 build_lc / build-debug），按 build*/tests 约定探测。
+    for build_dir in sorted(_REPO_ROOT.glob("build*")):
+        c = build_dir / "tests" / "tst_LibcurlConsistency"
+        if c.exists():
+            os.environ["QCURL_QTTEST"] = str(c.resolve())
+            return
+        c_exe = c.with_suffix(".exe")
+        if c_exe.exists():
+            os.environ["QCURL_QTTEST"] = str(c_exe.resolve())
+            return
+
 
 def _patch_testenv_curlinfo_path() -> None:
     """
@@ -206,6 +245,7 @@ _patch_testenv_curlinfo_path()
 _override_testenv_nghttpx_bin()
 _patch_httpd_access_log()
 _patch_nghttpx_access_log()
+_ensure_qcurl_qttest_env()
 
 
 @pytest.fixture(scope="session")
@@ -716,23 +756,7 @@ def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
                 proc.terminate()
 
 @pytest.fixture(scope="session")
-def lc_services(env, httpd, nghttpx, lc_ws_echo):
-    """
-    汇总可用服务实例，便于测试用例按需取用。
-    - httpd: h1/h2
-    - nghttpx: h3
-    - lc_ws_echo: ws echo server
-    """
-    return {
-        "env": env,
-        "httpd": httpd,
-        "nghttpx": nghttpx,
-        "ws": lc_ws_echo,
-    }
-
-
-@pytest.fixture(scope="session")
-def lc_logs(httpd, nghttpx, lc_ws_echo):
+def lc_logs(httpd, nghttpx):
     """
     提供服务端日志路径，便于失败时收集：
     - httpd：logs_dir/error_log
@@ -749,6 +773,15 @@ def lc_logs(httpd, nghttpx, lc_ws_echo):
         logs["nghttpx_log"] = Path(getattr(nghttpx, "_error_log"))  # type: ignore[attr-defined]
         logs["nghttpx_stderr"] = Path(getattr(nghttpx, "_stderr"))  # type: ignore[attr-defined]
         logs["nghttpx_access_log"] = run_dir / "access_log"
+    return logs
+
+
+@pytest.fixture(scope="session")
+def lc_ws_logs(lc_ws_echo):
+    """
+    提供 WebSocket echo server 的日志路径（仅在用例显式依赖 ws 时启动服务端）。
+    """
+    logs = {}
     if lc_ws_echo and "log_file" in lc_ws_echo:
         logs["ws_handshake_log"] = Path(str(lc_ws_echo["log_file"]))
     if lc_ws_echo and "events_log_file" in lc_ws_echo:

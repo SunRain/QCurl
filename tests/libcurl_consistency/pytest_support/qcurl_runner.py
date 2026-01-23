@@ -44,6 +44,7 @@ def run_qt_test(
     - request_meta/response_meta：Qt Test 侧填充 method/url/headers/http_version/status 等
     - download_files：下载场景传入文件路径以计算 len/hash
     """
+    qt_executable = qt_executable.expanduser().resolve()
     if not qt_executable.exists():
         raise FileNotFoundError(f"Qt Test binary not found: {qt_executable}")
     cmd = [str(qt_executable)]

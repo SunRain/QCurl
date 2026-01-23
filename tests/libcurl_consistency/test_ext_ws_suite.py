@@ -37,7 +37,7 @@ def _default_ws_baseline_binary(qt_executable: Path) -> Path:
 
 
 @pytest.mark.parametrize("case_id", sorted(EXT_WS_CASES.keys()))
-def test_ext_ws_suite(case_id, env, lc_logs, tmp_path):
+def test_ext_ws_suite(case_id, env, lc_logs, lc_ws_logs, tmp_path):
     case = EXT_WS_CASES[case_id]
     collect_logs = should_collect_service_logs()
 
@@ -86,7 +86,7 @@ def test_ext_ws_suite(case_id, env, lc_logs, tmp_path):
             response_meta=resp_meta,
         )
 
-        handshake_log = Path(lc_logs["ws_handshake_log"])
+        handshake_log = Path(lc_ws_logs["ws_handshake_log"])
         obs = ws_observed_for_id(handshake_log, baseline_req_id)
         baseline["payload"]["request"]["method"] = obs.method
         baseline["payload"]["request"]["url"] = obs.url
@@ -124,7 +124,7 @@ def test_ext_ws_suite(case_id, env, lc_logs, tmp_path):
                 env,
                 suite=case["suite"],
                 case=case_variant,
-                logs={k: Path(v) for k, v in lc_logs.items() if isinstance(v, Path)},
+                logs={**lc_logs, **lc_ws_logs},
                 meta={
                     "case_id": case_id,
                     "baseline_req_id": baseline_req_id,
@@ -132,4 +132,3 @@ def test_ext_ws_suite(case_id, env, lc_logs, tmp_path):
                 },
             )
         raise
-

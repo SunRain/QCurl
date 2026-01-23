@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <chrono>
@@ -106,19 +108,19 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--pause-offset" && i + 1 < argc) {
-            try {
-                out.pauseOffset = std::stoll(argv[++i]);
-            } catch (...) {
+            const auto offset = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!offset.has_value()) {
                 return std::nullopt;
             }
+            out.pauseOffset = *offset;
             continue;
         }
         if (arg == "--resume-delay-ms" && i + 1 < argc) {
-            try {
-                out.resumeDelayMs = std::stol(argv[++i]);
-            } catch (...) {
+            const auto delayMs = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!delayMs.has_value()) {
                 return std::nullopt;
             }
+            out.resumeDelayMs = *delayMs;
             continue;
         }
         if (!arg.empty() && arg[0] == '-') {

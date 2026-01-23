@@ -38,8 +38,6 @@ def _run_case(
     case_env = {
         "QCURL_LC_CASE_ID": case_id,
         "QCURL_LC_PROTO": proto,
-        "QCURL_LC_HTTPS_PORT": str(env.https_port),
-        "QCURL_LC_WS_PORT": str(env.ws_port),
         "QCURL_LC_COUNT": "1",
         "QCURL_LC_DOCNAME": "",
         "QCURL_LC_UPLOAD_SIZE": "0",

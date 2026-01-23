@@ -35,7 +35,6 @@ def test_p2_connection_limits_smoke(env):
         "QCURL_LC_CASE_ID": "multi_limits_smoke",
         "QCURL_LC_PROTO": "h2",
         "QCURL_LC_HTTPS_PORT": str(env.https_port),
-        "QCURL_LC_WS_PORT": str(env.ws_port),
         "QCURL_LC_COUNT": "4",
         "QCURL_LC_DOCNAME": "path/2402",
         "QCURL_LC_UPLOAD_SIZE": "0",
@@ -56,4 +55,3 @@ def test_p2_connection_limits_smoke(env):
         download_count=4,
         case_env=case_env,
     )
-

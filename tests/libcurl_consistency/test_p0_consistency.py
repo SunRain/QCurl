@@ -22,12 +22,7 @@ from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
-def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
-    ctx = defaults.copy()
-    ctx.update({
-        "https_port": env.https_port,
-        "ws_port": env.ws_port,
-    })
+def _fmt_args(template: List[str], ctx: Dict) -> List[str]:
     return [str(x).format(**ctx) for x in template]
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -95,8 +90,9 @@ def _build_response_proto(case_id: str, defaults: Dict) -> Dict:
 
 
 @pytest.mark.parametrize("case_id", sorted(P0_CASES.keys()))
-def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
+def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
     case = P0_CASES[case_id]
+    is_ws_case = str(case_id).startswith("ws_")
     collect_logs = should_collect_service_logs()
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
@@ -115,9 +111,14 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
     if env.have_h3():
         http_protos.append("h3")
 
-    protos_to_run = [None] if case_id.startswith("ws_") else http_protos
+    protos_to_run = [None] if is_ws_case else http_protos
 
     for proto in protos_to_run:
+        ws_logs = {}
+        if is_ws_case:
+            # 仅在 ws_* case 中启动 ws echo server，避免无关用例对 ws_port / ws 能力的隐式依赖。
+            ws_logs = request.getfixturevalue("lc_ws_logs")
+
         trace_base = f"lc_{uuid.uuid4().hex[:8]}_{case_id}"
         if proto is not None:
             trace_base = f"{trace_base}_{proto.replace('/', '_')}"
@@ -127,13 +128,13 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
         resolved_defaults = dict(case["defaults"])
         if proto is not None:
             resolved_defaults["proto"] = proto
-        resolved_defaults["url"] = str(resolved_defaults["url"]).format(
-            https_port=env.https_port,
-            ws_port=env.ws_port,
-        )
+        if is_ws_case:
+            resolved_defaults["url"] = str(resolved_defaults["url"]).format(ws_port=env.ws_port)
+        else:
+            resolved_defaults["url"] = str(resolved_defaults["url"]).format(https_port=env.https_port)
         resolved_defaults["url"] = _append_req_id(resolved_defaults["url"], baseline_req_id)
 
-        args = _fmt_args(case["args_template"], resolved_defaults, env)
+        args = _fmt_args(case["args_template"], resolved_defaults)
         req_meta = _build_request_proto(case_id, resolved_defaults)
         resp_meta = _build_response_proto(case_id, resolved_defaults)
         baseline_download_count = case.get("baseline_download_count")
@@ -146,8 +147,6 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
         case_env = {
             "QCURL_LC_CASE_ID": case_id,
             "QCURL_LC_PROTO": str(resolved_defaults.get("proto", "h2")),
-            "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": str(resolved_defaults.get("count", 1)),
             "QCURL_LC_DOCNAME": str(resolved_defaults.get("docname", "")),
             "QCURL_LC_UPLOAD_SIZE": str(resolved_defaults.get("upload_size", 0)),
@@ -155,6 +154,10 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
             "QCURL_LC_FILE_SIZE": str(resolved_defaults.get("file_size", 0)),
             "QCURL_LC_REQ_ID": qcurl_req_id,
         }
+        if is_ws_case:
+            case_env["QCURL_LC_WS_PORT"] = str(env.ws_port)
+        else:
+            case_env["QCURL_LC_HTTPS_PORT"] = str(env.https_port)
 
         try:
             try:
@@ -173,7 +176,7 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
 
             # 将 request/response 的关键语义从“构造值”升级为“观测值”（服务端日志）
             if case_id.startswith("ws_"):
-                ws_log = Path(lc_logs["ws_handshake_log"])
+                ws_log = Path(ws_logs["ws_handshake_log"])
                 obs = ws_observed_for_id(ws_log, baseline_req_id)
                 baseline["payload"]["request"]["method"] = obs.method
                 baseline["payload"]["request"]["url"] = obs.url
@@ -223,7 +226,7 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
             )
 
             if case_id.startswith("ws_"):
-                ws_log = Path(lc_logs["ws_handshake_log"])
+                ws_log = Path(ws_logs["ws_handshake_log"])
                 obs = ws_observed_for_id(ws_log, qcurl_req_id)
                 qcurl["payload"]["request"]["method"] = obs.method
                 qcurl["payload"]["request"]["url"] = obs.url
@@ -263,7 +266,7 @@ def test_p0_consistency(case_id, env, lc_services, lc_logs, tmp_path):
                     env,
                     suite=case["suite"],
                     case=case_variant,
-                    logs=lc_logs,
+                    logs={**lc_logs, **ws_logs},
                     meta={
                         "case_id": case_id,
                         "case_variant": case_variant,

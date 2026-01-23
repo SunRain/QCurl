@@ -13,6 +13,7 @@
  * - QCURL_LC_COUNT: 下载/上传次数（默认 1）
  * - QCURL_LC_DOCNAME: 下载资源名（如 data-1m）
  * - QCURL_LC_UPLOAD_SIZE: 上传字节数（默认 0）
+ * - QCURL_LC_EXPECT100_TIMEOUT_MS: Expect: 100-continue 等待超时（ms；可选；用于 p2_expect_100_continue）
  * - QCURL_LC_ABORT_OFFSET: 中断点（Range 续传用，默认 0）
  * - QCURL_LC_FILE_SIZE: 资源总长度（Range 续传用，默认 0）
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
@@ -29,6 +30,7 @@
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QDir>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QJsonArray>
@@ -45,6 +47,8 @@
 #include <algorithm>
 #include <cstring>
 #include <optional>
+
+#include <curl/curl.h>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
@@ -139,6 +143,15 @@ QUrl withRequestId(const QUrl &url, const QString &requestId)
     query.addQueryItem(QStringLiteral("id"), requestId);
     out.setQuery(query);
     return out;
+}
+
+void deleteReplyLater(QCNetworkReply *reply)
+{
+    if (!reply) {
+        return;
+    }
+    reply->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 bool writeWsEventsToFile(const QString &filePath, const QVector<QPair<QByteArray, QByteArray>> &events)
@@ -351,6 +364,8 @@ void TestLibcurlConsistency::testCase()
     const int count = qMax(1, qEnvironmentVariableIntValue("QCURL_LC_COUNT"));
     const QString docname = qEnvironmentVariable("QCURL_LC_DOCNAME");
     const int uploadSize = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_UPLOAD_SIZE"));
+    const bool hasExpect100TimeoutMs = qEnvironmentVariableIsSet("QCURL_LC_EXPECT100_TIMEOUT_MS");
+    const int expect100TimeoutMs = qEnvironmentVariableIntValue("QCURL_LC_EXPECT100_TIMEOUT_MS");
     const int abortOffset = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_ABORT_OFFSET"));
     const int fileSize = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_FILE_SIZE"));
     const int pauseOffset = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_PAUSE_OFFSET"));
@@ -445,7 +460,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -463,7 +478,7 @@ void TestLibcurlConsistency::testCase()
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::SslHandshakeFailed);
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -488,7 +503,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -510,7 +525,7 @@ void TestLibcurlConsistency::testCase()
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -525,7 +540,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -540,7 +555,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -563,7 +578,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -585,7 +600,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -606,7 +621,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -627,7 +642,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -647,7 +662,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -668,7 +683,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -701,7 +716,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -741,7 +756,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -947,7 +962,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -970,7 +985,7 @@ void TestLibcurlConsistency::testCase()
         const QByteArray headerData = reply->rawHeaderData();
         QVERIFY(writeAllToFile(QStringLiteral("response_headers_0.data"), headerData, QIODevice::WriteOnly | QIODevice::Truncate));
 
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -1104,7 +1119,7 @@ void TestLibcurlConsistency::testCase()
         QCOMPARE(headerValue("Test"), QByteArray("word"));
 
         QVERIFY(writeJsonObjectToFile(QStringLiteral("headers_unfolded_1940.json"), unfoldedJson));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -1330,6 +1345,10 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
+        if (hasExpect100TimeoutMs) {
+            QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
+            req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
+        }
         QCNetworkReply *reply = manager.sendPut(req, body);
         QVERIFY(reply);
 
@@ -1419,7 +1438,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -1443,7 +1462,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -1572,7 +1591,7 @@ void TestLibcurlConsistency::testCase()
                     resumeScheduled = true;
                     QTimer::singleShot(50, this, [safeReply]() {
                         if (safeReply) {
-                            safeReply->resume();
+                            safeReply->resumeTransport();
                         }
                     });
                 }
@@ -1610,7 +1629,7 @@ void TestLibcurlConsistency::testCase()
             }
             if (!pauseRequested && bytesReceived >= pauseOffset) {
                 pauseRequested = true;
-                reply->pause(PauseMode::Recv);
+                reply->pauseTransport(PauseMode::Recv);
             }
         });
 
@@ -1769,7 +1788,7 @@ void TestLibcurlConsistency::testCase()
                     }
                     resumeRequested = true;
                     record(QStringLiteral("resume_req"));
-                    safeReply->resume();
+                    safeReply->resumeTransport();
                 });
             }
         };
@@ -1797,7 +1816,7 @@ void TestLibcurlConsistency::testCase()
             if (!pauseRequested && bytesReceived >= pauseOffset) {
                 pauseRequested = true;
                 record(QStringLiteral("pause_req"));
-                reply->pause(PauseMode::Recv);
+                reply->pauseTransport(PauseMode::Recv);
             }
         });
 
@@ -1843,8 +1862,8 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setSslConfig(QCNetworkSslConfig::insecureConfig());
         req.setHttpVersion(httpVersion);
-        req.setAsyncBodyBufferLimitBytes(bpLimitBytes);
-        req.setAsyncBodyBufferResumeBytes(bpResumeBytes);
+        req.setBackpressureLimitBytes(bpLimitBytes);
+        req.setBackpressureResumeBytes(bpResumeBytes);
 
         QFile out(QStringLiteral("download_0.data"));
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -1919,6 +1938,7 @@ void TestLibcurlConsistency::testCase()
         root.insert(QStringLiteral("url"), url.toString());
         root.insert(QStringLiteral("limit_bytes"), bpLimitBytes);
         root.insert(QStringLiteral("resume_bytes"), bpResumeBytes);
+        root.insert(QStringLiteral("curl_max_write_size"), static_cast<qint64>(CURL_MAX_WRITE_SIZE));
         root.insert(QStringLiteral("peak_buffered_bytes"),
                     static_cast<qint64>(reply->backpressureBufferedBytesPeak()));
         root.insert(QStringLiteral("event_seq"), eventSeq);
@@ -2023,6 +2043,7 @@ void TestLibcurlConsistency::testCase()
 
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+        QSignalSpy sendPausedSpy(reply, &QCNetworkReply::uploadSendPausedChanged);
 
         QVERIFY(finishedSpy.wait(15000));
         QCOMPARE(reply->error(), NetworkError::NoError);
@@ -2046,8 +2067,21 @@ void TestLibcurlConsistency::testCase()
         root.insert(QStringLiteral("payload_size"), uploadSize);
         root.insert(QStringLiteral("zero_read_count"), device.zeroReadCount());
         QJsonArray seq;
-        if (device.zeroReadCount() > 0) {
+        bool pauseSeen = false;
+        bool resumeSeen = false;
+        for (const auto &args : sendPausedSpy) {
+            QVERIFY(!args.isEmpty());
+            const bool paused = args.at(0).toBool();
+            if (paused) {
+                pauseSeen = true;
+            } else if (pauseSeen) {
+                resumeSeen = true;
+            }
+        }
+        if (pauseSeen) {
             seq.append(QStringLiteral("pause"));
+        }
+        if (resumeSeen) {
             seq.append(QStringLiteral("resume"));
         }
         root.insert(QStringLiteral("event_seq"), seq);
@@ -2057,6 +2091,8 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(writeJsonObjectToFile(QStringLiteral("upload_pause_resume.json"), root));
 
         QVERIFY(device.zeroReadCount() > 0);
+        QVERIFY(pauseSeen);
+        QVERIFY(resumeSeen);
 
         reply->deleteLater();
         return;
@@ -2079,7 +2115,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2100,7 +2136,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2121,7 +2157,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2301,7 +2337,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2327,7 +2363,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2354,7 +2390,7 @@ void TestLibcurlConsistency::testCase()
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
-        delete reply;
+        deleteReplyLater(reply);
         return;
     }
 
@@ -2486,7 +2522,7 @@ void TestLibcurlConsistency::testCase()
         if (dataOpt.has_value()) {
             QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
         }
-        delete reply;
+        deleteReplyLater(reply);
 
         [[maybe_unused]] auto shouldSkipByOpt = [&warnings](const QString &opt) -> bool {
             for (const QString &w : warnings) {
@@ -2859,7 +2895,7 @@ void TestLibcurlConsistency::testCase()
             auto *reply = manager.sendGetSync(req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
-            delete reply;
+            deleteReplyLater(reply);
         }
 
         manager.setCookieFilePath(cookiePath, QCNetworkAccessManager::ReadWrite);
@@ -2869,7 +2905,7 @@ void TestLibcurlConsistency::testCase()
             auto *reply = manager.sendGetSync(req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
-            delete reply;
+            deleteReplyLater(reply);
         }
 
         QFile f(cookiePath);
@@ -2893,7 +2929,7 @@ void TestLibcurlConsistency::testCase()
             auto *reply = manager.sendGetSync(req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
-            delete reply;
+            deleteReplyLater(reply);
         }
 
         QFile f(cookiePath);

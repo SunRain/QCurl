@@ -50,6 +50,11 @@ def test_p2_expect_100_continue_417_retry(env, lc_observe_http):
 
     # 依赖 libcurl 的自动注入阈值（EXPECT_100_THRESHOLD=1MB）触发 Expect: 100-continue。
     # 不能手工添加 `Expect: 100-continue`：那会绕开 libcurl 的 exp100 状态机，导致 417→重试不发生。
+    #
+    # 稳定性最佳实践：
+    # - baseline/QCurl 两侧显式设置 EXPECT_100_TIMEOUT_MS（等待服务端 final response 的窗口）
+    # - 避免因调度抖动导致“body 提前发送”，从而不走 417→重试路径
+    expect100_timeout_ms = 10_000
     upload_size = 1053700
     body = b"x" * upload_size
 
@@ -75,6 +80,8 @@ def test_p2_expect_100_continue_417_retry(env, lc_observe_http):
                 "PUT",
                 "--data-size",
                 str(upload_size),
+                "--expect100-timeout-ms",
+                str(expect100_timeout_ms),
                 baseline_url,
             ],
             request_meta={"method": "PUT", "url": baseline_url, "headers": {}, "body": body},
@@ -133,6 +140,7 @@ def test_p2_expect_100_continue_417_retry(env, lc_observe_http):
                 "QCURL_LC_PROTO": proto,
                 "QCURL_LC_REQ_ID": qcurl_req_id,
                 "QCURL_LC_UPLOAD_SIZE": str(upload_size),
+                "QCURL_LC_EXPECT100_TIMEOUT_MS": str(expect100_timeout_ms),
                 "QCURL_LC_OBSERVE_HTTP_PORT": str(port),
             },
         )

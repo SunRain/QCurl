@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <algorithm>
@@ -43,6 +45,7 @@ struct Args {
     bool verifyHost = false;
     long connectTimeoutMs = -1;
     long totalTimeoutMs = -1;
+    long expect100TimeoutMs = -1;
     long lowSpeedTimeS = -1;
     long lowSpeedLimit = -1;
     long abortAfterBytes = -1;
@@ -350,51 +353,59 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--connect-timeout-ms" && i + 1 < argc) {
-            try {
-                out.connectTimeoutMs = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.connectTimeoutMs = *value;
             continue;
         }
         if (arg == "--timeout-ms" && i + 1 < argc) {
-            try {
-                out.totalTimeoutMs = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.totalTimeoutMs = *value;
+            continue;
+        }
+        if (arg == "--expect100-timeout-ms" && i + 1 < argc) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.expect100TimeoutMs = *value;
             continue;
         }
         if (arg == "--low-speed-time" && i + 1 < argc) {
-            try {
-                out.lowSpeedTimeS = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.lowSpeedTimeS = *value;
             continue;
         }
         if (arg == "--low-speed-limit" && i + 1 < argc) {
-            try {
-                out.lowSpeedLimit = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.lowSpeedLimit = *value;
             continue;
         }
         if (arg == "--abort-after-bytes" && i + 1 < argc) {
-            try {
-                out.abortAfterBytes = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.abortAfterBytes = *value;
             continue;
         }
         if (arg == "--data-size" && i + 1 < argc) {
-            try {
-                out.dataSize = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.dataSize = *value;
             continue;
         }
         if (arg == "--expect100") {
@@ -402,11 +413,11 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--repeat" && i + 1 < argc) {
-            try {
-                out.repeat = std::stoi(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<int>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.repeat = *value;
             continue;
         }
         if (arg == "--follow") {
@@ -414,11 +425,11 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--max-redirs" && i + 1 < argc) {
-            try {
-                out.maxRedirs = std::stol(argv[++i]);
-            } catch (...) {
+            const auto value = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!value.has_value()) {
                 return std::nullopt;
             }
+            out.maxRedirs = *value;
             continue;
         }
         if (arg == "--auto-referer") {
@@ -492,7 +503,7 @@ int printUsage()
         << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
         << "  [--accept-encoding <csv|all>] [--accept-encoding-all]\n"
         << "  [--secure] [--cainfo <path>] [--pinned-public-key <sha256//...|path>]\n"
-        << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>]\n"
+        << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>] [--expect100-timeout-ms <ms>]\n"
         << "  [--low-speed-time <s>] [--low-speed-limit <bytes_per_sec>]\n"
         << "  [--abort-after-bytes <n>]\n"
         << "  <url>\n";
@@ -643,6 +654,20 @@ int main(int argc, char **argv)
     }
     if (args.totalTimeoutMs > 0) {
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, args.totalTimeoutMs);
+    }
+    if (args.expect100TimeoutMs >= 0) {
+#ifdef CURLOPT_EXPECT_100_TIMEOUT_MS
+        const CURLcode expectRc =
+            curl_easy_setopt(curl, CURLOPT_EXPECT_100_TIMEOUT_MS, args.expect100TimeoutMs);
+        if (expectRc == CURLE_UNKNOWN_OPTION || expectRc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported expect100-timeout-ms (no CURLOPT_EXPECT_100_TIMEOUT_MS)\n";
+        } else if (expectRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_EXPECT_100_TIMEOUT_MS) failed: "
+                      << curl_easy_strerror(expectRc) << "\n";
+        }
+#else
+        std::cerr << "expect100-timeout-ms ignored (no CURLOPT_EXPECT_100_TIMEOUT_MS in this libcurl build)\n";
+#endif
     }
     if (args.lowSpeedTimeS > 0) {
         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, args.lowSpeedTimeS);

@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <cstdint>
@@ -116,11 +118,19 @@ std::optional<Args> parseArgs(int argc, char **argv)
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "-A" && i + 1 < argc) {
-            out.abortOffset = std::stoull(argv[++i]);
+            const auto abortOffset = qcurl::lc::parseInt<std::uint64_t>(argv[++i]);
+            if (!abortOffset.has_value()) {
+                return std::nullopt;
+            }
+            out.abortOffset = *abortOffset;
             continue;
         }
         if (arg == "-S" && i + 1 < argc) {
-            out.fileSize = std::stoull(argv[++i]);
+            const auto fileSize = qcurl::lc::parseInt<std::uint64_t>(argv[++i]);
+            if (!fileSize.has_value()) {
+                return std::nullopt;
+            }
+            out.fileSize = *fileSize;
             continue;
         }
         if (arg == "-V" && i + 1 < argc) {
@@ -226,4 +236,3 @@ int main(int argc, char **argv)
     curl_global_cleanup();
     return 0;
 }
-

@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <cstdint>
@@ -85,7 +87,11 @@ std::optional<Args> parseArgs(int argc, char **argv)
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "-n" && i + 1 < argc) {
-            out.count = std::stoi(argv[++i]);
+            const auto count = qcurl::lc::parseInt<int>(argv[++i]);
+            if (!count.has_value()) {
+                return std::nullopt;
+            }
+            out.count = *count;
             continue;
         }
         if (arg == "-I" && i + 1 < argc) {

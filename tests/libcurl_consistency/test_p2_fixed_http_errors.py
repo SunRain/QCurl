@@ -41,7 +41,7 @@ def _error_from_status(status: int) -> dict:
 
 
 @pytest.mark.parametrize("status_code", [404, 401, 503])
-def test_p2_fixed_http_errors(status_code: int, env, lc_services, lc_logs, lc_observe_http, tmp_path):
+def test_p2_fixed_http_errors(status_code: int, env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -139,7 +139,7 @@ def test_p2_fixed_http_errors(status_code: int, env, lc_services, lc_logs, lc_ob
         raise
 
 
-def test_p2_retry_501_sequence_http_1_1(env, lc_services, lc_logs, lc_observe_http, tmp_path):
+def test_p2_retry_501_sequence_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():

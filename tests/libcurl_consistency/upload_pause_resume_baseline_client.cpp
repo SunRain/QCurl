@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 
 #include <algorithm>
@@ -93,19 +95,19 @@ std::optional<Args> parseArgs(int argc, char **argv)
             continue;
         }
         if (arg == "--payload-size" && i + 1 < argc) {
-            try {
-                out.payloadSize = std::stoll(argv[++i]);
-            } catch (...) {
+            const auto payloadSize = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!payloadSize.has_value()) {
                 return std::nullopt;
             }
+            out.payloadSize = *payloadSize;
             continue;
         }
         if (arg == "--delay-ms" && i + 1 < argc) {
-            try {
-                out.delayMs = std::stol(argv[++i]);
-            } catch (...) {
+            const auto delayMs = qcurl::lc::parseInt<long>(argv[++i]);
+            if (!delayMs.has_value()) {
                 return std::nullopt;
             }
+            out.delayMs = *delayMs;
             continue;
         }
         if (!arg.empty() && arg[0] == '-') {

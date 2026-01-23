@@ -23,13 +23,8 @@ from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
-def _fmt_args(template: List[str], defaults: Dict, env) -> List[str]:
-    ctx = defaults.copy()
-    ctx.update({
-        "https_port": env.https_port,
-        "ws_port": env.ws_port,
-    })
-    return [str(x).format(**ctx) for x in template]
+def _fmt_args(template: List[str], defaults: Dict) -> List[str]:
+    return [str(x).format(**defaults) for x in template]
 
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -42,7 +37,7 @@ def _postfields_binary_payload() -> bytes:
 
 
 @pytest.mark.parametrize("case_id", sorted(P1_CASES.keys()))
-def test_p1_postfields_binary(case_id, env, lc_services, lc_logs, tmp_path):
+def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
     case = P1_CASES[case_id]
     collect_logs = should_collect_service_logs()
     qt_bin = os.environ.get("QCURL_QTTEST")
@@ -63,11 +58,10 @@ def test_p1_postfields_binary(case_id, env, lc_services, lc_logs, tmp_path):
         resolved_defaults["proto"] = proto
         resolved_defaults["url"] = str(resolved_defaults["url"]).format(
             https_port=env.https_port,
-            ws_port=env.ws_port,
         )
         resolved_defaults["url"] = _append_req_id(resolved_defaults["url"], baseline_req_id)
 
-        args = _fmt_args(case["args_template"], resolved_defaults, env)
+        args = _fmt_args(case["args_template"], resolved_defaults)
         body = _postfields_binary_payload()
         req_meta = {
             "method": "POST",
@@ -87,7 +81,6 @@ def test_p1_postfields_binary(case_id, env, lc_services, lc_logs, tmp_path):
             "QCURL_LC_CASE_ID": case_id,
             "QCURL_LC_PROTO": str(resolved_defaults.get("proto", "h2")),
             "QCURL_LC_HTTPS_PORT": str(env.https_port),
-            "QCURL_LC_WS_PORT": str(env.ws_port),
             "QCURL_LC_COUNT": "1",
             "QCURL_LC_DOCNAME": "",
             "QCURL_LC_UPLOAD_SIZE": str(len(body)),

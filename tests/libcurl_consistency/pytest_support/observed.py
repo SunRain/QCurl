@@ -387,7 +387,7 @@ def _wait_for_observe_http_matches(observe_log: Path,
                                   req_id: str,
                                   *,
                                   expected_count: int,
-                                  timeout_s: float = 1.0) -> List[Dict]:
+                                  timeout_s: float = 2.0) -> List[Dict]:
     """
     等待 observe_http.jsonl 写入完成，避免“服务端线程写 log”与“测试线程读 log”之间的竞态导致偶发空读。
     - expected_count > 0：等待匹配条数恰好等于 expected_count
@@ -447,8 +447,10 @@ def observe_http_observed_list_for_id(observe_log: Path,
     if expected_count > 0 and len(matches) != expected_count:
         raise AssertionError(f"observe http log 记录数不匹配：id={req_id}, got={len(matches)}, expected={expected_count}")
 
+    matches_sorted = sorted(matches, key=lambda e: str(e.get("ts") or ""))
+
     out: List[ObserveHttpObserved] = []
-    for e in matches:
+    for e in matches_sorted:
         headers_in = e.get("headers") or {}
         headers = {str(k).lower(): str(v) for k, v in headers_in.items()}
         resp_headers_in = e.get("response_headers") or {}

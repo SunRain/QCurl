@@ -1,3 +1,5 @@
+#include "cli_parse.h"
+
 #include <curl/curl.h>
 #include <curl/websockets.h>
 
@@ -294,11 +296,11 @@ int main(int argc, char **argv)
     const std::string outFile = argv[3];
     std::chrono::milliseconds timeout{20000};
     if (argc >= 5) {
-        try {
-            timeout = std::chrono::milliseconds(std::stoll(argv[4]));
-        } catch (...) {
+        const auto timeoutMs = qcurl::lc::parseInt<long long>(argv[4]);
+        if (!timeoutMs.has_value() || *timeoutMs < 0) {
             return 1;
         }
+        timeout = std::chrono::milliseconds(*timeoutMs);
     }
 
     return runScenario(scenario, url, outFile, timeout);
