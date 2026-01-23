@@ -293,8 +293,8 @@ public:
      * @param fieldName 字段名（默认为 "file"）
      * @return 网络响应对象
      */
-    QCNetworkReply* uploadFile(const QUrl &url, 
-                               const QString &filePath, 
+    QCNetworkReply* uploadFile(const QUrl &url,
+                               const QString &filePath,
                                const QString &fieldName = QStringLiteral("file"));
 
     /**
@@ -323,31 +323,31 @@ public:
 
     /**
      * @brief 启用/禁用请求调度器
-     * 
+     *
      * 启用后，所有通过 scheduleXXX() 方法发送的请求会经过调度器管理。
-     * 
+     *
      * @param enable true 为启用调度器，false 为禁用
      */
     void enableRequestScheduler(bool enable);
 
     /**
      * @brief 检查调度器是否已启用
-     * 
+     *
      * @return true 如果调度器已启用
      */
     bool isSchedulerEnabled() const;
 
     /**
      * @brief 获取调度器实例
-     * 
+     *
      * 用于配置调度器参数（并发限制、带宽限制等）。
-     * 
+     *
      * @return 调度器指针
-     * 
+     *
      * @code
      * manager.enableRequestScheduler(true);
      * auto *scheduler = manager.scheduler();
-     * 
+     *
      * QCNetworkRequestScheduler::Config config;
      * config.maxConcurrentRequests = 10;
      * config.maxBandwidthBytesPerSec = 1024 * 1024;  // 1 MB/s
@@ -358,23 +358,23 @@ public:
 
     /**
      * @brief 使用调度器发送 GET 请求
-     * 
+     *
      * 请求会根据优先级（request.priority()）加入队列。
-     * 
+     *
      * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
      *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
      *       或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * 
+     *
      * @note 如果调度器未启用，会回退到 sendGet() 方法
      */
     QCNetworkReply* scheduleGet(const QCNetworkRequest &request);
 
     /**
      * @brief 使用调度器发送 POST 请求
-     * 
+     *
      * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
      *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
      *       或调整调度器在开始传输前重新执行 pre-send。
@@ -387,7 +387,7 @@ public:
 
     /**
      * @brief 使用调度器发送 PUT 请求
-     * 
+     *
      * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply 并入队”时执行，
      *       队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建 request，
      *       或调整调度器在开始传输前重新执行 pre-send。

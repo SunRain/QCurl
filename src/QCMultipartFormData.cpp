@@ -124,22 +124,22 @@ QByteArray QCMultipartFormData::toByteArray() const
                 if (field.fileStream->isOpen() && field.fileStream->isReadable()) {
                     // 保存当前位置
                     qint64 originalPos = field.fileStream->pos();
-                    
+
                     // 重置到开头并读取所有数据
                     field.fileStream->seek(0);
                     QByteArray streamData = field.fileStream->readAll();
-                    
+
                     // 恢复原始位置
                     field.fileStream->seek(originalPos);
-                    
+
                     // 创建临时字段用于编码
                     Field tempField = field;
                     tempField.fileData = streamData;
                     tempField.fileStream = nullptr;
-                    
+
                     result.append(encodeFileField(tempField));
                 } else {
-                    qWarning() << "QCMultipartFormData: Stream is not open or not readable, skipping field:" 
+                    qWarning() << "QCMultipartFormData: Stream is not open or not readable, skipping field:"
                                << field.name;
                 }
                 continue;

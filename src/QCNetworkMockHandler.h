@@ -20,19 +20,19 @@ enum class HttpMethod;
 
 /**
  * @brief 网络请求 Mock 处理器
- * 
+ *
  * 用于单元测试，模拟网络响应、错误和延迟。
- * 
- * 
+ *
+ *
  * @example
  * @code
  * auto *mock = new QCNetworkMockHandler();
  * mock->mockResponse(url, QByteArray("success response"));
  * mock->mockError(url, NetworkError::ConnectionRefused);
  * mock->setGlobalDelay(100); // 100ms delay
- * 
+ *
  * manager->setMockHandler(mock);
- * 
+ *
  * // All requests will use mock responses
  * auto *reply = manager->sendGet(request);
  * @endcode
@@ -59,15 +59,15 @@ public:
         QByteArray bodyPreview;
         qsizetype bodySize = 0;
     };
-    
+
     /**
      * @brief 模拟成功响应
      * @param url 请求 URL
      * @param response 响应数据
      * @param statusCode HTTP 状态码（默认 200）
      */
-    void mockResponse(const QUrl &url, 
-                     const QByteArray &response, 
+    void mockResponse(const QUrl &url,
+                     const QByteArray &response,
                      int statusCode = 200);
 
     /**
@@ -139,19 +139,19 @@ public:
                       const QUrl &url,
                       NetworkError error,
                       const QMap<QByteArray, QByteArray> &headers = QMap<QByteArray, QByteArray>());
-    
+
     /**
      * @brief 设置全局模拟延迟
      * @param msecs 延迟时间（毫秒）
      */
     void setGlobalDelay(int msecs);
-    
+
     /**
      * @brief 获取全局延迟时间
      * @return 延迟时间（毫秒）
      */
     int globalDelay() const;
-    
+
     /**
      * @brief 检查是否有模拟响应
      * @param url 请求 URL
@@ -163,7 +163,7 @@ public:
      * @brief 检查指定 method+url 是否有模拟（含回退到 url-only）
      */
     bool hasMock(HttpMethod method, const QUrl &url) const;
-    
+
     /**
      * @brief 获取模拟响应
      * @param url 请求 URL
@@ -180,14 +180,14 @@ public:
      * 2) 若不存在，则回退到 url-only（旧 API）。
      */
     bool consumeMock(HttpMethod method, const QUrl &url, MockData &out);
-    
+
     /**
      * @brief 获取模拟错误
      * @param url 请求 URL
      * @return 错误类型
      */
     NetworkError getMockError(const QUrl &url) const;
-    
+
     /**
      * @brief 检查是否为错误模拟
      * @param url 请求 URL
@@ -208,12 +208,12 @@ public:
     QList<CapturedRequest> capturedRequests() const;
     QList<CapturedRequest> takeCapturedRequests();
     void clearCapturedRequests();
-    
+
     /**
      * @brief 清空所有模拟
      */
     void clear();
-    
+
 private:
     struct MockSequence {
         QList<MockData> items;

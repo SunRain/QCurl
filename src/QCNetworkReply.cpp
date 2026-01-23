@@ -1329,7 +1329,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             "/usr/local/share/certs/ca-root-nss.crt", // FreeBSD
             nullptr
         };
-        
+
         bool caPathSet = false;
         for (int i = 0; systemCaPaths[i] != nullptr; ++i) {
             QFileInfo fi(systemCaPaths[i]);
@@ -1339,7 +1339,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 break;
             }
         }
-        
+
         if (!caPathSet) {
             // 回退到 libcurl 默认行为（使用编译时配置的路径）
             sslCaCertPathBytes.clear();
@@ -1618,7 +1618,7 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
             // 返回值含义：0 = 未知, 1 = 新连接, >1 = 可能复用了连接
             long numConnects = 0;
             curl_easy_getinfo(curlManager.handle(), CURLINFO_NUM_CONNECTS, &numConnects);
-            
+
             // 注意：NUM_CONNECTS 是累计值，不是精确的复用标志
             // 这里简化处理：每个请求都视为"使用了连接池"
             // 实际复用率由 libcurl 内部管理
@@ -2897,24 +2897,24 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
 std::optional<QByteArray> QCNetworkReply::readBody() const
 {
     Q_D(const QCNetworkReply);
-    
+
     // 安全检查：错误状态或未完成状态不应读取 body
     if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
-        qWarning() << "QCNetworkReply::readBody: Invalid state" 
+        qWarning() << "QCNetworkReply::readBody: Invalid state"
                    << (d ? static_cast<int>(d->state) : -1);
         return std::nullopt;
     }
-    
+
     return readAll();  // 别名方法
 }
 
 QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
 {
     Q_D(const QCNetworkReply);
-    
+
     // 安全检查：错误状态或未完成状态下 headers 可能未初始化
     if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
-        qWarning() << "QCNetworkReply::rawHeaders: Invalid state" 
+        qWarning() << "QCNetworkReply::rawHeaders: Invalid state"
                    << (d ? static_cast<int>(d->state) : -1);
         return QList<RawHeaderPair>();  // 返回空列表而非崩溃
     }
@@ -2929,13 +2929,13 @@ QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
 QByteArray QCNetworkReply::rawHeaderData() const
 {
     Q_D(const QCNetworkReply);
-    
+
     // 安全检查
     if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaderData: Invalid state";
         return QByteArray();
     }
-    
+
     return d->headerData;
 }
 

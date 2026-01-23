@@ -104,7 +104,7 @@ public:
      * @param parent 父对象
      */
     explicit QCWebSocketPool(const Config &config, QObject *parent = nullptr);
-    
+
     /**
      * @brief 构造函数（使用默认配置）
      * @param parent 父对象

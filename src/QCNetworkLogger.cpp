@@ -77,7 +77,7 @@ public:
     std::function<void(const NetworkLogEntry &)> customCallback;
     QVector<NetworkLogEntry> entries;
     QMutex mutex;
-    
+
     QString formatLog(const NetworkLogEntry &entry) const
     {
         QString result = logFormat;
@@ -87,13 +87,13 @@ public:
         result.replace("%{message}", entry.message);
         return result;
     }
-    
+
     void writeToFile(const QString &text)
     {
         if (logFile.isEmpty()) {
             return;
         }
-        
+
         QFile file(logFile);
         if (file.size() > maxFileSize && maxFileSize > 0) {
             // Rotate log files
@@ -107,7 +107,7 @@ public:
             QFile::remove(backupFile);
             QFile::rename(logFile, backupFile);
         }
-        
+
         if (file.open(QIODevice::Append | QIODevice::Text)) {
             QTextStream stream(&file);
             stream << text << "\n";
@@ -162,25 +162,25 @@ void QCNetworkDefaultLogger::setLogFormat(const QString &format)
 void QCNetworkDefaultLogger::log(NetworkLogLevel level, const QString &category, const QString &message)
 {
     QMutexLocker locker(&d_ptr->mutex);
-    
+
     if (level < d_ptr->minLevel) {
         return;
     }
-    
+
     NetworkLogEntry entry;
     entry.level = level;
     entry.category = category;
     entry.message = message;
     entry.timestamp = QDateTime::currentDateTime();
-    
+
     // Store entry
     d_ptr->entries.append(entry);
     if (d_ptr->entries.size() > 10000) {
         d_ptr->entries.removeFirst();
     }
-    
+
     QString formatted = d_ptr->formatLog(entry);
-    
+
     // Console output
     if (d_ptr->enableConsole) {
         switch (level) {
@@ -198,12 +198,12 @@ void QCNetworkDefaultLogger::log(NetworkLogLevel level, const QString &category,
             break;
         }
     }
-    
+
     // File output
     if (!d_ptr->logFile.isEmpty()) {
         d_ptr->writeToFile(formatted);
     }
-    
+
     // Custom callback
     if (d_ptr->customCallback) {
         d_ptr->customCallback(entry);

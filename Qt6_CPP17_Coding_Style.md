@@ -4,7 +4,7 @@
 
 ---
 你=资深 Qt/KDE与现代 C++17 开发者，以下条款为强制最高优先级；任何冲突以序号小者为准。
-所有代码须在现代 C++17 下编译（GCC≥11、Clang≥14、MSVC≥2019），同时通过 KDE 官方 .clang-format、.clang-tidy 与 make test 零警告。详细的代码规范可以参考：
+所有代码须在现代 C++17 下编译（GCC≥11、Clang≥14、MSVC≥2019），同时通过 clang-format（标准配置：`Qt6_CPP17_CLANG-FORMAT`）、.clang-tidy 与 make test 零警告。详细的代码规范可以参考：
 - https://wiki.qt.io/Qt_Coding_Style
 - https://wiki.qt.io/Coding_Conventions
 - https://community.kde.org/Policies/Frameworks_Coding_Style
@@ -15,7 +15,7 @@
 - 编译器：GCC ≥ 11 | Clang ≥ 14 | MSVC ≥ 2019
 - 标准：C++17 (`set(CMAKE_CXX_STANDARD 17)`)
 - 警告：`-Wall -Wextra -Wpedantic` 全开，**零警告提交**
-- 格式化：项目根放置 `.clang-format`（见文末），提交前 `git clang-format`
+- 格式化：项目根放置 `Qt6_CPP17_CLANG-FORMAT`（必要时可复制/链接为 `.clang-format` 供工具自动发现），提交前 `git clang-format --style=file:Qt6_CPP17_CLANG-FORMAT`
 - 禁止：异常、RTTI、dynamic_cast、裸 new（`QObject` 派生为明确例外，见第 6 章）、单语句无 braces、64-bit enum
 - Use templates wisely, not just because you can（明智地使用模板，不仅仅是因为你可以）
 - Avoid C casts, prefer C++ casts (static_cast, const_cast, reinterpret_cast)
@@ -194,7 +194,7 @@ auto l = []() { doSomething();
 ```
 MyApp/
 ├── CMakeLists.txt
-├── .clang-format
+├── Qt6_CPP17_CLANG-FORMAT
 ├── .clang-tidy
 ├── src/
 │   ├── main.cpp
@@ -211,22 +211,15 @@ MyApp/
 
 ## 10 配置文件（直接复制到项目根）
 
-### .clang-format（KDE 风格，单语句强制 braces）
-```yaml
-BasedOnStyle: LLVM
-IndentWidth: 4
-Language: Cpp
-Standard: c++17
-PointerAlignment: Right
-BreakBeforeBraces: Attach
-ColumnLimit: 100
-AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: Inline
-FixNamespaceComments: true
-SortIncludes: true
-IncludeBlocks: Regroup
-```
+### Qt6_CPP17_CLANG-FORMAT（通用 Qt/C++ 基线）
+
+本仓库已提供完整配置，SSOT 为仓库根目录 `Qt6_CPP17_CLANG-FORMAT`（请以该文件为准，不再在本文档重复粘贴完整 YAML，避免漂移；如需 clang-format 默认自动发现，可复制/软链为 `.clang-format`）。
+
+关键约定（摘要）：
+- 4 空格缩进（`IndentWidth: 4`，`TabWidth: 4`，`UseTab: Never`）
+- 指针风格：`Type *var`（`PointerAlignment: Right`）
+- 行宽：`ColumnLimit: 100`
+- include 分组：强制归组（`IncludeBlocks: Regroup`），并将 `<Q...>` 与 `<Qt.../...>` 统一归类为 Qt；块内按大小写敏感排序（`SortIncludes: CaseSensitive`）
 
 ### .clang-tidy（最小零警告集）
 ```

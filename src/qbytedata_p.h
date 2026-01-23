@@ -98,7 +98,7 @@ public:
 
         if (other.firstPos > 0) {
             popFront(buffers[bufferCount() - other.bufferCount()], other.firstPos);
-    }
+        }
     }
 
 
@@ -218,7 +218,7 @@ public:
         if(buffers.isEmpty()) {
             return 0;
         }
-            return buffers.first().size() - firstPos;
+        return buffers.first().size() - firstPos;
     }
 
     inline QByteArray& operator[](int i)
@@ -241,7 +241,7 @@ public:
             for (; i < buffers.length(); i++) {
                 if (buffers.at(i).contains('\n')) {
                     return true;
-        }
+                }
             }
         }
         return false;

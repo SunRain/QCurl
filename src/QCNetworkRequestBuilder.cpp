@@ -141,7 +141,7 @@ QCNetworkRequestBuilder &QCNetworkRequestBuilder::withUploadFile(const QString &
 QCNetworkReply *QCNetworkRequestBuilder::sendGet()
 {
     QUrl finalUrl = d_ptr->url;
-    
+
     // Add query parameters if any
     if (!d_ptr->queryParams.isEmpty()) {
         QUrlQuery query(finalUrl);
@@ -150,9 +150,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendGet()
         }
         finalUrl.setQuery(query);
     }
-    
+
     QCNetworkRequest request(finalUrl);
-    
+
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
@@ -160,7 +160,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendGet()
     if (d_ptr->httpAuthConfig.has_value()) {
         request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
-    
+
     // Apply settings
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
@@ -169,14 +169,14 @@ QCNetworkReply *QCNetworkRequestBuilder::sendGet()
     if (!d_ptr->proxy.isEmpty()) {
         // request.setProxyUrl(d_ptr->proxy);
     }
-    
+
     return d_ptr->manager->sendGet(request);
 }
 
 QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
 {
     QUrl finalUrl = d_ptr->url;
-    
+
     // Add query parameters if any
     if (!d_ptr->queryParams.isEmpty()) {
         QUrlQuery query(finalUrl);
@@ -185,9 +185,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
         }
         finalUrl.setQuery(query);
     }
-    
+
     QCNetworkRequest request(finalUrl);
-    
+
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
@@ -195,7 +195,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
     if (d_ptr->httpAuthConfig.has_value()) {
         request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
-    
+
     // Apply settings
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
@@ -221,7 +221,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPost(const QByteArray &body)
 QCNetworkReply *QCNetworkRequestBuilder::sendHead()
 {
     QUrl finalUrl = d_ptr->url;
-    
+
     // Add query parameters if any
     if (!d_ptr->queryParams.isEmpty()) {
         QUrlQuery query(finalUrl);
@@ -230,9 +230,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendHead()
         }
         finalUrl.setQuery(query);
     }
-    
+
     QCNetworkRequest request(finalUrl);
-    
+
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
@@ -240,20 +240,20 @@ QCNetworkReply *QCNetworkRequestBuilder::sendHead()
     if (d_ptr->httpAuthConfig.has_value()) {
         request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
-    
+
     // Apply settings
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
     }
     request.setFollowLocation(d_ptr->followLocation);
-    
+
     return d_ptr->manager->sendHead(request);
 }
 
 QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
 {
     QUrl finalUrl = d_ptr->url;
-    
+
     // Add query parameters if any
     if (!d_ptr->queryParams.isEmpty()) {
         QUrlQuery query(finalUrl);
@@ -262,9 +262,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
         }
         finalUrl.setQuery(query);
     }
-    
+
     QCNetworkRequest request(finalUrl);
-    
+
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
@@ -272,12 +272,12 @@ QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
     if (d_ptr->httpAuthConfig.has_value()) {
         request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
-    
+
     // Apply settings
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));
     }
-    
+
     QByteArray finalBody = body.isEmpty() ? d_ptr->body : body;
     return d_ptr->manager->sendDelete(request, finalBody);
 }
@@ -285,7 +285,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendDelete(const QByteArray &body)
 QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)
 {
     QUrl finalUrl = d_ptr->url;
-    
+
     // Add query parameters if any
     if (!d_ptr->queryParams.isEmpty()) {
         QUrlQuery query(finalUrl);
@@ -294,9 +294,9 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)
         }
         finalUrl.setQuery(query);
     }
-    
+
     QCNetworkRequest request(finalUrl);
-    
+
     // Apply headers
     for (const auto &header : d_ptr->headers) {
         request.setRawHeader(header.first.toLatin1(), header.second.toLatin1());
@@ -304,7 +304,7 @@ QCNetworkReply *QCNetworkRequestBuilder::sendPut(const QByteArray &body)
     if (d_ptr->httpAuthConfig.has_value()) {
         request.setHttpAuth(d_ptr->httpAuthConfig.value());
     }
-    
+
     // Apply settings
     if (d_ptr->timeout > 0) {
         request.setTimeout(std::chrono::milliseconds(d_ptr->timeout));

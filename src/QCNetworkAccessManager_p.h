@@ -56,7 +56,7 @@ public:
     bool debugTraceEnabled = false;
     QList<QCNetworkMiddleware*> middlewares;
     QCNetworkMockHandler *mockHandler;
-    
+
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 
 private:

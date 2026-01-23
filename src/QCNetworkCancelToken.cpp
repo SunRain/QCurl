@@ -31,9 +31,9 @@ void QCNetworkCancelToken::attach(QCNetworkReply *reply)
     if (!reply || d_ptr->attachedReplies.contains(reply)) {
         return;
     }
-    
+
     d_ptr->attachedReplies.append(reply);
-    
+
     // Connect to finished signal
     connect(reply, &QCNetworkReply::finished, this, &QCNetworkCancelToken::onReplyFinished);
     connect(reply, &QObject::destroyed, this, [this](QObject *obj) {
@@ -69,16 +69,16 @@ void QCNetworkCancelToken::cancel()
     if (d_ptr->cancelled) {
         return;
     }
-    
+
     d_ptr->cancelled = true;
-    
+
     // Stop auto timeout timer
     if (d_ptr->autoTimeoutTimer) {
         d_ptr->autoTimeoutTimer->stop();
         d_ptr->autoTimeoutTimer->deleteLater();
         d_ptr->autoTimeoutTimer = nullptr;
     }
-    
+
     // Cancel all attached replies
     const QList<QPointer<QCNetworkReply>> repliesToCancel = d_ptr->attachedReplies;
     for (const QPointer<QCNetworkReply> &replyPtr : repliesToCancel) {
@@ -88,9 +88,9 @@ void QCNetworkCancelToken::cancel()
             detach(reply);
         }
     }
-    
+
     d_ptr->attachedReplies.clear();
-    
+
     emit cancelled();
 }
 
@@ -104,13 +104,13 @@ void QCNetworkCancelToken::setAutoTimeout(int msecs)
         }
         return;
     }
-    
+
     if (!d_ptr->autoTimeoutTimer) {
         d_ptr->autoTimeoutTimer = new QTimer(this);
         connect(d_ptr->autoTimeoutTimer, &QTimer::timeout,
                 this, &QCNetworkCancelToken::onAutoTimeoutTriggered);
     }
-    
+
     d_ptr->autoTimeoutTimer->start(msecs);
 }
 

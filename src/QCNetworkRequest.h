@@ -465,12 +465,12 @@ public:
 
     /**
      * @brief 设置请求优先级
-     * 
+     *
      * 用于请求调度器（QCNetworkRequestScheduler）按优先级排序和执行请求。
-     * 
+     *
      * @param priority 请求优先级（VeryLow/Low/Normal/High/VeryHigh/Critical）
      * @return 返回 *this 以支持方法链
-     * 
+     *
      * @code
      * QCNetworkRequest request(url);
      * request.setPriority(QCNetworkRequestPriority::High);

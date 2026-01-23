@@ -61,11 +61,11 @@ QCWebSocket* QCWebSocketPool::acquire(const QUrl &url)
                 conn.inUse = true;
                 conn.lastUsedTime = QDateTime::currentDateTime();
                 conn.reuseCount++;
-                
+
                 m_hitCounts[url]++;
                 qDebug() << "QCWebSocketPool: 复用连接" << url.toString()
                          << "复用次数:" << conn.reuseCount;
-                
+
                 emit connectionReused(url);
                 return conn.socket;
             }
@@ -128,10 +128,10 @@ void QCWebSocketPool::release(QCWebSocket *socket)
                 qWarning() << "QCWebSocketPool: 连接已处于空闲状态" << url.toString();
                 return;
             }
-            
+
             conn.inUse = false;
             conn.lastUsedTime = QDateTime::currentDateTime();
-            
+
             qDebug() << "QCWebSocketPool: 归还连接" << url.toString();
             return;
         }
@@ -206,7 +206,7 @@ void QCWebSocketPool::setConfig(const Config &config)
 {
     QMutexLocker locker(&m_mutex);
     m_config = config;
-    
+
     // 更新心跳定时器
     if (m_config.enableKeepAlive) {
         if (!m_keepAliveTimer) {
@@ -219,7 +219,7 @@ void QCWebSocketPool::setConfig(const Config &config)
             m_keepAliveTimer->stop();
         }
     }
-    
+
     qDebug() << "QCWebSocketPool: 配置已更新";
 }
 
@@ -250,7 +250,7 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
                 }
             }
         }
-        
+
         for (int count : m_hitCounts) {
             stats.hitCount += count;
         }
@@ -270,7 +270,7 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
                 }
             }
         }
-        
+
         stats.hitCount = m_hitCounts.value(url, 0);
         stats.missCount = m_missCounts.value(url, 0);
     }
@@ -306,14 +306,14 @@ QCWebSocket* QCWebSocketPool::createNewConnection(const QUrl &url)
 
     // 同步连接（阻塞等待，最多 5 秒）
     socket->open();
-    
+
     QEventLoop loop;
     QTimer timeout;
     timeout.setSingleShot(true);
     connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
     connect(socket, &QCWebSocket::connected, &loop, &QEventLoop::quit);
     connect(socket, &QCWebSocket::errorOccurred, &loop, &QEventLoop::quit);
-    
+
     timeout.start(5000);
     loop.exec();
 
@@ -369,20 +369,20 @@ void QCWebSocketPool::cleanupIdleConnections()
         // 移除超时的空闲连接（保留最小数量）
         for (int i = pool.size() - 1; i >= 0; --i) {
             auto &conn = pool[i];
-            
+
             if (!conn.inUse && idleCount > m_config.minIdleConnections) {
                 qint64 idleSeconds = conn.lastUsedTime.secsTo(now);
-                
+
                 if (idleSeconds > m_config.maxIdleTime) {
                     qDebug() << "QCWebSocketPool: 清理空闲连接" << url.toString()
                              << "空闲时间:" << idleSeconds << "秒";
-                    
+
                     m_socketToUrl.remove(conn.socket);
                     conn.socket->close();
                     conn.socket->deleteLater();
                     pool.removeAt(i);
                     idleCount--;
-                    
+
                     emit connectionClosed(url);
                 }
             }
@@ -461,7 +461,7 @@ void QCWebSocketPool::onSocketDisconnected()
     }
 
     QMutexLocker locker(&m_mutex);
-    
+
     if (!m_socketToUrl.contains(socket)) {
         return;
     }
@@ -472,7 +472,7 @@ void QCWebSocketPool::onSocketDisconnected()
     // 从池中移除断开的连接
     removeConnection(socket);
     socket->deleteLater();
-    
+
     emit connectionClosed(url);
 }
 

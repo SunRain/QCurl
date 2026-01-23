@@ -52,7 +52,7 @@ std::chrono::milliseconds QCWebSocketReconnectPolicy::delayForAttempt(int attemp
 
     // 限制在最大延迟范围内
     auto delayMs = static_cast<qint64>(std::min(calculatedDelay, static_cast<double>(maxDelay.count())));
-    
+
     return std::chrono::milliseconds(delayMs);
 }
 

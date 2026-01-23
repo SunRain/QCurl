@@ -232,7 +232,7 @@ qint64 QCWebSocketPrivate::sendFrame(const QByteArray &data, unsigned int flags)
     // 如果压缩已协商，压缩数据
     QByteArray dataToSend = data;
     qint64 originalSize = data.size();
-    
+
     if (compressionNegotiated && (flags & (CURLWS_TEXT | CURLWS_BINARY))) {
         QByteArray compressed;
         if (compressData(data, compressed)) {
@@ -326,26 +326,26 @@ void QCWebSocket::open()
 
         // 应用 SSL/TLS 配置（仅对 wss:// 协议）
         if (d->url.scheme() == "wss") {
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
                            d->sslConfig.verifyPeer ? 1L : 0L);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST,
                            d->sslConfig.verifyHost ? 2L : 0L);
-            
+
             if (!d->sslConfig.caCertPath.isEmpty()) {
                 QByteArray caPath = d->sslConfig.caCertPath.toUtf8();
                 curl_easy_setopt(curl, CURLOPT_CAINFO, caPath.constData());
             }
-            
+
             if (!d->sslConfig.clientCertPath.isEmpty()) {
                 QByteArray certPath = d->sslConfig.clientCertPath.toUtf8();
                 curl_easy_setopt(curl, CURLOPT_SSLCERT, certPath.constData());
             }
-            
+
             if (!d->sslConfig.clientKeyPath.isEmpty()) {
                 QByteArray keyPath = d->sslConfig.clientKeyPath.toUtf8();
                 curl_easy_setopt(curl, CURLOPT_SSLKEY, keyPath.constData());
             }
-            
+
             if (!d->sslConfig.clientKeyPassword.isEmpty()) {
                 QByteArray keyPass = d->sslConfig.clientKeyPassword.toUtf8();
                 curl_easy_setopt(curl, CURLOPT_KEYPASSWD, keyPass.constData());
@@ -361,52 +361,52 @@ void QCWebSocket::open()
                 QByteArray headerBytes = headerStr.toUtf8();
                 headers = curl_slist_append(headers, headerBytes.constData());
                 curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-                
+
                 qDebug() << "QCWebSocket: Requesting compression:" << extHeader;
             }
         }
 
         // 执行连接（这是阻塞调用，但在 QTimer 回调中不会阻塞 open() 方法本身）
         CURLcode res = curl_easy_perform(curl);
-        
+
         // 清理自定义头
         if (headers) {
             curl_slist_free_all(headers);
         }
         if (res != CURLE_OK) {
             QString errorMsg = QString::fromUtf8(curl_easy_strerror(res));
-            
+
             // 检测 SSL 错误并发射详细信号
-            if (res == CURLE_SSL_CONNECT_ERROR || 
+            if (res == CURLE_SSL_CONNECT_ERROR ||
                 res == CURLE_PEER_FAILED_VERIFICATION ||
                 res == CURLE_SSL_CERTPROBLEM ||
                 res == CURLE_SSL_CIPHER ||
                 res == CURLE_SSL_CACERT) {
-                
+
                 QStringList sslErrorList;
                 sslErrorList << errorMsg;
-                
+
                 // 获取 SSL 验证结果详情
                 long sslVerifyResult = 0;
                 curl_easy_getinfo(curl, CURLINFO_SSL_VERIFYRESULT, &sslVerifyResult);
                 if (sslVerifyResult != 0) {
                     sslErrorList << QStringLiteral("SSL 验证结果码: %1").arg(sslVerifyResult);
                 }
-                
+
                 // 发射详细 SSL 错误信号
                 emit sslErrorsDetailed(sslErrorList);
                 emit sslErrors(sslErrorList);  // 兼容旧信号
             }
-            
+
             // 连接失败映射到 CloseCode
             if (res == CURLE_COULDNT_CONNECT || res == CURLE_COULDNT_RESOLVE_HOST) {
                 d->lastCloseCode = 1006;
             } else {
                 d->lastCloseCode = 1002;
             }
-            
+
             d->handleError(errorMsg);
-            
+
             // 尝试重连
             if (d->reconnectPolicy.shouldRetry(d->lastCloseCode, d->reconnectAttemptCount + 1)) {
                 d->cleanupConnection();
@@ -416,11 +416,11 @@ void QCWebSocket::open()
 
         // 连接成功
         d->setState(State::Connected);
-        
+
         // 重置重连状态
         d->reconnectAttemptCount = 0;
         d->lastCloseCode = 0;
-        
+
         // 检查服务器是否接受了压缩扩展
         // 注意：libcurl 的 CONNECT_ONLY=2 模式不提供简单的响应头访问
         // 这里我们假设如果请求了压缩且连接成功，压缩就可能被启用
@@ -431,7 +431,7 @@ void QCWebSocket::open()
             d->compressionNegotiated = true;
             qDebug() << "QCWebSocket: Compression negotiated (simplified)";
         }
-        
+
         emit connected();
 
         // 尝试启用事件驱动接收（替代原有的 receiveTimer 轮询）
@@ -641,7 +641,7 @@ void QCWebSocket::setCompressionConfig(const QCWebSocketCompressionConfig &confi
 {
     Q_D(QCWebSocket);
     d->compressionConfig = config;
-    
+
     // 如果已连接，发出警告
     if (d->state != State::Unconnected) {
         qWarning() << "QCWebSocket::setCompressionConfig: 压缩配置必须在 open() 之前设置";
@@ -663,22 +663,22 @@ bool QCWebSocket::isCompressionNegotiated() const
 QString QCWebSocket::compressionStats() const
 {
     Q_D(const QCWebSocket);
-    
+
     if (!d->compressionNegotiated) {
         return QStringLiteral("Compression not negotiated");
     }
-    
+
     // 计算压缩率
     double sentRatio = 0.0;
     if (d->sentBytesRaw > 0) {
         sentRatio = 100.0 * (1.0 - static_cast<double>(d->sentBytesCompressed) / d->sentBytesRaw);
     }
-    
+
     double recvRatio = 0.0;
     if (d->receivedBytesRaw > 0) {
         recvRatio = 100.0 * (1.0 - static_cast<double>(d->receivedBytesCompressed) / d->receivedBytesRaw);
     }
-    
+
     return QStringLiteral("Sent: %1 bytes -> %2 bytes (%.1f%% compression)\n"
                    "Recv: %3 bytes <- %4 bytes (%.1f%% compression)")
             .arg(d->sentBytesRaw)
@@ -696,20 +696,20 @@ QString QCWebSocket::compressionStats() const
 curl_socket_t QCWebSocketPrivate::getSocketDescriptor()
 {
     curl_socket_t sockfd = CURL_SOCKET_BAD;
-    
+
     CURL *curl = curlManager.handle();
     if (!curl) {
         return CURL_SOCKET_BAD;
     }
-    
+
     // 从 curl 句柄获取活动 socket（libcurl 7.45.0+）
     CURLcode res = curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd);
     if (res != CURLE_OK || sockfd == CURL_SOCKET_BAD) {
-        qWarning() << "QCWebSocket: 无法获取 socket 描述符:" 
+        qWarning() << "QCWebSocket: 无法获取 socket 描述符:"
                    << curl_easy_strerror(res);
         return CURL_SOCKET_BAD;
     }
-    
+
     qDebug() << "QCWebSocket: 获取到 socket 描述符:" << sockfd;
     return sockfd;
 }
@@ -717,26 +717,26 @@ curl_socket_t QCWebSocketPrivate::getSocketDescriptor()
 void QCWebSocketPrivate::enableEventDrivenReceive()
 {
     Q_Q(QCWebSocket);
-    
+
     // 尝试获取 socket 描述符
     curl_socket_t sockfd = getSocketDescriptor();
-    
+
     if (sockfd != CURL_SOCKET_BAD) {
         // 创建 QSocketNotifier（监听读事件）
-        socketReadNotifier = new QSocketNotifier(sockfd, 
-                                                 QSocketNotifier::Read, 
+        socketReadNotifier = new QSocketNotifier(sockfd,
+                                                 QSocketNotifier::Read,
                                                  q);
-        
+
         // 连接信号：socket 可读时调用 processIncomingData()
         QObject::connect(socketReadNotifier, &QSocketNotifier::activated,
                         q, [this]() {
             processIncomingData();
         });
-        
+
         socketReadNotifier->setEnabled(true);
         eventDrivenMode = true;
-        
-        qInfo() << "QCWebSocket: 事件驱动模式已启用（socket fd:" 
+
+        qInfo() << "QCWebSocket: 事件驱动模式已启用（socket fd:"
                 << sockfd << "）延迟 <1ms";
 
         // 重要：启用 notifier 后立即尝试 drain 一次，避免“数据已到达但未再触发可读事件”的死等。
@@ -750,7 +750,7 @@ void QCWebSocketPrivate::enableEventDrivenReceive()
 void QCWebSocketPrivate::fallbackToPollingMode()
 {
     Q_Q(QCWebSocket);
-    
+
     // 创建 QTimer（每 50ms 轮询）
     if (!receiveTimer) {
         receiveTimer = new QTimer(q);
@@ -760,7 +760,7 @@ void QCWebSocketPrivate::fallbackToPollingMode()
     }
     receiveTimer->start(50);
     eventDrivenMode = false;
-    
+
     qWarning() << "QCWebSocket: 降级到轮询模式（50ms），延迟较高";
 }
 
@@ -771,21 +771,21 @@ void QCWebSocketPrivate::fallbackToPollingMode()
 void QCWebSocketPrivate::handleDisconnection(int closeCode)
 {
     lastCloseCode = closeCode;
-    
+
     // 检查是否应该重连
     if (reconnectPolicy.shouldRetry(closeCode, reconnectAttemptCount + 1)) {
         reconnectAttemptCount++;
-        
+
         // 计算延迟时间
         auto delay = reconnectPolicy.delayForAttempt(reconnectAttemptCount);
-        
+
         qDebug() << "QCWebSocket: Scheduling reconnect attempt" << reconnectAttemptCount
                  << "in" << delay.count() << "ms, close code:" << closeCode;
-        
+
         // 发射重连尝试信号
         Q_Q(QCWebSocket);
         emit q->reconnectAttempt(reconnectAttemptCount, closeCode);
-        
+
         // 设置延迟重连定时器
         if (!reconnectTimer) {
             reconnectTimer = new QTimer(q);
@@ -799,11 +799,11 @@ void QCWebSocketPrivate::handleDisconnection(int closeCode)
         // 不重连或达到最大重连次数
         qDebug() << "QCWebSocket: Not reconnecting, close code:" << closeCode
                  << "attempts:" << reconnectAttemptCount;
-        
+
         // 重置重连状态
         reconnectAttemptCount = 0;
         lastCloseCode = 0;
-        
+
         setState(QCWebSocket::State::Closed);
         Q_Q(QCWebSocket);
         emit q->disconnected();
@@ -813,7 +813,7 @@ void QCWebSocketPrivate::handleDisconnection(int closeCode)
 void QCWebSocketPrivate::attemptReconnect()
 {
     qDebug() << "QCWebSocket: Attempting reconnect, attempt" << reconnectAttemptCount;
-    
+
     // 重新连接
     Q_Q(QCWebSocket);
     q->open();
@@ -829,42 +829,42 @@ bool QCWebSocketPrivate::compressData(const QByteArray &input, QByteArray &outpu
     stream.zalloc = Z_NULL;
     stream.zfree = Z_NULL;
     stream.opaque = Z_NULL;
-    
+
     int windowBits = -compressionConfig.clientMaxWindowBits;  // 负值表示无 zlib 头
     int ret = deflateInit2(&stream, compressionConfig.compressionLevel, Z_DEFLATED,
                           windowBits, 8, Z_DEFAULT_STRATEGY);
-    
+
     if (ret != Z_OK) {
         qWarning() << "QCWebSocket: deflateInit2 failed:" << ret;
         return false;
     }
-    
+
     output.resize(input.size() + 128);  // 预分配空间
-    
+
     stream.avail_in = input.size();
     stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(input.constData()));
     stream.avail_out = output.size();
     stream.next_out = reinterpret_cast<Bytef*>(output.data());
-    
+
     ret = deflate(&stream, Z_FINISH);
-    
+
     if (ret != Z_STREAM_END) {
         deflateEnd(&stream);
         qWarning() << "QCWebSocket: deflate failed:" << ret;
         return false;
     }
-    
+
     output.resize(stream.total_out);
-    
+
     // RFC 7692: 移除末尾的 0x00 0x00 0xFF 0xFF
-    if (output.size() >= 4 && 
+    if (output.size() >= 4 &&
         output[output.size()-4] == 0x00 &&
         output[output.size()-3] == 0x00 &&
         output[output.size()-2] == static_cast<char>(0xFF) &&
         output[output.size()-1] == static_cast<char>(0xFF)) {
         output.chop(4);
     }
-    
+
     deflateEnd(&stream);
     return true;
 }
@@ -874,35 +874,35 @@ bool QCWebSocketPrivate::decompressData(const QByteArray &input, QByteArray &out
     // RFC 7692: 添加末尾的 0x00 0x00 0xFF 0xFF
     QByteArray inputWithTail = input;
     inputWithTail.append("\x00\x00\xFF\xFF", 4);
-    
+
     z_stream stream;
     stream.zalloc = Z_NULL;
     stream.zfree = Z_NULL;
     stream.opaque = Z_NULL;
-    
+
     int windowBits = -compressionConfig.serverMaxWindowBits;  // 负值表示无 zlib 头
     int ret = inflateInit2(&stream, windowBits);
-    
+
     if (ret != Z_OK) {
         qWarning() << "QCWebSocket: inflateInit2 failed:" << ret;
         return false;
     }
-    
+
     output.resize(inputWithTail.size() * 4);  // 预分配4倍空间
-    
+
     stream.avail_in = inputWithTail.size();
     stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(inputWithTail.constData()));
     stream.avail_out = output.size();
     stream.next_out = reinterpret_cast<Bytef*>(output.data());
-    
+
     ret = inflate(&stream, Z_FINISH);
-    
+
     if (ret != Z_STREAM_END) {
         inflateEnd(&stream);
         qWarning() << "QCWebSocket: inflate failed:" << ret;
         return false;
     }
-    
+
     output.resize(stream.total_out);
     inflateEnd(&stream);
     return true;

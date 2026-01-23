@@ -1,9 +1,9 @@
 /**
  * @file QCNetworkDiagnostics.h
  * @brief 网络诊断工具类
- * 
+ *
  * 提供 DNS 解析、连接测试、SSL 检查、HTTP 探测等诊断功能。
- * 
+ *
  */
 
 #ifndef QCNETWORKDIAGNOSTICS_H
@@ -31,7 +31,7 @@ struct DiagResult
     qint64 durationMs;           ///< 诊断耗时（毫秒）
     QDateTime timestamp;         ///< 诊断时间戳
     QString errorString;         ///< 错误描述（失败时）
-    
+
     /**
      * @brief 转换为易读的字符串格式
      */
@@ -40,50 +40,50 @@ struct DiagResult
 
 /**
  * @brief 网络诊断工具类
- * 
+ *
  * 提供一套完整的网络诊断功能，帮助快速定位网络问题。
- * 
+ *
  * @par 功能列表
  * - DNS 解析（正向和反向）
  * - TCP 连接测试
  * - SSL/TLS 证书检查
  * - HTTP 探测（时间分解）
  * - 综合诊断（一键诊断）
- * 
+ *
  * @par 基本用法
  * @code
  * // DNS 解析
  * auto result = QCNetworkDiagnostics::resolveDNS("example.com");
  * qDebug() << result.toString();
- * 
+ *
  * // SSL 检查
  * auto sslResult = QCNetworkDiagnostics::checkSSL("example.com");
  * qDebug() << "证书有效期:" << sslResult.details["daysValid"].toInt() << "天";
- * 
+ *
  * // 综合诊断
  * auto diagResult = QCNetworkDiagnostics::diagnose(QUrl("https://example.com"));
  * qDebug() << diagResult.toString();
  * @endcode
- * 
+ *
  */
 class QCNetworkDiagnostics
 {
 public:
     /**
      * @brief DNS 解析（正向）
-     * 
+     *
      * 将域名解析为 IP 地址（支持 IPv4 和 IPv6）。
-     * 
+     *
      * @param hostname 要解析的域名
      * @param timeout 超时时间（毫秒），默认 5000ms
      * @return DiagResult 解析结果
-     * 
+     *
      * @par 返回的 details 键
      * - "hostname" (QString) - 主机名
      * - "ipv4" (QStringList) - IPv4 地址列表
      * - "ipv6" (QStringList) - IPv6 地址列表
      * - "resolveDuration" (qint64) - 解析耗时（毫秒）
-     * 
+     *
      * @par 示例
      * @code
      * auto result = QCNetworkDiagnostics::resolveDNS("example.com");
@@ -93,40 +93,40 @@ public:
      * @endcode
      */
     static DiagResult resolveDNS(const QString &hostname, int timeout = 5000);
-    
+
     /**
      * @brief DNS 反向解析
-     * 
+     *
      * 将 IP 地址解析为域名。
-     * 
+     *
      * @param ip IP 地址（IPv4 或 IPv6）
      * @param timeout 超时时间（毫秒），默认 5000ms
      * @return DiagResult 解析结果
-     * 
+     *
      * @par 返回的 details 键
      * - "ip" (QString) - IP 地址
      * - "hostname" (QString) - 解析出的主机名
      * - "resolveDuration" (qint64) - 解析耗时（毫秒）
      */
     static DiagResult reverseDNS(const QString &ip, int timeout = 5000);
-    
+
     /**
      * @brief TCP 连接测试
-     * 
+     *
      * 测试到指定主机和端口的 TCP 连通性。
-     * 
+     *
      * @param host 主机名或 IP 地址
      * @param port 端口号
      * @param timeout 超时时间（毫秒），默认 5000ms
      * @return DiagResult 测试结果
-     * 
+     *
      * @par 返回的 details 键
      * - "host" (QString) - 主机名
      * - "port" (int) - 端口号
      * - "connected" (bool) - 是否连接成功
      * - "connectDuration" (qint64) - 连接耗时（毫秒）
      * - "resolvedIP" (QString) - 解析后的 IP 地址
-     * 
+     *
      * @par 示例
      * @code
      * auto result = QCNetworkDiagnostics::testConnection("example.com", 443);
@@ -136,17 +136,17 @@ public:
      * @endcode
      */
     static DiagResult testConnection(const QString &host, int port, int timeout = 5000);
-    
+
     /**
      * @brief SSL/TLS 证书检查
-     * 
+     *
      * 检查 SSL 证书的有效性和详细信息。
-     * 
+     *
      * @param host 主机名
      * @param port 端口号，默认 443
      * @param timeout 超时时间（毫秒），默认 10000ms
      * @return DiagResult 检查结果
-     * 
+     *
      * @par 返回的 details 键
      * - "issuer" (QString) - 证书颁发者
      * - "subject" (QString) - 证书主题
@@ -156,7 +156,7 @@ public:
      * - "tlsVersion" (QString) - TLS 版本
      * - "certChain" (QStringList) - 证书链
      * - "verified" (bool) - 证书是否验证通过
-     * 
+     *
      * @par 示例
      * @code
      * auto result = QCNetworkDiagnostics::checkSSL("example.com");
@@ -167,16 +167,16 @@ public:
      * @endcode
      */
     static DiagResult checkSSL(const QString &host, int port = 443, int timeout = 10000);
-    
+
     /**
      * @brief HTTP 探测
-     * 
+     *
      * 测试 HTTP/HTTPS 请求的各个阶段耗时。
-     * 
+     *
      * @param url 要探测的 URL
      * @param timeout 超时时间（毫秒），默认 10000ms
      * @return DiagResult 探测结果
-     * 
+     *
      * @par 返回的 details 键
      * - "url" (QString) - 请求的 URL
      * - "statusCode" (int) - HTTP 状态码
@@ -188,7 +188,7 @@ public:
      * - "totalTime" (qint64) - 总耗时（毫秒）
      * - "redirectCount" (int) - 重定向次数
      * - "finalURL" (QString) - 最终 URL（如有重定向）
-     * 
+     *
      * @par 示例
      * @code
      * auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://example.com"));
@@ -200,7 +200,7 @@ public:
      * @endcode
      */
     static DiagResult probeHTTP(const QUrl &url, int timeout = 10000);
-    
+
     /**
      * @brief 综合诊断
      *

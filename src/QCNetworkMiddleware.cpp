@@ -61,7 +61,7 @@ void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     if (!reply) {
         return;
     }
-    
+
     if (reply->error() == NetworkError::NoError) {
         qDebug() << "[QCurl Middleware] Response received:"
                  << reply->url().toString();
@@ -86,14 +86,14 @@ void QCErrorHandlingMiddleware::onResponseReceived(QCNetworkReply *reply)
     if (!reply) {
         return;
     }
-    
+
     if (reply->error() != NetworkError::NoError) {
         QString errorMsg = reply->errorString();
-        
+
         if (m_errorCallback) {
             m_errorCallback(errorMsg);
         }
-        
+
         qWarning() << "[QCurl] Error:" << errorMsg;
     }
 }
@@ -112,15 +112,15 @@ void QCSigningMiddleware::onRequestPreSend(QCNetworkRequest &request)
     if (m_signingKey.isEmpty()) {
         return;
     }
-    
+
     // Generate signature (simple example: SHA256 hash of key + timestamp)
     QString timestamp = QString::number(QDateTime::currentMSecsSinceEpoch());
     QString signString = m_signingKey + timestamp;
-    
+
     QCryptographicHash hash(QCryptographicHash::Sha256);
     hash.addData(signString.toUtf8());
     QString signature = QString::fromLatin1(hash.result().toHex());
-    
+
     // Add signature headers
     request.setRawHeader("X-Signature", signature.toLatin1());
     request.setRawHeader("X-Timestamp", timestamp.toLatin1());

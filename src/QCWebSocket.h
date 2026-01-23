@@ -569,9 +569,9 @@ Q_SIGNALS:
      *
      * @par 示例
      * @code
-     * connect(socket, &QCWebSocket::reconnectAttempt, 
+     * connect(socket, &QCWebSocket::reconnectAttempt,
      *         [](int attempt, int closeCode) {
-     *     qDebug() << "Reconnecting, attempt" << attempt 
+     *     qDebug() << "Reconnecting, attempt" << attempt
      *              << "due to close code" << closeCode;
      * });
      * @endcode

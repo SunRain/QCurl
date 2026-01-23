@@ -11,7 +11,7 @@
 namespace CallOnce {
 enum ECallOnce { CO_Request, CO_InProgress, CO_Finished };
 
-Q_GLOBAL_STATIC(QThreadStorage<QAtomicInt*>, once_flag)
+Q_GLOBAL_STATIC(QThreadStorage<QAtomicInt *>, once_flag)
 } // namespace CallOnce
 
 template <class Function> inline static void qCallOnce(Function func, QBasicAtomicInt &flag) {
@@ -43,13 +43,13 @@ template <class Function> inline static void qCallOncePerThread(Function func) {
 }
 
 template <class T> class Singleton {
-private:
-    typedef T* (*CreateInstanceFunction)();
+  private:
+    typedef T *(*CreateInstanceFunction)();
 
-public:
-    static T* instance(CreateInstanceFunction create);
+  public:
+    static T *instance(CreateInstanceFunction create);
 
-private:
+  private:
     static void init();
 
     Singleton();
@@ -64,7 +64,7 @@ private:
 template <class T> T *Singleton<T>::instance(CreateInstanceFunction create) {
     // Qt6 使用 storeRelaxed() 和 loadRelaxed()
     // 函数指针需要显式转换为 void*
-    Singleton::create.storeRelaxed(reinterpret_cast<void*>(create));
+    Singleton::create.storeRelaxed(reinterpret_cast<void *>(create));
     qCallOnce(init, flag);
     return static_cast<T *>(tptr.loadRelaxed());
 }

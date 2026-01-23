@@ -13,50 +13,50 @@ QString QCWebSocketCompressionConfig::toExtensionHeader() const
     if (!enabled) {
         return QString();
     }
-    
+
     QStringList parts;
     parts << "permessage-deflate";
-    
+
     // 客户端窗口位数
     if (clientMaxWindowBits < 15) {
         parts << QStringLiteral("client_max_window_bits=%1").arg(clientMaxWindowBits);
     }
-    
+
     // 服务器窗口位数
     if (serverMaxWindowBits < 15) {
         parts << QStringLiteral("server_max_window_bits=%1").arg(serverMaxWindowBits);
     }
-    
+
     // 客户端无上下文接管
     if (clientNoContextTakeover) {
         parts << "client_no_context_takeover";
     }
-    
+
     // 服务器无上下文接管
     if (serverNoContextTakeover) {
         parts << "server_no_context_takeover";
     }
-    
+
     return parts.join("; ");
 }
 
 QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(const QString &header)
 {
     QCWebSocketCompressionConfig config;
-    
+
     if (header.isEmpty() || !header.contains("permessage-deflate", Qt::CaseInsensitive)) {
         config.enabled = false;
         return config;
     }
-    
+
     config.enabled = true;
-    
+
     // 解析参数
     QStringList parts = header.split(';', Qt::SkipEmptyParts);
-    
+
     for (const QString &part : parts) {
         QString trimmed = part.trimmed();
-        
+
         if (trimmed.startsWith("client_max_window_bits", Qt::CaseInsensitive)) {
             int eqPos = trimmed.indexOf('=');
             if (eqPos > 0) {
@@ -81,7 +81,7 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(c
             config.serverNoContextTakeover = true;
         }
     }
-    
+
     return config;
 }
 
