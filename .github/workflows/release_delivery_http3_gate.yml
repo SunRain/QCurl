@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --upgrade pip
-          python3 -m pip install pytest websockets
+          python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt
 
       - name: Ensure curl testenv tool paths (httpd/apxs)
         run: |
@@ -250,7 +250,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install pytest websockets
+          python -m pip install -r tests/libcurl_consistency/requirements.lock.txt
 
       - name: Environment trace (os/pacman/curl)
         run: |

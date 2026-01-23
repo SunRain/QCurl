@@ -17,14 +17,11 @@
 #include <QSignalSpy>
 #include <QCoreApplication>
 #include <QEvent>
+#include "QCWebSocketTestServer.h"
 #include "QCWebSocketPool.h"
 #include "QCWebSocket.h"
 
 using namespace QCurl;
-
-// 测试服务器（使用公共 WebSocket echo 服务）
-static const QString TEST_WS_URL = QStringLiteral("wss://echo.websocket.org");
-static const QString TEST_WS_URL2 = QStringLiteral("wss://echo.websocket.org/echo");
 
 class TestQCWebSocketPool : public QObject
 {
@@ -56,14 +53,33 @@ private slots:
 
 private:
     QCWebSocketPool *pool = nullptr;
+
+    [[nodiscard]] bool localServerAvailable() const { return m_localServerSkipReason.isEmpty(); }
+    void applyLocalWssConfig(QCWebSocketPool *target);
     
     // 辅助方法
     bool waitForConnection(QCWebSocket *socket, int timeout = 5000);
+
+    QString m_localServerSkipReason;
+    QString m_testServerUrl;
+    QString m_testServerUrl2;
+    QString m_caCertPath;
+    QCWebSocketTestServer m_testServer;
 };
 
 // ============================================================================
 // 测试辅助方法
 // ============================================================================
+
+void TestQCWebSocketPool::applyLocalWssConfig(QCWebSocketPool *target)
+{
+    if (!target) {
+        return;
+    }
+    auto config = target->config();
+    config.sslConfig.caCertPath = m_caCertPath;
+    target->setConfig(config);
+}
 
 bool TestQCWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
 {
@@ -84,11 +100,27 @@ void TestQCWebSocketPool::initTestCase()
     qDebug() << "========================================";
     qDebug() << "QCurl WebSocket 连接池测试套件 (v2.5.0)";
     qDebug() << "========================================";
-    qDebug() << "测试服务器:" << TEST_WS_URL;
+
+    m_localServerSkipReason.clear();
+    m_testServerUrl.clear();
+    m_testServerUrl2.clear();
+    m_caCertPath.clear();
+
+    if (m_testServer.start(QCWebSocketTestServer::Mode::Wss)) {
+        m_testServerUrl  = m_testServer.baseUrl();
+        m_testServerUrl2 = m_testServer.urlWithPath(QStringLiteral("/echo"));
+        m_caCertPath     = m_testServer.caCertPath();
+        qDebug() << "测试服务器:" << m_testServerUrl;
+    } else {
+        m_localServerSkipReason = m_testServer.skipReason();
+        qWarning().noquote() << "Local WSS server unavailable, tests will be skipped:"
+                             << m_localServerSkipReason;
+    }
 }
 
 void TestQCWebSocketPool::cleanupTestCase()
 {
+    m_testServer.stop();
     qDebug() << "WebSocket 连接池测试套件完成";
 }
 
@@ -142,8 +174,13 @@ void TestQCWebSocketPool::testAcquireAndRelease()
 {
     qDebug() << "========== testAcquireAndRelease ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 获取连接
     auto *socket = pool->acquire(url);
@@ -182,8 +219,13 @@ void TestQCWebSocketPool::testConnectionReuse()
 {
     qDebug() << "========== testConnectionReuse ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 第 1 次获取（创建新连接）
     auto *socket1 = pool->acquire(url);
@@ -221,9 +263,14 @@ void TestQCWebSocketPool::testMultipleUrls()
 {
     qDebug() << "========== testMultipleUrls ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url1(TEST_WS_URL);
-    QUrl url2(TEST_WS_URL2);
+    applyLocalWssConfig(pool);
+    QUrl url1(m_testServerUrl);
+    QUrl url2(m_testServerUrl2);
 
     // 获取第一个 URL 的连接
     auto *socket1 = pool->acquire(url1);
@@ -257,11 +304,16 @@ void TestQCWebSocketPool::testMaxPoolSize()
 {
     qDebug() << "========== testMaxPoolSize ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     QCWebSocketPool::Config config;
     config.maxPoolSize = 2;  // 每个 URL 最多 2 个连接
 
     pool = new QCWebSocketPool(config);
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 获取 2 个连接（应该成功）
     QList<QCWebSocket*> sockets;
@@ -284,7 +336,7 @@ void TestQCWebSocketPool::testMaxPoolSize()
         for (auto *s : sockets) {
             pool->release(s);
         }
-        QSKIP("无法建立足够连接以验证 maxPoolSize（外部服务不可用或网络受限）");
+        QSKIP("无法建立足够连接以验证 maxPoolSize（本地 WSS server 不可用或环境受限）");
     }
 
     // 尝试获取第 3 个（应该失败，因为达到限制）
@@ -324,8 +376,13 @@ void TestQCWebSocketPool::testPreWarm()
 {
     qDebug() << "========== testPreWarm ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 预热 3 个连接
     pool->preWarm(url, 3);
@@ -340,7 +397,7 @@ void TestQCWebSocketPool::testPreWarm()
 
     // 应该至少有 1 个连接被创建
     if (stats.totalConnections < 1) {
-        QSKIP("无法连接到测试服务器，跳过此测试");
+        QSKIP("无法连接到本地 WSS 测试服务器，跳过此测试");
     }
     // 所有连接都应该是空闲的
     QCOMPARE(stats.activeConnections, 0);
@@ -352,8 +409,13 @@ void TestQCWebSocketPool::testClearPool()
 {
     qDebug() << "========== testClearPool ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 创建一些连接
     auto *socket1 = pool->acquire(url);
@@ -370,7 +432,7 @@ void TestQCWebSocketPool::testClearPool()
 
         qDebug() << "✅ 清理池测试通过";
     } else {
-        QSKIP("无法连接到测试服务器");
+        QSKIP("无法连接到本地 WSS 测试服务器");
     }
 }
 
@@ -378,8 +440,13 @@ void TestQCWebSocketPool::testStatistics()
 {
     qDebug() << "========== testStatistics ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 初始统计
     auto stats0 = pool->statistics(url);
@@ -389,7 +456,7 @@ void TestQCWebSocketPool::testStatistics()
     // 第 1 次获取
     auto *socket1 = pool->acquire(url);
     if (!socket1 || !waitForConnection(socket1, 10000)) {
-        QSKIP("无法连接到测试服务器");
+        QSKIP("无法连接到本地 WSS 测试服务器");
     }
 
     auto stats1 = pool->statistics(url);
@@ -421,13 +488,18 @@ void TestQCWebSocketPool::testAcquireFromEmptyPool()
 {
     qDebug() << "========== testAcquireFromEmptyPool ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     pool = new QCWebSocketPool();
-    QUrl url(TEST_WS_URL);
+    applyLocalWssConfig(pool);
+    QUrl url(m_testServerUrl);
 
     // 从空池获取（应该创建新连接）
     auto *socket = pool->acquire(url);
     if (!socket) {
-        QSKIP("无法连接到测试服务器，跳过此测试");
+        QSKIP("无法连接到本地 WSS 测试服务器，跳过此测试");
     }
 
     if (waitForConnection(socket, 10000)) {
@@ -435,7 +507,7 @@ void TestQCWebSocketPool::testAcquireFromEmptyPool()
         pool->release(socket);
         qDebug() << "✅ 空池获取测试通过";
     } else {
-        QSKIP("无法连接到测试服务器");
+        QSKIP("无法连接到本地 WSS 测试服务器");
     }
 }
 
@@ -458,7 +530,7 @@ void TestQCWebSocketPool::testReleaseNonPooledSocket()
     pool = new QCWebSocketPool();
     
     // 创建一个不在池中的 socket
-    QCWebSocket *socket = new QCWebSocket(QUrl(TEST_WS_URL));
+    QCWebSocket *socket = new QCWebSocket(QUrl(QStringLiteral("wss://localhost:1")));
 
     // 尝试释放（应该安全处理，发出警告但不崩溃）
     pool->release(socket);
@@ -473,13 +545,18 @@ void TestQCWebSocketPool::testMaxTotalConnections()
 {
     qDebug() << "========== testMaxTotalConnections ==========";
 
+    if (!localServerAvailable()) {
+        QSKIP(qPrintable(m_localServerSkipReason));
+    }
+
     QCWebSocketPool::Config config;
     config.maxPoolSize = 10;
     config.maxTotalConnections = 3;  // 全局最多 3 个连接
 
     pool = new QCWebSocketPool(config);
-    QUrl url1(TEST_WS_URL);
-    QUrl url2(TEST_WS_URL2);
+    applyLocalWssConfig(pool);
+    QUrl url1(m_testServerUrl);
+    QUrl url2(m_testServerUrl2);
 
     // 尝试创建超过全局限制的连接
     QList<QCWebSocket*> sockets;
@@ -505,7 +582,7 @@ void TestQCWebSocketPool::testMaxTotalConnections()
         for (auto *s : sockets) {
             pool->release(s);
         }
-        QSKIP("无法建立足够连接以验证 maxTotalConnections（外部服务不可用或网络受限）");
+        QSKIP("无法建立足够连接以验证 maxTotalConnections（本地 WSS server 不可用或环境受限）");
     }
 
     // 尝试创建第 4 个（应该失败）

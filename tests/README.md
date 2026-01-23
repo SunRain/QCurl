@@ -4,12 +4,34 @@
 
 ---
 
+## ✅ 证据门禁口径（skip=fail + LABELS）
+
+本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
+
+- **QSKIP 在 ctest 门禁下视为失败（skip=fail）**：`tests/CMakeLists.txt` 为所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP\\s*:"`，避免“ctest 全绿≠已覆盖”的误读。
+- **是否运行某类用例，唯一入口是 ctest 的 LABELS 分组**：不要依赖 `QSKIP` 去“规避失败”，而应通过 `-L/--label-regex` 选择要跑的证据集合。
+
+推荐入口（可复现命令）：
+
+```bash
+# 取证式门禁：默认仅跑 LABELS=offline（不依赖外部服务）
+python3 scripts/ctest_strict.py --build-dir build
+
+# 取证式门禁：跑 LABELS=env（需要先准备本地依赖；见下方 httpbin）
+python3 scripts/ctest_strict.py --build-dir build --label-regex env
+```
+
+期望工件（Evidence Artifacts）：
+
+- ctest：终端输出（含每个 QtTest 的 `Totals:` 行；无 `SKIP:`）。
+- `libcurl_consistency`（可选 gate）：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`，以及 `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
+
 ## 📋 测试列表
 
 | 测试文件 | 类型 | 测试数量 | 需要网络 | 说明 |
 |---------|------|---------|---------|------|
 | `tst_QCNetworkRequest.cpp` | 单元测试 | 31 | ❌ | 请求配置和流式接口 |
-| `tst_QCNetworkReply.cpp` | 单元测试 | 27 | ✅ | Reply 功能、信号、错误处理（部分用例依赖本地 httpbin:8935） |
+| `tst_QCNetworkReply.cpp` | 单元测试 | 27 | ✅ | Reply 功能、信号、错误处理（部分用例依赖本地 httpbin：`QCURL_HTTPBIN_URL`） |
 | `tst_QCNetworkError.cpp` | 单元测试 | 15 | ❌ | 错误码转换和字符串 |
 | `tst_QCNetworkFileTransfer.cpp` | 功能测试 | 3 | ✅ | 流式下载/上传 + 断点续传 |
 | `tst_Integration.cpp` | 集成测试 | 27 | ✅ | 真实网络请求和完整功能验证 |
@@ -23,8 +45,15 @@
 
 ### 1.（可选）准备 env 测试环境（依赖 httpbin 的用例需要）
 
-依赖 httpbin 的测试需要本地 httpbin 服务（默认 `http://localhost:8935`）。  
-启动/停止与健康检查请参考：[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）”。
+依赖 httpbin 的测试通过环境变量 `QCURL_HTTPBIN_URL` 获取 base URL（**不再硬编码端口**）。  
+推荐使用仓库内置脚本启动固定版本的 httpbin 并生成 env 文件：
+
+```bash
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+```
+
+说明：脚本会做健康检查；失败时应视为“无法出具 env/httpbin 证据”，不要继续跑 `LABELS=env`。
 
 ### 2. 运行测试
 
@@ -37,6 +66,24 @@
 - 2.3 全量回归（本地自检；非门禁）
 - 3. libcurl_consistency Gate（可选）
 - 3.3 全量回归（pytest 直跑；可选）
+
+#### ✅ 全量测试复验命令（提交前建议，一键入口）
+
+```bash
+# 1) 构建
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+
+# 2) QtTest 全量（含 env/httpbin）
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+CTEST_OUTPUT_ON_FAILURE=1 ctest --test-dir build --output-on-failure
+./tests/httpbin/stop_httpbin.sh
+
+# 3) libcurl_consistency 全量（含 ext + HTTP/3 强制）
+QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
+  python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+```
 
 ### 3. 查看详细输出
 
@@ -77,7 +124,7 @@
 - HTTP 状态码获取
 - 请求取消
 
-**依赖：** 部分用例需要本地 httpbin 服务（端口 8935），服务不可用时会自动跳过这些用例。
+**依赖：** 部分用例需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置）。在证据门禁口径下，缺失依赖会触发 `QSKIP` 并导致门禁失败。
 
 ### tst_QCNetworkError（15 个测试）
 
@@ -97,7 +144,7 @@
 - `uploadFromDevice()` 流式上传并回显校验
 - `downloadFileResumable()` 断点续传（先取消再续传）
 
-**依赖：** 需要本地 httpbin 服务（端口 8935），同时 `/bytes`、`/post`、`/range` 端点必须可用。
+**依赖：** 需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置），同时 `/bytes`、`/post`、`/range` 端点必须可用。
 
 ### tst_Integration（27 个测试）
 
@@ -112,7 +159,7 @@
 - 并发请求（并行和顺序）
 - 错误处理（无效主机、连接拒绝、HTTP 错误码）
 
-**⚠️ 需要本地 httpbin 服务（端口 8935）。**
+**⚠️ 需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置）。**
 
 #### 外部 HTTPS 大文件下载（非门禁）
 
@@ -123,31 +170,20 @@
 
 ## 🔧 配置选项
 
-### 修改 httpbin 端口
+### 配置 httpbin base URL（推荐）
 
-如需使用其他端口，请编辑 `tst_Integration.cpp` 文件：
-
-```cpp
-// 文件顶部修改此常量
-static const QString HTTPBIN_BASE_URL = QStringLiteral("http://localhost:YOUR_PORT");
-```
-
-然后重新编译：
+通过环境变量设置（无需改代码）：
 
 ```bash
-cd build
-cmake --build . --target tst_Integration
+# 推荐：启动固定 digest 的 httpbin 并自动写出 env（动态端口，避免冲突）
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+
+# 或手动：指向你自己的 httpbin（不要求固定端口）
+export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 ```
 
-### 使用远程 httpbin 服务
-
-虽然不推荐（网络不稳定），但如需使用远程服务（如 httpbin.org），请修改：
-
-```cpp
-static const QString HTTPBIN_BASE_URL = QStringLiteral("https://httpbin.org");
-```
-
-**注意：** 远程服务可能有限流、超时等问题，会导致测试不稳定。
+推荐使用 `./tests/httpbin/start_httpbin.sh --write-env ...` 自动生成并 `source`，避免端口冲突与版本漂移。
 
 ---
 
@@ -155,9 +191,9 @@ static const QString HTTPBIN_BASE_URL = QStringLiteral("https://httpbin.org");
 
 ### Q1: 依赖 httpbin 的测试失败/跳过，提示连接拒绝
 
-**原因：** httpbin 服务未启动。
+**原因：** httpbin 服务未启动或 `QCURL_HTTPBIN_URL` 未设置/指向不可达地址。
 
-**解决：** 按 [`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）” 启动并做健康检查。
+**解决：** 运行 `./tests/httpbin/start_httpbin.sh` 并 `source build/test-env/httpbin.env`，或手动设置 `QCURL_HTTPBIN_URL`。
 
 ### Q2: 测试超时失败
 
@@ -168,8 +204,9 @@ static const QString HTTPBIN_BASE_URL = QStringLiteral("https://httpbin.org");
 
 **解决：**
 ```bash
-# 重启 httpbin 容器
-docker restart qcurl-httpbin
+# 重启 httpbin（以脚本/容器为准）
+./tests/httpbin/stop_httpbin.sh || true
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 
 # 或增加测试超时时间（编辑测试文件）
 QVERIFY(waitForSignal(reply, SIGNAL(finished()), 30000));  // 改为 30 秒

@@ -156,8 +156,8 @@ set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
 
 # WebSocket（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
-    set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "websocket;external_network")
-    set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "websocket;external_network")
+    set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "env;local_port;websocket")
+    set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "env;local_port;websocket")
     set_tests_properties(tst_QCWebSocketCompression PROPERTIES LABELS "offline;websocket")
 endif()
 

@@ -47,14 +47,16 @@ ctest --test-dir build -R tst_QCNetworkHttp2 --output-on-failure
 ### 2.2 （可选）启动本地 httpbin（用于部分集成用例）
 
 ```bash
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-curl http://localhost:8935/get
+# 推荐：使用仓库脚本启动固定 digest 的 httpbin（动态端口 + 健康检查 + 写出 env）
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+curl -fsS "${QCURL_HTTPBIN_URL}/get" >/dev/null
 ```
 
 停止并清理：
 
 ```bash
-docker stop qcurl-httpbin && docker rm qcurl-httpbin
+./tests/httpbin/stop_httpbin.sh
 ```
 
 ### 2.3 全量回归（本地自检；非门禁）
@@ -70,19 +72,62 @@ node --version
 # 本机端口绑定能力（受限环境可能 EPERM）
 python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print('ok', s.getsockname()); s.close()"
 
-# 若要跑 env/httpbin：需本地 httpbin:8935
-curl -fsS http://localhost:8935/get >/dev/null
+# 若要跑 env/httpbin：启动本地 httpbin 并导出 QCURL_HTTPBIN_URL
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+curl -fsS "${QCURL_HTTPBIN_URL}/get" >/dev/null
 ```
 
 **执行命令**
 
 ```bash
-ctest --test-dir build --output-on-failure
+CTEST_OUTPUT_ON_FAILURE=1 ctest --test-dir build --output-on-failure
 ```
 
 常见权限失败信号：
 - Docker 权限不足：`permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`
 - 本机 socket 被禁止：`curl: (7) failed to open socket: 不允许的操作`（或同类 `EPERM`）
+
+## 5. 全量测试复验命令（提交前建议）
+
+> 目标：一键复验 “QtTest 全量（含 env/httpbin）+ libcurl_consistency 全量（含 ext + HTTP/3 强制）”。
+
+### 5.1 QtTest（ctest 全量，含 env/httpbin）
+
+```bash
+# 1) 构建（如已构建可跳过）
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+
+# 2) 启动 httpbin（动态端口 + 写出 QCURL_HTTPBIN_URL）
+./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+source build/test-env/httpbin.env
+
+# 3) 全量 ctest（包含 env/websocket/external_* 等；用于本地自检）
+CTEST_OUTPUT_ON_FAILURE=1 ctest --test-dir build --output-on-failure
+
+# 4) 清理 httpbin
+./tests/httpbin/stop_httpbin.sh
+```
+
+### 5.2 libcurl_consistency（全量：pytest 或 gate）
+
+> 注意：该套件会启动 curl testenv（本地 httpd/nghttpx/ws 等）并依赖本机端口绑定能力；受限环境可能直接失败。
+
+**推荐：Gate 入口（产出 JUnit + JSON 报告）**
+
+```bash
+# 全量（all）+ ext；并强制 HTTP/3 覆盖（缺 h3 runtime 会直接 gate fail）
+QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
+  python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+```
+
+**可选：pytest 直跑（更贴近开发者本地回归）**
+
+```bash
+QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
+  python3 -m pytest tests/libcurl_consistency -q
+```
 
 ## 3. libcurl_consistency Gate（可选）
 

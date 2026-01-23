@@ -1,8 +1,18 @@
 # QCurl v2.0 集成测试报告 - 完整通过 🎉
 
-**测试日期**: 2025-11-03
-**测试环境**: 本地 httpbin (http://localhost:8935)
-**测试套件**: tst_Integration
+> ⚠️ 重要说明（证据口径）
+>
+> - 本文为**历史快照**：用于记录当时的手工回归结论，不作为“可复现证据工件”。
+> - 当前门禁/审计取证以自动化工件为准：
+>   - QtTest/ctest：`python3 scripts/ctest_strict.py --build-dir build`（或 `--label-regex env`）
+>   - 一致性 gate：`python3 tests/libcurl_consistency/run_gate.py --suite <p0|p1|all> --build`
+> - 归档工件路径：
+>   - gate 报告：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`
+>   - artifacts：`curl/tests/http/gen/artifacts/<suite>/<case>/baseline.json`、`curl/tests/http/gen/artifacts/<suite>/<case>/qcurl.json`
+
+**测试日期**: 2025-11-03（历史快照）
+**测试环境**: 本地 httpbin（当前建议通过 `QCURL_HTTPBIN_URL` 配置，不再硬编码端口）
+**测试套件**: `tst_Integration`
 **QCurl 版本**: v2.0.0
 **Commit**: 2b415ad - fix: 修复超时配置功能 + CURLcode 错误转换 bug
 
@@ -201,7 +211,8 @@ QCOMPARE(data->size(), 102400);  // 期望 100KB（httpbin 限制）
 
 **验证**:
 ```bash
-$ curl -s http://localhost:8935/bytes/1048576 | wc -c
+$ # 需先启动 httpbin 并导出 QCURL_HTTPBIN_URL（见 tests/README.md）
+$ curl -s "${QCURL_HTTPBIN_URL}/bytes/1048576" | wc -c
 102400  # 实际只返回 100KB
 ```
 

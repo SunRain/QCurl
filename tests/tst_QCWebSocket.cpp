@@ -17,6 +17,8 @@
 #include <QTcpSocket>
 #include <QThread>
 
+#include "QCWebSocketTestServer.h"
+
 using namespace QCurl;
 
 /**
@@ -28,7 +30,7 @@ using namespace QCurl;
  * - 依赖 node 环境；若本地服务器无法启动则相关用例会 QSKIP。
  *   注意：本仓库的 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt 的 FAIL_REGULAR_EXPRESSION "SKIP\\s*:"），
  *   因此 QSKIP 代表“无证据”，在门禁口径下会导致失败而非“软通过”。
- * - 外部网络相关用例（如 WSS/SSL）默认跳过；可通过环境变量显式启用。
+ * - WSS/SSL 覆盖同样使用本地 WSS server（自签证书），通过“默认失败 / 配置 CA 后成功”验证证书校验路径。
  */
 class TestQCWebSocket : public QObject
 {
@@ -83,18 +85,15 @@ private:
      */
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 5000);
 
-    [[nodiscard]] bool externalNetworkTestsEnabled() const;
-    [[nodiscard]] bool startLocalTestServer();
-    void stopLocalTestServer();
-
-    static bool waitForPortReady(quint16 port, int timeoutMs);
-
     QString m_localServerSkipReason;
-    QProcess m_localServer;
-
-    quint16 m_localTestServerPort = 0;
     QString m_testServerUrl;
-    const QString m_externalTestServerUrl = QStringLiteral("wss://echo.websocket.org");
+
+    QString m_localWssServerSkipReason;
+    QString m_testWssServerUrl;
+    QString m_caCertPath;
+
+    QCWebSocketTestServer m_wsServer;
+    QCWebSocketTestServer m_wssServer;
 };
 
 void TestQCWebSocket::initTestCase()
@@ -105,17 +104,36 @@ void TestQCWebSocket::initTestCase()
     qDebug() << "本地测试服务器: (启动后回填实际端口)";
     qDebug();
 
-    if (startLocalTestServer()) {
+    m_localServerSkipReason.clear();
+    m_testServerUrl.clear();
+    m_localWssServerSkipReason.clear();
+    m_testWssServerUrl.clear();
+    m_caCertPath.clear();
+
+    if (m_wsServer.start(QCWebSocketTestServer::Mode::Ws)) {
+        m_testServerUrl = m_wsServer.baseUrl();
         qDebug() << "本地测试服务器:" << m_testServerUrl;
     } else {
+        m_localServerSkipReason = m_wsServer.skipReason();
         qWarning().noquote() << "Local WebSocket server unavailable, tests will be skipped:"
                              << m_localServerSkipReason;
+    }
+
+    if (m_wssServer.start(QCWebSocketTestServer::Mode::Wss)) {
+        m_testWssServerUrl = m_wssServer.baseUrl();
+        m_caCertPath       = m_wssServer.caCertPath();
+        qDebug() << "本地 WSS 测试服务器:" << m_testWssServerUrl;
+    } else {
+        m_localWssServerSkipReason = m_wssServer.skipReason();
+        qWarning().noquote() << "Local WSS server unavailable, tests will be skipped:"
+                             << m_localWssServerSkipReason;
     }
 }
 
 void TestQCWebSocket::cleanupTestCase()
 {
-    stopLocalTestServer();
+    m_wsServer.stop();
+    m_wssServer.stop();
     qDebug();
     qDebug() << "========================================";
     qDebug() << "测试完成";
@@ -160,19 +178,22 @@ void TestQCWebSocket::testConnectWss()
 {
     qDebug() << "========== testConnectWss ==========";
 
-    if (!externalNetworkTestsEnabled()) {
-        QSKIP("外部网络用例默认跳过（可设置 QCURL_TEST_EXTERNAL_NETWORK=1 启用）。");
+    if (!m_localWssServerSkipReason.isEmpty()) {
+        QSKIP(qPrintable(m_localWssServerSkipReason));
     }
 
-    // 使用 wss:// 加密连接（外部依赖）
-    QCWebSocket socket{QUrl(m_externalTestServerUrl)};
+    // 使用本地 wss:// 加密连接（自签证书，需配置 CA）
+    QCWebSocket socket{QUrl(m_testWssServerUrl)};
+    QCNetworkSslConfig sslConfig;
+    sslConfig.caCertPath = m_caCertPath;
+    socket.setSslConfig(sslConfig);
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
 
     socket.open();
 
-    if (!waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000)) {
-        QSKIP("无法连接外部 WSS 测试服务器（网络问题或服务不可用）");
-    }
+    QVERIFY2(connectedSpy.wait(15000),
+             qPrintable(QStringLiteral("无法连接本地 WSS 测试服务器，caCertPath=%1，错误=%2")
+                            .arg(m_caCertPath, socket.errorString())));
     QCOMPARE(connectedSpy.count(), 1);
     QCOMPARE(socket.state(), QCWebSocket::State::Connected);
 
@@ -626,64 +647,60 @@ void TestQCWebSocket::testSslError()
 {
     qDebug() << "========== testSslError ==========";
 
-    if (!externalNetworkTestsEnabled()) {
-        QSKIP("外部网络用例默认跳过（可设置 QCURL_TEST_EXTERNAL_NETWORK=1 启用）。");
+    if (!m_localWssServerSkipReason.isEmpty()) {
+        QSKIP(qPrintable(m_localWssServerSkipReason));
     }
 
     // SSL 错误处理测试
-    // 使用 badssl.com 提供的公共测试域名
     
     // ========================================================================
     // 测试 1: 自签名证书（默认配置应拒绝）
     // ========================================================================
     qDebug() << "测试 1: 自签名证书拒绝（默认安全配置）";
     
-    QCWebSocket socket(QUrl("wss://self-signed.badssl.com"));
+    QCWebSocket socket{QUrl(m_testWssServerUrl)};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
     QSignalSpy sslErrorSpy(&socket, &QCWebSocket::sslErrorsDetailed);
     
     socket.open();
     
-    // 等待 SSL 错误（或连接错误）
-    if (waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::errorOccurred), 15000)) {
-        qDebug() << "SSL 错误已检测:" << socket.errorString();
-        
-        // 可能不会触发 sslErrorsDetailed（取决于 libcurl 版本和 SSL 后端）
-        if (sslErrorSpy.count() > 0) {
-            QStringList errors = sslErrorSpy.at(0).at(0).toStringList();
-            qDebug() << "详细 SSL 错误:" << errors;
-            QVERIFY(!errors.isEmpty());
-        }
-        
-        qDebug() << "✅ 默认配置正确拒绝自签名证书";
-    } else {
-        QSKIP("无法连接到 badssl.com 测试服务器（网络问题或服务不可用）");
-        return;
+    QVERIFY2(errorSpy.wait(15000),
+             qPrintable(QStringLiteral("预期应拒绝自签名证书（未配置 CA），但未观察到 errorOccurred。当前错误=%1")
+                            .arg(socket.errorString())));
+
+    qDebug() << "SSL 错误已检测:" << socket.errorString();
+
+    // 可能不会触发 sslErrorsDetailed（取决于 libcurl 版本和 SSL 后端）
+    if (sslErrorSpy.count() > 0) {
+        const QStringList errors = sslErrorSpy.at(0).at(0).toStringList();
+        qDebug() << "详细 SSL 错误:" << errors;
+        QVERIFY(!errors.isEmpty());
     }
+
+    qDebug() << "✅ 默认配置正确拒绝自签名证书";
     
     // ========================================================================
-    // 测试 2: 禁用验证后应连接成功
+    // 测试 2: 配置 CA 后应连接成功
     // ========================================================================
-    qDebug() << "测试 2: 禁用证书验证后连接成功";
+    qDebug() << "测试 2: 配置 CA 后连接成功";
     
-    QCWebSocket socket2(QUrl("wss://self-signed.badssl.com"));
-    socket2.setSslConfig(QCNetworkSslConfig::insecureConfig());
+    QCWebSocket socket2{QUrl(m_testWssServerUrl)};
+    QCNetworkSslConfig sslConfig;
+    sslConfig.caCertPath = m_caCertPath;
+    socket2.setSslConfig(sslConfig);
     
     QSignalSpy connectedSpy(&socket2, &QCWebSocket::connected);
-    QSignalSpy errorSpy2(&socket2, &QCWebSocket::errorOccurred);
     
     socket2.open();
     
     // 等待连接（可能需要较长时间）
-    if (waitForSignal(&socket2, QMetaMethod::fromSignal(&QCWebSocket::connected), 20000)) {
-        qDebug() << "✅ 禁用验证后连接成功";
-        QCOMPARE(connectedSpy.count(), 1);
-        socket2.close();
-    } else {
-        // 某些情况下服务器可能仍然拒绝连接
-        qDebug() << "⚠️  连接失败（服务器可能不可用），错误:" << socket2.errorString();
-        // 不算失败，因为测试服务器不稳定
-    }
+    QVERIFY2(connectedSpy.wait(15000),
+             qPrintable(QStringLiteral("预期配置 CA 后应连接成功，caCertPath=%1，错误=%2")
+                            .arg(m_caCertPath, socket2.errorString())));
+
+    qDebug() << "✅ 配置 CA 后连接成功";
+    QCOMPARE(connectedSpy.count(), 1);
+    socket2.close();
     
     qDebug() << "✅ SSL 错误处理测试通过";
 }
@@ -725,126 +742,6 @@ bool TestQCWebSocket::waitForSignal(QObject *obj, const QMetaMethod &signal, int
 {
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
-}
-
-bool TestQCWebSocket::externalNetworkTestsEnabled() const
-{
-    const QByteArray value = qgetenv("QCURL_TEST_EXTERNAL_NETWORK");
-    return !value.isEmpty() && value != "0";
-}
-
-bool TestQCWebSocket::waitForPortReady(quint16 port, int timeoutMs)
-{
-    QElapsedTimer timer;
-    timer.start();
-
-    while (timer.elapsed() < timeoutMs) {
-        QTcpSocket probe;
-        probe.connectToHost(QHostAddress::LocalHost, port);
-        if (probe.waitForConnected(100)) {
-            probe.disconnectFromHost();
-            return true;
-        }
-        QThread::msleep(50);
-    }
-
-    return false;
-}
-
-bool TestQCWebSocket::startLocalTestServer()
-{
-    stopLocalTestServer();
-    m_localServerSkipReason.clear();
-    m_localTestServerPort = 0;
-    m_testServerUrl.clear();
-
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QString scriptPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/websocket-fragment-server.js"));
-    if (!QFileInfo::exists(scriptPath)) {
-        m_localServerSkipReason = QStringLiteral(
-            "未找到本地 WebSocket 测试服务器脚本（tests/websocket-fragment-server.js），跳过 WebSocket 本地用例。");
-        return false;
-    }
-
-    m_localServer.setProgram(QStringLiteral("node"));
-    m_localServer.setArguments({scriptPath, QStringLiteral("--port"), QStringLiteral("0")});
-    m_localServer.setProcessChannelMode(QProcess::SeparateChannels);
-    m_localServer.start();
-
-    if (!m_localServer.waitForStarted(2000)) {
-        m_localServerSkipReason = QStringLiteral(
-            "无法启动本地 WebSocket 测试服务器（node）。请确认已安装 node，且 tests/node_modules 依赖可用。");
-        return false;
-    }
-
-    // 解析 READY marker（含实际端口），避免固定端口冲突
-    quint16 readyPort = 0;
-    QString stdoutBuf;
-    QString stderrBuf;
-    QElapsedTimer timer;
-    timer.start();
-
-    static const QRegularExpression readyRe(
-        QStringLiteral(R"(QCURL_WEBSOCKET_TEST_SERVER_READY\s+\{"port":(\d+)\})"));
-
-    while (timer.elapsed() < 5000) {
-        if (m_localServer.state() == QProcess::NotRunning) {
-            break;
-        }
-
-        m_localServer.waitForReadyRead(100);
-        stdoutBuf += QString::fromUtf8(m_localServer.readAllStandardOutput());
-        stderrBuf += QString::fromUtf8(m_localServer.readAllStandardError());
-
-        const QRegularExpressionMatch m = readyRe.match(stdoutBuf);
-        if (m.hasMatch()) {
-            bool ok = false;
-            const int p = m.captured(1).toInt(&ok);
-            if (ok && p > 0 && p <= 65535) {
-                readyPort = static_cast<quint16>(p);
-                break;
-            }
-        }
-    }
-
-    if (readyPort == 0 || !waitForPortReady(readyPort, 3000)) {
-        const auto tail = [](const QString &s) -> QString {
-            constexpr int kMax = 4096;
-            if (s.size() <= kMax) {
-                return s;
-            }
-            return QStringLiteral("...(truncated)...\n") + s.right(kMax);
-        };
-
-        const QString outTail = tail(stdoutBuf);
-        const QString errTail = tail(stderrBuf);
-
-        stopLocalTestServer();
-        m_localServerSkipReason = QStringLiteral(
-            "本地 WebSocket 测试服务器未在预期时间内就绪（未收到 READY marker 或端口不可达）。\n"
-            "stdout:\n%1\nstderr:\n%2")
-                                     .arg(outTail.isEmpty() ? QStringLiteral("(empty)") : outTail,
-                                          errTail.isEmpty() ? QStringLiteral("(empty)") : errTail);
-        return false;
-    }
-
-    m_localTestServerPort = readyPort;
-    m_testServerUrl = QStringLiteral("ws://localhost:%1").arg(m_localTestServerPort);
-
-    return true;
-}
-
-void TestQCWebSocket::stopLocalTestServer()
-{
-    if (m_localServer.state() == QProcess::NotRunning) {
-        return;
-    }
-
-    m_localServer.terminate();
-    if (!m_localServer.waitForFinished(1500)) {
-        m_localServer.kill();
-        m_localServer.waitForFinished(1500);
-    }
 }
 
 QTEST_MAIN(TestQCWebSocket)

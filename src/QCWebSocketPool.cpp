@@ -302,6 +302,9 @@ QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
         socket->setReconnectPolicy(policy);
     }
 
+    // 应用 SSL/TLS 配置（用于 WSS + 自定义 CA 等）
+    socket->setSslConfig(m_config.sslConfig);
+
     // 连接断开信号
     connect(socket, &QCWebSocket::disconnected, this, &QCWebSocketPool::onSocketDisconnected);
 

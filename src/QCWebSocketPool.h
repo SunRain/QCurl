@@ -6,6 +6,7 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCWebSocket.h"
+#include "QCNetworkSslConfig.h"
 
 #include <QDateTime>
 #include <QHash>
@@ -86,6 +87,7 @@ public:
         bool enableKeepAlive    = true; ///< 启用心跳保活（发送 Ping 帧）
         int keepAliveInterval   = 30;   ///< 心跳间隔（秒）
         bool autoReconnect      = true; ///< 空闲连接断开时自动重连
+        QCNetworkSslConfig sslConfig;   ///< WSS 的 SSL/TLS 配置（默认安全配置）
     };
 
     /**

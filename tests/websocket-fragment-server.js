@@ -23,12 +23,23 @@
  */
 
 const WebSocket = require('ws');
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 function parsePort() {
     const args = process.argv.slice(2);
     let raw = '';
+    let tls = false;
+    let certPath = '';
+    let keyPath = '';
     for (let i = 0; i < args.length; i += 1) {
         const a = args[i];
+        if (a === '--tls') {
+            tls = true;
+            continue;
+        }
         if (a === '--port' && i + 1 < args.length) {
             raw = args[i + 1];
             i += 1;
@@ -38,43 +49,96 @@ function parsePort() {
             raw = a.substring('--port='.length);
             continue;
         }
+
+        if (a === '--cert' && i + 1 < args.length) {
+            certPath = args[i + 1];
+            i += 1;
+            continue;
+        }
+        if (a.startsWith('--cert=')) {
+            certPath = a.substring('--cert='.length);
+            continue;
+        }
+        if (a === '--key' && i + 1 < args.length) {
+            keyPath = args[i + 1];
+            i += 1;
+            continue;
+        }
+        if (a.startsWith('--key=')) {
+            keyPath = a.substring('--key='.length);
+            continue;
+        }
     }
     if (!raw) {
         raw = process.env.QCURL_WEBSOCKET_TEST_PORT || '';
     }
 
+    if (!certPath) {
+        certPath = process.env.QCURL_WEBSOCKET_TEST_CERT || '';
+    }
+    if (!keyPath) {
+        keyPath = process.env.QCURL_WEBSOCKET_TEST_KEY || '';
+    }
+
     // 默认 0：让 OS 分配可用端口，避免固定端口冲突
     if (!raw) {
-        return 0;
+        raw = '0';
     }
 
     const port = Number.parseInt(String(raw), 10);
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
         throw new Error(`invalid port: ${raw}`);
     }
-    return port;
+
+    if (tls) {
+        if (!certPath) {
+            certPath = path.join(__dirname, 'testdata', 'http2', 'localhost.crt');
+        }
+        if (!keyPath) {
+            keyPath = path.join(__dirname, 'testdata', 'http2', 'localhost.key');
+        }
+        if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+            throw new Error(`missing tls cert/key: cert=${certPath} key=${keyPath}`);
+        }
+    }
+
+    return { port, tls, certPath, keyPath };
 }
 
 let port = 0;
+let tls = false;
+let certPath = '';
+let keyPath = '';
 try {
-    port = parsePort();
+    const parsed = parsePort();
+    port = parsed.port;
+    tls = parsed.tls;
+    certPath = parsed.certPath;
+    keyPath = parsed.keyPath;
 } catch (err) {
     const msg = (err && err.message) ? err.message : String(err);
     console.error(`QCURL_WEBSOCKET_TEST_SERVER_ERROR invalid_args ${msg}`);
     process.exit(2);
 }
 
-// 创建 WebSocket 服务器
-const wss = new WebSocket.Server({ 
-    host: '127.0.0.1',
-    port,
-    perMessageDeflate: false  // 禁用压缩，简化测试
+const host = '127.0.0.1';
+
+const server = tls
+    ? https.createServer({
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath),
+    })
+    : http.createServer();
+
+const wss = new WebSocket.Server({
+    server,
+    perMessageDeflate: false,  // 禁用压缩，简化测试
 });
 
 let actualPort = port;
-wss.on('listening', () => {
+server.on('listening', () => {
     try {
-        const addr = wss.address();
+        const addr = server.address();
         if (addr && typeof addr === 'object' && addr.port) {
             actualPort = addr.port;
         }
@@ -85,7 +149,8 @@ wss.on('listening', () => {
     console.log('=====================================');
     console.log('  WebSocket 分片测试服务器');
     console.log('=====================================');
-    console.log(`监听地址: ws://localhost:${actualPort}`);
+    const scheme = tls ? 'wss' : 'ws';
+    console.log(`监听地址: ${scheme}://localhost:${actualPort}`);
     console.log('功能: Echo 服务器（回显所有消息）');
     console.log('按 Ctrl+C 停止服务器');
     console.log('=====================================\n');
@@ -95,6 +160,10 @@ wss.on('listening', () => {
 });
 
 let clientCount = 0;
+
+wss.on('error', (error) => {
+    console.error('❌ WebSocket 服务器错误:', error.message);
+});
 
 wss.on('connection', (ws, req) => {
     const clientId = ++clientCount;
@@ -145,7 +214,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // 服务器错误处理
-wss.on('error', (error) => {
+server.on('error', (error) => {
     console.error('❌ 服务器错误:', error.message);
     if (error.code === 'EADDRINUSE') {
         console.error(`端口 ${port} 已被占用，请先关闭占用该端口的程序或改用 --port 0`);
@@ -155,6 +224,8 @@ wss.on('error', (error) => {
     process.exit(1);
 });
 
+server.listen({ host, port });
+
 // 优雅关闭
 process.on('SIGINT', () => {
     console.log('\n\n收到停止信号，正在关闭服务器...');
@@ -163,10 +234,10 @@ process.on('SIGINT', () => {
         ws.close(1000, 'Server shutting down');
     });
     
-    wss.close(() => {
+    wss.close(() => server.close(() => {
         console.log('✅ 服务器已关闭');
         process.exit(0);
-    });
+    }));
 });
 
 // 定期打印统计信息（每 30 秒）
