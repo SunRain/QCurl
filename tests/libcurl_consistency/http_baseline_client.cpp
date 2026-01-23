@@ -7,8 +7,10 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -16,6 +18,12 @@ struct Args {
     std::string proto = "http/1.1";
     std::string method = "GET";
     std::string url;
+    std::vector<std::string> resolveEntries;
+    std::vector<std::string> connectToEntries;
+    std::optional<std::string> allowedProtocols;
+    std::optional<std::string> allowedRedirProtocols;
+    std::optional<curl_off_t> maxRecvSpeed;
+    std::optional<curl_off_t> maxSendSpeed;
     std::string outFile = "download_0.data";
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
@@ -53,6 +61,16 @@ struct Args {
     int repeat = 1;
     bool expect100Continue = false;
 };
+
+struct CurlSlistDeleter {
+    void operator()(curl_slist *p) const
+    {
+        if (p) {
+            curl_slist_free_all(p);
+        }
+    }
+};
+using CurlSlistPtr = std::unique_ptr<curl_slist, CurlSlistDeleter>;
 
 struct TransferSummary {
     curl_off_t dlNowMax = 0;
@@ -247,6 +265,164 @@ std::string toLowerAscii(const std::string &s)
     return out;
 }
 
+std::optional<long> protocolMaskFromCsv(const std::string &csv)
+{
+    long mask = 0;
+    std::string token;
+
+    auto flushToken = [&]() -> std::optional<long> {
+        const auto first = token.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return std::nullopt;
+        }
+        const auto last = token.find_last_not_of(" \t\r\n");
+        const std::string t = toLowerAscii(token.substr(first, (last - first) + 1));
+        token.clear();
+        if (t.empty()) {
+            return std::nullopt;
+        }
+        if (t == "all") {
+            return CURLPROTO_ALL;
+        }
+
+        long bit = 0;
+        if (t == "http") {
+            bit = CURLPROTO_HTTP;
+        } else if (t == "https") {
+            bit = CURLPROTO_HTTPS;
+#ifdef CURLPROTO_WS
+        } else if (t == "ws") {
+            bit = CURLPROTO_WS;
+#endif
+#ifdef CURLPROTO_WSS
+        } else if (t == "wss") {
+            bit = CURLPROTO_WSS;
+#endif
+        } else if (t == "ftp") {
+            bit = CURLPROTO_FTP;
+        } else if (t == "ftps") {
+            bit = CURLPROTO_FTPS;
+        } else if (t == "file") {
+            bit = CURLPROTO_FILE;
+#ifdef CURLPROTO_SCP
+        } else if (t == "scp") {
+            bit = CURLPROTO_SCP;
+#endif
+#ifdef CURLPROTO_SFTP
+        } else if (t == "sftp") {
+            bit = CURLPROTO_SFTP;
+#endif
+#ifdef CURLPROTO_TELNET
+        } else if (t == "telnet") {
+            bit = CURLPROTO_TELNET;
+#endif
+#ifdef CURLPROTO_DICT
+        } else if (t == "dict") {
+            bit = CURLPROTO_DICT;
+#endif
+#ifdef CURLPROTO_LDAP
+        } else if (t == "ldap") {
+            bit = CURLPROTO_LDAP;
+#endif
+#ifdef CURLPROTO_LDAPS
+        } else if (t == "ldaps") {
+            bit = CURLPROTO_LDAPS;
+#endif
+#ifdef CURLPROTO_IMAP
+        } else if (t == "imap") {
+            bit = CURLPROTO_IMAP;
+#endif
+#ifdef CURLPROTO_IMAPS
+        } else if (t == "imaps") {
+            bit = CURLPROTO_IMAPS;
+#endif
+#ifdef CURLPROTO_POP3
+        } else if (t == "pop3") {
+            bit = CURLPROTO_POP3;
+#endif
+#ifdef CURLPROTO_POP3S
+        } else if (t == "pop3s") {
+            bit = CURLPROTO_POP3S;
+#endif
+#ifdef CURLPROTO_SMTP
+        } else if (t == "smtp") {
+            bit = CURLPROTO_SMTP;
+#endif
+#ifdef CURLPROTO_SMTPS
+        } else if (t == "smtps") {
+            bit = CURLPROTO_SMTPS;
+#endif
+#ifdef CURLPROTO_RTSP
+        } else if (t == "rtsp") {
+            bit = CURLPROTO_RTSP;
+#endif
+#ifdef CURLPROTO_GOPHER
+        } else if (t == "gopher") {
+            bit = CURLPROTO_GOPHER;
+#endif
+#ifdef CURLPROTO_GOPHERS
+        } else if (t == "gophers") {
+            bit = CURLPROTO_GOPHERS;
+#endif
+#ifdef CURLPROTO_TFTP
+        } else if (t == "tftp") {
+            bit = CURLPROTO_TFTP;
+#endif
+#ifdef CURLPROTO_MQTT
+        } else if (t == "mqtt") {
+            bit = CURLPROTO_MQTT;
+#endif
+#ifdef CURLPROTO_IPFS
+        } else if (t == "ipfs") {
+            bit = CURLPROTO_IPFS;
+#endif
+#ifdef CURLPROTO_IPNS
+        } else if (t == "ipns") {
+            bit = CURLPROTO_IPNS;
+#endif
+#ifdef CURLPROTO_SMB
+        } else if (t == "smb") {
+            bit = CURLPROTO_SMB;
+#endif
+#ifdef CURLPROTO_SMBS
+        } else if (t == "smbs") {
+            bit = CURLPROTO_SMBS;
+#endif
+        } else {
+            return std::nullopt;
+        }
+        return bit;
+    };
+
+    const std::string lower = toLowerAscii(csv);
+    for (char c : lower) {
+        if (c == ',') {
+            const auto bit = flushToken();
+            if (!bit.has_value()) {
+                return std::nullopt;
+            }
+            if (bit.value() == CURLPROTO_ALL) {
+                return CURLPROTO_ALL;
+            }
+            mask |= bit.value();
+            continue;
+        }
+        token.push_back(c);
+    }
+    const auto bit = flushToken();
+    if (!bit.has_value()) {
+        return std::nullopt;
+    }
+    if (bit.value() == CURLPROTO_ALL) {
+        return CURLPROTO_ALL;
+    }
+    mask |= bit.value();
+    if (mask == 0) {
+        return std::nullopt;
+    }
+    return mask;
+}
+
 std::optional<unsigned long> httpAuthMask(const std::string &s)
 {
     const std::string v = toLowerAscii(s);
@@ -350,6 +526,38 @@ std::optional<Args> parseArgs(int argc, char **argv)
         }
         if (arg == "--pinned-public-key" && i + 1 < argc) {
             out.pinnedPublicKey = argv[++i];
+            continue;
+        }
+        if (arg == "--resolve" && i + 1 < argc) {
+            out.resolveEntries.push_back(argv[++i]);
+            continue;
+        }
+        if (arg == "--connect-to" && i + 1 < argc) {
+            out.connectToEntries.push_back(argv[++i]);
+            continue;
+        }
+        if (arg == "--allowed-protocols" && i + 1 < argc) {
+            out.allowedProtocols = argv[++i];
+            continue;
+        }
+        if (arg == "--allowed-redir-protocols" && i + 1 < argc) {
+            out.allowedRedirProtocols = argv[++i];
+            continue;
+        }
+        if (arg == "--max-recv-speed" && i + 1 < argc) {
+            const auto value = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxRecvSpeed = static_cast<curl_off_t>(*value);
+            continue;
+        }
+        if (arg == "--max-send-speed" && i + 1 < argc) {
+            const auto value = qcurl::lc::parseInt<long long>(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxSendSpeed = static_cast<curl_off_t>(*value);
             continue;
         }
         if (arg == "--connect-timeout-ms" && i + 1 < argc) {
@@ -490,6 +698,9 @@ int printUsage()
 {
     std::cerr
         << "Usage: qcurl_lc_http_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
+        << "  [--resolve <host:port:addr[,addr...]>] [--connect-to <host:port:connect-to-host:connect-to-port>]\n"
+        << "  [--allowed-protocols <csv>] [--allowed-redir-protocols <csv>]\n"
+        << "  [--max-recv-speed <bytes_per_sec>] [--max-send-speed <bytes_per_sec>]\n"
         << "  [--method <GET|HEAD|POST|PUT|PATCH|DELETE>] [--data-size <n>]\n"
         << "  [--stream-body [--seekable-body] [--unknown-size]]\n"
         << "  [--expect100]\n"
@@ -590,6 +801,12 @@ int main(int argc, char **argv)
     if (args.unknownSize && args.proto != "http/1.1") {
         return printUsage();
     }
+    if (args.maxRecvSpeed.has_value() && args.maxRecvSpeed.value() < 0) {
+        return printUsage();
+    }
+    if (args.maxSendSpeed.has_value() && args.maxSendSpeed.value() < 0) {
+        return printUsage();
+    }
 
     const CURLcode g = curl_global_init(CURL_GLOBAL_ALL);
     if (g != CURLE_OK) {
@@ -649,6 +866,135 @@ int main(int argc, char **argv)
         return 6;
 #endif
     }
+
+    CurlSlistPtr resolveSlist;
+    CurlSlistPtr connectToSlist;
+    for (const std::string &entry : args.resolveEntries) {
+        curl_slist *next = curl_slist_append(resolveSlist.get(), entry.c_str());
+        if (!next) {
+            std::cerr << "curl_slist_append(--resolve) failed\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+        if (!resolveSlist) {
+            resolveSlist.reset(next);
+        }
+    }
+    for (const std::string &entry : args.connectToEntries) {
+        curl_slist *next = curl_slist_append(connectToSlist.get(), entry.c_str());
+        if (!next) {
+            std::cerr << "curl_slist_append(--connect-to) failed\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+        if (!connectToSlist) {
+            connectToSlist.reset(next);
+        }
+    }
+    if (resolveSlist) {
+        const CURLcode resolveRc = curl_easy_setopt(curl, CURLOPT_RESOLVE, resolveSlist.get());
+        if (resolveRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_RESOLVE) failed: " << curl_easy_strerror(resolveRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+    if (connectToSlist) {
+        const CURLcode connectToRc = curl_easy_setopt(curl, CURLOPT_CONNECT_TO, connectToSlist.get());
+        if (connectToRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_CONNECT_TO) failed: " << curl_easy_strerror(connectToRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+    if (args.allowedProtocols.has_value()) {
+        const CURLcode protocolsRc = curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, args.allowedProtocols.value().c_str());
+        if (protocolsRc == CURLE_UNKNOWN_OPTION || protocolsRc == CURLE_NOT_BUILT_IN) {
+            const auto maskOpt = protocolMaskFromCsv(args.allowedProtocols.value());
+            if (!maskOpt.has_value()) {
+                std::cerr << "invalid allowed-protocols: " << args.allowedProtocols.value() << "\n";
+                curl_easy_cleanup(curl);
+                curl_global_cleanup();
+                return 6;
+            }
+            std::cerr << "[warn] CURLOPT_PROTOCOLS_STR unsupported, fallback to CURLOPT_PROTOCOLS\n";
+            const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_PROTOCOLS, maskOpt.value());
+            if (maskRc != CURLE_OK) {
+                std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS) failed: " << curl_easy_strerror(maskRc) << "\n";
+                curl_easy_cleanup(curl);
+                curl_global_cleanup();
+                return 5;
+            }
+        } else if (protocolsRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS_STR) failed: " << curl_easy_strerror(protocolsRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+    if (args.allowedRedirProtocols.has_value()) {
+        const CURLcode redirRc =
+            curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, args.allowedRedirProtocols.value().c_str());
+        if (redirRc == CURLE_UNKNOWN_OPTION || redirRc == CURLE_NOT_BUILT_IN) {
+            const auto maskOpt = protocolMaskFromCsv(args.allowedRedirProtocols.value());
+            if (!maskOpt.has_value()) {
+                std::cerr << "invalid allowed-redir-protocols: " << args.allowedRedirProtocols.value() << "\n";
+                curl_easy_cleanup(curl);
+                curl_global_cleanup();
+                return 6;
+            }
+            std::cerr << "[warn] CURLOPT_REDIR_PROTOCOLS_STR unsupported, fallback to CURLOPT_REDIR_PROTOCOLS\n";
+            const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, maskOpt.value());
+            if (maskRc != CURLE_OK) {
+                std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS) failed: " << curl_easy_strerror(maskRc) << "\n";
+                curl_easy_cleanup(curl);
+                curl_global_cleanup();
+                return 5;
+            }
+        } else if (redirRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS_STR) failed: " << curl_easy_strerror(redirRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+    if (args.maxRecvSpeed.has_value()) {
+        const CURLcode speedRc =
+            curl_easy_setopt(curl, CURLOPT_MAX_RECV_SPEED_LARGE, static_cast<curl_off_t>(args.maxRecvSpeed.value()));
+        if (speedRc == CURLE_UNKNOWN_OPTION || speedRc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported max recv speed (no CURLOPT_MAX_RECV_SPEED_LARGE)\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        if (speedRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_MAX_RECV_SPEED_LARGE) failed: " << curl_easy_strerror(speedRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+    if (args.maxSendSpeed.has_value()) {
+        const CURLcode speedRc =
+            curl_easy_setopt(curl, CURLOPT_MAX_SEND_SPEED_LARGE, static_cast<curl_off_t>(args.maxSendSpeed.value()));
+        if (speedRc == CURLE_UNKNOWN_OPTION || speedRc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported max send speed (no CURLOPT_MAX_SEND_SPEED_LARGE)\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        if (speedRc != CURLE_OK) {
+            std::cerr << "curl_easy_setopt(CURLOPT_MAX_SEND_SPEED_LARGE) failed: " << curl_easy_strerror(speedRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 5;
+        }
+    }
+
     if (args.connectTimeoutMs > 0) {
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, args.connectTimeoutMs);
     }
@@ -656,7 +1002,6 @@ int main(int argc, char **argv)
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, args.totalTimeoutMs);
     }
     if (args.expect100TimeoutMs >= 0) {
-#ifdef CURLOPT_EXPECT_100_TIMEOUT_MS
         const CURLcode expectRc =
             curl_easy_setopt(curl, CURLOPT_EXPECT_100_TIMEOUT_MS, args.expect100TimeoutMs);
         if (expectRc == CURLE_UNKNOWN_OPTION || expectRc == CURLE_NOT_BUILT_IN) {
@@ -665,9 +1010,6 @@ int main(int argc, char **argv)
             std::cerr << "curl_easy_setopt(CURLOPT_EXPECT_100_TIMEOUT_MS) failed: "
                       << curl_easy_strerror(expectRc) << "\n";
         }
-#else
-        std::cerr << "expect100-timeout-ms ignored (no CURLOPT_EXPECT_100_TIMEOUT_MS in this libcurl build)\n";
-#endif
     }
     if (args.lowSpeedTimeS > 0) {
         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, args.lowSpeedTimeS);

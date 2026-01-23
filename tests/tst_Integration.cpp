@@ -44,6 +44,7 @@
 #include <QEvent>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
 #include <QVector>
@@ -928,8 +929,18 @@ void TestIntegration::testInvalidHost()
 
 void TestIntegration::testConnectionRefused()
 {
-    // 使用 localhost:9999（通常没有服务）
-    QCNetworkRequest request(QUrl("http://127.0.0.1:9999"));
+    // 取证口径：避免依赖固定端口（如 9999）“通常没有服务”的非确定性前提。
+    //
+    // 策略：先申请一个临时端口并立即释放，然后连接该端口期望得到“连接失败”终态。
+    // 这仍存在极小竞态窗口，但显著优于固定端口假设，且在 CI/门禁环境中可重复性更强。
+    QTcpServer portPicker;
+    if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("无法绑定本机端口用于生成确定性 connection-refused 场景");
+    }
+    const quint16 port = portPicker.serverPort();
+    portPicker.close();
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1").arg(port)));
 
     QCNetworkTimeoutConfig timeout;
     timeout.connectTimeout = std::chrono::seconds(2);
@@ -950,9 +961,19 @@ void TestIntegration::testHttpErrorCodes()
     auto *reply404 = m_manager->sendGet(request404);
     QVERIFY(waitForSignal(reply404, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
-    // 注意：libcurl 的 CURLOPT_FAILONERROR 会将 HTTP 错误转为 curl 错误
-    // 所以可能返回 CURLE_HTTP_RETURNED_ERROR
-    qDebug() << "HTTP 404 test:" << reply404->errorString();
+    // 证据合同：
+    // - status 必须可观测（httpStatusCode=404）
+    // - 对外 error 必须非 NoError（可能为 HTTP 映射错误，或因 FAILONERROR 被归为 curl error）
+    QCOMPARE(reply404->httpStatusCode(), 404);
+    QCOMPARE(reply404->state(), ReplyState::Error);
+    QVERIFY(reply404->error() != NetworkError::NoError);
+    QVERIFY(reply404->error() == fromHttpCode(404) || isCurlError(reply404->error()));
+
+    qInfo().noquote()
+        << QStringLiteral("QCURL_EVIDENCE integration_http_error status=404 http_status=%1 error=%2 msg=%3")
+               .arg(reply404->httpStatusCode())
+               .arg(static_cast<int>(reply404->error()))
+               .arg(reply404->errorString());
     reply404->deleteLater();
 
     // 测试 HTTP 500
@@ -960,7 +981,16 @@ void TestIntegration::testHttpErrorCodes()
     auto *reply500 = m_manager->sendGet(request500);
     QVERIFY(waitForSignal(reply500, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
-    qDebug() << "HTTP 500 test:" << reply500->errorString();
+    QCOMPARE(reply500->httpStatusCode(), 500);
+    QCOMPARE(reply500->state(), ReplyState::Error);
+    QVERIFY(reply500->error() != NetworkError::NoError);
+    QVERIFY(reply500->error() == fromHttpCode(500) || isCurlError(reply500->error()));
+
+    qInfo().noquote()
+        << QStringLiteral("QCURL_EVIDENCE integration_http_error status=500 http_status=%1 error=%2 msg=%3")
+               .arg(reply500->httpStatusCode())
+               .arg(static_cast<int>(reply500->error()))
+               .arg(reply500->errorString());
     reply500->deleteLater();
 
     qDebug() << "HTTP error codes test completed";

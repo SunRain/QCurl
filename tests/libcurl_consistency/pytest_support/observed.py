@@ -7,11 +7,34 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+
+
+_DEFAULT_OBSERVE_TIMEOUT_S = 2.0
+
+
+def _observe_timeout_s(default: float = _DEFAULT_OBSERVE_TIMEOUT_S) -> float:
+    """
+    观测等待窗口（用于 access_log/observe_log 落盘等待）。
+
+    可通过环境变量覆盖默认值（用于极慢 CI/慢 IO 降低假失败）：
+    - QCURL_LC_OBSERVE_HTTP_TIMEOUT_S: float seconds, e.g. "5.0"
+    """
+    raw = (os.environ.get("QCURL_LC_OBSERVE_HTTP_TIMEOUT_S") or "").strip()
+    if not raw:
+        return float(default)
+    try:
+        v = float(raw)
+    except ValueError:
+        return float(default)
+    if v <= 0:
+        return float(default)
+    return v
 
 
 @dataclass(frozen=True)
@@ -115,7 +138,7 @@ def httpd_observed_for_id(access_log: Path,
                           include_content_length: bool = True) -> HttpdObserved:
     # ⚠️ 注意：httpd/nghttpx 的 access_log 写入存在 flush 延迟（尤其是 CONNECT + h2 场景）。
     # 为避免“请求已完成但日志尚未落盘”导致的假失败，这里做短暂轮询等待。
-    deadline = time.time() + 2.0
+    deadline = time.time() + _observe_timeout_s()
     entries: List[Dict[str, str]] = []
     while time.time() < deadline:
         entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
@@ -131,7 +154,7 @@ def httpd_observed_for_id(access_log: Path,
 
     chosen = None
     if require_range:
-        deadline = time.time() + 2.0
+        deadline = time.time() + _observe_timeout_s()
         while time.time() < deadline:
             for e in entries:
                 if has_range(e):
@@ -175,7 +198,7 @@ def httpd_observed_list_for_id(access_log: Path,
     - 用于 multi 场景（同一 case 内多次请求）
     - 返回结果按 url（去掉 id 后）排序以稳定对比
     """
-    deadline = time.time() + 2.0
+    deadline = time.time() + _observe_timeout_s()
     entries: List[Dict[str, str]] = []
     while time.time() < deadline:
         entries = [e for e in parse_httpd_access_log(access_log) if e.get("id") == req_id]
@@ -245,7 +268,7 @@ def nghttpx_observed_for_id(access_log: Path,
                             *,
                             require_range: bool,
                             include_content_length: bool = True) -> HttpdObserved:
-    deadline = time.time() + 2.0
+    deadline = time.time() + _observe_timeout_s()
     entries: List[Dict[str, str]] = []
     while time.time() < deadline:
         entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
@@ -261,7 +284,7 @@ def nghttpx_observed_for_id(access_log: Path,
 
     chosen = None
     if require_range:
-        deadline = time.time() + 2.0
+        deadline = time.time() + _observe_timeout_s()
         while time.time() < deadline:
             for e in entries:
                 if has_range(e):
@@ -304,7 +327,7 @@ def nghttpx_observed_list_for_id(access_log: Path,
     返回同一 correlation id 下的所有 HTTP/3 请求观测记录（来自 nghttpx access_log）。
     - 返回结果按 url（去掉 id 后）排序以稳定对比
     """
-    deadline = time.time() + 2.0
+    deadline = time.time() + _observe_timeout_s()
     entries: List[Dict[str, str]] = []
     while time.time() < deadline:
         entries = [e for e in parse_nghttpx_access_log(access_log) if e.get("id") == req_id]
@@ -424,12 +447,14 @@ def _wait_for_observe_http_matches(observe_log: Path,
                                   req_id: str,
                                   *,
                                   expected_count: int,
-                                  timeout_s: float = 2.0) -> List[Dict]:
+                                  timeout_s: Optional[float] = None) -> List[Dict]:
     """
     等待 observe_http.jsonl 写入完成，避免“服务端线程写 log”与“测试线程读 log”之间的竞态导致偶发空读。
     - expected_count > 0：等待匹配条数恰好等于 expected_count
     - expected_count <= 0：等待至少出现 1 条匹配记录
     """
+    if timeout_s is None:
+        timeout_s = _observe_timeout_s()
     end = time.monotonic() + max(0.0, float(timeout_s))
     last: List[Dict] = []
     while True:

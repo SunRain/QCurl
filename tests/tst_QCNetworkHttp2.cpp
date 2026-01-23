@@ -555,8 +555,9 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
     qDebug() << "========== testHttp2Downgrade ==========";
 
     if (m_disableDowngradeTest) {
-        QWARN("已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例。");
-        return;
+        // 证据口径：禁用关键用例不应“静默通过”，避免误读为已验证。
+        // 注意：本仓库 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt），因此该 QSKIP 代表“无证据”。
+        QSKIP("已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例（证据门禁口径下视为无证据）。");
     }
 
     QVERIFY2(!m_http1BaseUrl.isEmpty(),

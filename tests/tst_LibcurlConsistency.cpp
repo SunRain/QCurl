@@ -464,6 +464,97 @@ void TestLibcurlConsistency::testCase()
         manager.setHstsAltSvcCacheConfig(cacheCfg);
     }
 
+    if (caseId == QStringLiteral("p1_resolve_override")) {
+        QVERIFY(observeHttpPort > 0);
+        const QString host = QStringLiteral("example.invalid");
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://%1:%2/status/200").arg(host).arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setResolveOverride(QStringList{
+            QStringLiteral("%1:%2:127.0.0.1").arg(host).arg(observeHttpPort),
+        });
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p1_connect_to")) {
+        QVERIFY(observeHttpPort > 0);
+        const QString host = QStringLiteral("example.invalid");
+        const int logicalPort = 18080;
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://%1:%2/status/200").arg(host).arg(logicalPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setConnectTo(QStringList{
+            QStringLiteral("%1:%2:127.0.0.1:%3").arg(host).arg(logicalPort).arg(observeHttpPort),
+        });
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_protocols_block_http")) {
+        QVERIFY(observeHttpPort > 0);
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/status/200").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), fromCurlCode(CURLE_UNSUPPORTED_PROTOCOL));
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_redir_protocols_block_http")) {
+        QVERIFY(observeHttpPort > 0);
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/redir/1").arg(observeHttpPort)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        req.setFollowLocation(true);
+        req.setMaxRedirects(10);
+        req.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+        req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), fromCurlCode(CURLE_UNSUPPORTED_PROTOCOL));
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), *dataOpt, QIODevice::WriteOnly | QIODevice::Truncate));
+        deleteReplyLater(reply);
+        return;
+    }
+
     if (caseId == QStringLiteral("p2_tls_verify_success")) {
         QVERIFY(observeHttpsPort > 0);
         QVERIFY(!caCertPath.isEmpty());
@@ -1578,6 +1669,96 @@ void TestLibcurlConsistency::testCase()
 
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), received, QIODevice::WriteOnly | QIODevice::Truncate));
         reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_speed_limit_smoke")) {
+        QVERIFY(observeHttpPort > 0);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(20000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+        const qint64 cancelAtBytes = 32768;
+        const qint64 maxRecvSpeed = 65536;
+        const qint64 maxSendSpeed = 65536;
+
+        QCNetworkRequest req(withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/slow_body/131072/4096/50").arg(observeHttpPort)),
+            requestId));
+        req.setHttpVersion(httpVersion);
+        req.setMaxDownloadBytesPerSec(maxRecvSpeed);
+        req.setMaxUploadBytesPerSec(maxSendSpeed);
+
+        QCNetworkReply *reply = manager.sendGet(req);
+        QVERIFY(reply);
+
+        QByteArray received;
+        bool cancelRequested = false;
+        bool cancelledEmitted = false;
+        bool finishedEmitted = false;
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&, reply]() {
+            const auto dataOpt = reply->readAll();
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                received.append(*dataOpt);
+            }
+        });
+
+        connect(reply, &QCNetworkReply::downloadProgress, this, [&, reply](qint64 bytesReceived, qint64 /*bytesTotal*/) {
+            if (!cancelRequested && bytesReceived >= cancelAtBytes) {
+                cancelRequested = true;
+                reply->cancel();
+            }
+        });
+
+        connect(reply, &QCNetworkReply::cancelled, this, [&]() {
+            cancelledEmitted = true;
+            loop.quit();
+        });
+
+        connect(reply, &QCNetworkReply::finished, this, [&]() {
+            finishedEmitted = true;
+            loop.quit();
+        });
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for cancellation");
+        QVERIFY(cancelledEmitted);
+        QVERIFY(finishedEmitted);
+        QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            received.append(*tailOpt);
+        }
+
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"), received, QIODevice::WriteOnly | QIODevice::Truncate));
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("ext_api_reported_status")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(observeStatusCode > 0);
+
+        const QUrl url = withRequestId(
+            QUrl(QStringLiteral("http://localhost:%1/status/%2").arg(observeHttpPort).arg(observeStatusCode)),
+            requestId);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = manager.sendGetSync(req);
+        QVERIFY(reply);
+
+        QJsonObject meta;
+        meta.insert(QStringLiteral("httpStatusCode"), reply->httpStatusCode());
+        QVERIFY(writeJsonObjectToFile(QStringLiteral("reported_meta.json"), meta));
+
+        deleteReplyLater(reply);
         return;
     }
 

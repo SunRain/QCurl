@@ -276,7 +276,8 @@ void TestQCNetworkReply::testSyncInvalidUrl()
     // ✅ 同步测试无效 URL - 验证错误处理
     // 注意：同步请求即使失败也可能不会设置 isFinished()
     
-    QCNetworkRequest request(QUrl("http://invalid-domain-that-does-not-exist-12345.com"));
+    // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
+    QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
@@ -636,7 +637,8 @@ void TestQCNetworkReply::testStateTransitionIdleToFinished()
 
 void TestQCNetworkReply::testStateTransitionIdleToError()
 {
-    QCNetworkRequest request(QUrl("http://invalid-url-12345.com"));
+    // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
+    QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
@@ -795,12 +797,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     std::thread pauseThread([reply]() { reply->pauseTransport(PauseMode::Recv); });
     pauseThread.join();
 
-    QElapsedTimer pauseTimer;
-    pauseTimer.start();
-    while (pauseTimer.elapsed() < 3000 && reply->state() != ReplyState::Paused) {
-        QTest::qWait(10);
-    }
-    QCOMPARE(reply->state(), ReplyState::Paused);
+    QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
 
     const qint64 pausedBytes = reply->bytesReceived();
     QTest::qWait(200);
@@ -810,15 +807,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     std::thread resumeThread([reply]() { reply->resumeTransport(); });
     resumeThread.join();
 
-    QElapsedTimer resumeTimer;
-    resumeTimer.start();
-    while (resumeTimer.elapsed() < 3000 && reply->state() != ReplyState::Running) {
-        if (reply->state() == ReplyState::Finished) {
-            break;
-        }
-        QTest::qWait(10);
-    }
-    QVERIFY(reply->state() == ReplyState::Running || reply->state() == ReplyState::Finished);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running || reply->state() == ReplyState::Finished, 3000);
 
     QVERIFY(finishedSpy.wait(10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -1398,7 +1387,8 @@ void TestQCNetworkReply::testHttpError404()
 
 void TestQCNetworkReply::testErrorString()
 {
-    QCNetworkRequest request(QUrl("http://invalid-12345.com"));
+    // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
+    QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
@@ -1434,7 +1424,8 @@ void TestQCNetworkReply::testFinishedSignal()
 
 void TestQCNetworkReply::testErrorSignal()
 {
-    QCNetworkRequest request(QUrl("http://invalid-url-12345.com"));
+    // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
+    QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));

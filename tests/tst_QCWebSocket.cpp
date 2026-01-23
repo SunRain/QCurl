@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
 #include <QUrlQuery>
@@ -255,8 +256,15 @@ void TestQCWebSocket::testAutoReconnect()
     qDebug() << "========== testAutoReconnect ==========";
     
     // 自动重连功能测试
-    // 创建一个会失败的连接（端口不存在）
-    QCWebSocket socket(QUrl("ws://localhost:9999"));
+    // 创建一个会失败的连接（避免固定端口假设；使用临时端口并立即释放，获得更稳定的“连接失败”语义）
+    QTcpServer portPicker;
+    if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("无法绑定本机端口用于生成确定性 connection-refused 场景");
+    }
+    const quint16 port = portPicker.serverPort();
+    portPicker.close();
+
+    QCWebSocket socket(QUrl(QStringLiteral("ws://127.0.0.1:%1").arg(port)));
     
     // 设置标准重连策略（3 次重连，1s → 2s → 4s）
     socket.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
@@ -848,8 +856,15 @@ void TestQCWebSocket::testConnectionRefused()
 {
     qDebug() << "========== testConnectionRefused ==========";
 
-    // 连接到一个拒绝连接的端口
-    QCWebSocket socket{QUrl("ws://localhost:9999")};
+    // 连接到一个拒绝连接的端口（避免固定端口假设；使用临时端口并立即释放）
+    QTcpServer portPicker;
+    if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("无法绑定本机端口用于生成确定性 connection-refused 场景");
+    }
+    const quint16 port = portPicker.serverPort();
+    portPicker.close();
+
+    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:%1").arg(port))};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
     socket.open();

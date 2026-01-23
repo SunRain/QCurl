@@ -11,6 +11,8 @@
 
 #include <QtTest>
 #include <QSignalSpy>
+#include <QHostAddress>
+#include <QTcpServer>
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
@@ -404,13 +406,23 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 {
     qDebug() << "测试 5：无效代理错误处理";
 
-    // 使用无效的代理地址（确保失败）
+    // 取证口径：避免依赖固定端口/外网 DNS 的非确定性前提。
+    // 使用本机临时端口并立即释放，获得更稳定的“连接失败”场景。
+    QTcpServer portPicker;
+    if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
+        QSKIP("无法绑定本机端口用于生成确定性 proxy connection failure 场景");
+    }
+    const quint16 port = portPicker.serverPort();
+    portPicker.close();
+
+    // 使用本地无 listener 的 proxy endpoint（确保失败）
     QCNetworkProxyConfig proxyConfig;
     proxyConfig.type = QCNetworkProxyConfig::ProxyType::Http;
-    proxyConfig.hostName = "invalid-proxy-host.nonexistent";
-    proxyConfig.port = 9999;
+    proxyConfig.hostName = "127.0.0.1";
+    proxyConfig.port = port;
 
-    QCNetworkRequest request(QUrl("http://httpbin.org/get"));
+    // 目标 URL 在 proxy 连接失败前不应成为变量；使用本机 URL 避免外网依赖。
+    QCNetworkRequest request(QUrl("http://127.0.0.1/"));
     request.setProxyConfig(proxyConfig);
 
     // 设置短超时，快速失败
@@ -434,8 +446,6 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
     // 应该是连接失败、超时或主机不可达
     QVERIFY(error != NetworkError::NoError);
     QVERIFY(error == NetworkError::ConnectionRefused ||
-            error == NetworkError::ConnectionTimeout ||
-            error == NetworkError::HostNotFound ||
             static_cast<int>(error) >= 1000);  // CURLcode 错误（包含代理错误）
 
     reply->deleteLater();

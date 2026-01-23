@@ -497,6 +497,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p1_redirect_policy.py",
             "tests/libcurl_consistency/test_p1_httpauth.py",
             "tests/libcurl_consistency/test_p1_accept_encoding.py",
+            "tests/libcurl_consistency/test_p1_resolve_connect_to.py",
             "tests/libcurl_consistency/test_p1_upload_seek_constraints.py",
             "tests/libcurl_consistency/test_p1_empty_body.py",
             "tests/libcurl_consistency/test_p1_resp_headers.py",
@@ -513,6 +514,7 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_tls_verify.py",
             "tests/libcurl_consistency/test_p2_tls_pinned_public_key.py",
             "tests/libcurl_consistency/test_p2_cookie_request_header.py",
+            "tests/libcurl_consistency/test_p2_protocol_restrictions.py",
             "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
             "tests/libcurl_consistency/test_p2_error_paths.py",
             "tests/libcurl_consistency/test_p2_socks5_proxy_fail.py",
@@ -522,7 +524,6 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
             "tests/libcurl_consistency/test_p2_backpressure_contract.py",
             "tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py",
-            "tests/libcurl_consistency/test_p2_connection_limits.py",
             "tests/libcurl_consistency/test_p2_share_handle.py",
         ])
     if cfg.with_ext:
@@ -530,6 +531,8 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
             "tests/libcurl_consistency/test_ext_suite.py",
             "tests/libcurl_consistency/test_ext_ws_suite.py",
             "tests/libcurl_consistency/test_ext_tls_policy_and_cache.py",
+            "tests/libcurl_consistency/test_ext_speed_limit_smoke.py",
+            "tests/libcurl_consistency/test_p2_connection_limits.py",
         ])
     return base
 
