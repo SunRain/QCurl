@@ -168,30 +168,30 @@ public:
     void pause(PauseMode mode);
     void resume();
 
-	    // ==================
-	    // 数据访问（现代 C++17 风格）
-	    // ==================
+    // ==================
+    // 数据访问（现代 C++17 风格）
+    // ==================
 
-	    /**
-	     * @brief 读取并清空当前响应体缓冲
-	     *
-	     * 返回值语义：
-	     * - std::nullopt：尚无数据可读（未到终态且缓冲为空）
-	     * - QByteArray()：已到终态且 body 为空
-	     *
-	     * @note 调用后会清空缓冲区（同步/异步均适用）
-	     */
-	    [[nodiscard]] std::optional<QByteArray> readAll() const;
+    /**
+     * @brief 读取并清空当前响应体缓冲
+     *
+     * 返回值语义：
+     * - std::nullopt：尚无数据可读（未到终态且缓冲为空）
+     * - QByteArray()：已到终态且 body 为空
+     *
+     * @note 调用后会清空缓冲区（同步/异步均适用）
+     */
+    [[nodiscard]] std::optional<QByteArray> readAll() const;
 
-	    /**
-	     * @brief 读取响应体（readAll 别名）
-	     *
-	     * @return 同 readAll；Error/Idle 状态返回 std::nullopt
-	     */
-	    [[nodiscard]] std::optional<QByteArray> readBody() const;
-	    [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
-	    [[nodiscard]] QByteArray rawHeaderData() const;
-	    [[nodiscard]] QUrl url() const;
+    /**
+     * @brief 读取响应体（readAll 别名）
+     *
+     * @return 同 readAll；Error/Idle 状态返回 std::nullopt
+     */
+    [[nodiscard]] std::optional<QByteArray> readBody() const;
+    [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
+    [[nodiscard]] QByteArray rawHeaderData() const;
+    [[nodiscard]] QUrl url() const;
     [[nodiscard]] HttpMethod method() const noexcept;
     [[nodiscard]] int httpStatusCode() const noexcept;
     [[nodiscard]] qint64 durationMs() const noexcept;
@@ -208,6 +208,32 @@ public:
     [[nodiscard]] bool isFinished() const noexcept;
     [[nodiscard]] bool isRunning() const noexcept;
     [[nodiscard]] bool isPaused() const noexcept;
+
+    /**
+     * @brief backpressure 是否激活（仅异步请求 + 启用时）
+     *
+     * backpressure 为内部接收流控：通过传输级 pause/resume 控制数据进入缓冲，
+     * 不会改变 ReplyState（避免与用户显式 pause 语义冲突）。
+     */
+    [[nodiscard]] bool isBackpressureActive() const noexcept;
+
+    /**
+     * @brief backpressure 上限（bytes）
+     * @return 0 表示未启用
+     */
+    [[nodiscard]] qint64 backpressureLimitBytes() const noexcept;
+
+    /**
+     * @brief backpressure 低水位线（bytes）
+     * @return 0 表示使用默认值（limit/2）或未启用
+     */
+    [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
+
+    /**
+     * @brief backpressure 缓冲峰值（bytes）
+     * @return 0 表示未启用
+     */
+    [[nodiscard]] qint64 backpressureBufferedBytesPeak() const noexcept;
     [[nodiscard]] qint64 bytesReceived() const noexcept;
     [[nodiscard]] qint64 bytesTotal() const noexcept;
 
@@ -232,6 +258,13 @@ Q_SIGNALS:
     void downloadProgress(qint64 bytesReceived, qint64 bytesTotal);
     void uploadProgress(qint64 bytesSent, qint64 bytesTotal);
     void stateChanged(ReplyState newState);
+
+    /**
+     * @brief backpressure 状态变化信号（内部流控）
+     *
+     * 当内部接收流控进入/退出 pause 时发射，不会改变 ReplyState。
+     */
+    void backpressureStateChanged(bool active, qint64 bufferedBytes, qint64 limitBytes);
     void cancelled();
 
     /**

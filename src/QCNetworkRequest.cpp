@@ -41,6 +41,8 @@ public:
         , acceptedEncodings(QStringList())
         , maxDownloadBytesPerSec(std::nullopt)
         , maxUploadBytesPerSec(std::nullopt)
+        , asyncBodyBufferLimitBytes(0)
+        , asyncBodyBufferResumeBytes(0)
         , uploadDevice(nullptr)
         , uploadFilePath(std::nullopt)
         , uploadBodySizeBytes(std::nullopt)
@@ -93,6 +95,10 @@ public:
     // ========== 传输限速（M1） ==========
     std::optional<qint64> maxDownloadBytesPerSec;
     std::optional<qint64> maxUploadBytesPerSec;
+
+    // ========== 下载 backpressure（P2） ==========
+    qint64 asyncBodyBufferLimitBytes;
+    qint64 asyncBodyBufferResumeBytes;
 
     // ========== 流式上传（M2） ==========
     QPointer<QIODevice> uploadDevice;
@@ -467,6 +473,43 @@ QCNetworkRequest &QCNetworkRequest::setMaxUploadBytesPerSec(qint64 bytesPerSec)
 std::optional<qint64> QCNetworkRequest::maxUploadBytesPerSec() const
 {
     return d.data()->maxUploadBytesPerSec;
+}
+
+QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferLimitBytes(qint64 bytes)
+{
+    if (bytes < 0) {
+        qWarning() << "QCNetworkRequest: asyncBodyBufferLimitBytes must be >= 0, got" << bytes
+                   << "(ignored)";
+        bytes = 0;
+    }
+
+    d.data()->asyncBodyBufferLimitBytes = bytes;
+    if (bytes <= 0) {
+        d.data()->asyncBodyBufferResumeBytes = 0;
+    }
+    return *this;
+}
+
+qint64 QCNetworkRequest::asyncBodyBufferLimitBytes() const noexcept
+{
+    return d.data()->asyncBodyBufferLimitBytes;
+}
+
+QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferResumeBytes(qint64 bytes)
+{
+    if (bytes < 0) {
+        qWarning() << "QCNetworkRequest: asyncBodyBufferResumeBytes must be >= 0, got" << bytes
+                   << "(ignored)";
+        bytes = 0;
+    }
+
+    d.data()->asyncBodyBufferResumeBytes = bytes;
+    return *this;
+}
+
+qint64 QCNetworkRequest::asyncBodyBufferResumeBytes() const noexcept
+{
+    return d.data()->asyncBodyBufferResumeBytes;
 }
 
 QCNetworkRequest &QCNetworkRequest::setUploadDevice(QIODevice *device,

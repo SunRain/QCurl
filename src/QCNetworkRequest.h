@@ -124,17 +124,17 @@ public:
 
     // ========== 重定向策略（M1） ==========
 
-	    /**
-	     * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
-	     * @param n 最大重定向次数（n>=0）
-	     */
-	    QCNetworkRequest &setMaxRedirects(int n);
+    /**
+     * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
+     * @param n 最大重定向次数（n>=0）
+     */
+    QCNetworkRequest &setMaxRedirects(int n);
 
-	    /**
-	     * @brief 获取最大重定向次数
-	     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
-	     */
-	    [[nodiscard]] std::optional<int> maxRedirects() const;
+    /**
+     * @brief 获取最大重定向次数
+     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
+     */
+    [[nodiscard]] std::optional<int> maxRedirects() const;
 
     /**
      * @brief 设置 POST 在 301/302/303 下的重定向策略（仅在 followLocation=true 时生效）
@@ -196,18 +196,18 @@ public:
     QCNetworkRequest &setSslConfig(const QCNetworkSslConfig &config);
     [[nodiscard]] QCNetworkSslConfig sslConfig() const;
 
-	    /**
-	     * @brief 设置代理配置
-	     * @param config 代理配置对象
-	     * @return 返回 *this 以支持方法链
-	     */
-	    QCNetworkRequest &setProxyConfig(const QCNetworkProxyConfig &config);
+    /**
+     * @brief 设置代理配置
+     * @param config 代理配置对象
+     * @return 返回 *this 以支持方法链
+     */
+    QCNetworkRequest &setProxyConfig(const QCNetworkProxyConfig &config);
 
-	    /**
-	     * @brief 获取代理配置
-	     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
-	     */
-	    [[nodiscard]] std::optional<QCNetworkProxyConfig> proxyConfig() const;
+    /**
+     * @brief 获取代理配置
+     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
+     */
+    [[nodiscard]] std::optional<QCNetworkProxyConfig> proxyConfig() const;
 
     /**
      * @brief 设置超时配置
@@ -249,11 +249,11 @@ public:
      */
     QCNetworkRequest &setHttpAuth(const QCNetworkHttpAuthConfig &config);
 
-	    /**
-	     * @brief 获取请求级 HTTP 认证配置
-	     * @return std::nullopt 表示未设置
-	     */
-	    [[nodiscard]] std::optional<QCNetworkHttpAuthConfig> httpAuth() const;
+    /**
+     * @brief 获取请求级 HTTP 认证配置
+     * @return std::nullopt 表示未设置
+     */
+    [[nodiscard]] std::optional<QCNetworkHttpAuthConfig> httpAuth() const;
 
     /**
      * @brief 清除请求级 HTTP 认证配置
@@ -307,26 +307,62 @@ public:
      * - bytesPerSec == 0：禁用限速（不设置对应 libcurl 选项）
      * - bytesPerSec < 0：视为无效输入，禁用并给出 warning
      */
-	    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
+    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
 
-	    /**
-	     * @brief 获取最大下载速度上限
-	     * @return std::nullopt 表示未设置/已禁用
-	     */
-	    [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
+    /**
+     * @brief 获取最大下载速度上限
+     * @return std::nullopt 表示未设置/已禁用
+     */
+    [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
 
     /**
      * @brief 设置最大上传速度（bytes/sec）
      *
      * 语义同 setMaxDownloadBytesPerSec。
      */
-	    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
+    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
 
-	    /**
-	     * @brief 获取最大上传速度上限
-	     * @return std::nullopt 表示未设置/已禁用
-	     */
-	    [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
+    /**
+     * @brief 获取最大上传速度上限
+     * @return std::nullopt 表示未设置/已禁用
+     */
+    [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
+
+    // ========== 下载 backpressure（P2） ==========
+
+    /**
+     * @brief 设置异步下载响应体缓冲上限（bytes）
+     *
+     * 仅在 ExecutionMode::Async 下生效。
+     *
+     * - bytes <= 0：禁用（默认）
+     * - bytes > 0：启用 backpressure（缓冲达到上限时自动 pause 接收；消费到低水位线自动 resume）
+     * - 建议 limitBytes 不要过小，否则会频繁 pause/resume，影响吞吐
+     */
+    QCNetworkRequest &setAsyncBodyBufferLimitBytes(qint64 bytes);
+
+    /**
+     * @brief 获取异步下载响应体缓冲上限（bytes）
+     *
+     * @return 0 表示未启用（默认）
+     */
+    [[nodiscard]] qint64 asyncBodyBufferLimitBytes() const noexcept;
+
+    /**
+     * @brief 设置异步下载响应体缓冲低水位线（bytes）
+     *
+     * 仅在 limitBytes > 0 时有意义：
+     * - bytes <= 0：使用默认值（limit/2）
+     * - 0 < bytes < limit：自定义低水位线
+     */
+    QCNetworkRequest &setAsyncBodyBufferResumeBytes(qint64 bytes);
+
+    /**
+     * @brief 获取异步下载响应体缓冲低水位线（bytes）
+     *
+     * @return 0 表示使用默认值（limit/2）
+     */
+    [[nodiscard]] qint64 asyncBodyBufferResumeBytes() const noexcept;
 
     // ========== 流式上传（M2） ==========
 

@@ -194,6 +194,23 @@ public:
     // The byte count of all QByteArrays
     inline qint64 byteAmount() const { return bufferCompleteSize; }
 
+    inline bool wouldExceedLimit(qint64 additionalBytes, qint64 limitBytes) const
+    {
+        if (limitBytes <= 0) {
+            return false;
+        }
+        if (additionalBytes <= 0) {
+            return byteAmount() > limitBytes;
+        }
+
+        const qint64 current = byteAmount();
+        if (current >= limitBytes) {
+            return true;
+        }
+
+        return additionalBytes > (limitBytes - current);
+    }
+
     // the number of QByteArrays
     inline qint64 bufferCount() const { return buffers.length(); }
 

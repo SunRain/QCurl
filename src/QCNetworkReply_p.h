@@ -106,6 +106,23 @@ public:
     bool elapsedTimerStarted = false;
 
     // ==================
+    // 传输级 pause/resume mask（P2）
+    // ==================
+
+    int userPauseMask     = 0; ///< 用户显式 pause（CURLPAUSE_* mask）
+    int internalPauseMask = 0; ///< 内部流控 pause（CURLPAUSE_* mask）
+    int appliedPauseMask  = 0; ///< 最近一次已应用到 libcurl 的 mask（用于幂等）
+
+    // ==================
+    // 下载 backpressure（P2）
+    // ==================
+
+    qint64 backpressureLimitBytes        = 0; ///< <=0 表示禁用
+    qint64 backpressureResumeBytes       = 0; ///< <=0 表示默认（limit/2）
+    qint64 backpressurePeakBufferedBytes = 0; ///< 生命周期内 bodyBuffer 峰值（bytes）
+    bool backpressureActive              = false;
+
+    // ==================
     // 能力探测/可诊断 warning（不含敏感信息）
     // ==================
 
@@ -214,6 +231,13 @@ public:
     // ==================
     // 内部方法
     // ==================
+
+    [[nodiscard]] int desiredPauseMask() const { return userPauseMask | internalPauseMask; }
+
+    bool applyPauseMask(int desiredMask);
+    void setBackpressureActive(bool active);
+    void maybeResumeRecvFromBackpressure();
+    void resumeSendFromUploadSourceIfNeeded();
 
     /**
      * @brief 配置 curl 选项
