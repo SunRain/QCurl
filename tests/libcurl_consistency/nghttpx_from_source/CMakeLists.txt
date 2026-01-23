@@ -20,7 +20,7 @@ set(QCURL_LC_NGHTTPX_H3_PREFIX
 if(NOT QCURL_LC_BUILD_NGHTTPX_H3)
     add_custom_target(qcurl_nghttpx_h3
                       COMMAND "${CMAKE_COMMAND}" -E echo
-                              "QCURL_LC_BUILD_NGHTTPX_H3=OFF (skip building nghttpx)")
+                              "QCURL_LC_BUILD_NGHTTPX_H3=OFF: skip building nghttpx")
 else()
     find_program(QCURL_LC_MAKE_PROGRAM NAMES gmake make REQUIRED)
 
