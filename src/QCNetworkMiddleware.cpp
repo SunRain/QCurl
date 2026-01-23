@@ -48,9 +48,9 @@ constexpr const char kObservabilityRetryCountProperty[] = "_qcurl_observe_retry_
 
 } // namespace
 
-// ============================================================================
+// ==================
 // QCLoggingMiddleware Implementation
-// ============================================================================
+// ==================
 
 void QCLoggingMiddleware::onRequestPreSend(QCNetworkRequest &request)
 {
@@ -71,9 +71,9 @@ void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 }
 
-// ============================================================================
+// ==================
 // QCErrorHandlingMiddleware Implementation
-// ============================================================================
+// ==================
 
 void QCErrorHandlingMiddleware::setErrorCallback(std::function<void(const QString &)> callback)
 {
@@ -97,9 +97,9 @@ void QCErrorHandlingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 }
 
-// ============================================================================
+// ==================
 // QCSigningMiddleware Implementation
-// ============================================================================
+// ==================
 
 void QCSigningMiddleware::setSigningKey(const QString &key)
 {
@@ -125,9 +125,9 @@ void QCSigningMiddleware::onRequestPreSend(QCNetworkRequest &request)
     request.setRawHeader("X-Timestamp", timestamp.toLatin1());
 }
 
-// ============================================================================
+// ==================
 // QCUnifiedRetryPolicyMiddleware Implementation
-// ============================================================================
+// ==================
 
 QCUnifiedRetryPolicyMiddleware::QCUnifiedRetryPolicyMiddleware(
     const QCNetworkRetryPolicy &defaultPolicy)
@@ -153,9 +153,9 @@ void QCUnifiedRetryPolicyMiddleware::onRequestPreSend(QCNetworkRequest &request)
     request.setRetryPolicy(m_defaultPolicy);
 }
 
-// ============================================================================
+// ==================
 // QCRedactingLoggingMiddleware Implementation
-// ============================================================================
+// ==================
 
 void QCRedactingLoggingMiddleware::onReplyCreated(QCNetworkReply *reply)
 {
@@ -207,9 +207,9 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
                     .arg(errorCode));
 }
 
-// ============================================================================
+// ==================
 // QCObservabilityMiddleware Implementation
-// ============================================================================
+// ==================
 
 void QCObservabilityMiddleware::onReplyCreated(QCNetworkReply *reply)
 {

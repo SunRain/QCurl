@@ -7,9 +7,9 @@
 
 namespace QCurl {
 
-// ============================================================
+// ==================
 // 构造函数
-// ============================================================
+// ==================
 
 QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy()
     : maxRetries(0)
@@ -25,9 +25,9 @@ QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy()
     };
 }
 
-// ============================================================
+// ==================
 // 核心方法
-// ============================================================
+// ==================
 
 bool QCWebSocketReconnectPolicy::shouldRetry(int closeCode, int attemptCount) const
 {
@@ -58,9 +58,9 @@ std::chrono::milliseconds QCWebSocketReconnectPolicy::delayForAttempt(int attemp
     return std::chrono::milliseconds(delayMs);
 }
 
-// ============================================================
+// ==================
 // 静态工厂方法
-// ============================================================
+// ==================
 
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::noReconnect()
 {

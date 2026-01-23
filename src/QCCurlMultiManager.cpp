@@ -266,9 +266,9 @@ QString QCCurlMultiManager::shareConfigSummary(const ShareConfig &config)
     return parts.join(QStringLiteral(","));
 }
 
-// ============================================================================
+// ==================
 // QCCurlMultiManager 实现
-// ============================================================================
+// ==================
 
 QCCurlMultiManager *QCCurlMultiManager::instance()
 {
@@ -650,9 +650,9 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
         return;
     }
 
-    // ========================================================================
+    // ==================
     // Share handle（M6+，可选）：默认关闭；显式开启时才设置 CURLOPT_SHARE
-    // ========================================================================
+    // ==================
 
     auto *accessManager                  = qobject_cast<QCNetworkAccessManager *>(reply->parent());
     const ShareConfig desiredShareConfig = toShareConfig(accessManager);
@@ -746,9 +746,9 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                         return;
                     }
 
-                    // ========================================================
+                    // ==================
                     // 检查 HTTP 状态码（即使 CURLcode 成功）
-                    // ========================================================
+                    // ==================
                     CURL *handle  = d->curlManager.handle();
                     long httpCode = 0;
                     if (handle) {
@@ -793,9 +793,9 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                         return;
                     }
 
-                    // ========================================================
+                    // ==================
                     // 异步重试逻辑
-                    // ========================================================
+                    // ==================
 
                     // 获取重试策略
                     QCNetworkRetryPolicy policy = d->request.retryPolicy();
@@ -1615,9 +1615,9 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
     return 0;
 }
 
-// ============================================================================
+// ==================
 // libcurl 静态回调
-// ============================================================================
+// ==================
 
 int QCCurlMultiManager::curlSocketCallback(
     CURL *easy, curl_socket_t socketfd, int what, void *userp, void *socketp)

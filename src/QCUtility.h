@@ -6,6 +6,11 @@
 
 #include <curl/curl.h>
 
+/**
+ * @brief curl_easy_setopt 辅助函数
+ *
+ * 提供 Qt 类型到 libcurl 参数的便捷适配。
+ */
 namespace QCurl {
 
 template<typename T>
@@ -24,9 +29,9 @@ inline bool set(CURL *handle, CURLoption option, const QUrl &parameter)
     return set(handle, option, parameter.toEncoded().constData());
 }
 
-// 旧的 typedef 已移除，请使用 QCNetworkError.h 中的 enum class NetworkError
-// typedef int NetworkError;  // DEPRECATED - 使用 #include "QCNetworkError.h"
-// const static NetworkError NetworkNoError = CURLE_OK;  // DEPRECATED - 使用 NetworkError::NoError
+// 已移除旧 typedef
+// 请用 QCNetworkError.h
+// 使用 NetworkError 枚举
 
 } // namespace QCurl
 

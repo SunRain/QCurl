@@ -12,9 +12,9 @@ QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // QCWebSocketPrivate 实现
-// ============================================================================
+// ==================
 
 QCWebSocketPrivate::QCWebSocketPrivate(QCWebSocket *parent)
     : q_ptr(parent)
@@ -68,9 +68,13 @@ void QCWebSocketPrivate::processIncomingData()
         return;
     }
 
-    // 说明：在事件驱动模式下，单次 socket 可读事件可能已被 libcurl 预读了多段数据到内部缓冲。
-    // 若只调用一次 curl_ws_recv，会导致“还有 bytesleft 但不再触发新的 socket 事件”的死等。
-    // 这里必须循环读取，直到返回 CURLE_AGAIN。
+    // 事件驱动下
+    // libcurl 可能预读
+    // 多段数据到缓冲
+    // 只 recv 一次会死等
+    // bytesleft>0 但
+    // 不再触发可读事件
+    // 需循环至 CURLE_AGAIN
     for (int i = 0; i < 1024; ++i) {
         char buffer[4096];
         size_t received                  = 0;
@@ -262,9 +266,9 @@ qint64 QCWebSocketPrivate::sendFrame(const QByteArray &data, unsigned int flags)
     return originalSize;
 }
 
-// ============================================================================
+// ==================
 // QCWebSocket 公共接口实现
-// ============================================================================
+// ==================
 
 QCWebSocket::QCWebSocket(const QUrl &url, QObject *parent)
     : QObject(parent)
@@ -593,9 +597,9 @@ bool QCWebSocket::isValid() const
     return d->state == State::Connected;
 }
 
-// ============================================================================
+// ==================
 // 自动重连配置（v2.4.0）
-// ============================================================================
+// ==================
 
 void QCWebSocket::setReconnectPolicy(const QCWebSocketReconnectPolicy &policy)
 {
@@ -609,9 +613,9 @@ QCWebSocketReconnectPolicy QCWebSocket::reconnectPolicy() const
     return d->reconnectPolicy;
 }
 
-// ============================================================================
+// ==================
 // SSL/TLS 配置（v2.4.1）
-// ============================================================================
+// ==================
 
 void QCWebSocket::setSslConfig(const QCNetworkSslConfig &config)
 {
@@ -625,9 +629,9 @@ QCNetworkSslConfig QCWebSocket::sslConfig() const
     return d->sslConfig;
 }
 
-// ============================================================================
+// ==================
 // Public 接口：压缩配置（v2.18.0）
-// ============================================================================
+// ==================
 
 void QCWebSocket::setCompressionConfig(const QCWebSocketCompressionConfig &config)
 {
@@ -682,9 +686,9 @@ QString QCWebSocket::compressionStats() const
         .arg(recvRatio);
 }
 
-// ============================================================================
+// ==================
 // QCWebSocketPrivate 事件驱动接收实现（v2.4.2）
-// ============================================================================
+// ==================
 
 curl_socket_t QCWebSocketPrivate::getSocketDescriptor()
 {
@@ -750,9 +754,9 @@ void QCWebSocketPrivate::fallbackToPollingMode()
     qWarning() << "QCWebSocket: 降级到轮询模式（50ms），延迟较高";
 }
 
-// ============================================================================
+// ==================
 // QCWebSocketPrivate 重连实现（v2.4.0）
-// ============================================================================
+// ==================
 
 void QCWebSocketPrivate::handleDisconnection(int closeCode)
 {
@@ -803,9 +807,9 @@ void QCWebSocketPrivate::attemptReconnect()
     q->open();
 }
 
-// ============================================================================
+// ==================
 // 压缩/解压缩实现（v2.18.0）
-// ============================================================================
+// ==================
 
 bool QCWebSocketPrivate::compressData(const QByteArray &input, QByteArray &output)
 {

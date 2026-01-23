@@ -124,12 +124,17 @@ public:
 
     // ========== 重定向策略（M1） ==========
 
-    /**
-     * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
-     * @param n 最大重定向次数（n>=0）
-     */
-    QCNetworkRequest &setMaxRedirects(int n);
-    [[nodiscard]] std::optional<int> maxRedirects() const;
+	    /**
+	     * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
+	     * @param n 最大重定向次数（n>=0）
+	     */
+	    QCNetworkRequest &setMaxRedirects(int n);
+
+	    /**
+	     * @brief 获取最大重定向次数
+	     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
+	     */
+	    [[nodiscard]] std::optional<int> maxRedirects() const;
 
     /**
      * @brief 设置 POST 在 301/302/303 下的重定向策略（仅在 followLocation=true 时生效）
@@ -191,13 +196,18 @@ public:
     QCNetworkRequest &setSslConfig(const QCNetworkSslConfig &config);
     [[nodiscard]] QCNetworkSslConfig sslConfig() const;
 
-    /**
-     * @brief 设置代理配置
-     * @param config 代理配置对象
-     * @return 返回 *this 以支持方法链
-     */
-    QCNetworkRequest &setProxyConfig(const QCNetworkProxyConfig &config);
-    [[nodiscard]] std::optional<QCNetworkProxyConfig> proxyConfig() const;
+	    /**
+	     * @brief 设置代理配置
+	     * @param config 代理配置对象
+	     * @return 返回 *this 以支持方法链
+	     */
+	    QCNetworkRequest &setProxyConfig(const QCNetworkProxyConfig &config);
+
+	    /**
+	     * @brief 获取代理配置
+	     * @return std::nullopt 表示未显式设置（使用 libcurl 默认行为）
+	     */
+	    [[nodiscard]] std::optional<QCNetworkProxyConfig> proxyConfig() const;
 
     /**
      * @brief 设置超时配置
@@ -239,10 +249,11 @@ public:
      */
     QCNetworkRequest &setHttpAuth(const QCNetworkHttpAuthConfig &config);
 
-    /**
-     * @brief 获取请求级 HTTP 认证配置
-     */
-    [[nodiscard]] std::optional<QCNetworkHttpAuthConfig> httpAuth() const;
+	    /**
+	     * @brief 获取请求级 HTTP 认证配置
+	     * @return std::nullopt 表示未设置
+	     */
+	    [[nodiscard]] std::optional<QCNetworkHttpAuthConfig> httpAuth() const;
 
     /**
      * @brief 清除请求级 HTTP 认证配置
@@ -296,16 +307,26 @@ public:
      * - bytesPerSec == 0：禁用限速（不设置对应 libcurl 选项）
      * - bytesPerSec < 0：视为无效输入，禁用并给出 warning
      */
-    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
-    [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
+	    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
+
+	    /**
+	     * @brief 获取最大下载速度上限
+	     * @return std::nullopt 表示未设置/已禁用
+	     */
+	    [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
 
     /**
      * @brief 设置最大上传速度（bytes/sec）
      *
      * 语义同 setMaxDownloadBytesPerSec。
      */
-    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
-    [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
+	    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
+
+	    /**
+	     * @brief 获取最大上传速度上限
+	     * @return std::nullopt 表示未设置/已禁用
+	     */
+	    [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
 
     // ========== 流式上传（M2） ==========
 

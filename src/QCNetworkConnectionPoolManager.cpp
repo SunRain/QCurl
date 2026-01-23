@@ -10,9 +10,9 @@
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // 单例实现
-// ============================================================================
+// ==================
 
 QCNetworkConnectionPoolManager *QCNetworkConnectionPoolManager::instance()
 {
@@ -20,9 +20,9 @@ QCNetworkConnectionPoolManager *QCNetworkConnectionPoolManager::instance()
     return &instance;
 }
 
-// ============================================================================
+// ==================
 // 构造与析构
-// ============================================================================
+// ==================
 
 QCNetworkConnectionPoolManager::QCNetworkConnectionPoolManager()
     : m_totalRequests(0)
@@ -45,9 +45,9 @@ QCNetworkConnectionPoolManager::~QCNetworkConnectionPoolManager()
     }
 }
 
-// ============================================================================
+// ==================
 // 配置管理
-// ============================================================================
+// ==================
 
 void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConfig &config)
 {
@@ -91,9 +91,9 @@ QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const
     return m_config;
 }
 
-// ============================================================================
+// ==================
 // curl handle 配置
-// ============================================================================
+// ==================
 
 void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QString &host)
 {
@@ -105,17 +105,17 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     QCNetworkConnectionPoolConfig cfg = m_config; // 复制一份，减少锁持有时间
     locker.unlock();
 
-    // ========================================
+    // ==================
     // 1. 连接池大小配置
-    // ========================================
+    // ==================
 
     // CURLOPT_MAXCONNECTS: 连接池的最大连接数
     // libcurl 会维护一个连接池，复用空闲连接
     curl_easy_setopt(handle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections);
 
-    // ========================================
+    // ==================
     // 2. 连接复用配置
-    // ========================================
+    // ==================
 
     // CURLOPT_FRESH_CONNECT: 强制新连接（0 = 允许复用）
     curl_easy_setopt(handle, CURLOPT_FRESH_CONNECT, 0L);
@@ -123,9 +123,9 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     // CURLOPT_FORBID_REUSE: 禁止复用（0 = 允许复用）
     curl_easy_setopt(handle, CURLOPT_FORBID_REUSE, 0L);
 
-    // ========================================
+    // ==================
     // 3. Keep-Alive 配置
-    // ========================================
+    // ==================
 
     // CURLOPT_TCP_KEEPALIVE: 启用 TCP Keep-Alive
     curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1L);
@@ -136,9 +136,9 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     // CURLOPT_TCP_KEEPINTVL: Keep-Alive 探测间隔（秒）
     curl_easy_setopt(handle, CURLOPT_TCP_KEEPINTVL, 30L);
 
-    // ========================================
+    // ==================
     // 4. DNS 缓存配置
-    // ========================================
+    // ==================
 
     if (cfg.enableDnsCache) {
         // CURLOPT_DNS_CACHE_TIMEOUT: DNS 缓存超时（秒）
@@ -148,9 +148,9 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
         curl_easy_setopt(handle, CURLOPT_DNS_CACHE_TIMEOUT, 0L);
     }
 
-    // ========================================
+    // ==================
     // 5. HTTP/2 多路复用配置
-    // ========================================
+    // ==================
 
     if (cfg.enableMultiplexing) {
         // CURLOPT_HTTP_VERSION: 强制使用 HTTP/2
@@ -158,9 +158,9 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
         curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     }
 
-    // ========================================
+    // ==================
     // 6. HTTP/1.1 管道化配置（可选，默认禁用）
-    // ========================================
+    // ==================
 
     if (cfg.enablePipelining) {
         // CURLOPT_PIPEWAIT: 等待管道化
@@ -169,9 +169,9 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
         qDebug() << "QCNetworkConnectionPoolManager: HTTP/1.1 pipelining enabled for" << host;
     }
 
-    // ========================================
+    // ==================
     // 7. 连接生命周期配置（libcurl 7.80+）
-    // ========================================
+    // ==================
 
 #if LIBCURL_VERSION_NUM >= 0x075000
     if (cfg.maxConnectionLifetime > 0) {
@@ -182,17 +182,17 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     }
 #endif
 
-    // ========================================
+    // ==================
     // 8. 更新主机连接计数（用于统计）
-    // ========================================
+    // ==================
 
     locker.relock();
     m_activeConnectionsPerHost[host]++;
 }
 
-// ============================================================================
+// ==================
 // 统计管理
-// ============================================================================
+// ==================
 
 void QCNetworkConnectionPoolManager::recordRequestCompleted(CURL *handle, bool wasReused)
 {

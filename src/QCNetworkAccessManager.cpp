@@ -302,9 +302,9 @@ QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvc
     return m_hstsAltSvcCacheConfig;
 }
 
-// ============================================================================
+// ==================
 // 核心 API 实现
-// ============================================================================
+// ==================
 
 QCNetworkReply *QCNetworkAccessManager::sendHead(const QCNetworkRequest &request)
 {
@@ -772,9 +772,9 @@ QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
     return impl();
 }
 
-// ============================================================================
+// ==================
 // 请求优先级调度
-// ============================================================================
+// ==================
 
 void QCNetworkAccessManager::enableRequestScheduler(bool enable)
 {
@@ -964,9 +964,9 @@ QCNetworkReply *QCNetworkAccessManager::schedulePut(const QCNetworkRequest &requ
     return impl();
 }
 
-// ============================================================================
+// ==================
 // JSON 快捷方法实现
-// ============================================================================
+// ==================
 
 QCNetworkReply *QCNetworkAccessManager::postJson(const QUrl &url, const QJsonObject &json)
 {
@@ -1002,9 +1002,9 @@ QCNetworkReply *QCNetworkAccessManager::postForm(const QUrl &url,
     return sendPost(request, encodedData);
 }
 
-// ========================================================================
+// ==================
 // Multipart/form-data 支持
-// ========================================================================
+// ==================
 
 QCNetworkReply *QCNetworkAccessManager::postMultipart(const QUrl &url,
                                                       const QCMultipartFormData &formData)
@@ -1034,9 +1034,9 @@ QCNetworkReply *QCNetworkAccessManager::postMultipart(const QCNetworkRequest &re
     return sendPost(modifiedRequest, multipartData);
 }
 
-// ========================================================================
+// ==================
 // 文件操作便捷 API
-// ========================================================================
+// ==================
 
 QCNetworkReply *QCNetworkAccessManager::downloadFile(const QUrl &url, const QString &savePath)
 {
@@ -1092,9 +1092,9 @@ QCNetworkReply *QCNetworkAccessManager::uploadFile(const QUrl &url,
     return postMultipart(url, formData);
 }
 
-// ========================================================================
+// ==================
 // 流式下载/上传 API
-// ========================================================================
+// ==================
 
 QCNetworkReply *QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
 {
@@ -1361,9 +1361,9 @@ QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
     return reply;
 }
 
-// ============================================================================
+// ==================
 // 缓存管理实现
-// ============================================================================
+// ==================
 
 void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
 {
@@ -1383,9 +1383,9 @@ void QCNetworkAccessManager::setCachePath(const QString &path, qint64 maxSize)
     m_cache = diskCache;
 }
 
-// ============================================================================
+// ==================
 // 日志系统
-// ============================================================================
+// ==================
 
 void QCNetworkAccessManager::setLogger(QCNetworkLogger *logger)
 {
@@ -1411,9 +1411,9 @@ bool QCNetworkAccessManager::debugTraceEnabled() const noexcept
     return d->debugTraceEnabled;
 }
 
-// ============================================================================
+// ==================
 // 中间件系统
-// ============================================================================
+// ==================
 
 void QCNetworkAccessManager::addMiddleware(QCNetworkMiddleware *middleware)
 {
@@ -1441,18 +1441,18 @@ QList<QCNetworkMiddleware *> QCNetworkAccessManager::middlewares() const
     return d->middlewares;
 }
 
-// ============================================================================
+// ==================
 // 流式构建器
-// ============================================================================
+// ==================
 
 QCNetworkRequestBuilder QCNetworkAccessManager::newRequest(const QUrl &url)
 {
     return QCNetworkRequestBuilder(this, url);
 }
 
-// ============================================================================
+// ==================
 // Mock 工具
-// ============================================================================
+// ==================
 
 void QCNetworkAccessManager::setMockHandler(QCNetworkMockHandler *handler)
 {

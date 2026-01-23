@@ -7,9 +7,9 @@ QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // 构造函数
-// ============================================================================
+// ==================
 
 QCNetworkRetryPolicy::QCNetworkRetryPolicy()
     : maxRetries(0)
@@ -25,9 +25,9 @@ QCNetworkRetryPolicy::QCNetworkRetryPolicy(int retries, int initialDelayMs, doub
     , maxDelay(30000)
 {}
 
-// ============================================================================
+// ==================
 // 核心重试逻辑
-// ============================================================================
+// ==================
 
 bool QCNetworkRetryPolicy::shouldRetry(NetworkError error, int attemptCount) const
 {
@@ -85,9 +85,9 @@ std::chrono::milliseconds QCNetworkRetryPolicy::delayForAttempt(
     return delayForAttempt(attemptCount);
 }
 
-// ============================================================================
+// ==================
 // 静态工厂方法
-// ============================================================================
+// ==================
 
 QCNetworkRetryPolicy QCNetworkRetryPolicy::noRetry()
 {

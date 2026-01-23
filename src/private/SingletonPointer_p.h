@@ -8,6 +8,11 @@
 #include <QWaitCondition>
 #include <QtGlobal>
 
+/**
+ * @brief 内部：线程安全单例工具
+ *
+ * 采用 qCallOnce + 原子状态实现“一次性初始化”，用于内部单例创建。
+ */
 namespace CallOnce {
 enum ECallOnce { CO_Request, CO_InProgress, CO_Finished };
 
@@ -48,6 +53,11 @@ private:
     typedef T *(*CreateInstanceFunction)();
 
 public:
+    /**
+     * @brief 获取单例指针
+     * @param create 创建函数（仅执行一次）
+     * @return 单例指针
+     */
     static T *instance(CreateInstanceFunction create);
 
 private:

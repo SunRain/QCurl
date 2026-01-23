@@ -11,9 +11,9 @@
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // NetworkLogEntry Implementation
-// ============================================================================
+// ==================
 
 QString NetworkLogEntry::toJson() const
 {
@@ -30,9 +30,9 @@ QString NetworkLogEntry::toPlainText() const
              message);
 }
 
-// ============================================================================
+// ==================
 // Utility Functions
-// ============================================================================
+// ==================
 
 QString logLevelToString(NetworkLogLevel level)
 {
@@ -66,9 +66,9 @@ NetworkLogLevel stringToLogLevel(const QString &str)
     return NetworkLogLevel::Info;
 }
 
-// ============================================================================
+// ==================
 // QCNetworkDefaultLogger::Private
-// ============================================================================
+// ==================
 
 class QCNetworkDefaultLogger::Private
 {
@@ -121,9 +121,9 @@ public:
     }
 };
 
-// ============================================================================
+// ==================
 // QCNetworkDefaultLogger Implementation
-// ============================================================================
+// ==================
 
 QCNetworkDefaultLogger::QCNetworkDefaultLogger()
     : d_ptr(std::make_unique<Private>())

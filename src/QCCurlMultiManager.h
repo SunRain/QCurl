@@ -122,9 +122,9 @@ public:
      */
     [[nodiscard]] int runningRequestsCount() const noexcept;
 
-    // ========================================================================
+    // ==================
     // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通）
-    // ========================================================================
+    // ==================
 
     bool importCookiesForManager(const QCNetworkAccessManager *manager,
                                  const QList<QNetworkCookie> &cookies,
@@ -192,9 +192,9 @@ private:
     // 禁止拷贝和移动
     Q_DISABLE_COPY_MOVE(QCCurlMultiManager)
 
-    // ========================================================================
+    // ==================
     // Socket 事件处理
-    // ========================================================================
+    // ==================
 
     /**
      * @brief 处理 socket 事件
@@ -245,9 +245,9 @@ private:
      */
     int manageSocketNotifiers(curl_socket_t socketfd, int what, SocketInfo *socketInfo);
 
-    // ========================================================================
+    // ==================
     // libcurl 静态回调（C 接口）
-    // ========================================================================
+    // ==================
 
     /**
      * @brief Socket 回调（libcurl 调用）
@@ -280,9 +280,9 @@ private:
      */
     static int curlTimerCallback(CURLM *multi, long timeout_ms, void *userp);
 
-    // ========================================================================
+    // ==================
     // Share handle（M6+，可选）
-    // ========================================================================
+    // ==================
 
     struct ShareConfig
     {
@@ -301,16 +301,18 @@ private:
         bool operator!=(const ShareConfig &other) const noexcept { return !(*this == other); }
     };
 
-    struct ShareContext
-    {
-        const QCNetworkAccessManager *scopeKey = nullptr;
-        CURLSH *share                          = nullptr;
-        ShareConfig applied;
-        std::optional<ShareConfig> pending;
+	    struct ShareContext
+	    {
+	        const QCNetworkAccessManager *scopeKey = nullptr;
+	        CURLSH *share                          = nullptr;
+	        ShareConfig applied;
+	        // 待应用配置
+	        // 为空表示无变更
+	        std::optional<ShareConfig> pending;
 
-        ShareConfig lastInitAttempt;
-        bool lastInitFailed = false;
-        QString lastInitError;
+	        ShareConfig lastInitAttempt;
+	        bool lastInitFailed = false;
+	        QString lastInitError;
 
         bool scopeDestroyed = false;
         bool pendingDelete  = false;
@@ -340,9 +342,9 @@ private:
     void maybeFinalizeShareContextLocked(ShareContext *context);
 
 private:
-    // ========================================================================
+    // ==================
     // 成员变量
-    // ========================================================================
+    // ==================
 
     CURLM *m_multiHandle; ///< libcurl multi handle
 
@@ -358,18 +360,18 @@ private:
 
     QHash<curl_socket_t, QSharedPointer<SocketInfo>> m_socketMap; ///< socket 信息映射
 
-    // ========================================================================
+    // ==================
     // multi limits（M3）：上次成功应用的阀值（用于识别“清除设置”的场景）
-    // ========================================================================
+    // ==================
 
     std::optional<long> m_multiMaxTotalConnections  = std::nullopt;
     std::optional<long> m_multiMaxHostConnections   = std::nullopt;
     std::optional<long> m_multiMaxConcurrentStreams = std::nullopt;
     std::optional<long> m_multiMaxConnects          = std::nullopt;
 
-    // ========================================================================
+    // ==================
     // Share handle（M6+，可选）：按 manager scope 隔离（默认关闭）
-    // ========================================================================
+    // ==================
 
     QHash<const QCNetworkAccessManager *, QSharedPointer<ShareContext>> m_shareContexts;
     QHash<CURL *, ShareContext *> m_easyToShareContext;

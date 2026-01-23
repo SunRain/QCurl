@@ -23,9 +23,9 @@ QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // DiagResult 方法
-// ============================================================================
+// ==================
 
 QString DiagResult::toString() const
 {
@@ -49,9 +49,9 @@ QString DiagResult::toString() const
     return result;
 }
 
-// ============================================================================
+// ==================
 // DNS 解析
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout)
 {
@@ -187,9 +187,9 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
     return result;
 }
 
-// ============================================================================
+// ==================
 // 连接测试
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::testConnection(const QString &host, int port, int timeout)
 {
@@ -240,9 +240,9 @@ DiagResult QCNetworkDiagnostics::testConnection(const QString &host, int port, i
     return result;
 }
 
-// ============================================================================
+// ==================
 // SSL 检查
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int timeout)
 {
@@ -314,9 +314,9 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
     return result;
 }
 
-// ============================================================================
+// ==================
 // HTTP 探测
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
 {
@@ -359,9 +359,9 @@ DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
     return result;
 }
 
-// ============================================================================
+// ==================
 // 综合诊断
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
 {
@@ -427,9 +427,9 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
     return result;
 }
 
-// ============================================================================
+// ==================
 // Ping 测试
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeout)
 {
@@ -546,9 +546,9 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     return result;
 }
 
-// ============================================================================
+// ==================
 // Traceroute 路由跟踪
-// ============================================================================
+// ==================
 
 DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, int timeout)
 {

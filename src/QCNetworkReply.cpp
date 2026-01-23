@@ -275,9 +275,9 @@ std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString
 
 } // namespace
 
-// ============================================================================
+// ==================
 // QCNetworkReplyPrivate 实现
-// ============================================================================
+// ==================
 
 QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              const QCNetworkRequest &req,
@@ -343,9 +343,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         return false;
     }
 
-    // ========================================================================
+    // ==================
     // 1. 基础配置
-    // ========================================================================
+    // ==================
 
     // 设置 URL
     QByteArray urlBytes = request.url().toString().toUtf8();
@@ -357,9 +357,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 跟随重定向
     curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, request.followLocation() ? 1L : 0L);
 
-    // ========================================================================
+    // ==================
     // 1.1 重定向策略（M1）
-    // ========================================================================
+    // ==================
 
     if (request.followLocation()) {
         if (const auto maxRedirects = request.maxRedirects(); maxRedirects.has_value()) {
@@ -408,9 +408,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 1.3 网络路径与 DNS 控制（M4）
-    // ========================================================================
+    // ==================
 
     if (const auto ipResolveOpt = request.ipResolve(); ipResolveOpt.has_value()) {
         long ipResolveValue = CURL_IPRESOLVE_WHATEVER;
@@ -504,9 +504,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         setOptionalStringOption(this, handle, CURLOPT_DOH_URL, "CURLOPT_DOH_URL", dohUrlBytes);
     }
 
-    // ========================================================================
+    // ==================
     // 1.4 协议白名单（M5，安全）
-    // ========================================================================
+    // ==================
 
     const QCUnsupportedSecurityOptionPolicy securityPolicy = request
                                                                  .unsupportedSecurityOptionPolicy();
@@ -581,9 +581,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 多线程安全（禁用信号处理）
     curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
 
-    // ========================================================================
+    // ==================
     // 1.2 流式上传源准备（M2）
-    // ========================================================================
+    // ==================
 
     // 清理上一次配置残留（正常情况下构造期只会调用一次，但保持幂等）
     uploadDevice            = nullptr;
@@ -693,9 +693,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         return false;
     }
 
-    // ========================================================================
+    // ==================
     // 2. HTTP 方法配置
-    // ========================================================================
+    // ==================
 
     switch (httpMethod) {
         case HttpMethod::Head:
@@ -780,9 +780,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             return false;
     }
 
-    // ========================================================================
+    // ==================
     // 2.1 Expect: 100-continue 等待超时（P1，可选）
-    // ========================================================================
+    // ==================
 
     if (const auto timeoutOpt = request.expect100ContinueTimeout(); timeoutOpt.has_value()) {
         const bool isPutOrPost = httpMethod == HttpMethod::Put || httpMethod == HttpMethod::Post;
@@ -818,9 +818,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 3. 自定义 HTTP Headers
-    // ========================================================================
+    // ==================
 
     bool hasExplicitAuthorizationHeader  = false;
     bool hasExplicitRefererHeader        = false;
@@ -854,9 +854,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         curl_easy_setopt(handle, CURLOPT_HTTPHEADER, curlManager.headerList());
     }
 
-    // ========================================================================
+    // ==================
     // 3.1 Referer / 自动解压（M1）
-    // ========================================================================
+    // ==================
 
     if (!hasExplicitRefererHeader) {
         const QString referer = request.referer();
@@ -909,9 +909,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 3.2 传输限速（M1）
-    // ========================================================================
+    // ==================
 
     if (const auto maxDownloadBytesPerSec = request.maxDownloadBytesPerSec();
         maxDownloadBytesPerSec.has_value()) {
@@ -937,9 +937,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 4. HTTP 认证（Authorization: Basic / HTTPAUTH）
-    // ========================================================================
+    // ==================
 
     bool wantsUnrestrictedSensitiveHeaders = request.allowUnrestrictedSensitiveHeadersOnRedirect();
 
@@ -984,9 +984,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 4.1 重定向敏感头跨站策略（M1，安全基线）
-    // ========================================================================
+    // ==================
 
     if (request.followLocation() && wantsUnrestrictedSensitiveHeaders && hasSensitiveHeader) {
         appendCapabilityWarning(this,
@@ -999,9 +999,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                               1L);
     }
 
-    // ========================================================================
+    // ==================
     // 5. Range 请求配置
-    // ========================================================================
+    // ==================
 
     if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
         QString rangeStr = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd());
@@ -1009,9 +1009,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         curl_easy_setopt(handle, CURLOPT_RANGE, rangeBytes.constData());
     }
 
-    // ========================================================================
+    // ==================
     // 6. 代理配置
-    // ========================================================================
+    // ==================
 
     if (const auto proxyConfigOpt = request.proxyConfig(); proxyConfigOpt.has_value()) {
         const QCNetworkProxyConfig &proxyConfig = proxyConfigOpt.value();
@@ -1086,9 +1086,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
                 }
 
-                // ========================================================================
+                // ==================
                 // Proxy TLS（M5，可选）：仅 HTTPS proxy + 显式配置时生效
-                // ========================================================================
+                // ==================
 
 #ifdef CURLPROXY_HTTPS
                 if (proxyConfig.type == QCNetworkProxyConfig::ProxyType::Https
@@ -1360,18 +1360,18 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         proxyPasswordBytes.clear();
     }
 
-    // ========================================================================
+    // ==================
     // 连接池配置 (v2.14.0)
-    // ========================================================================
+    // ==================
 
     // 先应用连接池的通用配置（DNS/复用等），再由请求级别配置覆盖（例如 HTTP 版本）。
     auto *poolManager  = QCNetworkConnectionPoolManager::instance();
     const QString host = request.url().host();
     poolManager->configureCurlHandle(handle, host);
 
-    // ========================================================================
+    // ==================
     // HTTP 版本配置
-    // ========================================================================
+    // ==================
 
     const QCNetworkHttpVersion requestedHttpVer = request.httpVersion();
     QCNetworkHttpVersion effectiveHttpVer       = requestedHttpVer;
@@ -1419,9 +1419,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, curlVersion);
     }
 
-    // ========================================================================
+    // ==================
     // 7. SSL 配置（基于 QCNetworkSslConfig）
-    // ========================================================================
+    // ==================
 
     const QCNetworkSslConfig sslConfig = request.sslConfig();
     curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, sslConfig.verifyPeer ? 1L : 0L);
@@ -1481,9 +1481,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         curl_easy_setopt(handle, CURLOPT_KEYPASSWD, nullptr);
     }
 
-    // ========================================================================
+    // ==================
     // 7.1 TLS 策略（M5，可选；安全相关能力默认失败，可配置为 warning）
-    // ========================================================================
+    // ==================
 
     const QCUnsupportedSecurityOptionPolicy sslPolicy = sslConfig.unsupportedSecurityPolicy;
 
@@ -1619,9 +1619,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #endif
     }
 
-    // ========================================================================
+    // ==================
     // 8. 超时配置
-    // ========================================================================
+    // ==================
 
     QCNetworkTimeoutConfig timeout = request.timeoutConfig();
 
@@ -1650,9 +1650,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(*timeout.lowSpeedLimit));
     }
 
-    // ========================================================================
+    // ==================
     // 9. 回调函数配置
-    // ========================================================================
+    // ==================
 
     // 响应体写回调
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, QCNetworkReplyPrivate::curlWriteCallback);
@@ -1708,9 +1708,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // 完成时解析响应头
         parseHeaders();
 
-        // ========================================================================
+        // ==================
         // Cookie jar flush：当启用 COOKIEJAR 时，确保请求完成后立即落盘
-        // ========================================================================
+        // ==================
         if (curlManager.handle() && (cookieMode & 0x2) && !cookieFilePath.isEmpty()) {
             const CURLcode rc = curl_easy_setopt(curlManager.handle(), CURLOPT_COOKIELIST, "FLUSH");
             if (rc != CURLE_OK) {
@@ -1729,9 +1729,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
             }
         }
 
-        // ========================================================================
+        // ==================
         // 连接池统计 - 记录连接复用情况
-        // ========================================================================
+        // ==================
         if (curlManager.handle()) {
             // 使用 NUM_CONNECTS 检查连接复用
             // 返回值含义：0 = 未知, 1 = 新连接, >1 = 可能复用了连接
@@ -1745,9 +1745,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
             poolManager->recordRequestCompleted(curlManager.handle(), false);
         }
 
-        // ========================================================================
+        // ==================
         // 缓存集成 - 请求完成后自动写入缓存
-        // ========================================================================
+        // ==================
         QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(q->parent());
         if (manager) {
             QCNetworkCache *cache       = manager->cache();
@@ -1877,9 +1877,9 @@ void QCNetworkReplyPrivate::parseHeaders()
     flushCurrent(currentName, currentSegments);
 }
 
-// ============================================================================
+// ==================
 // Curl 静态回调函数实现
-// ============================================================================
+// ==================
 
 size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
@@ -2198,9 +2198,9 @@ int QCNetworkReplyPrivate::curlDebugCallback(
     return 0;
 }
 
-// ============================================================================
+// ==================
 // QCNetworkReply 公共接口实现
-// ============================================================================
+// ==================
 
 QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
                                HttpMethod method,
@@ -2235,9 +2235,9 @@ QCNetworkReply::~QCNetworkReply()
     delete d;
 }
 
-// ========================================================================
+// ==================
 // 执行控制
-// ========================================================================
+// ==================
 
 void QCNetworkReply::execute()
 {
@@ -2267,9 +2267,9 @@ void QCNetworkReply::execute()
         return;
     }
 
-    // ========================================================================
+    // ==================
     // 缓存集成 - 在发起网络请求前检查缓存
-    // ========================================================================
+    // ==================
     QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(parent());
     QCNetworkCache *cache           = manager ? manager->cache() : nullptr;
     if (cache) {
@@ -2316,9 +2316,9 @@ void QCNetworkReply::execute()
         }
     }
 
-    // ========================================================================
+    // ==================
     // MockHandler 集成（离线回归/单元测试）
-    // ========================================================================
+    // ==================
     if (manager && manager->mockHandler()) {
         auto *mock = manager->mockHandler();
 
@@ -2581,9 +2581,9 @@ void QCNetworkReply::execute()
         }
     }
 
-    // ========================================================================
+    // ==================
     // 应用 Cookie 配置（在 QCNetworkAccessManager 中设置）
-    // ========================================================================
+    // ==================
     // 注意：
     // - cookieFilePath/cookieMode 可能在构造函数之后通过 d_func() 设置，
     //   所以必须在 execute() 中应用，而不是在 configureCurlOptions() 中；
@@ -2614,9 +2614,9 @@ void QCNetworkReply::execute()
         }
     }
 
-    // ========================================================================
+    // ==================
     // HSTS/Alt-Svc cache 持久化（LC-50）：默认关闭；显式 opt-in
-    // ========================================================================
+    // ==================
 
     if (handle && manager) {
         const auto cacheCfg     = manager->hstsAltSvcCacheConfig();
@@ -2644,9 +2644,9 @@ void QCNetworkReply::execute()
         }
     }
 
-    // ========================================================================
+    // ==================
     // Debug trace（M5）：默认关闭；启用后强制脱敏（不输出请求体明文）
-    // ========================================================================
+    // ==================
 
     if (handle && manager && manager->debugTraceEnabled() && manager->logger()) {
         curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
@@ -2654,9 +2654,9 @@ void QCNetworkReply::execute()
         curl_easy_setopt(handle, CURLOPT_DEBUGDATA, d);
     }
 
-    // ========================================================================
+    // ==================
     // 流式上传（M2）：重试前回滚上传源到起始位置
-    // ========================================================================
+    // ==================
 
     d->hasUploadErrorOverride  = false;
     d->uploadErrorOverrideCode = NetworkError::NoError;
@@ -2688,9 +2688,9 @@ void QCNetworkReply::execute()
         QCCurlMultiManager::instance()->addReply(this);
         qDebug() << "QCNetworkReply::execute: Started async request for" << d->request.url();
     } else {
-        // ========================================================================
+        // ==================
         // 同步模式：阻塞执行（支持重试）
-        // ========================================================================
+        // ==================
         if (!handle) {
             d->setError(NetworkError::InvalidRequest, QStringLiteral("Invalid curl handle"));
             d->setState(ReplyState::Error);
@@ -3000,9 +3000,9 @@ void QCNetworkReply::resume()
     }
 }
 
-// ========================================================================
+// ==================
 // 数据访问（现代 C++17 风格）
-// ========================================================================
+// ==================
 
 std::optional<QByteArray> QCNetworkReply::readAll() const
 {
@@ -3103,9 +3103,9 @@ QStringList QCNetworkReply::capabilityWarnings() const
     return d->capabilityWarnings;
 }
 
-// ========================================================================
+// ==================
 // 状态查询
-// ========================================================================
+// ==================
 
 ReplyState QCNetworkReply::state() const noexcept
 {
@@ -3156,9 +3156,9 @@ qint64 QCNetworkReply::bytesTotal() const noexcept
     return d->downloadTotal;
 }
 
-// ========================================================================
+// ==================
 // 同步模式专用 API
-// ========================================================================
+// ==================
 
 void QCNetworkReply::setRequestBody(const QByteArray &data)
 {
@@ -3190,18 +3190,18 @@ void QCNetworkReply::setProgressCallback(const ProgressFunction &func)
     d->progressCallback = func;
 }
 
-// ========================================================================
+// ==================
 // 公共槽
-// ========================================================================
+// ==================
 
 void QCNetworkReply::deleteLater()
 {
     QObject::deleteLater();
 }
 
-// ============================================================================
+// ==================
 // 缓存集成私有方法实现
-// ============================================================================
+// ==================
 
 bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
 {

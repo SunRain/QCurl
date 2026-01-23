@@ -17,15 +17,15 @@
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // 前向声明
-// ============================================================================
+// ==================
 
 class QCNetworkReplyPrivate; // 私有实现类（定义在 QCNetworkReply_p.h）
 
-// ============================================================================
+// ==================
 // 枚举定义
-// ============================================================================
+// ==================
 
 /**
  * @brief HTTP 请求方法
@@ -68,9 +68,9 @@ enum class ReplyState {
     Error      ///< 错误
 };
 
-// ============================================================================
+// ==================
 // 类型定义
-// ============================================================================
+// ==================
 
 using RawHeaderPair = QPair<QByteArray, QByteArray>;
 
@@ -82,9 +82,9 @@ using SeekFunction = std::function<int(qint64 offset, int origin)>;
 using ProgressFunction
     = std::function<void(qint64 dltotal, qint64 dlnow, qint64 ultotal, qint64 ulnow)>;
 
-// ============================================================================
+// ==================
 // QCNetworkReply 类
-// ============================================================================
+// ==================
 
 /**
  * @brief 统一的网络响应类
@@ -130,9 +130,9 @@ class QCNetworkReply : public QObject
     friend class QCCurlMultiManager;       // 新实现（v2.0）
 
 public:
-    // ========================================================================
+    // ==================
     // 构造与析构
-    // ========================================================================
+    // ==================
 
     /**
      * @brief 构造网络响应对象
@@ -157,9 +157,9 @@ public:
     QCNetworkReply(const QCNetworkReply &)            = delete;
     QCNetworkReply &operator=(const QCNetworkReply &) = delete;
 
-    // ========================================================================
+    // ==================
     // 执行控制
-    // ========================================================================
+    // ==================
 
     void execute();
     void cancel();
@@ -168,24 +168,39 @@ public:
     void pause(PauseMode mode);
     void resume();
 
-    // ========================================================================
-    // 数据访问（现代 C++17 风格）
-    // ========================================================================
+	    // ==================
+	    // 数据访问（现代 C++17 风格）
+	    // ==================
 
-    [[nodiscard]] std::optional<QByteArray> readAll() const;
-    [[nodiscard]] std::optional<QByteArray> readBody() const;
-    [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
-    [[nodiscard]] QByteArray rawHeaderData() const;
-    [[nodiscard]] QUrl url() const;
+	    /**
+	     * @brief 读取并清空当前响应体缓冲
+	     *
+	     * 返回值语义：
+	     * - std::nullopt：尚无数据可读（未到终态且缓冲为空）
+	     * - QByteArray()：已到终态且 body 为空
+	     *
+	     * @note 调用后会清空缓冲区（同步/异步均适用）
+	     */
+	    [[nodiscard]] std::optional<QByteArray> readAll() const;
+
+	    /**
+	     * @brief 读取响应体（readAll 别名）
+	     *
+	     * @return 同 readAll；Error/Idle 状态返回 std::nullopt
+	     */
+	    [[nodiscard]] std::optional<QByteArray> readBody() const;
+	    [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
+	    [[nodiscard]] QByteArray rawHeaderData() const;
+	    [[nodiscard]] QUrl url() const;
     [[nodiscard]] HttpMethod method() const noexcept;
     [[nodiscard]] int httpStatusCode() const noexcept;
     [[nodiscard]] qint64 durationMs() const noexcept;
     [[nodiscard]] qint64 bytesAvailable() const noexcept;
     [[nodiscard]] QStringList capabilityWarnings() const;
 
-    // ========================================================================
+    // ==================
     // 状态查询
-    // ========================================================================
+    // ==================
 
     [[nodiscard]] ReplyState state() const noexcept;
     [[nodiscard]] NetworkError error() const noexcept;
@@ -196,9 +211,9 @@ public:
     [[nodiscard]] qint64 bytesReceived() const noexcept;
     [[nodiscard]] qint64 bytesTotal() const noexcept;
 
-    // ========================================================================
+    // ==================
     // 同步模式专用 API
-    // ========================================================================
+    // ==================
 
     void setRequestBody(const QByteArray &data);
     void setWriteCallback(const DataFunction &func);
@@ -206,9 +221,9 @@ public:
     void setSeekCallback(const SeekFunction &func);
     void setProgressCallback(const ProgressFunction &func);
 
-    // ========================================================================
+    // ==================
     // 信号（异步模式）
-    // ========================================================================
+    // ==================
 
 Q_SIGNALS:
     void finished();
@@ -229,24 +244,24 @@ Q_SIGNALS:
      */
     void retryAttempt(int attemptCount, NetworkError error);
 
-    // ========================================================================
+    // ==================
     // 公共槽
-    // ========================================================================
+    // ==================
 
 public Q_SLOTS:
     void deleteLater();
 
 private:
-    // ========================================================================
+    // ==================
     // 私有实现（Pimpl 模式）
-    // ========================================================================
+    // ==================
 
     QCNetworkReplyPrivate *d_ptr;
     Q_DECLARE_PRIVATE(QCNetworkReply)
 
-    // ========================================================================
+    // ==================
     // 缓存集成私有方法
-    // ========================================================================
+    // ==================
 
     bool loadFromCache(bool ignoreExpiry);
     QMap<QByteArray, QByteArray> parseResponseHeaders();

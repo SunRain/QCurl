@@ -11,9 +11,9 @@ QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
-// ============================================================================
+// ==================
 // 构造函数和析构函数
-// ============================================================================
+// ==================
 
 QCWebSocketPool::QCWebSocketPool(const Config &config, QObject *parent)
     : QObject(parent)
@@ -46,9 +46,9 @@ QCWebSocketPool::~QCWebSocketPool()
     qDebug() << "QCWebSocketPool: 连接池已销毁";
 }
 
-// ============================================================================
+// ==================
 // 核心 API 实现
-// ============================================================================
+// ==================
 
 QCWebSocket *QCWebSocketPool::acquire(const QUrl &url)
 {
@@ -145,9 +145,9 @@ bool QCWebSocketPool::contains(const QUrl &url) const
     return m_pools.contains(url) && !m_pools[url].isEmpty();
 }
 
-// ============================================================================
+// ==================
 // 池管理实现
-// ============================================================================
+// ==================
 
 void QCWebSocketPool::clearPool(const QUrl &url)
 {
@@ -230,9 +230,9 @@ QCWebSocketPool::Config QCWebSocketPool::config() const
     return m_config;
 }
 
-// ============================================================================
+// ==================
 // 统计信息实现
-// ============================================================================
+// ==================
 
 QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
 {
@@ -285,9 +285,9 @@ QCWebSocketPool::Stats QCWebSocketPool::statistics(const QUrl &url) const
     return stats;
 }
 
-// ============================================================================
+// ==================
 // 私有方法实现
-// ============================================================================
+// ==================
 
 QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
 {
@@ -438,9 +438,9 @@ int QCWebSocketPool::totalConnectionCount() const
     return count;
 }
 
-// ============================================================================
+// ==================
 // 槽函数实现
-// ============================================================================
+// ==================
 
 void QCWebSocketPool::onCleanupTimer()
 {

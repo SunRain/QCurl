@@ -12,6 +12,12 @@
 namespace QCurl {
 
 class QCNetworkAsyncReply;
+
+/**
+ * @brief QCNetworkAccessManager 私有实现（PIMPL）
+ *
+ * 保存 libcurl multi 句柄与事件驱动相关资源。
+ */
 class QCNetworkAccessManagerPrivate
 {
 public:
