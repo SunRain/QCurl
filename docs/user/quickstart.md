@@ -46,3 +46,20 @@ g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
 ## 5. 最小请求示例
 
 示例代码可参考根目录 `README.md` 中的 “代码示例-简单 GET 请求”。
+
+提示：
+
+- `High/VeryHigh`：与用户交互直接相关、希望优先处理且仍遵守并发/每主机限制的请求（例如页面数据加载、登录/下单/支付确认）。
+- `Critical`：适用于少量需要尽快启动的控制/紧急请求；该优先级会绕过 pending 队列，且当前实现可能突破并发/每主机限制，建议仅在明确需要时使用。
+
+最小示例（约 5 行）：
+
+```cpp
+QCNetworkAccessManager mgr;
+mgr.enableRequestScheduler(true);
+QCNetworkRequest req(QUrl("https://example.com")); // 默认 Normal
+req.setPriority(QCNetworkRequestPriority::High);   // 推荐：High/VeryHigh
+auto *reply = mgr.scheduleGet(req);
+```
+
+注：`reply` 记得按 Qt 习惯 `deleteLater()` 释放（或在 `finished` 后自动释放）。
