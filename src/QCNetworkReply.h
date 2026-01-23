@@ -164,8 +164,31 @@ public:
     void execute();
     void cancel();
     void abortWithError(NetworkError error, const QString &message = QString());
+
+    /**
+     * @brief 传输级暂停（仅 Async 生效）
+     *
+     * 语义：
+     * - 仅允许 `Running → Paused`（幂等）
+     * - 跨线程调用会自动 marshal 到 reply 线程
+     * - 不影响调度层（不会 cancel / removeReply / 出队）
+     */
+    void pauseTransport(PauseMode mode = PauseMode::All);
+
+    /**
+     * @brief 传输级恢复（仅 Async 生效）
+     *
+     * 语义：
+     * - 仅允许 `Paused → Running`（幂等）
+     * - 成功恢复后会触发一次 multi wakeup，以推进传输
+     */
+    void resumeTransport();
+
+    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
     void pause();
+    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
     void pause(PauseMode mode);
+    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
     void resume();
 
     // ==================
@@ -218,7 +241,21 @@ public:
     [[nodiscard]] bool isBackpressureActive() const noexcept;
 
     /**
+     * @brief 上传发送方向是否因“source not ready”处于内部 pause
+     *
+     * 说明：
+     * - 仅表达内部流控 pause，不包含用户显式 pause（ReplyState::Paused）
+     * - 不改变 ReplyState，用于可诊断与一致性合同验证
+     */
+    [[nodiscard]] bool isUploadSendPaused() const noexcept;
+
+    /**
      * @brief backpressure 上限（bytes）
+     *
+     * 该值为高水位线（soft limit），用于内部接收流控触发点。
+     * 注意：它不是 hard cap；由于 libcurl write callback 无法部分消费，bytesAvailable()
+     * 允许出现“有界超限”（通常最多一个 write callback chunk）。
+     *
      * @return 0 表示未启用
      */
     [[nodiscard]] qint64 backpressureLimitBytes() const noexcept;
@@ -265,6 +302,13 @@ Q_SIGNALS:
      * 当内部接收流控进入/退出 pause 时发射，不会改变 ReplyState。
      */
     void backpressureStateChanged(bool active, qint64 bufferedBytes, qint64 limitBytes);
+
+    /**
+     * @brief 上传发送方向内部 pause 状态变化（source not ready）
+     *
+     * 仅表达内部流控，不改变 ReplyState。
+     */
+    void uploadSendPausedChanged(bool paused);
     void cancelled();
 
     /**

@@ -475,12 +475,25 @@ std::optional<qint64> QCNetworkRequest::maxUploadBytesPerSec() const
     return d.data()->maxUploadBytesPerSec;
 }
 
-QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferLimitBytes(qint64 bytes)
+QCNetworkRequest &QCNetworkRequest::setBackpressureLimitBytes(qint64 bytes)
 {
     if (bytes < 0) {
-        qWarning() << "QCNetworkRequest: asyncBodyBufferLimitBytes must be >= 0, got" << bytes
+        qWarning() << "QCNetworkRequest: backpressureLimitBytes must be >= 0, got" << bytes
                    << "(ignored)";
         bytes = 0;
+    }
+
+    // soft limit 推荐下限：
+    // - libcurl write callback 通常不会超过 CURL_MAX_WRITE_SIZE（16KiB）
+    // - 过小的 limit 会导致频繁 pause/resume 或产生非预期的“看起来卡住”的体验（即使最终可恢复）
+    if (bytes > 0) {
+        constexpr qint64 kRecommendedMinBytes = 16 * 1024;
+        if (bytes < kRecommendedMinBytes) {
+            qWarning() << "QCNetworkRequest: backpressureLimitBytes is very small:" << bytes
+                       << "bytes; backpressure is a soft limit (high watermark) and bytesAvailable() may"
+                          " temporarily exceed it (bounded). Recommend >="
+                       << kRecommendedMinBytes << "bytes";
+        }
     }
 
     d.data()->asyncBodyBufferLimitBytes = bytes;
@@ -490,16 +503,23 @@ QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferLimitBytes(qint64 bytes)
     return *this;
 }
 
-qint64 QCNetworkRequest::asyncBodyBufferLimitBytes() const noexcept
+qint64 QCNetworkRequest::backpressureLimitBytes() const noexcept
 {
     return d.data()->asyncBodyBufferLimitBytes;
 }
 
-QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferResumeBytes(qint64 bytes)
+QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
 {
     if (bytes < 0) {
-        qWarning() << "QCNetworkRequest: asyncBodyBufferResumeBytes must be >= 0, got" << bytes
+        qWarning() << "QCNetworkRequest: backpressureResumeBytes must be >= 0, got" << bytes
                    << "(ignored)";
+        bytes = 0;
+    }
+
+    const qint64 limit = d.data()->asyncBodyBufferLimitBytes;
+    if (limit > 0 && bytes > 0 && bytes >= limit) {
+        qWarning() << "QCNetworkRequest: backpressureResumeBytes must be < backpressureLimitBytes, got"
+                   << bytes << "(limit=" << limit << "; use default limit/2)";
         bytes = 0;
     }
 
@@ -507,9 +527,29 @@ QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferResumeBytes(qint64 bytes)
     return *this;
 }
 
-qint64 QCNetworkRequest::asyncBodyBufferResumeBytes() const noexcept
+qint64 QCNetworkRequest::backpressureResumeBytes() const noexcept
 {
     return d.data()->asyncBodyBufferResumeBytes;
+}
+
+QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferLimitBytes(qint64 bytes)
+{
+    return setBackpressureLimitBytes(bytes);
+}
+
+qint64 QCNetworkRequest::asyncBodyBufferLimitBytes() const noexcept
+{
+    return backpressureLimitBytes();
+}
+
+QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferResumeBytes(qint64 bytes)
+{
+    return setBackpressureResumeBytes(bytes);
+}
+
+qint64 QCNetworkRequest::asyncBodyBufferResumeBytes() const noexcept
+{
+    return backpressureResumeBytes();
 }
 
 QCNetworkRequest &QCNetworkRequest::setUploadDevice(QIODevice *device,

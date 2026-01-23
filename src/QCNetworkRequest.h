@@ -331,37 +331,69 @@ public:
     // ========== 下载 backpressure（P2） ==========
 
     /**
-     * @brief 设置异步下载响应体缓冲上限（bytes）
+     * @brief 设置下载 backpressure 上限（bytes）
      *
      * 仅在 ExecutionMode::Async 下生效。
      *
      * - bytes <= 0：禁用（默认）
-     * - bytes > 0：启用 backpressure（缓冲达到上限时自动 pause 接收；消费到低水位线自动 resume）
-     * - 建议 limitBytes 不要过小，否则会频繁 pause/resume，影响吞吐
+     * - bytes > 0：启用 backpressure（soft limit，高水位线）
+     *   - 缓冲达到/超过高水位线后自动 pause 接收；消费到低水位线后自动 resume
+     *   - 注意：该值不是 hard cap。由于 libcurl write callback 无法部分消费，bytesAvailable()
+     *     允许出现“有界超限”（通常最多一个 write callback chunk）
+     * - 建议 limitBytes 不要过小（例如 >= 16KiB / CURL_MAX_WRITE_SIZE），否则会频繁 pause/resume，
+     *   影响吞吐并增加调度开销
      */
-    QCNetworkRequest &setAsyncBodyBufferLimitBytes(qint64 bytes);
+    QCNetworkRequest &setBackpressureLimitBytes(qint64 bytes);
 
     /**
-     * @brief 获取异步下载响应体缓冲上限（bytes）
+     * @brief 获取 backpressure 上限（bytes）
      *
      * @return 0 表示未启用（默认）
      */
-    [[nodiscard]] qint64 asyncBodyBufferLimitBytes() const noexcept;
+    [[nodiscard]] qint64 backpressureLimitBytes() const noexcept;
 
     /**
-     * @brief 设置异步下载响应体缓冲低水位线（bytes）
+     * @brief 设置 backpressure 低水位线（bytes）
      *
      * 仅在 limitBytes > 0 时有意义：
      * - bytes <= 0：使用默认值（limit/2）
      * - 0 < bytes < limit：自定义低水位线
      */
+    QCNetworkRequest &setBackpressureResumeBytes(qint64 bytes);
+
+    /**
+     * @brief 获取 backpressure 低水位线（bytes）
+     *
+     * @return 0 表示使用默认值（limit/2）
+     */
+    [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
+
+    /**
+     * @brief 设置异步下载响应体缓冲上限（bytes）
+     * @deprecated 请使用 setBackpressureLimitBytes/backpressureLimitBytes。
+     */
+    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
+    QCNetworkRequest &setAsyncBodyBufferLimitBytes(qint64 bytes);
+
+    /**
+     * @brief 获取异步下载响应体缓冲上限（bytes）
+     * @deprecated 请使用 setBackpressureLimitBytes/backpressureLimitBytes。
+     */
+    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
+    [[nodiscard]] qint64 asyncBodyBufferLimitBytes() const noexcept;
+
+    /**
+     * @brief 设置异步下载响应体缓冲低水位线（bytes）
+     * @deprecated 请使用 setBackpressureResumeBytes/backpressureResumeBytes。
+     */
+    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
     QCNetworkRequest &setAsyncBodyBufferResumeBytes(qint64 bytes);
 
     /**
      * @brief 获取异步下载响应体缓冲低水位线（bytes）
-     *
-     * @return 0 表示使用默认值（limit/2）
+     * @deprecated 请使用 setBackpressureResumeBytes/backpressureResumeBytes。
      */
+    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
     [[nodiscard]] qint64 asyncBodyBufferResumeBytes() const noexcept;
 
     // ========== 流式上传（M2） ==========

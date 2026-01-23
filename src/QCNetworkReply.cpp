@@ -317,10 +317,10 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
     , attemptCount(0)
     , cookieMode(0)
 {
-    const qint64 limitBytes = request.asyncBodyBufferLimitBytes();
+    const qint64 limitBytes = request.backpressureLimitBytes();
     if (limitBytes > 0) {
         backpressureLimitBytes = limitBytes;
-        const qint64 resumeBytes = request.asyncBodyBufferResumeBytes();
+        const qint64 resumeBytes = request.backpressureResumeBytes();
         if (resumeBytes > 0 && resumeBytes < limitBytes) {
             backpressureResumeBytes = resumeBytes;
         } else {
@@ -1739,6 +1739,19 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
     // 发射状态变更信号
     emit q->stateChanged(newState);
 
+    // 终态收敛：内部流控状态不应残留（避免影响后续诊断/合同采集）
+    if (newState == ReplyState::Finished || newState == ReplyState::Error
+        || newState == ReplyState::Cancelled) {
+        if (internalPauseMask & CURLPAUSE_RECV) {
+            internalPauseMask &= ~CURLPAUSE_RECV;
+        }
+        if (internalPauseMask & CURLPAUSE_SEND) {
+            internalPauseMask &= ~CURLPAUSE_SEND;
+        }
+        setBackpressureActive(false);
+        setUploadSendPaused(false);
+    }
+
     // 根据新状态发射对应信号
     if (newState == ReplyState::Finished) {
         // 完成时解析响应头
@@ -1969,6 +1982,23 @@ void QCNetworkReplyPrivate::setBackpressureActive(bool active)
     }
 }
 
+void QCNetworkReplyPrivate::setUploadSendPaused(bool paused)
+{
+    if (executionMode != ExecutionMode::Async) {
+        uploadSendPaused = false;
+        return;
+    }
+
+    if (uploadSendPaused == paused) {
+        return;
+    }
+
+    uploadSendPaused = paused;
+    if (q_ptr) {
+        emit q_ptr->uploadSendPausedChanged(paused);
+    }
+}
+
 void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
 {
     if (executionMode != ExecutionMode::Async) {
@@ -1990,14 +2020,13 @@ void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
     }
 
     const int oldMask = appliedPauseMask;
-    internalPauseMask &= ~CURLPAUSE_RECV;
-    setBackpressureActive(false);
-
-    if (!applyPauseMask(desiredPauseMask())) {
-        internalPauseMask |= CURLPAUSE_RECV;
-        setBackpressureActive(true);
+    const int desiredAfterResume = desiredPauseMask() & ~CURLPAUSE_RECV;
+    if (!applyPauseMask(desiredAfterResume)) {
         return;
     }
+
+    internalPauseMask &= ~CURLPAUSE_RECV;
+    setBackpressureActive(false);
 
     if ((oldMask & CURLPAUSE_RECV) && ((appliedPauseMask & CURLPAUSE_RECV) == 0)) {
         QCCurlMultiManager::instance()->wakeup();
@@ -2033,6 +2062,7 @@ void QCNetworkReplyPrivate::resumeSendFromUploadSourceIfNeeded()
         return;
     }
 
+    setUploadSendPaused(false);
     if ((oldMask & CURLPAUSE_SEND) && ((appliedPauseMask & CURLPAUSE_SEND) == 0)) {
         QCCurlMultiManager::instance()->wakeup();
     }
@@ -2066,19 +2096,6 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t n
             return CURL_WRITEFUNC_PAUSE;
         }
 
-        // P2-1：下载 backpressure（仅在显式启用时生效）
-        if (d->backpressureLimitBytes > 0 && totalSize > 0) {
-            const qint64 incoming = static_cast<qint64>(totalSize);
-            if (d->bodyBuffer.wouldExceedLimit(incoming, d->backpressureLimitBytes)) {
-                if ((d->internalPauseMask & CURLPAUSE_RECV) == 0) {
-                    d->internalPauseMask |= CURLPAUSE_RECV;
-                    d->setBackpressureActive(true);
-                }
-                d->appliedPauseMask |= CURLPAUSE_RECV;
-                return CURL_WRITEFUNC_PAUSE;
-            }
-        }
-
         // 异步模式：累积数据到缓冲区
         d->bodyBuffer.append(QByteArray(ptr, static_cast<int>(totalSize)));
         if (d->backpressureLimitBytes > 0) {
@@ -2089,15 +2106,34 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t n
 
         // 发射 readyRead 信号
         emit d->q_ptr->readyRead();
+
+        // P2-1：下载 backpressure（soft limit，高水位线；允许有界超限）
+        if (d->backpressureLimitBytes > 0) {
+            const qint64 buffered = d->bodyBuffer.byteAmount();
+            if (buffered >= d->backpressureLimitBytes) {
+                // 注意：此处不能通过返回 CURL_WRITEFUNC_PAUSE 实现暂停，否则会退化为 hard cap
+                // （本次 write callback 数据无法交付上层，可能导致 tiny limit 场景卡住）。
+                const bool userRecvPaused     = (d->userPauseMask & CURLPAUSE_RECV) != 0;
+                const bool internalRecvPaused = (d->internalPauseMask & CURLPAUSE_RECV) != 0;
+                if (!userRecvPaused) {
+                    const int desiredBase = d->desiredPauseMask();
+                    const int desiredMask = internalRecvPaused ? desiredBase : (desiredBase | CURLPAUSE_RECV);
+                    if (d->applyPauseMask(desiredMask) && !internalRecvPaused) {
+                        d->internalPauseMask |= CURLPAUSE_RECV;
+                        d->setBackpressureActive(true);
+                    }
+                }
+            }
+        }
     } else {
         // 同步模式：优先调用用户回调，否则累积到缓冲区
         if (d->writeCallback) {
             return d->writeCallback(ptr, totalSize);
-        } else {
-            // 没有回调函数时，也累积数据（支持 readAll()）
-            d->bodyBuffer.append(QByteArray(ptr, static_cast<int>(totalSize)));
-            d->bytesDownloaded += static_cast<qint64>(totalSize);
         }
+
+        // 没有回调函数时，也累积数据（支持 readAll()）
+        d->bodyBuffer.append(QByteArray(ptr, static_cast<int>(totalSize)));
+        d->bytesDownloaded += static_cast<qint64>(totalSize);
     }
 
     return totalSize;
@@ -2176,6 +2212,7 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
             // P2-2：source not ready → pause sending，等待 readyRead 恢复
             d->internalPauseMask |= CURLPAUSE_SEND;
             d->appliedPauseMask |= CURLPAUSE_SEND;
+            d->setUploadSendPaused(true);
             return CURL_READFUNC_PAUSE;
         }
         d->uploadBytesRead += n;
@@ -2209,6 +2246,7 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
         // P2-2：source not ready → pause sending，等待 readyRead 恢复
         d->internalPauseMask |= CURLPAUSE_SEND;
         d->appliedPauseMask |= CURLPAUSE_SEND;
+        d->setUploadSendPaused(true);
         return CURL_READFUNC_PAUSE;
     }
 
@@ -3103,22 +3141,18 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
     d->setState(ReplyState::Error);
 }
 
-void QCNetworkReply::pause()
-{
-    pause(PauseMode::All);
-}
-
-void QCNetworkReply::pause(PauseMode mode)
+void QCNetworkReply::pauseTransport(PauseMode mode)
 {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this, mode]() { pause(mode); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [this, mode]() { pauseTransport(mode); }, Qt::QueuedConnection);
         return;
     }
 
     Q_D(QCNetworkReply);
 
     if (d->executionMode == ExecutionMode::Sync) {
-        qWarning() << "QCNetworkReply::pause: Sync mode does not support transfer pause/resume";
+        qWarning() << "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume";
         return;
     }
 
@@ -3155,17 +3189,18 @@ void QCNetworkReply::pause(PauseMode mode)
     d->setState(ReplyState::Paused);
 }
 
-void QCNetworkReply::resume()
+void QCNetworkReply::resumeTransport()
 {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this]() { resume(); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, [this]() { resumeTransport(); }, Qt::QueuedConnection);
         return;
     }
 
     Q_D(QCNetworkReply);
 
     if (d->executionMode == ExecutionMode::Sync) {
-        qWarning() << "QCNetworkReply::resume: Sync mode does not support transfer pause/resume";
+        qWarning()
+            << "QCNetworkReply::resumeTransport: Sync mode does not support transfer pause/resume";
         return;
     }
 
@@ -3183,6 +3218,21 @@ void QCNetworkReply::resume()
 
     d->setState(ReplyState::Running);
     QCCurlMultiManager::instance()->wakeup();
+}
+
+void QCNetworkReply::pause()
+{
+    pauseTransport(PauseMode::All);
+}
+
+void QCNetworkReply::pause(PauseMode mode)
+{
+    pauseTransport(mode);
+}
+
+void QCNetworkReply::resume()
+{
+    resumeTransport();
 }
 
 // ==================
@@ -3350,6 +3400,19 @@ bool QCNetworkReply::isBackpressureActive() const noexcept
 {
     Q_D(const QCNetworkReply);
     return d->backpressureLimitBytes > 0 && d->backpressureActive;
+}
+
+bool QCNetworkReply::isUploadSendPaused() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    if (d->executionMode != ExecutionMode::Async) {
+        return false;
+    }
+    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
+        || d->state == ReplyState::Finished) {
+        return false;
+    }
+    return d->uploadSendPaused && ((d->internalPauseMask & CURLPAUSE_SEND) != 0);
 }
 
 qint64 QCNetworkReply::backpressureLimitBytes() const noexcept

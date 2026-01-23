@@ -662,14 +662,16 @@ void TestQCNetworkReply::testSyncPauseResumeNoOp()
     QCNetworkRequest request(QUrl("http://example.com"));
     QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
 
-    QTest::ignoreMessage(QtWarningMsg,
-                         "QCNetworkReply::pause: Sync mode does not support transfer pause/resume");
-    reply.pause(PauseMode::All);
+    QTest::ignoreMessage(
+        QtWarningMsg,
+        "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume");
+    reply.pauseTransport(PauseMode::All);
     QCOMPARE(reply.state(), ReplyState::Idle);
 
-    QTest::ignoreMessage(QtWarningMsg,
-                         "QCNetworkReply::resume: Sync mode does not support transfer pause/resume");
-    reply.resume();
+    QTest::ignoreMessage(
+        QtWarningMsg,
+        "QCNetworkReply::resumeTransport: Sync mode does not support transfer pause/resume");
+    reply.resumeTransport();
     QCOMPARE(reply.state(), ReplyState::Idle);
 }
 
@@ -755,7 +757,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     }
     QVERIFY(bytesAtPause >= kPauseAfterBytes);
 
-    std::thread pauseThread([reply]() { reply->pause(PauseMode::Recv); });
+    std::thread pauseThread([reply]() { reply->pauseTransport(PauseMode::Recv); });
     pauseThread.join();
 
     QElapsedTimer pauseTimer;
@@ -770,7 +772,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     const qint64 pausedBytesAfterWait = reply->bytesReceived();
     QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
 
-    std::thread resumeThread([reply]() { reply->resume(); });
+    std::thread resumeThread([reply]() { reply->resumeTransport(); });
     resumeThread.join();
 
     QElapsedTimer resumeTimer;
@@ -894,8 +896,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
     {
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp").arg(port)));
-        request.setAsyncBodyBufferLimitBytes(kLimitBytes);
-        request.setAsyncBodyBufferResumeBytes(kResumeBytes);
+        request.setBackpressureLimitBytes(kLimitBytes);
+        request.setBackpressureResumeBytes(kResumeBytes);
 
         auto *reply = m_manager->sendGet(request);
 
@@ -922,7 +924,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
         QVERIFY(sawActive);
         QVERIFY(reply->isBackpressureActive());
-        QVERIFY(reply->bytesAvailable() <= kLimitBytes);
+        QVERIFY(reply->bytesAvailable() > 0);
 
         connect(reply, &QCNetworkReply::readyRead, this, [&]() {
             const auto dataOpt = reply->readAll();
@@ -935,6 +937,79 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         if (firstDrain.has_value() && !firstDrain->isEmpty()) {
             received.append(*firstDrain);
         }
+
+        bool sawInactive = false;
+        waitTimer.restart();
+        while (waitTimer.elapsed() < 5000 && !sawInactive) {
+            if (!backpressureSpy.wait(500)) {
+                continue;
+            }
+            const auto args = backpressureSpy.takeLast();
+            if (!args.isEmpty() && !args.at(0).toBool()) {
+                sawInactive = true;
+            }
+        }
+
+        QVERIFY(sawInactive);
+        QVERIFY(finishedSpy.wait(10000));
+
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            received.append(*tailOpt);
+        }
+
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(received.size(), payload.size());
+        QCOMPARE(received, payload);
+
+        reply->deleteLater();
+    }
+
+    {
+        constexpr qint64 kTinyLimitBytes = 1024;
+        constexpr qint64 kTinyResumeBytes = 512;
+
+        QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp_tiny").arg(port)));
+        request.setBackpressureLimitBytes(kTinyLimitBytes);
+        request.setBackpressureResumeBytes(kTinyResumeBytes);
+
+        auto *reply = m_manager->sendGet(request);
+
+        QCOMPARE(reply->backpressureLimitBytes(), kTinyLimitBytes);
+        QCOMPARE(reply->backpressureResumeBytes(), kTinyResumeBytes);
+
+        QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+        QByteArray received;
+
+        bool sawActive = false;
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        while (waitTimer.elapsed() < 5000 && !sawActive) {
+            if (!backpressureSpy.wait(500)) {
+                continue;
+            }
+            const auto args = backpressureSpy.takeLast();
+            if (!args.isEmpty() && args.at(0).toBool()) {
+                sawActive = true;
+            }
+        }
+
+        QVERIFY(sawActive);
+        QVERIFY(reply->isBackpressureActive());
+
+        const auto firstDrain = reply->readAll();
+        QVERIFY(firstDrain.has_value());
+        QVERIFY(!firstDrain->isEmpty());
+        received.append(*firstDrain);
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                received.append(*dataOpt);
+            }
+        });
 
         bool sawInactive = false;
         waitTimer.restart();
@@ -1125,6 +1200,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+    QSignalSpy sendPausedSpy(reply, &QCNetworkReply::uploadSendPausedChanged);
 
     QVERIFY(finishedSpy.wait(15000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -1138,6 +1214,20 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     QCOMPARE(receivedBody.size(), payload.size());
     QCOMPARE(receivedBody, payload);
     QVERIFY(device.zeroReadCount() > 0);
+
+    bool pauseSeen = false;
+    bool resumeSeen = false;
+    for (const auto &args : sendPausedSpy) {
+        QVERIFY(!args.isEmpty());
+        const bool paused = args.at(0).toBool();
+        if (paused) {
+            pauseSeen = true;
+        } else if (pauseSeen) {
+            resumeSeen = true;
+        }
+    }
+    QVERIFY(pauseSeen);
+    QVERIFY(resumeSeen);
 
     reply->deleteLater();
     server.close();

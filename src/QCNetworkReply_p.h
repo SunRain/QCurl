@@ -123,6 +123,12 @@ public:
     bool backpressureActive              = false;
 
     // ==================
+    // 上传 source pause/resume（P2）
+    // ==================
+
+    bool uploadSendPaused = false; ///< 上传发送方向内部 pause（source not ready；仅 Async）
+
+    // ==================
     // 能力探测/可诊断 warning（不含敏感信息）
     // ==================
 
@@ -236,6 +242,7 @@ public:
 
     bool applyPauseMask(int desiredMask);
     void setBackpressureActive(bool active);
+    void setUploadSendPaused(bool paused);
     void maybeResumeRecvFromBackpressure();
     void resumeSendFromUploadSourceIfNeeded();
 
