@@ -32,12 +32,20 @@
 #include <QTimer>
 #include <QSignalSpy>
 #include <QTemporaryFile>
+#include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
+#include <QHostAddress>
 #include <QMetaMethod>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QTcpSocket>
+#include <QThread>
 #include <QVector>
 
 #include "QCNetworkAccessManager.h"
@@ -91,7 +99,8 @@ private slots:
     void testMaxRedirects();
 
     // ========== SSL 测试 ==========
-    void testHttpsRequest();
+    void testHttpbinRequestSslConfigAlignment();
+    void testLocalHttpsTlsVerification();
     void testSslConfiguration();
 
     // ========== 进度/大体量传输测试 ==========
@@ -147,6 +156,23 @@ QJsonObject TestIntegration::parseJsonResponse(const QByteArray &data)
 {
     QJsonDocument doc = QJsonDocument::fromJson(data);
     return doc.object();
+}
+
+static bool waitForPortReady(quint16 port, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+
+    while (timer.elapsed() < timeoutMs) {
+        QTcpSocket probe;
+        probe.connectToHost(QHostAddress::LocalHost, port);
+        if (probe.waitForConnected(100)) {
+            probe.disconnectFromHost();
+            return true;
+        }
+        QThread::msleep(50);
+    }
+    return false;
 }
 
 // ============================================================================
@@ -619,23 +645,168 @@ void TestIntegration::testMaxRedirects()
 // SSL 测试
 // ============================================================================
 
-void TestIntegration::testHttpsRequest()
+void TestIntegration::testHttpbinRequestSslConfigAlignment()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
+    const QUrl url(m_httpbinBaseUrl + "/get");
+    QCNetworkRequest request(url);
 
-    // 使用默认 SSL 配置（应该验证证书）
+    // 口径说明：
+    // - 当 httpbin base URL 为 HTTP 时，本用例证明“设置默认 SSL 配置不会破坏 HTTP 请求”。
+    // - 当 base URL 为 HTTPS 时，本用例要求“默认安全配置可正常工作”（证书需由系统 CA 信任）。
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
     request.setSslConfig(sslConfig);
 
     auto *reply = m_manager->sendGet(request);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
-    // 本地 httpbin 使用 HTTP（无 SSL），应该成功
-    // 注意：如使用 HTTPS httpbin，需配置 SSL 证书
     QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->httpStatusCode(), 200);
 
-    qDebug() << "HTTPS request test successful";
+    qInfo().noquote()
+        << QStringLiteral("QCURL_EVIDENCE integration_httpbin_sslconfig ok scheme=%1 url=%2 http_status=%3 error=%4 msg=%5")
+               .arg(url.scheme())
+               .arg(url.toString())
+               .arg(reply->httpStatusCode())
+               .arg(static_cast<int>(reply->error()))
+               .arg(reply->errorString());
+
     reply->deleteLater();
+}
+
+void TestIntegration::testLocalHttpsTlsVerification()
+{
+    // 可控 HTTPS 证据：使用仓库自带证书启动本地 HTTPS 服务端，验证 TLS 的失败/成功两条路径。
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString scriptPath
+        = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/http2-test-server.js"));
+    if (!QFileInfo::exists(scriptPath)) {
+        QFAIL("未找到本地 HTTPS 测试服务器脚本（tests/http2-test-server.js）。");
+    }
+
+    QProcess localServer;
+    localServer.setProgram(QStringLiteral("node"));
+    localServer.setArguments({scriptPath, QStringLiteral("--h2-port"), QStringLiteral("0"),
+                              QStringLiteral("--http1-port"), QStringLiteral("0")});
+    localServer.setProcessChannelMode(QProcess::MergedChannels);
+    localServer.start();
+
+    if (!localServer.waitForStarted(2000)) {
+        QSKIP("无法启动本地 HTTPS 测试服务器（node）。请确认 node 可用。");
+    }
+
+    struct ProcessGuard {
+        QProcess &proc;
+        ~ProcessGuard()
+        {
+            if (proc.state() == QProcess::NotRunning) {
+                return;
+            }
+            proc.terminate();
+            if (!proc.waitForFinished(1500)) {
+                proc.kill();
+                proc.waitForFinished(1500);
+            }
+        }
+    } guard{localServer};
+
+    QElapsedTimer timer;
+    timer.start();
+    QByteArray output;
+
+    int httpsPort = 0;
+    QString certPath;
+
+    QRegularExpression re(QStringLiteral(R"(QCURL_HTTP2_TEST_SERVER_READY\s+(\{.*\})\s*)"));
+    while (timer.elapsed() < 5000) {
+        if (!localServer.waitForReadyRead(200)) {
+            continue;
+        }
+        output += localServer.readAll();
+        const QString outText = QString::fromUtf8(output);
+        const QRegularExpressionMatch match = re.match(outText);
+        if (!match.hasMatch()) {
+            continue;
+        }
+
+        const QByteArray jsonBytes = match.captured(1).toUtf8();
+        QJsonParseError parseError{};
+        const QJsonDocument doc = QJsonDocument::fromJson(jsonBytes, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            QFAIL(qPrintable(QStringLiteral("本地 HTTPS 测试服务器输出格式错误：%1")
+                                 .arg(parseError.errorString())));
+        }
+
+        const QJsonObject obj = doc.object();
+        httpsPort = obj.value(QStringLiteral("http1Port")).toInt(0);
+        certPath  = obj.value(QStringLiteral("certPath")).toString();
+        break;
+    }
+
+    if (httpsPort <= 0 || httpsPort > 65535) {
+        const QString outText = QString::fromUtf8(output + localServer.readAll());
+        QFAIL(qPrintable(QStringLiteral("本地 HTTPS 测试服务器未就绪（未输出 READY 或端口无效）。输出：\n%1")
+                             .arg(outText.right(4096))));
+    }
+
+    if (certPath.isEmpty()) {
+        certPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+    }
+
+    QVERIFY2(waitForPortReady(static_cast<quint16>(httpsPort), 3000),
+             qPrintable(QStringLiteral("本地 HTTPS 测试服务器端口不可连接：%1").arg(httpsPort)));
+
+    const QUrl url(QStringLiteral("https://localhost:%1/reqinfo").arg(httpsPort));
+
+    // ----------------------------
+    // Phase 1: 默认安全配置（无自定义 CA）应拒绝自签名证书
+    // ----------------------------
+    {
+        QCNetworkRequest request(url);
+        request.setSslConfig(QCNetworkSslConfig::defaultConfig());
+        auto *reply = m_manager->sendGet(request);
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
+        QCOMPARE(reply->error(), NetworkError::SslHandshakeFailed);
+
+        qInfo().noquote()
+            << QStringLiteral("QCURL_EVIDENCE https_local_tls expected_fail url=%1 error=%2 msg=%3")
+                   .arg(url.toString())
+                   .arg(static_cast<int>(reply->error()))
+                   .arg(reply->errorString());
+
+        reply->deleteLater();
+    }
+
+    // ----------------------------
+    // Phase 2: 配置 CA 后应成功（可复核：status + body sha256）
+    // ----------------------------
+    {
+        QCNetworkRequest request(url);
+        QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
+        sslConfig.caCertPath = certPath;
+        request.setSslConfig(sslConfig);
+
+        auto *reply = m_manager->sendGet(request);
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(reply->httpStatusCode(), 200);
+
+        auto data = reply->readAll();
+        QVERIFY(data.has_value());
+        const QString bodySha256 = QString::fromLatin1(
+            QCryptographicHash::hash(*data, QCryptographicHash::Sha256).toHex());
+        const QJsonObject json = parseJsonResponse(*data);
+        QVERIFY(json.value(QStringLiteral("ok")).toBool());
+
+        qInfo().noquote()
+            << QStringLiteral("QCURL_EVIDENCE https_local_tls success url=%1 http_status=%2 body_len=%3 body_sha256=%4 caCertPath=%5")
+                   .arg(url.toString())
+                   .arg(reply->httpStatusCode())
+                   .arg(data->size())
+                   .arg(bodySha256)
+                   .arg(certPath);
+
+        reply->deleteLater();
+    }
 }
 
 void TestIntegration::testSslConfiguration()

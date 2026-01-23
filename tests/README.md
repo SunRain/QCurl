@@ -97,6 +97,14 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 在证据口径下，帧级语义（continuation frames / close code&reason）以 evidence server 的工件为准，避免“通过但不证明”的误读。
 
+## 🔒 HTTPS/TLS 证据说明（可控成功/失败）
+
+`tst_Integration` 中包含本地 HTTPS 证据用例（自签名证书）：
+- 失败路径：默认安全配置应拒绝（`NetworkError::SslHandshakeFailed`）
+- 成功路径：配置 `caCertPath=tests/testdata/http2/localhost.crt` 后应成功
+
+用例会输出 `QCURL_EVIDENCE ...` 行，便于在 CI/日志中复核。
+
 ## 🔍 查看详细输出
 
 ```bash
