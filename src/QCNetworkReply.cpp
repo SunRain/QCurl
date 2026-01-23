@@ -541,7 +541,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                                                                  .unsupportedSecurityOptionPolicy();
 
     if (const auto allowedOpt = request.allowedProtocols(); allowedOpt.has_value()) {
-#ifdef CURLOPT_PROTOCOLS_STR
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedProtocolsBytes = allowedOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc     = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_PROTOCOLS_STR,
@@ -574,7 +574,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     if (const auto redirOpt = request.allowedRedirectProtocols(); redirOpt.has_value()) {
-#ifdef CURLOPT_REDIR_PROTOCOLS_STR
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedRedirectProtocolsBytes = redirOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc             = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_REDIR_PROTOCOLS_STR,
@@ -1133,7 +1133,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     const QCUnsupportedSecurityOptionPolicy tlsPolicy
                         = tlsCfg.unsupportedSecurityPolicy;
 
-#ifdef CURLOPT_PROXY_SSL_VERIFYPEER
+#if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                     {
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
@@ -1172,7 +1172,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                         QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYPEER"));
 #endif
 
-#ifdef CURLOPT_PROXY_SSL_VERIFYHOST
+#if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                     {
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
@@ -1212,7 +1212,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #endif
 
                     if (!tlsCfg.caCertPath.isEmpty()) {
-#ifdef CURLOPT_PROXY_CAINFO
+#if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                         proxySslCaCertPathBytes = tlsCfg.caCertPath.toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
@@ -1260,7 +1260,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                             }
                             appendCapabilityWarning(this, msg);
                         } else {
-#ifdef CURLOPT_PROXY_SSLVERSION
+#if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                             const CURLcode rc
                                 = curlEasySetoptWithTestHook(handle,
                                                              CURLOPT_PROXY_SSLVERSION,
@@ -1301,7 +1301,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     }
 
                     if (!tlsCfg.cipherList.isEmpty()) {
-#ifdef CURLOPT_PROXY_SSL_CIPHER_LIST
+#if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                         proxySslCipherListBytes = tlsCfg.cipherList.toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
@@ -1343,7 +1343,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                     }
 
                     if (!tlsCfg.tls13Ciphers.isEmpty()) {
-#ifdef CURLOPT_PROXY_TLS13_CIPHERS
+#if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
                         proxySslTls13CiphersBytes = tlsCfg.tls13Ciphers.toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
@@ -1557,7 +1557,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             }
             appendCapabilityWarning(this, msg);
         } else {
-#ifdef CURLOPT_SSLVERSION
+#if LIBCURL_VERSION_NUM >= 0x070100 /* 7.1.0 */
             const CURLcode rc = curlEasySetoptWithTestHook(handle,
                                                            CURLOPT_SSLVERSION,
                                                            "CURLOPT_SSLVERSION",
@@ -1590,7 +1590,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     if (!sslConfig.cipherList.isEmpty()) {
-#ifdef CURLOPT_SSL_CIPHER_LIST
+#if LIBCURL_VERSION_NUM >= 0x070900 /* 7.9.0 */
         sslCipherListBytes = sslConfig.cipherList.toUtf8();
         const CURLcode rc  = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_SSL_CIPHER_LIST,
@@ -1623,7 +1623,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     if (!sslConfig.tls13Ciphers.isEmpty()) {
-#ifdef CURLOPT_TLS13_CIPHERS
+#if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
         sslTls13CiphersBytes = sslConfig.tls13Ciphers.toUtf8();
         const CURLcode rc    = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_TLS13_CIPHERS,
@@ -1782,14 +1782,6 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // 连接池统计 - 记录连接复用情况
         // ==================
         if (curlManager.handle()) {
-            // 使用 NUM_CONNECTS 检查连接复用
-            // 返回值含义：0 = 未知, 1 = 新连接, >1 = 可能复用了连接
-            long numConnects = 0;
-            curl_easy_getinfo(curlManager.handle(), CURLINFO_NUM_CONNECTS, &numConnects);
-
-            // 注意：NUM_CONNECTS 是累计值，不是精确的复用标志
-            // 这里简化处理：每个请求都视为"使用了连接池"
-            // 实际复用率由 libcurl 内部管理
             auto *poolManager = QCNetworkConnectionPoolManager::instance();
             poolManager->recordRequestCompleted(curlManager.handle(), false);
         }
@@ -2866,7 +2858,7 @@ void QCNetworkReply::execute()
         d->altSvcCachePathBytes = cacheCfg.altSvcFilePath.toUtf8();
 
         if (!d->hstsCachePathBytes.isEmpty()) {
-#ifdef CURLOPT_HSTS
+#if LIBCURL_VERSION_NUM >= 0x074a00 /* 7.74.0 */
             setOptionalStringOption(d, handle, CURLOPT_HSTS, "CURLOPT_HSTS", d->hstsCachePathBytes);
 #else
             appendCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_HSTS"));
@@ -2874,7 +2866,7 @@ void QCNetworkReply::execute()
         }
 
         if (!d->altSvcCachePathBytes.isEmpty()) {
-#ifdef CURLOPT_ALTSVC
+#if LIBCURL_VERSION_NUM >= 0x074001 /* 7.64.1 */
             setOptionalStringOption(d,
                                     handle,
                                     CURLOPT_ALTSVC,

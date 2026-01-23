@@ -731,15 +731,21 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     // 添加到活动列表（使用 QPointer 自动检测对象销毁）
     m_activeReplies.insert(easy, QPointer<QCNetworkReply>(reply));
 
-    // 连接完成信号（每个 reply 只会添加一次，无需 Qt::UniqueConnection）
-    // 注意：Lambda 不支持 Qt::UniqueConnection（需要成员函数指针）
-    connect(this,
-            &QCCurlMultiManager::requestFinished,
-            reply,
-            [reply](QCNetworkReply *finishedReply, int curlCode) {
-                if (reply == finishedReply) {
-                    // 处理完成逻辑（设置错误、发射信号）
-                    auto *d = reply->d_func();
+    // 连接完成信号：
+    // - reply 在重试时会多次调用 execute() 并进入 addReply()
+    // - 若每次 addReply() 都 connect，会导致 requestFinished 处理重复执行（attemptCount 乱序/多次重试/假挂起）
+    // 由于 Lambda 不支持 Qt::UniqueConnection，这里用 reply property 做幂等保护。
+    static constexpr const char kRequestFinishedConnectedProperty[] = "_qcurl_requestFinishedConnected";
+    if (!reply->property(kRequestFinishedConnectedProperty).toBool()) {
+        reply->setProperty(kRequestFinishedConnectedProperty, true);
+
+        connect(this,
+                &QCCurlMultiManager::requestFinished,
+                reply,
+                [reply](QCNetworkReply *finishedReply, int curlCode) {
+                    if (reply == finishedReply) {
+                        // 处理完成逻辑（设置错误、发射信号）
+                        auto *d = reply->d_func();
 
                     // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
                     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
@@ -869,10 +875,11 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
                     qDebug() << "QCCurlMultiManager: Request failed after" << d->attemptCount
                              << "attempts. Error:" << errorMsg;
 
-                    d->setError(error, errorMsg);
-                    d->setState(ReplyState::Error);
-                }
-            });
+                        d->setError(error, errorMsg);
+                        d->setState(ReplyState::Error);
+                    }
+                });
+    }
 
     // 添加到 multi handle
     CURLMcode ret = curl_multi_add_handle(m_multiHandle, easy);

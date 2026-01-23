@@ -200,14 +200,14 @@ void QCNetworkConnectionPoolManager::recordRequestCompleted(CURL *handle, bool w
         return;
     }
 
-    // 从 curl handle 获取连接是否被复用的信息
-    long connectionsInPool = 0;
-    curl_easy_getinfo(handle, CURLINFO_NUM_CONNECTS, &connectionsInPool);
+    // CURLINFO_NUM_CONNECTS: 本次 transfer 为完成请求新建的连接数量（通常：新建=1，复用=0）。
+    long numConnects = 0;
+    const CURLcode rc = curl_easy_getinfo(handle, CURLINFO_NUM_CONNECTS, &numConnects);
 
-    // 如果 wasReused 为 true 或者 connectionsInPool == 1，说明复用了连接
-    // connectionsInPool == 1 表示这次请求创建了新连接
-    // connectionsInPool > 1 表示复用了已有连接
-    bool actuallyReused = wasReused || (connectionsInPool > 1);
+    bool actuallyReused = wasReused;
+    if (!actuallyReused && rc == CURLE_OK) {
+        actuallyReused = (numConnects == 0);
+    }
 
     QMutexLocker locker(&m_mutex);
     m_totalRequests++;

@@ -254,6 +254,7 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
 
     QSslSocket socket;
     QEventLoop loop;
+    QList<QSslError> observedSslErrors;
 
     // 连接信号
     QObject::connect(&socket, &QSslSocket::encrypted, &loop, &QEventLoop::quit);
@@ -264,7 +265,7 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
     QObject::connect(&socket,
                      QOverload<const QList<QSslError> &>::of(&QSslSocket::sslErrors),
                      &loop,
-                     &QEventLoop::quit);
+                     [&](const QList<QSslError> &errors) { observedSslErrors = errors; });
 
     // 超时定时器
     QTimer timeoutTimer;
@@ -275,6 +276,9 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
     timeoutTimer.start(timeout);
 
     loop.exec();
+
+    const bool timedOut = !timeoutTimer.isActive();
+    timeoutTimer.stop();
 
     result.durationMs      = timer.elapsed();
     result.details["host"] = host;
@@ -297,14 +301,23 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
         result.details["verified"]   = socket.sslHandshakeErrors().isEmpty();
 
         socket.close();
+    } else if (timedOut) {
+        socket.abort();
+        result.success                = false;
+        result.summary                = QStringLiteral("SSL 握手超时: %1").arg(host);
+        result.errorString            = QStringLiteral("Timeout");
+        result.details["timedOut"]    = true;
+        result.details["timeoutMs"]   = timeout;
     } else {
         result.success     = false;
         result.summary     = QStringLiteral("SSL 握手失败: %1").arg(host);
         result.errorString = socket.errorString();
 
-        if (!socket.sslHandshakeErrors().isEmpty()) {
+        const QList<QSslError> allErrors =
+            !observedSslErrors.isEmpty() ? observedSslErrors : socket.sslHandshakeErrors();
+        if (!allErrors.isEmpty()) {
             QStringList errors;
-            for (const QSslError &err : socket.sslHandshakeErrors()) {
+            for (const QSslError &err : allErrors) {
                 errors << err.errorString();
             }
             result.details["sslErrors"] = errors;
