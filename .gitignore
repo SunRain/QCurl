@@ -138,6 +138,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# tests/libcurl_consistency artifacts (local runs)
+download_*.data
+response_headers_*.data
+connect_headers_*.data
+
 *.bak
 tmp/*
 

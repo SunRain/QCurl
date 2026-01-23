@@ -30,6 +30,21 @@ function(add_qcurl_test test_name)
 
     add_test(NAME ${test_name} COMMAND ${test_name})
 
+    # -----------------------------------------------------------------------------
+    # 取证式门禁：QSKIP 视为失败（避免 “ctest 全绿≠已覆盖” 的误读）
+    #
+    # 背景：
+    # - QtTest 的 QSKIP 进程返回码仍为 0，ctest 默认会将该 test 计为 Passed。
+    # - 在门禁与证据口径下，“跳过=未执行=无证据”，应显式失败。
+    #
+    # 机制：
+    # - QtTest 输出的跳过行形如：`SKIP   : TestClass::testCase() <reason>`
+    # - CTest 的 FAIL_REGULAR_EXPRESSION 可对测试输出做正则匹配并判定失败。
+    # -----------------------------------------------------------------------------
+    set_tests_properties(${test_name} PROPERTIES
+        FAIL_REGULAR_EXPRESSION "SKIP\\s*:"
+    )
+
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
@@ -85,11 +100,90 @@ if(QCURL_WEBSOCKET_SUPPORT)
 endif()
 
 add_qcurl_test(tst_Integration tst_Integration.cpp)
+add_qcurl_test(tst_LargeFileDownload tst_LargeFileDownload.cpp)
+
+# -----------------------------------------------------------------------------
+# CTest Labels（取证式门禁分组）
+#
+# 目标：
+# - `offline`：默认门禁集合；不应依赖外部网络/服务，且不应触发 QtTest `QSKIP`。
+# - `env`：需要额外环境/能力（网络、httpbin、端口绑定、python、特定 libcurl feature 等）；应在具备依赖的 job 中单独跑（同样建议 skip=fail）。
+#
+# 用法示例：
+# - 仅跑离线门禁：ctest -L offline
+# - 仅跑环境依赖：ctest -L env
+# -----------------------------------------------------------------------------
+
+# 默认离线门禁（不包含任何源码内显式 QSKIP 的测试）
+set_tests_properties(tst_QCNetworkRequest PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkError PROPERTIES LABELS "offline")
+set_tests_properties(tst_CurlFeatureProbe PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRetryOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkResponseHeadersOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRequestWarningsOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkHttpErrorMappingOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkScheduler PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCRequest PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCRequestBuilder PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCMultipartFormData PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkCache PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkLogger PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkMiddleware PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkMiddlewareIntegration PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkUnifiedPolicyMiddlewareOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkCookieBridge PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkCancelToken PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRequestBuilder PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkMockHandler PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkHttp3 PROPERTIES LABELS "offline")
+
+# 环境依赖（env 门禁证据：要求在门禁环境中可稳定执行，不应触发 QSKIP）
+set_tests_properties(tst_QCNetworkReply PROPERTIES LABELS "env;httpbin;local_port")
+set_tests_properties(tst_QCNetworkRetry PROPERTIES LABELS "env;httpbin")
+set_tests_properties(tst_QCNetworkHttp2 PROPERTIES LABELS "capability;http2;local_port")
+set_tests_properties(tst_QCNetworkProxy PROPERTIES LABELS "capability;proxy")
+set_tests_properties(tst_QCNetworkFileTransfer PROPERTIES LABELS "env;httpbin;local_port")
+set_tests_properties(tst_QCNetworkIODeviceLifetime PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCNetworkStreamUpload PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCNetworkCacheIntegration PROPERTIES LABELS "env;httpbin")
+set_tests_properties(tst_QCNetworkConnectionPool PROPERTIES LABELS "env;httpbin;connection_pool")
+set_tests_properties(tst_QCNetworkNetworkPath PROPERTIES LABELS "capability;network_path")
+set_tests_properties(tst_QCNetworkShareHandle PROPERTIES LABELS "env;local_port;python")
+set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES LABELS "external_network;diagnostics")
+set_tests_properties(tst_Integration PROPERTIES LABELS "env;httpbin")
+set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
+
+# WebSocket（条件编译）
+if(QCURL_WEBSOCKET_SUPPORT)
+    set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "websocket;external_network")
+    set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "websocket;external_network")
+    set_tests_properties(tst_QCWebSocketCompression PROPERTIES LABELS "offline;websocket")
+endif()
 
 # QCurl ↔ libcurl 可观测一致性门禁（仅在显式开启时构建）
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
-    # pytest 驱动：Qt Test 执行器（默认无 env 时会 skip）
-    add_qcurl_test(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
+    # pytest 驱动：Qt Test 执行器（不注册为 ctest）
+    #
+    # 背景：
+    # - 该二进制通过环境变量（QCURL_LC_CASE_ID 等）选择具体 case，并由 pytest driver 调用生成 artifacts。
+    # - 若直接作为 ctest 测试运行，在缺少 env 时会 QSKIP 且进程返回 0，ctest 会将其计为 Passed，
+    #   容易造成“全绿但未覆盖”的误读。
+    add_executable(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
+    target_link_libraries(tst_LibcurlConsistency
+        PRIVATE
+            Qt6::Test
+            QCurl
+            CURL::libcurl
+    )
+    target_include_directories(tst_LibcurlConsistency
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_BINARY_DIR}/src
+    )
+    set_target_properties(tst_LibcurlConsistency PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
 
     # baseline clients（非 Qt Test，供 pytest suite 使用）
     add_executable(qcurl_lc_ws_baseline libcurl_consistency/ws_baseline_client.cpp)
@@ -170,7 +264,8 @@ endif()
 # add_qcurl_test(tst_QCCurlHandleManager tst_QCCurlHandleManager.cpp)  # 待实现
 
 # 统计测试数量
-set(TEST_COUNT 29)  # 不含 WebSocket 条件测试的总数
+# 统计测试数量（以本文件 add_test 注册为准；不包含 libcurl_consistency 的 pytest 执行器）
+set(TEST_COUNT 35)  # 不含 WebSocket 条件测试的总数
 if(QCURL_WEBSOCKET_SUPPORT)
     math(EXPR TEST_COUNT "${TEST_COUNT} + 3")  # WebSocket + WebSocketPool + WebSocketCompression
 endif()

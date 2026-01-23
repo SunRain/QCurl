@@ -13,6 +13,7 @@
 | `tst_QCNetworkError.cpp` | 单元测试 | 15 | ❌ | 错误码转换和字符串 |
 | `tst_QCNetworkFileTransfer.cpp` | 功能测试 | 3 | ✅ | 流式下载/上传 + 断点续传 |
 | `tst_Integration.cpp` | 集成测试 | 27 | ✅ | 真实网络请求和完整功能验证 |
+| `tst_LargeFileDownload.cpp` | 外网回归 | 1 | ✅ | 外部 HTTPS 大文件下载（非门禁） |
 
 **总计：100 个测试用例**
 
@@ -20,40 +21,22 @@
 
 ## 🚀 快速开始
 
-### 1. 准备测试环境（集成测试 / 依赖 httpbin 的用例需要）
+### 1.（可选）准备 env 测试环境（依赖 httpbin 的用例需要）
 
-依赖 httpbin 的测试需要本地 httpbin 服务。**请先启动 Docker 容器：**
-
-```bash
-# 启动 httpbin 服务（后台运行）
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-
-# 验证服务是否正常
-curl http://localhost:8935/get
-# 应返回 JSON 响应
-```
-
-**停止服务：**
-```bash
-docker stop qcurl-httpbin && docker rm qcurl-httpbin
-```
+依赖 httpbin 的测试需要本地 httpbin 服务（默认 `http://localhost:8935`）。  
+启动/停止与健康检查请参考：[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）”。
 
 ### 2. 运行测试
 
-```bash
-# 进入构建目录
-cd build/tests
+测试运行命令（offline/env 门禁、httpbin、HTTP/2、本地全量回归、libcurl_consistency）已统一维护在：  
+[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md)
 
-# 运行所有测试（通过 CTest）
-cd ..
-ctest --output-on-failure
-
-# 或单独运行某个测试
-./tests/tst_QCNetworkRequest
-./tests/tst_QCNetworkReply  # 部分用例需要先启动 httpbin
-./tests/tst_QCNetworkError
-./tests/tst_Integration  # 需要先启动 httpbin
-```
+建议从以下章节开始：
+- 2. 运行 Qt Test（ctest）
+- 2.2（可选）启动本地 httpbin（用于部分集成用例）
+- 2.3 全量回归（本地自检；非门禁）
+- 3. libcurl_consistency Gate（可选）
+- 3.3 全量回归（pytest 直跑；可选）
 
 ### 3. 查看详细输出
 
@@ -131,11 +114,10 @@ ctest --output-on-failure
 
 **⚠️ 需要本地 httpbin 服务（端口 8935）。**
 
-#### 大文件下载依赖
+#### 外部 HTTPS 大文件下载（非门禁）
 
-- `testLargeFileDownload` 会从 `https://mirrors.ustc.edu.cn/archlinux/iso/2025.11.01/archlinux-bootstrap-2025.11.01-x86_64.tar.zst` 下载约 138 MB 的 Arch Linux bootstrap，用于验证真实 HTTPS 大文件传输。
-- 运行该用例需要可访问上述镜像站且具备足够带宽/时间，本地 httpbin 之外还需出口网络。
-- 由于部分 CI 环境缺少 USTC 镜像站的 CA 链，该测试在代码层面为请求设置 `QCNetworkSslConfig::insecureConfig()`，仅在此处禁用证书校验以避免误报；其余测试仍保持严格校验。
+`tst_Integration` 仅依赖本地 httpbin，不再包含外部大文件下载用例。  
+外部 HTTPS + 大体量传输回归已迁移至 `tst_LargeFileDownload`（LABELS=external_heavy）。
 
 ---
 
@@ -175,14 +157,7 @@ static const QString HTTPBIN_BASE_URL = QStringLiteral("https://httpbin.org");
 
 **原因：** httpbin 服务未启动。
 
-**解决：**
-```bash
-# 检查 Docker 容器是否运行
-docker ps | grep httpbin
-
-# 如果未运行，启动它
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-```
+**解决：** 按 [`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）” 启动并做健康检查。
 
 ### Q2: 测试超时失败
 
@@ -204,13 +179,7 @@ QVERIFY(waitForSignal(reply, SIGNAL(finished()), 30000));  // 改为 30 秒
 
 **原因：** libcurl 配置问题或 httpbin 版本兼容性。
 
-**解决：**
-```bash
-# 使用最新 httpbin 镜像
-docker pull kennethreitz/httpbin
-docker stop qcurl-httpbin && docker rm qcurl-httpbin
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-```
+**解决：** 建议按 [`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 httpbin 章节重建容器（必要时先 `docker pull kennethreitz/httpbin`）。
 
 ### Q4: 如何跳过集成测试？
 

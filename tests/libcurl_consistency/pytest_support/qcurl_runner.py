@@ -6,6 +6,8 @@ QCurl Qt Test 运行器（LC-4 占位）：
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -24,6 +26,17 @@ from .artifacts import (
 
 def _collect_download_files(run_dir: Path, count: int) -> List[Path]:
     return [run_dir / f"download_{i}.data" for i in range(count)]
+
+def _parse_qttest_totals(stdout: str) -> Optional[Dict[str, int]]:
+    # 示例：Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 19ms
+    for line in reversed(stdout.splitlines()):
+        m = re.match(
+            r"^Totals:\s+(?P<passed>\d+)\s+passed,\s+(?P<failed>\d+)\s+failed,\s+(?P<skipped>\d+)\s+skipped,",
+            line.strip(),
+        )
+        if m:
+            return {k: int(v) for k, v in m.groupdict().items()}
+    return None
 
 def run_qt_test(
     env: Env,
@@ -54,6 +67,8 @@ def run_qt_test(
     root = artifacts_root(env)
     case_dir = ensure_case_dir(root, suite=suite, case=case)
     run_dir = case_dir / "qcurl_run"
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     run_env = os.environ.copy()
@@ -78,6 +93,10 @@ def run_qt_test(
     if proc.returncode != 0:
         raise RuntimeError(f"Qt Test failed ({proc.returncode}): {cmd}\n{proc.stdout}\n{proc.stderr}")
 
+    totals = _parse_qttest_totals(proc.stdout or "")
+    if totals and totals.get("skipped", 0) > 0:
+        raise RuntimeError(f"Qt Test reported skipped={totals.get('skipped')}: {cmd}\n{proc.stdout}\n{proc.stderr}")
+
     req_semantic = None
     if request_meta:
         req_semantic = build_request_semantic(
@@ -93,6 +112,9 @@ def run_qt_test(
             files = _collect_download_files(run_dir, download_count)
         body = response_meta.get("body")
         if files:
+            missing = [str(p) for p in files if not p.exists()]
+            if missing:
+                raise RuntimeError(f"Qt Test did not produce expected download files: {missing}\ncmd={cmd}")
             # 对于 QCurl 侧，优先基于实际落盘结果计算 hash/len
             body = None
         resp_summary = build_response_summary(

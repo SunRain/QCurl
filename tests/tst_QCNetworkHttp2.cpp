@@ -8,7 +8,6 @@
  * - 头部压缩（HPACK）
  * - 协议降级（HTTP/2 → HTTP/1.1）
  * - HTTP/2 over TLS (h2)
- * - HTTP/2 明文连接 (h2c)
  * - 并发流限制
  * - 流控制
  *
@@ -19,9 +18,16 @@
  * 1. 确保 libcurl 编译时启用 nghttp2 支持：
  *    curl --version | grep HTTP2
  *
- * 2. 使用支持 HTTP/2 的测试服务：
- *    - httpbin（支持 HTTP/2）：需要 Nginx + httpbin 或 nghttp2 server
- *    - 或使用公共 HTTP/2 测试服务：https://http2.golang.org/
+ * 2. 默认使用仓库内置的本地可控 HTTP/2 server（node）：
+ *    - 脚本：tests/http2-test-server.js
+ *    - 证书：tests/testdata/http2/localhost.{crt,key}（仅用于测试）
+ *
+ *    如需对接其他 HTTP/2 server（例如 curl testenv），可通过环境变量覆盖 base URL：
+ *    - QCURL_HTTP2_TEST_BASE_URL: 覆盖 HTTP/2 base URL（例如 https://127.0.0.1:PORT）
+ *    - QCURL_HTTP2_TEST_HTTP1_BASE_URL: 覆盖 HTTP/1.1-only base URL（用于降级用例）
+ *
+ *    可选：
+ *    - QCURL_HTTP2_DISABLE_DOWNGRADE_TEST=1：禁用“HTTP/2 → HTTP/1.1 降级”用例（仅记录 QWARN）
  *
  * 3. 运行测试：
  *    ./tst_QCNetworkHttp2
@@ -37,6 +43,15 @@
 #include <QSignalSpy>
 #include <QElapsedTimer>
 #include <QMetaMethod>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QSet>
+#include <QTcpSocket>
+#include <QThread>
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
@@ -54,22 +69,9 @@ using namespace QCurl;
 // 测试服务器配置
 // ============================================================================
 
-/**
- * @brief HTTP/2 测试服务器 URL
- *
- * 使用 Golang 官方 HTTP/2 测试服务器（公开可用）
- * 支持：h2, h2c, HTTP/1.1 降级
- */
-static const QString HTTP2_TEST_SERVER = QStringLiteral("https://http2.golang.org");
-
-/**
- * @brief 本地 httpbin 服务（如果启用 HTTP/2）
- *
- * 需要配置：
- * - Nginx 作为反向代理启用 HTTP/2
- * - 或使用 nghttpd 直接提供 httpbin
- */
-static const QString LOCAL_HTTP2_SERVER = QStringLiteral("https://localhost:8443");
+static const char *kHttp2TestBaseUrlEnvName = "QCURL_HTTP2_TEST_BASE_URL";
+static const char *kHttp1TestBaseUrlEnvName = "QCURL_HTTP2_TEST_HTTP1_BASE_URL";
+static const char *kDisableDowngradeEnvName = "QCURL_HTTP2_DISABLE_DOWNGRADE_TEST";
 
 class TestQCNetworkHttp2 : public QObject
 {
@@ -95,12 +97,28 @@ private slots:
     void testHttp2VsHttp1Performance(); // 性能对比（简化版）
 
 private:
+    static constexpr const char *kJsonErrorKey = "_qcurl_test_error";
+
     QCNetworkAccessManager *m_manager = nullptr;
+
+    QProcess m_localServer;
+    QString m_h2BaseUrl;
+    QString m_http1BaseUrl;
+    QString m_localH2BaseUrl;
+    QString m_localHttp1BaseUrl;
+    QString m_serverError;
+    bool m_disableDowngradeTest = false;
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
     bool checkHttp2Support();  // 检查 libcurl 是否支持 HTTP/2
-    QString extractHttpVersion(QCNetworkReply *reply);  // 从响应中提取 HTTP 版本
+    static bool waitForPortReady(quint16 port, int timeoutMs);
+    bool startLocalTestServer();
+    void stopLocalTestServer();
+    QJsonObject requestJson(const QUrl &url,
+                            QCNetworkHttpVersion httpVersion,
+                            const QList<QPair<QByteArray, QByteArray>> &headers = {},
+                            int timeoutMs                                      = 15000);
 };
 
 // ============================================================================
@@ -109,8 +127,27 @@ private:
 
 bool TestQCNetworkHttp2::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
+    // 避免 “信号已先触发 -> 新建 QSignalSpy 永远等不到” 的假超时。
+    auto *reply = qobject_cast<QCNetworkReply *>(obj);
+    if (signal == QMetaMethod::fromSignal(&QCNetworkReply::finished)) {
+        if (reply && reply->state() == ReplyState::Finished) {
+            return true;
+        }
+    }
+
     QSignalSpy spy(obj, signal);
-    return spy.wait(timeout);
+    if (spy.count() > 0) {
+        return true;
+    }
+    if (spy.wait(timeout)) {
+        return true;
+    }
+
+    if (signal == QMetaMethod::fromSignal(&QCNetworkReply::finished)) {
+        return reply && reply->state() == ReplyState::Finished;
+    }
+
+    return false;
 }
 
 bool TestQCNetworkHttp2::checkHttp2Support()
@@ -119,29 +156,179 @@ bool TestQCNetworkHttp2::checkHttp2Support()
     return (ver->features & CURL_VERSION_HTTP2) != 0;
 }
 
-QString TestQCNetworkHttp2::extractHttpVersion(QCNetworkReply *reply)
+bool TestQCNetworkHttp2::waitForPortReady(quint16 port, int timeoutMs)
 {
-    // 尝试从响应头中提取 HTTP 版本
-    // 注意：libcurl 可能在 HTTP 头中包含协议信息
-    auto headers = reply->rawHeaders();
-    for (const auto &header : headers) {
-        QString key = QString::fromUtf8(header.first).toLower();
-        QString value = QString::fromUtf8(header.second);
+    QElapsedTimer timer;
+    timer.start();
 
-        // 某些服务器会在 Server header 中说明 HTTP/2
-        if (key == "server" && value.contains("h2", Qt::CaseInsensitive)) {
-            return "HTTP/2";
+    while (timer.elapsed() < timeoutMs) {
+        QTcpSocket probe;
+        probe.connectToHost(QHostAddress::LocalHost, port);
+        if (probe.waitForConnected(100)) {
+            probe.disconnectFromHost();
+            return true;
         }
+        QThread::msleep(50);
+    }
 
-        // 或者通过特定的 HTTP/2 header（如 :status）
-        if (key.startsWith(":")) {
-            return "HTTP/2";
+    return false;
+}
+
+bool TestQCNetworkHttp2::startLocalTestServer()
+{
+    stopLocalTestServer();
+    m_serverError.clear();
+    m_localH2BaseUrl.clear();
+    m_localHttp1BaseUrl.clear();
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString scriptPath
+        = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/http2-test-server.js"));
+    if (!QFileInfo::exists(scriptPath)) {
+        m_serverError = QStringLiteral(
+            "未找到本地 HTTP/2 测试服务器脚本（tests/http2-test-server.js）。");
+        return false;
+    }
+
+    m_localServer.setProgram(QStringLiteral("node"));
+    m_localServer.setArguments({scriptPath, QStringLiteral("--h2-port"), QStringLiteral("0"),
+                                QStringLiteral("--http1-port"), QStringLiteral("0")});
+    m_localServer.setProcessChannelMode(QProcess::MergedChannels);
+    m_localServer.start();
+
+    if (!m_localServer.waitForStarted(2000)) {
+        m_serverError = QStringLiteral("无法启动本地 HTTP/2 测试服务器（node）。请确认 node 可用。");
+        return false;
+    }
+
+    QElapsedTimer timer;
+    timer.start();
+    QByteArray output;
+
+    QRegularExpression re(QStringLiteral(R"(QCURL_HTTP2_TEST_SERVER_READY\s+(\{.*\})\s*)"));
+    while (timer.elapsed() < 5000) {
+        if (m_localServer.waitForReadyRead(200)) {
+            output += m_localServer.readAll();
+            const QString outText = QString::fromUtf8(output);
+            const QRegularExpressionMatch match = re.match(outText);
+            if (match.hasMatch()) {
+                const QByteArray jsonBytes = match.captured(1).toUtf8();
+                QJsonParseError parseError{};
+                const QJsonDocument doc = QJsonDocument::fromJson(jsonBytes, &parseError);
+                if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+                    m_serverError = QStringLiteral("本地 HTTP/2 测试服务器输出格式错误：%1")
+                                        .arg(parseError.errorString());
+                    break;
+                }
+
+                const QJsonObject obj = doc.object();
+                const int h2Port = obj.value(QStringLiteral("h2Port")).toInt(0);
+                const int http1Port = obj.value(QStringLiteral("http1Port")).toInt(0);
+                if (h2Port <= 0 || http1Port <= 0) {
+                    m_serverError = QStringLiteral("本地 HTTP/2 测试服务器返回端口无效。");
+                    break;
+                }
+
+                if (!waitForPortReady(static_cast<quint16>(h2Port), 3000)
+                    || !waitForPortReady(static_cast<quint16>(http1Port), 3000)) {
+                    m_serverError
+                        = QStringLiteral("本地 HTTP/2 测试服务器未在预期时间内就绪（端口不可连接）。");
+                    break;
+                }
+
+                m_localH2BaseUrl
+                    = QStringLiteral("https://127.0.0.1:%1").arg(QString::number(h2Port));
+                m_localHttp1BaseUrl
+                    = QStringLiteral("https://127.0.0.1:%1").arg(QString::number(http1Port));
+                return true;
+            }
         }
     }
 
-    // 如果没有明确指示，通过 curl_easy_getinfo 检查
-    // （在实际应用中，可以通过 QCNetworkReply 暴露 HTTP 版本信息）
-    return "Unknown";
+    const QString outText = QString::fromUtf8(output + m_localServer.readAll());
+    if (!outText.isEmpty()) {
+        qWarning().noquote() << "Local HTTP/2 server output:\n" << outText;
+    }
+
+    stopLocalTestServer();
+    if (m_serverError.isEmpty()) {
+        m_serverError = QStringLiteral("本地 HTTP/2 测试服务器未在预期时间内输出 READY 信号。");
+    }
+    return false;
+}
+
+void TestQCNetworkHttp2::stopLocalTestServer()
+{
+    if (m_localServer.state() == QProcess::NotRunning) {
+        m_localH2BaseUrl.clear();
+        m_localHttp1BaseUrl.clear();
+        return;
+    }
+
+    m_localServer.terminate();
+    if (!m_localServer.waitForFinished(1500)) {
+        m_localServer.kill();
+        m_localServer.waitForFinished(1500);
+    }
+
+    m_localH2BaseUrl.clear();
+    m_localHttp1BaseUrl.clear();
+}
+
+QJsonObject TestQCNetworkHttp2::requestJson(const QUrl &url,
+                                           QCNetworkHttpVersion httpVersion,
+                                           const QList<QPair<QByteArray, QByteArray>> &headers,
+                                           int timeoutMs)
+{
+    QCNetworkRequest request(url);
+    request.setHttpVersion(httpVersion);
+    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
+
+    for (const auto &kv : headers) {
+        request.setRawHeader(kv.first, kv.second);
+    }
+
+    auto *reply = m_manager->sendGet(request);
+    if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), timeoutMs)) {
+        const QString err = reply->errorString();
+        reply->cancel();
+        reply->deleteLater();
+        return QJsonObject{
+            {QString::fromUtf8(kJsonErrorKey),
+             QStringLiteral("请求超时（%1ms）：%2").arg(timeoutMs).arg(err)},
+        };
+    }
+
+    if (reply->error() != NetworkError::NoError) {
+        const QString err = reply->errorString();
+        reply->deleteLater();
+        return QJsonObject{
+            {QString::fromUtf8(kJsonErrorKey), QStringLiteral("请求失败：%1").arg(err)},
+        };
+    }
+
+    auto data = reply->readAll();
+    reply->deleteLater();
+    if (!data.has_value()) {
+        return QJsonObject{
+            {QString::fromUtf8(kJsonErrorKey), QStringLiteral("响应体为空（std::nullopt）")},
+        };
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(*data, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        return QJsonObject{
+            {QString::fromUtf8(kJsonErrorKey),
+             QStringLiteral("JSON 解析失败：%1").arg(parseError.errorString())},
+        };
+    }
+    if (!doc.isObject()) {
+        return QJsonObject{
+            {QString::fromUtf8(kJsonErrorKey), QStringLiteral("JSON 顶层必须是 object")},
+        };
+    }
+    return doc.object();
 }
 
 // ============================================================================
@@ -167,12 +354,42 @@ void TestQCNetworkHttp2::initTestCase()
     qDebug() << "HTTP/2 支持：" << ((ver->features & CURL_VERSION_HTTP2) ? "是" : "否");
     qDebug() << "HTTP/3 支持：" << ((ver->features & CURL_VERSION_HTTP3) ? "是" : "否");
 
+    m_disableDowngradeTest = !qgetenv(kDisableDowngradeEnvName).trimmed().isEmpty()
+                             && qgetenv(kDisableDowngradeEnvName).trimmed() != "0";
+
+    const QString overriddenH2 = QString::fromUtf8(qgetenv(kHttp2TestBaseUrlEnvName)).trimmed();
+    const QString overriddenHttp1 = QString::fromUtf8(qgetenv(kHttp1TestBaseUrlEnvName)).trimmed();
+
+    if (!overriddenH2.isEmpty()) {
+        m_h2BaseUrl = overriddenH2;
+    }
+    if (!overriddenHttp1.isEmpty()) {
+        m_http1BaseUrl = overriddenHttp1;
+    }
+
+    if (m_h2BaseUrl.isEmpty() || m_http1BaseUrl.isEmpty()) {
+        if (!startLocalTestServer()) {
+            QFAIL(qPrintable(QStringLiteral("本地 HTTP/2 测试服务器不可用：%1").arg(m_serverError)));
+        }
+
+        if (m_h2BaseUrl.isEmpty()) {
+            m_h2BaseUrl = m_localH2BaseUrl;
+        }
+        if (m_http1BaseUrl.isEmpty()) {
+            m_http1BaseUrl = m_localHttp1BaseUrl;
+        }
+    }
+
+    qDebug() << "HTTP/2 base URL:" << m_h2BaseUrl;
+    qDebug() << "HTTP/1.1 base URL:" << m_http1BaseUrl;
+
     m_manager = new QCNetworkAccessManager(this);
 }
 
 void TestQCNetworkHttp2::cleanupTestCase()
 {
     qDebug() << "清理 HTTP/2 测试套件";
+    stopLocalTestServer();
     m_manager = nullptr;
 }
 
@@ -208,68 +425,36 @@ void TestQCNetworkHttp2::testHttp2Negotiation()
 {
     qDebug() << "========== testHttp2Negotiation ==========";
 
-    // 配置 HTTP/2 请求
-    QCNetworkRequest request(QUrl(HTTP2_TEST_SERVER + "/reqinfo"));
-    request.setHttpVersion(QCNetworkHttpVersion::Http2);
-
-    // 使用默认 SSL 配置（启用 ALPN 协议协商）
-    QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-    request.setSslConfig(sslConfig);
-
-    auto *reply = m_manager->sendGet(request);
-    if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
-        reply->cancel();
-        reply->deleteLater();
-        QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过此测试");
-    }
-
-    // 验证请求成功
-    if (reply->error() != NetworkError::NoError) {
-        qWarning() << "HTTP/2 协商测试失败（可能网络问题）：" << reply->errorString();
-        QSKIP("HTTP/2 测试服务器不可达，跳过此测试");
-    }
-
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    auto data = reply->readAll();
-    QVERIFY(data.has_value());
-
-    qDebug() << "HTTP/2 协议协商成功，响应大小：" << data->size() << "字节";
-    qDebug() << "响应预览：" << data->left(200);
-
-    reply->deleteLater();
+    const QUrl url(m_h2BaseUrl + QStringLiteral("/reqinfo?case=negotiation"));
+    const QJsonObject obj = requestJson(url, QCNetworkHttpVersion::Http2TLS);
+    QVERIFY2(!obj.contains(QString::fromUtf8(kJsonErrorKey)),
+             qPrintable(obj.value(QString::fromUtf8(kJsonErrorKey)).toString()));
+    QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+    QVERIFY(obj.value(QStringLiteral("sessionId")).toInt() > 0);
+    QVERIFY(obj.value(QStringLiteral("streamId")).toInt() > 0);
 }
 
 void TestQCNetworkHttp2::testHttp2Multiplexing()
 {
     qDebug() << "========== testHttp2Multiplexing ==========";
 
-    // ✅ 添加网络可用性检查
-    QCNetworkRequest healthCheck(QUrl("https://httpbin.org/status/200"));
-    auto *healthReply = m_manager->sendGet(healthCheck);
-    if (!waitForSignal(healthReply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000) || 
-        healthReply->error() != NetworkError::NoError) {
-        QSKIP("Network not available (http2.golang.org unreachable)");
-    }
-    healthReply->deleteLater();
-
     // 同时发起 5 个请求到同一服务器（HTTP/2 应该复用单个连接）
     QList<QCNetworkReply*> replies;
 
     for (int i = 0; i < 5; ++i) {
-        QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?id=%1").arg(i)));
-        request.setHttpVersion(QCNetworkHttpVersion::Http2);
-
+        const QUrl url(m_h2BaseUrl
+                       + QStringLiteral("/reqinfo?id=%1&delay_ms=150").arg(QString::number(i)));
+        QCNetworkRequest request(url);
+        request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
         auto *reply = m_manager->sendGet(request);
         replies.append(reply);
     }
 
-    // ✅ 增加超时时间到 30 秒，如果超时则跳过
     // 等待所有请求完成
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
-            // ✅ 网络超时时跳过测试
             qWarning() << "HTTP/2 Multiplexing timeout on request" << i;
             for (auto *pendingReply : replies) {
                 if (pendingReply) {
@@ -278,22 +463,36 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
                 }
             }
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QSKIP("Network not available (http2.golang.org unreachable or too slow)");
+            QFAIL("HTTP/2 多路复用测试超时（单请求 30s 未完成）");
         }
     }
 
-    // 验证所有请求都成功
-    int successCount = 0;
-    for (auto *reply : replies) {
-        if (reply->error() == NetworkError::NoError) {
-            successCount++;
-        } else {
-            qWarning() << "请求失败：" << reply->errorString();
-        }
-    }
+    QSet<int> streamIds;
+    int sessionId = -1;
+    for (int i = 0; i < replies.size(); ++i) {
+        auto *reply = replies[i];
+        QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
+        const auto data = reply->readAll();
+        QVERIFY(data.has_value());
 
-    qDebug() << "HTTP/2 多路复用测试：" << successCount << "/" << replies.size() << "成功";
-    QVERIFY(successCount >= 3);  // 至少 3 个成功（容忍网络问题）
+        QJsonParseError parseError{};
+        const QJsonDocument doc = QJsonDocument::fromJson(*data, &parseError);
+        QVERIFY2(parseError.error == QJsonParseError::NoError, qPrintable(parseError.errorString()));
+        const QJsonObject obj = doc.object();
+
+        QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int streamId = obj.value(QStringLiteral("streamId")).toInt();
+        QVERIFY(sid > 0);
+        QVERIFY(streamId > 0);
+        if (sessionId < 0) {
+            sessionId = sid;
+        }
+        QCOMPARE(sid, sessionId);
+        QVERIFY2(!streamIds.contains(streamId),
+                 qPrintable(QStringLiteral("streamId 重复：%1").arg(streamId)));
+        streamIds.insert(streamId);
+    }
 
     for (auto *reply : replies) {
         if (reply) {
@@ -307,8 +506,9 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
     qDebug() << "========== testHttp2HeaderCompression ==========";
 
     // 发送带大量自定义 Header 的请求
-    QCNetworkRequest request(QUrl(HTTP2_TEST_SERVER + "/reqinfo"));
-    request.setHttpVersion(QCNetworkHttpVersion::Http2);
+    QCNetworkRequest request(QUrl(m_h2BaseUrl + QStringLiteral("/reqinfo?case=headers")));
+    request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
     // 添加多个自定义 Header
     for (int i = 0; i < 10; ++i) {
@@ -318,19 +518,34 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
 
     auto *reply = m_manager->sendGet(request);
     if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
+        const QString err = reply->errorString();
         reply->cancel();
         reply->deleteLater();
-        QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过此测试");
+        QFAIL(qPrintable(QStringLiteral("HTTP/2 头部压缩测试 15s 内未完成：%1").arg(err)));
     }
 
     if (reply->error() != NetworkError::NoError) {
-        qWarning() << "HTTP/2 头部压缩测试失败：" << reply->errorString();
-        QSKIP("HTTP/2 测试服务器不可达");
+        const QString err = reply->errorString();
+        reply->deleteLater();
+        QFAIL(qPrintable(QStringLiteral("HTTP/2 头部压缩测试失败：%1").arg(err)));
     }
 
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    qDebug() << "HTTP/2 头部压缩测试成功（发送 10 个自定义 Header）";
+    const auto data = reply->readAll();
+    QVERIFY(data.has_value());
+
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(*data, &parseError);
+    QVERIFY2(parseError.error == QJsonParseError::NoError, qPrintable(parseError.errorString()));
+    const QJsonObject obj = doc.object();
+    QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+
+    const QJsonObject echoed = obj.value(QStringLiteral("headers")).toObject();
+    for (int i = 0; i < 10; ++i) {
+        const QString k = QStringLiteral("x-custom-header-%1").arg(QString::number(i));
+        QVERIFY2(echoed.contains(k), qPrintable(QStringLiteral("未回显 header: %1").arg(k)));
+    }
 
     reply->deleteLater();
 }
@@ -339,34 +554,19 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
 {
     qDebug() << "========== testHttp2Downgrade ==========";
 
-    // 请求一个只支持 HTTP/1.1 的服务器（libcurl 应该自动降级）
-    // 注意：大多数现代服务器都支持 HTTP/2，这个测试可能难以触发降级
-
-    QCNetworkRequest request(QUrl("https://example.com"));  // example.com 可能只支持 HTTP/1.1
-    request.setHttpVersion(QCNetworkHttpVersion::HttpAny);  // 自动协商
-
-    auto *reply = m_manager->sendGet(request);
-    if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
-        reply->cancel();
-        reply->deleteLater();
-        QSKIP("测试服务器不可达或网络受限，跳过此测试");
+    if (m_disableDowngradeTest) {
+        QWARN("已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例。");
+        return;
     }
 
-    if (reply->error() != NetworkError::NoError) {
-        qWarning() << "HTTP/2 降级测试失败：" << reply->errorString();
-        QSKIP("测试服务器不可达");
-    }
+    QVERIFY2(!m_http1BaseUrl.isEmpty(),
+             "HTTP/1.1 base URL 为空：请设置 QCURL_HTTP2_TEST_HTTP1_BASE_URL 或使用默认本地 server。");
 
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    // 验证协议版本（如果服务器只支持 HTTP/1.1，应该降级）
-    QString httpVersion = extractHttpVersion(reply);
-    qDebug() << "检测到的 HTTP 版本：" << httpVersion;
-
-    // 只要请求成功，就认为降级机制工作正常
-    QVERIFY(!httpVersion.isEmpty());
-
-    reply->deleteLater();
+    const QUrl url(m_http1BaseUrl + QStringLiteral("/reqinfo?case=downgrade"));
+    const QJsonObject obj = requestJson(url, QCNetworkHttpVersion::Http2TLS);
+    QVERIFY2(!obj.contains(QString::fromUtf8(kJsonErrorKey)),
+             qPrintable(obj.value(QString::fromUtf8(kJsonErrorKey)).toString()));
+    QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("1.1"));
 }
 
 void TestQCNetworkHttp2::testHttp2WithSsl()
@@ -374,43 +574,16 @@ void TestQCNetworkHttp2::testHttp2WithSsl()
     qDebug() << "========== testHttp2WithSsl ==========";
 
     // HTTP/2 over TLS (h2) - 标准 HTTPS + HTTP/2
-    QCNetworkRequest request(QUrl(HTTP2_TEST_SERVER + "/reqinfo"));
-    request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);  // 强制 HTTP/2 over TLS
-
-    QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-    request.setSslConfig(sslConfig);
-
-    auto *reply = m_manager->sendGet(request);
-    if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
-        reply->cancel();
-        reply->deleteLater();
-        QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过此测试");
-    }
-
-    if (reply->error() != NetworkError::NoError) {
-        qWarning() << "HTTP/2 over TLS 测试失败：" << reply->errorString();
-        QSKIP("HTTP/2 测试服务器不可达");
-    }
-
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    qDebug() << "HTTP/2 over TLS (h2) 测试成功";
-
-    reply->deleteLater();
+    const QUrl url(m_h2BaseUrl + QStringLiteral("/reqinfo?case=h2tls"));
+    const QJsonObject obj = requestJson(url, QCNetworkHttpVersion::Http2TLS);
+    QVERIFY2(!obj.contains(QString::fromUtf8(kJsonErrorKey)),
+             qPrintable(obj.value(QString::fromUtf8(kJsonErrorKey)).toString()));
+    QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
 }
 
 void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
 {
     qDebug() << "========== testHttp2ConcurrentStreams ==========";
-
-    // ✅ 添加网络可用性检查
-    QCNetworkRequest healthCheck(QUrl("https://httpbin.org/status/200"));
-    auto *healthReply = m_manager->sendGet(healthCheck);
-    if (!waitForSignal(healthReply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000) || 
-        healthReply->error() != NetworkError::NoError) {
-        QSKIP("Network not available (http2.golang.org unreachable)");
-    }
-    healthReply->deleteLater();
 
     // 测试并发流（HTTP/2 的核心特性）
     // 同时发起 10 个请求，验证它们能并发执行
@@ -420,8 +593,11 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
 
     QList<QCNetworkReply*> replies;
     for (int i = 0; i < 10; ++i) {
-        QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?stream=%1").arg(i)));
-        request.setHttpVersion(QCNetworkHttpVersion::Http2);
+        const QUrl url(m_h2BaseUrl + QStringLiteral("/reqinfo?stream=%1&delay_ms=200")
+                                        .arg(QString::number(i)));
+        QCNetworkRequest request(url);
+        request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
         auto *reply = m_manager->sendGet(request);
         replies.append(reply);
@@ -440,26 +616,39 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
                 }
             }
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QSKIP("Network not available (http2.golang.org unreachable or too slow)");
+            QFAIL("HTTP/2 并发流测试超时（单请求 30s 未完成）");
         }
     }
 
     qint64 elapsed = timer.elapsed();
 
-    // 统计成功数
-    int successCount = 0;
+    QSet<int> streamIds;
+    int sessionId = -1;
     for (auto *reply : replies) {
-        if (reply->error() == NetworkError::NoError) {
-            successCount++;
+        QVERIFY(reply->error() == NetworkError::NoError);
+        const auto data = reply->readAll();
+        QVERIFY(data.has_value());
+
+        QJsonParseError parseError{};
+        const QJsonDocument doc = QJsonDocument::fromJson(*data, &parseError);
+        QVERIFY2(parseError.error == QJsonParseError::NoError, qPrintable(parseError.errorString()));
+        const QJsonObject obj = doc.object();
+        QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+
+        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int streamId = obj.value(QStringLiteral("streamId")).toInt();
+        QVERIFY(sid > 0);
+        QVERIFY(streamId > 0);
+        if (sessionId < 0) {
+            sessionId = sid;
         }
+        QCOMPARE(sid, sessionId);
+        QVERIFY(!streamIds.contains(streamId));
+        streamIds.insert(streamId);
     }
 
-    qDebug() << "HTTP/2 并发流测试：" << successCount << "/" << 10 << "成功";
+    qDebug() << "HTTP/2 并发流测试：10/10 成功";
     qDebug() << "总耗时：" << elapsed << "ms";
-
-    // 如果是 HTTP/2，10 个请求应该在较短时间内完成（多路复用）
-    // 如果是 HTTP/1.1，则需要建立多个连接，耗时更长
-    QVERIFY(successCount >= 5);  // 至少一半成功
 
     for (auto *reply : replies) {
         if (reply) {
@@ -474,22 +663,44 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
 
     // 验证连接复用：顺序发送 5 个请求，HTTP/2 应该复用同一连接
 
+    int sessionId = -1;
+    QSet<int> streamIds;
+
     for (int i = 0; i < 5; ++i) {
-        QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?seq=%1").arg(i)));
-        request.setHttpVersion(QCNetworkHttpVersion::Http2);
+        QCNetworkRequest request(
+            QUrl(m_h2BaseUrl
+                 + QStringLiteral("/reqinfo?seq=%1").arg(QString::number(i))));
+        request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
         auto *reply = m_manager->sendGet(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
+            const QString err = reply->errorString();
             reply->cancel();
             reply->deleteLater();
-            QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过连接复用测试");
+            QFAIL(qPrintable(QStringLiteral("HTTP/2 连接复用测试 15s 内未完成：%1").arg(err)));
         }
 
-        if (reply->error() == NetworkError::NoError) {
-            qDebug() << "请求" << i << "成功";
-        } else {
-            qWarning() << "请求" << i << "失败：" << reply->errorString();
+        QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
+        const auto data = reply->readAll();
+        QVERIFY(data.has_value());
+
+        QJsonParseError parseError{};
+        const QJsonDocument doc = QJsonDocument::fromJson(*data, &parseError);
+        QVERIFY2(parseError.error == QJsonParseError::NoError, qPrintable(parseError.errorString()));
+        const QJsonObject obj = doc.object();
+        QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int streamId = obj.value(QStringLiteral("streamId")).toInt();
+        QVERIFY(sid > 0);
+        QVERIFY(streamId > 0);
+
+        if (sessionId < 0) {
+            sessionId = sid;
         }
+        QCOMPARE(sid, sessionId);
+        QVERIFY(!streamIds.contains(streamId));
+        streamIds.insert(streamId);
 
         reply->deleteLater();
     }
@@ -503,44 +714,28 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
 
     const int requestCount = 10;
 
-    // 性能对比依赖外部测试服务器，网络不可用时直接跳过
-    {
-        QCNetworkRequest healthCheck(QUrl(HTTP2_TEST_SERVER + "/reqinfo"));
-        healthCheck.setHttpVersion(QCNetworkHttpVersion::Http1_1);
-        auto *healthReply = m_manager->sendGet(healthCheck);
-        const bool ok = waitForSignal(healthReply,
-                                      QMetaMethod::fromSignal(&QCNetworkReply::finished),
-                                      5000)
-            && healthReply->error() == NetworkError::NoError;
-        const QString errorString = healthReply->errorString();
-        healthReply->deleteLater();
-
-        if (!ok) {
-            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
-                                 .arg(errorString)));
-        }
-    }
-
     // ========== HTTP/1.1 基准测试 ==========
     qDebug() << "开始 HTTP/1.1 基准测试...";
     QElapsedTimer http1Timer;
     http1Timer.start();
 
     for (int i = 0; i < requestCount; ++i) {
-        QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?http1=%1").arg(i)));
+        QCNetworkRequest request(
+            QUrl(m_http1BaseUrl + QStringLiteral("/reqinfo?http1=%1").arg(QString::number(i))));
         request.setHttpVersion(QCNetworkHttpVersion::Http1_1);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
         auto *reply = m_manager->sendGet(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
+            const QString err = reply->errorString();
             reply->cancel();
             reply->deleteLater();
-            QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过性能对比测试");
+            QFAIL(qPrintable(QStringLiteral("HTTP/1.1 基准请求 15s 内未完成：%1").arg(err)));
         }
         if (reply->error() != NetworkError::NoError) {
             const QString errorString = reply->errorString();
             reply->deleteLater();
-            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
-                                 .arg(errorString)));
+            QFAIL(qPrintable(QStringLiteral("HTTP/1.1 基准请求失败：%1").arg(errorString)));
         }
         reply->deleteLater();
     }
@@ -554,20 +749,22 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
     http2Timer.start();
 
     for (int i = 0; i < requestCount; ++i) {
-        QCNetworkRequest request(QUrl(QString(HTTP2_TEST_SERVER + "/reqinfo?http2=%1").arg(i)));
-        request.setHttpVersion(QCNetworkHttpVersion::Http2);
+        QCNetworkRequest request(
+            QUrl(m_h2BaseUrl + QStringLiteral("/reqinfo?http2=%1").arg(QString::number(i))));
+        request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
         auto *reply = m_manager->sendGet(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
+            const QString err = reply->errorString();
             reply->cancel();
             reply->deleteLater();
-            QSKIP("HTTP/2 测试服务器不可达或网络受限，跳过性能对比测试");
+            QFAIL(qPrintable(QStringLiteral("HTTP/2 基准请求 15s 内未完成：%1").arg(err)));
         }
         if (reply->error() != NetworkError::NoError) {
             const QString errorString = reply->errorString();
             reply->deleteLater();
-            QSKIP(qPrintable(QString("HTTP/2 测试服务器不可达，跳过性能对比测试：%1")
-                                 .arg(errorString)));
+            QFAIL(qPrintable(QStringLiteral("HTTP/2 基准请求失败：%1").arg(errorString)));
         }
         reply->deleteLater();
     }

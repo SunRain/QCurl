@@ -8,6 +8,8 @@
 #include "QCNetworkReply_p.h"
 #include "QCNetworkSslConfig.h"
 
+#include <curl/curlver.h>
+
 using namespace QCurl;
 
 class TestQCNetworkNetworkPath : public QObject
@@ -170,12 +172,12 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
 
 void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
 {
-#ifndef CURLOPT_PROTOCOLS_STR
-    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROTOCOLS_STR");
-#endif
-
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
     qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
+#else
+    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#endif
 
     {
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
@@ -190,6 +192,11 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QVERIFY(!replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
         QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+#if LIBCURL_VERSION_NUM < 0x075500 /* 7.85.0 */
+        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("当前构建的 libcurl 不支持")));
+#else
+        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("libcurl 不支持")));
+#endif
     }
 
     {

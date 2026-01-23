@@ -196,7 +196,7 @@ void TestConnectionPool::testStatisticsReset()
 void TestConnectionPool::testConnectionReuse()
 {
     // 检查网络可用性
-    QUrl testUrl("https://httpbin.org/get");
+    QUrl testUrl("http://localhost:8935/get");
     QCNetworkRequest testRequest(testUrl);
     testRequest.setFollowLocation(true);
     
@@ -205,14 +205,14 @@ void TestConnectionPool::testConnectionReuse()
     
     if (!testSpy.wait(10000)) {
         testReply->deleteLater();
-        QSKIP("Network not available, skipping connection reuse test");
+        QSKIP("httpbin 不可达，跳过连接复用测试");
         return;
     }
     
     if (testReply->error() != NetworkError::NoError) {
         qWarning() << "Network test failed:" << testReply->errorString();
         testReply->deleteLater();
-        QSKIP("Network test failed, skipping connection reuse test");
+        QSKIP("httpbin 健康检查失败，跳过连接复用测试");
         return;
     }
     
@@ -223,7 +223,7 @@ void TestConnectionPool::testConnectionReuse()
     poolManager->resetStatistics();
     
     // 向同一主机发送多个请求
-    QUrl url("https://httpbin.org/get");
+    QUrl url("http://localhost:8935/get");
     const int requestCount = 5;
     int successCount = 0;
     
@@ -262,6 +262,9 @@ void TestConnectionPool::testConnectionReuse()
     
     // 验证统计：受网络环境影响，允许部分请求失败；统计应至少覆盖“成功完成”的请求数
     QCOMPARE(stats.totalRequests, qint64(successCount));
+
+    // 若成功请求不足 2 个，则无法给出“连接复用发生”的有效证据
+    QVERIFY2(successCount >= 2, "Need at least 2 successful requests to assert connection reuse");
     
     // 第一个请求创建连接，后续请求应该复用
     // 至少应该有 2-3 个请求复用了连接（保守估计）
@@ -272,7 +275,7 @@ void TestConnectionPool::testConnectionReuse()
     }
     
     // 复用率应该 > 0%（至少有一些复用）
-    QVERIFY2(stats.reusedConnections >= 0, 
+    QVERIFY2(stats.reusedConnections >= 1,
              "Expected some connection reuse");
     
     qDebug() << "Connection reuse test passed";

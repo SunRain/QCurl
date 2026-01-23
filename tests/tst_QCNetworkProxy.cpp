@@ -20,6 +20,8 @@
 #include "QCNetworkTimeoutConfig.h"
 #include "QCNetworkError.h"
 
+#include <curl/curlver.h>
+
 using namespace QCurl;
 
 class TestQCNetworkProxy : public QObject
@@ -296,17 +298,14 @@ void TestQCNetworkProxy::testProxyWithSsl()
 
 void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
 {
-#ifndef CURLPROXY_HTTPS
-    QSKIP("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）");
-#endif
-#ifndef CURLOPT_PROXY_SSL_CIPHER_LIST
-    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST");
-#endif
-
     qDebug() << "测试 4.3：Proxy TLS 不可用（Fail）";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
     qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+#else
+    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#endif
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
@@ -326,9 +325,21 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
                                        ExecutionMode::Sync,
                                        QByteArray());
 
+#if !defined(CURLPROXY_HTTPS)
+    QVERIFY(!replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
+    QVERIFY(replyPrivate.errorMessage.contains("CURLPROXY_HTTPS"));
+#elif LIBCURL_VERSION_NUM < 0x073400 /* 7.52.0 */
     QVERIFY(!replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
     QVERIFY(replyPrivate.errorMessage.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("当前构建的 libcurl 不支持")));
+#else
+    QVERIFY(!replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
+    QVERIFY(replyPrivate.errorMessage.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("libcurl 不支持")));
+#endif
 
     if (oldEnv.isEmpty()) {
         qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
@@ -339,17 +350,14 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
 
 void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
 {
-#ifndef CURLPROXY_HTTPS
-    QSKIP("当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）");
-#endif
-#ifndef CURLOPT_PROXY_SSL_CIPHER_LIST
-    QSKIP("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_CIPHER_LIST");
-#endif
-
     qDebug() << "测试 4.4：Proxy TLS 不可用（Warn）";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
     qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+#else
+    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+#endif
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
@@ -369,9 +377,21 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
                                        ExecutionMode::Sync,
                                        QByteArray());
 
+#if !defined(CURLPROXY_HTTPS)
+    QVERIFY(replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLPROXY_HTTPS"));
+#elif LIBCURL_VERSION_NUM < 0x073400 /* 7.52.0 */
     QVERIFY(replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
     QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(QStringLiteral("当前构建的 libcurl 不支持")));
+#else
+    QVERIFY(replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(QStringLiteral("libcurl 不支持")));
+#endif
 
     if (oldEnv.isEmpty()) {
         qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");

@@ -21,10 +21,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import gzip
 import hashlib
 import json
 import logging
+import re
 import socket
 import ssl
 import time
@@ -97,6 +100,222 @@ def _auth_scheme(value: str) -> str:
     if low == "ntlm":
         return "NTLM"
     return scheme
+
+# ============================================================================
+# HTTPAuth 校验（可证明级别，不落盘敏感信息）
+# ============================================================================
+
+_AUTH_USER = "user"
+_AUTH_PASS = "passwd"
+_AUTH_REALM = "qcurl_lc"
+_AUTH_DIGEST_NONCE = "1053604144"
+
+
+def _base64_decode_padded(token: str) -> bytes:
+    """
+    Base64 解码（允许缺省 padding）。
+    - 仅用于 Basic auth 解析；不输出/不记录明文。
+    """
+    raw = (token or "").strip()
+    if not raw:
+        return b""
+    pad = (-len(raw)) % 4
+    raw_padded = raw + ("=" * pad)
+    try:
+        return base64.b64decode(raw_padded.encode("ascii"), validate=True)
+    except (binascii.Error, UnicodeError):
+        return b""
+
+
+def _basic_auth_valid(header_value: str, *, expected_user: str, expected_pass: str) -> bool:
+    """
+    校验 Authorization: Basic ... 的 user/pass 是否正确。
+    - 仅比较解码结果；不落盘明文、不写日志。
+    """
+    v = (header_value or "").strip()
+    if not v:
+        return False
+    parts = v.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "basic":
+        return False
+    decoded = _base64_decode_padded(parts[1])
+    if not decoded:
+        return False
+    # RFC 7617：默认 ISO-8859-1；本测试使用 ASCII 子集（user/passwd）
+    try:
+        userpass = decoded.decode("iso-8859-1", errors="strict")
+    except UnicodeError:
+        return False
+    if ":" not in userpass:
+        return False
+    user, passwd = userpass.split(":", 1)
+    return (user == expected_user) and (passwd == expected_pass)
+
+
+def _parse_digest_params(value: str) -> Dict[str, str]:
+    """
+    解析 Digest Authorization 参数列表（RFC 7616 风格）。
+    - 支持 quoted-string 与基础转义（\\\" 与 \\\\）。
+    - 返回 key 小写化后的映射。
+    """
+    s = (value or "").strip()
+    out: Dict[str, str] = {}
+    i = 0
+    n = len(s)
+
+    while i < n:
+        while i < n and s[i] in " \t,":
+            i += 1
+        if i >= n:
+            break
+
+        k0 = i
+        while i < n and s[i] not in "=,":
+            i += 1
+        key = s[k0:i].strip().lower()
+        if not key:
+            while i < n and s[i] != ",":
+                i += 1
+            continue
+        if i >= n or s[i] != "=":
+            while i < n and s[i] != ",":
+                i += 1
+            continue
+        i += 1
+
+        if i < n and s[i] == "\"":
+            i += 1
+            buf: list[str] = []
+            while i < n:
+                ch = s[i]
+                if ch == "\\" and i + 1 < n:
+                    buf.append(s[i + 1])
+                    i += 2
+                    continue
+                if ch == "\"":
+                    i += 1
+                    break
+                buf.append(ch)
+                i += 1
+            val = "".join(buf)
+        else:
+            v0 = i
+            while i < n and s[i] != ",":
+                i += 1
+            val = s[v0:i].strip()
+
+        out[key] = val
+
+    return out
+
+
+def _hash_hex_for_algo(data: bytes, algo: str) -> str:
+    base = (algo or "").strip().upper()
+    base = base.replace("-", "")
+    if base == "MD5":
+        return hashlib.md5(data).hexdigest()
+    if base == "SHA256":
+        return hashlib.sha256(data).hexdigest()
+    raise ValueError(f"unsupported digest algorithm: {algo!r}")
+
+
+_NC_RE = re.compile(r"^[0-9a-fA-F]{8}$")
+
+
+def _digest_auth_valid(header_value: str,
+                      *,
+                      method: str,
+                      request_uri: str,
+                      body: bytes,
+                      expected_user: str,
+                      expected_pass: str,
+                      expected_realm: str,
+                      expected_nonce: str) -> bool:
+    """
+    校验 Authorization: Digest ... 的 response 是否正确。
+    - 支持 MD5/MD5-sess（以及 SHA-256/SHA-256-sess 的容错支持）
+    - 支持 qop=auth 与 qop=auth-int（auth-int 需要 body hash）
+    - 不落盘、不写日志（仅用于决定 200/401）
+    """
+    v = (header_value or "").strip()
+    if not v:
+        return False
+    if not v.lower().startswith("digest "):
+        return False
+    params = _parse_digest_params(v[len("Digest "):])
+
+    username = params.get("username", "")
+    realm = params.get("realm", "")
+    nonce = params.get("nonce", "")
+    uri = params.get("uri", "")
+    response = params.get("response", "")
+    if not username or not realm or not nonce or not uri or not response:
+        return False
+
+    if username != expected_user:
+        return False
+    if realm != expected_realm:
+        return False
+    if nonce != expected_nonce:
+        return False
+
+    # uri 必须与实际请求一致（允许 absolute-form，但必须落到同一路径+query）
+    if uri != request_uri:
+        if uri.startswith("http://") or uri.startswith("https://"):
+            u = urlsplit(uri)
+            path_query = u.path
+            if u.query:
+                path_query = f"{path_query}?{u.query}"
+            if path_query != request_uri:
+                return False
+        else:
+            return False
+
+    algo_raw = params.get("algorithm", "MD5").strip()
+    algo_upper = algo_raw.upper()
+    sess = algo_upper.endswith("-SESS")
+    base_algo = algo_upper[:-5] if sess else algo_upper
+    base_algo_norm = base_algo.replace("-", "")
+    if base_algo_norm not in ("MD5", "SHA256"):
+        return False
+
+    qop = (params.get("qop") or "").strip()
+    qop_l = qop.lower()
+    nc = (params.get("nc") or "").strip()
+    cnonce = (params.get("cnonce") or "").strip()
+
+    def H(text: str) -> str:
+        return _hash_hex_for_algo(text.encode("utf-8"), base_algo_norm)
+
+    # HA1
+    ha1 = H(f"{expected_user}:{expected_realm}:{expected_pass}")
+    if sess:
+        if not cnonce:
+            return False
+        ha1 = H(f"{ha1}:{expected_nonce}:{cnonce}")
+
+    # HA2
+    if qop_l == "auth-int":
+        body_h = _hash_hex_for_algo(body or b"", base_algo_norm)
+        ha2 = H(f"{method}:{uri}:{body_h}")
+    else:
+        ha2 = H(f"{method}:{uri}")
+
+    # response
+    if qop_l:
+        # RFC 7616：qop present => require nc+cnonce
+        if not nc or not cnonce or not qop:
+            return False
+        if not _NC_RE.match(nc):
+            return False
+        if qop_l not in ("auth", "auth-int"):
+            return False
+        expected = H(f"{ha1}:{expected_nonce}:{nc}:{cnonce}:{qop}:{ha2}")
+    else:
+        # RFC 2069 兼容：no qop
+        expected = H(f"{ha1}:{expected_nonce}:{ha2}")
+
+    return expected.lower() == response.strip().lower()
 
 def _cookie_header_summary(value: str) -> str:
     """
@@ -524,7 +743,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/auth/basic"):
             body = self._read_body()
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("basic "):
+            if _basic_auth_valid(auth, expected_user=_AUTH_USER, expected_pass=_AUTH_PASS):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -545,7 +764,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/auth/digest"):
             body = self._read_body()
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("digest "):
+            if _digest_auth_valid(
+                auth,
+                method="PUT",
+                request_uri=str(self.path),
+                body=body,
+                expected_user=_AUTH_USER,
+                expected_pass=_AUTH_PASS,
+                expected_realm=_AUTH_REALM,
+                expected_nonce=_AUTH_DIGEST_NONCE,
+            ):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -555,7 +783,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._write_log(200, {})
                 return
             self.send_response(401)
-            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            # 提供稳定 challenge，并在服务端校验 response（不落盘凭据/参数）
+            v = f"Digest realm=\"{_AUTH_REALM}\", nonce=\"{_AUTH_DIGEST_NONCE}\""
             self.send_header("WWW-Authenticate", v)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -602,7 +831,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/auth/basic"):
             body = self._read_body()
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("basic "):
+            if _basic_auth_valid(auth, expected_user=_AUTH_USER, expected_pass=_AUTH_PASS):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -623,7 +852,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/auth/digest"):
             body = self._read_body()
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("digest "):
+            if _digest_auth_valid(
+                auth,
+                method="POST",
+                request_uri=str(self.path),
+                body=body,
+                expected_user=_AUTH_USER,
+                expected_pass=_AUTH_PASS,
+                expected_realm=_AUTH_REALM,
+                expected_nonce=_AUTH_DIGEST_NONCE,
+            ):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -633,7 +871,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._write_log(200, {})
                 return
             self.send_response(401)
-            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            # 提供稳定 challenge，并在服务端校验 response（不落盘凭据/参数）
+            v = f"Digest realm=\"{_AUTH_REALM}\", nonce=\"{_AUTH_DIGEST_NONCE}\""
             self.send_header("WWW-Authenticate", v)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -731,7 +970,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path.startswith("/auth/basic"):
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("basic "):
+            if _basic_auth_valid(auth, expected_user=_AUTH_USER, expected_pass=_AUTH_PASS):
                 body = b"basic-ok\n"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
@@ -751,7 +990,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path.startswith("/auth/digest"):
             auth = str(self.headers.get("authorization") or "")
-            if auth.lower().startswith("digest "):
+            if _digest_auth_valid(
+                auth,
+                method="GET",
+                request_uri=str(self.path),
+                body=b"",
+                expected_user=_AUTH_USER,
+                expected_pass=_AUTH_PASS,
+                expected_realm=_AUTH_REALM,
+                expected_nonce=_AUTH_DIGEST_NONCE,
+            ):
                 body = b"digest-ok\n"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain")
@@ -760,9 +1008,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 self._write_log(200, {})
                 return
-            # KISS：仅提供最小 Digest challenge，不校验响应（只校验 scheme）
+            # KISS：仅提供最小 Digest challenge；服务端做 response 校验但不落盘凭据/参数
             self.send_response(401)
-            v = "Digest realm=\"qcurl_lc\", nonce=\"1053604144\""
+            v = f"Digest realm=\"{_AUTH_REALM}\", nonce=\"{_AUTH_DIGEST_NONCE}\""
             self.send_header("WWW-Authenticate", v)
             self.send_header("Content-Length", "0")
             self.end_headers()

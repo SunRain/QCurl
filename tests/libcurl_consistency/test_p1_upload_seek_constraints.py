@@ -13,6 +13,7 @@ P1：带 body 的“可重发约束”（seekable vs non-seekable）。
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from tests.libcurl_consistency.pytest_support.artifacts import sha256_bytes, wri
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_CURLINFO_RE = re.compile(r"curlcode=(\d+)\s+http_code=(\d+)")
 
 
 def _has_m2_upload_device_api() -> bool:
@@ -58,6 +60,14 @@ def _normalize_req_headers(headers: dict) -> dict:
 
 def _response_sha_empty() -> str:
     return sha256_bytes(b"")
+
+
+def _parse_curlcode_http_code(stderr_lines: list[str]) -> tuple[int, int]:
+    for line in stderr_lines or []:
+        m = _CURLINFO_RE.search(str(line))
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return -1, -1
 
 
 @pytest.mark.parametrize("seekable", [False, True])
@@ -261,9 +271,11 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
     body = b"x" * upload_size
     expect_success = bool(seekable)
     expected_count = 2 if expect_success else 1  # 401 -> 200（或 non-seekable 失败止于首次）
+    replay_error = {"kind": "body_replay_not_possible", "http_status": 401}
 
     try:
         observe_log.write_text("", encoding="utf-8")
+        resp_status = 200 if expect_success else 401
         baseline_args = [
             "-V",
             proto,
@@ -290,11 +302,35 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
             client_name="cli_lc_http",
             args=baseline_args,
             request_meta={"method": "POST", "url": baseline_url, "headers": {}, "body": body},
-            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            response_meta={"status": resp_status, "http_version": proto, "headers": {}, "body": None},
             download_count=1,
             allowed_exit_codes={0, 7},
         )
+        curlcode, http_code = _parse_curlcode_http_code(list(baseline["payload"].get("stderr") or []))
+        if curlcode < 0:
+            raise AssertionError("baseline stderr 未包含 curlcode/http_code")
+        if expect_success:
+            if curlcode != 0 or http_code != 200:
+                raise AssertionError(f"baseline unexpected curlcode/http_code: {curlcode}/{http_code} (want 0/200)")
+        else:
+            # libcurl 在无法 rewind body 时返回 CURLE_SEND_FAIL_REWIND（=65）
+            if curlcode != 65 or http_code != 401:
+                raise AssertionError(f"baseline unexpected curlcode/http_code: {curlcode}/{http_code} (want 65/401)")
+
         obs_base = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=expected_count)
+        if expect_success:
+            assert len(obs_base) == 2
+            assert obs_base[0].status == 401
+            assert "authorization" not in obs_base[0].headers
+            assert str(obs_base[0].response_headers.get("www-authenticate") or "").startswith("Digest")
+            assert obs_base[1].status == 200
+            assert str(obs_base[1].headers.get("authorization") or "") == "Digest"
+        else:
+            assert len(obs_base) == 1
+            assert obs_base[0].status == 401
+            assert "authorization" not in obs_base[0].headers
+            assert str(obs_base[0].response_headers.get("www-authenticate") or "").startswith("Digest")
+
         baseline["payload"]["requests"] = [{
             "method": obs.method,
             "url": obs.url,
@@ -315,16 +351,18 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
             else:
                 baseline["payload"]["responses"].append({
                     **baseline["payload"]["response"],
-                    "status": obs.status if expect_success else 0,
+                    "status": obs.status,
                     "http_version": proto,
                     "headers": dict(obs.response_headers),
                 })
         baseline["payload"]["request"]["method"] = obs_base[0].method
         baseline["payload"]["request"]["url"] = obs_base[0].url
         baseline["payload"]["request"]["headers"] = _normalize_req_headers(obs_base[0].headers)
-        baseline["payload"]["response"]["status"] = obs_base[-1].status if expect_success else 0
+        baseline["payload"]["response"]["status"] = obs_base[-1].status
         baseline["payload"]["response"]["http_version"] = proto
-        baseline["payload"]["response"]["headers"] = dict(obs_base[-1].response_headers) if expect_success else {}
+        baseline["payload"]["response"]["headers"] = dict(obs_base[-1].response_headers)
+        if not expect_success:
+            baseline["payload"]["error"] = replay_error
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -335,7 +373,7 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
             qt_executable=qt_path,
             args=[],
             request_meta={"method": "POST", "url": qcurl_url, "headers": {}, "body": body},
-            response_meta={"status": 200 if expect_success else 0, "http_version": proto, "headers": {}, "body": None},
+            response_meta={"status": resp_status, "http_version": proto, "headers": {}, "body": None},
             download_count=1,
             case_env={
                 "QCURL_LC_CASE_ID": case_id,
@@ -347,6 +385,19 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
             },
         )
         obs_q = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=expected_count)
+        if expect_success:
+            assert len(obs_q) == 2
+            assert obs_q[0].status == 401
+            assert "authorization" not in obs_q[0].headers
+            assert str(obs_q[0].response_headers.get("www-authenticate") or "").startswith("Digest")
+            assert obs_q[1].status == 200
+            assert str(obs_q[1].headers.get("authorization") or "") == "Digest"
+        else:
+            assert len(obs_q) == 1
+            assert obs_q[0].status == 401
+            assert "authorization" not in obs_q[0].headers
+            assert str(obs_q[0].response_headers.get("www-authenticate") or "").startswith("Digest")
+
         qcurl["payload"]["requests"] = [{
             "method": obs.method,
             "url": obs.url,
@@ -367,16 +418,18 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
             else:
                 qcurl["payload"]["responses"].append({
                     **qcurl["payload"]["response"],
-                    "status": obs.status if expect_success else 0,
+                    "status": obs.status,
                     "http_version": proto,
                     "headers": dict(obs.response_headers),
                 })
         qcurl["payload"]["request"]["method"] = obs_q[0].method
         qcurl["payload"]["request"]["url"] = obs_q[0].url
         qcurl["payload"]["request"]["headers"] = _normalize_req_headers(obs_q[0].headers)
-        qcurl["payload"]["response"]["status"] = obs_q[-1].status if expect_success else 0
+        qcurl["payload"]["response"]["status"] = obs_q[-1].status
         qcurl["payload"]["response"]["http_version"] = proto
-        qcurl["payload"]["response"]["headers"] = dict(obs_q[-1].response_headers) if expect_success else {}
+        qcurl["payload"]["response"]["headers"] = dict(obs_q[-1].response_headers)
+        if not expect_success:
+            qcurl["payload"]["error"] = replay_error
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])
@@ -397,4 +450,3 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
                 },
             )
         raise
-

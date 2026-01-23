@@ -307,14 +307,7 @@ Execution time: 6259ms (平均 232ms/test)
 ## 📝 测试环境说明
 
 ### httpbin Docker 启动命令
-```bash
-docker run -d -p 8935:80 --name qcurl-httpbin kennethreitz/httpbin
-```
-
-### 验证 httpbin 服务
-```bash
-curl http://localhost:8935/get
-```
+启动与健康检查请参考：[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “2.2（可选）启动本地 httpbin（用于部分集成用例）”。
 
 ### 运行测试
 ```bash

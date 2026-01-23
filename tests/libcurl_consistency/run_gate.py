@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -63,6 +64,56 @@ def _run(
         text=True,
         capture_output=capture,
     )
+
+
+def _parse_junit_counts(junit_xml: Path) -> Dict[str, object]:
+    """
+    取证式 Gate：将“跳过=通过”的风险显式化。
+    - 解析 pytest 生成的 JUnit XML，抽取 tests/failures/errors/skipped 计数。
+    - 解析失败/文件缺失时返回 parse_error，供上层转为门禁失败（避免“无执行也绿”）。
+    """
+    if not junit_xml.exists():
+        return {
+            "exists": False,
+            "tests": 0,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "parse_error": f"junit xml not found: {junit_xml}",
+        }
+    try:
+        root = ET.parse(junit_xml).getroot()
+    except Exception as exc:
+        return {
+            "exists": True,
+            "tests": 0,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "parse_error": f"failed to parse junit xml: {exc}",
+        }
+
+    suites = []
+    if root.tag == "testsuites":
+        suites = list(root.findall("testsuite"))
+    elif root.tag == "testsuite":
+        suites = [root]
+    else:
+        suites = list(root.findall(".//testsuite"))
+
+    def _attr_int(node: ET.Element, key: str) -> int:
+        raw = (node.attrib.get(key) or "").strip()
+        try:
+            return int(raw) if raw else 0
+        except ValueError:
+            return 0
+
+    totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+    for s in suites:
+        for k in totals:
+            totals[k] += _attr_int(s, k)
+
+    return {"exists": True, **totals}
 
 
 def _ensure_parent(path: Path) -> None:
@@ -615,6 +666,7 @@ def main(argv: List[str]) -> int:
         report["pytest_returncode"] = 2
     finally:
         report["duration_s"] = round(time.time() - started, 3)
+        report["junit_counts"] = _parse_junit_counts(cfg.junit_xml)
         # 先落盘一次 report（stdout/stderr 已脱敏），使 redaction scan 也能覆盖 gate_*.json 本身。
         cfg.json_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -622,6 +674,14 @@ def main(argv: List[str]) -> int:
         report["postflight_redaction_scan"] = _postflight_redaction_scan(cfg, since_ts=started)
         gate_rc = int(report.get("pytest_returncode", 2))
         policy_violations = []
+        junit_counts = report.get("junit_counts") or {}
+        if isinstance(junit_counts, dict):
+            if junit_counts.get("parse_error"):
+                policy_violations.append("junit_parse_error")
+            if int(junit_counts.get("tests") or 0) <= 0:
+                policy_violations.append("no_tests_executed")
+            if int(junit_counts.get("skipped") or 0) > 0:
+                policy_violations.append("skipped_tests")
         if (report.get("postflight_artifacts_schema_check") or {}).get("violations"):
             policy_violations.append("artifacts_schema")
         if (report.get("postflight_redaction_scan") or {}).get("violations"):

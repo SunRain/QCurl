@@ -109,8 +109,7 @@ private slots:
     void testHttpsRequest();
     void testSslConfiguration();
 
-    // ========== 大文件测试 ==========
-    void testLargeFileDownload();
+    // ========== 进度/大体量传输测试 ==========
     void testProgressTracking();
 
     // ========== 并发测试 ==========
@@ -607,36 +606,6 @@ void TestIntegration::testSslConfiguration()
 }
 
 // ============================================================================
-// 大文件测试
-// ============================================================================
-
-void TestIntegration::testLargeFileDownload()
-{
-    // 下载真实大文件：Arch Linux bootstrap (约 138 MB)
-    // 使用中科大镜像站，测试大文件下载和 HTTPS
-    QCNetworkRequest request(QUrl("https://mirrors.ustc.edu.cn/archlinux/iso/2025.11.01/archlinux-bootstrap-2025.11.01-x86_64.tar.zst"));
-
-    // 集成环境可能无法验证 USTC 镜像站证书，仅该用例临时禁用校验以覆盖真实大文件场景
-    QCNetworkSslConfig insecureSsl = QCNetworkSslConfig::insecureConfig();
-    request.setSslConfig(insecureSsl);
-
-    // 设置较长的超时时间（2 分钟）
-    QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(120);
-    request.setTimeoutConfig(timeout);
-
-    auto *reply = m_manager->sendGet(request);
-    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 150000));  // 2.5 分钟超时
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    auto data = reply->readAll();
-    QVERIFY(data.has_value());
-    QCOMPARE(data->size(), 144969772);  // 期望 138 MB (144,969,772 字节)
-
-    qDebug() << "Large file download successful:" << data->size() << "bytes (~138 MB)";
-    reply->deleteLater();
-}
-
 void TestIntegration::testProgressTracking()
 {
     QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/bytes/102400"));  // 100KB
@@ -792,10 +761,10 @@ void TestIntegration::testRetryWithConcurrentRequests()
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/status/503"));
 
-        // 避免在 httpbin 偶发卡顿时导致测试长时间悬挂
+        // 避免在 httpbin 偶发卡顿时导致测试长时间悬挂（每次 attempt 的上限）
         QCNetworkTimeoutConfig timeout;
         timeout.connectTimeout = std::chrono::milliseconds(1000);
-        timeout.totalTimeout = std::chrono::milliseconds(10000);
+        timeout.totalTimeout = std::chrono::milliseconds(3000);
         request.setTimeoutConfig(timeout);
 
         QCNetworkRetryPolicy policy;
@@ -810,16 +779,55 @@ void TestIntegration::testRetryWithConcurrentRequests()
         });
     }
 
-    // 等待所有请求完成
+    // 等待所有请求完成（避免串行 wait 导致整体上限接近边界而出现偶发失败）
+    QEventLoop loop;
+    QTimer deadlineTimer;
+    deadlineTimer.setSingleShot(true);
+    deadlineTimer.start(20000);
+    connect(&deadlineTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+
+    QVector<bool> finished(3, false);
+    for (int i = 0; i < replies.size(); ++i) {
+        auto *reply = replies[i];
+        connect(reply, &QCNetworkReply::finished, &loop, [&, i]() {
+            finished[i] = true;
+            bool allDone = true;
+            for (bool f : finished) {
+                if (!f) {
+                    allDone = false;
+                    break;
+                }
+            }
+            if (allDone) {
+                loop.quit();
+            }
+        });
+    }
+
+    loop.exec();
+
     bool allFinished = true;
-    for (auto *reply : replies) {
-        // 并发重试整体耗时可能超过 10s，适当放宽等待窗口
-        if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
+    for (bool f : finished) {
+        if (!f) {
             allFinished = false;
             break;
         }
     }
+
     if (!allFinished) {
+        for (int i = 0; i < replies.size(); ++i) {
+            auto *reply = replies[i];
+            if (!reply) {
+                continue;
+            }
+            qWarning().noquote() << QStringLiteral("concurrent retry timeout: idx=%1 finished=%2 state=%3 err=%4 errStr=%5 retryCount=%6")
+                                        .arg(i)
+                                        .arg(reply->isFinished() ? 1 : 0)
+                                        .arg(static_cast<int>(reply->state()))
+                                        .arg(static_cast<int>(reply->error()))
+                                        .arg(reply->errorString())
+                                        .arg(retryCounts[i]);
+        }
         for (auto *reply : replies) {
             if (reply) {
                 reply->cancel();
@@ -827,7 +835,7 @@ void TestIntegration::testRetryWithConcurrentRequests()
             }
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        QSKIP("Concurrent retries test is environment dependent (timeout or scheduler delay)");
+        QFAIL("Concurrent retries did not finish within 20s (unexpected hang or retry scheduler issue)");
     }
 
     // 验证每个请求都重试了 2 次
@@ -871,8 +879,9 @@ void TestIntegration::testRetryOnTimeout()
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 20000)) {
+        reply->cancel();
         reply->deleteLater();
-        QSKIP("Timeout retry test is environment dependent (httpbin delay / scheduler timing)");
+        QFAIL("Timeout retry did not finish within 20s (httpbin delay / scheduler timing)");
     }
 
     qint64 elapsed = timer.elapsed();
@@ -909,10 +918,10 @@ void TestIntegration::testRetryDelayAccuracy()
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000)) {
-        qWarning() << "Retry delay accuracy test timed out; skipping as environment dependent.";
+        qWarning() << "Retry delay accuracy test timed out; failing for forensic evidence.";
         reply->cancel();
         reply->deleteLater();
-        QSKIP("Retry delay accuracy test is environment dependent (httpbin availability / scheduler timing)");
+        QFAIL("Retry delay accuracy did not finish within 10s (httpbin availability / scheduler timing)");
     }
 
     qint64 elapsed = timer.elapsed();

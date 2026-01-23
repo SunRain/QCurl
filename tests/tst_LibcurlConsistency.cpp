@@ -721,13 +721,17 @@ void TestLibcurlConsistency::testCase()
     }
 
     if (caseId == QStringLiteral("p1_httpauth_any_basic") ||
+        caseId == QStringLiteral("p1_httpauth_any_basic_wrong_pass") ||
         caseId == QStringLiteral("p1_httpauth_anysafe_digest") ||
+        caseId == QStringLiteral("p1_httpauth_anysafe_digest_wrong_pass") ||
         caseId == QStringLiteral("p1_unrestricted_auth_redirect_off") ||
         caseId == QStringLiteral("p1_unrestricted_auth_redirect_on")) {
         QVERIFY(!targetUrl.isEmpty());
         QVERIFY(!authUser.isEmpty());
         QVERIFY(!authPass.isEmpty());
 
+        const bool expectHttp401 = (caseId == QStringLiteral("p1_httpauth_any_basic_wrong_pass") ||
+                                    caseId == QStringLiteral("p1_httpauth_anysafe_digest_wrong_pass"));
         const bool follow = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_off") ||
                              caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
         const bool unrestricted = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
@@ -740,9 +744,11 @@ void TestLibcurlConsistency::testCase()
         auth.userName = authUser;
         auth.password = authPass;
         auth.allowUnrestrictedAuth = unrestricted;
-        if (caseId == QStringLiteral("p1_httpauth_any_basic")) {
+        if (caseId == QStringLiteral("p1_httpauth_any_basic") ||
+            caseId == QStringLiteral("p1_httpauth_any_basic_wrong_pass")) {
             auth.method = QCNetworkHttpAuthMethod::Any;
-        } else if (caseId == QStringLiteral("p1_httpauth_anysafe_digest")) {
+        } else if (caseId == QStringLiteral("p1_httpauth_anysafe_digest") ||
+                   caseId == QStringLiteral("p1_httpauth_anysafe_digest_wrong_pass")) {
             auth.method = QCNetworkHttpAuthMethod::AnySafe;
         } else {
             auth.method = QCNetworkHttpAuthMethod::Basic;
@@ -751,7 +757,12 @@ void TestLibcurlConsistency::testCase()
 
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
-        QCOMPARE(reply->error(), NetworkError::NoError);
+        if (expectHttp401) {
+            QCOMPARE(reply->error(), NetworkError::HttpUnauthorized);
+            QCOMPARE(reply->httpStatusCode(), 401);
+        } else {
+            QCOMPARE(reply->error(), NetworkError::NoError);
+        }
 
         const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
@@ -899,7 +910,12 @@ void TestLibcurlConsistency::testCase()
         if (seekable) {
             QCOMPARE(reply.error(), NetworkError::NoError);
         } else {
-            QVERIFY(reply.error() != NetworkError::NoError);
+            QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+            QVERIFY2(reply.errorString().contains(QStringLiteral("无法重发 body")),
+                     "expected non-seekable replay to fail with a rewind/seek diagnostic");
+            if (isDigestAnySafe) {
+                QCOMPARE(reply.httpStatusCode(), 401);
+            }
         }
 
         QByteArray out;
@@ -2534,7 +2550,6 @@ void TestLibcurlConsistency::testCase()
         };
 
         if (!hstsPath.isEmpty()) {
-#ifdef CURLOPT_HSTS
             QFile f(hstsPath);
             if (!f.exists() || f.size() <= 0) {
                 if (shouldSkipByOpt(QStringLiteral("CURLOPT_HSTS"))) {
@@ -2543,13 +2558,9 @@ void TestLibcurlConsistency::testCase()
             }
             QVERIFY2(f.exists(), "HSTS cache file missing");
             QVERIFY2(f.size() > 0, "HSTS cache file empty");
-#else
-            QSKIP("libcurl headers lack CURLOPT_HSTS");
-#endif
         }
 
         if (!altSvcPath.isEmpty()) {
-#ifdef CURLOPT_ALTSVC
             QFile f(altSvcPath);
             if (!f.exists() || f.size() <= 0) {
                 if (shouldSkipByOpt(QStringLiteral("CURLOPT_ALTSVC"))) {
@@ -2558,9 +2569,6 @@ void TestLibcurlConsistency::testCase()
             }
             QVERIFY2(f.exists(), "Alt-Svc cache file missing");
             QVERIFY2(f.size() > 0, "Alt-Svc cache file empty");
-#else
-            QSKIP("libcurl headers lack CURLOPT_ALTSVC");
-#endif
         }
         return;
     }

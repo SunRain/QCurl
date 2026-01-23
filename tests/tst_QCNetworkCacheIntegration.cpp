@@ -339,9 +339,7 @@ void TestQCNetworkCacheIntegration::testOnlyCacheHit()
 void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
 {
     // 测试：OnlyCache 策略，缓存未命中，需要返回错误
-    // 这是一个已知的边缘情况：信号时序问题导致测试超时
-    // 核心功能已在其他测试中验证（testOnlyCacheHit 通过）
-    QSKIP("Known issue: Signal timing with OnlyCache miss - core functionality verified");
+    // 该用例曾被跳过以规避环境/时序波动；取证式门禁要求：未命中必须可靠地走错误路径并结束。
     
     m_manager->setCache(m_cache);
     

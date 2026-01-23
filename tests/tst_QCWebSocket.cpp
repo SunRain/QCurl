@@ -362,14 +362,14 @@ void TestQCWebSocket::testReceiveBinaryMessage()
         QTest::qWait(100);
     }
 
-    // ✅ 增加超时时间到 20 秒
-    // 等待接收所有消息
-    for (int i = 0; i < 3; ++i) {
-        if (!waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::binaryMessageReceived), 20000)) {
-            // ✅ 增加诊断信息
-            qWarning() << "Failed to receive binary message" << i 
-                      << "Signal spy count:" << binarySpy.count();
-            QSKIP("WebSocket binary message receiving issue - network dependent");
+    // ✅ 使用 binarySpy 等待（避免 waitForSignal() 新建 QSignalSpy 导致“信号已到达但等待超时”的假阴性）
+    const int expectedMessages = 3;
+    while (binarySpy.count() < expectedMessages) {
+        if (!binarySpy.wait(20000)) {
+            qWarning() << "Binary receive timeout. Expected:" << expectedMessages
+                       << "Actual:" << binarySpy.count();
+            socket.close();
+            QFAIL("WebSocket 二进制消息接收超时（20s），按取证口径视为失败（禁止失败即 SKIP）。");
         }
     }
 

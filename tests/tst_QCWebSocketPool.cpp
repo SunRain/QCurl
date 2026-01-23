@@ -278,19 +278,21 @@ void TestQCWebSocketPool::testMaxPoolSize()
         sockets.append(socket);
     }
 
-    if (sockets.isEmpty()) {
-        QSKIP("无法连接到测试服务器，跳过此测试");
+    // 取证式口径：该用例的证据前提是“至少能建立 2 个连接”以验证第 3 个被拒绝。
+    // 若前提不成立，应显式 SKIP，而不是“部分执行后仍 PASS”造成伪通过。
+    if (sockets.size() < 2) {
+        for (auto *s : sockets) {
+            pool->release(s);
+        }
+        QSKIP("无法建立足够连接以验证 maxPoolSize（外部服务不可用或网络受限）");
     }
 
     // 尝试获取第 3 个（应该失败，因为达到限制）
     QSignalSpy spy(pool, &QCWebSocketPool::poolLimitReached);
     auto *socket3 = pool->acquire(url);
-    
-    if (sockets.size() == 2) {
-        // 如果前面 2 个都成功了，第 3 个应该失败
-        QVERIFY(socket3 == nullptr);
-        QCOMPARE(spy.count(), 1);
-    }
+    // 如果前面 2 个都成功了，第 3 个必须失败
+    QVERIFY(socket3 == nullptr);
+    QCOMPARE(spy.count(), 1);
 
     // 释放第一个连接
     if (!sockets.isEmpty()) {
@@ -498,12 +500,20 @@ void TestQCWebSocketPool::testMaxTotalConnections()
 
     qDebug() << "成功创建" << sockets.size() << "个连接";
 
-    // 尝试创建第 4 个（应该失败）
-    if (sockets.size() == 3) {
-        auto *socket4 = pool->acquire(url1);
-        QVERIFY(socket4 == nullptr);  // 应该失败
-        qDebug() << "✅ 全局连接数限制验证成功";
+    // 取证式口径：该用例的证据前提是“成功建立 3 个连接”，否则无法验证第 4 个被拒绝。
+    if (sockets.size() != 3) {
+        for (auto *s : sockets) {
+            pool->release(s);
+        }
+        QSKIP("无法建立足够连接以验证 maxTotalConnections（外部服务不可用或网络受限）");
     }
+
+    // 尝试创建第 4 个（应该失败）
+    QSignalSpy spy(pool, &QCWebSocketPool::poolLimitReached);
+    auto *socket4 = pool->acquire(url1);
+    QVERIFY(socket4 == nullptr);  // 应该失败
+    QVERIFY2(spy.count() >= 1, "expected poolLimitReached emitted when maxTotalConnections reached");
+    qDebug() << "✅ 全局连接数限制验证成功";
 
     // 清理
     for (auto *s : sockets) {
