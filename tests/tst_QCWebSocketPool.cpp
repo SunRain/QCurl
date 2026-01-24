@@ -13,13 +13,14 @@
  *
  */
 
-#include <QtTest>
-#include <QSignalSpy>
+#include "QCWebSocket.h"
+#include "QCWebSocketPool.h"
+#include "QCWebSocketTestServer.h"
+
 #include <QCoreApplication>
 #include <QEvent>
-#include "QCWebSocketTestServer.h"
-#include "QCWebSocketPool.h"
-#include "QCWebSocket.h"
+#include <QSignalSpy>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -34,29 +35,29 @@ private slots:
     void cleanup();
 
     // ========== 核心功能测试 ==========
-    void testConstructor();                 // 构造函数和默认配置
-    void testAcquireAndRelease();           // 基本获取和释放
-    void testConnectionReuse();             // 连接复用验证
-    void testMultipleUrls();                // 多个 URL 独立池
-    void testMaxPoolSize();                 // 池大小限制
-    
+    void testConstructor();       // 构造函数和默认配置
+    void testAcquireAndRelease(); // 基本获取和释放
+    void testConnectionReuse();   // 连接复用验证
+    void testMultipleUrls();      // 多个 URL 独立池
+    void testMaxPoolSize();       // 池大小限制
+
     // ========== 池管理测试 ==========
-    void testPreWarm();                     // 预热连接
-    void testClearPool();                   // 清理池
-    void testStatistics();                  // 统计信息
-    
+    void testPreWarm();    // 预热连接
+    void testClearPool();  // 清理池
+    void testStatistics(); // 统计信息
+
     // ========== 边界情况测试 ==========
-    void testAcquireFromEmptyPool();        // 空池获取
-    void testReleaseNullPointer();          // 释放空指针
-    void testReleaseNonPooledSocket();      // 释放非池连接
-    void testMaxTotalConnections();         // 全局连接数限制
+    void testAcquireFromEmptyPool();   // 空池获取
+    void testReleaseNullPointer();     // 释放空指针
+    void testReleaseNonPooledSocket(); // 释放非池连接
+    void testMaxTotalConnections();    // 全局连接数限制
 
 private:
     QCWebSocketPool *pool = nullptr;
 
     [[nodiscard]] bool localServerAvailable() const { return m_localServerSkipReason.isEmpty(); }
     void applyLocalWssConfig(QCWebSocketPool *target);
-    
+
     // 辅助方法
     bool waitForConnection(QCWebSocket *socket, int timeout = 5000);
 
@@ -76,7 +77,7 @@ void TestQCWebSocketPool::applyLocalWssConfig(QCWebSocketPool *target)
     if (!target) {
         return;
     }
-    auto config = target->config();
+    auto config                 = target->config();
     config.sslConfig.caCertPath = m_caCertPath;
     target->setConfig(config);
 }
@@ -86,7 +87,7 @@ bool TestQCWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
     if (!socket) {
         return false;
     }
-    
+
     QSignalSpy spy(socket, &QCWebSocket::connected);
     return spy.wait(timeout) || socket->state() == QCWebSocket::State::Connected;
 }
@@ -157,8 +158,8 @@ void TestQCWebSocketPool::testConstructor()
 
     // 测试自定义配置
     QCWebSocketPool::Config config;
-    config.maxPoolSize = 5;
-    config.maxIdleTime = 600;
+    config.maxPoolSize     = 5;
+    config.maxIdleTime     = 600;
     config.enableKeepAlive = false;
 
     QCWebSocketPool pool2(config);
@@ -187,8 +188,8 @@ void TestQCWebSocketPool::testAcquireAndRelease()
     if (!socket) {
         QSKIP("无法连接到测试服务器，跳过此测试");
     }
-    QVERIFY(socket->state() == QCWebSocket::State::Connected || 
-            socket->state() == QCWebSocket::State::Connecting);
+    QVERIFY(socket->state() == QCWebSocket::State::Connected
+            || socket->state() == QCWebSocket::State::Connecting);
 
     // 等待连接完成
     if (!waitForConnection(socket, 10000)) {
@@ -232,13 +233,13 @@ void TestQCWebSocketPool::testConnectionReuse()
     if (!socket1) {
         QSKIP("无法连接到测试服务器，跳过此测试");
     }
-    
+
     if (!waitForConnection(socket1, 10000)) {
         QSKIP("无法连接到测试服务器，跳过此测试");
     }
 
     auto stats1 = pool->statistics(url);
-    QCOMPARE(stats1.missCount, 1);  // 未命中（创建新连接）
+    QCOMPARE(stats1.missCount, 1); // 未命中（创建新连接）
     QCOMPARE(stats1.hitCount, 0);
 
     // 归还
@@ -246,13 +247,13 @@ void TestQCWebSocketPool::testConnectionReuse()
 
     // 第 2 次获取（应复用同一连接）
     auto *socket2 = pool->acquire(url);
-    QVERIFY(socket2 == socket1);  // 应该是同一个对象
+    QVERIFY(socket2 == socket1); // 应该是同一个对象
     QCOMPARE(socket2->state(), QCWebSocket::State::Connected);
 
     auto stats2 = pool->statistics(url);
-    QCOMPARE(stats2.hitCount, 1);   // 命中（复用连接）
-    QCOMPARE(stats2.missCount, 1);  // 仍是 1（没有创建新连接）
-    QVERIFY(stats2.hitRate > 0.0);  // 命中率应该 > 0
+    QCOMPARE(stats2.hitCount, 1);  // 命中（复用连接）
+    QCOMPARE(stats2.missCount, 1); // 仍是 1（没有创建新连接）
+    QVERIFY(stats2.hitRate > 0.0); // 命中率应该 > 0
 
     pool->release(socket2);
 
@@ -284,7 +285,7 @@ void TestQCWebSocketPool::testMultipleUrls()
         pool->release(socket1);
         QSKIP("无法连接到测试服务器，跳过此测试");
     }
-    QVERIFY(socket2 != socket1);  // 应该是不同的连接
+    QVERIFY(socket2 != socket1); // 应该是不同的连接
 
     // 检查池中是否包含两个 URL
     QVERIFY(pool->contains(url1));
@@ -309,22 +310,22 @@ void TestQCWebSocketPool::testMaxPoolSize()
     }
 
     QCWebSocketPool::Config config;
-    config.maxPoolSize = 2;  // 每个 URL 最多 2 个连接
+    config.maxPoolSize = 2; // 每个 URL 最多 2 个连接
 
     pool = new QCWebSocketPool(config);
     applyLocalWssConfig(pool);
     QUrl url(m_testServerUrl);
 
     // 获取 2 个连接（应该成功）
-    QList<QCWebSocket*> sockets;
+    QList<QCWebSocket *> sockets;
     for (int i = 0; i < 2; ++i) {
         auto *socket = pool->acquire(url);
         if (!socket) {
-            qWarning() << "创建第" << (i+1) << "个连接失败";
+            qWarning() << "创建第" << (i + 1) << "个连接失败";
             break;
         }
         if (!waitForConnection(socket, 10000)) {
-            qWarning() << "第" << (i+1) << "个连接超时";
+            qWarning() << "第" << (i + 1) << "个连接超时";
             break;
         }
         sockets.append(socket);
@@ -349,12 +350,12 @@ void TestQCWebSocketPool::testMaxPoolSize()
     // 释放第一个连接
     if (!sockets.isEmpty()) {
         pool->release(sockets[0]);
-        
+
         // 再次尝试获取（应该成功，复用第一个）
         auto *socket4 = pool->acquire(url);
         QVERIFY(socket4 != nullptr);
-        QVERIFY(socket4 == sockets[0]);  // 应该复用
-        
+        QVERIFY(socket4 == sockets[0]); // 应该复用
+
         pool->release(socket4);
     }
 
@@ -473,7 +474,7 @@ void TestQCWebSocketPool::testStatistics()
     auto stats2 = pool->statistics(url);
     QCOMPARE(stats2.hitCount, 1);
     QCOMPARE(stats2.missCount, 1);
-    QCOMPARE(stats2.hitRate, 50.0);  // 1 hit / 2 total = 50%
+    QCOMPARE(stats2.hitRate, 50.0); // 1 hit / 2 total = 50%
 
     pool->release(socket2);
 
@@ -528,7 +529,7 @@ void TestQCWebSocketPool::testReleaseNonPooledSocket()
     qDebug() << "========== testReleaseNonPooledSocket ==========";
 
     pool = new QCWebSocketPool();
-    
+
     // 创建一个不在池中的 socket
     QCWebSocket *socket = new QCWebSocket(QUrl(QStringLiteral("wss://localhost:1")));
 
@@ -550,8 +551,8 @@ void TestQCWebSocketPool::testMaxTotalConnections()
     }
 
     QCWebSocketPool::Config config;
-    config.maxPoolSize = 10;
-    config.maxTotalConnections = 3;  // 全局最多 3 个连接
+    config.maxPoolSize         = 10;
+    config.maxTotalConnections = 3; // 全局最多 3 个连接
 
     pool = new QCWebSocketPool(config);
     applyLocalWssConfig(pool);
@@ -559,8 +560,8 @@ void TestQCWebSocketPool::testMaxTotalConnections()
     QUrl url2(m_testServerUrl2);
 
     // 尝试创建超过全局限制的连接
-    QList<QCWebSocket*> sockets;
-    
+    QList<QCWebSocket *> sockets;
+
     // URL1 创建 2 个
     for (int i = 0; i < 2; ++i) {
         auto *socket = pool->acquire(url1);
@@ -588,7 +589,7 @@ void TestQCWebSocketPool::testMaxTotalConnections()
     // 尝试创建第 4 个（应该失败）
     QSignalSpy spy(pool, &QCWebSocketPool::poolLimitReached);
     auto *socket4 = pool->acquire(url1);
-    QVERIFY(socket4 == nullptr);  // 应该失败
+    QVERIFY(socket4 == nullptr); // 应该失败
     QVERIFY2(spy.count() >= 1, "expected poolLimitReached emitted when maxTotalConnections reached");
     qDebug() << "✅ 全局连接数限制验证成功";
 

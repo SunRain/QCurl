@@ -301,18 +301,18 @@ private:
         bool operator!=(const ShareConfig &other) const noexcept { return !(*this == other); }
     };
 
-	    struct ShareContext
-	    {
-	        const QCNetworkAccessManager *scopeKey = nullptr;
-	        CURLSH *share                          = nullptr;
-	        ShareConfig applied;
-	        // 待应用配置
-	        // 为空表示无变更
-	        std::optional<ShareConfig> pending;
+    struct ShareContext
+    {
+        const QCNetworkAccessManager *scopeKey = nullptr;
+        CURLSH *share                          = nullptr;
+        ShareConfig applied;
+        // 待应用配置
+        // 为空表示无变更
+        std::optional<ShareConfig> pending;
 
-	        ShareConfig lastInitAttempt;
-	        bool lastInitFailed = false;
-	        QString lastInitError;
+        ShareConfig lastInitAttempt;
+        bool lastInitFailed = false;
+        QString lastInitError;
 
         bool scopeDestroyed = false;
         bool pendingDelete  = false;

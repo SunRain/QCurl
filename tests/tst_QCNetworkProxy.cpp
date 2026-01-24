@@ -9,18 +9,19 @@
  * 
  */
 
-#include <QtTest>
-#include <QSignalSpy>
-#include <QHostAddress>
-#include <QTcpServer>
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
+#include "QCNetworkError.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "QCNetworkProxyConfig.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
-#include "QCNetworkError.h"
+
+#include <QHostAddress>
+#include <QSignalSpy>
+#include <QTcpServer>
+#include <QtTest>
 
 #include <curl/curlver.h>
 
@@ -96,9 +97,9 @@ void TestQCNetworkProxy::testProxyConfigBasic()
 
     // 创建代理配置
     QCNetworkProxyConfig proxyConfig;
-    proxyConfig.type = QCNetworkProxyConfig::ProxyType::Http;
+    proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
     proxyConfig.hostName = "proxy.example.com";
-    proxyConfig.port = 8080;
+    proxyConfig.port     = 8080;
 
     // 创建请求并设置代理
     QCNetworkRequest request(QUrl("http://httpbin.org/get"));
@@ -106,7 +107,7 @@ void TestQCNetworkProxy::testProxyConfigBasic()
 
     // 验证代理配置已设置
     QVERIFY(request.proxyConfig().has_value());
-    
+
     auto proxyConfigOpt = request.proxyConfig();
     if (proxyConfigOpt) {
         QCOMPARE(proxyConfigOpt->type, QCNetworkProxyConfig::ProxyType::Http);
@@ -122,21 +123,19 @@ void TestQCNetworkProxy::testProxyTypeValidation()
     qDebug() << "测试 2：代理类型验证";
 
     // 测试所有支持的代理类型
-    QList<QCNetworkProxyConfig::ProxyType> types = {
-        QCNetworkProxyConfig::ProxyType::None,
-        QCNetworkProxyConfig::ProxyType::Http,
-        QCNetworkProxyConfig::ProxyType::Https,
-        QCNetworkProxyConfig::ProxyType::Socks4,
-        QCNetworkProxyConfig::ProxyType::Socks4A,
-        QCNetworkProxyConfig::ProxyType::Socks5,
-        QCNetworkProxyConfig::ProxyType::Socks5Hostname
-    };
+    QList<QCNetworkProxyConfig::ProxyType> types = {QCNetworkProxyConfig::ProxyType::None,
+                                                    QCNetworkProxyConfig::ProxyType::Http,
+                                                    QCNetworkProxyConfig::ProxyType::Https,
+                                                    QCNetworkProxyConfig::ProxyType::Socks4,
+                                                    QCNetworkProxyConfig::ProxyType::Socks4A,
+                                                    QCNetworkProxyConfig::ProxyType::Socks5,
+                                                    QCNetworkProxyConfig::ProxyType::Socks5Hostname};
 
     for (auto type : types) {
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type = type;
+        proxyConfig.type     = type;
         proxyConfig.hostName = "proxy.test.com";
-        proxyConfig.port = 1080;
+        proxyConfig.port     = 1080;
 
         QCNetworkRequest request(QUrl("http://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
@@ -156,9 +155,9 @@ void TestQCNetworkProxy::testProxyAuthentication()
 
     // 创建带认证的代理配置
     QCNetworkProxyConfig proxyConfig;
-    proxyConfig.type = QCNetworkProxyConfig::ProxyType::Http;
+    proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
     proxyConfig.hostName = "auth-proxy.example.com";
-    proxyConfig.port = 8080;
+    proxyConfig.port     = 8080;
     proxyConfig.userName = "testuser";
     proxyConfig.password = "testpass";
 
@@ -182,9 +181,9 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxyConfig;
-    proxyConfig.type = QCNetworkProxyConfig::ProxyType::Socks5Hostname;
+    proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Socks5Hostname;
     proxyConfig.hostName = "proxy.example.com";
-    proxyConfig.port = 1080;
+    proxyConfig.port     = 1080;
     proxyConfig.userName = "user";
     proxyConfig.password = "secret";
     request.setProxyConfig(proxyConfig);
@@ -227,11 +226,11 @@ void TestQCNetworkProxy::testSslConfigApplied()
 
     QCNetworkRequest request(QUrl("https://secure.example.com"));
     QCNetworkSslConfig sslConfig;
-    sslConfig.verifyPeer = false;
-    sslConfig.verifyHost = true;
-    sslConfig.caCertPath = "/etc/ssl/custom-ca.pem";
-    sslConfig.clientCertPath = "/tmp/client.crt";
-    sslConfig.clientKeyPath = "/tmp/client.key";
+    sslConfig.verifyPeer        = false;
+    sslConfig.verifyHost        = true;
+    sslConfig.caCertPath        = "/etc/ssl/custom-ca.pem";
+    sslConfig.clientCertPath    = "/tmp/client.crt";
+    sslConfig.clientKeyPath     = "/tmp/client.key";
     sslConfig.clientKeyPassword = "passphrase";
     request.setSslConfig(sslConfig);
 
@@ -271,14 +270,14 @@ void TestQCNetworkProxy::testProxyWithSsl()
 
     // HTTPS 代理配置
     QCNetworkProxyConfig proxyConfig;
-    proxyConfig.type = QCNetworkProxyConfig::ProxyType::Https;
+    proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Https;
     proxyConfig.hostName = "secure-proxy.example.com";
-    proxyConfig.port = 443;
+    proxyConfig.port     = 443;
 
     // SSL 配置
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-    sslConfig.verifyPeer = true;
-    sslConfig.verifyHost = true;
+    sslConfig.verifyPeer         = true;
+    sslConfig.verifyHost         = true;
 
     // 同时设置代理和 SSL
     QCNetworkRequest request(QUrl("https://httpbin.org/get"));
@@ -311,14 +310,14 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
-    proxy.type = QCNetworkProxyConfig::ProxyType::Https;
+    proxy.type     = QCNetworkProxyConfig::ProxyType::Https;
     proxy.hostName = "proxy.example.com";
-    proxy.port = 443;
+    proxy.port     = 443;
 
     QCNetworkProxyConfig::ProxyTlsConfig tls;
-    tls.cipherList = "TLS_AES_128_GCM_SHA256";
+    tls.cipherList                = "TLS_AES_128_GCM_SHA256";
     tls.unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Fail;
-    proxy.tlsConfig = tls;
+    proxy.tlsConfig               = tls;
     request.setProxyConfig(proxy);
 
     QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -363,14 +362,14 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
-    proxy.type = QCNetworkProxyConfig::ProxyType::Https;
+    proxy.type     = QCNetworkProxyConfig::ProxyType::Https;
     proxy.hostName = "proxy.example.com";
-    proxy.port = 443;
+    proxy.port     = 443;
 
     QCNetworkProxyConfig::ProxyTlsConfig tls;
-    tls.cipherList = "TLS_AES_128_GCM_SHA256";
+    tls.cipherList                = "TLS_AES_128_GCM_SHA256";
     tls.unsupportedSecurityPolicy = QCUnsupportedSecurityOptionPolicy::Warn;
-    proxy.tlsConfig = tls;
+    proxy.tlsConfig               = tls;
     request.setProxyConfig(proxy);
 
     QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -387,7 +386,8 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
     QVERIFY(replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
     QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(QStringLiteral("当前构建的 libcurl 不支持")));
+    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(
+        QStringLiteral("当前构建的 libcurl 不支持")));
 #else
     QVERIFY(replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
@@ -417,9 +417,9 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 
     // 使用本地无 listener 的 proxy endpoint（确保失败）
     QCNetworkProxyConfig proxyConfig;
-    proxyConfig.type = QCNetworkProxyConfig::ProxyType::Http;
+    proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
     proxyConfig.hostName = "127.0.0.1";
-    proxyConfig.port = port;
+    proxyConfig.port     = port;
 
     // 目标 URL 在 proxy 连接失败前不应成为变量；使用本机 URL 避免外网依赖。
     QCNetworkRequest request(QUrl("http://127.0.0.1/"));
@@ -428,7 +428,7 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
     // 设置短超时，快速失败
     QCNetworkTimeoutConfig timeoutConfig;
     timeoutConfig.connectTimeout = std::chrono::seconds(2);
-    timeoutConfig.totalTimeout = std::chrono::seconds(3);
+    timeoutConfig.totalTimeout   = std::chrono::seconds(3);
     request.setTimeoutConfig(timeoutConfig);
 
     auto *reply = m_manager->sendGet(request);
@@ -436,7 +436,7 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 
     // 等待请求完成（应该失败）
     bool finished = waitForReply(reply, 5000);
-    QVERIFY(finished);  // 应该超时或连接失败
+    QVERIFY(finished); // 应该超时或连接失败
 
     // 验证错误码
     NetworkError error = reply->error();
@@ -445,8 +445,8 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 
     // 应该是连接失败、超时或主机不可达
     QVERIFY(error != NetworkError::NoError);
-    QVERIFY(error == NetworkError::ConnectionRefused ||
-            static_cast<int>(error) >= 1000);  // CURLcode 错误（包含代理错误）
+    QVERIFY(error == NetworkError::ConnectionRefused
+            || static_cast<int>(error) >= 1000); // CURLcode 错误（包含代理错误）
 
     reply->deleteLater();
 

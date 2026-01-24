@@ -83,8 +83,9 @@ private slots:
 
     void printProgress()
     {
-        int completed   = successCount + failureCount;
-        double progress = (double) completed / totalRequests * 100.0;
+        const int completed   = successCount.load() + failureCount.load();
+        const double progress = static_cast<double>(completed) / static_cast<double>(totalRequests)
+                                * 100.0;
 
         qInfo() << QString("[%1] 进度: %2% (%3/%4) | 成功: %5 | 失败: %6 | 等待: %7 | 运行: %8")
                        .arg(QTime::currentTime().toString("HH:mm:ss"))
@@ -113,14 +114,19 @@ private slots:
         qInfo() << "========================================\n";
 
         // 基本统计
+        const double successRatePercent = static_cast<double>(successCount.load())
+                                          / static_cast<double>(totalRequests) * 100.0;
+        const double failureRatePercent = static_cast<double>(failureCount.load())
+                                          / static_cast<double>(totalRequests) * 100.0;
+
         qInfo() << "📊 基本统计：";
         qInfo() << QString("  总请求数: %1").arg(totalRequests);
         qInfo() << QString("  成功: %1 (%2%)")
                        .arg(successCount.load())
-                       .arg((double) successCount / totalRequests * 100.0, 0, 'f', 2);
+                       .arg(successRatePercent, 0, 'f', 2);
         qInfo() << QString("  失败: %1 (%2%)")
                        .arg(failureCount.load())
-                       .arg((double) failureCount / totalRequests * 100.0, 0, 'f', 2);
+                       .arg(failureRatePercent, 0, 'f', 2);
         qInfo() << QString("  总耗时: %1 秒").arg(elapsedSec, 0, 'f', 2);
 
         // 性能指标
@@ -139,7 +145,7 @@ private slots:
 
         // 稳定性评估
         qInfo() << "\n✅ 稳定性评估：";
-        double successRate = (double) successCount / totalRequests * 100.0;
+        const double successRate = successRatePercent;
 
         if (successRate >= 95.0) {
             qInfo() << "  ⭐⭐⭐⭐⭐ 优秀 - 成功率 ≥ 95%";
@@ -153,7 +159,7 @@ private slots:
             qInfo() << "  ⭐ 很差 - 成功率 < 70%";
         }
 
-        if (failureCount == 0) {
+        if (failureCount.load() == 0) {
             qInfo() << "  ✓ 无请求失败";
         } else {
             qInfo() << QString("  ⚠ %1 个请求失败").arg(failureCount.load());
@@ -165,7 +171,7 @@ private slots:
 
         // 结论
         qInfo() << "\n🎯 测试结论：";
-        if (successRate >= 90.0 && failureCount < totalRequests * 0.1) {
+        if (successRate >= 90.0 && failureCount.load() < totalRequests * 0.1) {
             qInfo() << "  ✅ 调度器在高负载下表现稳定";
             qInfo() << "  ✅ 适合生产环境使用";
         } else {

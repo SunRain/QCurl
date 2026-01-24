@@ -201,7 +201,7 @@ void QCNetworkConnectionPoolManager::recordRequestCompleted(CURL *handle, bool w
     }
 
     // CURLINFO_NUM_CONNECTS: 本次 transfer 为完成请求新建的连接数量（通常：新建=1，复用=0）。
-    long numConnects = 0;
+    long numConnects  = 0;
     const CURLcode rc = curl_easy_getinfo(handle, CURLINFO_NUM_CONNECTS, &numConnects);
 
     bool actuallyReused = wasReused;

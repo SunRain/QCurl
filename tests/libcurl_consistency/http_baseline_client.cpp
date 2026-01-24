@@ -1,10 +1,9 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -14,8 +13,9 @@
 
 namespace {
 
-struct Args {
-    std::string proto = "http/1.1";
+struct Args
+{
+    std::string proto  = "http/1.1";
     std::string method = "GET";
     std::string url;
     std::vector<std::string> resolveEntries;
@@ -24,13 +24,13 @@ struct Args {
     std::optional<std::string> allowedRedirProtocols;
     std::optional<curl_off_t> maxRecvSpeed;
     std::optional<curl_off_t> maxSendSpeed;
-    std::string outFile = "download_0.data";
+    std::string outFile       = "download_0.data";
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
-    std::optional<std::string> acceptEncoding;  // "gzip,br" | ""(all)
+    std::optional<std::string> acceptEncoding; // "gzip,br" | ""(all)
     std::string user;
     std::string pass;
-    std::string httpAuth;  // basic | any | anysafe
+    std::string httpAuth; // basic | any | anysafe
     bool unrestrictedAuth = false;
     std::string proxy;
     std::string proxyType = "http";
@@ -40,29 +40,30 @@ struct Args {
     std::string cookieJar;
     std::string caInfo;
     std::string pinnedPublicKey;
-    bool multipartDemo = false;
+    bool multipartDemo  = false;
     bool followLocation = false;
-    long maxRedirs = 10;
-    bool autoReferer = false;
+    long maxRedirs      = 10;
+    bool autoReferer    = false;
     std::optional<long> postRedir;
     std::string referer;
-    bool streamBody = false;
-    bool seekableBody = false;
-    bool unknownSize = false;
-    bool verifyPeer = false;
-    bool verifyHost = false;
-    long connectTimeoutMs = -1;
-    long totalTimeoutMs = -1;
+    bool streamBody         = false;
+    bool seekableBody       = false;
+    bool unknownSize        = false;
+    bool verifyPeer         = false;
+    bool verifyHost         = false;
+    long connectTimeoutMs   = -1;
+    long totalTimeoutMs     = -1;
     long expect100TimeoutMs = -1;
-    long lowSpeedTimeS = -1;
-    long lowSpeedLimit = -1;
-    long abortAfterBytes = -1;
-    long dataSize = -1;
-    int repeat = 1;
-    bool expect100Continue = false;
+    long lowSpeedTimeS      = -1;
+    long lowSpeedLimit      = -1;
+    long abortAfterBytes    = -1;
+    long dataSize           = -1;
+    int repeat              = 1;
+    bool expect100Continue  = false;
 };
 
-struct CurlSlistDeleter {
+struct CurlSlistDeleter
+{
     void operator()(curl_slist *p) const
     {
         if (p) {
@@ -72,23 +73,25 @@ struct CurlSlistDeleter {
 };
 using CurlSlistPtr = std::unique_ptr<curl_slist, CurlSlistDeleter>;
 
-struct TransferSummary {
-    curl_off_t dlNowMax = 0;
+struct TransferSummary
+{
+    curl_off_t dlNowMax   = 0;
     curl_off_t dlTotalMax = 0;
-    curl_off_t ulNowMax = 0;
+    curl_off_t ulNowMax   = 0;
     curl_off_t ulTotalMax = 0;
-    curl_off_t dlPrev = -1;
-    curl_off_t ulPrev = -1;
-    bool dlMonotonic = true;
-    bool ulMonotonic = true;
-    int dlEvents = 0;
-    int ulEvents = 0;
+    curl_off_t dlPrev     = -1;
+    curl_off_t ulPrev     = -1;
+    bool dlMonotonic      = true;
+    bool ulMonotonic      = true;
+    int dlEvents          = 0;
+    int ulEvents          = 0;
 };
 
-struct ProgressContext {
+struct ProgressContext
+{
     curl_off_t abortAfterBytes = -1;
-    bool enableAbort = false;
-    bool enableRecord = false;
+    bool enableAbort           = false;
+    bool enableRecord          = false;
     TransferSummary summary;
 };
 
@@ -110,9 +113,8 @@ bool setHttpVersion(CURL *curl, const std::string &proto)
     return false;
 }
 
-int xferInfoCallback(void *userdata,
-                     curl_off_t dltotal, curl_off_t dlnow,
-                     curl_off_t ultotal, curl_off_t ulnow)
+int xferInfoCallback(
+    void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
 {
     auto *ctx = static_cast<ProgressContext *>(userdata);
     if (!ctx) {
@@ -147,7 +149,7 @@ int xferInfoCallback(void *userdata,
     }
 
     if (ctx->enableAbort && ctx->abortAfterBytes > 0 && dlnow >= ctx->abortAfterBytes) {
-        return 1;  // 中止传输（CURLE_ABORTED_BY_CALLBACK）
+        return 1; // 中止传输（CURLE_ABORTED_BY_CALLBACK）
     }
     return 0;
 }
@@ -183,9 +185,10 @@ size_t headerCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return total;
 }
 
-struct BodyStream {
-    const char *data = nullptr;
-    std::size_t len = 0;
+struct BodyStream
+{
+    const char *data   = nullptr;
+    std::size_t len    = 0;
     std::size_t offset = 0;
 
     void reset() { offset = 0; }
@@ -275,7 +278,7 @@ std::optional<long> protocolMaskFromCsv(const std::string &csv)
         if (first == std::string::npos) {
             return std::nullopt;
         }
-        const auto last = token.find_last_not_of(" \t\r\n");
+        const auto last     = token.find_last_not_of(" \t\r\n");
         const std::string t = toLowerAscii(token.substr(first, (last - first) + 1));
         token.clear();
         if (t.empty()) {
@@ -453,7 +456,7 @@ std::optional<Args> parseArgs(int argc, char **argv)
         }
         if (arg == "--multipart-demo") {
             out.multipartDemo = true;
-            out.method = "POST";
+            out.method        = "POST";
             continue;
         }
         if (arg == "--stream-body") {
@@ -668,7 +671,7 @@ std::optional<Args> parseArgs(int argc, char **argv)
         if (arg == "--accept-encoding" && i + 1 < argc) {
             std::string v = argv[++i];
             if (toLowerAscii(v) == "all") {
-                v.clear();  // 空字符串：让 libcurl 使用其内置支持的编码列表，并启用自动解压
+                v.clear(); // 空字符串：让 libcurl 使用其内置支持的编码列表，并启用自动解压
             }
             out.acceptEncoding = v;
             continue;
@@ -698,7 +701,8 @@ int printUsage()
 {
     std::cerr
         << "Usage: qcurl_lc_http_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
-        << "  [--resolve <host:port:addr[,addr...]>] [--connect-to <host:port:connect-to-host:connect-to-port>]\n"
+        << "  [--resolve <host:port:addr[,addr...]>] [--connect-to "
+           "<host:port:connect-to-host:connect-to-port>]\n"
         << "  [--allowed-protocols <csv>] [--allowed-redir-protocols <csv>]\n"
         << "  [--max-recv-speed <bytes_per_sec>] [--max-send-speed <bytes_per_sec>]\n"
         << "  [--method <GET|HEAD|POST|PUT|PATCH|DELETE>] [--data-size <n>]\n"
@@ -708,7 +712,8 @@ int printUsage()
         << "  [--header-out <file>]\n"
         << "  [--progress-out <file>] [--repeat <n>]\n"
         << "  [--user <user> --pass <pass> --httpauth <basic|any|anysafe>] [--unrestricted-auth]\n"
-        << "  [--proxy <proxy_url> [--proxy-type <http|https|socks4|socks4a|socks5|socks5h>] --proxy-user <user> --proxy-pass <pass>]\n"
+        << "  [--proxy <proxy_url> [--proxy-type <http|https|socks4|socks4a|socks5|socks5h>] "
+           "--proxy-user <user> --proxy-pass <pass>]\n"
         << "  [--cookiefile <path>] [--cookiejar <path>]\n"
         << "  [--follow] [--max-redirs <n>]\n"
         << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
@@ -723,12 +728,8 @@ int printUsage()
 
 bool isSupportedMethod(const std::string &method)
 {
-    return method == "GET"
-        || method == "HEAD"
-        || method == "POST"
-        || method == "PUT"
-        || method == "PATCH"
-        || method == "DELETE";
+    return method == "GET" || method == "HEAD" || method == "POST" || method == "PUT"
+           || method == "PATCH" || method == "DELETE";
 }
 
 bool writeProgressJson(const std::string &path, const TransferSummary &s)
@@ -742,14 +743,12 @@ bool writeProgressJson(const std::string &path, const TransferSummary &s)
        << "\"monotonic\":" << (s.dlMonotonic ? "true" : "false") << ","
        << "\"now_max\":" << static_cast<long long>(s.dlNowMax) << ","
        << "\"total_max\":" << static_cast<long long>(s.dlTotalMax) << ","
-       << "\"events_count\":" << s.dlEvents
-       << "},"
+       << "\"events_count\":" << s.dlEvents << "},"
        << "\"upload\":{"
        << "\"monotonic\":" << (s.ulMonotonic ? "true" : "false") << ","
        << "\"now_max\":" << static_cast<long long>(s.ulNowMax) << ","
        << "\"total_max\":" << static_cast<long long>(s.ulTotalMax) << ","
-       << "\"events_count\":" << s.ulEvents
-       << "}"
+       << "\"events_count\":" << s.ulEvents << "}"
        << "}\n";
     fp.flush();
     return fp.good();
@@ -765,7 +764,7 @@ std::string makeMultipartDemoBinary()
     return out;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -846,7 +845,9 @@ int main(int argc, char **argv)
     }
     if (!args.pinnedPublicKey.empty()) {
 #if defined(LIBCURL_VERSION_NUM) && (LIBCURL_VERSION_NUM >= 0x072700)
-        const CURLcode pinnedRc = curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, args.pinnedPublicKey.c_str());
+        const CURLcode pinnedRc = curl_easy_setopt(curl,
+                                                   CURLOPT_PINNEDPUBLICKEY,
+                                                   args.pinnedPublicKey.c_str());
         if (pinnedRc == CURLE_UNKNOWN_OPTION || pinnedRc == CURLE_NOT_BUILT_IN) {
             std::cerr << "unsupported pinned public key (no CURLOPT_PINNEDPUBLICKEY)\n";
             curl_easy_cleanup(curl);
@@ -854,7 +855,8 @@ int main(int argc, char **argv)
             return 6;
         }
         if (pinnedRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_PINNEDPUBLICKEY) failed: " << curl_easy_strerror(pinnedRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_PINNEDPUBLICKEY) failed: "
+                      << curl_easy_strerror(pinnedRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
@@ -896,23 +898,29 @@ int main(int argc, char **argv)
     if (resolveSlist) {
         const CURLcode resolveRc = curl_easy_setopt(curl, CURLOPT_RESOLVE, resolveSlist.get());
         if (resolveRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_RESOLVE) failed: " << curl_easy_strerror(resolveRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_RESOLVE) failed: "
+                      << curl_easy_strerror(resolveRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
         }
     }
     if (connectToSlist) {
-        const CURLcode connectToRc = curl_easy_setopt(curl, CURLOPT_CONNECT_TO, connectToSlist.get());
+        const CURLcode connectToRc = curl_easy_setopt(curl,
+                                                      CURLOPT_CONNECT_TO,
+                                                      connectToSlist.get());
         if (connectToRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_CONNECT_TO) failed: " << curl_easy_strerror(connectToRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_CONNECT_TO) failed: "
+                      << curl_easy_strerror(connectToRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
         }
     }
     if (args.allowedProtocols.has_value()) {
-        const CURLcode protocolsRc = curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, args.allowedProtocols.value().c_str());
+        const CURLcode protocolsRc = curl_easy_setopt(curl,
+                                                      CURLOPT_PROTOCOLS_STR,
+                                                      args.allowedProtocols.value().c_str());
         if (protocolsRc == CURLE_UNKNOWN_OPTION || protocolsRc == CURLE_NOT_BUILT_IN) {
             const auto maskOpt = protocolMaskFromCsv(args.allowedProtocols.value());
             if (!maskOpt.has_value()) {
@@ -921,50 +929,60 @@ int main(int argc, char **argv)
                 curl_global_cleanup();
                 return 6;
             }
-            std::cerr << "[warn] CURLOPT_PROTOCOLS_STR unsupported, fallback to CURLOPT_PROTOCOLS\n";
+            std::cerr
+                << "[warn] CURLOPT_PROTOCOLS_STR unsupported, fallback to CURLOPT_PROTOCOLS\n";
             const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_PROTOCOLS, maskOpt.value());
             if (maskRc != CURLE_OK) {
-                std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS) failed: " << curl_easy_strerror(maskRc) << "\n";
+                std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS) failed: "
+                          << curl_easy_strerror(maskRc) << "\n";
                 curl_easy_cleanup(curl);
                 curl_global_cleanup();
                 return 5;
             }
         } else if (protocolsRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS_STR) failed: " << curl_easy_strerror(protocolsRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS_STR) failed: "
+                      << curl_easy_strerror(protocolsRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
         }
     }
     if (args.allowedRedirProtocols.has_value()) {
-        const CURLcode redirRc =
-            curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, args.allowedRedirProtocols.value().c_str());
+        const CURLcode redirRc = curl_easy_setopt(curl,
+                                                  CURLOPT_REDIR_PROTOCOLS_STR,
+                                                  args.allowedRedirProtocols.value().c_str());
         if (redirRc == CURLE_UNKNOWN_OPTION || redirRc == CURLE_NOT_BUILT_IN) {
             const auto maskOpt = protocolMaskFromCsv(args.allowedRedirProtocols.value());
             if (!maskOpt.has_value()) {
-                std::cerr << "invalid allowed-redir-protocols: " << args.allowedRedirProtocols.value() << "\n";
+                std::cerr << "invalid allowed-redir-protocols: "
+                          << args.allowedRedirProtocols.value() << "\n";
                 curl_easy_cleanup(curl);
                 curl_global_cleanup();
                 return 6;
             }
-            std::cerr << "[warn] CURLOPT_REDIR_PROTOCOLS_STR unsupported, fallback to CURLOPT_REDIR_PROTOCOLS\n";
+            std::cerr << "[warn] CURLOPT_REDIR_PROTOCOLS_STR unsupported, fallback to "
+                         "CURLOPT_REDIR_PROTOCOLS\n";
             const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, maskOpt.value());
             if (maskRc != CURLE_OK) {
-                std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS) failed: " << curl_easy_strerror(maskRc) << "\n";
+                std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS) failed: "
+                          << curl_easy_strerror(maskRc) << "\n";
                 curl_easy_cleanup(curl);
                 curl_global_cleanup();
                 return 5;
             }
         } else if (redirRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS_STR) failed: " << curl_easy_strerror(redirRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS_STR) failed: "
+                      << curl_easy_strerror(redirRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
         }
     }
     if (args.maxRecvSpeed.has_value()) {
-        const CURLcode speedRc =
-            curl_easy_setopt(curl, CURLOPT_MAX_RECV_SPEED_LARGE, static_cast<curl_off_t>(args.maxRecvSpeed.value()));
+        const CURLcode speedRc = curl_easy_setopt(curl,
+                                                  CURLOPT_MAX_RECV_SPEED_LARGE,
+                                                  static_cast<curl_off_t>(
+                                                      args.maxRecvSpeed.value()));
         if (speedRc == CURLE_UNKNOWN_OPTION || speedRc == CURLE_NOT_BUILT_IN) {
             std::cerr << "unsupported max recv speed (no CURLOPT_MAX_RECV_SPEED_LARGE)\n";
             curl_easy_cleanup(curl);
@@ -972,15 +990,18 @@ int main(int argc, char **argv)
             return 6;
         }
         if (speedRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_MAX_RECV_SPEED_LARGE) failed: " << curl_easy_strerror(speedRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_MAX_RECV_SPEED_LARGE) failed: "
+                      << curl_easy_strerror(speedRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
         }
     }
     if (args.maxSendSpeed.has_value()) {
-        const CURLcode speedRc =
-            curl_easy_setopt(curl, CURLOPT_MAX_SEND_SPEED_LARGE, static_cast<curl_off_t>(args.maxSendSpeed.value()));
+        const CURLcode speedRc = curl_easy_setopt(curl,
+                                                  CURLOPT_MAX_SEND_SPEED_LARGE,
+                                                  static_cast<curl_off_t>(
+                                                      args.maxSendSpeed.value()));
         if (speedRc == CURLE_UNKNOWN_OPTION || speedRc == CURLE_NOT_BUILT_IN) {
             std::cerr << "unsupported max send speed (no CURLOPT_MAX_SEND_SPEED_LARGE)\n";
             curl_easy_cleanup(curl);
@@ -988,7 +1009,8 @@ int main(int argc, char **argv)
             return 6;
         }
         if (speedRc != CURLE_OK) {
-            std::cerr << "curl_easy_setopt(CURLOPT_MAX_SEND_SPEED_LARGE) failed: " << curl_easy_strerror(speedRc) << "\n";
+            std::cerr << "curl_easy_setopt(CURLOPT_MAX_SEND_SPEED_LARGE) failed: "
+                      << curl_easy_strerror(speedRc) << "\n";
             curl_easy_cleanup(curl);
             curl_global_cleanup();
             return 5;
@@ -1002,8 +1024,9 @@ int main(int argc, char **argv)
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, args.totalTimeoutMs);
     }
     if (args.expect100TimeoutMs >= 0) {
-        const CURLcode expectRc =
-            curl_easy_setopt(curl, CURLOPT_EXPECT_100_TIMEOUT_MS, args.expect100TimeoutMs);
+        const CURLcode expectRc = curl_easy_setopt(curl,
+                                                   CURLOPT_EXPECT_100_TIMEOUT_MS,
+                                                   args.expect100TimeoutMs);
         if (expectRc == CURLE_UNKNOWN_OPTION || expectRc == CURLE_NOT_BUILT_IN) {
             std::cerr << "unsupported expect100-timeout-ms (no CURLOPT_EXPECT_100_TIMEOUT_MS)\n";
         } else if (expectRc != CURLE_OK) {
@@ -1023,14 +1046,14 @@ int main(int argc, char **argv)
     }
     BodyStream bodyStream;
     bodyStream.data = body.data();
-    bodyStream.len = body.size();
+    bodyStream.len  = body.size();
 
-    curl_mime *mime = nullptr;
+    curl_mime *mime     = nullptr;
     curl_slist *headers = nullptr;
     std::string multipartBinary;
     if (args.multipartDemo) {
         multipartBinary = makeMultipartDemoBinary();
-        mime = curl_mime_init(curl);
+        mime            = curl_mime_init(curl);
         if (!mime) {
             curl_easy_cleanup(curl);
             curl_global_cleanup();
@@ -1082,11 +1105,14 @@ int main(int argc, char **argv)
         if (args.method == "POST") {
             curl_easy_setopt(curl, CURLOPT_POST, 1L);
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, nullptr);
-            const curl_off_t postSize = args.unknownSize ? static_cast<curl_off_t>(-1) : static_cast<curl_off_t>(bodyStream.len);
+            const curl_off_t postSize = args.unknownSize ? static_cast<curl_off_t>(-1)
+                                                         : static_cast<curl_off_t>(bodyStream.len);
             curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, postSize);
         } else if (args.method == "PUT") {
             curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-            curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(bodyStream.len));
+            curl_easy_setopt(curl,
+                             CURLOPT_INFILESIZE_LARGE,
+                             static_cast<curl_off_t>(bodyStream.len));
         }
     } else if (args.method == "POST" && !args.multipartDemo) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
@@ -1095,14 +1121,16 @@ int main(int argc, char **argv)
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, args.method.c_str());
         if (!body.empty()) {
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
+            curl_easy_setopt(curl,
+                             CURLOPT_POSTFIELDSIZE_LARGE,
+                             static_cast<curl_off_t>(body.size()));
         }
     }
 
     ProgressContext progressCtx;
     if (args.abortAfterBytes > 0) {
         progressCtx.abortAfterBytes = static_cast<curl_off_t>(args.abortAfterBytes);
-        progressCtx.enableAbort = true;
+        progressCtx.enableAbort     = true;
     }
     if (!args.progressOutFile.empty()) {
         progressCtx.enableRecord = true;
@@ -1166,7 +1194,8 @@ int main(int argc, char **argv)
             proxyType = CURLPROXY_SOCKS4A;
         } else if (args.proxyType == "socks5") {
             proxyType = CURLPROXY_SOCKS5;
-        } else if (args.proxyType == "socks5h" || args.proxyType == "socks5-hostname" || args.proxyType == "socks5_hostname") {
+        } else if (args.proxyType == "socks5h" || args.proxyType == "socks5-hostname"
+                   || args.proxyType == "socks5_hostname") {
             proxyType = CURLPROXY_SOCKS5_HOSTNAME;
         } else {
             std::cerr << "unsupported proxy type: " << args.proxyType << "\n";

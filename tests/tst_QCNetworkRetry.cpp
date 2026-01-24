@@ -14,20 +14,19 @@
  *
  */
 
-#include <QtTest/QtTest>
-#include <QEventLoop>
-#include <QTimer>
-#include <QSignalSpy>
-#include <QElapsedTimer>
-#include <QMetaMethod>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 #include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
-
 #include "test_httpbin_env.h"
+
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QMetaMethod>
+#include <QSignalSpy>
+#include <QTimer>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -48,14 +47,14 @@ private slots:
     void testRetryPolicyShouldRetry();
 
     // ========== 实际重试行为测试 ==========
-    void testNoRetry();                    // 验证默认不重试
-    void testBasicRetry();                 // 基本重试成功场景
-    void testMaxRetriesExceeded();         // 达到最大重试次数
-    void testNonRetryableError();          // 404 等不可重试错误
-    void testExponentialBackoff();         // 延迟时间验证
-    void testCancelDuringRetry();          // 取消重试中的请求
-    void testCustomRetryPolicy();          // 自定义策略
-    void testSyncRetry();                  // 同步模式重试
+    void testNoRetry();            // 验证默认不重试
+    void testBasicRetry();         // 基本重试成功场景
+    void testMaxRetriesExceeded(); // 达到最大重试次数
+    void testNonRetryableError();  // 404 等不可重试错误
+    void testExponentialBackoff(); // 延迟时间验证
+    void testCancelDuringRetry();  // 取消重试中的请求
+    void testCustomRetryPolicy();  // 自定义策略
+    void testSyncRetry();          // 同步模式重试
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -132,10 +131,10 @@ QCNetworkRequest TestQCNetworkRetry::createRequestWithRetry(const QUrl &url, int
 {
     QCNetworkRequest request(url);
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = maxRetries;
-    policy.initialDelay = std::chrono::milliseconds(100);  // 缩短测试时间
+    policy.maxRetries        = maxRetries;
+    policy.initialDelay      = std::chrono::milliseconds(100); // 缩短测试时间
     policy.backoffMultiplier = 1.5;
-    policy.maxDelay = std::chrono::milliseconds(5000);
+    policy.maxDelay          = std::chrono::milliseconds(5000);
     request.setRetryPolicy(policy);
     return request;
 }
@@ -153,7 +152,7 @@ void TestQCNetworkRetry::testRetryPolicyDefaults()
     QCOMPARE(policy.initialDelay.count(), 1000);
     QCOMPARE(policy.backoffMultiplier, 2.0);
     QCOMPARE(policy.maxDelay.count(), 30000);
-    QCOMPARE(policy.retryableErrors.size(), 10);  // 10 种可重试错误
+    QCOMPARE(policy.retryableErrors.size(), 10); // 10 种可重试错误
     QVERIFY(policy.retryableErrors.contains(NetworkError::HttpNotImplemented));
 }
 
@@ -179,26 +178,23 @@ void TestQCNetworkRetry::testRetryPolicyFactoryMethods()
 void TestQCNetworkRetry::testRetryPolicyDelayCalculation()
 {
     QCNetworkRetryPolicy policy;
-    policy.initialDelay = std::chrono::milliseconds(1000);
+    policy.initialDelay      = std::chrono::milliseconds(1000);
     policy.backoffMultiplier = 2.0;
-    policy.maxDelay = std::chrono::milliseconds(10000);
+    policy.maxDelay          = std::chrono::milliseconds(10000);
 
     // 测试指数退避：delay = initialDelay * (backoffMultiplier ^ attemptCount)
-    QCOMPARE(policy.delayForAttempt(0).count(), 1000);   // 1000 * 2^0 = 1000
-    QCOMPARE(policy.delayForAttempt(1).count(), 2000);   // 1000 * 2^1 = 2000
-    QCOMPARE(policy.delayForAttempt(2).count(), 4000);   // 1000 * 2^2 = 4000
-    QCOMPARE(policy.delayForAttempt(3).count(), 8000);   // 1000 * 2^3 = 8000
-    QCOMPARE(policy.delayForAttempt(4).count(), 10000);  // 限制在 maxDelay
+    QCOMPARE(policy.delayForAttempt(0).count(), 1000);  // 1000 * 2^0 = 1000
+    QCOMPARE(policy.delayForAttempt(1).count(), 2000);  // 1000 * 2^1 = 2000
+    QCOMPARE(policy.delayForAttempt(2).count(), 4000);  // 1000 * 2^2 = 4000
+    QCOMPARE(policy.delayForAttempt(3).count(), 8000);  // 1000 * 2^3 = 8000
+    QCOMPARE(policy.delayForAttempt(4).count(), 10000); // 限制在 maxDelay
 }
 
 void TestQCNetworkRetry::testRetryPolicyShouldRetry()
 {
     QCNetworkRetryPolicy policy;
     policy.maxRetries = 3;
-    policy.retryableErrors = {
-        NetworkError::ConnectionTimeout,
-        NetworkError::HttpServiceUnavailable
-    };
+    policy.retryableErrors = {NetworkError::ConnectionTimeout, NetworkError::HttpServiceUnavailable};
 
     // 测试可重试错误
     QVERIFY(policy.shouldRetry(NetworkError::ConnectionTimeout, 0));
@@ -242,8 +238,7 @@ void TestQCNetworkRetry::testNoRetry()
 void TestQCNetworkRetry::testBasicRetry()
 {
     // 基本重试场景：503 错误重试 3 次
-    QCNetworkRequest request = createRequestWithRetry(
-        QUrl(m_httpbinBaseUrl + "/status/503"), 3);
+    QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"), 3);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -258,11 +253,11 @@ void TestQCNetworkRetry::testBasicRetry()
 
     // 验证信号参数
     for (int i = 0; i < retrySpy.count(); ++i) {
-        auto args = retrySpy.at(i);
-        int attemptCount = args.at(0).toInt();
+        auto args          = retrySpy.at(i);
+        int attemptCount   = args.at(0).toInt();
         NetworkError error = qvariant_cast<NetworkError>(args.at(1));
 
-        QCOMPARE(attemptCount, i + 1);  // 1, 2, 3
+        QCOMPARE(attemptCount, i + 1); // 1, 2, 3
         QCOMPARE(error, NetworkError::HttpServiceUnavailable);
     }
 
@@ -272,8 +267,8 @@ void TestQCNetworkRetry::testBasicRetry()
 void TestQCNetworkRetry::testMaxRetriesExceeded()
 {
     // 测试达到最大重试次数后停止
-    QCNetworkRequest request = createRequestWithRetry(
-        QUrl(m_httpbinBaseUrl + "/status/503"), 2);  // 最多重试 2 次
+    QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"),
+                                                      2); // 最多重试 2 次
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -290,8 +285,7 @@ void TestQCNetworkRetry::testMaxRetriesExceeded()
 void TestQCNetworkRetry::testNonRetryableError()
 {
     // 测试不可重试错误（如 404）不会触发重试
-    QCNetworkRequest request = createRequestWithRetry(
-        QUrl(m_httpbinBaseUrl + "/status/404"), 3);
+    QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/404"), 3);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -310,8 +304,8 @@ void TestQCNetworkRetry::testExponentialBackoff()
     // 测试延迟时间符合指数退避算法
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 2;
-    policy.initialDelay = std::chrono::milliseconds(200);
+    policy.maxRetries        = 2;
+    policy.initialDelay      = std::chrono::milliseconds(200);
     policy.backoffMultiplier = 1.5;
     request.setRetryPolicy(policy);
 
@@ -326,8 +320,8 @@ void TestQCNetworkRetry::testExponentialBackoff()
     // 预期总延迟：200 + 300 = 500ms
     // 允许 ±500ms 误差（网络请求时间和调度延迟）
     qDebug() << "Actual elapsed time:" << elapsed << "ms";
-    QVERIFY(elapsed >= 200);   // 至少等待了初始延迟
-    QVERIFY(elapsed <= 2000);  // 不应该超过太多
+    QVERIFY(elapsed >= 200);  // 至少等待了初始延迟
+    QVERIFY(elapsed <= 2000); // 不应该超过太多
 
     reply->deleteLater();
 }
@@ -335,8 +329,7 @@ void TestQCNetworkRetry::testExponentialBackoff()
 void TestQCNetworkRetry::testCancelDuringRetry()
 {
     // 测试在重试延迟期间取消请求
-    QCNetworkRequest request = createRequestWithRetry(
-        QUrl(m_httpbinBaseUrl + "/status/503"), 5);
+    QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"), 5);
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -350,8 +343,9 @@ void TestQCNetworkRetry::testCancelDuringRetry()
     reply->cancel();
 
     // 等待 finished 或 cancelled 信号（取消后应该会触发其中之一）
-    bool signalReceived = waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::cancelled), 2000) ||
-                         waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 100);
+    bool signalReceived
+        = waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::cancelled), 2000)
+          || waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 100);
 
     // 验证：至少收到一个完成信号
     QVERIFY(signalReceived || cancelledSpy.count() > 0 || finishedSpy.count() > 0);
@@ -368,11 +362,11 @@ void TestQCNetworkRetry::testCustomRetryPolicy()
     // 测试自定义重试策略
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 4;
-    policy.initialDelay = std::chrono::milliseconds(50);
+    policy.maxRetries        = 4;
+    policy.initialDelay      = std::chrono::milliseconds(50);
     policy.backoffMultiplier = 1.2;
-    policy.maxDelay = std::chrono::milliseconds(1000);
-    policy.retryableErrors = {NetworkError::HttpInternalServerError};
+    policy.maxDelay          = std::chrono::milliseconds(1000);
+    policy.retryableErrors   = {NetworkError::HttpInternalServerError};
     request.setRetryPolicy(policy);
 
     auto *reply = m_manager->sendGet(request);
@@ -392,8 +386,8 @@ void TestQCNetworkRetry::testSyncRetry()
     // 测试同步模式重试
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 2;
-    policy.initialDelay = std::chrono::milliseconds(100);
+    policy.maxRetries        = 2;
+    policy.initialDelay      = std::chrono::milliseconds(100);
     policy.backoffMultiplier = 1.5;
     request.setRetryPolicy(policy);
 
@@ -410,7 +404,7 @@ void TestQCNetworkRetry::testSyncRetry()
 
     // 验证：总时间应包含重试延迟（100 + 150 = 250ms）
     qDebug() << "Sync retry elapsed:" << elapsed << "ms";
-    QVERIFY(elapsed >= 200);  // 至少等待了延迟时间
+    QVERIFY(elapsed >= 200); // 至少等待了延迟时间
 
     reply->deleteLater();
 }

@@ -1,9 +1,8 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <cstdint>
 #include <cstdio>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -12,7 +11,8 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     int count = 0;
     std::string requestId;
     std::string proto;
@@ -53,12 +53,13 @@ std::string appendRequestId(const std::string &url, const std::string &requestId
     return url + sep + "id=" + requestId;
 }
 
-struct Transfer {
+struct Transfer
+{
     int index = 0;
     std::string url;
     std::ofstream file;
     std::uint64_t written = 0;
-    CURLcode result = CURLE_OK;
+    CURLcode result       = CURLE_OK;
 };
 
 size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -68,7 +69,8 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
         return 0;
     }
 
-    const std::uint64_t total = static_cast<std::uint64_t>(size) * static_cast<std::uint64_t>(nmemb);
+    const std::uint64_t total = static_cast<std::uint64_t>(size)
+                                * static_cast<std::uint64_t>(nmemb);
     if (total == 0) {
         return 0;
     }
@@ -119,11 +121,12 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr << "Usage: qcurl_lc_multi_get4_baseline -n <count> -I <req_id> -V <h2|h3|http/1.1> <url_prefix>\n";
+    std::cerr << "Usage: qcurl_lc_multi_get4_baseline -n <count> -I <req_id> -V <h2|h3|http/1.1> "
+                 "<url_prefix>\n";
     return 2;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -156,8 +159,8 @@ int main(int argc, char **argv)
     for (int i = 0; i < args.count; ++i) {
         transfers.emplace_back();
         Transfer &t = transfers.back();
-        t.index = i;
-        t.url = appendRequestId(args.urlPrefix + formatSuffix(i + 1), args.requestId);
+        t.index     = i;
+        t.url       = appendRequestId(args.urlPrefix + formatSuffix(i + 1), args.requestId);
 
         const std::string outFile = "download_" + std::to_string(i) + ".data";
         t.file.open(outFile, std::ios::binary | std::ios::trunc);
@@ -209,7 +212,7 @@ int main(int argc, char **argv)
     curl_multi_perform(multi, &running);
 
     while (running > 0) {
-        int numfds = 0;
+        int numfds         = 0;
         const CURLMcode mc = curl_multi_poll(multi, nullptr, 0, 1000, &numfds);
         if (mc != CURLM_OK) {
             std::cerr << "curl_multi_poll failed: " << curl_multi_strerror(mc) << "\n";

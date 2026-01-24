@@ -6,11 +6,12 @@
  *
  */
 
-#include <QtTest/QtTest>
 #include "QCNetworkDiagnostics.h"
-#include <QUrl>
+
 #include <QDateTime>
 #include <QHostInfo>
+#include <QUrl>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -90,7 +91,7 @@ void tst_QCNetworkDiagnostics::cleanupTestCase()
 
 bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
 {
-    static bool cached = false;
+    static bool cached      = false;
     static bool initialized = false;
     if (initialized) {
         return cached;
@@ -98,8 +99,8 @@ bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
 
     // 使用外部域名进行探测，避免 localhost 导致“永远有网络”的误判
     const QHostInfo info = QHostInfo::fromName(QStringLiteral("example.com"));
-    cached = (info.error() == QHostInfo::NoError) && !info.addresses().isEmpty();
-    initialized = true;
+    cached               = (info.error() == QHostInfo::NoError) && !info.addresses().isEmpty();
+    initialized          = true;
     return cached;
 }
 
@@ -110,10 +111,10 @@ bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
 void tst_QCNetworkDiagnostics::testDiagResult_ToString()
 {
     DiagResult result;
-    result.success = true;
-    result.summary = "测试成功";
-    result.durationMs = 123;
-    result.timestamp = QDateTime::currentDateTime();
+    result.success         = true;
+    result.summary         = "测试成功";
+    result.durationMs      = 123;
+    result.timestamp       = QDateTime::currentDateTime();
     result.details["key1"] = "value1";
     result.details["key2"] = 42;
 
@@ -125,9 +126,9 @@ void tst_QCNetworkDiagnostics::testDiagResult_ToString()
     QVERIFY(str.contains("value1"));
 
     // 测试失败情况
-    result.success = false;
+    result.success     = false;
     result.errorString = "测试错误";
-    str = result.toString();
+    str                = result.toString();
     QVERIFY(str.contains("❌"));
     QVERIFY(str.contains("测试错误"));
 }
@@ -278,8 +279,8 @@ void tst_QCNetworkDiagnostics::testConnection_Timeout()
 {
     // 连接到一个不可达的 IP 地址
     auto startTime = QDateTime::currentMSecsSinceEpoch();
-    auto result = QCNetworkDiagnostics::testConnection("10.255.255.1", 81, 1000);
-    auto elapsed = QDateTime::currentMSecsSinceEpoch() - startTime;
+    auto result    = QCNetworkDiagnostics::testConnection("10.255.255.1", 81, 1000);
+    auto elapsed   = QDateTime::currentMSecsSinceEpoch() - startTime;
 
     QVERIFY(!result.success);
     // 验证超时时间大致正确（允许 ±500ms 误差）
@@ -293,16 +294,14 @@ void tst_QCNetworkDiagnostics::testConnection_CommonPorts()
     }
 
     // 测试常见端口（HTTP、HTTPS）
-    struct PortTest {
+    struct PortTest
+    {
         QString host;
         int port;
         QString description;
     };
 
-    QList<PortTest> tests = {
-        {"google.com", 80, "HTTP"},
-        {"google.com", 443, "HTTPS"}
-    };
+    QList<PortTest> tests = {{"google.com", 80, "HTTP"}, {"google.com", 443, "HTTPS"}};
 
     for (const auto &test : tests) {
         auto result = QCNetworkDiagnostics::testConnection(test.host, test.port, 5000);
@@ -326,7 +325,8 @@ void tst_QCNetworkDiagnostics::testCheckSSL_ValidCertificate()
     auto result = QCNetworkDiagnostics::checkSSL("google.com", 443, 10000);
 
     if (!result.success) {
-        QSKIP(qPrintable(QStringLiteral("SSL 握手失败（网络/代理/证书环境相关）: %1").arg(result.errorString)));
+        QSKIP(qPrintable(
+            QStringLiteral("SSL 握手失败（网络/代理/证书环境相关）: %1").arg(result.errorString)));
     }
     QVERIFY(result.summary.contains("SSL 证书有效"));
 
@@ -373,8 +373,10 @@ void tst_QCNetworkDiagnostics::testCheckSSL_SelfSignedCertificate()
 
     qDebug() << "自签名证书测试:" << result.errorString;
     if (!result.details.contains("sslErrors")) {
-        const QByteArray skipReason =
-            QString("未捕获到 sslErrors（站点可能不可达/被阻断/超时），error=%1").arg(result.errorString).toUtf8();
+        const QByteArray skipReason
+            = QString("未捕获到 sslErrors（站点可能不可达/被阻断/超时），error=%1")
+                  .arg(result.errorString)
+                  .toUtf8();
         QSKIP(skipReason.constData());
     }
 
@@ -432,11 +434,12 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_HTTPS()
     auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"), 10000);
 
     if (!result.success) {
-        QSKIP(qPrintable(QStringLiteral("HTTPS 探测失败（网络/代理/证书环境相关）: %1").arg(result.errorString)));
+        QSKIP(qPrintable(
+            QStringLiteral("HTTPS 探测失败（网络/代理/证书环境相关）: %1").arg(result.errorString)));
     }
-    QVERIFY(result.details["statusCode"].toInt() == 200 ||
-            result.details["statusCode"].toInt() == 301 ||
-            result.details["statusCode"].toInt() == 302);
+    QVERIFY(result.details["statusCode"].toInt() == 200
+            || result.details["statusCode"].toInt() == 301
+            || result.details["statusCode"].toInt() == 302);
 }
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_Redirect()
@@ -470,8 +473,7 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_404NotFound()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::probeHTTP(
-        QUrl("https://httpbin.org/status/404"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://httpbin.org/status/404"), 10000);
 
     if (result.success) {
         QCOMPARE(result.details["statusCode"].toInt(), 404);
@@ -532,7 +534,7 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
         QVERIFY(result.details.contains("dns"));
         QVERIFY(result.details.contains("connection"));
         QVERIFY(result.details.contains("http"));
-        QVERIFY(!result.details.contains("ssl"));  // HTTP 不检查 SSL
+        QVERIFY(!result.details.contains("ssl")); // HTTP 不检查 SSL
     }
 }
 
@@ -547,7 +549,7 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSSite()
     if (result.success) {
         QVERIFY(result.details.contains("dns"));
         QVERIFY(result.details.contains("connection"));
-        QVERIFY(result.details.contains("ssl"));  // HTTPS 应该有 SSL 检查
+        QVERIFY(result.details.contains("ssl")); // HTTPS 应该有 SSL 检查
         QVERIFY(result.details.contains("http"));
     }
 }

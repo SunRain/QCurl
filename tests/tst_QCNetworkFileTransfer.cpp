@@ -3,23 +3,22 @@
  * @brief 流式下载/上传与断点续传 API 测试
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "test_httpbin_env.h"
+
 #include <QBuffer>
+#include <QFile>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
-#include <QTemporaryDir>
-#include <QFile>
 #include <QTcpServer>
 #include <QTcpSocket>
-#include <QHostAddress>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkError.h"
-
-#include "test_httpbin_env.h"
+#include <QTemporaryDir>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -48,22 +47,14 @@ public:
         });
     }
 
-    bool start()
-    {
-        return m_server.listen(QHostAddress::LocalHost, 0);
-    }
+    bool start() { return m_server.listen(QHostAddress::LocalHost, 0); }
 
     QUrl url(const QString &path) const
     {
-        return QUrl(QStringLiteral("http://127.0.0.1:%1%2")
-                        .arg(m_server.serverPort())
-                        .arg(path));
+        return QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(m_server.serverPort()).arg(path));
     }
 
-    QByteArray expectedPayload() const
-    {
-        return m_payload;
-    }
+    QByteArray expectedPayload() const { return m_payload; }
 
 private:
     static qint64 parseRangeStart(const QByteArray &headerValue)
@@ -78,95 +69,100 @@ private:
             return 0;
         }
 
-        bool ok = false;
+        bool ok            = false;
         const qint64 start = value.mid(6, dashPos - 6).toLongLong(&ok);
         return ok ? qMax<qint64>(0, start) : 0;
     }
 
     void setupSocket(QTcpSocket *socket)
     {
-        auto requestBuffer = QSharedPointer<QByteArray>::create();
+        auto requestBuffer  = QSharedPointer<QByteArray>::create();
         auto requestHandled = QSharedPointer<bool>::create(false);
 
-        QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket, requestBuffer, requestHandled]() {
-            if (*requestHandled) {
-                return;
-            }
+        QObject::connect(socket,
+                         &QTcpSocket::readyRead,
+                         socket,
+                         [this, socket, requestBuffer, requestHandled]() {
+                             if (*requestHandled) {
+                                 return;
+                             }
 
-            requestBuffer->append(socket->readAll());
-            const int headerEnd = requestBuffer->indexOf("\r\n\r\n");
-            if (headerEnd < 0) {
-                return;
-            }
+                             requestBuffer->append(socket->readAll());
+                             const int headerEnd = requestBuffer->indexOf("\r\n\r\n");
+                             if (headerEnd < 0) {
+                                 return;
+                             }
 
-            *requestHandled = true;
+                             *requestHandled = true;
 
-            const QByteArray headerBlock = requestBuffer->left(headerEnd);
-            const QList<QByteArray> lines = headerBlock.split('\n');
+                             const QByteArray headerBlock  = requestBuffer->left(headerEnd);
+                             const QList<QByteArray> lines = headerBlock.split('\n');
 
-            qint64 rangeStart = 0;
-            for (QByteArray line : lines) {
-                line = line.trimmed();
-                if (line.toLower().startsWith("range:")) {
-                    const int colonPos = line.indexOf(':');
-                    if (colonPos >= 0) {
-                        rangeStart = parseRangeStart(line.mid(colonPos + 1));
-                    }
-                }
-            }
+                             qint64 rangeStart = 0;
+                             for (QByteArray line : lines) {
+                                 line = line.trimmed();
+                                 if (line.toLower().startsWith("range:")) {
+                                     const int colonPos = line.indexOf(':');
+                                     if (colonPos >= 0) {
+                                         rangeStart = parseRangeStart(line.mid(colonPos + 1));
+                                     }
+                                 }
+                             }
 
-            if (rangeStart >= m_totalBytes) {
-                const QByteArray resp = QByteArray("HTTP/1.1 416 Range Not Satisfiable\r\n"
-                                                   "Connection: close\r\n\r\n");
-                socket->write(resp);
-                socket->disconnectFromHost();
-                return;
-            }
+                             if (rangeStart >= m_totalBytes) {
+                                 const QByteArray resp = QByteArray(
+                                     "HTTP/1.1 416 Range Not Satisfiable\r\n"
+                                     "Connection: close\r\n\r\n");
+                                 socket->write(resp);
+                                 socket->disconnectFromHost();
+                                 return;
+                             }
 
-            const bool isPartial = rangeStart > 0;
-            const qint64 remaining = m_totalBytes - rangeStart;
+                             const bool isPartial   = rangeStart > 0;
+                             const qint64 remaining = m_totalBytes - rangeStart;
 
-            QByteArray resp;
-            resp += isPartial ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n";
-            resp += "Content-Type: application/octet-stream\r\n";
-            resp += "Accept-Ranges: bytes\r\n";
-            resp += "Content-Length: " + QByteArray::number(remaining) + "\r\n";
-            if (isPartial) {
-                resp += "Content-Range: bytes ";
-                resp += QByteArray::number(rangeStart);
-                resp += "-";
-                resp += QByteArray::number(m_totalBytes - 1);
-                resp += "/";
-                resp += QByteArray::number(m_totalBytes);
-                resp += "\r\n";
-            }
-            resp += "Connection: close\r\n\r\n";
+                             QByteArray resp;
+                             resp += isPartial ? "HTTP/1.1 206 Partial Content\r\n"
+                                               : "HTTP/1.1 200 OK\r\n";
+                             resp += "Content-Type: application/octet-stream\r\n";
+                             resp += "Accept-Ranges: bytes\r\n";
+                             resp += "Content-Length: " + QByteArray::number(remaining) + "\r\n";
+                             if (isPartial) {
+                                 resp += "Content-Range: bytes ";
+                                 resp += QByteArray::number(rangeStart);
+                                 resp += "-";
+                                 resp += QByteArray::number(m_totalBytes - 1);
+                                 resp += "/";
+                                 resp += QByteArray::number(m_totalBytes);
+                                 resp += "\r\n";
+                             }
+                             resp += "Connection: close\r\n\r\n";
 
-            socket->write(resp);
-            socket->flush();
+                             socket->write(resp);
+                             socket->flush();
 
-            if (!isPartial && m_dropFirstFullResponse) {
-                // 故意只发送部分数据并关闭连接，制造“中断下载”以验证断点续传逻辑（避免依赖 cancel 的时序不确定性）。
-                const qint64 sendBytes = qMin<qint64>(m_dropBytes, remaining);
-                socket->write(m_payload.constData() + rangeStart, sendBytes);
-                socket->flush();
-                m_dropFirstFullResponse = false;
-                socket->disconnectFromHost();
-                socket->close();
-                return;
-            }
+                             if (!isPartial && m_dropFirstFullResponse) {
+                                 // 故意只发送部分数据并关闭连接，制造“中断下载”以验证断点续传逻辑（避免依赖 cancel 的时序不确定性）。
+                                 const qint64 sendBytes = qMin<qint64>(m_dropBytes, remaining);
+                                 socket->write(m_payload.constData() + rangeStart, sendBytes);
+                                 socket->flush();
+                                 m_dropFirstFullResponse = false;
+                                 socket->disconnectFromHost();
+                                 socket->close();
+                                 return;
+                             }
 
-            socket->write(m_payload.constData() + rangeStart, remaining);
-            socket->flush();
-            socket->disconnectFromHost();
-        });
+                             socket->write(m_payload.constData() + rangeStart, remaining);
+                             socket->flush();
+                             socket->disconnectFromHost();
+                         });
     }
 
     qint64 m_totalBytes = 0;
     QByteArray m_payload;
     QTcpServer m_server;
     bool m_dropFirstFullResponse = true;
-    qint64 m_dropBytes = 64 * 1024;
+    qint64 m_dropBytes           = 64 * 1024;
 };
 
 } // namespace
@@ -271,21 +267,21 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
 
     QUrl url(m_httpbinBaseUrl + "/post");
     auto *reply = m_manager->uploadFromDevice(url,
-                                            QStringLiteral("file"),
-                                            &buffer,
-                                            QStringLiteral("payload.bin"),
-                                            QStringLiteral("application/octet-stream"));
+                                              QStringLiteral("file"),
+                                              &buffer,
+                                              QStringLiteral("payload.bin"),
+                                              QStringLiteral("application/octet-stream"));
 
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto body = reply->readAll();
     QVERIFY(body.has_value());
-    
-    QJsonObject json = parseJson(body.value());
+
+    QJsonObject json     = parseJson(body.value());
     QJsonObject filesObj = json.value(QStringLiteral("files")).toObject();
-    QString echoedStr = filesObj.value(QStringLiteral("file")).toString();
-    
+    QString echoedStr    = filesObj.value(QStringLiteral("file")).toString();
+
     // ✅ 修复：httpbin 返回的是 base64 data URL，需要解码
     // 格式: "data:application/octet-stream;base64,AAECAwQF..."
     QByteArray echoed;
@@ -294,14 +290,14 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
         int commaPos = echoedStr.indexOf(',');
         if (commaPos != -1) {
             QString base64Part = echoedStr.mid(commaPos + 1);
-            echoed = QByteArray::fromBase64(base64Part.toUtf8());
+            echoed             = QByteArray::fromBase64(base64Part.toUtf8());
         } else {
             echoed = echoedStr.toUtf8();
         }
     } else {
         echoed = echoedStr.toUtf8();
     }
-    
+
     QCOMPARE(echoed, payload);
 
     reply->deleteLater();
@@ -312,7 +308,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
 
-    const QString savePath = dir.filePath(QStringLiteral("resumable.bin"));
+    const QString savePath  = dir.filePath(QStringLiteral("resumable.bin"));
     const qint64 totalBytes = 256 * 1024;
 
     ThrottledRangeServer server(totalBytes);

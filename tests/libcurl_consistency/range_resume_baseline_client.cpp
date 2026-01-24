@@ -1,8 +1,7 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <cstdint>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -10,9 +9,10 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     std::uint64_t abortOffset = 0;
-    std::uint64_t fileSize = 0;
+    std::uint64_t fileSize    = 0;
     std::string proto;
     std::string url;
 };
@@ -35,8 +35,9 @@ bool setHttpVersion(CURL *curl, const std::string &proto)
     return false;
 }
 
-struct WriteContext {
-    std::ofstream *file = nullptr;
+struct WriteContext
+{
+    std::ofstream *file   = nullptr;
     std::uint64_t abortAt = 0;
     std::uint64_t written = 0;
 };
@@ -48,7 +49,8 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
         return 0;
     }
 
-    const std::uint64_t total = static_cast<std::uint64_t>(size) * static_cast<std::uint64_t>(nmemb);
+    const std::uint64_t total = static_cast<std::uint64_t>(size)
+                                * static_cast<std::uint64_t>(nmemb);
     if (total == 0) {
         return 0;
     }
@@ -77,7 +79,10 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return static_cast<size_t>(total);
 }
 
-bool performDownload(const Args &args, std::ofstream &file, WriteContext &ctx, const std::optional<std::string> &rangeHeader)
+bool performDownload(const Args &args,
+                     std::ofstream &file,
+                     WriteContext &ctx,
+                     const std::optional<std::string> &rangeHeader)
 {
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -154,11 +159,12 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr << "Usage: qcurl_lc_range_resume_baseline -A <abort_offset> -S <file_size> -V <http/1.1|h2|h3> <url>\n";
+    std::cerr << "Usage: qcurl_lc_range_resume_baseline -A <abort_offset> -S <file_size> -V "
+                 "<http/1.1|h2|h3> <url>\n";
     return 2;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -183,7 +189,7 @@ int main(int argc, char **argv)
     }
 
     WriteContext ctx;
-    ctx.file = &out;
+    ctx.file    = &out;
     ctx.abortAt = args.abortOffset;
     ctx.written = 0;
     if (!performDownload(args, out, ctx, std::nullopt)) {
@@ -196,7 +202,8 @@ int main(int argc, char **argv)
 
     if (ctx.written != args.abortOffset) {
         curl_global_cleanup();
-        std::cerr << "phase1 bytes mismatch, got=" << ctx.written << " expected=" << args.abortOffset << "\n";
+        std::cerr << "phase1 bytes mismatch, got=" << ctx.written
+                  << " expected=" << args.abortOffset << "\n";
         return 6;
     }
 
@@ -208,10 +215,11 @@ int main(int argc, char **argv)
     }
 
     WriteContext ctx2;
-    ctx2.file = &append;
-    ctx2.abortAt = 0;
-    ctx2.written = args.abortOffset;
-    const std::string range = std::to_string(args.abortOffset) + "-" + std::to_string(args.fileSize - 1);
+    ctx2.file               = &append;
+    ctx2.abortAt            = 0;
+    ctx2.written            = args.abortOffset;
+    const std::string range = std::to_string(args.abortOffset) + "-"
+                              + std::to_string(args.fileSize - 1);
     if (!performDownload(args, append, ctx2, range)) {
         append.close();
         curl_global_cleanup();
@@ -229,7 +237,8 @@ int main(int argc, char **argv)
     const std::uint64_t gotSize = static_cast<std::uint64_t>(in.tellg());
     if (gotSize != args.fileSize) {
         curl_global_cleanup();
-        std::cerr << "final size mismatch, got=" << gotSize << " expected=" << args.fileSize << "\n";
+        std::cerr << "final size mismatch, got=" << gotSize << " expected=" << args.fileSize
+                  << "\n";
         return 10;
     }
 

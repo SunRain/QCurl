@@ -88,7 +88,11 @@ public:
         qDebug() << "失败:" << errorCount;
         if (totalRequests > 0) {
             qDebug() << "成功率:"
-                     << QString::number((double) successCount / totalRequests * 100, 'f', 2) << "%";
+                     << QString::number(static_cast<double>(successCount)
+                                            / static_cast<double>(totalRequests) * 100.0,
+                                        'f',
+                                        2)
+                     << "%";
         }
     }
 };

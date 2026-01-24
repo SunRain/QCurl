@@ -35,31 +35,31 @@
  * ============================================================================
  */
 
-#include <QtTest/QtTest>
-#include <QCoreApplication>
-#include <QEvent>
-#include <QEventLoop>
-#include <QTimer>
-#include <QSignalSpy>
-#include <QElapsedTimer>
-#include <QMetaMethod>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QProcess>
-#include <QDir>
-#include <QFileInfo>
-#include <QRegularExpression>
-#include <QSet>
-#include <QTcpSocket>
-#include <QThread>
-
+#include "QCCurlHandleManager.h"
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
-#include "QCCurlHandleManager.h"
+
+#include <QCoreApplication>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QEvent>
+#include <QEventLoop>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMetaMethod>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QSet>
+#include <QSignalSpy>
+#include <QTcpSocket>
+#include <QThread>
+#include <QTimer>
+#include <QtTest/QtTest>
 
 #include <curl/curl.h>
 
@@ -111,14 +111,14 @@ private:
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
-    bool checkHttp2Support();  // 检查 libcurl 是否支持 HTTP/2
+    bool checkHttp2Support(); // 检查 libcurl 是否支持 HTTP/2
     static bool waitForPortReady(quint16 port, int timeoutMs);
     bool startLocalTestServer();
     void stopLocalTestServer();
     QJsonObject requestJson(const QUrl &url,
                             QCNetworkHttpVersion httpVersion,
                             const QList<QPair<QByteArray, QByteArray>> &headers = {},
-                            int timeoutMs                                      = 15000);
+                            int timeoutMs                                       = 15000);
 };
 
 // ============================================================================
@@ -181,9 +181,9 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     m_localH2BaseUrl.clear();
     m_localHttp1BaseUrl.clear();
 
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QString scriptPath
-        = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/http2-test-server.js"));
+    const QString appDir     = QCoreApplication::applicationDirPath();
+    const QString scriptPath = QDir(appDir).absoluteFilePath(
+        QStringLiteral("../../tests/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         m_serverError = QStringLiteral(
             "未找到本地 HTTP/2 测试服务器脚本（tests/http2-test-server.js）。");
@@ -191,13 +191,17 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     }
 
     m_localServer.setProgram(QStringLiteral("node"));
-    m_localServer.setArguments({scriptPath, QStringLiteral("--h2-port"), QStringLiteral("0"),
-                                QStringLiteral("--http1-port"), QStringLiteral("0")});
+    m_localServer.setArguments({scriptPath,
+                                QStringLiteral("--h2-port"),
+                                QStringLiteral("0"),
+                                QStringLiteral("--http1-port"),
+                                QStringLiteral("0")});
     m_localServer.setProcessChannelMode(QProcess::MergedChannels);
     m_localServer.start();
 
     if (!m_localServer.waitForStarted(2000)) {
-        m_serverError = QStringLiteral("无法启动本地 HTTP/2 测试服务器（node）。请确认 node 可用。");
+        m_serverError = QStringLiteral(
+            "无法启动本地 HTTP/2 测试服务器（node）。请确认 node 可用。");
         return false;
     }
 
@@ -209,7 +213,7 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     while (timer.elapsed() < 5000) {
         if (m_localServer.waitForReadyRead(200)) {
             output += m_localServer.readAll();
-            const QString outText = QString::fromUtf8(output);
+            const QString outText               = QString::fromUtf8(output);
             const QRegularExpressionMatch match = re.match(outText);
             if (match.hasMatch()) {
                 const QByteArray jsonBytes = match.captured(1).toUtf8();
@@ -222,8 +226,8 @@ bool TestQCNetworkHttp2::startLocalTestServer()
                 }
 
                 const QJsonObject obj = doc.object();
-                const int h2Port = obj.value(QStringLiteral("h2Port")).toInt(0);
-                const int http1Port = obj.value(QStringLiteral("http1Port")).toInt(0);
+                const int h2Port      = obj.value(QStringLiteral("h2Port")).toInt(0);
+                const int http1Port   = obj.value(QStringLiteral("http1Port")).toInt(0);
                 if (h2Port <= 0 || http1Port <= 0) {
                     m_serverError = QStringLiteral("本地 HTTP/2 测试服务器返回端口无效。");
                     break;
@@ -231,15 +235,15 @@ bool TestQCNetworkHttp2::startLocalTestServer()
 
                 if (!waitForPortReady(static_cast<quint16>(h2Port), 3000)
                     || !waitForPortReady(static_cast<quint16>(http1Port), 3000)) {
-                    m_serverError
-                        = QStringLiteral("本地 HTTP/2 测试服务器未在预期时间内就绪（端口不可连接）。");
+                    m_serverError = QStringLiteral(
+                        "本地 HTTP/2 测试服务器未在预期时间内就绪（端口不可连接）。");
                     break;
                 }
 
-                m_localH2BaseUrl
-                    = QStringLiteral("https://127.0.0.1:%1").arg(QString::number(h2Port));
-                m_localHttp1BaseUrl
-                    = QStringLiteral("https://127.0.0.1:%1").arg(QString::number(http1Port));
+                m_localH2BaseUrl = QStringLiteral("https://127.0.0.1:%1")
+                                       .arg(QString::number(h2Port));
+                m_localHttp1BaseUrl = QStringLiteral("https://127.0.0.1:%1")
+                                          .arg(QString::number(http1Port));
                 return true;
             }
         }
@@ -276,9 +280,9 @@ void TestQCNetworkHttp2::stopLocalTestServer()
 }
 
 QJsonObject TestQCNetworkHttp2::requestJson(const QUrl &url,
-                                           QCNetworkHttpVersion httpVersion,
-                                           const QList<QPair<QByteArray, QByteArray>> &headers,
-                                           int timeoutMs)
+                                            QCNetworkHttpVersion httpVersion,
+                                            const QList<QPair<QByteArray, QByteArray>> &headers,
+                                            int timeoutMs)
 {
     QCNetworkRequest request(url);
     request.setHttpVersion(httpVersion);
@@ -357,7 +361,7 @@ void TestQCNetworkHttp2::initTestCase()
     m_disableDowngradeTest = !qgetenv(kDisableDowngradeEnvName).trimmed().isEmpty()
                              && qgetenv(kDisableDowngradeEnvName).trimmed() != "0";
 
-    const QString overriddenH2 = QString::fromUtf8(qgetenv(kHttp2TestBaseUrlEnvName)).trimmed();
+    const QString overriddenH2    = QString::fromUtf8(qgetenv(kHttp2TestBaseUrlEnvName)).trimmed();
     const QString overriddenHttp1 = QString::fromUtf8(qgetenv(kHttp1TestBaseUrlEnvName)).trimmed();
 
     if (!overriddenH2.isEmpty()) {
@@ -439,7 +443,7 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
     qDebug() << "========== testHttp2Multiplexing ==========";
 
     // 同时发起 5 个请求到同一服务器（HTTP/2 应该复用单个连接）
-    QList<QCNetworkReply*> replies;
+    QList<QCNetworkReply *> replies;
 
     for (int i = 0; i < 5; ++i) {
         const QUrl url(m_h2BaseUrl
@@ -481,7 +485,7 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
         const QJsonObject obj = doc.object();
 
         QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
-        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int sid      = obj.value(QStringLiteral("sessionId")).toInt();
         const int streamId = obj.value(QStringLiteral("streamId")).toInt();
         QVERIFY(sid > 0);
         QVERIFY(streamId > 0);
@@ -513,7 +517,9 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
     // 添加多个自定义 Header
     for (int i = 0; i < 10; ++i) {
         request.setRawHeader(QString("X-Custom-Header-%1").arg(i).toUtf8(),
-                             QString("Value-%1-With-Long-Content-For-Compression-Test").arg(i).toUtf8());
+                             QString("Value-%1-With-Long-Content-For-Compression-Test")
+                                 .arg(i)
+                                 .toUtf8());
     }
 
     auto *reply = m_manager->sendGet(request);
@@ -557,11 +563,13 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
     if (m_disableDowngradeTest) {
         // 证据口径：禁用关键用例不应“静默通过”，避免误读为已验证。
         // 注意：本仓库 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt），因此该 QSKIP 代表“无证据”。
-        QSKIP("已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例（证据门禁口径下视为无证据）。");
+        QSKIP(
+            "已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例（证据门禁口径下视为无证据）。");
     }
 
-    QVERIFY2(!m_http1BaseUrl.isEmpty(),
-             "HTTP/1.1 base URL 为空：请设置 QCURL_HTTP2_TEST_HTTP1_BASE_URL 或使用默认本地 server。");
+    QVERIFY2(
+        !m_http1BaseUrl.isEmpty(),
+        "HTTP/1.1 base URL 为空：请设置 QCURL_HTTP2_TEST_HTTP1_BASE_URL 或使用默认本地 server。");
 
     const QUrl url(m_http1BaseUrl + QStringLiteral("/reqinfo?case=downgrade"));
     const QJsonObject obj = requestJson(url, QCNetworkHttpVersion::Http2TLS);
@@ -592,10 +600,10 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
     QElapsedTimer timer;
     timer.start();
 
-    QList<QCNetworkReply*> replies;
+    QList<QCNetworkReply *> replies;
     for (int i = 0; i < 10; ++i) {
-        const QUrl url(m_h2BaseUrl + QStringLiteral("/reqinfo?stream=%1&delay_ms=200")
-                                        .arg(QString::number(i)));
+        const QUrl url(m_h2BaseUrl
+                       + QStringLiteral("/reqinfo?stream=%1&delay_ms=200").arg(QString::number(i)));
         QCNetworkRequest request(url);
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
@@ -636,7 +644,7 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
         const QJsonObject obj = doc.object();
         QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
 
-        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int sid      = obj.value(QStringLiteral("sessionId")).toInt();
         const int streamId = obj.value(QStringLiteral("streamId")).toInt();
         QVERIFY(sid > 0);
         QVERIFY(streamId > 0);
@@ -669,8 +677,7 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
 
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest request(
-            QUrl(m_h2BaseUrl
-                 + QStringLiteral("/reqinfo?seq=%1").arg(QString::number(i))));
+            QUrl(m_h2BaseUrl + QStringLiteral("/reqinfo?seq=%1").arg(QString::number(i))));
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
@@ -691,7 +698,7 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
         QVERIFY2(parseError.error == QJsonParseError::NoError, qPrintable(parseError.errorString()));
         const QJsonObject obj = doc.object();
         QCOMPARE(obj.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
-        const int sid = obj.value(QStringLiteral("sessionId")).toInt();
+        const int sid      = obj.value(QStringLiteral("sessionId")).toInt();
         const int streamId = obj.value(QStringLiteral("streamId")).toInt();
         QVERIFY(sid > 0);
         QVERIFY(streamId > 0);
@@ -780,7 +787,8 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
     qDebug() << "HTTP/2：  " << http2Elapsed << "ms";
 
     if (http2Elapsed < http1Elapsed) {
-        double improvement = ((double)(http1Elapsed - http2Elapsed) / http1Elapsed) * 100;
+        const double improvement = static_cast<double>(http1Elapsed - http2Elapsed)
+                                   / static_cast<double>(http1Elapsed) * 100.0;
         qDebug() << "HTTP/2 性能提升：" << QString::number(improvement, 'f', 1) << "% 🎉";
     } else {
         qDebug() << "注意：HTTP/2 未表现出性能优势（可能因为顺序请求或网络条件）";

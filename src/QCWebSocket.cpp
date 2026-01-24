@@ -123,7 +123,8 @@ void QCWebSocketPrivate::processIncomingData()
                 fragmentTypeFlags = msgType;
             } else if (fragmentTypeFlags != msgType) {
                 // 防御：理论上不应发生（协议错误/实现差异）。避免混合污染，重置缓冲。
-                qWarning() << "QCWebSocket: Mixed fragmented message types; resetting fragment buffer";
+                qWarning()
+                    << "QCWebSocket: Mixed fragmented message types; resetting fragment buffer";
                 fragmentBuffer.clear();
                 fragmentTypeFlags = msgType;
             }

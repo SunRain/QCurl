@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QUrl>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkMockHandler.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "QCNetworkRequestBuilder.h"
+
 #include <QCoreApplication>
 #include <QEvent>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkRequestBuilder.h"
-#include "QCNetworkMockHandler.h"
+#include <QUrl>
+#include <QtTest>
 
 #include <optional>
 
@@ -82,9 +82,8 @@ void TestQCNetworkRequestBuilder::cleanup()
     }
 }
 
-static std::optional<QByteArray> findHeaderValue(
-    const QList<QPair<QByteArray, QByteArray>> &headers,
-    const QByteArray &nameLower)
+static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, QByteArray>> &headers,
+                                                 const QByteArray &nameLower)
 {
     for (const auto &kv : headers) {
         if (kv.first.trimmed().toLower() == nameLower) {
@@ -119,9 +118,9 @@ void TestQCNetworkRequestBuilder::testChainedCalls()
 
     // Act - 链式调用（使用 . 而不是 ->）
     auto &result = builder.withHeader("User-Agent", "QCurl Test")
-                           .withHeader("Accept", "application/json")
-                           .withTimeout(5000)
-                           .withFollowLocation(true);
+                       .withHeader("Accept", "application/json")
+                       .withTimeout(5000)
+                       .withFollowLocation(true);
 
     // Assert - 返回的是引用，应该是同一个对象
     QCOMPARE(&result, &builder);
@@ -140,8 +139,7 @@ void TestQCNetworkRequestBuilder::testWithHeader()
     auto builder = m_manager->newRequest(url);
 
     // Act
-    builder.withHeader("User-Agent", "TestAgent")
-           .withHeader("Accept", "text/html");
+    builder.withHeader("User-Agent", "TestAgent").withHeader("Accept", "text/html");
 
     auto *reply = builder.sendGet();
     QVERIFY(reply != nullptr);
@@ -173,7 +171,7 @@ void TestQCNetworkRequestBuilder::testWithTimeout()
     auto builder = m_manager->newRequest(url);
 
     // Act
-    builder.withTimeout(3000);  // 3 秒超时
+    builder.withTimeout(3000); // 3 秒超时
 
     auto *reply = builder.sendGet();
     QVERIFY(reply != nullptr);
@@ -197,9 +195,7 @@ void TestQCNetworkRequestBuilder::testWithQueryParams()
     auto builder = m_manager->newRequest(baseUrl);
 
     // Act
-    builder.withQueryParam("page", "1")
-           .withQueryParam("limit", "20")
-           .withQueryParam("sort", "desc");
+    builder.withQueryParam("page", "1").withQueryParam("limit", "20").withQueryParam("sort", "desc");
 
     const QUrl expectedUrl("http://example.com/api?page=1&limit=20&sort=desc");
     m_mock.mockResponse(HttpMethod::Get, expectedUrl, QByteArray("OK"));
@@ -245,8 +241,7 @@ void TestQCNetworkRequestBuilder::testSendGet()
     m_mock.clearCapturedRequests();
 
     auto builder = m_manager->newRequest(url);
-    builder.withHeader("User-Agent", "QCurl Test")
-           .withTimeout(5000);
+    builder.withHeader("User-Agent", "QCurl Test").withTimeout(5000);
 
     // Act
     auto *reply = builder.sendGet();
@@ -276,11 +271,10 @@ void TestQCNetworkRequestBuilder::testSendPost()
     m_mock.mockResponse(HttpMethod::Post, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url);
+    auto builder        = m_manager->newRequest(url);
     QByteArray postData = "test=data";
 
-    builder.withHeader("Content-Type", "application/x-www-form-urlencoded")
-           .withTimeout(5000);
+    builder.withHeader("Content-Type", "application/x-www-form-urlencoded").withTimeout(5000);
 
     // Act
     auto *reply = builder.sendPost(postData);
@@ -314,7 +308,7 @@ void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
     m_mock.mockResponse(HttpMethod::Delete, url2, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url1);
+    auto builder    = m_manager->newRequest(url1);
     QByteArray body = "test=data";
     builder.withBody(body);
 
@@ -328,7 +322,7 @@ void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
 
     // Act（显式传入 body）
     auto builder2 = m_manager->newRequest(url2);
-    auto *reply2 = builder2.sendDelete(body);
+    auto *reply2  = builder2.sendDelete(body);
     QVERIFY(reply2 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
     reply2->deleteLater();

@@ -1,29 +1,29 @@
-#include <QtTest>
+#include "QCWebSocketTestServer.h"
+
+#include <QCNetworkSslConfig.h>
 #include <QCWebSocket.h>
 #include <QCWebSocketReconnectPolicy.h>
-#include <QCNetworkSslConfig.h>
-#include <QSignalSpy>
-#include <QEventLoop>
-#include <QTimer>
-#include <QDebug>
-#include <QMetaMethod>
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMetaMethod>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
+#include <QTimer>
 #include <QUrlQuery>
-
-#include "QCWebSocketTestServer.h"
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -145,7 +145,8 @@ void TestQCWebSocket::initTestCase()
                              << m_localWssServerSkipReason;
     }
 
-    if (m_wsEvidenceServer.start(QCWebSocketTestServer::Mode::Ws, QCWebSocketTestServer::ServerKind::Evidence)) {
+    if (m_wsEvidenceServer.start(QCWebSocketTestServer::Mode::Ws,
+                                 QCWebSocketTestServer::ServerKind::Evidence)) {
         m_testEvidenceServerUrl = m_wsEvidenceServer.baseUrl();
         m_evidenceArtifactsPath = m_wsEvidenceServer.artifactsPath();
         qDebug() << "本地 WS Evidence Server:" << m_testEvidenceServerUrl;
@@ -195,7 +196,7 @@ void TestQCWebSocket::testConnect()
     QVERIFY(socket.isValid());
 
     // 检查状态变化信号
-    QVERIFY(stateChangedSpy.count() >= 2);  // Connecting -> Connected
+    QVERIFY(stateChangedSpy.count() >= 2); // Connecting -> Connected
 
     socket.close();
 
@@ -254,7 +255,7 @@ void TestQCWebSocket::testConnectInvalidUrl()
 void TestQCWebSocket::testAutoReconnect()
 {
     qDebug() << "========== testAutoReconnect ==========";
-    
+
     // 自动重连功能测试
     // 创建一个会失败的连接（避免固定端口假设；使用临时端口并立即释放，获得更稳定的“连接失败”语义）
     QTcpServer portPicker;
@@ -265,42 +266,42 @@ void TestQCWebSocket::testAutoReconnect()
     portPicker.close();
 
     QCWebSocket socket(QUrl(QStringLiteral("ws://127.0.0.1:%1").arg(port)));
-    
+
     // 设置标准重连策略（3 次重连，1s → 2s → 4s）
     socket.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
-    
+
     // 监听重连尝试信号
     QSignalSpy reconnectSpy(&socket, &QCWebSocket::reconnectAttempt);
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
-    
+
     // 尝试连接（会失败）
     socket.open();
-    
+
     // 等待初始连接失败
     if (errorSpy.count() == 0) {
         QVERIFY(errorSpy.wait(2000));
     }
-    
+
     // 等待第一次重连尝试（延迟 1 秒）
     if (reconnectSpy.count() == 0) {
         QVERIFY(reconnectSpy.wait(2500));
     }
-    
+
     // 验证至少有一次重连尝试
     QVERIFY2(reconnectSpy.count() >= 1, "应该至少有一次重连尝试");
-    
+
     // 验证重连参数
     if (reconnectSpy.count() > 0) {
-        auto args = reconnectSpy.at(0);
+        auto args        = reconnectSpy.at(0);
         int attemptCount = args.at(0).toInt();
-        int closeCode = args.at(1).toInt();
-        
-        QCOMPARE(attemptCount, 1);  // 第一次重连
-        QCOMPARE(closeCode, 1006);  // AbnormalClosure（网络错误）
+        int closeCode    = args.at(1).toInt();
+
+        QCOMPARE(attemptCount, 1); // 第一次重连
+        QCOMPARE(closeCode, 1006); // AbnormalClosure（网络错误）
     }
-    
+
     qDebug() << "✅ 自动重连测试通过，重连尝试次数:" << reconnectSpy.count();
-    
+
     // 停止重连
     socket.abort();
 }
@@ -326,7 +327,7 @@ void TestQCWebSocket::testSendTextMessage()
     }
 
     QString testMessage = QStringLiteral("Hello WebSocket!");
-    qint64 sent = socket.sendTextMessage(testMessage);
+    qint64 sent         = socket.sendTextMessage(testMessage);
     QVERIFY(sent > 0);
     qDebug() << "发送字节数:" << sent;
 
@@ -363,7 +364,7 @@ void TestQCWebSocket::testSendBinaryMessage()
     }
 
     QByteArray testData = "Binary Data: \x01\x02\x03\x04";
-    qint64 sent = socket.sendBinaryMessage(testData);
+    qint64 sent         = socket.sendBinaryMessage(testData);
     QVERIFY(sent > 0);
     qDebug() << "发送字节数:" << sent;
 
@@ -474,7 +475,8 @@ void TestQCWebSocket::testLargeMessage()
     // 创建一个大消息（64KB）
     QString largeMessage;
     for (int i = 0; i < 1024; ++i) {
-        largeMessage.append(QStringLiteral("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz01"));
+        largeMessage.append(
+            QStringLiteral("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz01"));
     }
     qDebug() << "大消息大小:" << largeMessage.toUtf8().size() << "字节";
 
@@ -574,98 +576,98 @@ void TestQCWebSocket::testFragmentedMessage()
 
     // message-level 回显测试：验证“大消息收发链路”可用，但不证明 continuation frames（帧级分片）一定发生。
     QCWebSocket socket{QUrl(m_testServerUrl)};
-    
+
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
     QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
     QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
-    
+
     socket.open();
-    
+
     // 验证连接
     if (connectedSpy.count() == 0 && !connectedSpy.wait(5000)) {
         QSKIP("无法连接到本地 WebSocket 测试服务器，跳过分片测试。");
         return;
     }
-    
+
     QCOMPARE(connectedSpy.count(), 1);
-    
+
     // ========================================================================
     // 测试 1: 大文本消息分片（10KB）
     // ========================================================================
     qDebug() << "测试 1: 10KB 文本消息分片";
-    
+
     QByteArray largeText(10240, 'A');
     QString testMessage = QString::fromUtf8(largeText);
-    
+
     textSpy.clear();
     socket.sendTextMessage(testMessage);
-    
+
     // 等待回显消息
     if (textSpy.count() == 0) {
         QVERIFY(textSpy.wait(10000));
     }
     QCOMPARE(textSpy.count(), 1);
-    
+
     QString receivedText = textSpy.at(0).at(0).toString();
     QCOMPARE(receivedText.size(), 10240);
     QCOMPARE(receivedText, testMessage);
-    
+
     qDebug() << "✅ 10KB 文本消息完整性验证通过";
-    
+
     // ========================================================================
     // 测试 2: 超大二进制消息分片（100KB）
     // ========================================================================
     qDebug() << "测试 2: 100KB 二进制消息分片";
-    
-    QByteArray largeBinary(102400, 0x42);  // 填充 'B' (0x42)
-    
+
+    QByteArray largeBinary(102400, 0x42); // 填充 'B' (0x42)
+
     binarySpy.clear();
     socket.sendBinaryMessage(largeBinary);
-    
+
     // 等待回显消息
     if (binarySpy.count() == 0) {
         QVERIFY(binarySpy.wait(15000));
     }
     QCOMPARE(binarySpy.count(), 1);
-    
+
     QByteArray receivedBinary = binarySpy.at(0).at(0).toByteArray();
     QCOMPARE(receivedBinary.size(), 102400);
     QCOMPARE(receivedBinary, largeBinary);
-    
+
     qDebug() << "✅ 100KB 二进制消息完整性验证通过";
-    
+
     // ========================================================================
     // 测试 3: 边界条件（4096 字节 - 正好 1 帧）
     // ========================================================================
     qDebug() << "测试 3: 4096 字节边界测试";
-    
-    QByteArray boundaryBinary(4096, 0x43);  // 填充 'C' (0x43)
-    
+
+    QByteArray boundaryBinary(4096, 0x43); // 填充 'C' (0x43)
+
     binarySpy.clear();
     socket.sendBinaryMessage(boundaryBinary);
-    
+
     if (binarySpy.count() == 0) {
         QVERIFY(binarySpy.wait(10000));
     }
     QCOMPARE(binarySpy.count(), 1);
-    
+
     QByteArray receivedBoundary = binarySpy.at(0).at(0).toByteArray();
     QCOMPARE(receivedBoundary.size(), 4096);
     QCOMPARE(receivedBoundary, boundaryBinary);
-    
+
     qDebug() << "✅ 4096 字节边界测试通过";
-    
+
     // ========================================================================
     // 测试 4: 连续发送多个大消息
     // ========================================================================
     qDebug() << "测试 4: 连续发送多个大消息";
-    
+
     textSpy.clear();
     for (int i = 0; i < 3; ++i) {
         QByteArray msg(8192, 'D' + i);
         socket.sendTextMessage(QString::fromUtf8(msg));
     }
-    
+
     // 等待所有消息返回（避免固定 sleep 导致 flaky）
     const int expectedMessages = 3;
     while (textSpy.count() < expectedMessages) {
@@ -677,12 +679,12 @@ void TestQCWebSocket::testFragmentedMessage()
         }
     }
     QVERIFY(textSpy.count() >= 3);
-    
+
     qDebug() << "✅ 连续大消息测试通过，收到" << textSpy.count() << "个消息";
-    
+
     // 关闭连接
     socket.close();
-    
+
     qDebug() << "✅ 分片消息完整性测试全部通过";
 }
 
@@ -717,7 +719,8 @@ static QList<int> splitParts(int totalLen, int parts)
     return sizes;
 }
 
-static QList<QJsonObject> readEvidenceFramesByCaseOnce(const QString &jsonlPath, const QString &caseId)
+static QList<QJsonObject> readEvidenceFramesByCaseOnce(const QString &jsonlPath,
+                                                       const QString &caseId)
 {
     QList<QJsonObject> out;
     QFile f(jsonlPath);
@@ -776,11 +779,12 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
     if (!m_localEvidenceServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localEvidenceServerSkipReason));
     }
-    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(), "Evidence server artifactsPath 为空，无法复核帧级证据。");
+    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(),
+             "Evidence server artifactsPath 为空，无法复核帧级证据。");
 
-    const int totalLen  = 8192;
-    const int parts     = 3;
-    const int seed      = 7;
+    const int totalLen   = 8192;
+    const int parts      = 3;
+    const int seed       = 7;
     const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
 
     QUrl url(m_testEvidenceServerUrl + QStringLiteral("/fragment"));
@@ -798,7 +802,8 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
 
     socket.open();
     QVERIFY2(connectedSpy.wait(10000),
-             qPrintable(QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
 
     if (binarySpy.count() == 0) {
         QVERIFY(binarySpy.wait(10000));
@@ -811,8 +816,10 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
     QCOMPARE(sha256Hex(received), sha256Hex(expected));
 
     // 复核证据：服务端工件必须记录“确实发送了 continuation frames”。
-    const QList<QJsonObject> frames
-        = waitEvidenceFramesByCase(m_evidenceArtifactsPath, caseId, parts, 2000);
+    const QList<QJsonObject> frames = waitEvidenceFramesByCase(m_evidenceArtifactsPath,
+                                                               caseId,
+                                                               parts,
+                                                               2000);
     QCOMPARE(frames.size(), parts);
 
     const QList<int> sizes = splitParts(totalLen, parts);
@@ -889,21 +896,23 @@ void TestQCWebSocket::testSslError()
     }
 
     // SSL 错误处理测试
-    
+
     // ========================================================================
     // 测试 1: 自签名证书（默认配置应拒绝）
     // ========================================================================
     qDebug() << "测试 1: 自签名证书拒绝（默认安全配置）";
-    
+
     QCWebSocket socket{QUrl(m_testWssServerUrl)};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
     QSignalSpy sslErrorSpy(&socket, &QCWebSocket::sslErrorsDetailed);
-    
+
     socket.open();
-    
+
     QVERIFY2(errorSpy.wait(15000),
-             qPrintable(QStringLiteral("预期应拒绝自签名证书（未配置 CA），但未观察到 errorOccurred。当前错误=%1")
-                            .arg(socket.errorString())));
+             qPrintable(
+                 QStringLiteral(
+                     "预期应拒绝自签名证书（未配置 CA），但未观察到 errorOccurred。当前错误=%1")
+                     .arg(socket.errorString())));
 
     qDebug() << "SSL 错误已检测:" << socket.errorString();
 
@@ -915,21 +924,21 @@ void TestQCWebSocket::testSslError()
     }
 
     qDebug() << "✅ 默认配置正确拒绝自签名证书";
-    
+
     // ========================================================================
     // 测试 2: 配置 CA 后应连接成功
     // ========================================================================
     qDebug() << "测试 2: 配置 CA 后连接成功";
-    
+
     QCWebSocket socket2{QUrl(m_testWssServerUrl)};
     QCNetworkSslConfig sslConfig;
     sslConfig.caCertPath = m_caCertPath;
     socket2.setSslConfig(sslConfig);
-    
+
     QSignalSpy connectedSpy(&socket2, &QCWebSocket::connected);
-    
+
     socket2.open();
-    
+
     // 等待连接（可能需要较长时间）
     QVERIFY2(connectedSpy.wait(15000),
              qPrintable(QStringLiteral("预期配置 CA 后应连接成功，caCertPath=%1，错误=%2")
@@ -938,7 +947,7 @@ void TestQCWebSocket::testSslError()
     qDebug() << "✅ 配置 CA 后连接成功";
     QCOMPARE(connectedSpy.count(), 1);
     socket2.close();
-    
+
     qDebug() << "✅ SSL 错误处理测试通过";
 }
 
@@ -949,7 +958,8 @@ void TestQCWebSocket::testServerClosedConnection()
     if (!m_localEvidenceServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localEvidenceServerSkipReason));
     }
-    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(), "Evidence server artifactsPath 为空，无法复核 close 证据。");
+    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(),
+             "Evidence server artifactsPath 为空，无法复核 close 证据。");
 
     const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
     QUrl url(m_testEvidenceServerUrl + QStringLiteral("/close"));
@@ -967,7 +977,8 @@ void TestQCWebSocket::testServerClosedConnection()
 
     socket.open();
     QVERIFY2(connectedSpy.wait(10000),
-             qPrintable(QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
 
     // server-initiated close：服务端发送 close(code/reason) 并断开；禁止用 abort() 伪装。
     if (closeSpy.count() == 0) {
@@ -988,8 +999,10 @@ void TestQCWebSocket::testServerClosedConnection()
         qWarning() << "Unexpected error during server close:" << socket.errorString();
     }
 
-    const QList<QJsonObject> frames
-        = waitEvidenceFramesByCase(m_evidenceArtifactsPath, caseId, 1, 2000);
+    const QList<QJsonObject> frames = waitEvidenceFramesByCase(m_evidenceArtifactsPath,
+                                                               caseId,
+                                                               1,
+                                                               2000);
     QVERIFY2(!frames.isEmpty(), "未在 evidence 工件中找到 close 帧记录。");
     const QJsonObject last = frames.last();
     QCOMPARE(last.value(QStringLiteral("opcode")).toInt(-1), 0x8);

@@ -79,7 +79,8 @@ public:
                 reply2->deleteLater();
 
                 // 计算性能提升
-                double improvement = ((double) (elapsed1 - elapsed2) / elapsed1) * 100.0;
+                const double improvement = static_cast<double>(elapsed1 - elapsed2)
+                                           / static_cast<double>(elapsed1) * 100.0;
                 std::cout << "\n✅ 性能提升: " << improvement << "%" << std::endl;
 
                 emit demoComplete();
@@ -183,8 +184,8 @@ private:
                               << std::endl;
 
                     // 计算性能提升
-                    double improvement = ((double) (http11Elapsed - http2Elapsed) / http11Elapsed)
-                                         * 100.0;
+                    const double improvement = static_cast<double>(http11Elapsed - http2Elapsed)
+                                               / static_cast<double>(http11Elapsed) * 100.0;
                     std::cout << "\n✅ 性能提升: " << improvement << "%" << std::endl;
                     std::cout << "💡 HTTP/2 多路复用：5 个请求复用单个连接，减少 TLS 握手"
                               << std::endl;

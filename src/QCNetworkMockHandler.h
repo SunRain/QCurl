@@ -45,17 +45,17 @@ public:
     QCNetworkMockHandler();
     ~QCNetworkMockHandler();
 
-	    struct MockData
-	    {
-	        QByteArray response;
-	        int statusCode = 200;
-	        QMap<QByteArray, QByteArray> headers;
-	        /// 原始响应头块
-	        /// 为空则使用 headers
-	        std::optional<QByteArray> rawHeaderData;
-	        NetworkError error = NetworkError::NoError;
-	        bool isError       = false;
-	    };
+    struct MockData
+    {
+        QByteArray response;
+        int statusCode = 200;
+        QMap<QByteArray, QByteArray> headers;
+        /// 原始响应头块
+        /// 为空则使用 headers
+        std::optional<QByteArray> rawHeaderData;
+        NetworkError error = NetworkError::NoError;
+        bool isError       = false;
+    };
 
     struct CapturedRequest
     {

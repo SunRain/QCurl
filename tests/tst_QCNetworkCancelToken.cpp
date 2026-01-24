@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QSignalSpy>
-#include <QUrl>
-#include <QCoreApplication>
-#include <QEvent>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 #include "QCNetworkCancelToken.h"
 #include "QCNetworkMockHandler.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
+#include <QCoreApplication>
+#include <QEvent>
+#include <QSignalSpy>
+#include <QUrl>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -47,7 +47,7 @@ private slots:
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
-    QCNetworkCancelToken *m_token = nullptr;
+    QCNetworkCancelToken *m_token     = nullptr;
     QCNetworkMockHandler m_mock;
 };
 
@@ -64,7 +64,7 @@ void TestQCNetworkCancelToken::cleanupTestCase()
 void TestQCNetworkCancelToken::init()
 {
     m_manager = new QCNetworkAccessManager(this);
-    m_token = new QCNetworkCancelToken(this);
+    m_token   = new QCNetworkCancelToken(this);
 
     m_mock.clear();
     m_mock.clearCapturedRequests();
@@ -166,7 +166,7 @@ void TestQCNetworkCancelToken::testAttachMultiple()
     auto *reply2 = m_manager->sendGet(request2);
     auto *reply3 = m_manager->sendGet(request3);
 
-    QList<QCNetworkReply*> replies = {reply1, reply2, reply3};
+    QList<QCNetworkReply *> replies = {reply1, reply2, reply3};
 
     // Act
     m_token->attachMultiple(replies);
@@ -227,7 +227,7 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
 
     // Assert
     QCOMPARE(m_token->isCancelled(), true);
-    QCOMPARE(m_token->attachedCount(), 0);  // 取消后应该清空
+    QCOMPARE(m_token->attachedCount(), 0); // 取消后应该清空
 
     // 注意：cancel() 可能同步发射 cancelled 信号；QSignalSpy::wait() 会以“等待新信号”为准，
     // 可能导致已发射但 wait 超时的假阴性。这里用 count + QTRY* 保证确定性。
@@ -267,7 +267,7 @@ void TestQCNetworkCancelToken::testClearReplies()
 
     // Assert
     QCOMPARE(m_token->attachedCount(), 0);
-    QCOMPARE(m_token->isCancelled(), false);  // clear 不会标记为已取消
+    QCOMPARE(m_token->isCancelled(), false); // clear 不会标记为已取消
 
     // Cleanup
     reply1->deleteLater();
@@ -293,10 +293,10 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     auto *token2 = new QCNetworkCancelToken(this);
     QSignalSpy spy2(token2, &QCNetworkCancelToken::cancelled);
     token2->setAutoTimeout(100);
-    token2->setAutoTimeout(0);  // 禁用
+    token2->setAutoTimeout(0); // 禁用
 
     QVERIFY(!spy2.wait(200));
-    QCOMPARE(token2->isCancelled(), false);  // 应该未取消
+    QCOMPARE(token2->isCancelled(), false); // 应该未取消
 
     // Cleanup
     token2->deleteLater();

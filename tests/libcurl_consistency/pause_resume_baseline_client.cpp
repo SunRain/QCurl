@@ -1,9 +1,8 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <chrono>
 #include <cstdio>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -12,28 +11,30 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     std::string proto = "h2";
     std::string url;
     std::string outFile = "download_0.data";
     std::string eventsOutFile;
     long long pauseOffset = -1;
-    long resumeDelayMs = 50;
+    long resumeDelayMs    = 50;
 };
 
-struct Event {
-    int seq = 0;
+struct Event
+{
+    int seq       = 0;
     long long tUs = 0;
     std::string type;
     long long bytesDeliveredTotal = 0;
-    long long bytesWrittenTotal = 0;
+    long long bytesWrittenTotal   = 0;
 };
 
 using Clock = std::chrono::steady_clock;
 
 long long elapsedUs(const Clock::time_point &started)
 {
-    const auto now = Clock::now();
+    const auto now   = Clock::now();
     const auto delta = std::chrono::duration_cast<std::chrono::microseconds>(now - started);
     return delta.count();
 }
@@ -44,29 +45,29 @@ std::string jsonEscape(const std::string &s)
     out.reserve(s.size() + 8);
     for (const unsigned char c : s) {
         switch (c) {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (c < 0x20) {
-                char buf[7] = {0};
-                std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
-                out += buf;
-            } else {
-                out.push_back(static_cast<char>(c));
-            }
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20) {
+                    char buf[7] = {0};
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+                    out += buf;
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
         }
     }
     return out;
@@ -146,22 +147,22 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr
-        << "Usage: qcurl_lc_pause_resume_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
-        << "  --events-out <file> --pause-offset <bytes> [--resume-delay-ms <ms>] <url>\n";
+    std::cerr << "Usage: qcurl_lc_pause_resume_baseline [-V <http/1.1|h2|h3>] [--out <file>]\n"
+              << "  --events-out <file> --pause-offset <bytes> [--resume-delay-ms <ms>] <url>\n";
     return 2;
 }
 
-struct PauseResumeContext {
+struct PauseResumeContext
+{
     std::ofstream out;
-    long long pauseOffset = 0;
-    long resumeDelayMs = 0;
+    long long pauseOffset  = 0;
+    long resumeDelayMs     = 0;
     long long bytesWritten = 0;
     bool firstByteRecorded = false;
-    bool pauseRequested = false;
-    bool pauseEffective = false;
-    bool resumeRequested = false;
-    bool resumeEffective = false;
+    bool pauseRequested    = false;
+    bool pauseEffective    = false;
+    bool resumeRequested   = false;
+    bool resumeEffective   = false;
     Clock::time_point started;
     Clock::time_point pauseEffectiveAt;
     int nextSeq = 1;
@@ -170,11 +171,11 @@ struct PauseResumeContext {
     void record(const std::string &type)
     {
         Event e;
-        e.seq = nextSeq++;
-        e.tUs = elapsedUs(started);
-        e.type = type;
+        e.seq                 = nextSeq++;
+        e.tUs                 = elapsedUs(started);
+        e.type                = type;
         e.bytesDeliveredTotal = bytesWritten;
-        e.bytesWrittenTotal = bytesWritten;
+        e.bytesWrittenTotal   = bytesWritten;
         events.push_back(e);
     }
 };
@@ -214,7 +215,11 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return total;
 }
 
-bool writeEventsJson(const std::string &path, const Args &args, const std::vector<Event> &events, CURLcode curlcode, long httpCode)
+bool writeEventsJson(const std::string &path,
+                     const Args &args,
+                     const std::vector<Event> &events,
+                     CURLcode curlcode,
+                     long httpCode)
 {
     std::ofstream fp(path, std::ios::binary | std::ios::trunc);
     if (!fp.is_open()) {
@@ -229,8 +234,7 @@ bool writeEventsJson(const std::string &path, const Args &args, const std::vecto
     fp << "\"resume_delay_ms\":" << args.resumeDelayMs << ",";
     fp << "\"result\":{"
        << "\"curlcode\":" << static_cast<int>(curlcode) << ","
-       << "\"http_code\":" << httpCode
-       << "},";
+       << "\"http_code\":" << httpCode << "},";
 
     fp << "\"events\":[";
     for (std::size_t i = 0; i < events.size(); ++i) {
@@ -243,15 +247,14 @@ bool writeEventsJson(const std::string &path, const Args &args, const std::vecto
            << "\"t_us\":" << e.tUs << ","
            << "\"type\":\"" << jsonEscape(e.type) << "\","
            << "\"bytes_delivered_total\":" << e.bytesDeliveredTotal << ","
-           << "\"bytes_written_total\":" << e.bytesWrittenTotal
-           << "}";
+           << "\"bytes_written_total\":" << e.bytesWrittenTotal << "}";
     }
     fp << "]}\n";
     fp.flush();
     return fp.good();
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -283,9 +286,9 @@ int main(int argc, char **argv)
     }
 
     PauseResumeContext ctx;
-    ctx.pauseOffset = args.pauseOffset;
+    ctx.pauseOffset   = args.pauseOffset;
     ctx.resumeDelayMs = args.resumeDelayMs;
-    ctx.started = Clock::now();
+    ctx.started       = Clock::now();
     ctx.record("start");
 
     ctx.out.open(args.outFile, std::ios::binary | std::ios::trunc);
@@ -322,10 +325,10 @@ int main(int argc, char **argv)
         return 6;
     }
 
-    int running = 0;
-    CURLcode rc = CURLE_OK;
+    int running   = 0;
+    CURLcode rc   = CURLE_OK;
     long httpCode = 0;
-    bool done = false;
+    bool done     = false;
 
     curl_multi_perform(multi, &running);
     while (!done) {
@@ -339,14 +342,15 @@ int main(int argc, char **argv)
                 rc = prc;
                 break;
             }
-            ctx.pauseEffective = true;
+            ctx.pauseEffective   = true;
             ctx.pauseEffectiveAt = Clock::now();
             ctx.record("pause_effective");
         }
 
         if (ctx.pauseEffective && !ctx.resumeRequested) {
-            const auto now = Clock::now();
-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - ctx.pauseEffectiveAt);
+            const auto now     = Clock::now();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - ctx.pauseEffectiveAt);
             if (elapsed.count() >= ctx.resumeDelayMs) {
                 ctx.resumeRequested = true;
                 ctx.record("resume_req");
@@ -365,7 +369,7 @@ int main(int argc, char **argv)
             if (msg->msg != CURLMSG_DONE) {
                 continue;
             }
-            rc = msg->data.result;
+            rc   = msg->data.result;
             done = true;
             break;
         }

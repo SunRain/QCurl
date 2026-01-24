@@ -303,18 +303,19 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
         socket.close();
     } else if (timedOut) {
         socket.abort();
-        result.success                = false;
-        result.summary                = QStringLiteral("SSL 握手超时: %1").arg(host);
-        result.errorString            = QStringLiteral("Timeout");
-        result.details["timedOut"]    = true;
-        result.details["timeoutMs"]   = timeout;
+        result.success              = false;
+        result.summary              = QStringLiteral("SSL 握手超时: %1").arg(host);
+        result.errorString          = QStringLiteral("Timeout");
+        result.details["timedOut"]  = true;
+        result.details["timeoutMs"] = timeout;
     } else {
         result.success     = false;
         result.summary     = QStringLiteral("SSL 握手失败: %1").arg(host);
         result.errorString = socket.errorString();
 
-        const QList<QSslError> allErrors =
-            !observedSslErrors.isEmpty() ? observedSslErrors : socket.sslHandshakeErrors();
+        const QList<QSslError> allErrors = !observedSslErrors.isEmpty()
+                                               ? observedSslErrors
+                                               : socket.sslHandshakeErrors();
         if (!allErrors.isEmpty()) {
             QStringList errors;
             for (const QSslError &err : allErrors) {

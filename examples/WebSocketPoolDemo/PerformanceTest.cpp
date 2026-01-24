@@ -59,8 +59,9 @@ void PerformanceTest::printPerformanceResult(const QString &metric,
     qDebug() << "   ├─ 有连接池:" << with << unit;
 
     if (with > 0 && without > 0) {
-        double improvement = ((double) (without - with) / without) * 100;
-        double speedup     = (double) without / with;
+        const double improvement = static_cast<double>(without - with)
+                                   / static_cast<double>(without) * 100.0;
+        const double speedup = static_cast<double>(without) / static_cast<double>(with);
 
         if (improvement > 0) {
             qDebug() << "   ├─ 性能提升:" << QString::number(improvement, 'f', 1) << "%";
@@ -143,8 +144,9 @@ void PerformanceTest::testConnectionTime()
             QThread::msleep(100);
         } else {
             qWarning() << "   第" << (i + 1) << "次: 获取连接失败";
-            if (socket)
+            if (socket) {
                 pool.release(socket);
+            }
         }
     }
 
@@ -228,8 +230,9 @@ void PerformanceTest::testThroughput()
             QThread::msleep(50);
         } else {
             qWarning() << "   第" << (i + 1) << "条消息发送失败";
-            if (socket)
+            if (socket) {
                 pool.release(socket);
+            }
         }
     }
 
@@ -243,8 +246,10 @@ void PerformanceTest::testThroughput()
     if (time2 > 0 && time1 > 0) {
         qDebug() << "";
         qDebug() << "📈 吞吐量对比:";
-        double throughput1 = (double) sentWithout * 1000 / time1;
-        double throughput2 = (double) sentWith * 1000 / time2;
+        const double throughput1 = static_cast<double>(sentWithout) * 1000.0
+                                   / static_cast<double>(time1);
+        const double throughput2 = static_cast<double>(sentWith) * 1000.0
+                                   / static_cast<double>(time2);
         qDebug() << "   - 无连接池:" << QString::number(throughput1, 'f', 2) << "条/秒";
         qDebug() << "   - 有连接池:" << QString::number(throughput2, 'f', 2) << "条/秒";
     }

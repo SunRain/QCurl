@@ -86,7 +86,7 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
 
 std::optional<long> protocolMaskFromList(const QStringList &protocols, QString *badToken)
 {
-    long mask = 0;
+    long mask     = 0;
     auto addToken = [&](const QString &t) -> bool {
         if (t.isEmpty()) {
             return false;
@@ -519,7 +519,7 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 {
     const qint64 limitBytes = request.backpressureLimitBytes();
     if (limitBytes > 0) {
-        backpressureLimitBytes = limitBytes;
+        backpressureLimitBytes   = limitBytes;
         const qint64 resumeBytes = request.backpressureResumeBytes();
         if (resumeBytes > 0 && resumeBytes < limitBytes) {
             backpressureResumeBytes = resumeBytes;
@@ -757,7 +757,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                          .arg(QString::fromUtf8(curl_easy_strerror(rc))));
             return false;
         }
-#endif  // LIBCURL_VERSION_NUM >= 7.85.0
+#endif // LIBCURL_VERSION_NUM >= 7.85.0
 
         if (!applied) {
             QString badToken;
@@ -768,7 +768,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 return false;
             }
 
-            appendCapabilityWarning(this, QStringLiteral("CURLOPT_PROTOCOLS_STR 不可用，fallback to CURLOPT_PROTOCOLS"));
+            appendCapabilityWarning(
+                this, QStringLiteral("CURLOPT_PROTOCOLS_STR 不可用，fallback to CURLOPT_PROTOCOLS"));
             const CURLcode maskRc = curlEasySetoptWithTestHook(handle,
                                                                CURLOPT_PROTOCOLS,
                                                                "CURLOPT_PROTOCOLS",
@@ -809,25 +810,30 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                          .arg(QString::fromUtf8(curl_easy_strerror(rc))));
             return false;
         }
-#endif  // LIBCURL_VERSION_NUM >= 7.85.0
+#endif // LIBCURL_VERSION_NUM >= 7.85.0
 
         if (!applied) {
             QString badToken;
             const auto maskOpt = protocolMaskFromList(redirOpt.value(), &badToken);
             if (!maskOpt.has_value()) {
                 setError(NetworkError::InvalidRequest,
-                         QStringLiteral("allowedRedirectProtocols 包含不支持的协议：%1").arg(badToken));
+                         QStringLiteral("allowedRedirectProtocols 包含不支持的协议：%1")
+                             .arg(badToken));
                 return false;
             }
 
-            appendCapabilityWarning(this, QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR 不可用，fallback to CURLOPT_REDIR_PROTOCOLS"));
+            appendCapabilityWarning(
+                this,
+                QStringLiteral(
+                    "CURLOPT_REDIR_PROTOCOLS_STR 不可用，fallback to CURLOPT_REDIR_PROTOCOLS"));
             const CURLcode maskRc = curlEasySetoptWithTestHook(handle,
                                                                CURLOPT_REDIR_PROTOCOLS,
                                                                "CURLOPT_REDIR_PROTOCOLS",
                                                                maskOpt.value());
             if (maskRc != CURLE_OK) {
                 if (isCapabilityRelatedCurlError(maskRc)) {
-                    const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_REDIR_PROTOCOLS（%1）")
+                    const QString msg = QStringLiteral(
+                                            "libcurl 不支持 CURLOPT_REDIR_PROTOCOLS（%1）")
                                             .arg(QString::fromUtf8(curl_easy_strerror(maskRc)));
                     if (securityPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
                         setError(NetworkError::InvalidRequest, msg);
@@ -946,10 +952,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
 
         if (executionMode == ExecutionMode::Async && uploadDevice && q_ptr) {
-            QObject::connect(uploadDevice,
-                             &QIODevice::readyRead,
-                             q_ptr,
-                             [this]() { resumeSendFromUploadSourceIfNeeded(); });
+            QObject::connect(uploadDevice, &QIODevice::readyRead, q_ptr, [this]() {
+                resumeSendFromUploadSourceIfNeeded();
+            });
         }
     }
 
@@ -2207,7 +2212,9 @@ void QCNetworkReplyPrivate::setBackpressureActive(bool active)
 
     backpressureActive = active;
     if (q_ptr) {
-        emit q_ptr->backpressureStateChanged(active, bodyBuffer.byteAmount(), backpressureLimitBytes);
+        emit q_ptr->backpressureStateChanged(active,
+                                             bodyBuffer.byteAmount(),
+                                             backpressureLimitBytes);
     }
 }
 
@@ -2239,7 +2246,8 @@ void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
     if ((internalPauseMask & CURLPAUSE_RECV) == 0) {
         return;
     }
-    if (state == ReplyState::Cancelled || state == ReplyState::Error || state == ReplyState::Finished) {
+    if (state == ReplyState::Cancelled || state == ReplyState::Error
+        || state == ReplyState::Finished) {
         return;
     }
 
@@ -2248,7 +2256,7 @@ void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
         return;
     }
 
-    const int oldMask = appliedPauseMask;
+    const int oldMask            = appliedPauseMask;
     const int desiredAfterResume = desiredPauseMask() & ~CURLPAUSE_RECV;
     if (!applyPauseMask(desiredAfterResume)) {
         return;
@@ -2270,7 +2278,8 @@ void QCNetworkReplyPrivate::resumeSendFromUploadSourceIfNeeded()
     if ((internalPauseMask & CURLPAUSE_SEND) == 0) {
         return;
     }
-    if (state == ReplyState::Cancelled || state == ReplyState::Error || state == ReplyState::Finished) {
+    if (state == ReplyState::Cancelled || state == ReplyState::Error
+        || state == ReplyState::Finished) {
         return;
     }
 
@@ -2328,8 +2337,8 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t n
         // 异步模式：累积数据到缓冲区
         d->bodyBuffer.append(QByteArray(ptr, static_cast<int>(totalSize)));
         if (d->backpressureLimitBytes > 0) {
-            d->backpressurePeakBufferedBytes
-                = qMax(d->backpressurePeakBufferedBytes, d->bodyBuffer.byteAmount());
+            d->backpressurePeakBufferedBytes = qMax(d->backpressurePeakBufferedBytes,
+                                                    d->bodyBuffer.byteAmount());
         }
         d->bytesDownloaded += static_cast<qint64>(totalSize);
 
@@ -2346,7 +2355,8 @@ size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t n
                 const bool internalRecvPaused = (d->internalPauseMask & CURLPAUSE_RECV) != 0;
                 if (!userRecvPaused) {
                     const int desiredBase = d->desiredPauseMask();
-                    const int desiredMask = internalRecvPaused ? desiredBase : (desiredBase | CURLPAUSE_RECV);
+                    const int desiredMask = internalRecvPaused ? desiredBase
+                                                               : (desiredBase | CURLPAUSE_RECV);
                     if (d->applyPauseMask(desiredMask) && !internalRecvPaused) {
                         d->internalPauseMask |= CURLPAUSE_RECV;
                         d->setBackpressureActive(true);
@@ -3381,7 +3391,8 @@ void QCNetworkReply::pauseTransport(PauseMode mode)
     Q_D(QCNetworkReply);
 
     if (d->executionMode == ExecutionMode::Sync) {
-        qWarning() << "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume";
+        qWarning()
+            << "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume";
         return;
     }
 

@@ -359,7 +359,7 @@ public:
      */
     QCNetworkRequestScheduler *scheduler() const;
 
-	    /**
+    /**
 	     * @brief 使用调度器发送 GET 请求
 	     *
 	     * 请求会根据优先级（request.priority()）加入队列。
@@ -381,7 +381,7 @@ public:
      */
     QCNetworkReply *scheduleGet(const QCNetworkRequest &request);
 
-	    /**
+    /**
 	     * @brief 使用调度器发送 POST 请求
 	     *
 	     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
@@ -400,7 +400,7 @@ public:
      */
     QCNetworkReply *schedulePost(const QCNetworkRequest &request, const QByteArray &data);
 
-	    /**
+    /**
 	     * @brief 使用调度器发送 PUT 请求
 	     *
 	     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：

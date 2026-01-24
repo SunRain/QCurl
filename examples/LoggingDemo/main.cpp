@@ -79,7 +79,12 @@ public:
         qDebug() << "总请求数:" << totalRequests;
         qDebug() << "错误数:" << errorRequests;
         qDebug() << "成功率:"
-                 << QString::number((1.0 - (double) errorRequests / totalRequests) * 100, 'f', 2)
+                 << QString::number((1.0
+                                     - static_cast<double>(errorRequests)
+                                           / static_cast<double>(totalRequests))
+                                        * 100.0,
+                                    'f',
+                                    2)
                  << "%";
     }
 };
@@ -104,7 +109,7 @@ int main(int argc, char *argv[])
 
     manager1->setLogger(defaultLogger);
 
-    qDebug() << "Logger 已设置，最小日志级别:" << (int) defaultLogger->minLogLevel();
+    qDebug() << "Logger 已设置，最小日志级别:" << static_cast<int>(defaultLogger->minLogLevel());
 
     // ========================================================================
     // 示例 2: 启用文件日志

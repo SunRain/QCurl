@@ -73,23 +73,25 @@ public:
     [[nodiscard]] QString caCertPath() const
     {
         const QString appDir = QCoreApplication::applicationDirPath();
-        return QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+        return QDir(appDir).absoluteFilePath(
+            QStringLiteral("../../tests/testdata/http2/localhost.crt"));
     }
 
     bool start(Mode mode, ServerKind kind = ServerKind::FragmentEcho)
     {
         stop();
 
-        m_mode       = mode;
-        m_kind       = kind;
-        m_port       = 0;
+        m_mode = mode;
+        m_kind = kind;
+        m_port = 0;
         m_artifactsPath.clear();
         m_skipReason = {};
 
         const QString appDir     = QCoreApplication::applicationDirPath();
         const QString scriptPath = QDir(appDir).absoluteFilePath(
-            (m_kind == ServerKind::Evidence) ? QStringLiteral("../../tests/websocket-evidence-server.js")
-                                             : QStringLiteral("../../tests/websocket-fragment-server.js"));
+            (m_kind == ServerKind::Evidence)
+                ? QStringLiteral("../../tests/websocket-evidence-server.js")
+                : QStringLiteral("../../tests/websocket-fragment-server.js"));
         if (!QFileInfo::exists(scriptPath)) {
             m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本：%1").arg(scriptPath);
             return false;
@@ -97,14 +99,20 @@ public:
 
         QStringList args{scriptPath, QStringLiteral("--port"), QStringLiteral("0")};
         if (m_mode == Mode::Wss) {
-            const QString certPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.crt"));
-            const QString keyPath  = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.key"));
+            const QString certPath = QDir(appDir).absoluteFilePath(
+                QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+            const QString keyPath = QDir(appDir).absoluteFilePath(
+                QStringLiteral("../../tests/testdata/http2/localhost.key"));
             if (!QFileInfo::exists(certPath) || !QFileInfo::exists(keyPath)) {
                 m_skipReason = QStringLiteral(
                     "未找到本地 WSS 证书或私钥（tests/testdata/http2/localhost.{crt,key}）。");
                 return false;
             }
-            args += {QStringLiteral("--tls"), QStringLiteral("--cert"), certPath, QStringLiteral("--key"), keyPath};
+            args += {QStringLiteral("--tls"),
+                     QStringLiteral("--cert"),
+                     certPath,
+                     QStringLiteral("--key"),
+                     keyPath};
         }
 
         m_process.setProgram(QStringLiteral("node"));
@@ -112,8 +120,9 @@ public:
         m_process.setProcessChannelMode(QProcess::SeparateChannels);
 
         // 统一将工件写入 build/<...>/test-artifacts（由 appDir 推导，避免硬编码 build 目录名）。
-        const QString artifactRoot = QDir(appDir).absoluteFilePath(QStringLiteral("../test-artifacts"));
-        QProcessEnvironment env    = QProcessEnvironment::systemEnvironment();
+        const QString artifactRoot = QDir(appDir).absoluteFilePath(
+            QStringLiteral("../test-artifacts"));
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.insert(QStringLiteral("QCURL_TEST_ARTIFACT_DIR"), artifactRoot);
         env.insert(QStringLiteral("QCURL_WEBSOCKET_EVIDENCE_DIR"), artifactRoot);
         m_process.setProcessEnvironment(env);
@@ -122,10 +131,12 @@ public:
 
         if (!m_process.waitForStarted(2000)) {
             m_skipReason = QStringLiteral(
-                "无法启动本地 WebSocket 测试服务器（node）。请确认已安装 node。"
-                "%1")
+                               "无法启动本地 WebSocket 测试服务器（node）。请确认已安装 node。"
+                               "%1")
                                .arg((m_kind == ServerKind::FragmentEcho)
-                                        ? QStringLiteral("（Fragment Echo 依赖 tests/node_modules，可尝试 `cd tests && npm ci`）")
+                                        ? QStringLiteral(
+                                              "（Fragment Echo 依赖 tests/node_modules，可尝试 `cd "
+                                              "tests && npm ci`）")
                                         : QString());
             return false;
         }
@@ -156,9 +167,9 @@ public:
 
         if (readyPort == 0 || !waitForPortReady(readyPort, 3000)) {
             stop();
-            m_skipReason = QStringLiteral(
-                "本地 WebSocket 测试服务器未在预期时间内就绪（未收到 READY marker 或端口不可达）。\n"
-                "stdout:\n%1\nstderr:\n%2")
+            m_skipReason = QStringLiteral("本地 WebSocket 测试服务器未在预期时间内就绪（未收到 "
+                                          "READY marker 或端口不可达）。\n"
+                                          "stdout:\n%1\nstderr:\n%2")
                                .arg(tailForLog(stdoutBuf), tailForLog(stderrBuf));
             return false;
         }
@@ -183,7 +194,7 @@ public:
 private:
     static bool tryParseReady(const QString &stdoutBuf, quint16 &outPort, QString &outArtifactsPath)
     {
-        const QString marker = QStringLiteral("QCURL_WEBSOCKET_TEST_SERVER_READY ");
+        const QString marker    = QStringLiteral("QCURL_WEBSOCKET_TEST_SERVER_READY ");
         const QStringList lines = stdoutBuf.split('\n');
         for (const QString &rawLine : lines) {
             const QString line = rawLine.trimmed();
@@ -198,7 +209,7 @@ private:
                 continue;
             }
             const QJsonObject obj = doc.object();
-            const int p = obj.value(QStringLiteral("port")).toInt(0);
+            const int p           = obj.value(QStringLiteral("port")).toInt(0);
             if (p <= 0 || p > 65535) {
                 continue;
             }
@@ -243,9 +254,9 @@ private:
         return QStringLiteral("...(truncated)...\n") + s.right(kMax);
     }
 
-    Mode m_mode = Mode::Ws;
+    Mode m_mode       = Mode::Ws;
     ServerKind m_kind = ServerKind::FragmentEcho;
-    quint16 m_port = 0;
+    quint16 m_port    = 0;
     QString m_skipReason;
     QString m_artifactsPath;
     QProcess m_process;

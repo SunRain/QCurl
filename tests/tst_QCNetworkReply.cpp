@@ -12,26 +12,26 @@
  * - 信号发射（finished/error/progress）
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "test_httpbin_env.h"
+
+#include <QElapsedTimer>
 #include <QEventLoop>
-#include <QTimer>
-#include <QSignalSpy>
+#include <QHostAddress>
 #include <QMetaMethod>
+#include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
-#include <QHostAddress>
-#include <QElapsedTimer>
+#include <QTimer>
+#include <QtTest/QtTest>
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <thread>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkError.h"
-
-#include "test_httpbin_env.h"
 
 using namespace QCurl;
 
@@ -92,7 +92,7 @@ private slots:
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
-    bool m_isHttpbinReachable = false;
+    bool m_isHttpbinReachable         = false;
     QString m_httpbinBaseUrl;
 
     // 辅助方法
@@ -244,7 +244,7 @@ void TestQCNetworkReply::testSyncPostRequest()
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
-    QVERIFY(data->contains("test"));  // 验证服务器回显了我们的数据
+    QVERIFY(data->contains("test")); // 验证服务器回显了我们的数据
 
     reply->deleteLater();
 }
@@ -275,7 +275,7 @@ void TestQCNetworkReply::testSyncInvalidUrl()
 {
     // ✅ 同步测试无效 URL - 验证错误处理
     // 注意：同步请求即使失败也可能不会设置 isFinished()
-    
+
     // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
     QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
@@ -286,8 +286,8 @@ void TestQCNetworkReply::testSyncInvalidUrl()
     QVERIFY(reply != nullptr);
     // ✅ 修改：检查错误而不是 isFinished()，因为同步请求的状态管理可能不一致
     QVERIFY(reply->error() != NetworkError::NoError);
-    QVERIFY(isCurlError(reply->error()));  // 应该是 curl 错误
-    
+    QVERIFY(isCurlError(reply->error())); // 应该是 curl 错误
+
     // ✅ 验证错误消息存在
     QString errorStr = reply->errorString();
     QVERIFY(!errorStr.isEmpty());
@@ -368,8 +368,8 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     QByteArray receivedPath;
     QByteArray receivedBody;
     qint64 receivedContentLength = -1;
-    bool requestHandled = false;
-    bool continueSent = false;
+    bool requestHandled          = false;
+    bool continueSent            = false;
 
     QPointer<QTcpSocket> clientSocket;
 
@@ -384,7 +384,7 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
             return;
         }
 
-        const QByteArray headerBytes = recvBuf.left(headerEnd);
+        const QByteArray headerBytes  = recvBuf.left(headerEnd);
         const QList<QByteArray> lines = headerBytes.split('\n');
         if (lines.isEmpty()) {
             return;
@@ -393,21 +393,22 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
         const QList<QByteArray> requestLineParts = lines[0].trimmed().split(' ');
         if (requestLineParts.size() >= 2) {
             receivedMethod = requestLineParts[0].trimmed();
-            receivedPath = requestLineParts[1].trimmed();
+            receivedPath   = requestLineParts[1].trimmed();
         }
 
-        qint64 contentLength = 0;
+        qint64 contentLength  = 0;
         bool hasContentLength = false;
-        bool expectContinue = false;
+        bool expectContinue   = false;
         for (int i = 1; i < lines.size(); ++i) {
-            const QByteArray line = lines[i].trimmed();
+            const QByteArray line  = lines[i].trimmed();
             const QByteArray lower = line.toLower();
             if (lower.startsWith("content-length:")) {
-                const QByteArray v = line.mid(static_cast<int>(QByteArray("Content-Length:").size())).trimmed();
-                bool ok = false;
+                const QByteArray v
+                    = line.mid(static_cast<int>(QByteArray("Content-Length:").size())).trimmed();
+                bool ok             = false;
                 const qint64 parsed = v.toLongLong(&ok);
                 if (ok && parsed >= 0) {
-                    contentLength = parsed;
+                    contentLength    = parsed;
                     hasContentLength = true;
                 }
             } else if (lower.startsWith("expect:") && lower.contains("100-continue")) {
@@ -426,21 +427,23 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
         }
 
         const int bodyOffset = headerEnd + 4;
-        const int need = bodyOffset + static_cast<int>(contentLength);
+        const int need       = bodyOffset + static_cast<int>(contentLength);
         if (recvBuf.size() < need) {
             return;
         }
 
-        receivedBody = recvBuf.mid(bodyOffset, contentLength);
+        receivedBody          = recvBuf.mid(bodyOffset, contentLength);
         receivedContentLength = contentLength;
-        requestHandled = true;
+        requestHandled        = true;
 
-        const QByteArray resp =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/octet-stream\r\n"
-            "Content-Length: " + QByteArray::number(receivedBody.size()) + "\r\n"
-            "Connection: close\r\n"
-            "\r\n" + receivedBody;
+        const QByteArray resp = "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/octet-stream\r\n"
+                                "Content-Length: "
+                                + QByteArray::number(receivedBody.size())
+                                + "\r\n"
+                                  "Connection: close\r\n"
+                                  "\r\n"
+                                + receivedBody;
 
         clientSocket->write(resp);
         clientSocket->flush();
@@ -499,11 +502,10 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
             return;
         }
 
-        const QByteArray resp =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Length: 0\r\n"
-            "Connection: close\r\n"
-            "\r\n";
+        const QByteArray resp = "HTTP/1.1 200 OK\r\n"
+                                "Content-Length: 0\r\n"
+                                "Connection: close\r\n"
+                                "\r\n";
 
         clientSocket->write(resp);
         clientSocket->flush();
@@ -532,7 +534,7 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     const QStringList warnings = reply->capabilityWarnings();
-    bool found = false;
+    bool found                 = false;
     for (const QString &w : warnings) {
         if (w.contains(QStringLiteral("100-continue"), Qt::CaseInsensitive)) {
             found = true;
@@ -579,7 +581,7 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
     auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/delay/1")));
     auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/uuid")));
 
-    QList<QCNetworkReply*> replies{reply1, reply2, reply3};
+    QList<QCNetworkReply *> replies{reply1, reply2, reply3};
 
     QSignalSpy finishedSpy1(reply1, QMetaMethod::fromSignal(&QCNetworkReply::finished));
     QSignalSpy finishedSpy2(reply2, QMetaMethod::fromSignal(&QCNetworkReply::finished));
@@ -587,7 +589,7 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
 
     // 等待所有请求完成
     QEventLoop loop;
-    int finishedCount = 0;
+    int finishedCount     = 0;
     auto checkAllFinished = [&]() {
         finishedCount++;
         if (finishedCount == 3) {
@@ -599,7 +601,7 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
     connect(reply2, &QCNetworkReply::finished, checkAllFinished);
     connect(reply3, &QCNetworkReply::finished, checkAllFinished);
 
-    QTimer::singleShot(15000, &loop, &QEventLoop::quit);  // 15 秒超时
+    QTimer::singleShot(15000, &loop, &QEventLoop::quit); // 15 秒超时
     loop.exec();
 
     QCOMPARE(finishedCount, 3);
@@ -630,7 +632,7 @@ void TestQCNetworkReply::testStateTransitionIdleToFinished()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
     QCOMPARE(reply->state(), ReplyState::Finished);
-    QVERIFY(stateSpy.count() >= 1);  // 至少有 Idle→Running→Finished
+    QVERIFY(stateSpy.count() >= 1); // 至少有 Idle→Running→Finished
 
     reply->deleteLater();
 }
@@ -714,9 +716,9 @@ void TestQCNetworkReply::testSyncPauseResumeNoOp()
 
 void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 {
-    constexpr qsizetype kPayloadSize = 256 * 1024;
-    constexpr qsizetype kChunkSize = 4096;
-    constexpr int kChunkIntervalMs = 5;
+    constexpr qsizetype kPayloadSize  = 256 * 1024;
+    constexpr qsizetype kChunkSize    = 4096;
+    constexpr int kChunkIntervalMs    = 5;
     constexpr qint64 kPauseAfterBytes = 32 * 1024;
 
     const QByteArray payload(kPayloadSize, 'x');
@@ -740,11 +742,12 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
             return;
         }
 
-        const QByteArray header =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
-            "Connection: close\r\n"
-            "\r\n";
+        const QByteArray header = "HTTP/1.1 200 OK\r\n"
+                                  "Content-Length: "
+                                  + QByteArray::number(payload.size())
+                                  + "\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
 
         clientSocket->write(header);
         clientSocket->flush();
@@ -766,7 +769,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
         }
 
         const qsizetype remaining = payload.size() - bytesSent;
-        const qsizetype toSend = std::min(kChunkSize, remaining);
+        const qsizetype toSend    = std::min(kChunkSize, remaining);
 
         const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
         if (written > 0) {
@@ -790,7 +793,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
         }
 
         const auto args = progressSpy.takeLast();
-        bytesAtPause = args.at(0).toLongLong();
+        bytesAtPause    = args.at(0).toLongLong();
     }
     QVERIFY(bytesAtPause >= kPauseAfterBytes);
 
@@ -807,7 +810,9 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     std::thread resumeThread([reply]() { reply->resumeTransport(); });
     resumeThread.join();
 
-    QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running || reply->state() == ReplyState::Finished, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running
+                                 || reply->state() == ReplyState::Finished,
+                             3000);
 
     QVERIFY(finishedSpy.wait(10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -825,10 +830,10 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 void TestQCNetworkReply::testAsyncDownloadBackpressure()
 {
     constexpr qsizetype kPayloadSize = 256 * 1024;
-    constexpr qsizetype kChunkSize = 4096;
-    constexpr int kChunkIntervalMs = 1;
+    constexpr qsizetype kChunkSize   = 4096;
+    constexpr int kChunkIntervalMs   = 1;
 
-    constexpr qint64 kLimitBytes = 16 * 1024;
+    constexpr qint64 kLimitBytes  = 16 * 1024;
     constexpr qint64 kResumeBytes = 8 * 1024;
 
     const QByteArray payload(kPayloadSize, 'b');
@@ -854,11 +859,12 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
         bytesSent = 0;
 
-        const QByteArray header =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
-            "Connection: close\r\n"
-            "\r\n";
+        const QByteArray header = "HTTP/1.1 200 OK\r\n"
+                                  "Content-Length: "
+                                  + QByteArray::number(payload.size())
+                                  + "\r\n"
+                                    "Connection: close\r\n"
+                                    "\r\n";
 
         clientSocket->write(header);
         clientSocket->flush();
@@ -880,7 +886,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         }
 
         const qsizetype remaining = payload.size() - bytesSent;
-        const qsizetype toSend = std::min(kChunkSize, remaining);
+        const qsizetype toSend    = std::min(kChunkSize, remaining);
 
         const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
         if (written > 0) {
@@ -990,7 +996,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
     }
 
     {
-        constexpr qint64 kTinyLimitBytes = 1024;
+        constexpr qint64 kTinyLimitBytes  = 1024;
         constexpr qint64 kTinyResumeBytes = 512;
 
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp_tiny").arg(port)));
@@ -1138,7 +1144,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
 
     QByteArray requestBuffer;
     QByteArray receivedBody;
-    bool headerParsed = false;
+    bool headerParsed            = false;
     qint64 expectedContentLength = -1;
 
     connect(&server, &QTcpServer::newConnection, this, [&]() {
@@ -1159,16 +1165,15 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
                 const QByteArray headers = requestBuffer.left(headerEnd + 4);
                 requestBuffer.remove(0, headerEnd + 4);
 
-                const QList<QByteArray> lines = headers.split('\n');
+                const QList<QByteArray> lines                = headers.split('\n');
                 static const QByteArray kContentLengthPrefix = "content-length:";
                 for (const QByteArray &line : lines) {
                     const QByteArray trimmed = line.trimmed();
-                    const QByteArray lower = trimmed.toLower();
+                    const QByteArray lower   = trimmed.toLower();
                     if (lower.startsWith(kContentLengthPrefix)) {
-                        const QByteArray value
-                            = trimmed.mid(kContentLengthPrefix.size()).trimmed();
-                        bool ok = false;
-                        const qint64 v = value.toLongLong(&ok);
+                        const QByteArray value = trimmed.mid(kContentLengthPrefix.size()).trimmed();
+                        bool ok                = false;
+                        const qint64 v         = value.toLongLong(&ok);
                         if (ok) {
                             expectedContentLength = v;
                         }
@@ -1185,12 +1190,11 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
 
             if (headerParsed && expectedContentLength >= 0
                 && receivedBody.size() >= expectedContentLength) {
-                const QByteArray response =
-                    "HTTP/1.1 200 OK\r\n"
-                    "Content-Length: 2\r\n"
-                    "Connection: close\r\n"
-                    "\r\n"
-                    "OK";
+                const QByteArray response = "HTTP/1.1 200 OK\r\n"
+                                            "Content-Length: 2\r\n"
+                                            "Connection: close\r\n"
+                                            "\r\n"
+                                            "OK";
                 socket->write(response);
                 socket->flush();
                 socket->disconnectFromHost();
@@ -1239,7 +1243,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     QCOMPARE(receivedBody, payload);
     QVERIFY(device.zeroReadCount() > 0);
 
-    bool pauseSeen = false;
+    bool pauseSeen  = false;
     bool resumeSeen = false;
     for (const auto &args : sendPausedSpy) {
         QVERIFY(!args.isEmpty());
@@ -1432,7 +1436,8 @@ void TestQCNetworkReply::testErrorSignal()
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy errorSpy(reply,
-                        QMetaMethod::fromSignal(static_cast<void (QCNetworkReply::*)(NetworkError)>(&QCNetworkReply::error)));
+                        QMetaMethod::fromSignal(static_cast<void (QCNetworkReply::*)(NetworkError)>(
+                            &QCNetworkReply::error)));
     QSignalSpy finishedSpy(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished));
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -1449,7 +1454,7 @@ void TestQCNetworkReply::testProgressSignal()
         QSKIP("httpbin 服务不可用");
     }
 
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/10240"));  // 下载 10KB
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/10240")); // 下载 10KB
     auto *reply = m_manager->sendGet(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
@@ -1460,9 +1465,9 @@ void TestQCNetworkReply::testProgressSignal()
     QVERIFY(progressSpy.count() >= 1);
 
     if (progressSpy.count() > 0) {
-        auto args = progressSpy.last();
+        auto args       = progressSpy.last();
         qint64 received = args.at(0).toLongLong();
-        qint64 total = args.at(1).toLongLong();
+        qint64 total    = args.at(1).toLongLong();
         qDebug() << "Progress: received=" << received << ", total=" << total;
         QVERIFY(received > 0);
     }

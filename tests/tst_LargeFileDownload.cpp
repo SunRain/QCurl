@@ -7,15 +7,15 @@
  * - 仅用于在具备出口网络的环境中做“真实 HTTPS + 大体量传输”回归验证。
  */
 
-#include <QtTest/QtTest>
-#include <QSignalSpy>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 #include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
+
+#include <QSignalSpy>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -46,8 +46,8 @@ void TestLargeFileDownload::cleanupTestCase()
 void TestLargeFileDownload::testHttpsLargeFileDownload()
 {
     // 下载真实大文件：Arch Linux bootstrap (约 138 MB)
-    QCNetworkRequest request(QUrl(
-        "https://mirrors.ustc.edu.cn/archlinux/iso/2025.11.01/archlinux-bootstrap-2025.11.01-x86_64.tar.zst"));
+    QCNetworkRequest request(QUrl("https://mirrors.ustc.edu.cn/archlinux/iso/2025.11.01/"
+                                  "archlinux-bootstrap-2025.11.01-x86_64.tar.zst"));
 
     // 外部环境可能缺少 CA 链；此用例仅为“传输层/大体量”回归，临时禁用校验以避免误报。
     request.setSslConfig(QCNetworkSslConfig::insecureConfig());

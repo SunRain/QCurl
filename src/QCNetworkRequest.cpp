@@ -489,10 +489,11 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureLimitBytes(qint64 bytes)
     if (bytes > 0) {
         constexpr qint64 kRecommendedMinBytes = 16 * 1024;
         if (bytes < kRecommendedMinBytes) {
-            qWarning() << "QCNetworkRequest: backpressureLimitBytes is very small:" << bytes
-                       << "bytes; backpressure is a soft limit (high watermark) and bytesAvailable() may"
-                          " temporarily exceed it (bounded). Recommend >="
-                       << kRecommendedMinBytes << "bytes";
+            qWarning()
+                << "QCNetworkRequest: backpressureLimitBytes is very small:" << bytes
+                << "bytes; backpressure is a soft limit (high watermark) and bytesAvailable() may"
+                   " temporarily exceed it (bounded). Recommend >="
+                << kRecommendedMinBytes << "bytes";
         }
     }
 
@@ -518,8 +519,9 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
 
     const qint64 limit = d.data()->asyncBodyBufferLimitBytes;
     if (limit > 0 && bytes > 0 && bytes >= limit) {
-        qWarning() << "QCNetworkRequest: backpressureResumeBytes must be < backpressureLimitBytes, got"
-                   << bytes << "(limit=" << limit << "; use default limit/2)";
+        qWarning()
+            << "QCNetworkRequest: backpressureResumeBytes must be < backpressureLimitBytes, got"
+            << bytes << "(limit=" << limit << "; use default limit/2)";
         bytes = 0;
     }
 

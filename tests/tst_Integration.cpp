@@ -27,38 +27,37 @@
  * ============================================================================
  */
 
-#include <QtTest/QtTest>
-#include <QEventLoop>
-#include <QTimer>
-#include <QSignalSpy>
-#include <QTemporaryFile>
-#include <QCryptographicHash>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QDir>
-#include <QElapsedTimer>
-#include <QFileInfo>
-#include <QHostAddress>
-#include <QMetaMethod>
-#include <QCoreApplication>
-#include <QEvent>
-#include <QProcess>
-#include <QRegularExpression>
-#include <QTcpServer>
-#include <QTcpSocket>
-#include <QThread>
-#include <QVector>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
 #include "QCNetworkError.h"
+#include "QCNetworkProxyConfig.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
 #include "QCNetworkSslConfig.h"
-#include "QCNetworkProxyConfig.h"
 #include "QCNetworkTimeoutConfig.h"
-
 #include "test_httpbin_env.h"
+
+#include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QEvent>
+#include <QEventLoop>
+#include <QFileInfo>
+#include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMetaMethod>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QTemporaryFile>
+#include <QThread>
+#include <QTimer>
+#include <QVector>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -117,9 +116,9 @@ private slots:
     void testHttpErrorCodes();
 
     // ========== 重试机制集成测试（v2.1.0）==========
-    void testRetryWithConcurrentRequests();  // 并发重试无冲突
-    void testRetryOnTimeout();               // 超时重试
-    void testRetryDelayAccuracy();           // 重试延迟准确性
+    void testRetryWithConcurrentRequests(); // 并发重试无冲突
+    void testRetryOnTimeout();              // 超时重试
+    void testRetryDelayAccuracy();          // 重试延迟准确性
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -194,9 +193,9 @@ void TestIntegration::initTestCase()
     qDebug() << "httpbin base URL:" << m_httpbinBaseUrl;
 
     QCNetworkRequest healthCheck(QUrl(m_httpbinBaseUrl + "/status/200"));
-    auto *reply = m_manager->sendGet(healthCheck);
+    auto *reply   = m_manager->sendGet(healthCheck);
     const bool ok = waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 2000)
-        && reply->error() == NetworkError::NoError;
+                    && reply->error() == NetworkError::NoError;
     reply->deleteLater();
 
     if (!ok) {
@@ -251,7 +250,7 @@ void TestIntegration::testRealHttpPostRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray postData = R"({"name":"QCurl","version":"2.0.0"})";
-    auto *reply = m_manager->sendPost(request, postData);
+    auto *reply         = m_manager->sendPost(request, postData);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -276,7 +275,7 @@ void TestIntegration::testRealHttpPutRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray putData = R"({"action":"update"})";
-    auto *reply = m_manager->sendPut(request, putData);
+    auto *reply        = m_manager->sendPut(request, putData);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -307,7 +306,7 @@ void TestIntegration::testRealHttpPatchRequest()
     request.setRawHeader("Content-Type", "application/json");
 
     QByteArray patchData = R"({"field":"patched"})";
-    auto *reply = m_manager->sendPatch(request, patchData);
+    auto *reply          = m_manager->sendPatch(request, patchData);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -328,7 +327,7 @@ void TestIntegration::testCookieSetAndGet()
 {
     // 设置 cookie
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/cookies/set?test_cookie=test_value"));
-    request.setFollowLocation(true);  // httpbin 会重定向到 /cookies
+    request.setFollowLocation(true); // httpbin 会重定向到 /cookies
 
     auto *reply = m_manager->sendGet(request);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -371,7 +370,7 @@ void TestIntegration::testCookiePersistence()
     auto data = reply2->readAll();
     QVERIFY(data.has_value());
 
-    QJsonObject json = parseJsonResponse(*data);
+    QJsonObject json    = parseJsonResponse(*data);
     QJsonObject cookies = json["cookies"].toObject();
     QCOMPARE(cookies["session"].toString(), QString("123"));
 
@@ -399,7 +398,7 @@ void TestIntegration::testCustomHeaders()
     auto data = reply->readAll();
     QVERIFY(data.has_value());
 
-    QJsonObject json = parseJsonResponse(*data);
+    QJsonObject json    = parseJsonResponse(*data);
     QJsonObject headers = json["headers"].toObject();
     QCOMPARE(headers["X-Custom-Header"].toString(), QString("TestValue"));
     QCOMPARE(headers["X-Test-Id"].toString(), QString("12345"));
@@ -419,7 +418,7 @@ void TestIntegration::testUserAgentHeader()
     auto data = reply->readAll();
     QVERIFY(data.has_value());
 
-    QJsonObject json = parseJsonResponse(*data);
+    QJsonObject json  = parseJsonResponse(*data);
     QString userAgent = json["user-agent"].toString();
     QVERIFY(userAgent.contains("QCurl/2.0.0"));
 
@@ -458,7 +457,7 @@ void TestIntegration::testHttpAuthBasic()
     QCNetworkHttpAuthConfig auth;
     auth.userName = QStringLiteral("user");
     auth.password = QStringLiteral("passwd");
-    auth.method = QCNetworkHttpAuthMethod::Basic;
+    auth.method   = QCNetworkHttpAuthMethod::Basic;
     request.setHttpAuth(auth);
 
     auto *reply = m_manager->sendGet(request);
@@ -488,7 +487,7 @@ void TestIntegration::testAuthorizationHeaderOverridesHttpAuth()
     QCNetworkHttpAuthConfig auth;
     auth.userName = QStringLiteral("user");
     auth.password = QStringLiteral("passwd");
-    auth.method = QCNetworkHttpAuthMethod::Basic;
+    auth.method   = QCNetworkHttpAuthMethod::Basic;
     request.setHttpAuth(auth);
 
     auto *reply = m_manager->sendGet(request);
@@ -506,11 +505,11 @@ void TestIntegration::testAuthorizationHeaderOverridesHttpAuth()
 void TestIntegration::testConnectTimeout()
 {
     // 使用一个不可达的 IP 地址测试连接超时
-    QCNetworkRequest request(QUrl("http://192.0.2.1"));  // TEST-NET-1, 不可路由
+    QCNetworkRequest request(QUrl("http://192.0.2.1")); // TEST-NET-1, 不可路由
 
     QCNetworkTimeoutConfig timeout;
     timeout.connectTimeout = std::chrono::seconds(2);
-    timeout.totalTimeout = std::chrono::seconds(3);
+    timeout.totalTimeout   = std::chrono::seconds(3);
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -526,10 +525,10 @@ void TestIntegration::testConnectTimeout()
 
 void TestIntegration::testTotalTimeout()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/10"));  // 延迟 10 秒
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/10")); // 延迟 10 秒
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(2);  // 但只允许 2 秒
+    timeout.totalTimeout = std::chrono::seconds(2); // 但只允许 2 秒
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -548,7 +547,7 @@ void TestIntegration::testDelayedResponse()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/2"));
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(5);  // 给足够的时间
+    timeout.totalTimeout = std::chrono::seconds(5); // 给足够的时间
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -567,7 +566,7 @@ void TestIntegration::testDelayedResponse()
 
 void TestIntegration::testFollowRedirect()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/redirect/3"));  // 3 次重定向
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/redirect/3")); // 3 次重定向
     request.setFollowLocation(true);
 
     auto *reply = m_manager->sendGet(request);
@@ -608,11 +607,11 @@ void TestIntegration::testMaxRedirects()
         QVERIFY(data->contains("\"url\""));
         QVERIFY(data->contains("/get"));
 
-        qInfo().noquote()
-            << QStringLiteral("QCURL_EVIDENCE redirect_max success max_redirects=%1 http_status=%2 final_url=%3")
-                   .arg(20)
-                   .arg(reply->httpStatusCode())
-                   .arg(reply->url().toString());
+        qInfo().noquote() << QStringLiteral("QCURL_EVIDENCE redirect_max success max_redirects=%1 "
+                                            "http_status=%2 final_url=%3")
+                                 .arg(20)
+                                 .arg(reply->httpStatusCode())
+                                 .arg(reply->url().toString());
 
         reply->deleteLater();
     }
@@ -630,13 +629,13 @@ void TestIntegration::testMaxRedirects()
 
         QCOMPARE(reply->error(), NetworkError::TooManyRedirects);
 
-        qInfo().noquote()
-            << QStringLiteral("QCURL_EVIDENCE redirect_max blocked max_redirects=%1 error=%2 http_status=%3 url=%4 msg=%5")
-                   .arg(1)
-                   .arg(static_cast<int>(reply->error()))
-                   .arg(reply->httpStatusCode())
-                   .arg(reply->url().toString())
-                   .arg(reply->errorString());
+        qInfo().noquote() << QStringLiteral("QCURL_EVIDENCE redirect_max blocked max_redirects=%1 "
+                                            "error=%2 http_status=%3 url=%4 msg=%5")
+                                 .arg(1)
+                                 .arg(static_cast<int>(reply->error()))
+                                 .arg(reply->httpStatusCode())
+                                 .arg(reply->url().toString())
+                                 .arg(reply->errorString());
 
         reply->deleteLater();
     }
@@ -663,13 +662,13 @@ void TestIntegration::testHttpbinRequestSslConfigAlignment()
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->httpStatusCode(), 200);
 
-    qInfo().noquote()
-        << QStringLiteral("QCURL_EVIDENCE integration_httpbin_sslconfig ok scheme=%1 url=%2 http_status=%3 error=%4 msg=%5")
-               .arg(url.scheme())
-               .arg(url.toString())
-               .arg(reply->httpStatusCode())
-               .arg(static_cast<int>(reply->error()))
-               .arg(reply->errorString());
+    qInfo().noquote() << QStringLiteral("QCURL_EVIDENCE integration_httpbin_sslconfig ok scheme=%1 "
+                                        "url=%2 http_status=%3 error=%4 msg=%5")
+                             .arg(url.scheme())
+                             .arg(url.toString())
+                             .arg(reply->httpStatusCode())
+                             .arg(static_cast<int>(reply->error()))
+                             .arg(reply->errorString());
 
     reply->deleteLater();
 }
@@ -677,17 +676,20 @@ void TestIntegration::testHttpbinRequestSslConfigAlignment()
 void TestIntegration::testLocalHttpsTlsVerification()
 {
     // 可控 HTTPS 证据：使用仓库自带证书启动本地 HTTPS 服务端，验证 TLS 的失败/成功两条路径。
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QString scriptPath
-        = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/http2-test-server.js"));
+    const QString appDir     = QCoreApplication::applicationDirPath();
+    const QString scriptPath = QDir(appDir).absoluteFilePath(
+        QStringLiteral("../../tests/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         QFAIL("未找到本地 HTTPS 测试服务器脚本（tests/http2-test-server.js）。");
     }
 
     QProcess localServer;
     localServer.setProgram(QStringLiteral("node"));
-    localServer.setArguments({scriptPath, QStringLiteral("--h2-port"), QStringLiteral("0"),
-                              QStringLiteral("--http1-port"), QStringLiteral("0")});
+    localServer.setArguments({scriptPath,
+                              QStringLiteral("--h2-port"),
+                              QStringLiteral("0"),
+                              QStringLiteral("--http1-port"),
+                              QStringLiteral("0")});
     localServer.setProcessChannelMode(QProcess::MergedChannels);
     localServer.start();
 
@@ -695,7 +697,8 @@ void TestIntegration::testLocalHttpsTlsVerification()
         QSKIP("无法启动本地 HTTPS 测试服务器（node）。请确认 node 可用。");
     }
 
-    struct ProcessGuard {
+    struct ProcessGuard
+    {
         QProcess &proc;
         ~ProcessGuard()
         {
@@ -723,7 +726,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
             continue;
         }
         output += localServer.readAll();
-        const QString outText = QString::fromUtf8(output);
+        const QString outText               = QString::fromUtf8(output);
         const QRegularExpressionMatch match = re.match(outText);
         if (!match.hasMatch()) {
             continue;
@@ -738,19 +741,21 @@ void TestIntegration::testLocalHttpsTlsVerification()
         }
 
         const QJsonObject obj = doc.object();
-        httpsPort = obj.value(QStringLiteral("http1Port")).toInt(0);
-        certPath  = obj.value(QStringLiteral("certPath")).toString();
+        httpsPort             = obj.value(QStringLiteral("http1Port")).toInt(0);
+        certPath              = obj.value(QStringLiteral("certPath")).toString();
         break;
     }
 
     if (httpsPort <= 0 || httpsPort > 65535) {
         const QString outText = QString::fromUtf8(output + localServer.readAll());
-        QFAIL(qPrintable(QStringLiteral("本地 HTTPS 测试服务器未就绪（未输出 READY 或端口无效）。输出：\n%1")
-                             .arg(outText.right(4096))));
+        QFAIL(qPrintable(
+            QStringLiteral("本地 HTTPS 测试服务器未就绪（未输出 READY 或端口无效）。输出：\n%1")
+                .arg(outText.right(4096))));
     }
 
     if (certPath.isEmpty()) {
-        certPath = QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+        certPath = QDir(appDir).absoluteFilePath(
+            QStringLiteral("../../tests/testdata/http2/localhost.crt"));
     }
 
     QVERIFY2(waitForPortReady(static_cast<quint16>(httpsPort), 3000),
@@ -783,7 +788,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
     {
         QCNetworkRequest request(url);
         QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-        sslConfig.caCertPath = certPath;
+        sslConfig.caCertPath         = certPath;
         request.setSslConfig(sslConfig);
 
         auto *reply = m_manager->sendGet(request);
@@ -798,13 +803,14 @@ void TestIntegration::testLocalHttpsTlsVerification()
         const QJsonObject json = parseJsonResponse(*data);
         QVERIFY(json.value(QStringLiteral("ok")).toBool());
 
-        qInfo().noquote()
-            << QStringLiteral("QCURL_EVIDENCE https_local_tls success url=%1 http_status=%2 body_len=%3 body_sha256=%4 caCertPath=%5")
-                   .arg(url.toString())
-                   .arg(reply->httpStatusCode())
-                   .arg(data->size())
-                   .arg(bodySha256)
-                   .arg(certPath);
+        qInfo().noquote() << QStringLiteral(
+                                 "QCURL_EVIDENCE https_local_tls success url=%1 http_status=%2 "
+                                 "body_len=%3 body_sha256=%4 caCertPath=%5")
+                                 .arg(url.toString())
+                                 .arg(reply->httpStatusCode())
+                                 .arg(data->size())
+                                 .arg(bodySha256)
+                                 .arg(certPath);
 
         reply->deleteLater();
     }
@@ -829,7 +835,7 @@ void TestIntegration::testSslConfiguration()
 // ============================================================================
 void TestIntegration::testProgressTracking()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/102400"));  // 100KB
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/102400")); // 100KB
 
     auto *reply = m_manager->sendGet(request);
 
@@ -843,8 +849,8 @@ void TestIntegration::testProgressTracking()
 
     if (progressSpy.count() > 0) {
         auto lastProgress = progressSpy.last();
-        qint64 received = lastProgress.at(0).toLongLong();
-        qint64 total = lastProgress.at(1).toLongLong();
+        qint64 received   = lastProgress.at(0).toLongLong();
+        qint64 total      = lastProgress.at(1).toLongLong();
         qDebug() << "Progress tracking successful: received=" << received << "total=" << total;
         QVERIFY(received > 0);
     }
@@ -859,7 +865,7 @@ void TestIntegration::testProgressTracking()
 void TestIntegration::testConcurrentRequests()
 {
     // 同时发起 5 个请求
-    QList<QCNetworkReply*> replies;
+    QList<QCNetworkReply *> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest request(QUrl(QString(m_httpbinBaseUrl + "/get?id=%1").arg(i)));
         auto *reply = m_manager->sendGet(request);
@@ -868,7 +874,7 @@ void TestIntegration::testConcurrentRequests()
 
     // 等待所有请求完成
     QEventLoop loop;
-    int finishedCount = 0;
+    int finishedCount     = 0;
     auto checkAllFinished = [&]() {
         finishedCount++;
         if (finishedCount == 5) {
@@ -880,7 +886,7 @@ void TestIntegration::testConcurrentRequests()
         connect(reply, &QCNetworkReply::finished, checkAllFinished);
     }
 
-    QTimer::singleShot(30000, &loop, &QEventLoop::quit);  // 30 秒超时
+    QTimer::singleShot(30000, &loop, &QEventLoop::quit); // 30 秒超时
     loop.exec();
 
     QCOMPARE(finishedCount, 5);
@@ -970,7 +976,8 @@ void TestIntegration::testHttpErrorCodes()
     QVERIFY(reply404->error() == fromHttpCode(404) || isCurlError(reply404->error()));
 
     qInfo().noquote()
-        << QStringLiteral("QCURL_EVIDENCE integration_http_error status=404 http_status=%1 error=%2 msg=%3")
+        << QStringLiteral(
+               "QCURL_EVIDENCE integration_http_error status=404 http_status=%1 error=%2 msg=%3")
                .arg(reply404->httpStatusCode())
                .arg(static_cast<int>(reply404->error()))
                .arg(reply404->errorString());
@@ -987,7 +994,8 @@ void TestIntegration::testHttpErrorCodes()
     QVERIFY(reply500->error() == fromHttpCode(500) || isCurlError(reply500->error()));
 
     qInfo().noquote()
-        << QStringLiteral("QCURL_EVIDENCE integration_http_error status=500 http_status=%1 error=%2 msg=%3")
+        << QStringLiteral(
+               "QCURL_EVIDENCE integration_http_error status=500 http_status=%1 error=%2 msg=%3")
                .arg(reply500->httpStatusCode())
                .arg(static_cast<int>(reply500->error()))
                .arg(reply500->errorString());
@@ -1005,7 +1013,7 @@ void TestIntegration::testRetryWithConcurrentRequests()
     qDebug() << "========== testRetryWithConcurrentRequests ==========";
 
     // 创建 3 个并发请求，都会触发重试
-    QList<QCNetworkReply*> replies;
+    QList<QCNetworkReply *> replies;
     QVector<int> retryCounts(3, 0);
 
     for (int i = 0; i < 3; ++i) {
@@ -1014,11 +1022,11 @@ void TestIntegration::testRetryWithConcurrentRequests()
         // 避免在 httpbin 偶发卡顿时导致测试长时间悬挂（每次 attempt 的上限）
         QCNetworkTimeoutConfig timeout;
         timeout.connectTimeout = std::chrono::milliseconds(1000);
-        timeout.totalTimeout = std::chrono::milliseconds(3000);
+        timeout.totalTimeout   = std::chrono::milliseconds(3000);
         request.setTimeoutConfig(timeout);
 
         QCNetworkRetryPolicy policy;
-        policy.maxRetries = 2;
+        policy.maxRetries   = 2;
         policy.initialDelay = std::chrono::milliseconds(100);
         request.setRetryPolicy(policy);
 
@@ -1040,7 +1048,7 @@ void TestIntegration::testRetryWithConcurrentRequests()
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
         connect(reply, &QCNetworkReply::finished, &loop, [&, i]() {
-            finished[i] = true;
+            finished[i]  = true;
             bool allDone = true;
             for (bool f : finished) {
                 if (!f) {
@@ -1070,7 +1078,8 @@ void TestIntegration::testRetryWithConcurrentRequests()
             if (!reply) {
                 continue;
             }
-            qWarning().noquote() << QStringLiteral("concurrent retry timeout: idx=%1 finished=%2 state=%3 err=%4 errStr=%5 retryCount=%6")
+            qWarning().noquote() << QStringLiteral("concurrent retry timeout: idx=%1 finished=%2 "
+                                                   "state=%3 err=%4 errStr=%5 retryCount=%6")
                                         .arg(i)
                                         .arg(reply->isFinished() ? 1 : 0)
                                         .arg(static_cast<int>(reply->state()))
@@ -1085,7 +1094,8 @@ void TestIntegration::testRetryWithConcurrentRequests()
             }
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        QFAIL("Concurrent retries did not finish within 20s (unexpected hang or retry scheduler issue)");
+        QFAIL("Concurrent retries did not finish within 20s (unexpected hang or retry scheduler "
+              "issue)");
     }
 
     // 验证每个请求都重试了 2 次
@@ -1110,14 +1120,14 @@ void TestIntegration::testRetryOnTimeout()
     qDebug() << "========== testRetryOnTimeout ==========";
 
     // 配置短超时 + 重试策略
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/3"));  // httpbin 延迟 3 秒响应
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/3")); // httpbin 延迟 3 秒响应
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::milliseconds(500);  // 500ms 超时
+    timeout.totalTimeout = std::chrono::milliseconds(500); // 500ms 超时
     request.setTimeoutConfig(timeout);
 
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 2;
+    policy.maxRetries   = 2;
     policy.initialDelay = std::chrono::milliseconds(100);
     // ConnectionTimeout 已在默认 retryableErrors 中，无需手动添加
     request.setRetryPolicy(policy);
@@ -1141,7 +1151,7 @@ void TestIntegration::testRetryOnTimeout()
     qDebug() << "Total time elapsed:" << elapsed << "ms";
     qDebug() << "Final error:" << static_cast<int>(reply->error()) << reply->errorString();
 
-    QVERIFY(retrySpy.count() >= 1);  // 至少重试了 1 次
+    QVERIFY(retrySpy.count() >= 1); // 至少重试了 1 次
     // 注意：超时可能返回 ConnectionTimeout (28) 或其他超时相关错误
     QVERIFY(reply->error() != NetworkError::NoError);
 
@@ -1156,8 +1166,8 @@ void TestIntegration::testRetryDelayAccuracy()
     // 配置精确的重试延迟
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 3;
-    policy.initialDelay = std::chrono::milliseconds(200);
+    policy.maxRetries        = 3;
+    policy.initialDelay      = std::chrono::milliseconds(200);
     policy.backoffMultiplier = 1.5;
     request.setRetryPolicy(policy);
 
@@ -1171,7 +1181,8 @@ void TestIntegration::testRetryDelayAccuracy()
         qWarning() << "Retry delay accuracy test timed out; failing for forensic evidence.";
         reply->cancel();
         reply->deleteLater();
-        QFAIL("Retry delay accuracy did not finish within 10s (httpbin availability / scheduler timing)");
+        QFAIL("Retry delay accuracy did not finish within 10s (httpbin availability / scheduler "
+              "timing)");
     }
 
     qint64 elapsed = timer.elapsed();

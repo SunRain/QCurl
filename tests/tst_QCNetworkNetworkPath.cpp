@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest/QtTest>
-
-#include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
+
+#include <QtTest/QtTest>
 
 #include <curl/curlver.h>
 
@@ -208,7 +208,8 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            QByteArray());
         QVERIFY(replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
-        QVERIFY(replyPrivate.capabilityWarnings.join(QStringLiteral("\n")).contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+        QVERIFY(replyPrivate.capabilityWarnings.join(QStringLiteral("\n"))
+                    .contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
     }
 
     {

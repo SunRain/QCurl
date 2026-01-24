@@ -1,10 +1,9 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -13,28 +12,30 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     std::string proto = "h2";
     std::string url;
     std::string outFile = "download_0.data";
     std::string eventsOutFile;
-    long long limitBytes = 0;
+    long long limitBytes  = 0;
     long long resumeBytes = 0;
 };
 
-struct Event {
-    int seq = 0;
+struct Event
+{
+    int seq       = 0;
     long long tUs = 0;
     std::string type;
     long long bufferedBytes = 0;
-    long long writtenTotal = 0;
+    long long writtenTotal  = 0;
 };
 
 using Clock = std::chrono::steady_clock;
 
 long long elapsedUs(const Clock::time_point &started)
 {
-    const auto now = Clock::now();
+    const auto now   = Clock::now();
     const auto delta = std::chrono::duration_cast<std::chrono::microseconds>(now - started);
     return delta.count();
 }
@@ -45,29 +46,29 @@ std::string jsonEscape(const std::string &s)
     out.reserve(s.size() + 8);
     for (const unsigned char c : s) {
         switch (c) {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (c < 0x20) {
-                char buf[7] = {0};
-                std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
-                out += buf;
-            } else {
-                out.push_back(static_cast<char>(c));
-            }
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20) {
+                    char buf[7] = {0};
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+                    out += buf;
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
         }
     }
     return out;
@@ -147,22 +148,22 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr
-        << "Usage: qcurl_lc_backpressure_baseline [-V <http/1.1|h2|h3>] [--out <file>] "
-        << "--events-out <file> --limit-bytes <bytes> --resume-bytes <bytes> <url>\n";
+    std::cerr << "Usage: qcurl_lc_backpressure_baseline [-V <http/1.1|h2|h3>] [--out <file>] "
+              << "--events-out <file> --limit-bytes <bytes> --resume-bytes <bytes> <url>\n";
     return 2;
 }
 
-struct BackpressureContext {
+struct BackpressureContext
+{
     std::ofstream out;
     std::vector<unsigned char> buffer;
-    long long limitBytes = 0;
+    long long limitBytes  = 0;
     long long resumeBytes = 0;
 
-    bool paused = false;
-    bool bpOnRecorded = false;
+    bool paused        = false;
+    bool bpOnRecorded  = false;
     bool bpOffRecorded = false;
-    bool directWrite = false;
+    bool directWrite   = false;
 
     long long peakBufferedBytes = 0;
     long long bytesWrittenTotal = 0;
@@ -175,11 +176,11 @@ struct BackpressureContext {
     void record(const std::string &type)
     {
         Event e;
-        e.seq = nextSeq++;
-        e.tUs = elapsedUs(started);
-        e.type = type;
+        e.seq           = nextSeq++;
+        e.tUs           = elapsedUs(started);
+        e.type          = type;
         e.bufferedBytes = static_cast<long long>(buffer.size());
-        e.writtenTotal = bytesWrittenTotal;
+        e.writtenTotal  = bytesWrittenTotal;
         events.push_back(e);
 
         if (type == "bp_on") {
@@ -227,7 +228,8 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     ctx->buffer.insert(ctx->buffer.end(),
                        reinterpret_cast<const unsigned char *>(ptr),
                        reinterpret_cast<const unsigned char *>(ptr) + total);
-    ctx->peakBufferedBytes = std::max(ctx->peakBufferedBytes, static_cast<long long>(ctx->buffer.size()));
+    ctx->peakBufferedBytes = std::max(ctx->peakBufferedBytes,
+                                      static_cast<long long>(ctx->buffer.size()));
     return total;
 }
 
@@ -271,8 +273,7 @@ bool writeEventsJson(const std::string &path,
     fp << "\"peak_buffered_bytes\":" << ctx.peakBufferedBytes << ",";
     fp << "\"result\":{"
        << "\"curlcode\":" << static_cast<int>(curlcode) << ","
-       << "\"http_code\":" << httpCode
-       << "},";
+       << "\"http_code\":" << httpCode << "},";
 
     fp << "\"event_seq\":[";
     for (std::size_t i = 0; i < ctx.eventSeq.size(); ++i) {
@@ -294,15 +295,14 @@ bool writeEventsJson(const std::string &path,
            << "\"t_us\":" << e.tUs << ","
            << "\"type\":\"" << jsonEscape(e.type) << "\","
            << "\"buffered_bytes\":" << e.bufferedBytes << ","
-           << "\"written_total\":" << e.writtenTotal
-           << "}";
+           << "\"written_total\":" << e.writtenTotal << "}";
     }
     fp << "]}\n";
     fp.flush();
     return fp.good();
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -334,9 +334,9 @@ int main(int argc, char **argv)
     }
 
     BackpressureContext ctx;
-    ctx.limitBytes = args.limitBytes;
+    ctx.limitBytes  = args.limitBytes;
     ctx.resumeBytes = args.resumeBytes;
-    ctx.started = Clock::now();
+    ctx.started     = Clock::now();
     ctx.record("start");
 
     ctx.out.open(args.outFile, std::ios::binary | std::ios::trunc);
@@ -373,10 +373,10 @@ int main(int argc, char **argv)
         return 6;
     }
 
-    int running = 0;
-    CURLcode rc = CURLE_OK;
-    long httpCode = 0;
-    bool done = false;
+    int running         = 0;
+    CURLcode rc         = CURLE_OK;
+    long httpCode       = 0;
+    bool done           = false;
     const auto deadline = ctx.started + std::chrono::seconds(60);
 
     curl_multi_perform(multi, &running);
@@ -399,14 +399,14 @@ int main(int argc, char **argv)
                 // 注意：curl_easy_pause(CURLPAUSE_CONT) 可能触发回调重入。
                 // 为避免“恢复期间收到的数据落在 buffer 中但后续不再 drain”导致下载文件缺块，
                 // 这里在恢复前切换到 directWrite，使重入回调直接写盘。
-                ctx.directWrite = true;
+                ctx.directWrite    = true;
                 const CURLcode rrc = curl_easy_pause(easy, CURLPAUSE_CONT);
                 if (rrc != CURLE_OK) {
                     rc = rrc;
                     break;
                 }
                 ctx.bpOffRecorded = true;
-                ctx.paused = false;
+                ctx.paused        = false;
                 ctx.record("bp_off");
             }
         }
@@ -416,7 +416,7 @@ int main(int argc, char **argv)
             if (msg->msg != CURLMSG_DONE) {
                 continue;
             }
-            rc = msg->data.result;
+            rc   = msg->data.result;
             done = true;
             break;
         }

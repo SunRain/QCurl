@@ -1,11 +1,10 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -14,20 +13,21 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     std::string proto = "http/1.1";
     std::string url;
     std::string outFile = "download_0.data";
     std::string eventsOutFile;
     long long payloadSize = 0;
-    long delayMs = 200;
+    long delayMs          = 200;
 };
 
 using Clock = std::chrono::steady_clock;
 
 long long elapsedMs(const Clock::time_point &started)
 {
-    const auto now = Clock::now();
+    const auto now   = Clock::now();
     const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - started);
     return delta.count();
 }
@@ -38,29 +38,29 @@ std::string jsonEscape(const std::string &s)
     out.reserve(s.size() + 8);
     for (const unsigned char c : s) {
         switch (c) {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (c < 0x20) {
-                char buf[7] = {0};
-                std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
-                out += buf;
-            } else {
-                out.push_back(static_cast<char>(c));
-            }
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20) {
+                    char buf[7] = {0};
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned>(c));
+                    out += buf;
+                } else {
+                    out.push_back(static_cast<char>(c));
+                }
         }
     }
     return out;
@@ -133,21 +133,21 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr
-        << "Usage: qcurl_lc_upload_pause_resume_baseline [-V <http/1.1|h2>] [--out <file>] "
-        << "--events-out <file> --payload-size <bytes> [--delay-ms <ms>] <url>\n";
+    std::cerr << "Usage: qcurl_lc_upload_pause_resume_baseline [-V <http/1.1|h2>] [--out <file>] "
+              << "--events-out <file> --payload-size <bytes> [--delay-ms <ms>] <url>\n";
     return 2;
 }
 
-struct UploadContext {
+struct UploadContext
+{
     std::vector<unsigned char> buffer;
     std::vector<unsigned char> payload;
     std::size_t payloadOffset = 0;
-    bool finished = false;
+    bool finished             = false;
 
-    bool paused = false;
-    bool pauseSeen = false;
-    bool resumeSeen = false;
+    bool paused             = false;
+    bool pauseSeen          = false;
+    bool resumeSeen         = false;
     long long zeroReadCount = 0;
     Clock::time_point started;
     bool chunk2Injected = false;
@@ -159,7 +159,8 @@ struct UploadContext {
             return;
         }
         const std::size_t n = std::min(size, payload.size() - payloadOffset);
-        buffer.insert(buffer.end(), payload.begin() + static_cast<long long>(payloadOffset),
+        buffer.insert(buffer.end(),
+                      payload.begin() + static_cast<long long>(payloadOffset),
                       payload.begin() + static_cast<long long>(payloadOffset + n));
         payloadOffset += n;
         if (payloadOffset >= payload.size()) {
@@ -246,14 +247,13 @@ bool writeEventsJson(const std::string &path,
     fp << "],";
     fp << "\"result\":{"
        << "\"curlcode\":" << static_cast<int>(curlcode) << ","
-       << "\"http_code\":" << httpCode
-       << "}";
+       << "\"http_code\":" << httpCode << "}";
     fp << "}\n";
     fp.flush();
     return fp.good();
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -328,10 +328,10 @@ int main(int argc, char **argv)
         return 6;
     }
 
-    int running = 0;
-    CURLcode rc = CURLE_OK;
+    int running   = 0;
+    CURLcode rc   = CURLE_OK;
     long httpCode = 0;
-    bool done = false;
+    bool done     = false;
 
     curl_multi_perform(multi, &running);
     while (!done) {
@@ -366,7 +366,7 @@ int main(int argc, char **argv)
             if (msg->msg != CURLMSG_DONE) {
                 continue;
             }
-            rc = msg->data.result;
+            rc   = msg->data.result;
             done = true;
             break;
         }
@@ -395,7 +395,8 @@ int main(int argc, char **argv)
     }
 
     if (ctx.zeroReadCount <= 0 || !ctx.pauseSeen || !ctx.resumeSeen) {
-        std::cerr << "upload pause/resume contract not observed (zero_read_count=" << ctx.zeroReadCount << ")\n";
+        std::cerr << "upload pause/resume contract not observed (zero_read_count="
+                  << ctx.zeroReadCount << ")\n";
         return 8;
     }
 

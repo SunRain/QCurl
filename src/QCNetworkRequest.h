@@ -379,8 +379,9 @@ public:
      * @brief 获取异步下载响应体缓冲上限（bytes）
      * @deprecated 请使用 setBackpressureLimitBytes/backpressureLimitBytes。
      */
-    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
-    [[nodiscard]] qint64 asyncBodyBufferLimitBytes() const noexcept;
+    [[deprecated(
+        "已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]] [[nodiscard]] qint64
+    asyncBodyBufferLimitBytes() const noexcept;
 
     /**
      * @brief 设置异步下载响应体缓冲低水位线（bytes）
@@ -393,8 +394,9 @@ public:
      * @brief 获取异步下载响应体缓冲低水位线（bytes）
      * @deprecated 请使用 setBackpressureResumeBytes/backpressureResumeBytes。
      */
-    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
-    [[nodiscard]] qint64 asyncBodyBufferResumeBytes() const noexcept;
+    [[deprecated(
+        "已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]] [[nodiscard]] qint64
+    asyncBodyBufferResumeBytes() const noexcept;
 
     // ========== 流式上传（M2） ==========
 
@@ -557,7 +559,7 @@ public:
 
     // ========== 请求优先级 ==========
 
-	    /**
+    /**
 	     * @brief 设置请求优先级
 	     *
 	     * 用于请求调度器（QCNetworkRequestScheduler）按优先级排序和执行请求。

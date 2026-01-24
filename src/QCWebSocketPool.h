@@ -5,8 +5,8 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
-#include "QCWebSocket.h"
 #include "QCNetworkSslConfig.h"
+#include "QCWebSocket.h"
 
 #include <QDateTime>
 #include <QHash>

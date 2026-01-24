@@ -1,10 +1,9 @@
 #include "cli_parse.h"
 
-#include <curl/curl.h>
-#include <curl/websockets.h>
-
 #include <chrono>
 #include <cstdint>
+#include <curl/curl.h>
+#include <curl/websockets.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -22,7 +21,8 @@ enum class WsEventType {
     Close,
 };
 
-struct WsEvent {
+struct WsEvent
+{
     WsEventType type;
     std::vector<std::uint8_t> payload;
 };
@@ -30,16 +30,16 @@ struct WsEvent {
 std::string toEventName(WsEventType type)
 {
     switch (type) {
-    case WsEventType::Text:
-        return "TEXT";
-    case WsEventType::Binary:
-        return "BINARY";
-    case WsEventType::Ping:
-        return "PING";
-    case WsEventType::Pong:
-        return "PONG";
-    case WsEventType::Close:
-        return "CLOSE";
+        case WsEventType::Text:
+            return "TEXT";
+        case WsEventType::Binary:
+            return "BINARY";
+        case WsEventType::Ping:
+            return "PING";
+        case WsEventType::Pong:
+            return "PONG";
+        case WsEventType::Close:
+            return "CLOSE";
     }
     return "UNKNOWN";
 }
@@ -69,7 +69,8 @@ bool writeEventsFile(const std::string &path, const std::vector<WsEvent> &events
     return fp.good();
 }
 
-struct BufferedMessage {
+struct BufferedMessage
+{
     unsigned int flags = 0;
     std::vector<std::uint8_t> data;
 };
@@ -107,7 +108,9 @@ bool payloadEquals(const std::vector<std::uint8_t> &payload, const std::string &
     return true;
 }
 
-bool closePayloadEquals(const std::vector<std::uint8_t> &payload, std::uint16_t code, const std::string &reason)
+bool closePayloadEquals(const std::vector<std::uint8_t> &payload,
+                        std::uint16_t code,
+                        const std::string &reason)
 {
     if (payload.size() != 2 + reason.size()) {
         return false;
@@ -124,7 +127,10 @@ bool closePayloadEquals(const std::vector<std::uint8_t> &payload, std::uint16_t 
     return true;
 }
 
-int runScenario(const std::string &scenario, const std::string &url, const std::string &outFile, std::chrono::milliseconds timeout)
+int runScenario(const std::string &scenario,
+                const std::string &url,
+                const std::string &outFile,
+                std::chrono::milliseconds timeout)
 {
     CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
     if (res != CURLE_OK) {
@@ -173,9 +179,9 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
         }
 
         std::uint8_t buf[4096];
-        std::size_t nread = 0;
+        std::size_t nread                = 0;
         const struct curl_ws_frame *meta = nullptr;
-        res = curl_ws_recv(curl, buf, sizeof(buf), &nread, &meta);
+        res                              = curl_ws_recv(curl, buf, sizeof(buf), &nread, &meta);
         if (res == CURLE_AGAIN) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -196,7 +202,7 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
 
         if (type == WsEventType::Ping) {
             std::size_t sent = 0;
-            CURLcode sres = curl_ws_send(curl, buf, nread, &sent, 0, CURLWS_PONG);
+            CURLcode sres    = curl_ws_send(curl, buf, nread, &sent, 0, CURLWS_PONG);
             if (sres != CURLE_OK) {
                 std::cerr << "curl_ws_send(PONG) failed: " << curl_easy_strerror(sres) << "\n";
                 res = sres;
@@ -273,7 +279,8 @@ int runScenario(const std::string &scenario, const std::string &url, const std::
         if (events[3].type != WsEventType::Pong || !payloadEquals(events[3].payload, "pong")) {
             return 7;
         }
-        if (events[4].type != WsEventType::Close || !closePayloadEquals(events[4].payload, 1000, "close")) {
+        if (events[4].type != WsEventType::Close
+            || !closePayloadEquals(events[4].payload, 1000, "close")) {
             return 7;
         }
         return 0;
@@ -292,8 +299,8 @@ int main(int argc, char **argv)
     }
 
     const std::string scenario = argv[1];
-    const std::string url = argv[2];
-    const std::string outFile = argv[3];
+    const std::string url      = argv[2];
+    const std::string outFile  = argv[3];
     std::chrono::milliseconds timeout{20000};
     if (argc >= 5) {
         const auto timeoutMs = qcurl::lc::parseInt<long long>(argv[4]);

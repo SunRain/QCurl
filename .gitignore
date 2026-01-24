@@ -149,4 +149,5 @@ tmp/*
 # Third-party / nested repository
 legendary-python/
 helloagents/
+helloagents_backup_*/
 Testing/

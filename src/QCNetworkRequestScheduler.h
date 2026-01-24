@@ -138,7 +138,7 @@ public:
      */
     Config config() const;
 
-	    /**
+    /**
 	     * @brief 调度一个网络请求
 	     *
 	     * 根据优先级将请求加入队列（调度器为**非抢占式**：已 Running 的请求不会被更高优先级请求中断）。
@@ -208,7 +208,7 @@ public:
      */
     void cancelAllRequests();
 
-	    /**
+    /**
 	     * @brief 动态调整请求优先级
 	     *
 	     * @param reply 要调整优先级的响应对象
@@ -216,7 +216,7 @@ public:
 	     *
 	     * @note 只能调整 pending 中的请求；不会抢占/影响已 Running 的请求，也不会触发对 Running 的隐式 cancel/pause。
 	     */
-	    void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
+    void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
 
     /**
      * @brief 获取统计信息
