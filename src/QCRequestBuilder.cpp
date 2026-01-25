@@ -1,5 +1,6 @@
 #include "QCRequestBuilder.h"
 
+#include "QCNetworkAccessManager.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequestPriority.h"
@@ -200,6 +201,43 @@ QCNetworkRequest QCRequestBuilder::build() const
     }
 
     return request;
+}
+
+QCNetworkAccessManager *QCRequestBuilder::defaultManager()
+{
+    static QCNetworkAccessManager s_manager;
+    return &s_manager;
+}
+
+QCNetworkReply *QCRequestBuilder::send(QCNetworkAccessManager *manager) const
+{
+    if (!manager) {
+        manager = defaultManager();
+    }
+
+    const QCNetworkRequest request = build();
+    if (request.url().isEmpty()) {
+        qWarning() << "[QCRequestBuilder] Cannot send request: URL is empty";
+        return nullptr;
+    }
+
+    switch (m_method) {
+    case GET:
+        return manager->sendGet(request);
+    case POST:
+        return manager->sendPost(request, m_body);
+    case PUT:
+        return manager->sendPut(request, m_body);
+    case DELETE:
+        return manager->sendDelete(request, m_body);
+    case PATCH:
+        return manager->sendPatch(request, m_body);
+    case HEAD:
+        return manager->sendHead(request);
+    }
+
+    qWarning() << "[QCRequestBuilder] Unsupported HTTP method:" << int(m_method);
+    return nullptr;
 }
 
 void QCRequestBuilder::reset()

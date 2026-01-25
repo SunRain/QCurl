@@ -15,6 +15,9 @@
 
 namespace QCurl {
 
+class QCNetworkAccessManager;
+class QCNetworkReply;
+
 /**
  * @brief 传统构建器模式的 HTTP 请求构建器
  *
@@ -227,6 +230,17 @@ public:
     QCNetworkRequest build() const;
 
     /**
+     * @brief 发送请求（使用构建器中保存的 method/body）
+     *
+     * 说明：
+     * - build() 返回的 QCNetworkRequest 不包含“method/body”信息，因此该方法用于提供一体化发送入口。
+     * - 若 manager 为空则使用内部默认 manager（全局单例）。
+     *
+     * @return QCNetworkReply*（调用者负责 deleteLater）；URL 为空时返回 nullptr
+     */
+    QCNetworkReply *send(QCNetworkAccessManager *manager = nullptr) const;
+
+    /**
      * @brief 重置构建器到初始状态
      *
      * 清除所有配置,可重新使用构建器
@@ -234,6 +248,8 @@ public:
     void reset();
 
 private:
+    static QCNetworkAccessManager *defaultManager();
+
     QUrl m_url;                           ///< 请求 URL
     Method m_method;                      ///< HTTP 方法
     QMap<QString, QString> m_headers;     ///< HTTP Headers(键值对)
