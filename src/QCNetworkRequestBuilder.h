@@ -99,6 +99,9 @@ public:
     /**
      * @brief 设置是否跟随重定向
      * @param follow 是否跟随
+     *
+     * 默认值：true（与 QCNetworkRequest::followLocation 的默认值保持一致）。
+     * 如需禁止自动重定向，请显式调用 withFollowLocation(false)。
      */
     QCNetworkRequestBuilder &withFollowLocation(bool follow);
 

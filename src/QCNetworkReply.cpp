@@ -2803,8 +2803,9 @@ void QCNetworkReply::execute()
         // 请求捕获：用于离线断言 middleware/header 注入、body 形态等
         if (mock->captureEnabled()) {
             QCNetworkMockHandler::CapturedRequest captured;
-            captured.url    = d->request.url();
-            captured.method = d->httpMethod;
+            captured.url            = d->request.url();
+            captured.method         = d->httpMethod;
+            captured.followLocation = d->request.followLocation();
 
             const auto headerNames = d->request.rawHeaderList();
             for (const auto &name : headerNames) {

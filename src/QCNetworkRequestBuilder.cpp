@@ -26,7 +26,7 @@ public:
     std::optional<QString> uploadFilePath;
     std::optional<qint64> uploadSizeBytes;
     int timeout         = -1;
-    bool followLocation = false;
+    bool followLocation = true;
     QUrl proxy;
     bool sslVerify = true;
     QString caCert;

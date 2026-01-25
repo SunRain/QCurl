@@ -198,6 +198,12 @@ QUrl QCNetworkRequest::url() const
     return d.data()->reqUrl;
 }
 
+QCNetworkRequest &QCNetworkRequest::setUrl(const QUrl &url)
+{
+    d.data()->reqUrl = url;
+    return *this;
+}
+
 QCNetworkRequest &QCNetworkRequest::setFollowLocation(bool followLocation)
 {
     d.data()->followLocation = followLocation;

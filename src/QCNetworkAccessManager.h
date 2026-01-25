@@ -279,6 +279,10 @@ public:
      * @brief 创建流式请求构建器
      * @param url 请求 URL
      * @return 请求构建器对象（值语义，可链式调用）
+     *
+     * 说明：
+     * - followLocation 默认 true（与 QCNetworkRequest 一致）；如需禁止重定向，请显式
+     *   调用 builder.withFollowLocation(false)。
      */
     QCNetworkRequestBuilder newRequest(const QUrl &url);
 

@@ -115,6 +115,15 @@ public:
     QUrl url() const;
 
     /**
+     * @brief 设置请求 URL
+     * @param url 请求 URL
+     * @return 返回 *this 以支持方法链
+     *
+     * @note 用于在保留其他请求配置（headers/timeout/proxy 等）的前提下更新 URL。
+     */
+    QCNetworkRequest &setUrl(const QUrl &url);
+
+    /**
      * @brief 设置是否跟随 HTTP 重定向
      * @param followLocation true 为跟随重定向（默认），false 为不跟随
      * @return 返回 *this 以支持方法链

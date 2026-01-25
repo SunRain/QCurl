@@ -64,6 +64,7 @@ public:
         QList<QPair<QByteArray, QByteArray>> headers;
         QByteArray bodyPreview;
         qsizetype bodySize = 0;
+        bool followLocation = true;
     };
 
     /**

@@ -111,10 +111,7 @@ QCRequest &QCRequest::withQueryParam(const QString &key, const QString &value)
     QUrlQuery query(url);
     query.addQueryItem(key, value);
     url.setQuery(query);
-
-    // 需要创建新的 request 对象以更新 URL
-    m_request = QCNetworkRequest(url);
-
+    m_request.setUrl(url);
     return *this;
 }
 
