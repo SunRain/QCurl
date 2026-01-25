@@ -282,8 +282,6 @@ QCWebSocket::~QCWebSocket()
     if (d->state == State::Connected || d->state == State::Connecting) {
         abort();
     }
-
-    delete d_ptr;
 }
 
 void QCWebSocket::open()

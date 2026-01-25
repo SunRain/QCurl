@@ -7,6 +7,7 @@
 
 #include <QByteArray>
 #include <QObject>
+#include <QScopedPointer>
 #include <QString>
 #include <QUrl>
 
@@ -583,7 +584,7 @@ Q_SIGNALS:
 
 private:
     Q_DECLARE_PRIVATE(QCWebSocket)
-    QCWebSocketPrivate *d_ptr;
+    QScopedPointer<QCWebSocketPrivate> d_ptr;
 
     Q_DISABLE_COPY(QCWebSocket)
 };

@@ -560,16 +560,16 @@ public:
     // ========== 请求优先级 ==========
 
     /**
-	     * @brief 设置请求优先级
-	     *
-	     * 用于请求调度器（QCNetworkRequestScheduler）按优先级排序和执行请求。
-	     *
-	     * @note 当前调度契约为非抢占（non-preemptive）：优先级只影响 pending 队列出队顺序；
-	     * 已 Running 的请求不会因更高优先级到来而被中断。详见 `QCNetworkRequestScheduler` 注释。
-	     *
-	     * @param priority 请求优先级（VeryLow/Low/Normal/High/VeryHigh/Critical）
-	     * @return 返回 *this 以支持方法链
-	     *
+     * @brief 设置请求优先级
+     *
+     * 用于请求调度器（QCNetworkRequestScheduler）按优先级排序和执行请求。
+     *
+     * @note 当前调度契约为非抢占（non-preemptive）：优先级只影响 pending 队列出队顺序；
+     * 已 Running 的请求不会因更高优先级到来而被中断。详见 `QCNetworkRequestScheduler` 注释。
+     *
+     * @param priority 请求优先级（VeryLow/Low/Normal/High/VeryHigh/Critical）
+     * @return 返回 *this 以支持方法链
+     *
      * @code
      * QCNetworkRequest request(url);
      * request.setPriority(QCNetworkRequestPriority::High);

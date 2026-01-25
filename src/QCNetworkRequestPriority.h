@@ -58,12 +58,12 @@ enum class QCNetworkRequestPriority {
     VeryHigh = 4,
 
     /**
-	     * @brief 紧急优先级
-	     *
-	     * 最高优先级，绕过 pending 队列立即启动（不会抢占已 Running 的请求）。
-	     * 当前实现允许 Critical 突破并发/每主机限制：用于极少数“必须立即发出”的控制类请求。
-	     * 用于紧急通知、实时数据更新、安全相关请求等。
-	     */
+     * @brief 紧急优先级
+     *
+     * 最高优先级，绕过 pending 队列立即启动（不会抢占已 Running 的请求）。
+     * 当前实现允许 Critical 突破并发/每主机限制：用于极少数“必须立即发出”的控制类请求。
+     * 用于紧急通知、实时数据更新、安全相关请求等。
+     */
     Critical = 5
 };
 

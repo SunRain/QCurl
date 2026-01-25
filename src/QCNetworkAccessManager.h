@@ -7,6 +7,7 @@
 #include <QMap>
 #include <QNetworkCookie>
 #include <QObject>
+#include <QScopedPointer>
 #include <QSet>
 
 #include <curl/curl.h>
@@ -360,19 +361,19 @@ public:
     QCNetworkRequestScheduler *scheduler() const;
 
     /**
-	     * @brief 使用调度器发送 GET 请求
-	     *
-	     * 请求会根据优先级（request.priority()）加入队列。
-	     *
-	     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-	     * - 调度器会绕过 pending 队列并立即启动；
-	     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-	     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-	     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-	     *
-	     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-	     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
-	     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
+     * @brief 使用调度器发送 GET 请求
+     *
+     * 请求会根据优先级（request.priority()）加入队列。
+     *
+     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
+     * - 调度器会绕过 pending 队列并立即启动；
+     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
+     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
+     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
+     *
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
+     * request，或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
@@ -382,17 +383,17 @@ public:
     QCNetworkReply *scheduleGet(const QCNetworkRequest &request);
 
     /**
-	     * @brief 使用调度器发送 POST 请求
-	     *
-	     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-	     * - 调度器会绕过 pending 队列并立即启动；
-	     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-	     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-	     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-	     *
-	     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-	     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
-	     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
+     * @brief 使用调度器发送 POST 请求
+     *
+     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
+     * - 调度器会绕过 pending 队列并立即启动；
+     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
+     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
+     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
+     *
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
+     * request，或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @param data 请求体数据
@@ -401,17 +402,17 @@ public:
     QCNetworkReply *schedulePost(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
-	     * @brief 使用调度器发送 PUT 请求
-	     *
-	     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-	     * - 调度器会绕过 pending 队列并立即启动；
-	     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-	     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-	     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-	     *
-	     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-	     * 并入队”时执行， 队列等待期间不会再次触发；若业务要求等待期间注入最新
-	     * token，需要在上层出队/传输前刷新并重建 request， 或调整调度器在开始传输前重新执行 pre-send。
+     * @brief 使用调度器发送 PUT 请求
+     *
+     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
+     * - 调度器会绕过 pending 队列并立即启动；
+     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
+     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
+     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
+     *
+     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
+     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
+     * request，或调整调度器在开始传输前重新执行 pre-send。
      *
      * @param request 请求配置（包含优先级）
      * @param data 请求体数据
@@ -688,8 +689,8 @@ signals:
 public slots:
 
 private:
-    QCNetworkAccessManagerPrivate *const d_ptr;
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
+    QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;
     CookieFileModeFlag m_cookieModeFlag;
     QString m_cookieFilePath;
     bool m_schedulerEnabled;

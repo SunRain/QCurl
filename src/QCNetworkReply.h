@@ -9,6 +9,7 @@
 #include <QList>
 #include <QObject>
 #include <QPair>
+#include <QScopedPointer>
 #include <QStringList>
 #include <QUrl>
 
@@ -333,8 +334,8 @@ private:
     // 私有实现（Pimpl 模式）
     // ==================
 
-    QCNetworkReplyPrivate *d_ptr;
     Q_DECLARE_PRIVATE(QCNetworkReply)
+    QScopedPointer<QCNetworkReplyPrivate> d_ptr;
 
     // ==================
     // 缓存集成私有方法

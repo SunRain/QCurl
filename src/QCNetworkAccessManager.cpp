@@ -149,10 +149,7 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     CurlGlobalConstructor::instance();
 }
 
-QCNetworkAccessManager::~QCNetworkAccessManager()
-{
-    delete d_ptr;
-}
+QCNetworkAccessManager::~QCNetworkAccessManager() {}
 
 QString QCNetworkAccessManager::cookieFilePath() const
 {

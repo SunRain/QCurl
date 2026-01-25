@@ -2711,9 +2711,6 @@ QCNetworkReply::~QCNetworkReply()
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         cancel();
     }
-
-    // 删除私有实现
-    delete d;
 }
 
 // ==================

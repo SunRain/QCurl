@@ -139,16 +139,16 @@ public:
     Config config() const;
 
     /**
-	     * @brief 调度一个网络请求
-	     *
-	     * 根据优先级将请求加入队列（调度器为**非抢占式**：已 Running 的请求不会被更高优先级请求中断）。
-	     *
-	     * - 非 Critical：进入 pending 队列，等待并发槽位释放后按优先级出队执行。
-	     * - Critical：绕过 pending 队列并立即启动；不会抢占 Running，但可能突破并发/每主机限制。
-	     *
-	     * @param request 网络请求
-	     * @param method HTTP 方法
-	     * @param priority 请求优先级（默认：Normal）
+     * @brief 调度一个网络请求
+     *
+     * 根据优先级将请求加入队列（调度器为**非抢占式**：已 Running 的请求不会被更高优先级请求中断）。
+     *
+     * - 非 Critical：进入 pending 队列，等待并发槽位释放后按优先级出队执行。
+     * - Critical：绕过 pending 队列并立即启动；不会抢占 Running，但可能突破并发/每主机限制。
+     *
+     * @param request 网络请求
+     * @param method HTTP 方法
+     * @param priority 请求优先级（默认：Normal）
      * @param body 请求体（对于 POST/PUT/PATCH）
      * @return 网络响应对象
      *
@@ -209,13 +209,13 @@ public:
     void cancelAllRequests();
 
     /**
-	     * @brief 动态调整请求优先级
-	     *
-	     * @param reply 要调整优先级的响应对象
-	     * @param newPriority 新的优先级
-	     *
-	     * @note 只能调整 pending 中的请求；不会抢占/影响已 Running 的请求，也不会触发对 Running 的隐式 cancel/pause。
-	     */
+     * @brief 动态调整请求优先级
+     *
+     * @param reply 要调整优先级的响应对象
+     * @param newPriority 新的优先级
+     *
+     * @note 只能调整 pending 中的请求；不会抢占/影响已 Running 的请求，也不会触发对 Running 的隐式 cancel/pause。
+     */
     void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
 
     /**
