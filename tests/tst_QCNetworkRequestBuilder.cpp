@@ -13,6 +13,7 @@
 #include <QtTest>
 
 #include <optional>
+#include <utility>
 
 using namespace QCurl;
 
@@ -98,13 +99,24 @@ static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, Q
  */
 void TestQCNetworkRequestBuilder::testCreateBuilder()
 {
-    // Arrange
-    QUrl url("http://example.com/api");
+    const QUrl url("http://example.com/create-builder");
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
 
-    // Act
     auto builder = m_manager->newRequest(url);
-    Q_UNUSED(builder);
-    QVERIFY(true);
+    auto moved = std::move(builder);
+
+    auto *reply = moved.sendGet();
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+
+    reply->deleteLater();
 }
 
 /**
@@ -219,15 +231,64 @@ void TestQCNetworkRequestBuilder::testWithQueryParams()
 void TestQCNetworkRequestBuilder::testWithFollowLocation()
 {
     // Arrange
-    auto builder = m_manager->newRequest(QUrl("http://example.com"));
+    const QUrl url1("http://example.com/follow-default");
+    const QUrl url2("http://example.com/follow-on");
+    const QUrl url3("http://example.com/follow-off");
+    m_mock.mockResponse(HttpMethod::Get, url1, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, url2, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, url3, QByteArray("OK"));
 
-    // Act
-    builder.withFollowLocation(true);
-    builder.withFollowLocation(false);
+    // Case 1: default（未调用 withFollowLocation）
+    {
+        m_mock.clearCapturedRequests();
+        auto builder = m_manager->newRequest(url1);
+        auto *reply = builder.sendGet();
+        QVERIFY(reply != nullptr);
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
-    // Assert - 验证方法调用成功
+        const auto captured = m_mock.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QCOMPARE(captured.first().url, url1);
+        QVERIFY(captured.first().followLocation);
 
-    Q_UNUSED(builder);
+        reply->deleteLater();
+    }
+
+    // Case 2: followLocation=true
+    {
+        m_mock.clearCapturedRequests();
+        auto builder = m_manager->newRequest(url2);
+        builder.withFollowLocation(true);
+
+        auto *reply = builder.sendGet();
+        QVERIFY(reply != nullptr);
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+        const auto captured = m_mock.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QCOMPARE(captured.first().url, url2);
+        QVERIFY(captured.first().followLocation);
+
+        reply->deleteLater();
+    }
+
+    // Case 3: followLocation=false（显式覆盖）
+    {
+        m_mock.clearCapturedRequests();
+        auto builder = m_manager->newRequest(url3);
+        builder.withFollowLocation(false);
+
+        auto *reply = builder.sendGet();
+        QVERIFY(reply != nullptr);
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+        const auto captured = m_mock.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QCOMPARE(captured.first().url, url3);
+        QVERIFY(!captured.first().followLocation);
+
+        reply->deleteLater();
+    }
 }
 
 /**

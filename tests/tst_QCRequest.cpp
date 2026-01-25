@@ -1,242 +1,197 @@
 /**
  * @file tst_QCRequest.cpp
- * @brief QCRequest 流式 API 单元测试
+ * @brief QCRequest 流式 API 单元测试（离线：MockHandler）
  * @version v2.9.0
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkMockHandler.h"
+#include "QCNetworkReply.h"
 #include "QCRequest.h"
 
+#include <QCoreApplication>
+#include <QEvent>
+#include <QJsonDocument>
 #include <QJsonObject>
-#include <QUrlQuery>
 #include <QtTest/QtTest>
 
+#include <optional>
+
 using namespace QCurl;
+
+static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, QByteArray>> &headers,
+                                                 const QByteArray &nameLower)
+{
+    for (const auto &kv : headers) {
+        if (kv.first.trimmed().toLower() == nameLower) {
+            return kv.second;
+        }
+    }
+    return std::nullopt;
+}
 
 class TestQCRequest : public QObject
 {
     Q_OBJECT
 
 private slots:
-    void initTestCase();
-    void cleanupTestCase();
+    void init();
+    void cleanup();
 
-    // 静态工厂方法测试
-    void testFactoryGet();
-    void testFactoryPost();
-    void testFactoryPut();
-    void testFactoryDelete();
-    void testFactoryPatch();
-    void testFactoryHead();
+    void testGet_preservesHeaderWhenAddingQueryParam();
+    void testPost_withJson_sendsJsonBodyAndContentType();
+    void testPut_withBody_usesDefaultContentType();
+    void testHead_sendsHeadWithoutBody();
 
-    // 流式配置方法测试
-    void testWithHeader();
-    void testWithQueryParam();
-    void testWithTimeoutSeconds();
-    void testWithTimeoutMilliseconds();
-    void testWithJson();
-    void testWithBody();
-    void testWithFollowRedirects();
-
-    // 链式调用测试
-    void testMethodChaining();
-    void testComplexChaining();
-
-    // 发送请求测试（不实际发送）
-    void testSendWithDefaultManager();
-    void testSendWithCustomManager();
+private:
+    QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkMockHandler m_mock;
 };
 
-void TestQCRequest::initTestCase()
+void TestQCRequest::init()
 {
-    qDebug() << "初始化 QCRequest 测试套件 (v2.9.0)";
+    m_manager = new QCNetworkAccessManager(this);
+
+    m_mock.clear();
+    m_mock.clearCapturedRequests();
+    m_mock.setCaptureEnabled(true);
+    m_mock.setGlobalDelay(0);
+    m_manager->setMockHandler(&m_mock);
 }
 
-void TestQCRequest::cleanupTestCase()
+void TestQCRequest::cleanup()
 {
-    qDebug() << "清理 QCRequest 测试套件";
+    if (m_manager) {
+        m_manager->deleteLater();
+        m_manager = nullptr;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
 }
 
-// ========== 静态工厂方法测试 ==========
-
-void TestQCRequest::testFactoryGet()
+void TestQCRequest::testGet_preservesHeaderWhenAddingQueryParam()
 {
-    // 测试 QString 重载
-    auto request1 = QCRequest::get("https://example.com/api");
-    QVERIFY(true); // 成功创建对象
+    const QUrl expectedUrl("http://example.com/api?page=1");
+    m_mock.mockResponse(HttpMethod::Get, expectedUrl, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
 
-    // 测试 QUrl 重载
-    auto request2 = QCRequest::get(QUrl("https://example.com/api"));
-    QVERIFY(true); // 成功创建对象
+    auto request = QCRequest::get("http://example.com/api")
+                       .withHeader("User-Agent", "TestAgent")
+                       .withQueryParam("page", "1");
+
+    auto *reply = request.send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    auto data = reply->readAll();
+    QVERIFY(data.has_value());
+    QCOMPARE(*data, QByteArray("OK"));
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, expectedUrl);
+    QCOMPARE(captured.first().method, HttpMethod::Get);
+
+    const auto userAgent = findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent"));
+    QVERIFY(userAgent.has_value());
+    QCOMPARE(*userAgent, QByteArray("TestAgent"));
+
+    reply->deleteLater();
 }
 
-void TestQCRequest::testFactoryPost()
+void TestQCRequest::testPost_withJson_sendsJsonBodyAndContentType()
 {
-    auto request1 = QCRequest::post("https://example.com/api");
-    QVERIFY(true);
+    const QUrl url("http://example.com/users");
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("CREATED"), 201);
+    m_mock.clearCapturedRequests();
 
-    auto request2 = QCRequest::post(QUrl("https://example.com/api"));
-    QVERIFY(true);
-}
-
-void TestQCRequest::testFactoryPut()
-{
-    auto request1 = QCRequest::put("https://example.com/api");
-    QVERIFY(true);
-
-    auto request2 = QCRequest::put(QUrl("https://example.com/api"));
-    QVERIFY(true);
-}
-
-void TestQCRequest::testFactoryDelete()
-{
-    auto request1 = QCRequest::del("https://example.com/api");
-    QVERIFY(true);
-
-    auto request2 = QCRequest::del(QUrl("https://example.com/api"));
-    QVERIFY(true);
-}
-
-void TestQCRequest::testFactoryPatch()
-{
-    auto request1 = QCRequest::patch("https://example.com/api");
-    QVERIFY(true);
-
-    auto request2 = QCRequest::patch(QUrl("https://example.com/api"));
-    QVERIFY(true);
-}
-
-void TestQCRequest::testFactoryHead()
-{
-    auto request1 = QCRequest::head("https://example.com/api");
-    QVERIFY(true);
-
-    auto request2 = QCRequest::head(QUrl("https://example.com/api"));
-    QVERIFY(true);
-}
-
-// ========== 流式配置方法测试 ==========
-
-void TestQCRequest::testWithHeader()
-{
-    auto request = QCRequest::get("https://example.com/api")
-                       .withHeader("Authorization", "Bearer token123")
-                       .withHeader("User-Agent", "QCurl-Test/2.9.0");
-
-    // 无法直接验证内部 m_request 的 headers,
-    // 但可以验证方法链调用不会崩溃
-    QVERIFY(true);
-}
-
-void TestQCRequest::testWithQueryParam()
-{
-    auto request = QCRequest::get("https://example.com/api")
-                       .withQueryParam("page", "1")
-                       .withQueryParam("limit", "10");
-
-    // 验证方法链调用成功
-    QVERIFY(true);
-}
-
-void TestQCRequest::testWithTimeoutSeconds()
-{
-    auto request = QCRequest::get("https://example.com/api").withTimeout(std::chrono::seconds(30));
-
-    QVERIFY(true);
-}
-
-void TestQCRequest::testWithTimeoutMilliseconds()
-{
-    auto request = QCRequest::get("https://example.com/api")
-                       .withTimeout(std::chrono::milliseconds(5000));
-
-    QVERIFY(true);
-}
-
-void TestQCRequest::testWithJson()
-{
     QJsonObject json;
-    json["name"]  = "Alice";
-    json["age"]   = 30;
-    json["email"] = "alice@example.com";
+    json["name"] = QStringLiteral("Alice");
+    json["age"]  = 30;
+    const QByteArray expectedBody = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
-    auto request = QCRequest::post("https://example.com/users").withJson(json);
+    auto request = QCRequest::post(url)
+                       .withHeader("User-Agent", "QCurl-Test/2.9.0")
+                       .withJson(json);
 
-    QVERIFY(true);
+    auto *reply = request.send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->httpStatusCode(), 201);
+
+    auto data = reply->readAll();
+    QVERIFY(data.has_value());
+    QCOMPARE(*data, QByteArray("CREATED"));
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize, expectedBody.size());
+    QCOMPARE(captured.first().bodyPreview, expectedBody);
+
+    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    QVERIFY(contentType.has_value());
+    QCOMPARE(*contentType, QByteArray("application/json"));
+
+    const auto userAgent = findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent"));
+    QVERIFY(userAgent.has_value());
+    QCOMPARE(*userAgent, QByteArray("QCurl-Test/2.9.0"));
+
+    reply->deleteLater();
 }
 
-void TestQCRequest::testWithBody()
+void TestQCRequest::testPut_withBody_usesDefaultContentType()
 {
-    QByteArray data = "raw binary data";
+    const QUrl url("http://example.com/upload");
+    m_mock.mockResponse(HttpMethod::Put, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
 
-    // 测试带 Content-Type
-    auto request1 = QCRequest::post("https://example.com/api")
-                        .withBody(data, "application/octet-stream");
-    QVERIFY(true);
+    const QByteArray body("raw binary data");
+    auto request = QCRequest::put(url).withBody(body);
 
-    // 测试不带 Content-Type（应使用默认值）
-    auto request2 = QCRequest::post("https://example.com/api").withBody(data);
-    QVERIFY(true);
+    auto *reply = request.send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Put);
+    QCOMPARE(captured.first().bodySize, body.size());
+    QCOMPARE(captured.first().bodyPreview, body);
+
+    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    QVERIFY(contentType.has_value());
+    QCOMPARE(*contentType, QByteArray("application/octet-stream"));
+
+    reply->deleteLater();
 }
 
-void TestQCRequest::testWithFollowRedirects()
+void TestQCRequest::testHead_sendsHeadWithoutBody()
 {
-    auto request1 = QCRequest::get("https://example.com/redirect").withFollowRedirects(true);
-    QVERIFY(true);
+    const QUrl url("http://example.com/head");
+    m_mock.mockResponse(HttpMethod::Head, url, QByteArray(), 200);
+    m_mock.clearCapturedRequests();
 
-    auto request2 = QCRequest::get("https://example.com/redirect").withFollowRedirects(false);
-    QVERIFY(true);
-}
+    auto *reply = QCRequest::head(url).send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
 
-// ========== 链式调用测试 ==========
+    auto body = reply->readAll();
+    QVERIFY(body.has_value());
+    QCOMPARE(body->size(), 0);
 
-void TestQCRequest::testMethodChaining()
-{
-    // 验证多个 with* 方法可以链式调用
-    auto request = QCRequest::get("https://api.example.com/data")
-                       .withHeader("Authorization", "Bearer token")
-                       .withQueryParam("page", "1")
-                       .withTimeout(std::chrono::seconds(10));
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().url, url);
+    QCOMPARE(captured.first().method, HttpMethod::Head);
+    QCOMPARE(captured.first().bodySize, 0);
 
-    QVERIFY(true);
-}
-
-void TestQCRequest::testComplexChaining()
-{
-    // 验证复杂的链式调用场景
-    QJsonObject json;
-    json["username"] = "testuser";
-    json["password"] = "secret";
-
-    auto request = QCRequest::post("https://api.example.com/login")
-                       .withHeader("User-Agent", "QCurl/2.9.0")
-                       .withHeader("Accept", "application/json")
-                       .withJson(json)
-                       .withTimeout(std::chrono::seconds(30))
-                       .withFollowRedirects(true);
-
-    QVERIFY(true);
-}
-
-// ========== 发送请求测试（不实际发送）==========
-
-void TestQCRequest::testSendWithDefaultManager()
-{
-    // 注意：这里不实际发送网络请求，只测试 API 可调用性
-    // 实际发送会在集成测试中进行
-
-    // 验证 send() 方法可以被调用（返回 nullptr 是正常的，因为这是单元测试）
-    // 真实环境下会返回 QCNetworkReply*
-
-    // 由于不想实际发送请求，这里只验证代码编译通过
-    QVERIFY(true);
-}
-
-void TestQCRequest::testSendWithCustomManager()
-{
-    // 验证可以传入自定义 manager
-    // 由于是单元测试，不实际创建 manager 和发送请求
-    QVERIFY(true);
+    reply->deleteLater();
 }
 
 QTEST_MAIN(TestQCRequest)

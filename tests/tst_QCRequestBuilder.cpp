@@ -4,13 +4,33 @@
  * @version v2.9.0
  */
 
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkMockHandler.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkTimeoutConfig.h"
 #include "QCRequestBuilder.h"
 
+#include <QCoreApplication>
+#include <QEvent>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QtTest/QtTest>
 
+#include <optional>
+
 using namespace QCurl;
+
+static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, QByteArray>> &headers,
+                                                 const QByteArray &nameLower)
+{
+    for (const auto &kv : headers) {
+        if (kv.first.trimmed().toLower() == nameLower) {
+            return kv.second;
+        }
+    }
+    return std::nullopt;
+}
 
 class TestQCRequestBuilder : public QObject
 {
@@ -19,6 +39,8 @@ class TestQCRequestBuilder : public QObject
 private slots:
     void initTestCase();
     void cleanupTestCase();
+    void init();
+    void cleanup();
 
     // 基本配置方法测试
     void testSetUrl();
@@ -44,6 +66,10 @@ private slots:
     // 方法链测试
     void testMethodChaining();
     void testComplexBuilder();
+
+private:
+    QCNetworkAccessManager *m_manager = nullptr;
+    QCNetworkMockHandler m_mock;
 };
 
 void TestQCRequestBuilder::initTestCase()
@@ -54,6 +80,26 @@ void TestQCRequestBuilder::initTestCase()
 void TestQCRequestBuilder::cleanupTestCase()
 {
     qDebug() << "清理 QCRequestBuilder 测试套件";
+}
+
+void TestQCRequestBuilder::init()
+{
+    m_manager = new QCNetworkAccessManager(this);
+
+    m_mock.clear();
+    m_mock.clearCapturedRequests();
+    m_mock.setCaptureEnabled(true);
+    m_mock.setGlobalDelay(0);
+    m_manager->setMockHandler(&m_mock);
+}
+
+void TestQCRequestBuilder::cleanup()
+{
+    if (m_manager) {
+        m_manager->deleteLater();
+        m_manager = nullptr;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
 }
 
 // ========== 基本配置方法测试 ==========
@@ -75,26 +121,52 @@ void TestQCRequestBuilder::testSetUrl()
 
 void TestQCRequestBuilder::testSetMethod()
 {
-    QCRequestBuilder builder;
+    const QUrl url("http://example.com/api");
+    const QByteArray body("DATA");
 
-    // 方法枚举设置（不会直接体现在 QCNetworkRequest 中，但不应崩溃）
-    builder.setUrl("https://example.com").setMethod(QCRequestBuilder::GET);
-    QVERIFY(true);
+    struct MethodCase
+    {
+        QCRequestBuilder::Method builderMethod;
+        HttpMethod expectedMethod;
+        bool expectBody;
+    };
+    const QList<MethodCase> cases = {
+        { QCRequestBuilder::GET, HttpMethod::Get, false },
+        { QCRequestBuilder::POST, HttpMethod::Post, true },
+        { QCRequestBuilder::PUT, HttpMethod::Put, true },
+        { QCRequestBuilder::DELETE, HttpMethod::Delete, true },
+        { QCRequestBuilder::PATCH, HttpMethod::Patch, true },
+        { QCRequestBuilder::HEAD, HttpMethod::Head, false },
+    };
 
-    builder.setMethod(QCRequestBuilder::POST);
-    QVERIFY(true);
+    for (const auto &c : cases) {
+        m_mock.mockResponse(c.expectedMethod, url, QByteArray("OK"));
+        m_mock.clearCapturedRequests();
 
-    builder.setMethod(QCRequestBuilder::PUT);
-    QVERIFY(true);
+        QCRequestBuilder builder;
+        builder.setUrl(url).setMethod(c.builderMethod);
+        if (c.expectBody) {
+            builder.setBody(body);
+        }
 
-    builder.setMethod(QCRequestBuilder::DELETE);
-    QVERIFY(true);
+        auto *reply = builder.send(m_manager);
+        QVERIFY(reply != nullptr);
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+        QCOMPARE(reply->error(), NetworkError::NoError);
 
-    builder.setMethod(QCRequestBuilder::PATCH);
-    QVERIFY(true);
+        const auto captured = m_mock.takeCapturedRequests();
+        QCOMPARE(captured.size(), 1);
+        QCOMPARE(captured.first().url, url);
+        QCOMPARE(captured.first().method, c.expectedMethod);
+        if (c.expectBody) {
+            QCOMPARE(captured.first().bodySize, body.size());
+            QCOMPARE(captured.first().bodyPreview, body);
+        } else {
+            QCOMPARE(captured.first().bodySize, 0);
+        }
 
-    builder.setMethod(QCRequestBuilder::HEAD);
-    QVERIFY(true);
+        reply->deleteLater();
+    }
 }
 
 void TestQCRequestBuilder::testAddHeader()
@@ -130,8 +202,9 @@ void TestQCRequestBuilder::testSetTimeout()
     builder.setUrl("https://example.com").setTimeout(30);
 
     auto request = builder.build();
-    // 超时值无法直接从 QCNetworkRequest 读取，但可以验证不崩溃
-    QVERIFY(true);
+    const auto timeout = request.timeoutConfig();
+    QVERIFY(timeout.totalTimeout.has_value());
+    QCOMPARE(timeout.totalTimeout->count(), std::chrono::milliseconds(30000).count());
 }
 
 void TestQCRequestBuilder::testSetTimeoutMs()
@@ -140,21 +213,35 @@ void TestQCRequestBuilder::testSetTimeoutMs()
     builder.setUrl("https://example.com").setTimeoutMs(5000);
 
     auto request = builder.build();
-    QVERIFY(true);
+    const auto timeout = request.timeoutConfig();
+    QVERIFY(timeout.totalTimeout.has_value());
+    QCOMPARE(timeout.totalTimeout->count(), std::chrono::milliseconds(5000).count());
 }
 
 // ========== 请求体配置测试 ==========
 
 void TestQCRequestBuilder::testSetBody()
 {
+    const QUrl url("http://example.com/body");
+    const QByteArray body("raw test data");
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
     QCRequestBuilder builder;
-    QByteArray data = "raw test data";
+    builder.setUrl(url).setMethod(QCRequestBuilder::POST).setBody(body);
 
-    builder.setUrl("https://example.com").setMethod(QCRequestBuilder::POST).setBody(data);
+    auto *reply = builder.send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
 
-    auto request = builder.build();
-    // body 数据无法直接从 QCNetworkRequest 读取，但可以验证不崩溃
-    QVERIFY(true);
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().method, HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize, body.size());
+    QCOMPARE(captured.first().bodyPreview, body);
+
+    reply->deleteLater();
 }
 
 void TestQCRequestBuilder::testSetJsonBody()
@@ -164,12 +251,32 @@ void TestQCRequestBuilder::testSetJsonBody()
     json["name"] = "Alice";
     json["age"]  = 30;
 
-    builder.setUrl("https://example.com/users").setMethod(QCRequestBuilder::POST).setJsonBody(json);
+    const QUrl url("http://example.com/users");
+    builder.setUrl(url).setMethod(QCRequestBuilder::POST).setJsonBody(json);
 
-    auto request = builder.build();
-
-    // 验证 Content-Type 被自动设置
+    const auto request = builder.build();
     QCOMPARE(request.rawHeader("Content-Type"), QByteArray("application/json"));
+
+    const QByteArray expectedBody = QJsonDocument(json).toJson(QJsonDocument::Compact);
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    auto *reply = builder.send(m_manager);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().method, HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize, expectedBody.size());
+    QCOMPARE(captured.first().bodyPreview, expectedBody);
+
+    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    QVERIFY(contentType.has_value());
+    QCOMPARE(*contentType, QByteArray("application/json"));
+
+    reply->deleteLater();
 }
 
 void TestQCRequestBuilder::testSetContentType()
