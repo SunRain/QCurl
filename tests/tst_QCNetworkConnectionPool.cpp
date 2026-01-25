@@ -242,7 +242,7 @@ void TestConnectionPool::testConnectionReuse()
 
         // 等待完成
         QSignalSpy spy(reply, &QCNetworkReply::finished);
-        QVERIFY2(spy.wait(30000), qPrintable(QString("Request %1 timeout").arg(i)));
+        QVERIFY2(spy.wait(30000), qPrintable(QStringLiteral("Request %1 timeout").arg(i)));
 
         if (reply->error() != NetworkError::NoError) {
             qWarning() << "Request" << i << "failed:" << reply->errorString();

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QSignalSpy>
-#include <QEvent>
-#include <QNetworkCookie>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
+
+#include <QEvent>
+#include <QNetworkCookie>
+#include <QSignalSpy>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -65,10 +65,9 @@ void tst_QCNetworkMiddlewareIntegration::testSendGet_AutoWiredMiddleware()
     {
     public:
         OrderMiddleware(const QByteArray &headerValue, QStringList &events)
-            : m_headerValue(headerValue),
-              m_events(events)
-        {
-        }
+            : m_headerValue(headerValue)
+            , m_events(events)
+        {}
 
         void onRequestPreSend(QCNetworkRequest &request) override
         {
@@ -129,8 +128,7 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     public:
         explicit HeaderOnlyMiddleware(const QByteArray &value)
             : m_value(value)
-        {
-        }
+        {}
 
         void onRequestPreSend(QCNetworkRequest &request) override
         {
@@ -178,12 +176,13 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     class XsrfCookieHeaderMiddleware final : public QCNetworkMiddleware
     {
     public:
-        XsrfCookieHeaderMiddleware(QCNetworkAccessManager *manager, const QString &host, const QString &pathPrefix)
-            : m_manager(manager),
-              m_host(host),
-              m_pathPrefix(pathPrefix)
-        {
-        }
+        XsrfCookieHeaderMiddleware(QCNetworkAccessManager *manager,
+                                   const QString &host,
+                                   const QString &pathPrefix)
+            : m_manager(manager)
+            , m_host(host)
+            , m_pathPrefix(pathPrefix)
+        {}
 
         void onRequestPreSend(QCNetworkRequest &request) override
         {
@@ -201,7 +200,9 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
 
             // 不覆盖用户显式设置的 header（大小写不敏感）
             for (const QByteArray &name : request.rawHeaderList()) {
-                if (QString::fromLatin1(name).compare(QStringLiteral("X-XSRF-TOKEN"), Qt::CaseInsensitive) == 0) {
+                if (QString::fromLatin1(name).compare(QStringLiteral("X-XSRF-TOKEN"),
+                                                      Qt::CaseInsensitive)
+                    == 0) {
                     return;
                 }
             }
@@ -215,10 +216,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
             }
         }
 
-        QString name() const override
-        {
-            return QStringLiteral("XsrfCookieHeaderMiddleware");
-        }
+        QString name() const override { return QStringLiteral("XsrfCookieHeaderMiddleware"); }
 
     private:
         QCNetworkAccessManager *m_manager = nullptr;

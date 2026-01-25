@@ -7,7 +7,11 @@
  * - 端口绑定失败时使用 QSKIP（避免在受限环境阻断 ctest）。
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkError.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "QCNetworkRetryPolicy.h"
 
 #include <QBuffer>
 #include <QEventLoop>
@@ -19,14 +23,9 @@
 #include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
+#include <QtTest/QtTest>
 
 #include <chrono>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkError.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkRetryPolicy.h"
 
 using namespace QCurl;
 
@@ -37,7 +36,8 @@ class UploadEchoServer final : public QObject
     Q_OBJECT
 
 public:
-    struct RequestRecord {
+    struct RequestRecord
+    {
         QByteArray method;
         QByteArray path;
         QByteArray body;
@@ -57,10 +57,7 @@ public:
         });
     }
 
-    bool start()
-    {
-        return m_server.listen(QHostAddress::LocalHost, 0);
-    }
+    bool start() { return m_server.listen(QHostAddress::LocalHost, 0); }
 
     QUrl url(const QString &path) const
     {
@@ -91,13 +88,14 @@ public:
     void setReadBodyEnabled(bool enabled) { m_readBodyEnabled = enabled; }
 
 private:
-    struct ConnState {
+    struct ConnState
+    {
         QByteArray recvBuf;
-        int headerEnd = -1;
-        qint64 contentLength = 0;
+        int headerEnd         = -1;
+        qint64 contentLength  = 0;
         bool hasContentLength = false;
-        bool continueSent = false;
-        bool requestRecorded = false;
+        bool continueSent     = false;
+        bool requestRecorded  = false;
         QByteArray method;
         QByteArray path;
     };
@@ -135,26 +133,28 @@ private:
                     return;
                 }
 
-                const QByteArray headerBlock = state.recvBuf.left(state.headerEnd);
+                const QByteArray headerBlock  = state.recvBuf.left(state.headerEnd);
                 const QList<QByteArray> lines = headerBlock.split('\n');
                 if (!lines.isEmpty()) {
                     const QList<QByteArray> parts = lines[0].trimmed().split(' ');
                     if (parts.size() >= 2) {
                         state.method = parts[0].trimmed();
-                        state.path = parts[1].trimmed();
+                        state.path   = parts[1].trimmed();
                     }
                 }
 
                 bool expectContinue = false;
                 for (int i = 1; i < lines.size(); ++i) {
-                    const QByteArray line = lines[i].trimmed();
+                    const QByteArray line  = lines[i].trimmed();
                     const QByteArray lower = line.toLower();
                     if (lower.startsWith("content-length:")) {
-                        const QByteArray v = line.mid(static_cast<int>(QByteArray("Content-Length:").size())).trimmed();
-                        bool ok = false;
+                        const QByteArray v = line.mid(static_cast<int>(
+                                                          QByteArray("Content-Length:").size()))
+                                                 .trimmed();
+                        bool ok             = false;
                         const qint64 parsed = v.toLongLong(&ok);
                         if (ok && parsed >= 0) {
-                            state.contentLength = parsed;
+                            state.contentLength    = parsed;
                             state.hasContentLength = true;
                         }
                     } else if (lower.startsWith("expect:") && lower.contains("100-continue")) {
@@ -182,7 +182,7 @@ private:
             }
 
             const int bodyOffset = state.headerEnd + 4;
-            const int need = bodyOffset + static_cast<int>(state.contentLength);
+            const int need       = bodyOffset + static_cast<int>(state.contentLength);
             if (state.recvBuf.size() < need) {
                 return;
             }
@@ -191,7 +191,7 @@ private:
             if (!state.requestRecorded) {
                 m_requests.append(RequestRecord{state.method, state.path, body});
                 state.requestRecorded = true;
-                m_requestHandled = true;
+                m_requestHandled      = true;
             }
 
             if (!m_respondEnabled) {
@@ -199,40 +199,47 @@ private:
             }
 
             const QByteArray path = normalizePath(state.path);
-            if (path == QByteArrayLiteral("/redir_307_put") || path == QByteArrayLiteral("/redir_307_post")) {
-                const QByteArray location =
-                    (path.endsWith(QByteArrayLiteral("_put")) ? QByteArrayLiteral("/echo_put") : QByteArrayLiteral("/echo_post"));
-                const QByteArray resp =
-                    "HTTP/1.1 307 Temporary Redirect\r\n"
-                    "Location: " + location + "\r\n"
-                    "Content-Length: 0\r\n"
-                    "Connection: close\r\n"
-                    "\r\n";
+            if (path == QByteArrayLiteral("/redir_307_put")
+                || path == QByteArrayLiteral("/redir_307_post")) {
+                const QByteArray location = (path.endsWith(QByteArrayLiteral("_put"))
+                                                 ? QByteArrayLiteral("/echo_put")
+                                                 : QByteArrayLiteral("/echo_post"));
+                const QByteArray resp     = "HTTP/1.1 307 Temporary Redirect\r\n"
+                                            "Location: "
+                                        + location
+                                        + "\r\n"
+                                          "Content-Length: 0\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n";
                 safeSocket->write(resp);
                 safeSocket->flush();
                 safeSocket->disconnectFromHost();
                 return;
             }
 
-            const QByteArray resp =
-                "HTTP/1.1 200 OK\r\n"
-                "Content-Type: application/octet-stream\r\n"
-                "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                "Connection: close\r\n"
-                "\r\n" + body;
+            const QByteArray resp = "HTTP/1.1 200 OK\r\n"
+                                    "Content-Type: application/octet-stream\r\n"
+                                    "Content-Length: "
+                                    + QByteArray::number(body.size())
+                                    + "\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n"
+                                    + body;
 
             safeSocket->write(resp);
             safeSocket->flush();
             safeSocket->disconnectFromHost();
         });
-        QObject::connect(socket, &QObject::destroyed, this, [this, socket]() { m_states.remove(socket); });
+        QObject::connect(socket, &QObject::destroyed, this, [this, socket]() {
+            m_states.remove(socket);
+        });
     }
 
     QTcpServer m_server;
     bool m_requestHandled = false;
     QHash<QTcpSocket *, ConnState> m_states;
     QVector<RequestRecord> m_requests;
-    bool m_respondEnabled = true;
+    bool m_respondEnabled  = true;
     bool m_readBodyEnabled = true;
 };
 
@@ -244,15 +251,11 @@ public:
     explicit SequentialUploadDevice(QByteArray data, QObject *parent = nullptr)
         : QIODevice(parent)
         , m_data(std::move(data))
-    {
-    }
+    {}
 
     bool isSequential() const override { return true; }
 
-    bool open(OpenMode mode) override
-    {
-        return QIODevice::open(mode);
-    }
+    bool open(OpenMode mode) override { return QIODevice::open(mode); }
 
 protected:
     qint64 readData(char *data, qint64 maxlen) override
@@ -266,10 +269,7 @@ protected:
         return n;
     }
 
-    qint64 writeData(const char *, qint64) override
-    {
-        return -1;
-    }
+    qint64 writeData(const char *, qint64) override { return -1; }
 
 private:
     QByteArray m_data;
@@ -284,8 +284,7 @@ public:
     explicit ReadFailUploadDevice(QString error, QObject *parent = nullptr)
         : QIODevice(parent)
         , m_error(std::move(error))
-    {
-    }
+    {}
 
     bool isSequential() const override { return true; }
 
@@ -296,10 +295,7 @@ protected:
         return -1;
     }
 
-    qint64 writeData(const char *, qint64) override
-    {
-        return -1;
-    }
+    qint64 writeData(const char *, qint64) override { return -1; }
 
 private:
     QString m_error;
@@ -340,9 +336,9 @@ protected:
     }
 
 private:
-    int m_readCalls = 0;
+    int m_readCalls         = 0;
     qint64 m_bytesReadTotal = 0;
-    qint64 m_maxChunkBytes = 0;
+    qint64 m_maxChunkBytes  = 0;
 };
 
 class SeekFailBuffer final : public QBuffer
@@ -565,7 +561,7 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
     QVERIFY(device.open(QIODevice::ReadOnly));
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
-    request.setFollowLocation(false);  // 避免被“自动重定向”约束抢先命中
+    request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
     request.setRetryPolicy(QCNetworkRetryPolicy(1, 1));
     request.setUploadDevice(&device, payload.size());
 
@@ -663,12 +659,15 @@ void TestQCNetworkStreamUpload::testUploadDeviceCloseDuringTransferFails()
     QVERIFY(reply);
 
     bool closed = false;
-    QObject::connect(reply, &QCNetworkReply::uploadProgress, this, [&](qint64 sent, qint64 /*total*/) {
-        if (!closed && sent > 0) {
-            closed = true;
-            buffer->close();
-        }
-    });
+    QObject::connect(reply,
+                     &QCNetworkReply::uploadProgress,
+                     this,
+                     [&](qint64 sent, qint64 /*total*/) {
+                         if (!closed && sent > 0) {
+                             closed = true;
+                             buffer->close();
+                         }
+                     });
 
     QVERIFY(waitForFinished(reply, 20000));
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
@@ -702,12 +701,15 @@ void TestQCNetworkStreamUpload::testUploadDeviceDestroyedDuringTransferFails()
     QVERIFY(reply);
 
     bool destroyed = false;
-    QObject::connect(reply, &QCNetworkReply::uploadProgress, this, [&](qint64 sent, qint64 /*total*/) {
-        if (!destroyed && sent > 0 && safeBuffer) {
-            destroyed = true;
-            delete safeBuffer.data();
-        }
-    });
+    QObject::connect(reply,
+                     &QCNetworkReply::uploadProgress,
+                     this,
+                     [&](qint64 sent, qint64 /*total*/) {
+                         if (!destroyed && sent > 0 && safeBuffer) {
+                             destroyed = true;
+                             safeBuffer->deleteLater();
+                         }
+                     });
 
     QVERIFY(waitForFinished(reply, 20000));
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
@@ -777,7 +779,7 @@ void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
 
     QTRY_VERIFY_WITH_TIMEOUT(buffer->readCalls() > 0, 2000);
 
-    const int readsBefore = buffer->readCalls();
+    const int readsBefore    = buffer->readCalls();
     const qint64 bytesBefore = buffer->bytesReadTotal();
 
     reply->cancel();

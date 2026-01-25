@@ -12,11 +12,11 @@
  * - 边界情况（空表单、特殊字符、大文件）
  */
 
-#include <QtTest/QtTest>
+#include <QBuffer>
 #include <QCMultipartFormData.h>
 #include <QFile>
-#include <QBuffer>
 #include <QTemporaryFile>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -209,7 +209,8 @@ void TestQCMultipartFormData::testAddFileFieldFromByteArray()
     QCOMPARE(form.fieldCount(), 1);
 
     QByteArray encoded = form.toByteArray();
-    QVERIFY(encoded.contains("Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\""));
+    QVERIFY(
+        encoded.contains("Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\""));
     QVERIFY(encoded.contains("Content-Type: text/plain"));
     QVERIFY(encoded.contains(fileData));
 }
@@ -299,8 +300,8 @@ void TestQCMultipartFormData::testMimeTypeDetection()
 
     QByteArray encoded = form.toByteArray();
     // QMimeDatabase 应该推断为 image/jpeg
-    QVERIFY(encoded.contains("Content-Type: image/jpeg") ||
-            encoded.contains("Content-Type: image/jpg"));
+    QVERIFY(encoded.contains("Content-Type: image/jpeg")
+            || encoded.contains("Content-Type: image/jpg"));
 
     // 清理
     QFile::remove(jpgPath);
@@ -353,7 +354,7 @@ void TestQCMultipartFormData::testStreamFieldNotInByteArray()
 {
     // ✅ v2.13.0 修复: 流式字段现在被序列化了
     // 更新为验证新行为：流式字段现在被包含在 toByteArray() 中
-    
+
     QBuffer buffer;
     buffer.open(QIODevice::ReadWrite);
     buffer.write("Stream data");
@@ -370,8 +371,8 @@ void TestQCMultipartFormData::testStreamFieldNotInByteArray()
     QByteArray encoded = form.toByteArray();
     QVERIFY(encoded.contains("text"));
     QVERIFY(encoded.contains("value"));
-    QVERIFY(encoded.contains("Stream data"));  // ← 新增验证
-    
+    QVERIFY(encoded.contains("Stream data")); // ← 新增验证
+
     // 验证 multipart 结构正确
     QVERIFY(encoded.contains("name=\"stream\""));
     QVERIFY(encoded.contains("filename=\"stream.bin\""));
@@ -480,13 +481,12 @@ void TestQCMultipartFormData::testEmptyFormData()
     QCOMPARE(form.fieldCount(), 0);
 
     QByteArray encoded = form.toByteArray();
-    QString boundary = form.boundary();
+    QString boundary   = form.boundary();
 
     // 空表单应该只有结束标记或为空
     // 不同实现可能有不同的处理方式
-    QVERIFY(encoded.isEmpty() ||
-            encoded == (boundary + "--\r\n").toUtf8() ||
-            encoded == ("--" + boundary + "--\r\n").toUtf8());
+    QVERIFY(encoded.isEmpty() || encoded == (boundary + "--\r\n").toUtf8()
+            || encoded == ("--" + boundary + "--\r\n").toUtf8());
 }
 
 void TestQCMultipartFormData::testSpecialCharactersInFields()

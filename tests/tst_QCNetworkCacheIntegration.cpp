@@ -514,7 +514,7 @@ void TestQCNetworkCacheIntegration::testConcurrentRequests()
 
     // 发起 5 个并发请求
     for (int i = 0; i < 5; ++i) {
-        QUrl url(m_httpbinBaseUrl + QString("/get?test=concurrent&id=%1").arg(i));
+        QUrl url(m_httpbinBaseUrl + QStringLiteral("/get?test=concurrent&id=%1").arg(i));
         QCNetworkRequest request(url);
         request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 

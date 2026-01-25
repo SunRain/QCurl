@@ -111,7 +111,7 @@ void TestQCNetworkProxy::testProxyConfigBasic()
     auto proxyConfigOpt = request.proxyConfig();
     if (proxyConfigOpt) {
         QCOMPARE(proxyConfigOpt->type, QCNetworkProxyConfig::ProxyType::Http);
-        QCOMPARE(proxyConfigOpt->hostName, QString("proxy.example.com"));
+        QCOMPARE(proxyConfigOpt->hostName, QStringLiteral("proxy.example.com"));
         QCOMPARE(proxyConfigOpt->port, quint16(8080));
     }
 
@@ -168,8 +168,8 @@ void TestQCNetworkProxy::testProxyAuthentication()
     QVERIFY(request.proxyConfig().has_value());
     auto proxyConfigOpt = request.proxyConfig();
     if (proxyConfigOpt) {
-        QCOMPARE(proxyConfigOpt->userName, QString("testuser"));
-        QCOMPARE(proxyConfigOpt->password, QString("testpass"));
+        QCOMPARE(proxyConfigOpt->userName, QStringLiteral("testuser"));
+        QCOMPARE(proxyConfigOpt->password, QStringLiteral("testpass"));
     }
 
     qDebug() << "✅ 代理认证配置验证通过";

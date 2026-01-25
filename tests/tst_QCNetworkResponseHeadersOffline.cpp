@@ -7,12 +7,13 @@
  * - 通过 QCNetworkMockHandler 注入原始响应头块，验证折叠行（SP/HTAB）unfold 规则。
  */
 
-#include <QtTest/QtTest>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+
+#include <QScopedPointer>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -31,13 +32,12 @@ void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
     manager.setMockHandler(&mock);
 
     const QUrl url(QStringLiteral("https://example.com/offline/headers_unfold"));
-    const QByteArray rawHeaderData =
-        QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
-                          "X-Test:  a\r\n"
-                          "\tb\r\n"
-                          "  c  \r\n"
-                          "Y: v\r\n"
-                          "\r\n");
+    const QByteArray rawHeaderData = QByteArrayLiteral("HTTP/1.1 200 OK\r\n"
+                                                       "X-Test:  a\r\n"
+                                                       "\tb\r\n"
+                                                       "  c  \r\n"
+                                                       "Y: v\r\n"
+                                                       "\r\n");
 
     mock.mockResponse(HttpMethod::Get,
                       url,
@@ -47,7 +47,7 @@ void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
                       rawHeaderData);
 
     QCNetworkRequest request(url);
-    auto *reply = manager.sendGetSync(request);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -66,10 +66,7 @@ void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
 
     QCOMPARE(xTestValue, QByteArrayLiteral("a b c"));
     QCOMPARE(yValue, QByteArrayLiteral("v"));
-
-    delete reply;
 }
 
 QTEST_MAIN(TestQCNetworkResponseHeadersOffline)
 #include "tst_QCNetworkResponseHeadersOffline.moc"
-

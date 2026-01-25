@@ -9,7 +9,9 @@
  * - 并发 smoke：开启 shareCookies 后高并发请求不死锁不崩溃
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -24,10 +26,7 @@
 #include <QTimer>
 #include <QUrlQuery>
 #include <QVector>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkRequest.h"
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -112,7 +111,7 @@ bool TestQCNetworkShareHandle::startObserveServer()
         return false;
     }
 
-    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString appDir     = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(
         QStringLiteral("../../tests/libcurl_consistency/http_observe_server.py"));
     if (!QFileInfo::exists(scriptPath)) {
@@ -328,4 +327,3 @@ void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 
 QTEST_MAIN(TestQCNetworkShareHandle)
 #include "tst_QCNetworkShareHandle.moc"
-

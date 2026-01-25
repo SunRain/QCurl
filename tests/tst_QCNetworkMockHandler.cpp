@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QUrl>
-#include <QCoreApplication>
-#include <QEvent>
-#include <QElapsedTimer>
-#include <QSignalSpy>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkMockHandler.h"
 #include "QCNetworkError.h"
+#include "QCNetworkMockHandler.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEvent>
+#include <QSignalSpy>
+#include <QUrl>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -79,7 +79,7 @@ void TestQCNetworkMockHandler::testMockResponse()
     // Arrange
     QUrl url("http://example.com/api/test");
     QByteArray mockData = "{\"status\":\"success\"}";
-    int statusCode = 200;
+    int statusCode      = 200;
 
     // Act
     m_mockHandler.mockResponse(url, mockData, statusCode);
@@ -87,7 +87,7 @@ void TestQCNetworkMockHandler::testMockResponse()
     // Assert
     QVERIFY(m_mockHandler.hasMock(url));
 
-    int retrievedStatus = 0;
+    int retrievedStatus      = 0;
     QByteArray retrievedData = m_mockHandler.getMockResponse(url, retrievedStatus);
 
     QCOMPARE(retrievedData, mockData);

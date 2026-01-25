@@ -238,7 +238,7 @@ void TestIntegration::testRealHttpGetRequest()
     QJsonObject json = parseJsonResponse(*data);
     QVERIFY(json.contains("args"));
     QJsonObject args = json["args"].toObject();
-    QCOMPARE(args["test"].toString(), QString("value"));
+    QCOMPARE(args["test"].toString(), QStringLiteral("value"));
 
     qDebug() << "GET request successful:" << data->size() << "bytes";
     reply->deleteLater();
@@ -372,7 +372,7 @@ void TestIntegration::testCookiePersistence()
 
     QJsonObject json    = parseJsonResponse(*data);
     QJsonObject cookies = json["cookies"].toObject();
-    QCOMPARE(cookies["session"].toString(), QString("123"));
+    QCOMPARE(cookies["session"].toString(), QStringLiteral("123"));
 
     qDebug() << "Cookie persistence test successful";
     reply2->deleteLater();
@@ -400,8 +400,8 @@ void TestIntegration::testCustomHeaders()
 
     QJsonObject json    = parseJsonResponse(*data);
     QJsonObject headers = json["headers"].toObject();
-    QCOMPARE(headers["X-Custom-Header"].toString(), QString("TestValue"));
-    QCOMPARE(headers["X-Test-Id"].toString(), QString("12345"));
+    QCOMPARE(headers["X-Custom-Header"].toString(), QStringLiteral("TestValue"));
+    QCOMPARE(headers["X-Test-Id"].toString(), QStringLiteral("12345"));
 
     qDebug() << "Custom headers test successful";
     reply->deleteLater();
@@ -432,8 +432,8 @@ void TestIntegration::testAuthorizationHeader()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/basic-auth/user/passwd"));
 
     // Basic Auth: base64(user:passwd)
-    QString credentials = QString("user:passwd").toUtf8().toBase64();
-    request.setRawHeader("Authorization", QString("Basic %1").arg(credentials).toUtf8());
+    QString credentials = QStringLiteral("user:passwd").toUtf8().toBase64();
+    request.setRawHeader("Authorization", QStringLiteral("Basic %1").arg(credentials).toUtf8());
 
     auto *reply = m_manager->sendGet(request);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -444,7 +444,7 @@ void TestIntegration::testAuthorizationHeader()
 
     QJsonObject json = parseJsonResponse(*data);
     QVERIFY(json["authenticated"].toBool());
-    QCOMPARE(json["user"].toString(), QString("user"));
+    QCOMPARE(json["user"].toString(), QStringLiteral("user"));
 
     qDebug() << "Authorization header test successful";
     reply->deleteLater();
@@ -480,8 +480,8 @@ void TestIntegration::testAuthorizationHeaderOverridesHttpAuth()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/basic-auth/user/passwd"));
 
     // 显式 Authorization header 优先：此处故意设置错误凭据
-    QString wrongCredentials = QString("bad:creds").toUtf8().toBase64();
-    request.setRawHeader("Authorization", QString("Basic %1").arg(wrongCredentials).toUtf8());
+    QString wrongCredentials = QStringLiteral("bad:creds").toUtf8().toBase64();
+    request.setRawHeader("Authorization", QStringLiteral("Basic %1").arg(wrongCredentials).toUtf8());
 
     // 同时配置正确的 httpAuth（应被忽略）
     QCNetworkHttpAuthConfig auth;

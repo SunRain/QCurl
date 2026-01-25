@@ -1,6 +1,5 @@
-#include <curl/curl.h>
-
 #include <cstdint>
+#include <curl/curl.h>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -9,7 +8,8 @@
 
 namespace {
 
-struct Args {
+struct Args
+{
     std::string proto;
     std::string url;
 };
@@ -32,8 +32,9 @@ bool setHttpVersion(CURL *curl, const std::string &proto)
     return false;
 }
 
-struct WriteContext {
-    std::ofstream *file = nullptr;
+struct WriteContext
+{
+    std::ofstream *file   = nullptr;
     std::uint64_t written = 0;
 };
 
@@ -44,7 +45,8 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
         return 0;
     }
 
-    const std::uint64_t total = static_cast<std::uint64_t>(size) * static_cast<std::uint64_t>(nmemb);
+    const std::uint64_t total = static_cast<std::uint64_t>(size)
+                                * static_cast<std::uint64_t>(nmemb);
     if (total == 0) {
         return 0;
     }
@@ -83,7 +85,7 @@ int printUsage()
     return 2;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -118,7 +120,7 @@ int main(int argc, char **argv)
     }
 
     WriteContext ctx;
-    ctx.file = &out;
+    ctx.file    = &out;
     ctx.written = 0;
 
     curl_easy_setopt(curl, CURLOPT_URL, args.url.c_str());
@@ -152,7 +154,8 @@ int main(int argc, char **argv)
 
     if (ctx.written != body.size()) {
         curl_global_cleanup();
-        std::cerr << "response size mismatch, got=" << ctx.written << " expected=" << body.size() << "\n";
+        std::cerr << "response size mismatch, got=" << ctx.written << " expected=" << body.size()
+                  << "\n";
         return 8;
     }
 
@@ -178,4 +181,3 @@ int main(int argc, char **argv)
     curl_global_cleanup();
     return 0;
 }
-

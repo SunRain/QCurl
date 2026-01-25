@@ -3,8 +3,9 @@
  * @brief QCNetworkRequest 单元测试
  */
 
-#include <QtTest/QtTest>
 #include "QCNetworkRequest.h"
+
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -133,7 +134,7 @@ void TestQCNetworkRequest::testSetRange()
 void TestQCNetworkRequest::testRangeStart()
 {
     QCNetworkRequest request;
-    QCOMPARE(request.rangeStart(), -1);  // 默认值
+    QCOMPARE(request.rangeStart(), -1); // 默认值
 
     request.setRange(0, 1024);
     QCOMPARE(request.rangeStart(), 0);
@@ -142,7 +143,7 @@ void TestQCNetworkRequest::testRangeStart()
 void TestQCNetworkRequest::testRangeEnd()
 {
     QCNetworkRequest request;
-    QCOMPARE(request.rangeEnd(), -1);  // 默认值
+    QCOMPARE(request.rangeEnd(), -1); // 默认值
 
     request.setRange(0, 1024);
     QCOMPARE(request.rangeEnd(), 1024);
@@ -161,7 +162,7 @@ void TestQCNetworkRequest::testSetFollowLocation()
 void TestQCNetworkRequest::testFollowLocation()
 {
     QCNetworkRequest request;
-    QVERIFY(request.followLocation());  // 默认为 true
+    QVERIFY(request.followLocation()); // 默认为 true
 }
 
 void TestQCNetworkRequest::testRedirectPolicyDefaults()
@@ -244,7 +245,8 @@ void TestQCNetworkRequest::testSetAcceptedEncodings()
 
     request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
     QVERIFY(request.autoDecompressionEnabled());
-    QCOMPARE(request.acceptedEncodings(), QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
+    QCOMPARE(request.acceptedEncodings(),
+             QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
 
     request.setAcceptedEncodings({});
     QVERIFY(!request.autoDecompressionEnabled());
@@ -300,11 +302,13 @@ void TestQCNetworkRequest::testSetExpect100ContinueTimeout()
 
     request.setExpect100ContinueTimeout(std::chrono::milliseconds(0));
     QVERIFY(request.expect100ContinueTimeout().has_value());
-    QCOMPARE(static_cast<qint64>(request.expect100ContinueTimeout().value().count()), static_cast<qint64>(0));
+    QCOMPARE(static_cast<qint64>(request.expect100ContinueTimeout().value().count()),
+             static_cast<qint64>(0));
 
     request.setExpect100ContinueTimeout(std::chrono::milliseconds(150));
     QVERIFY(request.expect100ContinueTimeout().has_value());
-    QCOMPARE(static_cast<qint64>(request.expect100ContinueTimeout().value().count()), static_cast<qint64>(150));
+    QCOMPARE(static_cast<qint64>(request.expect100ContinueTimeout().value().count()),
+             static_cast<qint64>(150));
 
     request.setExpect100ContinueTimeout(std::chrono::milliseconds(-1));
     QVERIFY(!request.expect100ContinueTimeout().has_value());

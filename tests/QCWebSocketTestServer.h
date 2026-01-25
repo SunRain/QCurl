@@ -1,3 +1,6 @@
+#ifndef QCURL_TEST_QCWEBSOCKETTESTSERVER_H
+#define QCURL_TEST_QCWEBSOCKETTESTSERVER_H
+
 /*
  * QtTest WebSocket 本地测试服务器 helper。
  *
@@ -7,8 +10,6 @@
  * - Fragment Echo（message-level）：tests/websocket-fragment-server.js（依赖 ws；仅用于回显 smoke）
  * - Evidence Server（frame-level）：tests/websocket-evidence-server.js（零外部依赖；用于 fragmentation/close 证据链）
  */
-
-#pragma once
 
 #include <QCoreApplication>
 #include <QDir>
@@ -264,3 +265,5 @@ private:
 
 } // namespace QCurl
 QT_END_NAMESPACE
+
+#endif // QCURL_TEST_QCWEBSOCKETTESTSERVER_H

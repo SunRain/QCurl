@@ -4,11 +4,12 @@
  * @version v2.9.0
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+#include "QCRequest.h"
+
 #include <QJsonObject>
 #include <QUrlQuery>
-#include "QCRequest.h"
-#include "QCNetworkAccessManager.h"
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -62,11 +63,11 @@ void TestQCRequest::testFactoryGet()
 {
     // 测试 QString 重载
     auto request1 = QCRequest::get("https://example.com/api");
-    QVERIFY(true);  // 成功创建对象
+    QVERIFY(true); // 成功创建对象
 
     // 测试 QUrl 重载
     auto request2 = QCRequest::get(QUrl("https://example.com/api"));
-    QVERIFY(true);  // 成功创建对象
+    QVERIFY(true); // 成功创建对象
 }
 
 void TestQCRequest::testFactoryPost()
@@ -119,8 +120,8 @@ void TestQCRequest::testFactoryHead()
 void TestQCRequest::testWithHeader()
 {
     auto request = QCRequest::get("https://example.com/api")
-        .withHeader("Authorization", "Bearer token123")
-        .withHeader("User-Agent", "QCurl-Test/2.9.0");
+                       .withHeader("Authorization", "Bearer token123")
+                       .withHeader("User-Agent", "QCurl-Test/2.9.0");
 
     // 无法直接验证内部 m_request 的 headers,
     // 但可以验证方法链调用不会崩溃
@@ -130,8 +131,8 @@ void TestQCRequest::testWithHeader()
 void TestQCRequest::testWithQueryParam()
 {
     auto request = QCRequest::get("https://example.com/api")
-        .withQueryParam("page", "1")
-        .withQueryParam("limit", "10");
+                       .withQueryParam("page", "1")
+                       .withQueryParam("limit", "10");
 
     // 验证方法链调用成功
     QVERIFY(true);
@@ -139,8 +140,7 @@ void TestQCRequest::testWithQueryParam()
 
 void TestQCRequest::testWithTimeoutSeconds()
 {
-    auto request = QCRequest::get("https://example.com/api")
-        .withTimeout(std::chrono::seconds(30));
+    auto request = QCRequest::get("https://example.com/api").withTimeout(std::chrono::seconds(30));
 
     QVERIFY(true);
 }
@@ -148,7 +148,7 @@ void TestQCRequest::testWithTimeoutSeconds()
 void TestQCRequest::testWithTimeoutMilliseconds()
 {
     auto request = QCRequest::get("https://example.com/api")
-        .withTimeout(std::chrono::milliseconds(5000));
+                       .withTimeout(std::chrono::milliseconds(5000));
 
     QVERIFY(true);
 }
@@ -156,12 +156,11 @@ void TestQCRequest::testWithTimeoutMilliseconds()
 void TestQCRequest::testWithJson()
 {
     QJsonObject json;
-    json["name"] = "Alice";
-    json["age"] = 30;
+    json["name"]  = "Alice";
+    json["age"]   = 30;
     json["email"] = "alice@example.com";
 
-    auto request = QCRequest::post("https://example.com/users")
-        .withJson(json);
+    auto request = QCRequest::post("https://example.com/users").withJson(json);
 
     QVERIFY(true);
 }
@@ -172,23 +171,20 @@ void TestQCRequest::testWithBody()
 
     // 测试带 Content-Type
     auto request1 = QCRequest::post("https://example.com/api")
-        .withBody(data, "application/octet-stream");
+                        .withBody(data, "application/octet-stream");
     QVERIFY(true);
 
     // 测试不带 Content-Type（应使用默认值）
-    auto request2 = QCRequest::post("https://example.com/api")
-        .withBody(data);
+    auto request2 = QCRequest::post("https://example.com/api").withBody(data);
     QVERIFY(true);
 }
 
 void TestQCRequest::testWithFollowRedirects()
 {
-    auto request1 = QCRequest::get("https://example.com/redirect")
-        .withFollowRedirects(true);
+    auto request1 = QCRequest::get("https://example.com/redirect").withFollowRedirects(true);
     QVERIFY(true);
 
-    auto request2 = QCRequest::get("https://example.com/redirect")
-        .withFollowRedirects(false);
+    auto request2 = QCRequest::get("https://example.com/redirect").withFollowRedirects(false);
     QVERIFY(true);
 }
 
@@ -198,9 +194,9 @@ void TestQCRequest::testMethodChaining()
 {
     // 验证多个 with* 方法可以链式调用
     auto request = QCRequest::get("https://api.example.com/data")
-        .withHeader("Authorization", "Bearer token")
-        .withQueryParam("page", "1")
-        .withTimeout(std::chrono::seconds(10));
+                       .withHeader("Authorization", "Bearer token")
+                       .withQueryParam("page", "1")
+                       .withTimeout(std::chrono::seconds(10));
 
     QVERIFY(true);
 }
@@ -213,11 +209,11 @@ void TestQCRequest::testComplexChaining()
     json["password"] = "secret";
 
     auto request = QCRequest::post("https://api.example.com/login")
-        .withHeader("User-Agent", "QCurl/2.9.0")
-        .withHeader("Accept", "application/json")
-        .withJson(json)
-        .withTimeout(std::chrono::seconds(30))
-        .withFollowRedirects(true);
+                       .withHeader("User-Agent", "QCurl/2.9.0")
+                       .withHeader("Accept", "application/json")
+                       .withJson(json)
+                       .withTimeout(std::chrono::seconds(30))
+                       .withFollowRedirects(true);
 
     QVERIFY(true);
 }

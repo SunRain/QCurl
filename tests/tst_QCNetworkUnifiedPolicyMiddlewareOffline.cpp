@@ -3,12 +3,6 @@
  * @brief 基于 QCNetworkMiddleware 的统一策略（重试/脱敏日志/观测）纯离线门禁（MockHandler）
  */
 
-#include <QtTest/QtTest>
-
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QSignalSpy>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMiddleware.h"
@@ -16,6 +10,11 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSignalSpy>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -67,10 +66,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDefaultRetryPolicyInjected
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries = 1;
-    defaultPolicy.initialDelay = std::chrono::milliseconds(1);
+    defaultPolicy.maxRetries        = 1;
+    defaultPolicy.initialDelay      = std::chrono::milliseconds(1);
     defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay = std::chrono::milliseconds(10);
+    defaultPolicy.maxDelay          = std::chrono::milliseconds(10);
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -97,10 +96,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testExplicitNoRetryNotOverridd
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries = 2;
-    defaultPolicy.initialDelay = std::chrono::milliseconds(1);
+    defaultPolicy.maxRetries        = 2;
+    defaultPolicy.initialDelay      = std::chrono::milliseconds(1);
     defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay = std::chrono::milliseconds(10);
+    defaultPolicy.maxDelay          = std::chrono::milliseconds(10);
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -145,8 +144,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
     bool sawRedacted = false;
     for (const auto &entry : logger.entries()) {
         const QString msg = entry.message;
-        QVERIFY2(!msg.contains(QString::fromLatin1(secret)),
-                 "日志中泄漏了敏感 token 明文");
+        QVERIFY2(!msg.contains(QString::fromLatin1(secret)), "日志中泄漏了敏感 token 明文");
         if (msg.contains(QStringLiteral("[REDACTED]"))) {
             sawRedacted = true;
         }
@@ -176,10 +174,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy policy;
-    policy.maxRetries = 1;
-    policy.initialDelay = std::chrono::milliseconds(1);
+    policy.maxRetries        = 1;
+    policy.initialDelay      = std::chrono::milliseconds(1);
     policy.backoffMultiplier = 1.0;
-    policy.maxDelay = std::chrono::milliseconds(10);
+    policy.maxDelay          = std::chrono::milliseconds(10);
 
     QCNetworkRequest request(url);
     request.setRetryPolicy(policy);
@@ -194,7 +192,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
             continue;
         }
         const QByteArray jsonBytes = entry.message.toUtf8();
-        const auto doc = QJsonDocument::fromJson(jsonBytes);
+        const auto doc             = QJsonDocument::fromJson(jsonBytes);
         QVERIFY(doc.isObject());
         const QJsonObject obj = doc.object();
 
@@ -228,4 +226,3 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
 
 QTEST_MAIN(TestQCNetworkUnifiedPolicyMiddlewareOffline)
 #include "tst_QCNetworkUnifiedPolicyMiddlewareOffline.moc"
-

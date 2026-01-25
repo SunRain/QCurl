@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 QCurl Project
 
-#include <QtTest>
-#include <QSignalSpy>
-#include <QThread>
-
 #include "../src/QCNetworkAccessManager.h"
 #include "../src/QCNetworkMockHandler.h"
 #include "../src/QCNetworkReply.h"
 #include "../src/QCNetworkRequest.h"
+
+#include <QSignalSpy>
+#include <QThread>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -37,9 +37,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
     mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("ok"), 200);
 
     QMetaObject::invokeMethod(
-        manager,
-        [&]() { manager->setMockHandler(&mock); },
-        Qt::BlockingQueuedConnection);
+        manager, [&]() { manager->setMockHandler(&mock); }, Qt::BlockingQueuedConnection);
 
     QCNetworkRequest request(url);
     QCNetworkReply *reply = manager->sendGet(request);
@@ -52,18 +50,13 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
     QVERIFY(cancelledSpy.wait(1500));
 
     NetworkError error = NetworkError::NoError;
-    QMetaObject::invokeMethod(
-        reply,
-        [&]() { error = reply->error(); },
-        Qt::BlockingQueuedConnection);
+    QMetaObject::invokeMethod(reply, [&]() { error = reply->error(); }, Qt::BlockingQueuedConnection);
     QCOMPARE(error, NetworkError::OperationCancelled);
 
     reply->deleteLater();
 
     QMetaObject::invokeMethod(
-        manager,
-        [&]() { manager->setMockHandler(nullptr); },
-        Qt::BlockingQueuedConnection);
+        manager, [&]() { manager->setMockHandler(nullptr); }, Qt::BlockingQueuedConnection);
 
     manager->deleteLater();
 
@@ -88,8 +81,15 @@ void tst_QCNetworkActorThreadModel::testNoEventLoopFailFast()
 
     reply->deleteLater();
 
-    // noLoopThread 未启动，deleteLater 不会执行；这里直接销毁对象以避免泄漏
-    delete manager;
+    // noLoopThread 未启动时，deleteLater 不会执行；通过启动线程处理 deferred delete，再退出线程。
+    QObject::connect(manager,
+                     &QObject::destroyed,
+                     &noLoopThread,
+                     &QThread::quit,
+                     Qt::DirectConnection);
+    noLoopThread.start();
+    manager->deleteLater();
+    QVERIFY(noLoopThread.wait(3000));
 }
 
 void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
@@ -101,7 +101,8 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
     manager->moveToThread(&actorThread);
 
     QString error;
-    const auto cookies = manager->exportCookies(QUrl(QStringLiteral("http://example.local")), &error);
+    const auto cookies = manager->exportCookies(QUrl(QStringLiteral("http://example.local")),
+                                                &error);
     QVERIFY(cookies.isEmpty());
     QVERIFY(!error.isEmpty());
 
@@ -117,4 +118,3 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
 QTEST_MAIN(tst_QCNetworkActorThreadModel)
 
 #include "tst_QCNetworkActorThreadModel.moc"
-

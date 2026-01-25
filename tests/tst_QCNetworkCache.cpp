@@ -11,13 +11,13 @@
  *
  */
 
-#include <QtTest/QtTest>
-#include <QTemporaryDir>
-
 #include "QCNetworkCache.h"
-#include "QCNetworkMemoryCache.h"
-#include "QCNetworkDiskCache.h"
 #include "QCNetworkCachePolicy.h"
+#include "QCNetworkDiskCache.h"
+#include "QCNetworkMemoryCache.h"
+
+#include <QTemporaryDir>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -57,9 +57,7 @@ void TestQCNetworkCache::initTestCase()
     QVERIFY(m_tempDir.isValid());
 }
 
-void TestQCNetworkCache::cleanupTestCase()
-{
-}
+void TestQCNetworkCache::cleanupTestCase() {}
 
 // ============================================================================
 // 内存缓存测试
@@ -73,7 +71,7 @@ void TestQCNetworkCache::testMemoryCacheInsertAndRetrieve()
     QByteArray data("Hello, World!");
 
     QCNetworkCacheMetadata meta;
-    meta.url = url;
+    meta.url  = url;
     meta.size = data.size();
 
     cache.insert(url, data, meta);
@@ -115,9 +113,9 @@ void TestQCNetworkCache::testMemoryCacheClear()
 void TestQCNetworkCache::testMemoryCacheSizeLimit()
 {
     QCNetworkMemoryCache cache;
-    cache.setMaxCacheSize(100);  // 100 字节
+    cache.setMaxCacheSize(100); // 100 字节
 
-    QByteArray largeData(200, 'X');  // 200 字节
+    QByteArray largeData(200, 'X'); // 200 字节
     QCNetworkCacheMetadata meta;
 
     cache.insert(QUrl("https://example.com/large"), largeData, meta);
@@ -134,8 +132,8 @@ void TestQCNetworkCache::testMemoryCacheExpiration()
     QByteArray data("Expired data");
 
     QCNetworkCacheMetadata meta;
-    meta.url = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(-10);  // 已过期
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(-10); // 已过期
 
     cache.insert(url, data, meta);
 
@@ -156,7 +154,7 @@ void TestQCNetworkCache::testDiskCacheInsertAndRetrieve()
     QByteArray data("Disk cache test");
 
     QCNetworkCacheMetadata meta;
-    meta.url = url;
+    meta.url  = url;
     meta.size = data.size();
 
     cache.insert(url, data, meta);
@@ -225,7 +223,7 @@ void TestQCNetworkCache::testDiskCacheSizeLimit()
 {
     QCNetworkDiskCache cache;
     cache.setCacheDirectory(m_tempDir.path());
-    cache.setMaxCacheSize(100);  // 100 字节
+    cache.setMaxCacheSize(100); // 100 字节
 
     QByteArray largeData(200, 'Y');
     QCNetworkCacheMetadata meta;
@@ -265,13 +263,13 @@ void TestQCNetworkCache::testExpiresHeader()
 {
     QMap<QByteArray, QByteArray> headers;
     QDateTime futureDate = QDateTime::currentDateTime().addSecs(7200);
-    headers["Expires"] = futureDate.toString(Qt::RFC2822Date).toLatin1();
+    headers["Expires"]   = futureDate.toString(Qt::RFC2822Date).toLatin1();
 
     QDateTime expiration = QCNetworkCache::parseExpirationDate(headers);
     QVERIFY(expiration.isValid());
 
     qint64 diff = expiration.secsTo(futureDate);
-    QVERIFY(qAbs(diff) < 5);  // 允许 5 秒误差
+    QVERIFY(qAbs(diff) < 5); // 允许 5 秒误差
 }
 
 QTEST_MAIN(TestQCNetworkCache)

@@ -1,6 +1,6 @@
-#include <QtTest/QtTest>
-
 #include "CurlFeatureProbe.h"
+
+#include <QtTest/QtTest>
 
 #include <curl/curlver.h>
 

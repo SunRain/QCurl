@@ -1,4 +1,5 @@
-#pragma once
+#ifndef QCURL_TEST_HTTPBIN_ENV_H
+#define QCURL_TEST_HTTPBIN_ENV_H
 
 #include <QByteArray>
 #include <QString>
@@ -22,3 +23,5 @@ inline QString httpbinMissingReason()
 }
 
 } // namespace QCurl::TestEnv
+
+#endif // QCURL_TEST_HTTPBIN_ENV_H

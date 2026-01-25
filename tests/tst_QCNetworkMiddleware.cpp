@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QUrl>
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkMiddleware.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QCoreApplication>
 #include <QEvent>
-
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkMiddleware.h"
+#include <QUrl>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -163,7 +163,7 @@ void TestQCNetworkMiddleware::testMultipleMiddlewares()
     // Arrange
     QCLoggingMiddleware m1;
     QCErrorHandlingMiddleware m2;
-    QCLoggingMiddleware m3;  // 允许同类型多个实例
+    QCLoggingMiddleware m3; // 允许同类型多个实例
 
     // Act
     m_manager->addMiddleware(&m1);
@@ -185,10 +185,9 @@ void TestQCNetworkMiddleware::testMiddlewareOrder()
     {
     public:
         OrderMiddleware(const QString &name, QStringList &order)
-            : m_order(order),
-              m_name(name)
-        {
-        }
+            : m_order(order)
+            , m_name(name)
+        {}
 
         void onRequestPreSend(QCNetworkRequest &request) override
         {
@@ -226,9 +225,9 @@ void TestQCNetworkMiddleware::testMiddlewareOrder()
 
     // Assert - 验证执行顺序
     QCOMPARE(executionOrder.size(), 3);
-    QCOMPARE(executionOrder.at(0), QString("M1_request"));
-    QCOMPARE(executionOrder.at(1), QString("M2_request"));
-    QCOMPARE(executionOrder.at(2), QString("M3_request"));
+    QCOMPARE(executionOrder.at(0), QStringLiteral("M1_request"));
+    QCOMPARE(executionOrder.at(1), QStringLiteral("M2_request"));
+    QCOMPARE(executionOrder.at(2), QStringLiteral("M3_request"));
     m_manager->clearMiddlewares();
 }
 
@@ -242,8 +241,8 @@ void TestQCNetworkMiddleware::testDuplicateMiddleware()
 
     // Act - 多次添加同一实例
     m_manager->addMiddleware(&middleware);
-    m_manager->addMiddleware(&middleware);  // 应该被忽略
-    m_manager->addMiddleware(&middleware);  // 应该被忽略
+    m_manager->addMiddleware(&middleware); // 应该被忽略
+    m_manager->addMiddleware(&middleware); // 应该被忽略
 
     // Assert - 只应该有一个
     QCOMPARE(m_manager->middlewares().size(), 1);

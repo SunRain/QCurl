@@ -3,8 +3,9 @@
  * @brief QCNetworkError 单元测试
  */
 
-#include <QtTest/QtTest>
 #include "QCNetworkError.h"
+
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -67,7 +68,7 @@ void TestQCNetworkError::testCurlErrors()
 {
     // 测试常见 curl 错误码
     NetworkError connectionError = fromCurlCode(CURLE_COULDNT_CONNECT);
-    NetworkError timeoutError = fromCurlCode(CURLE_OPERATION_TIMEDOUT);
+    NetworkError timeoutError    = fromCurlCode(CURLE_OPERATION_TIMEDOUT);
 
     QVERIFY(isCurlError(connectionError));
     QVERIFY(isCurlError(timeoutError));
@@ -128,7 +129,7 @@ void TestQCNetworkError::testErrorString()
 
     // 测试 curl 错误
     NetworkError connError = fromCurlCode(CURLE_COULDNT_CONNECT);
-    QString connErrorStr = errorString(connError);
+    QString connErrorStr   = errorString(connError);
     QVERIFY(!connErrorStr.isEmpty());
 }
 

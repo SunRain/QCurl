@@ -516,8 +516,8 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
 
     // 添加多个自定义 Header
     for (int i = 0; i < 10; ++i) {
-        request.setRawHeader(QString("X-Custom-Header-%1").arg(i).toUtf8(),
-                             QString("Value-%1-With-Long-Content-For-Compression-Test")
+        request.setRawHeader(QStringLiteral("X-Custom-Header-%1").arg(i).toUtf8(),
+                             QStringLiteral("Value-%1-With-Long-Content-For-Compression-Test")
                                  .arg(i)
                                  .toUtf8());
     }

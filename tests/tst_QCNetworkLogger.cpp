@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include <QtTest>
-#include <QUrl>
-#include <QCoreApplication>
-#include <QEvent>
-
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
+#include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "QCNetworkLogger.h"
+#include "QCNetworkRequest.h"
+
+#include <QCoreApplication>
+#include <QEvent>
+#include <QUrl>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -180,7 +180,8 @@ void TestQCNetworkLogger::testDebugTraceRedaction()
         QString m_lastMessage;
         NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
 
-        void log(NetworkLogLevel level, const QString &category, const QString &message) override {
+        void log(NetworkLogLevel level, const QString &category, const QString &message) override
+        {
             Q_UNUSED(level);
             Q_UNUSED(category);
             ++m_logCount;
@@ -197,18 +198,21 @@ void TestQCNetworkLogger::testDebugTraceRedaction()
 
     QCNetworkRequest request(QUrl("https://example.com/path?token=abc"));
     QCNetworkReply dummyReply(request, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), m_manager);
-    QCNetworkReplyPrivate priv(&dummyReply, request, HttpMethod::Get, ExecutionMode::Sync, QByteArray());
+    QCNetworkReplyPrivate priv(&dummyReply,
+                               request,
+                               HttpMethod::Get,
+                               ExecutionMode::Sync,
+                               QByteArray());
 
-    const QByteArray raw =
-        QByteArray("GET /path?token=abc&foo=bar HTTP/1.1\r\n"
-                   "Authorization: Bearer secret_token\r\n"
-                   "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"
-                   "Cookie: sessionid=abc\r\n"
-                   "Set-Cookie: sid=def\r\n");
+    const QByteArray raw = QByteArray("GET /path?token=abc&foo=bar HTTP/1.1\r\n"
+                                      "Authorization: Bearer secret_token\r\n"
+                                      "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"
+                                      "Cookie: sessionid=abc\r\n"
+                                      "Set-Cookie: sid=def\r\n");
 
     QCNetworkReplyPrivate::curlDebugCallback(nullptr,
                                              CURLINFO_HEADER_OUT,
-                                             const_cast<char*>(raw.constData()),
+                                             const_cast<char *>(raw.constData()),
                                              static_cast<size_t>(raw.size()),
                                              &priv);
 
@@ -292,26 +296,23 @@ void TestQCNetworkLogger::testCustomLogger()
     class TestLogger : public QCNetworkLogger
     {
     public:
-        int m_logCount = 0;
+        int m_logCount             = 0;
         NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
         QString m_lastCategory;
         QString m_lastMessage;
 
         // 实现纯虚函数
-        void log(NetworkLogLevel level, const QString &category, const QString &message) override {
+        void log(NetworkLogLevel level, const QString &category, const QString &message) override
+        {
             Q_UNUSED(level);
             m_logCount++;
             m_lastCategory = category;
-            m_lastMessage = message;
+            m_lastMessage  = message;
         }
 
-        void setMinLogLevel(NetworkLogLevel level) override {
-            m_minLevel = level;
-        }
+        void setMinLogLevel(NetworkLogLevel level) override { m_minLevel = level; }
 
-        NetworkLogLevel minLogLevel() const override {
-            return m_minLevel;
-        }
+        NetworkLogLevel minLogLevel() const override { return m_minLevel; }
     };
 
     // Arrange
@@ -327,12 +328,12 @@ void TestQCNetworkLogger::testCustomLogger()
     // 手动调用 log 方法
     customLogger.log(NetworkLogLevel::Info, "Test", "Message 1");
     QCOMPARE(customLogger.m_logCount, 1);
-    QCOMPARE(customLogger.m_lastCategory, QString("Test"));
-    QCOMPARE(customLogger.m_lastMessage, QString("Message 1"));
+    QCOMPARE(customLogger.m_lastCategory, QStringLiteral("Test"));
+    QCOMPARE(customLogger.m_lastMessage, QStringLiteral("Message 1"));
 
     customLogger.log(NetworkLogLevel::Error, "Error", "Message 2");
     QCOMPARE(customLogger.m_logCount, 2);
-    QCOMPARE(customLogger.m_lastCategory, QString("Error"));
+    QCOMPARE(customLogger.m_lastCategory, QStringLiteral("Error"));
 
     // Test log level
     customLogger.setMinLogLevel(NetworkLogLevel::Warning);

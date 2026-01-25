@@ -3,11 +3,11 @@
  * @brief Cookie bridge（share cookie store）离线门禁
  */
 
-#include <QtTest/QtTest>
+#include "QCNetworkAccessManager.h"
+
 #include <QDateTime>
 #include <QTimeZone>
-
-#include "QCNetworkAccessManager.h"
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -52,7 +52,9 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
     QString err;
     QVERIFY(manager.importCookies({sid}, QUrl("https://example.com/"), &err));
 
-    const QList<QNetworkCookie> exported = manager.exportCookies(QUrl("https://example.com/foo/bar"), &err);
+    const QList<QNetworkCookie> exported = manager.exportCookies(QUrl(
+                                                                     "https://example.com/foo/bar"),
+                                                                 &err);
     QVERIFY2(!exported.isEmpty(), qPrintable(err));
 
     for (const QNetworkCookie &c : exported) {
@@ -84,16 +86,19 @@ void TestQCNetworkCookieBridge::testExportFilter_HostAndPathIsolation()
     QString err;
     QVERIFY(manager.importCookies({hostOnly, domainCookie}, QUrl("https://example.com/"), &err));
 
-    const QList<QNetworkCookie> ex1 = manager.exportCookies(QUrl("https://example.com/foo/bar"), &err);
+    const QList<QNetworkCookie> ex1 = manager.exportCookies(QUrl("https://example.com/foo/bar"),
+                                                            &err);
     QVERIFY(hasCookie(ex1, "hostonly", "1"));
     QVERIFY(hasCookie(ex1, "domain", "1"));
 
-    const QList<QNetworkCookie> ex2 = manager.exportCookies(QUrl("https://sub.example.com/foo/bar"), &err);
+    const QList<QNetworkCookie> ex2 = manager.exportCookies(QUrl("https://sub.example.com/foo/bar"),
+                                                            &err);
     QVERIFY(!hasCookie(ex2, "hostonly", "1"));
     QVERIFY(hasCookie(ex2, "domain", "1"));
 
     // 路径匹配要求边界正确：/foo 不应匹配 /foobar
-    const QList<QNetworkCookie> ex3 = manager.exportCookies(QUrl("https://example.com/foobar"), &err);
+    const QList<QNetworkCookie> ex3 = manager.exportCookies(QUrl("https://example.com/foobar"),
+                                                            &err);
     QVERIFY(!hasCookie(ex3, "hostonly", "1"));
     QVERIFY(!hasCookie(ex3, "domain", "1"));
 }

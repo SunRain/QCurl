@@ -4,10 +4,11 @@
  * @version v2.9.0
  */
 
-#include <QtTest/QtTest>
-#include <QJsonObject>
-#include "QCRequestBuilder.h"
 #include "QCNetworkRequest.h"
+#include "QCRequestBuilder.h"
+
+#include <QJsonObject>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -64,12 +65,12 @@ void TestQCRequestBuilder::testSetUrl()
     // 测试 QString 重载
     builder.setUrl("https://example.com/api");
     auto request1 = builder.build();
-    QCOMPARE(request1.url().toString(), QString("https://example.com/api"));
+    QCOMPARE(request1.url().toString(), QStringLiteral("https://example.com/api"));
 
     // 测试 QUrl 重载
     builder.setUrl(QUrl("https://example.org/test"));
     auto request2 = builder.build();
-    QCOMPARE(request2.url().toString(), QString("https://example.org/test"));
+    QCOMPARE(request2.url().toString(), QStringLiteral("https://example.org/test"));
 }
 
 void TestQCRequestBuilder::testSetMethod()
@@ -77,8 +78,7 @@ void TestQCRequestBuilder::testSetMethod()
     QCRequestBuilder builder;
 
     // 方法枚举设置（不会直接体现在 QCNetworkRequest 中，但不应崩溃）
-    builder.setUrl("https://example.com")
-           .setMethod(QCRequestBuilder::GET);
+    builder.setUrl("https://example.com").setMethod(QCRequestBuilder::GET);
     QVERIFY(true);
 
     builder.setMethod(QCRequestBuilder::POST);
@@ -101,8 +101,8 @@ void TestQCRequestBuilder::testAddHeader()
 {
     QCRequestBuilder builder;
     builder.setUrl("https://example.com")
-           .addHeader("Authorization", "Bearer token123")
-           .addHeader("User-Agent", "QCurl-Test/2.9.0");
+        .addHeader("Authorization", "Bearer token123")
+        .addHeader("User-Agent", "QCurl-Test/2.9.0");
 
     auto request = builder.build();
 
@@ -114,11 +114,9 @@ void TestQCRequestBuilder::testAddHeader()
 void TestQCRequestBuilder::testAddQueryParam()
 {
     QCRequestBuilder builder;
-    builder.setUrl("https://example.com/api")
-           .addQueryParam("page", "1")
-           .addQueryParam("limit", "10");
+    builder.setUrl("https://example.com/api").addQueryParam("page", "1").addQueryParam("limit", "10");
 
-    auto request = builder.build();
+    auto request      = builder.build();
     QString urlString = request.url().toString();
 
     // 验证查询参数被添加
@@ -129,8 +127,7 @@ void TestQCRequestBuilder::testAddQueryParam()
 void TestQCRequestBuilder::testSetTimeout()
 {
     QCRequestBuilder builder;
-    builder.setUrl("https://example.com")
-           .setTimeout(30);
+    builder.setUrl("https://example.com").setTimeout(30);
 
     auto request = builder.build();
     // 超时值无法直接从 QCNetworkRequest 读取，但可以验证不崩溃
@@ -140,8 +137,7 @@ void TestQCRequestBuilder::testSetTimeout()
 void TestQCRequestBuilder::testSetTimeoutMs()
 {
     QCRequestBuilder builder;
-    builder.setUrl("https://example.com")
-           .setTimeoutMs(5000);
+    builder.setUrl("https://example.com").setTimeoutMs(5000);
 
     auto request = builder.build();
     QVERIFY(true);
@@ -154,9 +150,7 @@ void TestQCRequestBuilder::testSetBody()
     QCRequestBuilder builder;
     QByteArray data = "raw test data";
 
-    builder.setUrl("https://example.com")
-           .setMethod(QCRequestBuilder::POST)
-           .setBody(data);
+    builder.setUrl("https://example.com").setMethod(QCRequestBuilder::POST).setBody(data);
 
     auto request = builder.build();
     // body 数据无法直接从 QCNetworkRequest 读取，但可以验证不崩溃
@@ -168,11 +162,9 @@ void TestQCRequestBuilder::testSetJsonBody()
     QCRequestBuilder builder;
     QJsonObject json;
     json["name"] = "Alice";
-    json["age"] = 30;
+    json["age"]  = 30;
 
-    builder.setUrl("https://example.com/users")
-           .setMethod(QCRequestBuilder::POST)
-           .setJsonBody(json);
+    builder.setUrl("https://example.com/users").setMethod(QCRequestBuilder::POST).setJsonBody(json);
 
     auto request = builder.build();
 
@@ -183,8 +175,7 @@ void TestQCRequestBuilder::testSetJsonBody()
 void TestQCRequestBuilder::testSetContentType()
 {
     QCRequestBuilder builder;
-    builder.setUrl("https://example.com")
-           .setContentType("text/xml");
+    builder.setUrl("https://example.com").setContentType("text/xml");
 
     auto request = builder.build();
     QCOMPARE(request.rawHeader("Content-Type"), QByteArray("text/xml"));
@@ -196,8 +187,7 @@ void TestQCRequestBuilder::testSetFollowRedirects()
 {
     QCRequestBuilder builder;
 
-    builder.setUrl("https://example.com")
-           .setFollowRedirects(true);
+    builder.setUrl("https://example.com").setFollowRedirects(true);
     auto request1 = builder.build();
     QVERIFY(request1.followLocation());
 
@@ -217,7 +207,7 @@ void TestQCRequestBuilder::testBuild()
 
     // 验证构建的 request 有效
     QVERIFY(!request.url().isEmpty());
-    QCOMPARE(request.url().toString(), QString("https://example.com/test"));
+    QCOMPARE(request.url().toString(), QStringLiteral("https://example.com/test"));
 }
 
 void TestQCRequestBuilder::testBuildEmptyUrl()
@@ -235,9 +225,9 @@ void TestQCRequestBuilder::testReset()
 {
     QCRequestBuilder builder;
     builder.setUrl("https://example.com")
-           .setMethod(QCRequestBuilder::POST)
-           .addHeader("Authorization", "Bearer token")
-           .setTimeout(30);
+        .setMethod(QCRequestBuilder::POST)
+        .addHeader("Authorization", "Bearer token")
+        .setTimeout(30);
 
     // 重置构建器
     builder.reset();
@@ -255,13 +245,12 @@ void TestQCRequestBuilder::testMethodChaining()
     QCRequestBuilder builder;
 
     // 验证所有方法都返回引用，可以链式调用
-    auto request = builder
-        .setUrl("https://api.example.com")
-        .setMethod(QCRequestBuilder::GET)
-        .addHeader("Accept", "application/json")
-        .addQueryParam("version", "v1")
-        .setTimeout(20)
-        .build();
+    auto request = builder.setUrl("https://api.example.com")
+                       .setMethod(QCRequestBuilder::GET)
+                       .addHeader("Accept", "application/json")
+                       .addQueryParam("version", "v1")
+                       .setTimeout(20)
+                       .build();
 
     QVERIFY(!request.url().isEmpty());
     QCOMPARE(request.rawHeader("Accept"), QByteArray("application/json"));
@@ -273,20 +262,19 @@ void TestQCRequestBuilder::testComplexBuilder()
 
     QJsonObject json;
     json["username"] = "testuser";
-    json["email"] = "test@example.com";
+    json["email"]    = "test@example.com";
 
-    auto request = builder
-        .setUrl("https://api.example.com/register")
-        .setMethod(QCRequestBuilder::POST)
-        .addHeader("User-Agent", "QCurl/2.9.0")
-        .addHeader("Accept", "application/json")
-        .setJsonBody(json)
-        .setTimeout(30)
-        .setFollowRedirects(true)
-        .build();
+    auto request = builder.setUrl("https://api.example.com/register")
+                       .setMethod(QCRequestBuilder::POST)
+                       .addHeader("User-Agent", "QCurl/2.9.0")
+                       .addHeader("Accept", "application/json")
+                       .setJsonBody(json)
+                       .setTimeout(30)
+                       .setFollowRedirects(true)
+                       .build();
 
     // 验证多个配置都生效
-    QCOMPARE(request.url().toString(), QString("https://api.example.com/register"));
+    QCOMPARE(request.url().toString(), QStringLiteral("https://api.example.com/register"));
     QCOMPARE(request.rawHeader("User-Agent"), QByteArray("QCurl/2.9.0"));
     QCOMPARE(request.rawHeader("Accept"), QByteArray("application/json"));
     QCOMPARE(request.rawHeader("Content-Type"), QByteArray("application/json"));

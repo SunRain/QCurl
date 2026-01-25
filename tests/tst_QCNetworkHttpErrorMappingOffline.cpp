@@ -7,13 +7,14 @@
  * - 仅验证 status>=400 时，QCNetworkReply 的 error/httpStatusCode/state 等可观测契约稳定。
  */
 
-#include <QtTest/QtTest>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+
+#include <QScopedPointer>
+#include <QtTest/QtTest>
 
 using namespace QCurl;
 
@@ -36,14 +37,12 @@ void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
         mock.mockResponse(HttpMethod::Get, url, QByteArray(), statusCode);
 
         QCNetworkRequest request(url);
-        auto *reply = manager.sendGetSync(request);
+        QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
         QVERIFY(reply);
 
         QCOMPARE(reply->httpStatusCode(), statusCode);
         QCOMPARE(reply->state(), ReplyState::Error);
         QCOMPARE(reply->error(), fromHttpCode(statusCode));
-
-        delete reply;
     };
 
     runCase(401);
@@ -53,4 +52,3 @@ void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
 
 QTEST_MAIN(TestQCNetworkHttpErrorMappingOffline)
 #include "tst_QCNetworkHttpErrorMappingOffline.moc"
-

@@ -147,7 +147,7 @@ void tst_QCNetworkDiagnostics::testResolveDNS_ValidDomain()
 
     QVERIFY(result.success);
     QVERIFY(result.summary.contains("DNS 解析成功"));
-    QCOMPARE(result.details["hostname"].toString(), QString("example.com"));
+    QCOMPARE(result.details["hostname"].toString(), QStringLiteral("example.com"));
 
     // 应该至少有一个 IPv4 地址
     QStringList ipv4 = result.details["ipv4"].toStringList();
@@ -179,7 +179,7 @@ void tst_QCNetworkDiagnostics::testResolveDNS_Localhost()
     auto result = QCNetworkDiagnostics::resolveDNS("localhost", 1000);
 
     QVERIFY(result.success);
-    QCOMPARE(result.details["hostname"].toString(), QString("localhost"));
+    QCOMPARE(result.details["hostname"].toString(), QStringLiteral("localhost"));
 
     QStringList ipv4 = result.details["ipv4"].toStringList();
     QVERIFY(!ipv4.isEmpty());
@@ -218,7 +218,7 @@ void tst_QCNetworkDiagnostics::testReverseDNS_ValidIP()
 
     QVERIFY(result.success);
     QVERIFY(result.summary.contains("反向 DNS 解析成功"));
-    QCOMPARE(result.details["ip"].toString(), QString("8.8.8.8"));
+    QCOMPARE(result.details["ip"].toString(), QStringLiteral("8.8.8.8"));
     QVERIFY(!result.details["hostname"].toString().isEmpty());
     QVERIFY(result.details["hostname"].toString().contains("dns.google"));
 }
@@ -251,7 +251,7 @@ void tst_QCNetworkDiagnostics::testConnection_ValidHost()
 
     if (result.success) {
         QVERIFY(result.summary.contains("连接成功"));
-        QCOMPARE(result.details["host"].toString(), QString("8.8.8.8"));
+        QCOMPARE(result.details["host"].toString(), QStringLiteral("8.8.8.8"));
         QCOMPARE(result.details["port"].toInt(), 53);
         QVERIFY(result.details["connected"].toBool());
         QVERIFY(!result.details["resolvedIP"].toString().isEmpty());
@@ -374,7 +374,7 @@ void tst_QCNetworkDiagnostics::testCheckSSL_SelfSignedCertificate()
     qDebug() << "自签名证书测试:" << result.errorString;
     if (!result.details.contains("sslErrors")) {
         const QByteArray skipReason
-            = QString("未捕获到 sslErrors（站点可能不可达/被阻断/超时），error=%1")
+            = QStringLiteral("未捕获到 sslErrors（站点可能不可达/被阻断/超时），error=%1")
                   .arg(result.errorString)
                   .toUtf8();
         QSKIP(skipReason.constData());
@@ -421,7 +421,7 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_ValidURL()
 
     QVERIFY(result.success);
     QVERIFY(result.summary.contains("HTTP 探测成功"));
-    QCOMPARE(result.details["url"].toString(), QString("http://example.com"));
+    QCOMPARE(result.details["url"].toString(), QStringLiteral("http://example.com"));
     QCOMPARE(result.details["statusCode"].toInt(), 200);
 }
 

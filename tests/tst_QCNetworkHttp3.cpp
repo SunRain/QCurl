@@ -7,15 +7,16 @@
  * - 这里仅固化 QCurl 在不同运行时能力下的行为：Http3Only 的失败语义、Http3 的降级语义。
  */
 
-#include <QtTest/QtTest>
-
-#include <curl/curl.h>
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+
+#include <QScopedPointer>
+#include <QtTest/QtTest>
+
+#include <curl/curl.h>
 
 using namespace QCurl;
 
@@ -65,7 +66,7 @@ void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3Only);
 
-    auto *reply = manager.sendGetSync(req);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {
@@ -76,8 +77,6 @@ void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
     } else {
         QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     }
-
-    delete reply;
 }
 
 void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
@@ -92,7 +91,7 @@ void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    auto *reply = manager.sendGetSync(req);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -100,8 +99,6 @@ void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
         const QStringList warnings = reply->capabilityWarnings();
         QVERIFY(!warnings.isEmpty());
     }
-
-    delete reply;
 }
 
 void TestQCNetworkHttp3::testRequireHttp3EnvGate()
@@ -119,7 +116,7 @@ void TestQCNetworkHttp3::testRequireHttp3EnvGate()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    auto *reply = manager.sendGetSync(req);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {
@@ -127,8 +124,6 @@ void TestQCNetworkHttp3::testRequireHttp3EnvGate()
     } else {
         QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     }
-
-    delete reply;
 
     if (old.isEmpty()) {
         qunsetenv("QCURL_REQUIRE_HTTP3");
