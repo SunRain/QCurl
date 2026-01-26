@@ -1481,7 +1481,7 @@ xdg-open coverage_report/index.html
 
 ```bash
 valgrind --leak-check=full --show-leak-kinds=all \
-    ./tests/tst_QCNetworkRequest
+    ./build/tests/tst_QCNetworkRequest
 ```
 
 ### 编写测试
@@ -2043,7 +2043,7 @@ git checkout -b feature/my-awesome-feature
 #### 4. 编写测试
 
 ```cpp
-// tests/tst_MyFeature.cpp
+// tests/qcurl/tst_MyFeature.cpp
 class TestMyFeature : public QObject {
     Q_OBJECT
 private slots:
@@ -2106,12 +2106,19 @@ QCurl/
 │   ├── QCNetworkLogger.{h,cpp}
 │   ├── QCNetworkMiddleware.{h,cpp}
 │   └── ... (72 个源文件)
-├── tests/                         # 测试套件
-│   ├── CMakeLists.txt
-│   ├── tst_QCNetworkRequest.cpp
-│   ├── tst_QCNetworkReply.cpp
-│   ├── tst_Integration.cpp
-│   └── ... (25 个测试文件，~550 测试用例)
+├── tests/                         # 测试套件（QtTest + 一致性 gate）
+│   ├── CMakeLists.txt             # 聚合：add_subdirectory(qcurl/libcurl_consistency)
+│   ├── README.md                  # 测试入口与证据口径（SSOT）
+│   ├── qcurl/                     # QCurl QtTest（C++）与本地依赖（httpbin/node/testdata）
+│   │   ├── CMakeLists.txt
+│   │   ├── tst_QCNetworkRequest.cpp
+│   │   ├── tst_QCNetworkReply.cpp
+│   │   ├── tst_Integration.cpp
+│   │   └── ...
+│   └── libcurl_consistency/       # QCurl ↔ libcurl 可观测一致性门禁（pytest + baseline clients）
+│       ├── CMakeLists.txt
+│       ├── tst_LibcurlConsistency.cpp
+│       └── ...
 ├── examples/                      # 示例程序
 │   ├── QCurl/                     # 基础 GUI 示例
 │   ├── WebSocketDemo/             # WebSocket 示例

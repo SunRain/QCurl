@@ -10,7 +10,7 @@
   ────
   变更:
 
-  - ✅ README 口径纠偏：tests/README.md 不再维护固定“总数/静态清单”，真实清单以 `ctest -N/-L` 与 `tests/CMakeLists.txt` 为准。
+  - ✅ README 口径纠偏：tests/README.md 不再维护固定“总数/静态清单”，真实清单以 `ctest -N/-L` 与 `tests/qcurl/CMakeLists.txt`（注册/分组）为准。
   - ✅ P0 WebSocket 证据对称：ws_* baseline 改为落盘 baseline（qcurl_lc_ws_baseline 新增 ws_pingpong_small/ws_data_small），P0 对比基于 download_0.data 产物，移除“预期 bytes 注入”。
   - ✅ 取证工件隔离：proxy CONNECT 诊断字段 baseline/qcurl 各自仅写本侧，避免工件污染。
   - ✅ API 报告强证据：新增 ext 用例输出 reported_meta.json（至少 httpStatusCode），并在 pytest 中与 observe_http 观测值对比（需 QCURL_LC_EXT=1）。
@@ -32,7 +32,7 @@
 
   证据链
 
-  - README 已移除固定“总数/静态清单”声明，改为明确：真实清单以 `tests/CMakeLists.txt`（注册/分组）与 `ctest -N/-L`（当前 build 实际集合）为准。
+  - README 已移除固定“总数/静态清单”声明，改为明确：真实清单以 `tests/qcurl/CMakeLists.txt`（注册/分组）与 `ctest -N/-L`（当前 build 实际集合）为准。
   - 因此“门禁覆盖面”可以被直接复核：同一 `build/` 目录下，任何人都可用 `ctest -N/-L` 重建清单并对照 LABELS。
 
   证明力破坏方式
@@ -49,7 +49,7 @@
 
   证据链
 
-  - tests/CMakeLists.txt 的 add_qcurl_test() 对所有 QtTest 目标设置：
+  - tests/qcurl/CMakeLists.txt 的 add_qcurl_test() 对所有 QtTest 目标设置：
 
     set_tests_properties(${test_name} PROPERTIES
         FAIL_REGULAR_EXPRESSION "SKIP\\s*:"
@@ -74,7 +74,7 @@
   - upstream/baseline 侧：tests/libcurl_consistency/pytest_support/case_defs.py 中 download_parallel_resume 的 baseline 参数模板包含并发与 pause 扰动：
 
     "args_template": ["-n","{count}","-m","{max_parallel}","-P","{pause_offset}","-V","{proto}","{url}"]
-  - QCurl 侧执行器：tests/tst_LibcurlConsistency.cpp 对 download_serial_resume / download_parallel_resume 的实现是同步串行下载循环：
+  - QCurl 侧执行器：tests/libcurl_consistency/tst_LibcurlConsistency.cpp 对 download_serial_resume / download_parallel_resume 的实现是同步串行下载循环：
 
     if (caseId == "download_serial_resume" || caseId == "download_parallel_resume") {
         for (int i = 0; i < count; ++i) {
@@ -95,7 +95,7 @@
 
   最小修复建议（两条选其一，按你想要的证据强度）
 
-  1. 证据强（推荐）：在 tests/tst_LibcurlConsistency.cpp 为 download_parallel_resume 引入真正的并发下载（复用 ext 里的并发模式），并明确“本用例只验证终态文件一致，不对齐完成顺序”；同时把
+  1. 证据强（推荐）：在 tests/libcurl_consistency/tst_LibcurlConsistency.cpp 为 download_parallel_resume 引入真正的并发下载（复用 ext 里的并发模式），并明确“本用例只验证终态文件一致，不对齐完成顺序”；同时把
      pause_offset 以环境变量传入并实际触发 pauseTransport/resumeTransport（若产品不要求 in-flight pause，则不要叫 resume）。
   2. 证据诚实（次优但最小）：保留现状，但把 caseId 与 README 文案改成“download_parallel_bytes_only / download_serial_bytes_only”，并把并发/暂停语义明确移到 P2/ext 的强判据（已有雏形：
      test_p2_pause_resume_strict.py、test_ext_suite.py）。
@@ -181,7 +181,7 @@
     timeout_s: float = 2.0
     time.sleep(0.01)
     在极端慢 CI/受限容器下，可能出现“服务端写 log 较晚 → 观测空读 → 假失败”。
-  - tests/tst_LibcurlConsistency.cpp::p1_cancel_after_first_chunk 要求取消后 cancelled 与 finished 都必须在同一次等待窗口内发生，且取消后不得再有 readyRead/progress（非常严格的时序契约），在实现
+  - tests/libcurl_consistency/tst_LibcurlConsistency.cpp::p1_cancel_after_first_chunk 要求取消后 cancelled 与 finished 都必须在同一次等待窗口内发生，且取消后不得再有 readyRead/progress（非常严格的时序契约），在实现
     或 Qt 信号调度变化时存在波动风险。
 
   最小修复建议
@@ -243,7 +243,7 @@
   - 连接复用统计：connection_observed.{request_count,unique_connections,conn_seq}（来自服务端 peer_port 归一化）
     证据：tests/libcurl_consistency/test_ext_suite.py::test_ext_reuse_keepalive_http_1_1
   - pause/resume：弱判据 pause_resume.{pause_offset,pause_count,resume_count,event_seq}；强判据 pause_resume_strict 结构化 events + Δ=0 合同
-    证据：tests/libcurl_consistency/test_p2_pause_resume*.py 与 tests/tst_LibcurlConsistency.cpp::p2_pause_resume_strict
+    证据：tests/libcurl_consistency/test_p2_pause_resume*.py 与 tests/libcurl_consistency/tst_LibcurlConsistency.cpp::p2_pause_resume_strict
   - backpressure 合同：backpressure_contract（bp_on/bp_off + 软上界校验）
     证据：tests/libcurl_consistency/test_p2_backpressure_contract.py + pytest_support/compare.py::_validate_backpressure_contract
   - 上传 READFUNC_PAUSE 合同：upload_pause_resume
@@ -307,7 +307,7 @@
 
   ### P1（严重）P0：并发/复用语义未在 QCurl 侧复现（假阳性）
 
-  - 具体位置：tests/tst_LibcurlConsistency.cpp::TestLibcurlConsistency::testCase
+  - 具体位置：tests/libcurl_consistency/tst_LibcurlConsistency.cpp::TestLibcurlConsistency::testCase
       - caseId == "download_serial_resume" || "download_parallel_resume"
       - caseId == "upload_post_reuse"
   - 触发条件：运行 tests/libcurl_consistency/test_p0_consistency.py 的对应 case（h1/h2/h3 变体）。
@@ -370,7 +370,7 @@
 
   - tests/libcurl_consistency/run_gate.py：skip=fail + schema 校验 + 脱敏扫描，能有效阻断“无执行也绿/泄密也绿”。
   - 强判据合同用例：
-      - tests/libcurl_consistency/test_p2_pause_resume_strict.py + tests/tst_LibcurlConsistency.cpp::p2_pause_resume_strict + pytest_support/compare.py::_validate_pause_resume_contract
+      - tests/libcurl_consistency/test_p2_pause_resume_strict.py + tests/libcurl_consistency/tst_LibcurlConsistency.cpp::p2_pause_resume_strict + pytest_support/compare.py::_validate_pause_resume_contract
       - tests/libcurl_consistency/test_p1_resp_headers.py（字节级响应头 + 形状断言防失效）
 
   ### 最不可靠（中低信心）
@@ -384,7 +384,7 @@
 
   - tests/（ctest 门禁）：
       - 证明点：在选定 LABELS 集合内，QtTest 目标真实执行且无 QSKIP 假绿（skip=fail）。
-      - 复核入口：`tests/CMakeLists.txt`（注册/分组） + `ctest -N/-L`（当前 build 清单） + `python3 scripts/ctest_strict.py`（门禁执行）。
+      - 复核入口：`tests/qcurl/CMakeLists.txt`（注册/分组） + `ctest -N/-L`（当前 build 清单） + `python3 scripts/ctest_strict.py`（门禁执行）。
   - libcurl_consistency（baseline ↔ qcurl 可观测对照）：
       - 证明点：在纳入 suite 的用例集合中，baseline 与 QCurl 在“可观测语义摘要”和“响应体/工件 sha256”上等价（对比字段见 `pytest_support/compare.py`）。
       - 复核入口：`build/libcurl_consistency/reports/*`（JUnit/XML + gate JSON）与 `curl/tests/http/gen/artifacts/<suite>/<case>/`（artifacts）。

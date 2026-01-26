@@ -19,7 +19,7 @@
   - `pause_resume` 仅比较 `pause_offset/pause_count/resume_count/event_seq`，不比较 `paused_data_events`。
 - Gate 接入：`tests/libcurl_consistency/run_gate.py`
   - `--suite all` 纳入 `test_p2_pause_resume.py`。
-- QCurl 侧执行器：`tests/tst_LibcurlConsistency.cpp`
+- QCurl 侧执行器：`tests/libcurl_consistency/tst_LibcurlConsistency.cpp`
   - 增加 `p2_pause_resume` 分支，产出 `pause_resume.json`。
 
 ### LC-15b（强判据/语义合同测试）

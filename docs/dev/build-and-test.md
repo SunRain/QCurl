@@ -34,7 +34,7 @@ ctest --test-dir build --output-on-failure
 
 ### 2.1 HTTP/2（本地可控 + 强断言）
 
-`tst_QCNetworkHttp2` 默认启动仓库内置的本地 node server（`tests/http2-test-server.js`），不依赖公网，并通过响应 JSON 提供可观察证据（`httpVersion/sessionId/streamId`）。
+`tst_QCNetworkHttp2` 默认启动仓库内置的本地 node server（`tests/qcurl/http2-test-server.js`），不依赖公网，并通过响应 JSON 提供可观察证据（`httpVersion/sessionId/streamId`）。
 
 ```bash
 ctest --test-dir build -R tst_QCNetworkHttp2 --output-on-failure
@@ -48,7 +48,7 @@ ctest --test-dir build -R tst_QCNetworkHttp2 --output-on-failure
 
 ```bash
 # 推荐：使用仓库脚本启动固定 digest 的 httpbin（动态端口 + 健康检查 + 写出 env）
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 curl -fsS "${QCURL_HTTPBIN_URL}/get" >/dev/null
 ```
@@ -56,7 +56,7 @@ curl -fsS "${QCURL_HTTPBIN_URL}/get" >/dev/null
 停止并清理：
 
 ```bash
-./tests/httpbin/stop_httpbin.sh
+./tests/qcurl/httpbin/stop_httpbin.sh
 ```
 
 ### 2.3 全量回归（本地自检；非门禁）
@@ -73,7 +73,7 @@ node --version
 python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print('ok', s.getsockname()); s.close()"
 
 # 若要跑 env/httpbin：启动本地 httpbin 并导出 QCURL_HTTPBIN_URL
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 curl -fsS "${QCURL_HTTPBIN_URL}/get" >/dev/null
 ```
@@ -100,14 +100,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 
 # 2) 启动 httpbin（动态端口 + 写出 QCURL_HTTPBIN_URL）
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 
 # 3) 全量 ctest（包含 env/websocket/external_* 等；用于本地自检）
 CTEST_OUTPUT_ON_FAILURE=1 ctest --test-dir build --output-on-failure
 
 # 4) 清理 httpbin
-./tests/httpbin/stop_httpbin.sh
+./tests/qcurl/httpbin/stop_httpbin.sh
 ```
 
 ### 5.2 libcurl_consistency（全量：pytest 或 gate）

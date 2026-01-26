@@ -198,7 +198,7 @@ d->setError(error, ...);
 
 **问题**: 测试期望下载 1MB，但 httpbin Docker 镜像限制最大返回 100KB。
 
-**修复** (tests/tst_Integration.cpp):
+**修复** (tests/qcurl/tst_Integration.cpp):
 ```cpp
 // 之前
 QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/bytes/1048576"));

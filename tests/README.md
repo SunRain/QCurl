@@ -4,11 +4,17 @@
 
 ---
 
+## 📁 目录结构（测试分类）
+
+- `tests/qcurl/`：QCurl 本身的 QtTest（C++）与本地测试依赖（httpbin/node server/testdata/node_modules）。
+- `tests/libcurl_consistency/`：QCurl ↔ libcurl 一致性测试（pytest + baseline clients + gate）。
+
 ## ✅ 证据门禁口径（skip=fail + LABELS）
 
 本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
 
-- **QSKIP 在 ctest 门禁下视为失败（skip=fail）**：`tests/CMakeLists.txt` 为所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP\\s*:"`，避免“ctest 全绿≠已覆盖”的误读。
+- **默认：QSKIP 在 ctest 证据门禁下视为失败（skip=fail）**：`tests/qcurl/CMakeLists.txt` 为（几乎）所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP\\s*:"`，避免“ctest 全绿≠已覆盖”的误读。
+  - **例外：`LABELS=external_network`（如 `tst_QCNetworkDiagnostics`）允许 QSKIP**。该类测试包含公网探测场景，默认不开外网以避免在受限网络/CI 中引入不稳定因素；如需执行公网探测，显式设置 `QCURL_ALLOW_EXTERNAL_NETWORK=1`。
 - **是否运行某类用例，唯一入口是 ctest 的 LABELS 分组**：不要依赖 `QSKIP` 去“规避失败”，而应通过 `-L/--label-regex` 选择要跑的证据集合。
 
 推荐入口（可复现命令）：
@@ -43,7 +49,7 @@ python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-r
 ## 📋 测试列表
 
 测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。  
-测试项的唯一准确来源是 `ctest`（由 `tests/CMakeLists.txt` 收集并标注 LABELS）。
+测试项的唯一准确来源是 `ctest`（由 `tests/qcurl/CMakeLists.txt` 注册并标注 LABELS）。
 
 推荐查看方式：
 
@@ -56,6 +62,16 @@ ctest --test-dir build -N -L offline
 ctest --test-dir build -N -L env
 ```
 
+### 🌐 external_network（默认关闭公网探测）
+
+`LABELS=external_network` 的测试会优先使用本地依赖（若设置了 `QCURL_HTTPBIN_URL`），并默认跳过公网探测用例。
+
+如需显式启用公网探测（非门禁、可能不稳定），使用：
+
+```bash
+QCURL_ALLOW_EXTERNAL_NETWORK=1 ctest --test-dir build -L external_network --output-on-failure
+```
+
 ---
 
 ## 🚀 快速开始
@@ -66,7 +82,7 @@ ctest --test-dir build -N -L env
 推荐使用仓库内置脚本启动固定版本的 httpbin 并生成 env 文件：
 
 ```bash
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 ```
 
@@ -92,10 +108,10 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 
 # 2) QtTest 全量（含 env/httpbin）
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 CTEST_OUTPUT_ON_FAILURE=1 ctest --test-dir build --output-on-failure
-./tests/httpbin/stop_httpbin.sh
+./tests/qcurl/httpbin/stop_httpbin.sh
 
 # 3) libcurl_consistency 全量（含 ext + HTTP/3 强制）
 QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
@@ -106,8 +122,8 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ## 🧪 WebSocket 测试说明（smoke vs evidence）
 
-- `tests/websocket-fragment-server.js`：**message-level** echo smoke（基于 `ws`，只能证明回显链路；不提供帧级证据）。
-- `tests/websocket-evidence-server.js`：**frame-level** evidence（零外部依赖；显式发送 fragmentation/close，并输出 JSONL 工件供复核）。
+- `tests/qcurl/websocket-fragment-server.js`：**message-level** echo smoke（基于 `ws`，只能证明回显链路；不提供帧级证据）。
+- `tests/qcurl/websocket-evidence-server.js`：**frame-level** evidence（零外部依赖；显式发送 fragmentation/close，并输出 JSONL 工件供复核）。
 
 在证据口径下，帧级语义（continuation frames / close code&reason）以 evidence server 的工件为准，避免“通过但不证明”的误读。
 
@@ -115,7 +131,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 `tst_Integration` 中包含本地 HTTPS 证据用例（自签名证书）：
 - 失败路径：默认安全配置应拒绝（`NetworkError::SslHandshakeFailed`）
-- 成功路径：配置 `caCertPath=tests/testdata/http2/localhost.crt` 后应成功
+- 成功路径：配置 `caCertPath=tests/qcurl/testdata/http2/localhost.crt` 后应成功
 
 用例会输出 `QCURL_EVIDENCE ...` 行，便于在 CI/日志中复核。
 
@@ -123,10 +139,10 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ```bash
 # 运行单个测试并显示详细信息
-./tests/tst_Integration -v2
+./build/tests/tst_Integration -v2
 
 # 只运行特定测试用例
-./tests/tst_Integration testRealHttpGetRequest
+./build/tests/tst_Integration testRealHttpGetRequest
 ```
 
 ---
@@ -210,14 +226,14 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ```bash
 # 推荐：启动固定 digest 的 httpbin 并自动写出 env（动态端口，避免冲突）
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 source build/test-env/httpbin.env
 
 # 或手动：指向你自己的 httpbin（不要求固定端口）
 export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 ```
 
-推荐使用 `./tests/httpbin/start_httpbin.sh --write-env ...` 自动生成并 `source`，避免端口冲突与版本漂移。
+推荐使用 `./tests/qcurl/httpbin/start_httpbin.sh --write-env ...` 自动生成并 `source`，避免端口冲突与版本漂移。
 
 ---
 
@@ -227,7 +243,7 @@ export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 
 **原因：** httpbin 服务未启动或 `QCURL_HTTPBIN_URL` 未设置/指向不可达地址。
 
-**解决：** 运行 `./tests/httpbin/start_httpbin.sh` 并 `source build/test-env/httpbin.env`，或手动设置 `QCURL_HTTPBIN_URL`。
+**解决：** 运行 `./tests/qcurl/httpbin/start_httpbin.sh` 并 `source build/test-env/httpbin.env`，或手动设置 `QCURL_HTTPBIN_URL`。
 
 ### Q2: 测试超时失败
 
@@ -239,8 +255,8 @@ export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 **解决：**
 ```bash
 # 重启 httpbin（以脚本/容器为准）
-./tests/httpbin/stop_httpbin.sh || true
-./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+./tests/qcurl/httpbin/stop_httpbin.sh || true
+./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
 
 # 或增加测试超时时间（编辑测试文件）
 QVERIFY(waitForSignal(reply, SIGNAL(finished()), 30000));  // 改为 30 秒
