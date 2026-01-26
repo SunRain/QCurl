@@ -376,7 +376,7 @@ def _preflight_forbid_local_httpbin(cfg: GateConfig) -> List[Dict[str, object]]:
 
     说明：
     - 一致性测试以 `curl/tests/http/testenv` 与本仓库 `http_observe_server.py` 为唯一服务端依赖；
-    - 本地 httpbin 仅用于 `tests/` 下的 QCurl 单侧集成测试，不得进入一致性 Gate（避免 Docker/端口成为门禁前置条件）。
+    - 本地 httpbin 仅用于 `tests/qcurl/` 下的 QCurl 单侧集成测试，不得进入一致性 Gate（避免 Docker/端口成为门禁前置条件）。
 
     实现：
     - 仅扫描“一致性套件可能执行的代码文件”（.py/.cpp/.h/.hpp...），避免文档出现端口号导致误报。
@@ -387,7 +387,7 @@ def _preflight_forbid_local_httpbin(cfg: GateConfig) -> List[Dict[str, object]]:
     skip_files = {Path(__file__).resolve()}
     scan_targets: List[Path] = [
         cfg.repo_root / "tests" / "libcurl_consistency",
-        cfg.repo_root / "tests" / "tst_LibcurlConsistency.cpp",
+        cfg.repo_root / "tests" / "libcurl_consistency" / "tst_LibcurlConsistency.cpp",
     ]
 
     violations: List[Dict[str, object]] = []

@@ -18,7 +18,7 @@ inline QString httpbinBaseUrl()
 
 inline QString httpbinMissingReason()
 {
-    return QStringLiteral("未配置 httpbin：请先启动 tests/httpbin/start_httpbin.sh 并 source "
+    return QStringLiteral("未配置 httpbin：请先启动 tests/qcurl/httpbin/start_httpbin.sh 并 source "
                           "输出的 env 文件，或设置环境变量 QCURL_HTTPBIN_URL。");
 }
 

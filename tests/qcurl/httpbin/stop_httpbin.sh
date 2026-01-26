@@ -4,9 +4,9 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 用法：
-  ./tests/httpbin/stop_httpbin.sh [--name <container>]
+  ./tests/qcurl/httpbin/stop_httpbin.sh [--name <container>]
 
-默认容器名从 tests/httpbin/httpbin.lock 读取（QCURL_HTTPBIN_CONTAINER_NAME），否则使用 qcurl-httpbin。
+默认容器名从 tests/qcurl/httpbin/httpbin.lock 读取（QCURL_HTTPBIN_CONTAINER_NAME），否则使用 qcurl-httpbin。
 USAGE
 }
 

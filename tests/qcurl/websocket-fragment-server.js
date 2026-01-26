@@ -5,7 +5,7 @@
  * ⚠️ 重要说明：
  * - 本脚本基于 `ws` 库的 message 回调；ws 会在内部完成分片重组。
  * - 因此它只能证明“消息收发链路/回显”可用，不能证明 continuation frames（帧级分片）真实发生。
- * - 如需帧级证据（fragmentation/close code&reason），请使用 `tests/websocket-evidence-server.js`。
+ * - 如需帧级证据（fragmentation/close code&reason），请使用 `tests/qcurl/websocket-evidence-server.js`。
  * 
  * 功能：
  * - Echo 服务器：回显所有收到的消息
@@ -17,7 +17,7 @@
  *   npm install ws
  * 
  * 运行：
- *   node tests/websocket-fragment-server.js --port 0
+ *   node tests/qcurl/websocket-fragment-server.js --port 0
  * 
  * 测试：
  *   cd build && ctest -R testFragmentedMessage -V

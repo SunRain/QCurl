@@ -19,8 +19,8 @@
  *    curl --version | grep HTTP2
  *
  * 2. 默认使用仓库内置的本地可控 HTTP/2 server（node）：
- *    - 脚本：tests/http2-test-server.js
- *    - 证书：tests/testdata/http2/localhost.{crt,key}（仅用于测试）
+ *    - 脚本：tests/qcurl/http2-test-server.js
+ *    - 证书：tests/qcurl/testdata/http2/localhost.{crt,key}（仅用于测试）
  *
  *    如需对接其他 HTTP/2 server（例如 curl testenv），可通过环境变量覆盖 base URL：
  *    - QCURL_HTTP2_TEST_BASE_URL: 覆盖 HTTP/2 base URL（例如 https://127.0.0.1:PORT）
@@ -183,10 +183,10 @@ bool TestQCNetworkHttp2::startLocalTestServer()
 
     const QString appDir     = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/http2-test-server.js"));
+        QStringLiteral("../../tests/qcurl/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         m_serverError = QStringLiteral(
-            "未找到本地 HTTP/2 测试服务器脚本（tests/http2-test-server.js）。");
+            "未找到本地 HTTP/2 测试服务器脚本（tests/qcurl/http2-test-server.js）。");
         return false;
     }
 
@@ -562,7 +562,7 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
 
     if (m_disableDowngradeTest) {
         // 证据口径：禁用关键用例不应“静默通过”，避免误读为已验证。
-        // 注意：本仓库 ctest 取证式门禁为 skip=fail（见 tests/CMakeLists.txt），因此该 QSKIP 代表“无证据”。
+        // 注意：本仓库 ctest 取证式门禁为 skip=fail（见 tests/qcurl/CMakeLists.txt），因此该 QSKIP 代表“无证据”。
         QSKIP(
             "已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例（证据门禁口径下视为无证据）。");
     }

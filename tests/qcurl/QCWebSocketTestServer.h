@@ -7,8 +7,8 @@
  * 封装本地 node WebSocket 测试服务器的启动/停止、READY marker 解析与端口就绪探测。
  *
  * 当前包含两类 server：
- * - Fragment Echo（message-level）：tests/websocket-fragment-server.js（依赖 ws；仅用于回显 smoke）
- * - Evidence Server（frame-level）：tests/websocket-evidence-server.js（零外部依赖；用于 fragmentation/close 证据链）
+ * - Fragment Echo（message-level）：tests/qcurl/websocket-fragment-server.js（依赖 ws；仅用于回显 smoke）
+ * - Evidence Server（frame-level）：tests/qcurl/websocket-evidence-server.js（零外部依赖；用于 fragmentation/close 证据链）
  */
 
 #include <QCoreApplication>
@@ -75,7 +75,7 @@ public:
     {
         const QString appDir = QCoreApplication::applicationDirPath();
         return QDir(appDir).absoluteFilePath(
-            QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+            QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
     }
 
     bool start(Mode mode, ServerKind kind = ServerKind::FragmentEcho)
@@ -91,8 +91,8 @@ public:
         const QString appDir     = QCoreApplication::applicationDirPath();
         const QString scriptPath = QDir(appDir).absoluteFilePath(
             (m_kind == ServerKind::Evidence)
-                ? QStringLiteral("../../tests/websocket-evidence-server.js")
-                : QStringLiteral("../../tests/websocket-fragment-server.js"));
+                ? QStringLiteral("../../tests/qcurl/websocket-evidence-server.js")
+                : QStringLiteral("../../tests/qcurl/websocket-fragment-server.js"));
         if (!QFileInfo::exists(scriptPath)) {
             m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本：%1").arg(scriptPath);
             return false;
@@ -101,12 +101,12 @@ public:
         QStringList args{scriptPath, QStringLiteral("--port"), QStringLiteral("0")};
         if (m_mode == Mode::Wss) {
             const QString certPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+                QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
             const QString keyPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/testdata/http2/localhost.key"));
+                QStringLiteral("../../tests/qcurl/testdata/http2/localhost.key"));
             if (!QFileInfo::exists(certPath) || !QFileInfo::exists(keyPath)) {
                 m_skipReason = QStringLiteral(
-                    "未找到本地 WSS 证书或私钥（tests/testdata/http2/localhost.{crt,key}）。");
+                    "未找到本地 WSS 证书或私钥（tests/qcurl/testdata/http2/localhost.{crt,key}）。");
                 return false;
             }
             args += {QStringLiteral("--tls"),
@@ -136,8 +136,8 @@ public:
                                "%1")
                                .arg((m_kind == ServerKind::FragmentEcho)
                                         ? QStringLiteral(
-                                              "（Fragment Echo 依赖 tests/node_modules，可尝试 `cd "
-                                              "tests && npm ci`）")
+                                              "（Fragment Echo 依赖 tests/qcurl/node_modules，可尝试 "
+                                              "`cd tests/qcurl && npm ci`）")
                                         : QString());
             return false;
         }

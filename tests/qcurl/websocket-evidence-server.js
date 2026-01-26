@@ -15,8 +15,8 @@
  * - 工件仅记录摘要（len/sha256/opcode/fin），不记录 payload 原文，避免泄露敏感信息。
  *
  * 用法：
- *   node tests/websocket-evidence-server.js --port 0
- *   node tests/websocket-evidence-server.js --tls --cert <path> --key <path> --port 0
+ *   node tests/qcurl/websocket-evidence-server.js --port 0
+ *   node tests/qcurl/websocket-evidence-server.js --tls --cert <path> --key <path> --port 0
  *
  * READY marker（单行）：
  *   QCURL_WEBSOCKET_TEST_SERVER_READY {"port":12345,"kind":"evidence","artifactsPath":"...","nodeVersion":"v20.0.0"}
@@ -528,4 +528,3 @@ function main() {
 }
 
 main();
-

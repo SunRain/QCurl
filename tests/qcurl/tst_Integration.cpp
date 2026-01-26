@@ -21,7 +21,7 @@
  *
  * 推荐启动方式（生成 env 文件并做健康检查）：
  *
- *     ./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+ *     ./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
  *     source build/test-env/httpbin.env
  *     cd build && ctest -R tst_Integration --output-on-failure
  * ============================================================================
@@ -678,9 +678,9 @@ void TestIntegration::testLocalHttpsTlsVerification()
     // 可控 HTTPS 证据：使用仓库自带证书启动本地 HTTPS 服务端，验证 TLS 的失败/成功两条路径。
     const QString appDir     = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/http2-test-server.js"));
+        QStringLiteral("../../tests/qcurl/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
-        QFAIL("未找到本地 HTTPS 测试服务器脚本（tests/http2-test-server.js）。");
+        QFAIL("未找到本地 HTTPS 测试服务器脚本（tests/qcurl/http2-test-server.js）。");
     }
 
     QProcess localServer;
@@ -755,7 +755,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
 
     if (certPath.isEmpty()) {
         certPath = QDir(appDir).absoluteFilePath(
-            QStringLiteral("../../tests/testdata/http2/localhost.crt"));
+            QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
     }
 
     QVERIFY2(waitForPortReady(static_cast<quint16>(httpsPort), 3000),

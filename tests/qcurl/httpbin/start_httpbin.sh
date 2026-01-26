@@ -4,22 +4,22 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 用法：
-  ./tests/httpbin/start_httpbin.sh [--port <host_port|0>] [--write-env <path>] [--name <container>] [--image-ref <ref>]
+  ./tests/qcurl/httpbin/start_httpbin.sh [--port <host_port|0>] [--write-env <path>] [--name <container>] [--image-ref <ref>]
 
 说明：
   - 默认使用动态端口（--port 0），避免固定 8935 冲突
-  - 镜像默认从 tests/httpbin/httpbin.lock 读取（image@sha256:<digest>）
+  - 镜像默认从 tests/qcurl/httpbin/httpbin.lock 读取（image@sha256:<digest>）
   - 启动后会执行健康检查（GET /get 返回 200 且为 JSON）
   - 成功后会写出 env 文件（默认 build/test-env/httpbin.env），其中包含 QCURL_HTTPBIN_URL
 
 示例：
-  ./tests/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
+  ./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
   source build/test-env/httpbin.env
 USAGE
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 write_env="${REPO_ROOT}/build/test-env/httpbin.env"
 host_port="0"
@@ -68,7 +68,7 @@ if [[ -z "${container_name}" ]]; then
   container_name="qcurl-httpbin"
 fi
 if [[ -z "${image_ref}" ]]; then
-  echo "[httpbin] missing image ref: please set QCURL_HTTPBIN_IMAGE_REF in tests/httpbin/httpbin.lock or pass --image-ref" >&2
+  echo "[httpbin] missing image ref: please set QCURL_HTTPBIN_IMAGE_REF in tests/qcurl/httpbin/httpbin.lock or pass --image-ref" >&2
   exit 2
 fi
 

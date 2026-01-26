@@ -2,7 +2,7 @@
 #
 # 目标：
 # - 固定 image tag/digest，避免版本漂移导致“同样命令不同结果”
-# - 供 tests/httpbin/start_httpbin.sh 与 CI 使用
+# - 供 tests/qcurl/httpbin/start_httpbin.sh 与 CI 使用
 #
 # 说明：
 # - 推荐使用 `image@sha256:<digest>` 锁定（而非仅 tag）
