@@ -67,6 +67,11 @@ private:
      * @brief 检查是否有网络连接
      */
     bool hasNetworkAccess() const;
+
+    static bool isTruthyEnvValue(const QByteArray &value);
+    bool isExternalNetworkAllowed() const;
+    QUrl httpbinBaseUrl() const;
+    QUrl httpbinUrl(const QString &path) const;
 };
 
 void tst_QCNetworkDiagnostics::initTestCase()
@@ -75,6 +80,17 @@ void tst_QCNetworkDiagnostics::initTestCase()
     qDebug() << "QCNetworkDiagnostics 测试套件";
     qDebug() << "v2.19.0";
     qDebug() << "========================================";
+
+    const QUrl httpbinBase = httpbinBaseUrl();
+    if (httpbinBase.isValid() && !httpbinBase.isEmpty()) {
+        qDebug() << "QCURL_HTTPBIN_URL:" << httpbinBase.toString();
+    }
+
+    if (!isExternalNetworkAllowed()) {
+        qWarning() << "ℹ️  外网探测默认关闭（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1 可启用）";
+        qWarning() << "   公网相关用例将被跳过（不影响本地/离线诊断用例）";
+        return;
+    }
 
     if (!hasNetworkAccess()) {
         qWarning() << "⚠️  未检测到网络连接";
@@ -102,6 +118,41 @@ bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
     cached               = (info.error() == QHostInfo::NoError) && !info.addresses().isEmpty();
     initialized          = true;
     return cached;
+}
+
+bool tst_QCNetworkDiagnostics::isTruthyEnvValue(const QByteArray &value)
+{
+    const QByteArray normalized = value.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return false;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off") {
+        return false;
+    }
+    return true;
+}
+
+bool tst_QCNetworkDiagnostics::isExternalNetworkAllowed() const
+{
+    return isTruthyEnvValue(qgetenv("QCURL_ALLOW_EXTERNAL_NETWORK"));
+}
+
+QUrl tst_QCNetworkDiagnostics::httpbinBaseUrl() const
+{
+    const QByteArray url = qgetenv("QCURL_HTTPBIN_URL");
+    if (url.isEmpty()) {
+        return {};
+    }
+    return QUrl(QString::fromUtf8(url));
+}
+
+QUrl tst_QCNetworkDiagnostics::httpbinUrl(const QString &path) const
+{
+    const QUrl baseUrl = httpbinBaseUrl();
+    if (!baseUrl.isValid() || baseUrl.isEmpty()) {
+        return {};
+    }
+    return baseUrl.resolved(QUrl(path));
 }
 
 // ============================================================================
@@ -139,6 +190,9 @@ void tst_QCNetworkDiagnostics::testDiagResult_ToString()
 
 void tst_QCNetworkDiagnostics::testResolveDNS_ValidDomain()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -188,6 +242,9 @@ void tst_QCNetworkDiagnostics::testResolveDNS_Localhost()
 
 void tst_QCNetworkDiagnostics::testResolveDNS_IPv6Support()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -210,6 +267,9 @@ void tst_QCNetworkDiagnostics::testResolveDNS_IPv6Support()
 
 void tst_QCNetworkDiagnostics::testReverseDNS_ValidIP()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -242,6 +302,9 @@ void tst_QCNetworkDiagnostics::testReverseDNS_InvalidIP()
 
 void tst_QCNetworkDiagnostics::testConnection_ValidHost()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -289,6 +352,9 @@ void tst_QCNetworkDiagnostics::testConnection_Timeout()
 
 void tst_QCNetworkDiagnostics::testConnection_CommonPorts()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -318,6 +384,9 @@ void tst_QCNetworkDiagnostics::testConnection_CommonPorts()
 
 void tst_QCNetworkDiagnostics::testCheckSSL_ValidCertificate()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -339,6 +408,9 @@ void tst_QCNetworkDiagnostics::testCheckSSL_ValidCertificate()
 
 void tst_QCNetworkDiagnostics::testCheckSSL_ExpiredCertificate()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -359,6 +431,9 @@ void tst_QCNetworkDiagnostics::testCheckSSL_ExpiredCertificate()
 
 void tst_QCNetworkDiagnostics::testCheckSSL_SelfSignedCertificate()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -385,6 +460,9 @@ void tst_QCNetworkDiagnostics::testCheckSSL_SelfSignedCertificate()
 
 void tst_QCNetworkDiagnostics::testCheckSSL_CertificateDetails()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -413,6 +491,20 @@ void tst_QCNetworkDiagnostics::testCheckSSL_CertificateDetails()
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_ValidURL()
 {
+    const QUrl localUrl = httpbinUrl(QStringLiteral("/get"));
+    if (localUrl.isValid() && !localUrl.isEmpty()) {
+        auto result = QCNetworkDiagnostics::probeHTTP(localUrl, 10000);
+
+        QVERIFY(result.success);
+        QVERIFY(result.summary.contains("HTTP 探测成功"));
+        QCOMPARE(result.details["url"].toString(), localUrl.toString());
+        QCOMPARE(result.details["statusCode"].toInt(), 200);
+        return;
+    }
+
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（QCURL_ALLOW_EXTERNAL_NETWORK=1），且未设置 QCURL_HTTPBIN_URL");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -427,6 +519,9 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_ValidURL()
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_HTTPS()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -444,6 +539,9 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_HTTPS()
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_Redirect()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
@@ -469,11 +567,21 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_Redirect()
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_404NotFound()
 {
-    if (!hasNetworkAccess()) {
-        QSKIP("无网络连接");
+    QUrl url;
+    const QUrl localUrl = httpbinUrl(QStringLiteral("/status/404"));
+    if (localUrl.isValid() && !localUrl.isEmpty()) {
+        url = localUrl;
+    } else {
+        if (!isExternalNetworkAllowed()) {
+            QSKIP("未显式允许外网（QCURL_ALLOW_EXTERNAL_NETWORK=1），且未设置 QCURL_HTTPBIN_URL");
+        }
+        if (!hasNetworkAccess()) {
+            QSKIP("无网络连接");
+        }
+        url = QUrl(QStringLiteral("https://httpbin.org/status/404"));
     }
 
-    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://httpbin.org/status/404"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(url, 10000);
 
     if (result.success) {
         QCOMPARE(result.details["statusCode"].toInt(), 404);
@@ -482,11 +590,21 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_404NotFound()
 
 void tst_QCNetworkDiagnostics::testProbeHTTP_TimingBreakdown()
 {
-    if (!hasNetworkAccess()) {
-        QSKIP("无网络连接");
+    QUrl url;
+    const QUrl localUrl = httpbinUrl(QStringLiteral("/get"));
+    if (localUrl.isValid() && !localUrl.isEmpty()) {
+        url = localUrl;
+    } else {
+        if (!isExternalNetworkAllowed()) {
+            QSKIP("未显式允许外网（QCURL_ALLOW_EXTERNAL_NETWORK=1），且未设置 QCURL_HTTPBIN_URL");
+        }
+        if (!hasNetworkAccess()) {
+            QSKIP("无网络连接");
+        }
+        url = QUrl(QStringLiteral("https://example.com"));
     }
 
-    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://example.com"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(url, 10000);
 
     if (result.success) {
         // 验证时间详情存在
@@ -504,11 +622,21 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_TimingBreakdown()
 
 void tst_QCNetworkDiagnostics::testDiagnose_CompleteFlow()
 {
-    if (!hasNetworkAccess()) {
-        QSKIP("无网络连接");
+    QUrl url;
+    const QUrl localUrl = httpbinUrl(QStringLiteral("/get"));
+    if (localUrl.isValid() && !localUrl.isEmpty()) {
+        url = localUrl;
+    } else {
+        if (!isExternalNetworkAllowed()) {
+            QSKIP("未显式允许外网（QCURL_ALLOW_EXTERNAL_NETWORK=1），且未设置 QCURL_HTTPBIN_URL");
+        }
+        if (!hasNetworkAccess()) {
+            QSKIP("无网络连接");
+        }
+        url = QUrl(QStringLiteral("http://example.com"));
     }
 
-    auto result = QCNetworkDiagnostics::diagnose(QUrl("http://example.com"));
+    auto result = QCNetworkDiagnostics::diagnose(url);
 
     QVERIFY(result.success);
     QVERIFY(result.summary.contains("综合诊断完成"));
@@ -524,11 +652,21 @@ void tst_QCNetworkDiagnostics::testDiagnose_CompleteFlow()
 
 void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
 {
-    if (!hasNetworkAccess()) {
-        QSKIP("无网络连接");
+    QUrl url;
+    const QUrl localUrl = httpbinBaseUrl();
+    if (localUrl.isValid() && !localUrl.isEmpty()) {
+        url = localUrl;
+    } else {
+        if (!isExternalNetworkAllowed()) {
+            QSKIP("未显式允许外网（QCURL_ALLOW_EXTERNAL_NETWORK=1），且未设置 QCURL_HTTPBIN_URL");
+        }
+        if (!hasNetworkAccess()) {
+            QSKIP("无网络连接");
+        }
+        url = QUrl(QStringLiteral("http://httpbin.org"));
     }
 
-    auto result = QCNetworkDiagnostics::diagnose(QUrl("http://httpbin.org"));
+    auto result = QCNetworkDiagnostics::diagnose(url);
 
     if (result.success) {
         QVERIFY(result.details.contains("dns"));
@@ -540,6 +678,9 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
 
 void tst_QCNetworkDiagnostics::testDiagnose_HTTPSSite()
 {
+    if (!isExternalNetworkAllowed()) {
+        QSKIP("未显式允许外网（设置 QCURL_ALLOW_EXTERNAL_NETWORK=1）");
+    }
     if (!hasNetworkAccess()) {
         QSKIP("无网络连接");
     }
