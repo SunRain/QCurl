@@ -59,8 +59,8 @@
 
 ### 🎯 开发体验
 
-- **流式链式 API** - `QCRequest::get(url).withHeader().send()` 极简语法
-- **传统构建器 API** - `QCRequestBuilder` 适合复杂配置
+- **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::send*()` 一套入口覆盖配置与发送
+- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()` 支持链式配置
 - **请求重试** - 指数退避算法，自动处理临时性错误
 - **优先级调度** - 6 级优先级，并发控制，带宽限制
 
@@ -93,16 +93,21 @@ sudo cmake --install build
 #### 1. 简单 GET 请求
 
 ```cpp
-#include <QCRequest.h>
+#include <QCNetworkAccessManager.h>
+#include <QCNetworkRequest.h>
 
-auto *reply = QCurl::QCRequest::get("https://api.example.com/data")
-    .withHeader("Authorization", "Bearer token")
-    .withTimeout(std::chrono::seconds(30))
-    .send();
+QCurl::QCNetworkAccessManager manager;
+QCurl::QCNetworkRequest request(QUrl("https://api.example.com/data"));
+request.setRawHeader("Authorization", "Bearer token")
+    .setTimeout(std::chrono::seconds(30));
+
+auto *reply = manager.sendGet(request);
 
 connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
     if (reply->error() == QCurl::NetworkError::NoError) {
-        qDebug() << "Response:" << reply->readAll().value();
+        if (const auto data = reply->readAll(); data.has_value()) {
+            qDebug() << "Response:" << *data;
+        }
     }
     reply->deleteLater();
 });
@@ -139,7 +144,8 @@ QCurl::QCMultipartFormData formData;
 formData.addTextField("userId", "12345");
 formData.addFileField("avatar", "/path/to/photo.jpg");
 
-auto *reply = manager->postMultipart(QUrl("https://api.example.com/upload"), formData);
+QCurl::QCNetworkRequest uploadRequest(QUrl("https://api.example.com/upload"));
+auto *reply = manager.postMultipart(uploadRequest, formData);
 ```
 
 ---
@@ -182,7 +188,7 @@ auto *reply = manager->postMultipart(QUrl("https://api.example.com/upload"), for
 ### CMake
 
 ```cmake
-find_package(QCurl REQUIRED)
+find_package(QCurl CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE QCurl::QCurl)
 ```
 

@@ -2,23 +2,23 @@
 
 本页给出“常用配置点”的导航，避免读者在大量 API 中迷路；更细的行为契约以代码与注释为准（Ground Truth）。
 
-## 1. 请求级配置（推荐从 QCRequest 开始）
+## 1. 请求级配置（推荐从 `QCNetworkRequest` 开始）
 
-`QCRequest` 提供链式 API，覆盖常用请求参数配置（详见 `src/QCRequest.h`）：
+`QCNetworkRequest` 是当前唯一的 public request 配置入口，覆盖常用请求参数配置（详见 `src/QCNetworkRequest.h`）：
 
-- Header：`withHeader(...)`
-- 超时：`withTimeout(...)`
-- 代理：`withProxyConfig(...)`
-- TLS/SSL：`withSslConfig(...)`
-- HTTP 版本：`withHttpVersion(...)`
-- 优先级：`withPriority(...)`
-- 重试策略：`withRetryPolicy(...)`
-- 认证：`withBasicAuth(...)` / `withHttpAuth(...)`
-- 上传：`withUploadDevice(...)` / `withUploadFile(...)`
+- Header：`setRawHeader(...)`
+- 超时：`setTimeout(...)` / `setTimeoutConfig(...)`
+- 代理：`setProxyConfig(...)`
+- TLS/SSL：`setSslConfig(...)`
+- HTTP 版本：`setHttpVersion(...)`
+- 优先级：`setPriority(...)`
+- 重试策略：`setRetryPolicy(...)`
+- 认证：`setHttpAuth(...)`
+- 上传：`setUploadDevice(...)` / `setUploadFile(...)`
 
 ### 优先级（调度器）
 
-`withPriority(...)` 会设置 `QCNetworkRequestPriority`，用于调度器出队顺序。当前调度契约为**非抢占式**（non-preemptive）：已 Running 的请求不会因更高优先级到来而被中断。
+`setPriority(...)` 会设置 `QCNetworkRequestPriority`，用于调度器出队顺序。当前调度契约为**非抢占式**（non-preemptive）：已 Running 的请求不会因更高优先级到来而被中断。
 
 说明（Critical）：
 
@@ -37,9 +37,20 @@
 
 ## 3. WebSocket 配置
 
-WebSocket 能力入口为 `QCWebSocket`，常见配置包括重连策略、压缩配置等；可参考：
+WebSocket 的 public 配置入口集中在以下头文件注释：
 
-- 示例：`examples/WebSocketDemo/`、`examples/WebSocketCompressionDemo/`、`examples/WebSocketPoolDemo/`
+- `src/QCWebSocket.h`：连接生命周期、`close(...)` / `ping(...)` / `pong(...)` / `setAutoPongEnabled(...)` / SSL 配置
+- `src/QCWebSocketReconnectPolicy.h`：重连次数、指数退避参数、可重连 close code 集合
+- `src/QCWebSocketCompressionConfig.h`：压缩开关、 window bits、context takeover、compression level
+
+常见边界可先关注：
+
+- `close(reason)` 的 `reason` 最大 123 字节
+- `ping(...)` / `pong(...)` 的 payload 最大 125 字节
+- `setAutoPongEnabled(...)` 必须在 `open()` 前设置，连接建立后修改无效
+- `QCWebSocketCompressionConfig` 的 `clientMaxWindowBits` / `serverMaxWindowBits` 约束为 8-15
+
+示例目录（`examples/WebSocketDemo/`、`examples/WebSocketCompressionDemo/`、`examples/WebSocketPoolDemo/`）只演示典型用法，不定义参数合同。
 
 ## 4. 排障与常见问题
 

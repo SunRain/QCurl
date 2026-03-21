@@ -1,208 +1,90 @@
-# QCurl HTTP/3 使用指南
+# QCurl HTTP/3 参考
 
-> **版本**: v2.17.0  
-> **更新**: 2025-11-17
+本文只描述 QCurl 对 HTTP/3 的稳定使用合同，不记录版本快照、单次性能结论或环境特例。
 
----
+## 1. 能力边界
 
-## 📋 目录
+- HTTP/3 是否可用取决于当前构建所链接的 libcurl 运行时能力，以及目标服务端是否支持 QUIC/HTTP/3。
+- QCurl 只负责把请求的 HTTP 版本偏好映射到 libcurl，不承诺在任意环境下都一定走到 HTTP/3。
+- `Http3` 与 `Http3Only` 的区别必须由调用方显式选择：
+  - `Http3`: 优先尝试 HTTP/3；不可用时允许按 libcurl 能力与服务器协商降级。
+  - `Http3Only`: 仅接受 HTTP/3；环境或服务端不满足时应直接失败，而不是静默降级。
+  - `HttpAny`: 不表达偏好，由 libcurl 自动协商。
 
-1. [HTTP/3 简介](#http3-简介)
-2. [依赖要求](#依赖要求)
-3. [快速开始](#快速开始)
-4. [使用场景](#使用场景)
-5. [性能优化](#性能优化)
-6. [故障排查](#故障排查)
-
----
-
-## HTTP/3 简介
-
-HTTP/3 是 HTTP 协议的最新版本，基于 QUIC 传输层协议（UDP），提供：
-
-- ✅ **更快的连接建立** - 0-RTT 恢复
-- ✅ **更好的丢包恢复** - 无队头阻塞
-- ✅ **内置加密** - 强制 TLS 1.3
-- ✅ **连接迁移** - 网络切换不断连
-
----
-
-## 依赖要求
-
-### libcurl 版本
-
-```bash
-# 检查 libcurl 版本和 HTTP/3 支持
-curl --version | grep HTTP3
-
-# 期望输出包含:
-# libcurl/8.17.0 ... HTTP3
-```
-
-### 编译要求
-
-- libcurl >= 7.66.0
-- nghttp3 (HTTP/3 layer)
-- ngtcp2 (QUIC implementation)
-
----
-
-## 快速开始
-
-### 1. 基本 HTTP/3 请求
+## 2. 最小用法
 
 ```cpp
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequest.h"
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkRequest.h"
 
 using namespace QCurl;
 
 QCNetworkAccessManager manager;
-
-QCNetworkRequest request(QUrl("https://cloudflare-quic.com"));
-request.setHttpVersion(QCNetworkHttpVersion::Http3);  // 启用 HTTP/3
+QCNetworkRequest request(QUrl("https://example.com"));
+request.setHttpVersion(QCNetworkHttpVersion::Http3);
 
 auto *reply = manager.sendGet(request);
-
-connect(reply, &QCNetworkReply::finished, [reply]() {
-    if (reply->error() == NetworkError::NoError) {
-        auto data = reply->readAll();
-        qDebug() << "HTTP/3 请求成功!";
-    }
-    reply->deleteLater();
-});
 ```
 
-### 2. Http3Only 模式（严格）
+严格要求 HTTP/3 时，改为：
 
 ```cpp
-// 仅使用 HTTP/3，失败则报错（不降级）
 request.setHttpVersion(QCNetworkHttpVersion::Http3Only);
 ```
 
-### 3. 自动协商
+## 3. 调用方应当知道的合同
 
-```cpp
-// 让 libcurl 自动选择最优版本
-request.setHttpVersion(QCNetworkHttpVersion::HttpAny);
-```
+- 是否“偏好 HTTP/3”是请求级配置，不是全局默认。
+- 如果业务允许降级，应优先使用 `Http3` 而不是 `Http3Only`。
+- 如果业务把 HTTP/3 视为交付门槛，应在运行前做能力探测，并在 CI 或交付门禁中显式失败。
+- HTTP/3 不等于一定更快。首次握手、网络质量、服务器实现和 UDP 可达性都会影响结果。
 
----
+## 4. 验证入口
 
-## 使用场景
-
-### 场景 1: 移动网络
-
-HTTP/3 的连接迁移特性适合移动场景：
-
-```cpp
-// 移动应用推荐使用 Http3
-request.setHttpVersion(QCNetworkHttpVersion::Http3);
-```
-
-### 场景 2: 高延迟网络
-
-0-RTT 恢复显著减少延迟：
-
-```cpp
-// 跨国请求适合 HTTP/3
-request.setHttpVersion(QCNetworkHttpVersion::Http3);
-```
-
-### 场景 3: 丢包网络
-
-QUIC 的独立流恢复避免队头阻塞。
-
----
-
-## 性能优化
-
-### 1. 连接复用
-
-```cpp
-// 使用相同的 Manager 复用连接
-QCNetworkAccessManager manager;  // 单例或成员变量
-
-// 多次请求会自动复用 HTTP/3 连接
-auto *reply1 = manager.sendGet(request1);
-auto *reply2 = manager.sendGet(request2);
-```
-
-### 2. 连接池配置
-
-```cpp
-// HTTP/3 配合连接池效果更好
-#include "QCNetworkConnectionPoolConfig.h"
-#include "QCNetworkConnectionPoolManager.h"
-
-auto *poolManager = QCNetworkConnectionPoolManager::instance();
-poolManager->setConfig(QCNetworkConnectionPoolConfig::http2Optimized());
-```
-
----
-
-## 故障排查
-
-### Q: HTTP/3 请求失败？
-
-**检查清单**:
-1. libcurl 版本是否 >= 7.66.0
-2. 编译时是否启用 HTTP/3
-3. 服务器是否支持 HTTP/3
-4. 防火墙是否阻止 UDP 流量（QUIC 基于 UDP）
-
-**检查命令**:
-```cpp
-curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
-if (ver->features & CURL_VERSION_HTTP3) {
-    qDebug() << "HTTP/3 supported";
-} else {
-    qDebug() << "HTTP/3 not supported";
-}
-```
-
-### Q: HTTP/3 比 HTTP/2 慢？
-
-**可能原因**:
-- 首次连接的握手开销
-- 网络环境不稳定
-- 服务器实现不够优化
-
-**建议**: 多次测试取平均值，关注后续请求性能。
-
-### Q: UDP 被阻止？
-
-HTTP/3 使用 UDP 端口 443，某些网络环境可能阻止。
-
-**解决方案**:
-```cpp
-// 使用自动降级
-request.setHttpVersion(QCNetworkHttpVersion::Http3);  // 会自动降级到 HTTP/2
-```
-
----
-
-## 参考资源
-
-- [RFC 9114 - HTTP/3](https://www.rfc-editor.org/rfc/rfc9114)
-- [RFC 9000 - QUIC](https://www.rfc-editor.org/rfc/rfc9000)
-- [libcurl HTTP/3 文档](https://curl.se/docs/http3.html)
-- [Cloudflare QUIC 测试](https://cloudflare-quic.com)
-
----
-
-## 示例程序
-
-完整示例请参考: `examples/Http3Demo/`
+先确认运行时 libcurl 是否具备 HTTP/3 能力：
 
 ```bash
-cd build
-./examples/Http3Demo/Http3Demo 4  # 运行性能对比
+curl --version | grep HTTP3
 ```
 
----
+然后使用仓库内门禁或回归入口验证 QCurl 的实际行为：
 
-**版本**: v2.17.0  
-**作者**: QCurl Team  
-**许可**: 与 QCurl 主项目相同
+- `tests/qcurl/tst_QCNetworkHttp3`
+- `tests/libcurl_consistency/`
+- `docs/dev/build-and-test.md`
+
+如果交付要求“缺少 HTTP/3 能力即失败”，应配合环境变量或对应 gate 脚本使用，而不是依赖文档中的经验判断。
+
+## 5. 常见失败原因
+
+### 5.1 `Http3Only` 直接失败
+
+优先检查：
+
+1. 运行时 libcurl 是否编译进 HTTP/3 支持。
+2. 目标服务端是否真的开放了 HTTP/3。
+3. 当前网络是否允许 UDP/443。
+
+### 5.2 `Http3` 实际走了降级路径
+
+这通常表示 QCurl 允许了协商回退，并不代表实现异常。若业务不接受该结果，应改用 `Http3Only` 并把失败视为能力缺失。
+
+### 5.3 单次压测结果波动大
+
+HTTP/3 的性能判断必须依赖同一环境、多次采样和一致的门禁脚本；单次样本不能写成产品承诺。
+
+## 6. 相关文件
+
+- `src/QCNetworkHttpVersion.h`
+- `src/QCNetworkHttpVersion.cpp`
+- `tests/qcurl/tst_QCNetworkHttp3.cpp`
+- `docs/reference/performance.md`
+
+## 7. 非目标
+
+本文不负责：
+
+- 记录某个版本的 benchmark 数字
+- 记录某台机器的成功截图
+- 替代交付门禁或 CI 报告

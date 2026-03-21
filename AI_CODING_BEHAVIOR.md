@@ -1,4 +1,8 @@
-# AI 编码行为说明文档
+# AI 编码行为说明文档（中文）
+
+English | 简体中文 | 原文
+
+> 说明：本文档为当前 AI 编码行为规范的中文整理版（用于阅读与分发）。若与规范基线存在差异，以规范基线为准。
 
 > 本文档解释 AI 助手如何处理项目编码规范中的"强制规范"与"可选推荐"
 
@@ -22,7 +26,7 @@
 - 代码格式（4 空格缩进、单语句必须加括号）
 - Qt 6 专属约定（新式信号槽、`QStringLiteral`、`Q_OBJECT` 宏）
 - 禁止项（异常、RTTI、`dynamic_cast`、默认禁止裸 `new`/`delete`（`QObject` 派生允许裸 `new`，但必须父子树或 `deleteLater()`；禁止手动 `delete` `QObject`）、C 风格转换）
-- `QObject` 派生语义：禁止 copy/move/按值容器；仅使用指针/引用语义，并用 parent ownership / `deleteLater()` 管理生命周期（详见 `Qt6_CPP17_Coding_Style.md` 第 6 章）
+- `QObject` 派生语义：禁止 copy/move/按值容器；仅使用指针/引用语义，并用 parent ownership / `deleteLater()` 管理生命周期（详见当前目录中的代码规范文档第 6 章）
 
 **示例**：
 ```cpp
@@ -48,7 +52,7 @@ if (condition) {
 - 🤝 **用户明确偏好**：尊重用户选择，无需多次提醒
 - 💡 **首次使用**：可以简要说明推荐写法的优点（仅一次）
 
-**包含内容**（详见 `Qt6_CPP17_Coding_Style.md` 第 5 章）：
+**包含内容**（详见当前目录中的代码规范文档第 5 章）：
 - `std::optional<T>` vs `bool func(T *out)`
 - 结构化绑定 vs `QPair`
 - `constexpr` vs `const`/`#define`
@@ -85,7 +89,7 @@ bool getColor(QColor *outColor) {
 - 🔍 **分析现有代码**：学习项目的实际编码风格
 - 📊 **统计分析**：如果现有代码库中 90% 使用某种写法，优先沿用
 - 🆕 **新模块**：可以适度引入现代化写法
-- 📝 **文档更新**：将新约定补充到发布包内对应规范文档（优先 `Qt6_CPP17_Coding_Style.md` / `CPP_Code_Comment_Guidelines.md`），并同步更新本文档的决策说明（如适用）
+- 📝 **文档更新**：将新约定补充到发布包内对应规范文档（优先当前目录中的代码规范与注释规范文档），并同步更新本文档的决策说明（如适用）
 
 ---
 
@@ -300,17 +304,17 @@ QPair<QMap<QString, int>::iterator, bool> insertValue(
 
 ### 发布包入口（统一入口）
 
-本仓库发布包仅包含以下文件（建议保持位于仓库根目录，便于复制到业务仓库使用）：
-- [`Qt6_CPP17_Coding_Style.md`](./Qt6_CPP17_Coding_Style.md)（代码规范；可选推荐见第 5 章）
-- [`Qt6_CPP17_CLANG-FORMAT`](./Qt6_CPP17_CLANG-FORMAT)（clang-format 配置；格式 SSOT）
-- [`CPP_Code_Comment_Guidelines.md`](./CPP_Code_Comment_Guidelines.md)（注释规范）
-- [`AI_CODING_BEHAVIOR.md`](./AI_CODING_BEHAVIOR.md)（AI 行为与决策树）
+本目录提供一组可直接阅读与分发的规范文档，便于在单一语言目录内完成查阅：
+- [`代码规范文档`](./Qt6_CPP17_Coding_Style.md)（可选推荐见第 5 章）
+- 当前目录随附的 clang-format 格式基线说明（用于统一格式约定）
+- [`注释规范文档`](./CPP_Code_Comment_Guidelines.md)（注释规范）
+- AI 行为与决策树（本文档）
 
-#### SSOT 与阅读顺序
-1. 格式（SSOT）：`./Qt6_CPP17_CLANG-FORMAT`
-2. 代码规范：`./Qt6_CPP17_Coding_Style.md`
-3. 注释规范：`./CPP_Code_Comment_Guidelines.md`
-4. AI 行为：本文档
+#### 建议阅读顺序
+1. 格式约定与格式基线说明
+2. [代码规范文档](./Qt6_CPP17_Coding_Style.md)
+3. [注释规范文档](./CPP_Code_Comment_Guidelines.md)
+4. AI 行为说明（本文档）
 
 #### 链接规范
 - 仅使用相对链接，且仅指向发布包内文件/锚点；禁止引用非发布路径或仅在特定工具中存在的入口文件名。

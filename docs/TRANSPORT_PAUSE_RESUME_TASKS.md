@@ -1,18 +1,70 @@
-# 传输级 pause/resume（MVP）任务拆分与执行日志
+# 传输级 pause/resume 当前状态
 
-来源：`docs/TRANSPORT_PAUSE_RESUME_PLAN.md`（以第 7 章“语义契约与验收标准（冻结）”为单一事实来源）。
+本文是传输级 pause/resume 的状态页，只保留当前可依赖的 contract、证据入口和未决边界；历史执行日志不再在此累计。
 
-> 说明：本任务清单只修改 QCurl 自身代码（`src/`、`tests/`、`docs/`），不触碰 `curl/` 目录。
+## 1. 当前合同
 
-| ID | 任务描述 | 优先级 | 依赖关系 | 状态 | 执行日志 |
-| --- | --- | --- | --- | --- | --- |
-| PR-MVP-0 | 对外可观测“Paused”语义：`ReplyState` 增加 `Paused`（或等价 `isPaused()`），并补齐 `cancel()/~QCNetworkReply()/~QCNetworkReplyPrivate()` 在 Paused 下的清理路径。 | 高 | - | 已完成 | 2025-12-17：为 `ReplyState` 增加 `Paused`，新增 `QCNetworkReply::isPaused()`，并确保 `cancel()`/析构在 Paused 状态下也会从 `QCCurlMultiManager` 移除 easy handle。 |
-| PR-MVP-1 | 引入 `PauseMode`（Recv/Send/All）并实现传输级 pause/resume：v2 推荐 `QCNetworkReply::pauseTransport(PauseMode)`/`resumeTransport()`（旧 `pause/resume` 已弃用）：仅 Async 生效；Sync 必须 `qWarning()` + no-op；pause/resume 不得影响调度（不得 removeReply/cancel/出队）。 | 高 | PR-MVP-0 | 已完成 | 2025-12-17：新增 `PauseMode`，补齐传输级 pause/resume（旧 API 为 `QCNetworkReply::pause(PauseMode)`/`resume()`，后续新增 v2 命名并弃用旧 API）；Sync 模式调用直接告警并 no-op。 |
-| PR-MVP-2 | 状态机与幂等：仅 `Running→Paused` 生效；仅 `Paused→Running` 生效；其他状态重复调用必须 no-op；`stateChanged` 行为与现有语义一致。 | 高 | PR-MVP-1 | 已完成 | 2025-12-17：实现 pause/resume 的状态门控与幂等（仅 Running 可 pause、仅 Paused 可 resume），并通过 `setState()` 统一发射 `stateChanged`。 |
-| PR-MVP-3 | 线程约束：libcurl `curl_easy_pause()` 必须在 `QCCurlMultiManager` 所在线程执行；跨线程调用需 marshal（或明确禁止并告警）。 | 高 | PR-MVP-1 | 已完成 | 2025-12-17：`QCNetworkReply::pause/resume` 增加线程防御：若不在 reply 线程调用则先 marshal 回 reply 线程；`curl_easy_pause()` 通过 `Qt::BlockingQueuedConnection` 保证在 `QCCurlMultiManager` 线程执行。 |
-| PR-MVP-4 | resume kick：`QCCurlMultiManager` 提供一次性 wakeup/kick（优先 `curl_multi_wakeup()`；退化为触发一次 `curl_multi_socket_action(CURL_SOCKET_TIMEOUT,0)`）；任何成功恢复（v2 `resumeTransport()` / 旧 `resume()`）后必须触发。 | 高 | PR-MVP-3 | 已完成 | 2025-12-17：新增 `QCCurlMultiManager::wakeup()`（支持跨线程调用），恢复成功后强制触发；wakeup 采用 `curl_multi_wakeup()`（可用时）+ `QTimer::singleShot(0)` kick `curl_multi_socket_action(CURL_SOCKET_TIMEOUT,0)` 避免同步重入。 |
-| PR-MVP-5 | 调度层语义隔离：`QCNetworkRequestScheduler::pauseRequest/resumeRequest` 改名 `deferRequest/undeferRequest`，并将 `m_pausedRequests` 改为 `m_deferredRequests`；同步更新 `tests/qcurl/tst_QCNetworkScheduler.cpp`。 | 高 | - | 已完成 | 2025-12-17：按冻结语义将 Scheduler “pause/resume” 全面更名为 `defer/undefer`，并在注释中明确其为调度层延后（running 场景通过 cancel 终止并延后，undefer 后从头请求）。同步更新 Qt Test 与 `examples/SchedulerDemo/main.cpp`，修复构建因旧 API 引用导致的编译失败。 |
-| PR-MVP-6 | Qt Test 覆盖：pause/resume（状态转换、幂等、Sync 告警 no-op、resume 后继续推进）+ defer/undefer（pending/running、幂等）。 | 高 | PR-MVP-2、PR-MVP-4、PR-MVP-5 | 已完成 | 2025-12-17：在 `tests/qcurl/tst_QCNetworkReply.cpp` 新增本地 `QTcpServer` 自建 HTTP/1.1 流式响应用例，覆盖 Async 传输级 pause/resume（含跨线程调用）与 Sync 模式告警 no-op；同时更新 `tests/qcurl/tst_QCNetworkScheduler.cpp` 的用例为 defer/undefer。问题：全量跑 `ctest -R tst_QCNetworkReply` 时 `testStateCancellation()` 触发 QtTest 300s 超时并 `QFATAL`（进程 abort）。定位：`QCCurlMultiManager::removeReply()` 持锁调用 `curl_multi_remove_handle()`，libcurl 同步触发 socket callback（`what=CURL_POLL_REMOVE`）→ `cleanupSocket()` 再次尝试加锁导致死锁。解决：将 `QCCurlMultiManager` 的互斥锁切换为可重入 `QRecursiveMutex`（`src/QCCurlMultiManager.h`）。验证：`./build/tests/tst_QCNetworkReply testSyncPauseResumeNoOp testAsyncTransferPauseResumeCrossThread`、`./build/tests/tst_QCNetworkScheduler` 通过；`ctest -R ^tst_QCNetworkReply$ --output-on-failure` 通过（约 25s）。 |
-| PR-P2-0 | （后续）为 LC-15 提供 callback 边界 pause hook：write callback 返回 `CURL_WRITEFUNC_PAUSE` + resume cont + wakeup，用于对齐 `cli_hx_download -P` 的过程一致性。 | 低 | PR-MVP-6 | 已完成 | 2026-01-14：引入 pause mask 基础设施（user/internal/applied）与 `applyPauseMask()`；当 `PauseMode::Recv` 在 libcurl 回调链路内发起时，优先在 write callback 边界返回 `CURL_WRITEFUNC_PAUSE` 使暂停生效（保持 `ReplyState::Paused` 仅表达“用户显式 pause”）。验证：`ctest` 38/38；一致性 gate（offline，未构建 nghttpx-h3）：`python3 tests/libcurl_consistency/run_gate.py --suite all --build --qcurl-build build_lc`（67 passed, 1 skipped）。 |
-| PR-P2-1 | （后续）下载 backpressure：为 `QCByteDataBuffer` 引入上限并与 pause/resume 联动，避免异步下载无限增长。 | 低 | PR-MVP-6 | 已完成 | 2026-01-14：新增 request 级 backpressure 配置（limit/resume，默认关闭），write callback 达上限自动 pause（内部流控不改变 `ReplyState`），消费到低水位自动 resume；补齐最小可观测面（getter + `backpressureStateChanged`），并新增 QtTest `testAsyncDownloadBackpressure`。验证同上。 |
-| PR-P2-2 | （后续）上传方向传输级 pause/resume（`CURLOPT_READFUNCTION` + `CURL_READFUNC_PAUSE` + 可 seek 数据源抽象）。 | 低 | PR-P2-1 | 已完成 | 2026-01-14：read callback 支持“source not ready → `CURL_READFUNC_PAUSE`”，并在 `QIODevice::readyRead` 时自动恢复发送（内部流控不改变 `ReplyState`）；新增 QtTest `testAsyncStreamingUploadPauseResume`。验证同上。 |
+### 1.1 `QCNetworkReply` 传输级 pause/resume
+
+- 公开入口：`QCNetworkReply::pauseTransport(PauseMode)` / `resumeTransport()`
+- 支持范围：仅 `ExecutionMode::Async`
+- `Sync` 模式：`qWarning()` + no-op
+- 生效状态：
+  - 仅 `Running -> Paused`
+  - 仅 `Paused -> Running`
+  - 其他状态重复调用为幂等 no-op
+- pause/resume 不得等价于调度器层面的 defer，也不得触发 remove/cancel/重新入队
+
+### 1.2 调度器层 defer/undefer
+
+- 调度层语义使用 `deferRequest()` / `undeferRequest()`
+- 该语义只表示“延后调度”，不表示“保留同一次传输继续执行”
+- 对 running 请求的 defer 允许释放并发槽位；后续恢复时按调度语义重新开始，而不是继续原传输
+
+### 1.3 恢复推进
+
+- 成功 `resumeTransport()` 后必须触发一次 multi wakeup/kick
+- 该合同用于避免“恢复后因为没有新 socket/timer 事件而长时间不推进”
+
+### 1.4 接收方向 backpressure
+
+- 请求级配置位于 `QCNetworkRequest`
+- reply 侧可观察：
+  - `backpressureActive()`
+  - `backpressureLimitBytes()`
+  - `backpressureResumeBytes()`
+  - `backpressureBufferedBytesPeak()`
+  - `backpressureStateChanged(...)`
+
+## 2. 证据入口
+
+- 实现：
+  - `src/QCNetworkReply.h`
+  - `src/QCNetworkReply.cpp`
+  - `src/QCNetworkRequest.h`
+  - `src/QCNetworkRequest.cpp`
+  - `src/QCCurlMultiManager.h`
+  - `src/QCCurlMultiManager.cpp`
+  - `src/QCNetworkRequestScheduler.h`
+  - `src/QCNetworkRequestScheduler.cpp`
+- 回归：
+  - `tests/qcurl/tst_QCNetworkReply.cpp`
+  - `tests/qcurl/tst_QCNetworkScheduler.cpp`
+
+## 3. 当前已覆盖的关键场景
+
+- Sync 模式 pause/resume 的 no-op 合同
+- Async 模式跨线程 pause/resume
+- 下载方向 backpressure 激活与自动恢复
+- 流式上传方向 pause/resume
+- scheduler defer/undefer 与传输级 pause 的语义隔离
+
+## 4. 未决边界
+
+- callback 边界与字节级暂停点是否满足特定一致性场景，仍应以 `tests/libcurl_consistency/` 的实际 gate 结果为准
+- 上传/下载 pause 对更复杂业务语义的映射，应由上层场景定义，不在本文扩展
+
+## 5. 相关文档
+
+- `docs/arch/transport-pause-resume.md`
+- `docs/dev/build-and-test.md`

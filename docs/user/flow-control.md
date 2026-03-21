@@ -1,27 +1,23 @@
-# FlowControl（传输级 pause/resume + backpressure + 上传 source pause）
+# Flow Control（传输级 pause/resume + backpressure + 上传 source pause）
 
-> 本页面向 **QCurl 使用者（下游项目）**，总结“方案2：新增 v2 API + 保留旧 API 并标记弃用一段版本”的对外 API 变更与迁移要点。  
+> 本页面向 **QCurl 使用者（下游项目）**，总结当前对外 API 与 flow-control 语义。  
 > **Ground Truth：** 如本文与代码不一致，以 `src/QCNetworkReply.h` / `src/QCNetworkRequest.h` 为准。
 
-## 1. 速查：旧 API → v2 API（推荐）
+## 1. 速查：当前 API
 
 ### 1.1 `QCNetworkReply`：传输级 pause/resume（仅 Async）
 
-| 旧 API（保留但已弃用） | v2 API（推荐） | 备注 |
+| 当前 API | 说明 | 备注 |
 | --- | --- | --- |
-| `pause()` / `pause(PauseMode)` | `pauseTransport(PauseMode mode = PauseMode::All)` | 传输级暂停；仅 `Running → Paused` 生效，幂等 |
-| `resume()` | `resumeTransport()` | 传输级恢复；仅 `Paused → Running` 生效，幂等 |
-
-弃用窗口：旧 API 带 `[[deprecated]]`，**计划在 v3.0 移除**。
+| `pauseTransport(PauseMode mode = PauseMode::All)` | 传输级暂停 | 仅 `Running → Paused` 生效，幂等 |
+| `resumeTransport()` | 传输级恢复 | 仅 `Paused → Running` 生效，幂等 |
 
 ### 1.2 `QCNetworkRequest`：下载 backpressure 配置命名统一
 
-| 旧 API（保留但已弃用） | v2 API（推荐） | 备注 |
+| 当前 API | 说明 | 备注 |
 | --- | --- | --- |
-| `setAsyncBodyBufferLimitBytes(qint64)` / `asyncBodyBufferLimitBytes()` | `setBackpressureLimitBytes(qint64)` / `backpressureLimitBytes()` | `bytes > 0` 启用；`bytes <= 0` 禁用 |
-| `setAsyncBodyBufferResumeBytes(qint64)` / `asyncBodyBufferResumeBytes()` | `setBackpressureResumeBytes(qint64)` / `backpressureResumeBytes()` | `0` 表示使用默认值（`limit/2`）；`resume >= limit` 会回退默认 |
-
-弃用窗口：旧 API 带 `[[deprecated]]`，**计划在 v3.0 移除**。
+| `setBackpressureLimitBytes(qint64)` / `backpressureLimitBytes()` | 高水位线 | `bytes > 0` 启用；`bytes <= 0` 禁用 |
+| `setBackpressureResumeBytes(qint64)` / `backpressureResumeBytes()` | 低水位线 | `0` 表示使用默认值（`limit/2`）；`resume >= limit` 会回退默认 |
 
 ## 2. 核心语义（避免误用）
 
@@ -59,28 +55,18 @@
 
 说明：该状态仅表达内部流控，不包含用户显式 pause，也不改变 `ReplyState`。
 
-## 3. 迁移示例（最小替换）
+## 3. 使用示例
 
-### 3.1 传输级暂停/恢复（替换旧 pause/resume）
+### 3.1 传输级暂停/恢复
 
 ```cpp
-// 旧：
-// reply->pause(QCurl::PauseMode::Recv);
-// reply->resume();
-
-// 新（推荐）：
 reply->pauseTransport(QCurl::PauseMode::Recv);
 reply->resumeTransport();
 ```
 
-### 3.2 启用下载 backpressure（替换 asyncBodyBuffer*）
+### 3.2 启用下载 backpressure
 
 ```cpp
-// 旧：
-// request.setAsyncBodyBufferLimitBytes(64 * 1024)
-//        .setAsyncBodyBufferResumeBytes(32 * 1024);
-
-// 新（推荐）：
 request.setBackpressureLimitBytes(64 * 1024)
        .setBackpressureResumeBytes(32 * 1024);
 ```
@@ -102,4 +88,4 @@ QObject::connect(reply, &QCurl::QCNetworkReply::uploadSendPausedChanged,
 ## 4. 相关文档
 
 - 维护者设计/实现索引：`docs/arch/transport-pause-resume.md`
-- 任务拆分与执行日志：`docs/TRANSPORT_PAUSE_RESUME_TASKS.md`
+- 当前状态页：`docs/TRANSPORT_PAUSE_RESUME_TASKS.md`

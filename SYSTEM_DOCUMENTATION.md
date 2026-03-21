@@ -82,10 +82,10 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 │   │  - QCWebSocket (WebSocket 客户端)              │   │
 │   └────────────────────────────────────────────────┘   │
 │   ┌────────────────────────────────────────────────┐   │
-│   │  流式 API (Fluent API)                         │   │
-│   │  - QCRequest (流式请求构建)                     │   │
-│   │  - QCRequestBuilder (传统构建器)                │   │
-│   │  - QCNetworkRequestBuilder (流式构建器)         │   │
+│   │  Canonical Request API                         │   │
+│   │  - QCNetworkRequest（请求配置）                │   │
+│   │  - QCNetworkAccessManager::send*()             │   │
+│   │  - scheduler 启用时 send* 自动走调度策略       │   │
 │   └────────────────────────────────────────────────┘   │
 │   ┌────────────────────────────────────────────────┐   │
 │   │  辅助 API                                       │   │
@@ -411,61 +411,47 @@ void setSeekFunction(const SeekFunction &func);
 void setProgressFunction(const ProgressFunction &func);
 ```
 
-### 2. 流式 API
+### 2. Canonical Request API
 
-#### QCRequest (简洁流式 API)
+#### `QCNetworkRequest` + `QCNetworkAccessManager::send*()`
 
-**特点**: 极简链式调用，适合快速构建请求
+**特点**: 当前唯一 public request 入口；同一套对象既负责配置，也负责进入同步/异步发送路径。
 
 ```cpp
-// GET 请求
-auto *reply = QCRequest::get("https://api.example.com/users")
-    .withHeader("Authorization", "Bearer token")
-    .withTimeout(std::chrono::seconds(30))
-    .send();
+QCNetworkAccessManager manager;
 
-// POST JSON
-auto *reply = QCRequest::post("https://api.example.com/users")
-    .withJson({{"name", "John"}, {"age", 30}})
-    .send();
+QCNetworkRequest request(QUrl("https://api.example.com/users"));
+request.setRawHeader("Authorization", "Bearer token")
+    .setTimeout(std::chrono::seconds(30))
+    .setFollowLocation(true);
 
-// POST 表单
-auto *reply = QCRequest::post("https://api.example.com/login")
-    .withFormData({{"username", "admin"}, {"password", "123456"}})
-    .send();
-
-// 文件上传
-auto *reply = QCRequest::post("https://api.example.com/upload")
-    .withFile("avatar", "/path/to/photo.jpg")
-    .send();
+auto *reply = manager.sendGet(request);
 ```
 
-#### QCRequestBuilder (传统构建器)
-
-**特点**: 可变状态，适合复杂配置场景
+#### POST JSON
 
 ```cpp
-QCRequestBuilder builder;
-builder.setUrl("https://api.example.com/users");
-builder.addHeader("Authorization", "Bearer token");
-builder.setMethod(HttpMethod::Get);
-builder.setTimeout(30);
+QCNetworkAccessManager manager;
 
-QCNetworkRequest request = builder.build();
-QCNetworkReply *reply = manager->sendGet(request);
+QCNetworkRequest request(QUrl("https://api.example.com/users"));
+request.setRawHeader("Content-Type", "application/json")
+    .setPriority(QCNetworkRequestPriority::High);
+
+auto *reply = manager.sendPost(request, R"({"name":"John","age":30})");
 ```
 
-#### QCNetworkRequestBuilder (流式构建器)
+#### 调度器模式
 
-**特点**: 结合流式 API 和传统构建器的优点
+**特点**: 调度器仍是独立配置对象，但发送入口已统一收敛到 `send*()`；启用 scheduler 后由 manager 内部决定是否排队。
 
 ```cpp
-auto *reply = QCNetworkRequestBuilder::create(manager)
-    .get("https://api.example.com/users")
-    .header("Authorization", "Bearer token")
-    .timeout(30)
-    .cache(QCNetworkCachePolicy::PreferCache)
-    .execute();
+QCNetworkAccessManager manager;
+manager.enableRequestScheduler(true);
+
+QCNetworkRequest request(QUrl("https://api.example.com/upload"));
+request.setPriority(QCNetworkRequestPriority::VeryHigh);
+
+auto *reply = manager.sendGet(request);
 ```
 
 ### 3. 协议支持
@@ -925,9 +911,6 @@ QCNetworkReply *reply = manager->postMultipart(
 | `QCNetworkRequest` | 请求配置 | `QCNetworkRequest.h` |
 | `QCNetworkReply` | 统一响应对象 | `QCNetworkReply.h` |
 | `QCWebSocket` | WebSocket 客户端 | `QCWebSocket.h` |
-| `QCRequest` | 流式 Request API | `QCRequest.h` |
-| `QCRequestBuilder` | 传统构建器 API | `QCRequestBuilder.h` |
-| `QCNetworkRequestBuilder` | 流式构建器 API | `QCNetworkRequestBuilder.h` |
 | `QCMultipartFormData` | Multipart 表单数据 | `QCMultipartFormData.h` |
 | `QCNetworkDiagnostics` | 网络诊断工具 | `QCNetworkDiagnostics.h` |
 
@@ -1443,7 +1426,7 @@ QCNetworkReply* sendGet(const QCNetworkRequest &request);
 | 请求配置 | tst_QCNetworkRequest | 31 | 95% | ✅ |
 | 响应处理 | tst_QCNetworkReply | 27 | 90% | ✅ |
 | 错误处理 | tst_QCNetworkError | 15 | 100% | ✅ |
-| 流式 API | tst_QCRequest | 25 | 85% | ✅ |
+| Canonical Request API | tst_QCNetworkRequestCanonicalApi / tst_QCNetworkRequestConfigCanonicalApi / tst_QCNetworkRequestCanonicalFlowApi | 25 | 85% | ✅ |
 | Multipart | tst_QCMultipartFormData | 24 | 100% | ✅ |
 | 文件传输 | tst_QCNetworkFileTransfer | 3 | 75% | ✅ |
 | 重试机制 | tst_QCNetworkRetry | 18 | 85% | ✅ |
@@ -2098,7 +2081,6 @@ QCurl/
 │   ├── QCNetworkRequest.{h,cpp}
 │   ├── QCNetworkReply.{h,cpp}
 │   ├── QCWebSocket.{h,cpp}
-│   ├── QCRequest.{h,cpp}
 │   ├── QCMultipartFormData.{h,cpp}
 │   ├── QCNetworkDiagnostics.{h,cpp}
 │   ├── QCNetworkCache.{h,cpp}

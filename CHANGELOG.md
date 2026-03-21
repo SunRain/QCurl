@@ -7,6 +7,51 @@
 
 ---
 
+## 2026-03-19
+
+### Removed
+- 删除 legacy public request API：`QCRequest`、`QCRequestBuilder`、`QCNetworkRequestBuilder`、`QCNetworkAccessManager::newRequest()` 与 `scheduleGet/Post/Put()`
+
+### Changed
+- 统一 public request 入口为 `QCNetworkRequest + QCNetworkAccessManager::send*()`；启用 scheduler 时由 `send*()` 内部决定是否排队
+- 将原 builder/request 合同测试迁移为 canonical API 三组用例：`tst_QCNetworkRequestCanonicalApi`、`tst_QCNetworkRequestConfigCanonicalApi`、`tst_QCNetworkRequestCanonicalFlowApi`
+- 为 internal D-lite 流水线补齐首批 `RequestBody/NormalizedRequest/CurlPlan` 归一化与编译骨架，并让 method/body 的 libcurl 选项应用改为消费 `CurlPlan`
+- 将 `QCNetworkAccessManager` 的 Sync/Async `send*()` 收敛到统一 dispatch helper；启用 scheduler 时全部异步 `send*()` 共享同一条 normalize/compile 执行链
+- 同步更新 README、用户文档、系统文档与 `.helloagents/modules/*` 的对外叙事，移除已删除 API 的活跃引用
+
+### Fixed
+- 修复 `QCNetworkReply::readAll()` / `readBody()` 的 `const` 语义错误，移除 drain 路径中的 `const_cast`
+- 修复 scheduler 路径与 middleware/priority 的入口分叉，确保异步 `send*()` 在启用调度器时沿用同一条执行链
+- 修复 plan digest test hook 泄露到 `QCNetworkReply.h` 的问题，改为 private/test-only 可见
+
+### Testing
+- 针对 public API 收敛回归：`ctest --test-dir build --output-on-failure -R "^(tst_QCNetworkRequestCanonicalApi|tst_QCNetworkRequestConfigCanonicalApi|tst_QCNetworkRequestCanonicalFlowApi|tst_QCNetworkReply|tst_QCNetworkScheduler|tst_QCNetworkMiddlewareIntegration)$"`（6/6 passed）
+- internal pipeline 白盒回归：`ctest --test-dir build --output-on-failure -R "^(tst_QCNetworkRequestPipeline|tst_QCNetworkScheduler|tst_QCNetworkMiddlewareIntegration|tst_QCNetworkRequestCanonicalFlowApi)$"`（4/4 passed）
+- 检查点：`python3 -X utf8 scripts/ctest_strict.py --build-dir build`（`skipped_total=0`）
+
+## 2026-03-20
+
+### Changed
+- 收紧 public/install 边界：`src/CMakeLists.txt` 只安装真正的 public headers；新增 `docs/arch/public-header-boundary.md` 盘点 install surface、libcurl 暴露面与导出规则
+- 补齐 internal D-lite 维护文档：新增 `docs/arch/request-normalization-pipeline.md`，明确 `NormalizedRequest/CurlPlan` 仅属 internal-only，不进入安装面
+- 统一仓库入口叙事：`docs/user/quickstart.md`、`docs/user/configuration.md`、`docs/reference/http3.md`、`README.md`、`examples/README.md`、`examples/CanonicalRequestDemo/`、`benchmarks/` 全部对齐为 canonical `QCNetworkRequest + QCNetworkAccessManager::send*()` 入口
+- 调整 install/export 行为：即使 `QCURL_BUILD_LIBCURL_CONSISTENCY=ON` 也保留 `cmake --install` / `find_package(QCurl)` 能力，确保主构建目录可直接做 consumer smoke
+
+### Fixed
+- 修复 `tests/libcurl_consistency/tst_LibcurlConsistency.cpp` 中 `p1_resolve_override` 对 `/status/200` 响应体的错误空 body 断言；首次 `readBody()` 改为接纳真实 body，后续 drain 语义仍保持为空
+- 修复 bundled curl 构建下 install/export 缺失的问题，使 `build/` 目录可完成 staging install + consumer smoke 验证
+- 修复 `tests/qcurl/tst_QCNetworkReply.cpp` 的 env/httpbin 稳定性问题（pause-resume/backpressure/readAll empty-body 合同），恢复 `tst_QCNetworkReply` 在真实本地环境下稳定通过
+- 修复 curl testenv root CA 过期后的混合证书链问题；testenv 在根 CA 失效时自动重建整套证书，恢复 nghttpx / HTTP/3 探活稳定性
+
+### Testing
+- 全量构建：`cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON && cmake --build build -j"$(nproc)"`
+- install + consumer smoke：`cmake --install build --prefix build/install-smoke/stage-bundled`，并验证 `find_package(QCurl)` 正向构建成功、`#include <QCNetworkReply_p.h>` 反向构建失败
+- 严格离线门禁：`python3 -X utf8 scripts/ctest_strict.py --build-dir build`（`skipped_total=0`）
+- basic-no-problem：`python3 -X utf8 scripts/run_basic_no_problem_gate.py --build-dir build --run-id 20260320-refactor-a-dlite-final`（PASS，evidence：`build/evidence/basic-no-problem/20260320-refactor-a-dlite-final/`）
+- libcurl consistency 全量：`QCURL_LC_EXT=1 python3 -X utf8 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build --qcurl-build build --reports-dir build/libcurl_consistency/reports_all_ext_retry_20260320`（`87 passed`）
+
+---
+
 ## 2025-12-27
 
 ### Fixed
