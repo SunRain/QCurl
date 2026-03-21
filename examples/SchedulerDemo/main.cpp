@@ -114,7 +114,7 @@ private slots:
         QCNetworkRequest request(QUrl("https://httpbin.org/delay/2"));
         request.setPriority(QCNetworkRequestPriority::High);
 
-        auto *reply     = manager->scheduleGet(request);
+        auto *reply     = manager->sendGet(request);
         pauseResumeDemo = reply;
 
         connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
@@ -221,7 +221,7 @@ private:
         QCNetworkRequest request(requestUrl);
         request.setPriority(priority);
 
-        auto *reply = manager->scheduleGet(request);
+        auto *reply = manager->sendGet(request);
 
         // 设置属性用于追踪
         reply->setProperty("description", description);

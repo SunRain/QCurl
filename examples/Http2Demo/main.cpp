@@ -15,6 +15,8 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
+#include <curl/curl.h>
+
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QElapsedTimer>

@@ -13,9 +13,6 @@
 #include <QTimer>
 #include <QUrlQuery>
 #include <QUuid>
-// 旧 API（已弃用）：
-// #include "QCNetworkAsyncReply.h"
-// #include "QCNetworkSyncReply.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -135,24 +132,6 @@ void MainWindow::tst_sync()
         // 使用 sendGetSync() 进行同步请求
         // 注意：这是同步阻塞调用，会冻结 UI！
         QCurl::QCNetworkReply *reply = mgr->sendGetSync(request);
-
-        //        connect(reply, &QCurl::QCNetworkAsyncReply::finished,
-        ////                [&, reply, f]() {
-        ////            qDebug()<<Q_FUNC_INFO<<"--------- finished ";
-        ////            QByteArray ba = reply->readAll();
-        ////            qDebug()<<Q_FUNC_INFO<<" ba size "<<ba.size();
-        ////            f->write(ba);
-        ////            f->close();
-        ////            reply->deleteLater();
-        ////        });
-        ////        connect(reply, &QCurl::QCNetworkAsyncReply::readyRead,
-        ////                [&, reply, f]() {
-        ////            qDebug()<<Q_FUNC_INFO<<"--------- readyRead ";
-        ////            QByteArray ba = reply->readAll();
-        ////            qDebug()<<Q_FUNC_INFO<<" ba size "<<ba.size();
-        ////            f->write(ba);
-        //////            f->close();
-        ////        });
 
         //        reply->setReadFunction([&](char *buffer, size_t size)->size_t {
         //            qDebug()<<Q_FUNC_INFO<<"--------";

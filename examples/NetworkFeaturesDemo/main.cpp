@@ -21,6 +21,8 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
+#include <curl/curl.h>
+
 #ifdef QCURL_WEBSOCKET_SUPPORT
 #include "QCWebSocket.h"
 #include "QCWebSocketCompressionConfig.h"

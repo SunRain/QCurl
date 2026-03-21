@@ -53,8 +53,8 @@ add_subdirectory(LoggingDemo)
 add_subdirectory(MiddlewareDemo)
 add_subdirectory(UnifiedPolicyMiddlewareOfflineDemo)
 add_subdirectory(CancelTokenDemo)
-add_subdirectory(RequestBuilderDemo)
-message(STATUS "示例已启用（Logger + Middleware + UnifiedPolicyMiddlewareOffline + CancelToken + RequestBuilder）")
+add_subdirectory(CanonicalRequestDemo)
+message(STATUS "示例已启用（Logger + Middleware + UnifiedPolicyMiddlewareOffline + CancelToken + CanonicalRequest）")
 
 # 综合功能演示（HTTP/3 + WebSocket 压缩 + 网络诊断）
 add_subdirectory(NetworkFeaturesDemo)

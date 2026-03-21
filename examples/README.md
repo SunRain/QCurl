@@ -192,6 +192,7 @@ cmake --build . --target ApiClientDemo -j4
 除了上述 4 个实用示例外，项目还包含以下示例：
 
 - **QCurl** - 基础 GUI 示例（Qt Widgets）
+- **CanonicalRequestDemo** - `QCNetworkRequest + send*()` canonical API 演示
 - **SchedulerDemo** - 请求优先级调度器演示
 - **StressTest** - 调度器压力测试
 - **Http2Demo** - HTTP/2 示例（需要 libcurl 支持）

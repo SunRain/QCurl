@@ -3,22 +3,21 @@
 
 /**
  * @file main.cpp
- * @brief RequestBuilder 流式构建器演示程序
+ * @brief canonical request API 演示程序
  *
- * 展示如何使用流式 API 简化请求配置。
+ * 展示如何使用 QCNetworkRequest + QCNetworkAccessManager::send* 配置请求。
  *
  * 功能演示:
  * 1. 基础 GET 请求
  * 2. POST JSON 数据
  * 3. 复杂请求构建（查询参数 + Header）
- * 4. 流式 API vs 传统 API 对比
+ * 4. canonical API 用法
  *
  */
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestBuilder.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -26,6 +25,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
+#include <QUrlQuery>
+
+#include <chrono>
 
 using namespace QCurl;
 
@@ -33,7 +35,7 @@ int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
 
-    qDebug() << "=== QCurl RequestBuilder 流式API演示 ===\n";
+    qDebug() << "=== QCurl canonical request API 演示 ===\n";
 
     auto *manager = new QCNetworkAccessManager(&app);
 
@@ -43,10 +45,9 @@ int main(int argc, char *argv[])
 
     qDebug() << ">>> 示例 1: 基础 GET 请求";
 
-    auto *reply1 = manager->newRequest(QUrl("https://httpbin.org/get"))
-                       .withHeader("User-Agent", "QCurl/2.16.0")
-                       .withTimeout(30000)
-                       .sendGet();
+    QCNetworkRequest request1(QUrl("https://httpbin.org/get"));
+    request1.setRawHeader("User-Agent", "QCurl/2.16.0").setTimeout(std::chrono::milliseconds(30000));
+    auto *reply1 = manager->sendGet(request1);
 
     qDebug() << "请求已发送，等待响应...";
 
@@ -75,15 +76,15 @@ int main(int argc, char *argv[])
     QJsonObject json;
     json["name"]     = "QCurl";
     json["version"]  = "2.16.0";
-    json["features"] = "RequestBuilder";
+    json["features"] = "CanonicalRequest";
 
     QByteArray jsonData = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
-    auto *reply2 = manager->newRequest(QUrl("https://httpbin.org/post"))
-                       .withHeader("Content-Type", "application/json")
-                       .withHeader("User-Agent", "QCurl/2.16.0")
-                       .withTimeout(30000)
-                       .sendPost(jsonData);
+    QCNetworkRequest request2(QUrl("https://httpbin.org/post"));
+    request2.setRawHeader("Content-Type", "application/json")
+        .setRawHeader("User-Agent", "QCurl/2.16.0")
+        .setTimeout(std::chrono::milliseconds(30000));
+    auto *reply2 = manager->sendPost(request2, jsonData);
 
     qDebug() << "发送 JSON POST 请求...";
 
@@ -108,15 +109,19 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 3: 复杂请求构建";
 
-    auto *reply3 = manager->newRequest(QUrl("https://httpbin.org/get"))
-                       .withQueryParam("page", "1")
-                       .withQueryParam("limit", "20")
-                       .withQueryParam("sort", "desc")
-                       .withHeader("Authorization", "Bearer fake-token-123")
-                       .withHeader("Accept", "application/json")
-                       .withFollowLocation(true)
-                       .withTimeout(15000)
-                       .sendGet();
+    QUrl url3("https://httpbin.org/get");
+    QUrlQuery query3(url3);
+    query3.addQueryItem("page", "1");
+    query3.addQueryItem("limit", "20");
+    query3.addQueryItem("sort", "desc");
+    url3.setQuery(query3);
+
+    QCNetworkRequest request3(url3);
+    request3.setRawHeader("Authorization", "Bearer fake-token-123")
+        .setRawHeader("Accept", "application/json")
+        .setFollowLocation(true)
+        .setTimeout(std::chrono::milliseconds(15000));
+    auto *reply3 = manager->sendGet(request3);
 
     qDebug() << "发送复杂请求...";
 
@@ -137,7 +142,7 @@ int main(int argc, char *argv[])
     reply3->deleteLater();
 
     qDebug() << "\n=== 演示完成 ===";
-    qDebug() << "\n💡 提示：流式 API 可以大幅简化代码，提高可读性";
+    qDebug() << "\n💡 提示：请改用 QCNetworkRequest + QCNetworkAccessManager::send* canonical API";
 
     return 0;
 }
