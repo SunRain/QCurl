@@ -8,6 +8,28 @@
 
 - `tests/qcurl/`：QCurl 本身的 QtTest（C++）与本地测试依赖（httpbin/node server/testdata/node_modules）。
 - `tests/libcurl_consistency/`：QCurl ↔ libcurl 一致性测试（pytest + baseline clients + gate）。
+- `tests/public_api/`：public/install surface guardrails（逐头 self-compile、规则扫描、staging install、导出合同校验、isolated consumer smoke）。
+
+## Public API 安装面门禁
+
+当改动 public headers、`QCURL_INSTALL_HEADERS` 或 install/export 合同时，请执行：
+
+```bash
+ctest --test-dir build -L '^public-api$' --output-on-failure
+ctest --test-dir build -L '^public-api-slow$' --output-on-failure
+```
+
+门禁内容：
+
+- `public-api`：每个安装头作为第一个 include 单独编译，并执行 public header 规则扫描
+- `public-api-slow`：将当前 build install 到隔离的 staging prefix，校验安装头集合、导出合同，并在只指向 staging prefix 的 consumer 工程里执行正向/反向 smoke
+
+反向 smoke 的 contract 是：
+
+- `find_package(QCurl CONFIG REQUIRED)` + include/link `QCurl::QCurl` 成功
+- `#include <QCNetworkReply_p.h>` 失败
+
+> 说明：CTest 的 `-L` 参数是正则；这里使用 `'^public-api$'` / `'^public-api-slow$'` 是为了避免快路径误匹配慢路径。
 
 ## 证据门禁口径（skip=fail + LABELS）
 

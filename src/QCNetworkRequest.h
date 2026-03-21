@@ -4,7 +4,6 @@
 #include "QCGlobal.h"
 
 #include <QByteArray>
-#include <QDebug>
 #include <QList>
 #include <QSharedDataPointer>
 #include <QString>
@@ -15,6 +14,7 @@
 #include <optional>
 
 // 前向声明新配置类
+class QDebug;
 class QIODevice;
 namespace QCurl {
 class QCNetworkRequestPrivate;

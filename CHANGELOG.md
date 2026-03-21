@@ -7,6 +7,23 @@
 
 ---
 
+## 2026-03-21
+
+### Added
+- 新增 `tests/public_api/` 安装面门禁：逐头 self-compile、规则扫描、staging install 集合校验、导出合同校验，以及 isolated consumer smoke（含 `QCNetworkReply_p.h` 反向断言）
+- 新增 public type header `src/QCNetworkHttpMethod.h`，将 `HttpMethod` 从 `QCNetworkReply.h` 中抽离
+
+### Changed
+- 收紧 public header include hygiene：`QCNetworkRequest.h` 去掉 `<QDebug>` 传递依赖，`QCNetworkRequestScheduler.h` 改为依赖 `QCNetworkHttpMethod.h` + `QCNetworkRequestPriority.h` 并使用 forward declarations
+- 修正 install/export contract：`QCurl::QCurl` package 不再把 bundled curl target 暴露进 `QCurlTargets*.cmake`；bundled `libcurl_shared` 仅作为 runtime staging 细节处理
+- 更新 `docs/arch/public-header-boundary.md`、`docs/dev/build-and-test.md` 与 `tests/README.md`，固化 public header 禁止项、install/export 合同与本地验证口径
+- 将 `public-api` 快路径接入 `.github/workflows/pr_fast_gate.yml`，并将 `public-api-slow` 慢路径接入 `.github/workflows/basic_no_problem_gate.yml`，让 public/install surface contract 进入 CI 主线
+
+### Testing
+- bundled curl 构建：`ctest --test-dir build -L '^public-api$' --output-on-failure`、`ctest --test-dir build -L '^public-api-slow$' --output-on-failure`、`cmake --build build -j"$(nproc)"`
+- system libcurl 构建：`cmake -S . -B build-public-api-system -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF`，随后执行 `cmake --build build-public-api-system --target QCurl qcurl_public_api_self_compile -j"$(nproc)"`、`ctest --test-dir build-public-api-system -L '^public-api$' --output-on-failure`、`ctest --test-dir build-public-api-system -L '^public-api-slow$' --output-on-failure`
+- workflow dry-run：`act pull_request -n -W .github/workflows/pr_fast_gate.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest`、`act push -n -W .github/workflows/basic_no_problem_gate.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest`
+
 ## 2026-03-19
 
 ### Removed

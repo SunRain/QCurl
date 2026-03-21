@@ -4,10 +4,10 @@
 #ifndef QCNETWORKREQUESTSCHEDULER_H
 #define QCNETWORKREQUESTSCHEDULER_H
 
-#include "QCNetworkReply.h"
-#include "QCNetworkRequest.h"
+#include "QCNetworkHttpMethod.h"
 #include "QCNetworkRequestPriority.h"
 
+#include <QByteArray>
 #include <QDateTime>
 #include <QHash>
 #include <QList>
@@ -16,9 +16,13 @@
 #include <QObject>
 #include <QPointer>
 #include <QQueue>
+#include <QString>
 #include <QTimer>
 
 namespace QCurl {
+
+class QCNetworkReply;
+class QCNetworkRequest;
 
 /**
  * @brief 网络请求调度器

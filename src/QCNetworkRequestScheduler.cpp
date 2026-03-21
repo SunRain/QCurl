@@ -3,6 +3,9 @@
 
 #include "QCNetworkRequestScheduler.h"
 
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+
 #include <QDebug>
 #include <QMetaObject>
 

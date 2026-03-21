@@ -45,6 +45,35 @@ ctest --test-dir build --output-on-failure
 
 注意：直接运行 `ctest` 时，QtTest 的 `QSKIP` 可能被 ctest 视为通过；需要取证式门禁时请优先使用 `ctest_strict.py`。
 
+### 2.4 Public API 安装面门禁
+
+当改动 `QCURL_INSTALL_HEADERS`、install/export 规则、或任何 public header include 依赖时，至少执行：
+
+```bash
+ctest --test-dir build -L '^public-api$' --output-on-failure
+ctest --test-dir build -L '^public-api-slow$' --output-on-failure
+```
+
+说明：
+
+- `public-api`：逐头 self-compile + 规则扫描（禁止 `<curl/...>` / `CURL*` / `curl_*` / Qt private / `*_p.h` / `tuple` 泄漏）
+- `public-api-slow`：staging install、安装头集合校验、导出合同校验、staging-isolated consumer smoke（含 `QCNetworkReply_p.h` 反向断言）
+- 为避免 `public-api` 正则误匹配 `public-api-slow`，文档统一使用带锚点的 label 写法
+
+若当前 `build/` 是 bundled curl 一致性构建（`QCURL_BUILD_LIBCURL_CONSISTENCY=ON`），上述两条命令直接可用。
+
+如需额外验证 system libcurl 构建路径，可使用一套更轻的本地构建目录：
+
+```bash
+cmake -S . -B build-public-api-system -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
+  -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
+
+cmake --build build-public-api-system --target QCurl qcurl_public_api_self_compile -j"$(nproc)"
+ctest --test-dir build-public-api-system -L '^public-api$' --output-on-failure
+ctest --test-dir build-public-api-system -L '^public-api-slow$' --output-on-failure
+```
+
 ## 3. HTTP/2 本地验证
 
 `tst_QCNetworkHttp2` 默认使用仓库内置 node server，不依赖公网。

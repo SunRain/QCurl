@@ -157,22 +157,29 @@ endif()
 # install/export 规则应始终可用：
 # - 方案包 7.3 需要在主 build 目录上验证 `cmake --install` + consumer smoke
 # - `QCurl` 仅 PUBLIC 暴露 Qt，libcurl 为 PRIVATE 依赖，因此导出的 package
-#   不需要把 bundled curl 目标一并导出给下游
+#   不应把 bundled curl target 一并暴露给下游
 #
 install(TARGETS QCurl
     EXPORT QCurlTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT Runtime
+            NAMELINK_COMPONENT Development
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT Development
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT Runtime
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
 )
 
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     install(TARGETS libcurl_shared
-        EXPORT QCurlTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT BundledRuntime
+                NAMELINK_SKIP
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT BundledRuntime
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT BundledRuntime
     )
 endif()
 
@@ -181,6 +188,7 @@ install(EXPORT QCurlTargets
     FILE QCurlTargets.cmake
     NAMESPACE QCurl::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+    COMPONENT Development
 )
 
 configure_package_config_file(
@@ -198,12 +206,14 @@ install(
         "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+    COMPONENT Development
 )
 
 # 创建 pkg-config 文件
 configure_file(qcurl.pc.in qcurl.pc @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/qcurl.pc
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        COMPONENT Development)
 
 if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     # CPack 配置

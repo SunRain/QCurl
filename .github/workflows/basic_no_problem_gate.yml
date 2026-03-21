@@ -85,6 +85,11 @@ jobs:
           set -euo pipefail
           cmake --build build --parallel
 
+      - name: Public API slow gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -L '^public-api-slow$' --output-on-failure
+
       - name: Run acceptance gate (basic-no-problem) + archive evidence
         env:
           QCURL_BASIC_GATE_RUN_ID: ${{ github.sha }}

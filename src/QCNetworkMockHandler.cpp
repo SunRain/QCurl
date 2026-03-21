@@ -3,7 +3,7 @@
 
 #include "QCNetworkMockHandler.h"
 
-#include "QCNetworkReply.h" // HttpMethod
+#include "QCNetworkHttpMethod.h"
 
 #include <QMutexLocker>
 

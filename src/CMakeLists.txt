@@ -51,6 +51,7 @@ set(QCURL_MODERN_HEADERS
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h
+    QCNetworkHttpMethod.h
     QCNetworkHttpVersion.h
     QCNetworkError.h
     QCNetworkReply.h
@@ -109,6 +110,7 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h
+    QCNetworkHttpMethod.h
     QCNetworkHttpVersion.h
     QCNetworkError.h
     QCNetworkReply.h
@@ -139,6 +141,9 @@ if(QCURL_WEBSOCKET_SUPPORT)
     )
 endif()
 
+set(QCURL_INSTALL_HEADERS "${QCURL_INSTALL_HEADERS}" PARENT_SCOPE)
+set(QCURL_GENERATED_CONFIG_HEADER "${CMAKE_BINARY_DIR}/src/QCurlConfig.h" PARENT_SCOPE)
+
 # 创建 QCurl 共享库
 add_library(QCurl SHARED ${QCURL_ALL_SOURCES} ${QCURL_ALL_HEADERS})
 
@@ -159,9 +164,16 @@ target_link_libraries(QCurl
         Qt6::Core
         Qt6::Network
     PRIVATE
-        CURL::libcurl
         ${ZLIB_LIBRARIES}  # v2.18.0: WebSocket 压缩
 )
+
+if(QCURL_BUILD_LIBCURL_CONSISTENCY)
+    target_include_directories(QCurl PRIVATE "${CMAKE_SOURCE_DIR}/curl/include")
+    target_link_libraries(QCurl PRIVATE "$<BUILD_INTERFACE:$<TARGET_FILE:libcurl_shared>>")
+    add_dependencies(QCurl libcurl_shared)
+else()
+    target_link_libraries(QCurl PRIVATE CURL::libcurl)
+endif()
 
 # 包含目录
 target_include_directories(QCurl
