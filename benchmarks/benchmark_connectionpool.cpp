@@ -16,9 +16,9 @@ using namespace QCurl;
 
 /**
  * @brief HTTP 连接池性能基准测试
- * 
+ *
  * 测试连接池对性能的影响。
- * 
+ *
  * @note 需要网络连接才能运行
  */
 class BenchmarkConnectionPool : public QObject
@@ -56,26 +56,14 @@ void BenchmarkConnectionPool::initTestCase()
         QSKIP("Network not available, skipping benchmark tests");
         return;
     }
-    
+
     testReply->deleteLater();
-    
-    qDebug() << "";
-    qDebug() << "========================================";
-    qDebug() << "HTTP Connection Pool Benchmark";
-    qDebug() << "========================================";
-    qDebug() << "Testing connection pool performance...";
-    qDebug() << "";
 }
 
 void BenchmarkConnectionPool::cleanupTestCase()
 {
     delete manager;
     manager = nullptr;
-    
-    qDebug() << "";
-    qDebug() << "========================================";
-    qDebug() << "Benchmark Complete";
-    qDebug() << "========================================";
 }
 
 void BenchmarkConnectionPool::runRequests(int count, const QString &testName)
@@ -110,8 +98,7 @@ void BenchmarkConnectionPool::runRequests(int count, const QString &testName)
     
     qint64 elapsed = timer.elapsed();
     auto stats = poolManager->statistics();
-    
-    qDebug() << "";
+
     qDebug() << "Test:" << testName;
     qDebug() << "  Requests:" << count << "(" << successCount << "successful)";
     qDebug() << "  Total time:" << elapsed << "ms";
@@ -129,12 +116,7 @@ void BenchmarkConnectionPool::benchmarkDefaultConfig()
     // 使用默认配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
     poolManager->setConfig(QCNetworkConnectionPoolConfig());
-    
-    qDebug() << "";
-    qDebug() << "----------------------------------------";
-    qDebug() << "Benchmark: Default Configuration";
-    qDebug() << "----------------------------------------";
-    
+
     auto config = poolManager->config();
     qDebug() << "Config:";
     qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
@@ -151,12 +133,7 @@ void BenchmarkConnectionPool::benchmarkConservativeConfig()
     // 使用保守配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
     poolManager->setConfig(QCNetworkConnectionPoolConfig::conservative());
-    
-    qDebug() << "";
-    qDebug() << "----------------------------------------";
-    qDebug() << "Benchmark: Conservative Configuration";
-    qDebug() << "----------------------------------------";
-    
+
     auto config = poolManager->config();
     qDebug() << "Config:";
     qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
@@ -173,12 +150,7 @@ void BenchmarkConnectionPool::benchmarkAggressiveConfig()
     // 使用激进配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
     poolManager->setConfig(QCNetworkConnectionPoolConfig::aggressive());
-    
-    qDebug() << "";
-    qDebug() << "----------------------------------------";
-    qDebug() << "Benchmark: Aggressive Configuration";
-    qDebug() << "----------------------------------------";
-    
+
     auto config = poolManager->config();
     qDebug() << "Config:";
     qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;

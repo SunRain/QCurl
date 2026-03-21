@@ -1,12 +1,8 @@
 /**
  * @file benchmark_websocket_eventdriven.cpp
  * @brief WebSocket 事件驱动性能基准测试
- * 
- * 测量 v2.4.2 事件驱动优化的性能提升：
- * - 接收延迟（轮询 50ms → 事件驱动 <1ms）
- * - CPU 占用（空闲 2% → <0.1%）
- * 
- * @since 2.4.2
+ *
+ * 测量事件驱动收发模式在延迟和空闲连接场景下的表现。
  */
 
 #include <QtTest>
@@ -39,18 +35,11 @@ private:
 
 void BenchmarkWebSocketEventDriven::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "WebSocket 事件驱动性能基准测试";
-    qDebug() << "========================================";
     qDebug() << "测试 URL:" << TEST_URL;
-    qDebug() << "";
-    qDebug() << "注意：此测试验证 v2.4.2 的事件驱动优化";
-    qDebug() << "";
 }
 
 void BenchmarkWebSocketEventDriven::cleanupTestCase()
 {
-    qDebug() << "基准测试完成";
 }
 
 bool BenchmarkWebSocketEventDriven::waitForConnection(QCWebSocket *socket, int timeout)
@@ -81,8 +70,6 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
     QFETCH(QString, message);
     QFETCH(int, iterations);
 
-    qDebug() << "基准测试：接收延迟（消息大小:" << message.size() << "字节）";
-
     QCWebSocket *socket = new QCWebSocket(QUrl(TEST_URL));
     socket->open();
 
@@ -90,8 +77,6 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
         delete socket;
         QSKIP("无法连接到测试服务器");
     }
-
-    qDebug() << "连接成功，开始测试...";
 
     QList<qint64> latencies;
 
@@ -123,8 +108,6 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
         qDebug() << "  平均:" << avgLatency << "ms";
         qDebug() << "  最小:" << minLatency << "ms";
         qDebug() << "  最大:" << maxLatency << "ms";
-        qDebug() << "";
-        qDebug() << "预期：事件驱动模式下延迟应 <1ms（网络延迟除外）";
     }
 
     socket->close();
@@ -133,11 +116,7 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
 
 void BenchmarkWebSocketEventDriven::benchmarkMultipleConnections()
 {
-    qDebug() << "基准测试：多连接空闲 CPU 占用";
-    qDebug() << "";
     qDebug() << "创建 10 个连接并保持空闲 10 秒...";
-    qDebug() << "请使用 top/htop 监控进程 CPU 占用率";
-    qDebug() << "";
 
     QList<QCWebSocket*> sockets;
 
@@ -149,17 +128,10 @@ void BenchmarkWebSocketEventDriven::benchmarkMultipleConnections()
         QTest::qWait(500);
     }
 
-    qDebug() << "所有连接已建立，开始空闲...";
-
     QBENCHMARK_ONCE {
         // 空闲 10 秒
         QTest::qWait(10000);
     }
-
-    qDebug() << "";
-    qDebug() << "空闲完成";
-    qDebug() << "预期：事件驱动模式下空闲 CPU 应 <0.1%";
-    qDebug() << "";
 
     // 清理
     for (auto *socket : sockets) {

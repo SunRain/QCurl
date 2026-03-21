@@ -293,7 +293,7 @@ def main(argv: List[str]) -> int:
             start_res = _run_gate(
                 "httpbin_start",
                 [
-                    str(repo_root / "tests" / "httpbin" / "start_httpbin.sh"),
+                    str(repo_root / "tests" / "qcurl" / "httpbin" / "start_httpbin.sh"),
                     "--write-env",
                     str(httpbin_env_file),
                 ],
@@ -363,7 +363,7 @@ def main(argv: List[str]) -> int:
                 )
         finally:
             # best-effort stop（即使 start 失败也尝试清理默认容器名）
-            stop_cmd = [str(repo_root / "tests" / "httpbin" / "stop_httpbin.sh")]
+            stop_cmd = [str(repo_root / "tests" / "qcurl" / "httpbin" / "stop_httpbin.sh")]
             if container_name:
                 stop_cmd += ["--name", container_name]
             results.append(

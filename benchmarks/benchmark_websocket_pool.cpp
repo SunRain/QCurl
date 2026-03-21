@@ -1,10 +1,8 @@
 /**
  * @file benchmark_websocket_pool.cpp
  * @brief WebSocket 连接池性能基准测试
- * 
- * 使用 Qt Test 框架的 QBENCHMARK 宏测量性能
- * 
- * @since 2.5.0
+ *
+ * 使用 Qt Test 框架的 QBENCHMARK 宏测量性能。
  */
 
 #include <QtTest>
@@ -40,16 +38,11 @@ private:
 
 void BenchmarkWebSocketPool::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "WebSocket 连接池性能基准测试";
-    qDebug() << "========================================";
     qDebug() << "测试 URL:" << TEST_URL;
-    qDebug() << "";
 }
 
 void BenchmarkWebSocketPool::cleanupTestCase()
 {
-    qDebug() << "基准测试完成";
 }
 
 void BenchmarkWebSocketPool::init()
@@ -82,14 +75,8 @@ bool BenchmarkWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
     return spy.wait(timeout) || socket->state() == QCWebSocket::State::Connected;
 }
 
-// ============================================================================
-// 基准测试
-// ============================================================================
-
 void BenchmarkWebSocketPool::benchmarkAcquireWithoutPool()
 {
-    qDebug() << "基准测试：无连接池（每次新建连接）";
-
     QUrl url(TEST_URL);
 
     QBENCHMARK {
@@ -118,8 +105,6 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithPool()
 {
     QFETCH(int, warmupCount);
 
-    qDebug() << "基准测试：有连接池（预热" << warmupCount << "个连接）";
-
     QUrl url(TEST_URL);
 
     // 预热连接
@@ -144,16 +129,10 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithPool()
 
         pool->release(socket);
     }
-
-    // 显示统计信息
-    auto stats = pool->statistics(url);
-    qDebug() << "统计信息 - 命中率:" << stats.hitRate << "% | 总连接:" << stats.totalConnections;
 }
 
 void BenchmarkWebSocketPool::benchmarkConnectionReuse()
 {
-    qDebug() << "基准测试：连接复用性能";
-
     QUrl url(TEST_URL);
 
     // 预热 1 个连接
@@ -170,24 +149,16 @@ void BenchmarkWebSocketPool::benchmarkConnectionReuse()
         QVERIFY(s2 == s1);  // 验证复用
         pool->release(s2);
     }
-
-    auto stats = pool->statistics(url);
-    qDebug() << "统计信息 - 命中率:" << stats.hitRate << "%";
 }
 
 void BenchmarkWebSocketPool::benchmarkPreWarm()
 {
-    qDebug() << "基准测试：预热连接性能";
-
     QUrl url(TEST_URL);
 
     QBENCHMARK {
         QCWebSocketPool tempPool;
         tempPool.preWarm(url, 5);
         QTest::qWait(3000);
-        
-        auto stats = tempPool.statistics(url);
-        qDebug() << "预热结果 - 总连接:" << stats.totalConnections;
     }
 }
 

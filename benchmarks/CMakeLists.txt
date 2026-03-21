@@ -28,21 +28,17 @@ function(add_qcurl_benchmark test_name source_file)
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
     )
-    
-    message(STATUS "  ✅ ${test_name} 已配置")
+
+    message(STATUS "  ${test_name}")
 endfunction()
 
-# ============================================================================
-# 添加基准测试
-# ============================================================================
-
-message(STATUS "配置性能基准测试套件:")
+message(STATUS "配置性能基准测试套件")
 
 # WebSocket 基准测试（需要 WebSocket 支持）
 if(QCURL_WEBSOCKET_SUPPORT)
     add_qcurl_benchmark(benchmark_websocket_pool benchmark_websocket_pool.cpp)
     add_qcurl_benchmark(benchmark_websocket_eventdriven benchmark_websocket_eventdriven.cpp)
-    add_qcurl_benchmark(benchmark_websocket_compression benchmark_websocket_compression.cpp)  # v2.19.2
+    add_qcurl_benchmark(benchmark_websocket_compression benchmark_websocket_compression.cpp)
 endif()
 
 # HTTP/2 基准测试（需要 HTTP/2 支持）
@@ -50,17 +46,14 @@ if(QCURL_HTTP2_SUPPORT)
     add_qcurl_benchmark(benchmark_http2 benchmark_http2.cpp)
 endif()
 
-# HTTP/3 基准测试（v2.19.2）
+# HTTP/3 基准测试
 add_qcurl_benchmark(benchmark_http3 benchmark_http3.cpp)
 
-# 调度器基准测试（v2.6.0）
+# 调度器基准测试
 add_qcurl_benchmark(benchmark_scheduler benchmark_scheduler.cpp)
 
-# 连接池基准测试（v2.14.0）
+# 连接池基准测试
 add_qcurl_benchmark(benchmark_connectionpool benchmark_connectionpool.cpp)
 
-message(STATUS "✅ 性能基准测试已配置")
-message(STATUS "")
-message(STATUS "运行基准测试:")
-message(STATUS "  单独运行: ./build/benchmarks/benchmark_websocket_pool")
-message(STATUS "  注意: 基准测试不纳入默认 ctest，用于性能评估请手动运行")
+message(STATUS "基准测试目标")
+message(STATUS "  示例: ./build/benchmarks/benchmark_websocket_pool")

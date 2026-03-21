@@ -15,8 +15,6 @@
  * - CPU 时间（毫秒）
  * - 内存使用（KB）
  * - 延迟影响（毫秒）
- *
- * @since 2.19.2
  */
 
 #include <QCoreApplication>
@@ -110,11 +108,6 @@ private:
 
 void BenchmarkWebSocketCompression::initTestCase()
 {
-    m_output << "========================================\n";
-    m_output << "WebSocket 压缩效果基准测试\n";
-    m_output << "v2.19.2\n";
-    m_output << "========================================\n\n";
-
     m_output << "测试说明:\n";
     m_output << "- 所有测试使用 wss://echo.websocket.org 回显服务器\n";
     m_output << "- 压缩基于 RFC 7692 permessage-deflate\n";
@@ -123,16 +116,8 @@ void BenchmarkWebSocketCompression::initTestCase()
 
 void BenchmarkWebSocketCompression::cleanupTestCase()
 {
-    m_output << "\n========================================\n";
-    m_output << "压缩效果基准测试完成\n";
-    m_output << "========================================\n\n";
-
     generateReport();
 }
-
-// ============================================================================
-// 辅助方法实现
-// ============================================================================
 
 QString BenchmarkWebSocketCompression::generateRepeatingText(int sizeKB)
 {
@@ -245,9 +230,8 @@ void BenchmarkWebSocketCompression::generateReport()
         return;
     }
 
-    m_output << "========================================\n";
     m_output << "压缩效果对比报告\n";
-    m_output << "========================================\n\n";
+    m_output << "\n";
 
     // 按测试分组
     QMap<QString, QList<TestResult>> groupedResults;
@@ -272,36 +256,10 @@ void BenchmarkWebSocketCompression::generateReport()
         }
         m_output << "\n";
     }
-
-    // 压缩效果总结
-    m_output << "========================================\n";
-    m_output << "压缩效果总结\n";
-    m_output << "========================================\n\n";
-    m_output << "基于测试结果:\n\n";
-    m_output << "1. 纯文本消息（重复内容）:\n";
-    m_output << "   - 压缩率: 60-80%\n";
-    m_output << "   - 推荐: 强烈建议启用压缩\n\n";
-    m_output << "2. JSON 数据:\n";
-    m_output << "   - 压缩率: 50-70%\n";
-    m_output << "   - 推荐: 建议启用压缩\n\n";
-    m_output << "3. 二进制数据（随机）:\n";
-    m_output << "   - 压缩率: 0-20%\n";
-    m_output << "   - 推荐: 不建议启用压缩（CPU开销大于收益）\n\n";
-    m_output << "4. 压缩级别选择:\n";
-    m_output << "   - 级别 1: 最快速度，压缩率约 40-50%\n";
-    m_output << "   - 级别 6: 平衡（推荐），压缩率约 60-70%\n";
-    m_output << "   - 级别 9: 最高压缩率 70-80%，CPU开销最大\n\n";
-    m_output << "建议: 对于大多数场景，使用默认级别 6 可获得最佳性价比\n";
 }
-
-// ============================================================================
-// 纯文本消息测试
-// ============================================================================
 
 void BenchmarkWebSocketCompression::benchmark_TextMessage_NoCompression()
 {
-    m_output << "测试: 纯文本消息 (无压缩)\n";
-
     QString message = generateRepeatingText(10);  // 10KB
 
     QCWebSocketCompressionConfig config;
@@ -319,19 +277,12 @@ void BenchmarkWebSocketCompression::benchmark_TextMessage_NoCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_TextMessage_DefaultCompression()
 {
-    m_output << "测试: 纯文本消息 (默认压缩)\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::defaultConfig();
@@ -348,19 +299,12 @@ void BenchmarkWebSocketCompression::benchmark_TextMessage_DefaultCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_TextMessage_MaxCompression()
 {
-    m_output << "测试: 纯文本消息 (最大压缩)\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::maxCompressionConfig();
@@ -377,23 +321,12 @@ void BenchmarkWebSocketCompression::benchmark_TextMessage_MaxCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
-// ============================================================================
-// JSON 数据测试
-// ============================================================================
-
 void BenchmarkWebSocketCompression::benchmark_JsonData_NoCompression()
 {
-    m_output << "测试: JSON 数据 (无压缩)\n";
-
     QString message = QString::fromUtf8(generateJsonData(10));
 
     QCWebSocketCompressionConfig config;
@@ -411,19 +344,12 @@ void BenchmarkWebSocketCompression::benchmark_JsonData_NoCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_JsonData_DefaultCompression()
 {
-    m_output << "测试: JSON 数据 (默认压缩)\n";
-
     QString message = QString::fromUtf8(generateJsonData(10));
 
     QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::defaultConfig();
@@ -440,19 +366,12 @@ void BenchmarkWebSocketCompression::benchmark_JsonData_DefaultCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_JsonData_MaxCompression()
 {
-    m_output << "测试: JSON 数据 (最大压缩)\n";
-
     QString message = QString::fromUtf8(generateJsonData(10));
 
     QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::maxCompressionConfig();
@@ -469,23 +388,12 @@ void BenchmarkWebSocketCompression::benchmark_JsonData_MaxCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
-// ============================================================================
-// 二进制数据测试
-// ============================================================================
-
 void BenchmarkWebSocketCompression::benchmark_BinaryData_NoCompression()
 {
-    m_output << "测试: 二进制数据 (无压缩)\n";
-
     QString message = QString::fromLatin1(generateRandomBinary(10));
 
     QCWebSocketCompressionConfig config;
@@ -503,19 +411,12 @@ void BenchmarkWebSocketCompression::benchmark_BinaryData_NoCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_BinaryData_DefaultCompression()
 {
-    m_output << "测试: 二进制数据 (默认压缩)\n";
-
     QString message = QString::fromLatin1(generateRandomBinary(10));
 
     QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::defaultConfig();
@@ -532,23 +433,12 @@ void BenchmarkWebSocketCompression::benchmark_BinaryData_DefaultCompression()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  原始: %1 KB, 压缩后: %2 KB, 压缩率: %3%\n")
-                           .arg(result.originalSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressedSize / 1024.0, 0, 'f', 1)
-                           .arg(result.compressionRatio, 0, 'f', 1);
         }
     }
 }
 
-// ============================================================================
-// 压缩级别对比测试
-// ============================================================================
-
 void BenchmarkWebSocketCompression::benchmark_CompressionLevel_1()
 {
-    m_output << "测试: 压缩级别 1 (最快速度)\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
@@ -567,18 +457,12 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_1()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  压缩率: %1%, CPU: %2μs\n")
-                           .arg(result.compressionRatio, 0, 'f', 1)
-                           .arg(result.cpuTime);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_CompressionLevel_3()
 {
-    m_output << "测试: 压缩级别 3\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
@@ -597,18 +481,12 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_3()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  压缩率: %1%, CPU: %2μs\n")
-                           .arg(result.compressionRatio, 0, 'f', 1)
-                           .arg(result.cpuTime);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_CompressionLevel_6()
 {
-    m_output << "测试: 压缩级别 6 (默认)\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
@@ -627,18 +505,12 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_6()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  压缩率: %1%, CPU: %2μs\n")
-                           .arg(result.compressionRatio, 0, 'f', 1)
-                           .arg(result.cpuTime);
         }
     }
 }
 
 void BenchmarkWebSocketCompression::benchmark_CompressionLevel_9()
 {
-    m_output << "测试: 压缩级别 9 (最高压缩)\n";
-
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
@@ -657,10 +529,6 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_9()
             testResult.compressionRatio = result.compressionRatio;
             testResult.cpuTime = result.cpuTime;
             m_results.append(testResult);
-
-            m_output << QString("  压缩率: %1%, CPU: %2μs\n")
-                           .arg(result.compressionRatio, 0, 'f', 1)
-                           .arg(result.cpuTime);
         }
     }
 }

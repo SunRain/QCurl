@@ -1,13 +1,11 @@
 /**
  * @file benchmark_http2.cpp
  * @brief HTTP/2 性能基准测试
- * 
+ *
  * 对比 HTTP/1.1 和 HTTP/2 的性能差异：
  * - 单个请求延迟
  * - 并发请求性能（多路复用）
  * - 头部压缩效果
- * 
- * @since 2.2.0
  */
 
 #include <QtTest>
@@ -45,12 +43,8 @@ private:
 
 void BenchmarkHttp2::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "HTTP/2 性能基准测试";
-    qDebug() << "========================================";
     qDebug() << "HTTP/1.1 测试 URL:" << TEST_URL_HTTP1;
     qDebug() << "HTTP/2 测试 URL:" << TEST_URL_HTTP2;
-    qDebug() << "";
 
     manager = new QCNetworkAccessManager(this);
 }
@@ -58,7 +52,6 @@ void BenchmarkHttp2::initTestCase()
 void BenchmarkHttp2::cleanupTestCase()
 {
     delete manager;
-    qDebug() << "基准测试完成";
 }
 
 bool BenchmarkHttp2::waitForReply(QCNetworkReply *reply, int timeout)
@@ -73,8 +66,6 @@ bool BenchmarkHttp2::waitForReply(QCNetworkReply *reply, int timeout)
 
 void BenchmarkHttp2::benchmarkHttp1Request()
 {
-    qDebug() << "基准测试：HTTP/1.1 单个请求";
-
     QBENCHMARK {
         QUrl url(TEST_URL_HTTP1);
         QCNetworkRequest request(url);
@@ -83,9 +74,8 @@ void BenchmarkHttp2::benchmarkHttp1Request()
         auto *reply = manager->sendGet(request);
 
         if (waitForReply(reply, 30000)) {  // 30秒超时
-            if (auto data = reply->readAll()) {
-                qDebug() << "  HTTP/1.1 响应大小:" << data->size() << "字节";
-            }
+            const auto body = reply->readAll();
+            Q_UNUSED(body);
         } else {
             qWarning() << "  HTTP/1.1 请求超时";
         }
@@ -96,8 +86,6 @@ void BenchmarkHttp2::benchmarkHttp1Request()
 
 void BenchmarkHttp2::benchmarkHttp2Request()
 {
-    qDebug() << "基准测试：HTTP/2 单个请求";
-
     QBENCHMARK {
         QUrl url(TEST_URL_HTTP2);
         QCNetworkRequest request(url);
@@ -106,9 +94,8 @@ void BenchmarkHttp2::benchmarkHttp2Request()
         auto *reply = manager->sendGet(request);
 
         if (waitForReply(reply, 30000)) {  // 30秒超时
-            if (auto data = reply->readAll()) {
-                qDebug() << "  HTTP/2 响应大小:" << data->size() << "字节";
-            }
+            const auto body = reply->readAll();
+            Q_UNUSED(body);
         } else {
             qWarning() << "  HTTP/2 请求超时";
         }
@@ -133,9 +120,6 @@ void BenchmarkHttp2::benchmarkConcurrentRequests()
     QFETCH(QCNetworkHttpVersion, httpVersion);
     QFETCH(int, concurrency);
 
-    QString version = (httpVersion == QCNetworkHttpVersion::Http1_1) ? "HTTP/1.1" : "HTTP/2";
-    qDebug() << "基准测试：" << version << "并发" << concurrency << "个请求";
-
     QBENCHMARK {
         QList<QCNetworkReply*> replies;
 
@@ -158,12 +142,7 @@ void BenchmarkHttp2::benchmarkConcurrentRequests()
             }
             reply->deleteLater();
         }
-
-        qDebug() << "  完成" << completed << "/" << concurrency << "个请求";
     }
-
-    qDebug() << "";
-    qDebug() << "预期：HTTP/2 多路复用在并发场景下应更快";
 }
 
 QTEST_MAIN(BenchmarkHttp2)

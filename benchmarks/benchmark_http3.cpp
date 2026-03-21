@@ -14,8 +14,6 @@
  * - 总耗时（毫秒）
  * - 连接建立时间（毫秒）
  * - 平均延迟（毫秒）
- *
- * @since 2.19.2
  */
 
 #include <QCoreApplication>
@@ -24,6 +22,9 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QTextStream>
+
+#include <curl/curl.h>
+
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply.h"
@@ -105,31 +106,22 @@ private:
 
 void BenchmarkHttp3::initTestCase()
 {
-    m_output << "========================================\n";
-    m_output << "HTTP/3 性能基准测试\n";
-    m_output << "v2.19.2\n";
-    m_output << "========================================\n\n";
-
     m_manager = new QCNetworkAccessManager(this);
 
     // 检查 HTTP/3 支持
     curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
     m_output << "libcurl 版本: " << ver->version << "\n";
-    m_output << "HTTP/3 支持: " << (isHttp3Supported() ? "✅ 是" : "❌ 否") << "\n\n";
+    m_output << "HTTP/3 支持: " << (isHttp3Supported() ? "yes" : "no") << "\n";
 
     if (!isHttp3Supported()) {
-        m_output << "⚠️  警告: 当前 libcurl 不支持 HTTP/3\n";
-        m_output << "   部分测试将被跳过\n\n";
+        m_output << "HTTP/3 不可用，相关测试将跳过\n";
     }
+    m_output << "\n";
 }
 
 void BenchmarkHttp3::cleanupTestCase()
 {
     delete m_manager;
-
-    m_output << "\n========================================\n";
-    m_output << "性能基准测试完成\n";
-    m_output << "========================================\n\n";
 
     generateReport();
 }
@@ -144,10 +136,6 @@ bool BenchmarkHttp3::isHttp3Supported() const
 #endif
     return false;
 }
-
-// ============================================================================
-// 辅助方法实现
-// ============================================================================
 
 BenchmarkHttp3::BenchmarkResult BenchmarkHttp3::downloadFile(const QUrl &url, QCNetworkHttpVersion httpVersion)
 {
@@ -252,9 +240,8 @@ void BenchmarkHttp3::generateReport()
         return;
     }
 
-    m_output << "========================================\n";
     m_output << "性能对比报告\n";
-    m_output << "========================================\n\n";
+    m_output << "\n";
 
     // 按测试分组
     QMap<QString, QList<TestResult>> groupedResults;
@@ -279,26 +266,10 @@ void BenchmarkHttp3::generateReport()
         }
         m_output << "\n";
     }
-
-    // 性能对比总结
-    m_output << "========================================\n";
-    m_output << "性能提升总结\n";
-    m_output << "========================================\n\n";
-    m_output << "基于以上测试结果，HTTP/2 和 HTTP/3 相比 HTTP/1.1:\n";
-    m_output << "- 大文件下载: HTTP/2 提升约 20-30%, HTTP/3 提升约 30-50%\n";
-    m_output << "- 多文件并发: HTTP/2 提升约 50-80%, HTTP/3 提升约 60-100%\n";
-    m_output << "- 连接建立: HTTP/2 略慢（ALPN协商），HTTP/3 更快（0-RTT）\n\n";
-    m_output << "注意: 实际性能受网络条件、服务器配置等因素影响\n";
 }
-
-// ============================================================================
-// 大文件下载测试
-// ============================================================================
 
 void BenchmarkHttp3::benchmark_LargeFile_Http1_1()
 {
-    m_output << "测试: 大文件下载 (HTTP/1.1)\n";
-
     // 使用 Cloudflare 的测试文件（10MB）
     QUrl url("https://speed.cloudflare.com/cdn-cgi/trace");
 
@@ -313,18 +284,12 @@ void BenchmarkHttp3::benchmark_LargeFile_Http1_1()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
 
 void BenchmarkHttp3::benchmark_LargeFile_Http2()
 {
-    m_output << "测试: 大文件下载 (HTTP/2)\n";
-
     QUrl url("https://speed.cloudflare.com/cdn-cgi/trace");
 
     QBENCHMARK {
@@ -338,10 +303,6 @@ void BenchmarkHttp3::benchmark_LargeFile_Http2()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
@@ -351,8 +312,6 @@ void BenchmarkHttp3::benchmark_LargeFile_Http3()
     if (!isHttp3Supported()) {
         QSKIP("HTTP/3 不支持");
     }
-
-    m_output << "测试: 大文件下载 (HTTP/3)\n";
 
     QUrl url("https://speed.cloudflare.com/cdn-cgi/trace");
 
@@ -367,22 +326,12 @@ void BenchmarkHttp3::benchmark_LargeFile_Http3()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
 
-// ============================================================================
-// 多文件并发下载测试
-// ============================================================================
-
 void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http1_1()
 {
-    m_output << "测试: 多文件并发下载 (HTTP/1.1)\n";
-
     // 使用多个小文件URL
     QList<QUrl> urls;
     for (int i = 0; i < 10; ++i) {
@@ -400,18 +349,12 @@ void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http1_1()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 总吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
 
 void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http2()
 {
-    m_output << "测试: 多文件并发下载 (HTTP/2)\n";
-
     QList<QUrl> urls;
     for (int i = 0; i < 10; ++i) {
         urls << QUrl("https://httpbin.org/bytes/10240");
@@ -428,10 +371,6 @@ void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http2()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 总吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
@@ -441,8 +380,6 @@ void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http3()
     if (!isHttp3Supported()) {
         QSKIP("HTTP/3 不支持");
     }
-
-    m_output << "测试: 多文件并发下载 (HTTP/3)\n";
 
     QList<QUrl> urls;
     for (int i = 0; i < 10; ++i) {
@@ -460,39 +397,25 @@ void BenchmarkHttp3::benchmark_MultipleSmallFiles_Http3()
             testResult.throughput = result.throughput;
             testResult.bytesDownloaded = result.bytesDownloaded;
             m_results.append(testResult);
-
-            m_output << QString("  耗时: %1ms, 总吞吐量: %2 MB/s\n")
-                           .arg(result.totalTime)
-                           .arg(result.throughput, 0, 'f', 2);
         }
     }
 }
 
-// ============================================================================
-// 连接建立时间测试
-// ============================================================================
-
 void BenchmarkHttp3::benchmark_ConnectionSetup_Http1_1()
 {
-    m_output << "测试: 连接建立时间 (HTTP/1.1)\n";
-
     QUrl url("https://www.cloudflare.com");
 
     QBENCHMARK {
-        qint64 setupTime = measureConnectionSetup(url, QCNetworkHttpVersion::Http1_1);
-        m_output << QString("  连接建立: %1ms\n").arg(setupTime);
+        measureConnectionSetup(url, QCNetworkHttpVersion::Http1_1);
     }
 }
 
 void BenchmarkHttp3::benchmark_ConnectionSetup_Http2()
 {
-    m_output << "测试: 连接建立时间 (HTTP/2)\n";
-
     QUrl url("https://www.cloudflare.com");
 
     QBENCHMARK {
-        qint64 setupTime = measureConnectionSetup(url, QCNetworkHttpVersion::Http2);
-        m_output << QString("  连接建立: %1ms\n").arg(setupTime);
+        measureConnectionSetup(url, QCNetworkHttpVersion::Http2);
     }
 }
 
@@ -502,13 +425,10 @@ void BenchmarkHttp3::benchmark_ConnectionSetup_Http3()
         QSKIP("HTTP/3 不支持");
     }
 
-    m_output << "测试: 连接建立时间 (HTTP/3)\n";
-
     QUrl url("https://www.cloudflare.com");
 
     QBENCHMARK {
-        qint64 setupTime = measureConnectionSetup(url, QCNetworkHttpVersion::Http3);
-        m_output << QString("  连接建立: %1ms\n").arg(setupTime);
+        measureConnectionSetup(url, QCNetworkHttpVersion::Http3);
     }
 }
 

@@ -57,10 +57,6 @@ public:
 
     void run()
     {
-        qInfo() << "\n========================================";
-        qInfo() << "QCurl 调度器性能基准测试";
-        qInfo() << "========================================\n";
-
         // 测试 1：基本延迟对比（10 个顺序请求）
         benchmark1_BasicLatency();
 
@@ -80,10 +76,6 @@ public:
 private slots:
     void benchmark1_BasicLatency()
     {
-        qInfo() << "\n--- 测试 1：基本延迟对比 ---";
-        qInfo() << "场景：10 个顺序请求";
-        qInfo() << "对比：无调度器 vs 调度器（默认配置）\n";
-
         // 1.1 无调度器
         manager->enableRequestScheduler(false);
         auto noSchedulerResult = runBenchmark("无调度器", 10, false);
@@ -102,10 +94,6 @@ private slots:
 
     void benchmark2_ConcurrentPerformance()
     {
-        qInfo() << "\n--- 测试 2：并发性能对比 ---";
-        qInfo() << "场景：50 个并发请求";
-        qInfo() << "对比：无调度器 vs 调度器（maxConcurrent=10）\n";
-
         // 2.1 无调度器
         manager->enableRequestScheduler(false);
         auto noSchedulerResult = runConcurrentBenchmark("无调度器（并发）", 50, false);
@@ -129,10 +117,6 @@ private slots:
 
     void benchmark3_PriorityScheduling()
     {
-        qInfo() << "\n--- 测试 3：优先级调度效果 ---";
-        qInfo() << "场景：20 个请求（10个Low + 10个High优先级）";
-        qInfo() << "验证：高优先级请求是否更快完成\n";
-
         manager->enableRequestScheduler(true);
         
         QCNetworkRequestScheduler::Config config;
@@ -157,7 +141,7 @@ private slots:
             QElapsedTimer *timer = new QElapsedTimer();
             timer->start();
 
-            auto *reply = manager->scheduleGet(request);
+            auto *reply = manager->sendGet(request);
             connect(reply, &QCNetworkReply::finished, this, [this, reply, timer, lowPriorityResult, highPriorityResult, completedCount, totalCount]() {
                 qint64 latency = timer->elapsed();
                 lowPriorityResult->latencies.push_back(latency);
@@ -187,7 +171,7 @@ private slots:
             QElapsedTimer *timer = new QElapsedTimer();
             timer->start();
 
-            auto *reply = manager->scheduleGet(request);
+            auto *reply = manager->sendGet(request);
             connect(reply, &QCNetworkReply::finished, this, [this, reply, timer, highPriorityResult, lowPriorityResult, completedCount, totalCount]() {
                 qint64 latency = timer->elapsed();
                 highPriorityResult->latencies.push_back(latency);
@@ -212,10 +196,6 @@ private slots:
 
     void benchmark4_HighLoad()
     {
-        qInfo() << "\n--- 测试 4：高负载压力测试 ---";
-        qInfo() << "场景：100 个并发请求";
-        qInfo() << "验证：调度器在高负载下的稳定性\n";
-
         manager->enableRequestScheduler(true);
         
         QCNetworkRequestScheduler::Config config;
@@ -231,19 +211,13 @@ private slots:
 
     void printSummary()
     {
-        qInfo() << "\n========================================";
-        qInfo() << "性能基准测试总结";
-        qInfo() << "========================================\n";
+        qInfo() << "测试组数:" << results.size();
 
-        qInfo() << "✅ 完成" << results.size() << "组测试";
-        
         if (results.size() >= 2) {
-            qInfo() << "\n关键发现：";
-            
             // 测试 1 对比
             if (results[0].avgLatencyMs > 0 && results[1].avgLatencyMs > 0) {
                 double improvement = (results[0].avgLatencyMs - results[1].avgLatencyMs) / results[0].avgLatencyMs * 100;
-                qInfo() << QString("1. 基本延迟：调度器%1延迟 %2%")
+                qInfo() << QString("基本延迟：调度器%1 %2%")
                            .arg(improvement > 0 ? "降低" : "增加")
                            .arg(qAbs(improvement), 0, 'f', 1);
             }
@@ -251,19 +225,11 @@ private slots:
             // 测试 2 对比
             if (results.size() >= 4 && results[2].throughput > 0 && results[3].throughput > 0) {
                 double improvement = (results[3].throughput - results[2].throughput) / results[2].throughput * 100;
-                qInfo() << QString("2. 并发吞吐量：调度器%1吞吐量 %2%")
+                qInfo() << QString("并发吞吐量：调度器%1 %2%")
                            .arg(improvement > 0 ? "提升" : "降低")
                            .arg(qAbs(improvement), 0, 'f', 1);
             }
-
-            qInfo() << "\n调度器优势：";
-            qInfo() << "  ✓ 并发控制：防止资源耗尽";
-            qInfo() << "  ✓ 优先级调度：关键请求优先";
-            qInfo() << "  ✓ 每主机限制：避免单点过载";
-            qInfo() << "  ✓ 带宽控制：流量管理";
         }
-
-        qInfo() << "\n========================================\n";
 
         QCoreApplication::quit();
     }
@@ -290,7 +256,7 @@ private:
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
                 request.setPriority(QCNetworkRequestPriority::Normal);
-                reply = manager->scheduleGet(request);
+                reply = manager->sendGet(request);
             } else {
                 reply = manager->sendGet(request);
             }
@@ -345,7 +311,7 @@ private:
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
                 request.setPriority(QCNetworkRequestPriority::Normal);
-                reply = manager->scheduleGet(request);
+                reply = manager->sendGet(request);
             } else {
                 reply = manager->sendGet(request);
             }
@@ -417,16 +383,9 @@ private:
         results.push_back(lowResult);
         results.push_back(highResult);
 
-        qInfo() << "\n优先级调度效果：";
-        qInfo() << QString("  低优先级平均延迟: %1 ms").arg(lowResult.avgLatencyMs, 0, 'f', 2);
-        qInfo() << QString("  高优先级平均延迟: %1 ms").arg(highResult.avgLatencyMs, 0, 'f', 2);
-
-        if (highResult.avgLatencyMs < lowResult.avgLatencyMs) {
-            double improvement = (lowResult.avgLatencyMs - highResult.avgLatencyMs) / lowResult.avgLatencyMs * 100;
-            qInfo() << QString("  ✓ 高优先级请求延迟降低 %1%").arg(improvement, 0, 'f', 1);
-        } else {
-            qInfo() << "  ✗ 优先级调度效果不明显（可能是并发限制不够严格）";
-        }
+        qInfo() << QString("优先级延迟：low=%1 ms, high=%2 ms")
+                       .arg(lowResult.avgLatencyMs, 0, 'f', 2)
+                       .arg(highResult.avgLatencyMs, 0, 'f', 2);
     }
 
     void printResult(const BenchmarkResult &result)
@@ -475,9 +434,6 @@ private:
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-
-    qInfo() << "QCurl Scheduler Benchmark v2.6.0";
-    qInfo() << "注意：使用无效 URL 快速失败进行测试\n";
 
     SchedulerBenchmark benchmark;
     benchmark.run();
