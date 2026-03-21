@@ -183,17 +183,13 @@ private:
     QCNetworkAccessManager *m_manager = nullptr;
     QString m_httpbinBaseUrl;
 
-    // ✅ 增加超时时间到 40 秒 (之前是 20 秒)
+    // 下载/上传类用例在慢环境下使用更宽松的默认等待窗口。
     bool waitForFinished(QCNetworkReply *reply, int timeout = 40000);
     QJsonObject parseJson(const QByteArray &data) const;
 };
 
 void TestQCNetworkFileTransfer::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "文件传输 API 测试";
-    qDebug() << "========================================";
-
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
@@ -282,11 +278,11 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
     QJsonObject filesObj = json.value(QStringLiteral("files")).toObject();
     QString echoedStr    = filesObj.value(QStringLiteral("file")).toString();
 
-    // ✅ 修复：httpbin 返回的是 base64 data URL，需要解码
+    // httpbin 可能回显为 base64 data URL，需要先提取并解码 payload。
     // 格式: "data:application/octet-stream;base64,AAECAwQF..."
     QByteArray echoed;
     if (echoedStr.startsWith("data:")) {
-        // 提取 base64 部分
+        // 提取 base64 负载部分。
         int commaPos = echoedStr.indexOf(',');
         if (commaPos != -1) {
             QString base64Part = echoedStr.mid(commaPos + 1);
@@ -321,7 +317,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     auto *firstAttempt = m_manager->downloadFileResumable(url, savePath);
     QVERIFY(firstAttempt);
 
-    // ✅ 服务端会主动断开连接造成部分下载，确保用例可复现且不依赖 cancel 时序
+    // 该测试依赖服务端主动断连制造部分下载，以验证 resumable 续传语义。
     QVERIFY(waitForFinished(firstAttempt, 10000));
     QVERIFY(firstAttempt->error() != NetworkError::NoError);
     firstAttempt->deleteLater();

@@ -111,12 +111,6 @@ private:
 
 void TestQCWebSocket::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "QCurl WebSocket 测试套件";
-    qDebug() << "========================================";
-    qDebug() << "本地测试服务器: (启动后回填实际端口)";
-    qDebug();
-
     m_localServerSkipReason.clear();
     m_testServerUrl.clear();
     m_localWssServerSkipReason.clear();
@@ -163,10 +157,6 @@ void TestQCWebSocket::cleanupTestCase()
     m_wsServer.stop();
     m_wssServer.stop();
     m_wsEvidenceServer.stop();
-    qDebug();
-    qDebug() << "========================================";
-    qDebug() << "测试完成";
-    qDebug() << "========================================";
 }
 
 // ============================================================================
@@ -175,8 +165,6 @@ void TestQCWebSocket::cleanupTestCase()
 
 void TestQCWebSocket::testConnect()
 {
-    qDebug() << "========== testConnect ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -200,13 +188,11 @@ void TestQCWebSocket::testConnect()
 
     socket.close();
 
-    qDebug() << "✅ 基本连接测试通过";
+    qDebug() << "Basic connection contract verified";
 }
 
 void TestQCWebSocket::testConnectWss()
 {
-    qDebug() << "========== testConnectWss ==========";
-
     if (!m_localWssServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localWssServerSkipReason));
     }
@@ -228,13 +214,11 @@ void TestQCWebSocket::testConnectWss()
 
     socket.close();
 
-    qDebug() << "✅ WSS 加密连接测试通过";
+    qDebug() << "WSS connection contract verified";
 }
 
 void TestQCWebSocket::testConnectInvalidUrl()
 {
-    qDebug() << "========== testConnectInvalidUrl ==========";
-
     QCWebSocket socket{QUrl("wss://invalid-host-that-does-not-exist.example.com")};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
@@ -249,13 +233,11 @@ void TestQCWebSocket::testConnectInvalidUrl()
     QCOMPARE(socket.state(), QCWebSocket::State::Unconnected);
 
     qDebug() << "错误信息:" << socket.errorString();
-    qDebug() << "✅ 无效 URL 错误处理测试通过";
+    qDebug() << "Invalid URL error path verified";
 }
 
 void TestQCWebSocket::testAutoReconnect()
 {
-    qDebug() << "========== testAutoReconnect ==========";
-
     // 自动重连功能测试
     // 创建一个会失败的连接（避免固定端口假设；使用临时端口并立即释放，获得更稳定的“连接失败”语义）
     QTcpServer portPicker;
@@ -300,7 +282,7 @@ void TestQCWebSocket::testAutoReconnect()
         QCOMPARE(closeCode, 1006); // AbnormalClosure（网络错误）
     }
 
-    qDebug() << "✅ 自动重连测试通过，重连尝试次数:" << reconnectSpy.count();
+    qDebug() << "Reconnect attempts observed:" << reconnectSpy.count();
 
     // 停止重连
     socket.abort();
@@ -312,8 +294,6 @@ void TestQCWebSocket::testAutoReconnect()
 
 void TestQCWebSocket::testSendTextMessage()
 {
-    qDebug() << "========== testSendTextMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -344,13 +324,11 @@ void TestQCWebSocket::testSendTextMessage()
 
     socket.close();
 
-    qDebug() << "✅ 文本消息发送测试通过";
+    qDebug() << "Text echo contract verified";
 }
 
 void TestQCWebSocket::testSendBinaryMessage()
 {
-    qDebug() << "========== testSendBinaryMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -379,13 +357,11 @@ void TestQCWebSocket::testSendBinaryMessage()
 
     socket.close();
 
-    qDebug() << "✅ 二进制消息发送测试通过";
+    qDebug() << "Binary echo contract verified";
 }
 
 void TestQCWebSocket::testReceiveTextMessage()
 {
-    qDebug() << "========== testReceiveTextMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -409,13 +385,11 @@ void TestQCWebSocket::testReceiveTextMessage()
 
     socket.close();
 
-    qDebug() << "✅ 文本消息接收测试通过";
+    qDebug() << "Text receive path verified";
 }
 
 void TestQCWebSocket::testReceiveBinaryMessage()
 {
-    qDebug() << "========== testReceiveBinaryMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -434,11 +408,11 @@ void TestQCWebSocket::testReceiveBinaryMessage()
         data.append(static_cast<char>(i));
         data.append("Test Binary Data");
         socket.sendBinaryMessage(data);
-        // ✅ 在发送消息之间增加延迟
+        // 保持轻微间隔，避免连续发送时服务端回显顺序被时间片扰动。
         QTest::qWait(100);
     }
 
-    // ✅ 使用 binarySpy 等待（避免 waitForSignal() 新建 QSignalSpy 导致“信号已到达但等待超时”的假阴性）
+    // 复用同一个 spy，避免重新创建 spy 带来的假阴性。
     const int expectedMessages = 3;
     while (binarySpy.count() < expectedMessages) {
         if (!binarySpy.wait(20000)) {
@@ -453,13 +427,11 @@ void TestQCWebSocket::testReceiveBinaryMessage()
 
     socket.close();
 
-    qDebug() << "✅ 二进制消息接收测试通过";
+    qDebug() << "Binary receive path verified";
 }
 
 void TestQCWebSocket::testLargeMessage()
 {
-    qDebug() << "========== testLargeMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -496,7 +468,7 @@ void TestQCWebSocket::testLargeMessage()
 
     socket.close();
 
-    qDebug() << "✅ 大消息测试通过";
+    qDebug() << "Large message echo verified";
 }
 
 // ============================================================================
@@ -505,8 +477,6 @@ void TestQCWebSocket::testLargeMessage()
 
 void TestQCWebSocket::testPingPong()
 {
-    qDebug() << "========== testPingPong ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -534,13 +504,11 @@ void TestQCWebSocket::testPingPong()
 
     socket.close();
 
-    qDebug() << "✅ Ping/Pong 测试通过";
+    qDebug() << "Ping/Pong path verified";
 }
 
 void TestQCWebSocket::testCloseHandshake()
 {
-    qDebug() << "========== testCloseHandshake ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -563,13 +531,11 @@ void TestQCWebSocket::testCloseHandshake()
     QCOMPARE(disconnectedSpy.count(), 1);
     QCOMPARE(socket.state(), QCWebSocket::State::Closed);
 
-    qDebug() << "✅ 关闭握手测试通过";
+    qDebug() << "Close handshake verified";
 }
 
 void TestQCWebSocket::testFragmentedMessage()
 {
-    qDebug() << "========== testFragmentedMessage ==========";
-
     if (!m_localServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -591,10 +557,8 @@ void TestQCWebSocket::testFragmentedMessage()
 
     QCOMPARE(connectedSpy.count(), 1);
 
-    // ========================================================================
-    // 测试 1: 大文本消息分片（10KB）
-    // ========================================================================
-    qDebug() << "测试 1: 10KB 文本消息分片";
+    // 验证 10KB 文本消息在 echo 往返后仍保持完整。
+    qDebug() << "Verifying 10KB text echo integrity";
 
     QByteArray largeText(10240, 'A');
     QString testMessage = QString::fromUtf8(largeText);
@@ -612,12 +576,10 @@ void TestQCWebSocket::testFragmentedMessage()
     QCOMPARE(receivedText.size(), 10240);
     QCOMPARE(receivedText, testMessage);
 
-    qDebug() << "✅ 10KB 文本消息完整性验证通过";
+    qDebug() << "10KB text echo integrity verified";
 
-    // ========================================================================
-    // 测试 2: 超大二进制消息分片（100KB）
-    // ========================================================================
-    qDebug() << "测试 2: 100KB 二进制消息分片";
+    // 验证较大二进制负载的完整往返。
+    qDebug() << "Verifying 100KB binary echo integrity";
 
     QByteArray largeBinary(102400, 0x42); // 填充 'B' (0x42)
 
@@ -634,12 +596,10 @@ void TestQCWebSocket::testFragmentedMessage()
     QCOMPARE(receivedBinary.size(), 102400);
     QCOMPARE(receivedBinary, largeBinary);
 
-    qDebug() << "✅ 100KB 二进制消息完整性验证通过";
+    qDebug() << "100KB binary echo integrity verified";
 
-    // ========================================================================
-    // 测试 3: 边界条件（4096 字节 - 正好 1 帧）
-    // ========================================================================
-    qDebug() << "测试 3: 4096 字节边界测试";
+    // 4096 字节用于覆盖常见分帧边界附近的回显完整性。
+    qDebug() << "Verifying 4096-byte boundary echo";
 
     QByteArray boundaryBinary(4096, 0x43); // 填充 'C' (0x43)
 
@@ -655,12 +615,10 @@ void TestQCWebSocket::testFragmentedMessage()
     QCOMPARE(receivedBoundary.size(), 4096);
     QCOMPARE(receivedBoundary, boundaryBinary);
 
-    qDebug() << "✅ 4096 字节边界测试通过";
+    qDebug() << "4096-byte boundary echo verified";
 
-    // ========================================================================
-    // 测试 4: 连续发送多个大消息
-    // ========================================================================
-    qDebug() << "测试 4: 连续发送多个大消息";
+    // 连续发送大消息，验证连接在多次往返下仍能完整交付。
+    qDebug() << "Verifying repeated large-message echo";
 
     textSpy.clear();
     for (int i = 0; i < 3; ++i) {
@@ -680,12 +638,12 @@ void TestQCWebSocket::testFragmentedMessage()
     }
     QVERIFY(textSpy.count() >= 3);
 
-    qDebug() << "✅ 连续大消息测试通过，收到" << textSpy.count() << "个消息";
+    qDebug() << "Repeated large-message echo verified, count =" << textSpy.count();
 
     // 关闭连接
     socket.close();
 
-    qDebug() << "✅ 分片消息完整性测试全部通过";
+    qDebug() << "Fragmented message integrity contract verified";
 }
 
 static QString sha256Hex(const QByteArray &data)
@@ -774,8 +732,6 @@ static QList<QJsonObject> waitEvidenceFramesByCase(const QString &jsonlPath,
 
 void TestQCWebSocket::testFragmentedFramesReassembly()
 {
-    qDebug() << "========== testFragmentedFramesReassembly ==========";
-
     if (!m_localEvidenceServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localEvidenceServerSkipReason));
     }
@@ -852,7 +808,7 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
     QCOMPARE(offset, totalLen);
 
     socket.close();
-    qDebug() << "✅ 帧级分片重组测试通过（len/sha256 + 服务器帧日志）";
+    qDebug() << "Frame-level reassembly verified (len/sha256 + evidence log)";
 }
 
 // ============================================================================
@@ -861,8 +817,6 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
 
 void TestQCWebSocket::testConnectionRefused()
 {
-    qDebug() << "========== testConnectionRefused ==========";
-
     // 连接到一个拒绝连接的端口（避免固定端口假设；使用临时端口并立即释放）
     QTcpServer portPicker;
     if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
@@ -884,23 +838,17 @@ void TestQCWebSocket::testConnectionRefused()
     QVERIFY(!socket.errorString().isEmpty());
 
     qDebug() << "错误信息:" << socket.errorString();
-    qDebug() << "✅ 连接拒绝错误处理测试通过";
+    qDebug() << "Connection-refused error path verified";
 }
 
 void TestQCWebSocket::testSslError()
 {
-    qDebug() << "========== testSslError ==========";
-
     if (!m_localWssServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localWssServerSkipReason));
     }
 
-    // SSL 错误处理测试
-
-    // ========================================================================
-    // 测试 1: 自签名证书（默认配置应拒绝）
-    // ========================================================================
-    qDebug() << "测试 1: 自签名证书拒绝（默认安全配置）";
+    // 默认安全配置必须拒绝未被信任的自签名证书。
+    qDebug() << "Verifying default rejection of self-signed certificate";
 
     QCWebSocket socket{QUrl(m_testWssServerUrl)};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
@@ -923,12 +871,10 @@ void TestQCWebSocket::testSslError()
         QVERIFY(!errors.isEmpty());
     }
 
-    qDebug() << "✅ 默认配置正确拒绝自签名证书";
+    qDebug() << "Default TLS policy rejected self-signed certificate";
 
-    // ========================================================================
-    // 测试 2: 配置 CA 后应连接成功
-    // ========================================================================
-    qDebug() << "测试 2: 配置 CA 后连接成功";
+    // 显式配置信任 CA 后，连接应恢复成功。
+    qDebug() << "Verifying connection succeeds after CA is configured";
 
     QCWebSocket socket2{QUrl(m_testWssServerUrl)};
     QCNetworkSslConfig sslConfig;
@@ -944,17 +890,15 @@ void TestQCWebSocket::testSslError()
              qPrintable(QStringLiteral("预期配置 CA 后应连接成功，caCertPath=%1，错误=%2")
                             .arg(m_caCertPath, socket2.errorString())));
 
-    qDebug() << "✅ 配置 CA 后连接成功";
+    qDebug() << "Connection succeeded after CA configuration";
     QCOMPARE(connectedSpy.count(), 1);
     socket2.close();
 
-    qDebug() << "✅ SSL 错误处理测试通过";
+    qDebug() << "TLS validation path verified";
 }
 
 void TestQCWebSocket::testServerClosedConnection()
 {
-    qDebug() << "========== testServerClosedConnection ==========";
-
     if (!m_localEvidenceServerSkipReason.isEmpty()) {
         QSKIP(qPrintable(m_localEvidenceServerSkipReason));
     }
@@ -1009,7 +953,7 @@ void TestQCWebSocket::testServerClosedConnection()
     QCOMPARE(last.value(QStringLiteral("close_code")).toInt(-1), 1001);
     QCOMPARE(last.value(QStringLiteral("close_reason")).toString(), QStringLiteral("bye"));
 
-    qDebug() << "✅ 服务器关闭连接测试通过";
+    qDebug() << "Server-driven close path verified";
 }
 
 // ============================================================================

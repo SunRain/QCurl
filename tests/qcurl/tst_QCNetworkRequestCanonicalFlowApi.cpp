@@ -5,25 +5,29 @@
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestBuilder.h"
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QtTest>
 
+#include <chrono>
+#include <initializer_list>
 #include <optional>
 #include <utility>
 
 using namespace QCurl;
 
 /**
- * @brief RequestBuilder 单元测试
+ * @brief QCNetworkRequest canonical flow API 语义回归测试
  *
- * 测试流式构建器的链式调用、参数设置和请求发送。
+ * 测试 QCNetworkRequest + QCNetworkAccessManager::send* 的链式配置与发送语义。
  *
  */
-class TestQCNetworkRequestBuilder : public QObject
+class TestQCNetworkRequestCanonicalFlowApi : public QObject
 {
     Q_OBJECT
 
@@ -34,7 +38,7 @@ private slots:
     void cleanup();
 
     // 基础功能测试
-    void testCreateBuilder();
+    void testRequestHandoff();
     void testChainedCalls();
     void testWithHeader();
     void testWithTimeout();
@@ -42,6 +46,7 @@ private slots:
     // 参数设置测试
     void testWithQueryParams();
     void testWithFollowLocation();
+    void testUploadFileMissingPathFailsAsInvalidRequest();
 
     // 请求发送测试
     void testSendGet();
@@ -53,17 +58,13 @@ private:
     QCNetworkMockHandler m_mock;
 };
 
-void TestQCNetworkRequestBuilder::initTestCase()
-{
-    qDebug() << "=== TestQCNetworkRequestBuilder Test Suite ===";
-}
+void TestQCNetworkRequestCanonicalFlowApi::initTestCase()
+{}
 
-void TestQCNetworkRequestBuilder::cleanupTestCase()
-{
-    qDebug() << "=== TestQCNetworkRequestBuilder Completed ===";
-}
+void TestQCNetworkRequestCanonicalFlowApi::cleanupTestCase()
+{}
 
-void TestQCNetworkRequestBuilder::init()
+void TestQCNetworkRequestCanonicalFlowApi::init()
 {
     m_manager = new QCNetworkAccessManager(this);
 
@@ -74,7 +75,7 @@ void TestQCNetworkRequestBuilder::init()
     m_manager->setMockHandler(&m_mock);
 }
 
-void TestQCNetworkRequestBuilder::cleanup()
+void TestQCNetworkRequestCanonicalFlowApi::cleanup()
 {
     if (m_manager) {
         m_manager->deleteLater();
@@ -94,19 +95,32 @@ static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, Q
     return std::nullopt;
 }
 
-/**
- * @brief 测试创建 Builder
- */
-void TestQCNetworkRequestBuilder::testCreateBuilder()
+static QUrl addQueryItems(QUrl url, std::initializer_list<std::pair<QString, QString>> items)
 {
-    const QUrl url("http://example.com/create-builder");
+    QUrlQuery query(url);
+    for (const auto &item : items) {
+        query.addQueryItem(item.first, item.second);
+    }
+    url.setQuery(query);
+    return url;
+}
+
+static QCNetworkRequest handoffRequest(QCNetworkRequest request)
+{
+    return request;
+}
+
+/**
+ * @brief 测试临时 request 交接
+ */
+void TestQCNetworkRequestCanonicalFlowApi::testRequestHandoff()
+{
+    const QUrl url("http://example.com/request-handoff");
     m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url);
-    auto moved = std::move(builder);
-
-    auto *reply = moved.sendGet();
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(handoffRequest(std::move(request)));
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -120,40 +134,34 @@ void TestQCNetworkRequestBuilder::testCreateBuilder()
 }
 
 /**
- * @brief 测试链式调用
+ * @brief 测试 QCNetworkRequest 链式调用
  */
-void TestQCNetworkRequestBuilder::testChainedCalls()
+void TestQCNetworkRequestCanonicalFlowApi::testChainedCalls()
 {
-    // Arrange
-    QUrl url("http://example.com/api");
-    auto builder = m_manager->newRequest(url);
+    QCNetworkRequest request(QUrl("http://example.com/api"));
 
-    // Act - 链式调用（使用 . 而不是 ->）
-    auto &result = builder.withHeader("User-Agent", "QCurl Test")
-                       .withHeader("Accept", "application/json")
-                       .withTimeout(5000)
-                       .withFollowLocation(true);
+    auto &result = request.setRawHeader("User-Agent", "QCurl Test")
+                       .setRawHeader("Accept", "application/json")
+                       .setTimeout(std::chrono::milliseconds(5000))
+                       .setFollowLocation(true);
 
-    // Assert - 返回的是引用，应该是同一个对象
-    QCOMPARE(&result, &builder);
+    QCOMPARE(&result, &request);
 }
 
 /**
  * @brief 测试 withHeader
  */
-void TestQCNetworkRequestBuilder::testWithHeader()
+void TestQCNetworkRequestCanonicalFlowApi::testWithHeader()
 {
     // Arrange
     QUrl url("http://example.com/with-header");
     m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url);
+    QCNetworkRequest request(url);
+    request.setRawHeader("User-Agent", "TestAgent").setRawHeader("Accept", "text/html");
 
-    // Act
-    builder.withHeader("User-Agent", "TestAgent").withHeader("Accept", "text/html");
-
-    auto *reply = builder.sendGet();
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -173,19 +181,17 @@ void TestQCNetworkRequestBuilder::testWithHeader()
 /**
  * @brief 测试 withTimeout
  */
-void TestQCNetworkRequestBuilder::testWithTimeout()
+void TestQCNetworkRequestCanonicalFlowApi::testWithTimeout()
 {
     // Arrange
     QUrl url("http://example.com/with-timeout");
     m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url);
+    QCNetworkRequest request(url);
+    request.setTimeout(std::chrono::milliseconds(3000));
 
-    // Act
-    builder.withTimeout(3000); // 3 秒超时
-
-    auto *reply = builder.sendGet();
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -193,6 +199,8 @@ void TestQCNetworkRequestBuilder::testWithTimeout()
     QCOMPARE(captured.size(), 1);
     QCOMPARE(captured.first().url, url);
     QCOMPARE(captured.first().method, HttpMethod::Get);
+    QVERIFY(captured.first().totalTimeoutMs.has_value());
+    QCOMPARE(*captured.first().totalTimeoutMs, qint64(3000));
 
     reply->deleteLater();
 }
@@ -200,20 +208,16 @@ void TestQCNetworkRequestBuilder::testWithTimeout()
 /**
  * @brief 测试 withQueryParams
  */
-void TestQCNetworkRequestBuilder::testWithQueryParams()
+void TestQCNetworkRequestCanonicalFlowApi::testWithQueryParams()
 {
-    // Arrange
     QUrl baseUrl("http://example.com/api");
-    auto builder = m_manager->newRequest(baseUrl);
-
-    // Act
-    builder.withQueryParam("page", "1").withQueryParam("limit", "20").withQueryParam("sort", "desc");
-
-    const QUrl expectedUrl("http://example.com/api?page=1&limit=20&sort=desc");
+    const QUrl expectedUrl = addQueryItems(baseUrl,
+                                           {{"page", "1"}, {"limit", "20"}, {"sort", "desc"}});
     m_mock.mockResponse(HttpMethod::Get, expectedUrl, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto *reply = builder.sendGet();
+    QCNetworkRequest request(expectedUrl);
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -228,9 +232,8 @@ void TestQCNetworkRequestBuilder::testWithQueryParams()
 /**
  * @brief 测试 withFollowLocation
  */
-void TestQCNetworkRequestBuilder::testWithFollowLocation()
+void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
 {
-    // Arrange
     const QUrl url1("http://example.com/follow-default");
     const QUrl url2("http://example.com/follow-on");
     const QUrl url3("http://example.com/follow-off");
@@ -241,8 +244,8 @@ void TestQCNetworkRequestBuilder::testWithFollowLocation()
     // Case 1: default（未调用 withFollowLocation）
     {
         m_mock.clearCapturedRequests();
-        auto builder = m_manager->newRequest(url1);
-        auto *reply = builder.sendGet();
+        QCNetworkRequest request(url1);
+        auto *reply = m_manager->sendGet(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -257,10 +260,10 @@ void TestQCNetworkRequestBuilder::testWithFollowLocation()
     // Case 2: followLocation=true
     {
         m_mock.clearCapturedRequests();
-        auto builder = m_manager->newRequest(url2);
-        builder.withFollowLocation(true);
+        QCNetworkRequest request(url2);
+        request.setFollowLocation(true);
 
-        auto *reply = builder.sendGet();
+        auto *reply = m_manager->sendGet(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -275,10 +278,10 @@ void TestQCNetworkRequestBuilder::testWithFollowLocation()
     // Case 3: followLocation=false（显式覆盖）
     {
         m_mock.clearCapturedRequests();
-        auto builder = m_manager->newRequest(url3);
-        builder.withFollowLocation(false);
+        QCNetworkRequest request(url3);
+        request.setFollowLocation(false);
 
-        auto *reply = builder.sendGet();
+        auto *reply = m_manager->sendGet(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -294,18 +297,17 @@ void TestQCNetworkRequestBuilder::testWithFollowLocation()
 /**
  * @brief 测试 sendGet
  */
-void TestQCNetworkRequestBuilder::testSendGet()
+void TestQCNetworkRequestCanonicalFlowApi::testSendGet()
 {
     // Arrange
     QUrl url("http://example.com/test");
     m_mock.mockResponse(HttpMethod::Get, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder = m_manager->newRequest(url);
-    builder.withHeader("User-Agent", "QCurl Test").withTimeout(5000);
+    QCNetworkRequest request(url);
+    request.setRawHeader("User-Agent", "QCurl Test").setTimeout(std::chrono::milliseconds(5000));
 
-    // Act
-    auto *reply = builder.sendGet();
+    auto *reply = m_manager->sendGet(request);
 
     // Assert
     QVERIFY(reply != nullptr);
@@ -325,20 +327,19 @@ void TestQCNetworkRequestBuilder::testSendGet()
 /**
  * @brief 测试 sendPost
  */
-void TestQCNetworkRequestBuilder::testSendPost()
+void TestQCNetworkRequestCanonicalFlowApi::testSendPost()
 {
     // Arrange
     QUrl url("http://example.com/submit");
     m_mock.mockResponse(HttpMethod::Post, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder        = m_manager->newRequest(url);
     QByteArray postData = "test=data";
+    QCNetworkRequest request(url);
+    request.setRawHeader("Content-Type", "application/x-www-form-urlencoded")
+        .setTimeout(std::chrono::milliseconds(5000));
 
-    builder.withHeader("Content-Type", "application/x-www-form-urlencoded").withTimeout(5000);
-
-    // Act
-    auto *reply = builder.sendPost(postData);
+    auto *reply = m_manager->sendPost(request, postData);
 
     // Assert
     QVERIFY(reply != nullptr);
@@ -360,7 +361,7 @@ void TestQCNetworkRequestBuilder::testSendPost()
 /**
  * @brief 测试 sendDelete（携带 body）
  */
-void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
+void TestQCNetworkRequestCanonicalFlowApi::testSendDeleteWithBody()
 {
     // Arrange
     QUrl url1("http://example.com/delete");
@@ -369,21 +370,17 @@ void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
     m_mock.mockResponse(HttpMethod::Delete, url2, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto builder    = m_manager->newRequest(url1);
     QByteArray body = "test=data";
-    builder.withBody(body);
-
-    // Act（使用 withBody 中的 body）
-    auto *reply = builder.sendDelete();
+    QCNetworkRequest request(url1);
+    auto *reply = m_manager->sendDelete(request, body);
 
     // Assert
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     reply->deleteLater();
 
-    // Act（显式传入 body）
-    auto builder2 = m_manager->newRequest(url2);
-    auto *reply2  = builder2.sendDelete(body);
+    QCNetworkRequest request2(url2);
+    auto *reply2 = m_manager->sendDelete(request2, body);
     QVERIFY(reply2 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
     reply2->deleteLater();
@@ -400,5 +397,24 @@ void TestQCNetworkRequestBuilder::testSendDeleteWithBody()
     QCOMPARE(captured.at(1).bodyPreview, body);
 }
 
-QTEST_MAIN(TestQCNetworkRequestBuilder)
-#include "tst_QCNetworkRequestBuilder.moc"
+void TestQCNetworkRequestCanonicalFlowApi::testUploadFileMissingPathFailsAsInvalidRequest()
+{
+    const QString missingPath = QDir::temp().filePath(
+        QStringLiteral("qcurl-missing-upload-%1.bin")
+            .arg(QUuid::createUuid().toString(QUuid::Id128)));
+    QVERIFY(!QFileInfo::exists(missingPath));
+
+    auto *reply = m_manager->uploadFile(QUrl(QStringLiteral("http://example.com/upload")),
+                                        missingPath);
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(QStringLiteral("uploadFile")));
+    QCOMPARE(m_mock.takeCapturedRequests().size(), 0);
+
+    reply->deleteLater();
+}
+
+QTEST_MAIN(TestQCNetworkRequestCanonicalFlowApi)
+#include "tst_QCNetworkRequestCanonicalFlowApi.moc"

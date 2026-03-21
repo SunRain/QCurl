@@ -1,8 +1,6 @@
 /**
  * @file tst_QCMultipartFormData.cpp
  * @brief QCMultipartFormData 类单元测试
- * @author QCurl Project
- * @date 2025-11-07
  *
  * 测试 QCMultipartFormData 的所有公共 API，包括：
  * - 基础功能（构造、清空、计数）
@@ -28,17 +26,17 @@ private slots:
     void initTestCase();
     void cleanupTestCase();
 
-    // ========== 基础功能测试（3 个）==========
+    // ========== 基础功能测试 ==========
     void testConstructor();
     void testClear();
     void testFieldCount();
 
-    // ========== 文本字段测试（3 个）==========
+    // ========== 文本字段测试 ==========
     void testAddTextField();
     void testAddMultipleTextFields();
     void testTextFieldEncoding();
 
-    // ========== 文件字段测试（6 个）==========
+    // ========== 文件字段测试 ==========
     void testAddFileFieldFromByteArray();
     void testFileFieldEncoding();
     void testMultipleFileFields();
@@ -46,19 +44,19 @@ private slots:
     void testAddFileFieldInvalidPath();
     void testMimeTypeDetection();
 
-    // ========== 流式字段测试（3 个）==========
+    // ========== 流式字段测试 ==========
     void testAddFileFieldStream();
     void testHasStreamFields();
     void testStreamFieldNotInByteArray();
 
-    // ========== 编码输出测试（4 个）==========
+    // ========== 编码输出测试 ==========
     void testToByteArray();
     void testContentType();
     void testBoundary();
     void testCustomBoundary();
     void testSize();
 
-    // ========== 边界情况测试（3 个）==========
+    // ========== 边界情况测试 ==========
     void testEmptyFormData();
     void testSpecialCharactersInFields();
     void testLargeFileField();
@@ -73,10 +71,6 @@ private:
 
 void TestQCMultipartFormData::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "QCMultipartFormData 单元测试";
-    qDebug() << "========================================";
-
     m_tempDir = QDir::tempPath() + "/qcurl_test_multipart";
     QDir().mkpath(m_tempDir);
 }
@@ -86,10 +80,6 @@ void TestQCMultipartFormData::cleanupTestCase()
     // 清理临时目录
     QDir dir(m_tempDir);
     dir.removeRecursively();
-
-    qDebug() << "========================================";
-    qDebug() << "测试套件完成";
-    qDebug() << "========================================";
 }
 
 // ============================================================================
@@ -352,8 +342,8 @@ void TestQCMultipartFormData::testHasStreamFields()
 
 void TestQCMultipartFormData::testStreamFieldNotInByteArray()
 {
-    // ✅ v2.13.0 修复: 流式字段现在被序列化了
-    // 更新为验证新行为：流式字段现在被包含在 toByteArray() 中
+    // 流式字段也应参与 toByteArray() 编码，避免与 fieldCount()/hasStreamFields()
+    // 的契约语义脱节。
 
     QBuffer buffer;
     buffer.open(QIODevice::ReadWrite);
@@ -367,11 +357,11 @@ void TestQCMultipartFormData::testStreamFieldNotInByteArray()
     QCOMPARE(form.fieldCount(), 2);
     QVERIFY(form.hasStreamFields());
 
-    // ✅ 新行为: 流式字段现在被包含在编码中（v2.13.0修复）
+    // 编码结果应包含流式字段内容与对应 multipart 元数据。
     QByteArray encoded = form.toByteArray();
     QVERIFY(encoded.contains("text"));
     QVERIFY(encoded.contains("value"));
-    QVERIFY(encoded.contains("Stream data")); // ← 新增验证
+    QVERIFY(encoded.contains("Stream data"));
 
     // 验证 multipart 结构正确
     QVERIFY(encoded.contains("name=\"stream\""));

@@ -46,14 +46,10 @@ private:
 };
 
 void TestQCNetworkMockHandler::initTestCase()
-{
-    qDebug() << "=== TestQCNetworkMockHandler Test Suite ===";
-}
+{}
 
 void TestQCNetworkMockHandler::cleanupTestCase()
-{
-    qDebug() << "=== TestQCNetworkMockHandler Completed ===";
-}
+{}
 
 void TestQCNetworkMockHandler::init()
 {

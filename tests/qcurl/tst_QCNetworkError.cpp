@@ -5,6 +5,7 @@
 
 #include "QCNetworkError.h"
 
+#include <curl/curl.h>
 #include <QtTest/QtTest>
 
 using namespace QCurl;

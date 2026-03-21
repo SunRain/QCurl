@@ -1,12 +1,12 @@
 /**
  * @file tst_QCNetworkProxy.cpp
- * @brief 代理配置功能测试
- * 
- * 简化测试方案：
- * - 无需真实代理服务器（使用无效代理地址）
- * - 重点测试配置 API 和错误处理
- * - 验证代理配置是否正确传递给 libcurl
- * 
+ * @brief 验证代理配置、TLS 选项和错误路径的稳定合同。
+ *
+ * 该套件避免依赖真实代理服务，重点覆盖：
+ * - request 层 proxy 配置的保存与读取
+ * - proxy/TLS 选项向 libcurl 句柄的映射
+ * - 不支持能力的 fail/warn 分支
+ * - 代理连接失败时的错误语义
  */
 
 #include "QCNetworkAccessManager.h"
@@ -57,11 +57,7 @@ private:
 
 void TestQCNetworkProxy::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "代理配置功能测试";
-    qDebug() << "========================================";
-    qDebug() << "测试方案：简化版（无需真实代理服务器）";
-    qDebug() << "";
+    qDebug() << "Contract: config mapping + error paths without a real proxy server";
 
     m_manager = new QCNetworkAccessManager(this);
 }
@@ -93,7 +89,7 @@ bool TestQCNetworkProxy::waitForReply(QCNetworkReply *reply, int timeout)
 
 void TestQCNetworkProxy::testProxyConfigBasic()
 {
-    qDebug() << "测试 1：代理配置 API 验证";
+    qDebug() << "Verifying request-level proxy config storage";
 
     // 创建代理配置
     QCNetworkProxyConfig proxyConfig;
@@ -115,12 +111,12 @@ void TestQCNetworkProxy::testProxyConfigBasic()
         QCOMPARE(proxyConfigOpt->port, quint16(8080));
     }
 
-    qDebug() << "✅ 代理配置 API 验证通过";
+    qDebug() << "Request-level proxy config verified";
 }
 
 void TestQCNetworkProxy::testProxyTypeValidation()
 {
-    qDebug() << "测试 2：代理类型验证";
+    qDebug() << "Verifying supported proxy type round-trip";
 
     // 测试所有支持的代理类型
     QList<QCNetworkProxyConfig::ProxyType> types = {QCNetworkProxyConfig::ProxyType::None,
@@ -146,12 +142,12 @@ void TestQCNetworkProxy::testProxyTypeValidation()
         }
     }
 
-    qDebug() << "✅ 代理类型验证通过（7 种类型）";
+    qDebug() << "Supported proxy types verified";
 }
 
 void TestQCNetworkProxy::testProxyAuthentication()
 {
-    qDebug() << "测试 3：代理认证配置验证";
+    qDebug() << "Verifying proxy authentication fields";
 
     // 创建带认证的代理配置
     QCNetworkProxyConfig proxyConfig;
@@ -172,12 +168,12 @@ void TestQCNetworkProxy::testProxyAuthentication()
         QCOMPARE(proxyConfigOpt->password, QStringLiteral("testpass"));
     }
 
-    qDebug() << "✅ 代理认证配置验证通过";
+    qDebug() << "Proxy authentication fields verified";
 }
 
 void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
 {
-    qDebug() << "测试 4.1：代理配置是否正确写入 curl 句柄";
+    qDebug() << "Verifying proxy config is propagated into curl handle state";
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxyConfig;
@@ -217,12 +213,12 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
     QVERIFY(invalidPrivate.proxyUserBytes.isEmpty());
     QVERIFY(invalidPrivate.proxyPasswordBytes.isEmpty());
 
-    qDebug() << "✅ 代理配置已正确写入 curl 句柄";
+    qDebug() << "Proxy config propagation verified";
 }
 
 void TestQCNetworkProxy::testSslConfigApplied()
 {
-    qDebug() << "测试 4.2：SSL 配置是否正确写入 curl 句柄";
+    qDebug() << "Verifying SSL config is propagated into curl handle state";
 
     QCNetworkRequest request(QUrl("https://secure.example.com"));
     QCNetworkSslConfig sslConfig;
@@ -261,12 +257,12 @@ void TestQCNetworkProxy::testSslConfigApplied()
     QVERIFY(defaultPrivate.sslClientKeyPathBytes.isEmpty());
     QVERIFY(defaultPrivate.sslClientKeyPasswordBytes.isEmpty());
 
-    qDebug() << "✅ SSL 配置已正确传递";
+    qDebug() << "SSL config propagation verified";
 }
 
 void TestQCNetworkProxy::testProxyWithSsl()
 {
-    qDebug() << "测试 4：代理与 SSL 结合配置";
+    qDebug() << "Verifying proxy and SSL config can coexist on one request";
 
     // HTTPS 代理配置
     QCNetworkProxyConfig proxyConfig;
@@ -294,12 +290,12 @@ void TestQCNetworkProxy::testProxyWithSsl()
         QCOMPARE(proxyConfigOpt->type, QCNetworkProxyConfig::ProxyType::Https);
     }
 
-    qDebug() << "✅ 代理与 SSL 结合配置验证通过";
+    qDebug() << "Proxy + SSL request contract verified";
 }
 
 void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
 {
-    qDebug() << "测试 4.3：Proxy TLS 不可用（Fail）";
+    qDebug() << "Verifying proxy TLS capability failure path";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
 #if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
@@ -351,7 +347,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
 
 void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
 {
-    qDebug() << "测试 4.4：Proxy TLS 不可用（Warn）";
+    qDebug() << "Verifying proxy TLS capability warning path";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
 #if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
@@ -404,7 +400,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
 
 void TestQCNetworkProxy::testProxyConnectionFailed()
 {
-    qDebug() << "测试 5：无效代理错误处理";
+    qDebug() << "Verifying proxy connection failure error path";
 
     // 取证口径：避免依赖固定端口/外网 DNS 的非确定性前提。
     // 使用本机临时端口并立即释放，获得更稳定的“连接失败”场景。
@@ -450,7 +446,7 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 
     reply->deleteLater();
 
-    qDebug() << "✅ 无效代理错误处理验证通过";
+    qDebug() << "Proxy connection failure path verified";
 }
 
 QTEST_MAIN(TestQCNetworkProxy)

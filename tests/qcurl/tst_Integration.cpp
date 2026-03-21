@@ -115,7 +115,7 @@ private slots:
     void testConnectionRefused();
     void testHttpErrorCodes();
 
-    // ========== 重试机制集成测试（v2.1.0）==========
+    // ========== 重试机制集成测试 ==========
     void testRetryWithConcurrentRequests(); // 并发重试无冲突
     void testRetryOnTimeout();              // 超时重试
     void testRetryDelayAccuracy();          // 重试延迟准确性
@@ -181,9 +181,6 @@ static bool waitForPortReady(quint16 port, int timeoutMs)
 
 void TestIntegration::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "QCurl 集成测试套件";
-    qDebug() << "========================================";
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
@@ -205,7 +202,6 @@ void TestIntegration::initTestCase()
 
 void TestIntegration::cleanupTestCase()
 {
-    qDebug() << "清理集成测试套件";
     m_manager = nullptr;
 }
 
@@ -240,7 +236,6 @@ void TestIntegration::testRealHttpGetRequest()
     QJsonObject args = json["args"].toObject();
     QCOMPARE(args["test"].toString(), QStringLiteral("value"));
 
-    qDebug() << "GET request successful:" << data->size() << "bytes";
     reply->deleteLater();
 }
 
@@ -265,7 +260,6 @@ void TestIntegration::testRealHttpPostRequest()
     QVERIFY(dataStr.contains("QCurl"));
     QVERIFY(dataStr.contains("2.0.0"));
 
-    qDebug() << "POST request successful";
     reply->deleteLater();
 }
 
@@ -284,7 +278,6 @@ void TestIntegration::testRealHttpPutRequest()
     QVERIFY(data.has_value());
     QVERIFY(data->contains("update"));
 
-    qDebug() << "PUT request successful";
     reply->deleteLater();
 }
 
@@ -296,7 +289,6 @@ void TestIntegration::testRealHttpDeleteRequest()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    qDebug() << "DELETE request successful";
     reply->deleteLater();
 }
 
@@ -315,7 +307,6 @@ void TestIntegration::testRealHttpPatchRequest()
     QVERIFY(data.has_value());
     QVERIFY(data->contains("patched"));
 
-    qDebug() << "PATCH request successful";
     reply->deleteLater();
 }
 
@@ -340,7 +331,6 @@ void TestIntegration::testCookieSetAndGet()
     QJsonObject json = parseJsonResponse(*data);
     QVERIFY(json.contains("cookies"));
 
-    qDebug() << "Cookie test successful";
     reply->deleteLater();
 }
 
@@ -374,7 +364,6 @@ void TestIntegration::testCookiePersistence()
     QJsonObject cookies = json["cookies"].toObject();
     QCOMPARE(cookies["session"].toString(), QStringLiteral("123"));
 
-    qDebug() << "Cookie persistence test successful";
     reply2->deleteLater();
 
     // 清理
@@ -403,7 +392,6 @@ void TestIntegration::testCustomHeaders()
     QCOMPARE(headers["X-Custom-Header"].toString(), QStringLiteral("TestValue"));
     QCOMPARE(headers["X-Test-Id"].toString(), QStringLiteral("12345"));
 
-    qDebug() << "Custom headers test successful";
     reply->deleteLater();
 }
 
@@ -422,7 +410,6 @@ void TestIntegration::testUserAgentHeader()
     QString userAgent = json["user-agent"].toString();
     QVERIFY(userAgent.contains("QCurl/2.0.0"));
 
-    qDebug() << "User-Agent test successful:" << userAgent;
     reply->deleteLater();
 }
 
@@ -446,7 +433,6 @@ void TestIntegration::testAuthorizationHeader()
     QVERIFY(json["authenticated"].toBool());
     QCOMPARE(json["user"].toString(), QStringLiteral("user"));
 
-    qDebug() << "Authorization header test successful";
     reply->deleteLater();
 }
 
@@ -471,7 +457,6 @@ void TestIntegration::testHttpAuthBasic()
     QVERIFY(json["authenticated"].toBool());
     QCOMPARE(json["user"].toString(), QStringLiteral("user"));
 
-    qDebug() << "HTTPAUTH Basic test successful";
     reply->deleteLater();
 }
 
@@ -494,7 +479,6 @@ void TestIntegration::testAuthorizationHeaderOverridesHttpAuth()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::HttpUnauthorized);
 
-    qDebug() << "Authorization header overrides HTTPAUTH test successful";
     reply->deleteLater();
 }
 
@@ -519,7 +503,7 @@ void TestIntegration::testConnectTimeout()
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(isCurlError(reply->error()));
 
-    qDebug() << "Connect timeout test successful:" << reply->errorString();
+    qDebug() << "Connect timeout error:" << reply->errorString();
     reply->deleteLater();
 }
 
@@ -537,7 +521,7 @@ void TestIntegration::testTotalTimeout()
     // 应该超时失败
     QVERIFY(reply->error() != NetworkError::NoError);
 
-    qDebug() << "Total timeout test successful:" << reply->errorString();
+    qDebug() << "Total timeout error:" << reply->errorString();
     reply->deleteLater();
 }
 
@@ -556,7 +540,6 @@ void TestIntegration::testDelayedResponse()
     // 应该成功
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    qDebug() << "Delayed response test successful";
     reply->deleteLater();
 }
 
@@ -579,7 +562,6 @@ void TestIntegration::testFollowRedirect()
     // 最终应该到达 /get
     QVERIFY(data->contains("\"url\""));
 
-    qDebug() << "Redirect following test successful";
     reply->deleteLater();
 }
 
@@ -828,7 +810,6 @@ void TestIntegration::testSslConfiguration()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    qDebug() << "SSL insecure config test successful";
     reply->deleteLater();
 }
 
@@ -851,7 +832,7 @@ void TestIntegration::testProgressTracking()
         auto lastProgress = progressSpy.last();
         qint64 received   = lastProgress.at(0).toLongLong();
         qint64 total      = lastProgress.at(1).toLongLong();
-        qDebug() << "Progress tracking successful: received=" << received << "total=" << total;
+        qDebug() << "Download progress sample: received=" << received << "total=" << total;
         QVERIFY(received > 0);
     }
 
@@ -897,7 +878,6 @@ void TestIntegration::testConcurrentRequests()
         reply->deleteLater();
     }
 
-    qDebug() << "Concurrent requests test successful: 5 requests completed";
 }
 
 void TestIntegration::testSequentialRequests()
@@ -913,7 +893,6 @@ void TestIntegration::testSequentialRequests()
         reply->deleteLater();
     }
 
-    qDebug() << "Sequential requests test successful: 3 requests completed";
 }
 
 // ============================================================================
@@ -929,7 +908,7 @@ void TestIntegration::testInvalidHost()
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(isCurlError(reply->error()));
 
-    qDebug() << "Invalid host test successful:" << reply->errorString();
+    qDebug() << "Invalid host error:" << reply->errorString();
     reply->deleteLater();
 }
 
@@ -956,7 +935,7 @@ void TestIntegration::testConnectionRefused()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
     QVERIFY(reply->error() != NetworkError::NoError);
 
-    qDebug() << "Connection refused test successful:" << reply->errorString();
+    qDebug() << "Connection refused error:" << reply->errorString();
     reply->deleteLater();
 }
 
@@ -1001,17 +980,14 @@ void TestIntegration::testHttpErrorCodes()
                .arg(reply500->errorString());
     reply500->deleteLater();
 
-    qDebug() << "HTTP error codes test completed";
 }
 
 // ============================================================================
-// 重试机制集成测试（v2.1.0）
+// 重试机制集成测试
 // ============================================================================
 
 void TestIntegration::testRetryWithConcurrentRequests()
 {
-    qDebug() << "========== testRetryWithConcurrentRequests ==========";
-
     // 创建 3 个并发请求，都会触发重试
     QList<QCNetworkReply *> replies;
     QVector<int> retryCounts(3, 0);
@@ -1112,13 +1088,10 @@ void TestIntegration::testRetryWithConcurrentRequests()
     }
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
-    qDebug() << "Concurrent retries test completed";
 }
 
 void TestIntegration::testRetryOnTimeout()
 {
-    qDebug() << "========== testRetryOnTimeout ==========";
-
     // 配置短超时 + 重试策略
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/3")); // httpbin 延迟 3 秒响应
 
@@ -1156,13 +1129,10 @@ void TestIntegration::testRetryOnTimeout()
     QVERIFY(reply->error() != NetworkError::NoError);
 
     reply->deleteLater();
-    qDebug() << "Retry on timeout test completed";
 }
 
 void TestIntegration::testRetryDelayAccuracy()
 {
-    qDebug() << "========== testRetryDelayAccuracy ==========";
-
     // 配置精确的重试延迟
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
@@ -1202,7 +1172,6 @@ void TestIntegration::testRetryDelayAccuracy()
     }
 
     reply->deleteLater();
-    qDebug() << "Retry delay accuracy test completed";
 }
 
 QTEST_MAIN(TestIntegration)

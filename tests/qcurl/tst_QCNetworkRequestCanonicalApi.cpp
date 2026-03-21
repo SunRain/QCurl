@@ -1,18 +1,18 @@
 /**
- * @file tst_QCRequest.cpp
- * @brief QCRequest 流式 API 单元测试（离线：MockHandler）
- * @version v2.9.0
+ * @file tst_QCNetworkRequestCanonicalApi.cpp
+ * @brief QCNetworkRequest canonical send* API 语义回归测试（离线：MockHandler）
  */
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
-#include "QCRequest.h"
+#include "QCNetworkRequest.h"
 
 #include <QCoreApplication>
 #include <QEvent>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrlQuery>
 #include <QtTest/QtTest>
 
 #include <optional>
@@ -30,7 +30,7 @@ static std::optional<QByteArray> findHeaderValue(const QList<QPair<QByteArray, Q
     return std::nullopt;
 }
 
-class TestQCRequest : public QObject
+class TestQCNetworkRequestCanonicalApi : public QObject
 {
     Q_OBJECT
 
@@ -38,17 +38,17 @@ private slots:
     void init();
     void cleanup();
 
-    void testGet_preservesHeaderWhenAddingQueryParam();
-    void testPost_withJson_sendsJsonBodyAndContentType();
-    void testPut_withBody_usesDefaultContentType();
-    void testHead_sendsHeadWithoutBody();
+    void testSendGet_preservesHeaderWhenAddingQueryParam();
+    void testSendPost_sendsJsonBodyAndContentType();
+    void testSendPut_preservesBodyWithExplicitContentType();
+    void testSendHead_sendsHeadWithoutBody();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkMockHandler m_mock;
 };
 
-void TestQCRequest::init()
+void TestQCNetworkRequestCanonicalApi::init()
 {
     m_manager = new QCNetworkAccessManager(this);
 
@@ -59,7 +59,7 @@ void TestQCRequest::init()
     m_manager->setMockHandler(&m_mock);
 }
 
-void TestQCRequest::cleanup()
+void TestQCNetworkRequestCanonicalApi::cleanup()
 {
     if (m_manager) {
         m_manager->deleteLater();
@@ -68,17 +68,22 @@ void TestQCRequest::cleanup()
     }
 }
 
-void TestQCRequest::testGet_preservesHeaderWhenAddingQueryParam()
+void TestQCNetworkRequestCanonicalApi::testSendGet_preservesHeaderWhenAddingQueryParam()
 {
     const QUrl expectedUrl("http://example.com/api?page=1");
     m_mock.mockResponse(HttpMethod::Get, expectedUrl, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
-    auto request = QCRequest::get("http://example.com/api")
-                       .withHeader("User-Agent", "TestAgent")
-                       .withQueryParam("page", "1");
+    QCNetworkRequest request(QUrl("http://example.com/api"));
+    request.setRawHeader("User-Agent", "TestAgent");
 
-    auto *reply = request.send(m_manager);
+    QUrl url = request.url();
+    QUrlQuery query(url);
+    query.addQueryItem("page", "1");
+    url.setQuery(query);
+    request.setUrl(url);
+
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -99,7 +104,7 @@ void TestQCRequest::testGet_preservesHeaderWhenAddingQueryParam()
     reply->deleteLater();
 }
 
-void TestQCRequest::testPost_withJson_sendsJsonBodyAndContentType()
+void TestQCNetworkRequestCanonicalApi::testSendPost_sendsJsonBodyAndContentType()
 {
     const QUrl url("http://example.com/users");
     m_mock.mockResponse(HttpMethod::Post, url, QByteArray("CREATED"), 201);
@@ -110,11 +115,11 @@ void TestQCRequest::testPost_withJson_sendsJsonBodyAndContentType()
     json["age"]  = 30;
     const QByteArray expectedBody = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
-    auto request = QCRequest::post(url)
-                       .withHeader("User-Agent", "QCurl-Test/2.9.0")
-                       .withJson(json);
+    QCNetworkRequest request(url);
+    request.setRawHeader("User-Agent", "QCurl-Test/2.9.0");
+    request.setRawHeader("Content-Type", "application/json");
 
-    auto *reply = request.send(m_manager);
+    auto *reply = m_manager->sendPost(request, expectedBody);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -142,16 +147,17 @@ void TestQCRequest::testPost_withJson_sendsJsonBodyAndContentType()
     reply->deleteLater();
 }
 
-void TestQCRequest::testPut_withBody_usesDefaultContentType()
+void TestQCNetworkRequestCanonicalApi::testSendPut_preservesBodyWithExplicitContentType()
 {
     const QUrl url("http://example.com/upload");
     m_mock.mockResponse(HttpMethod::Put, url, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
     const QByteArray body("raw binary data");
-    auto request = QCRequest::put(url).withBody(body);
+    QCNetworkRequest request(url);
+    request.setRawHeader("Content-Type", "application/octet-stream");
 
-    auto *reply = request.send(m_manager);
+    auto *reply = m_manager->sendPut(request, body);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -170,13 +176,14 @@ void TestQCRequest::testPut_withBody_usesDefaultContentType()
     reply->deleteLater();
 }
 
-void TestQCRequest::testHead_sendsHeadWithoutBody()
+void TestQCNetworkRequestCanonicalApi::testSendHead_sendsHeadWithoutBody()
 {
     const QUrl url("http://example.com/head");
     m_mock.mockResponse(HttpMethod::Head, url, QByteArray(), 200);
     m_mock.clearCapturedRequests();
 
-    auto *reply = QCRequest::head(url).send(m_manager);
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendHead(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -194,5 +201,5 @@ void TestQCRequest::testHead_sendsHeadWithoutBody()
     reply->deleteLater();
 }
 
-QTEST_MAIN(TestQCRequest)
-#include "tst_QCRequest.moc"
+QTEST_MAIN(TestQCNetworkRequestCanonicalApi)
+#include "tst_QCNetworkRequestCanonicalApi.moc"

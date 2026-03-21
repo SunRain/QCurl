@@ -13,7 +13,7 @@
  * - QCURL_LC_COUNT: 下载/上传次数（默认 1）
  * - QCURL_LC_DOCNAME: 下载资源名（如 data-1m）
  * - QCURL_LC_UPLOAD_SIZE: 上传字节数（默认 0）
- * - QCURL_LC_EXPECT100_TIMEOUT_MS: Expect: 100-continue 等待超时（ms；可选；用于 p2_expect_100_continue）
+ * - QCURL_LC_EXPECT100_TIMEOUT_MS: Expect: 100-continue 等待超时（ms；可选；用于 p2_expect_100_continue / p2_expect_100_continue_inline_body）
  * - QCURL_LC_ABORT_OFFSET: 中断点（Range 续传用，默认 0）
  * - QCURL_LC_FILE_SIZE: 资源总长度（Range 续传用，默认 0）
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
@@ -458,9 +458,9 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(observeHttpPort > 0);
         const QString host = QStringLiteral("example.invalid");
         const QUrl url     = withRequestId(QUrl(QStringLiteral("http://%1:%2/status/200")
-                                                .arg(host)
-                                                .arg(observeHttpPort)),
-                                       requestId);
+                                                    .arg(host)
+                                                    .arg(observeHttpPort)),
+                                           requestId);
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
@@ -471,8 +471,18 @@ void TestLibcurlConsistency::testCase()
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
-        const auto dataOpt = reply->readAll();
+        const auto dataOpt = reply->readBody();
         QVERIFY(dataOpt.has_value());
+        QVERIFY(!dataOpt->isEmpty());
+
+        const auto secondBodyOpt = reply->readBody();
+        QVERIFY(secondBodyOpt.has_value());
+        QVERIFY(secondBodyOpt->isEmpty());
+
+        const auto tailOpt = reply->readAll();
+        QVERIFY(tailOpt.has_value());
+        QVERIFY(tailOpt->isEmpty());
+
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
                                *dataOpt,
                                QIODevice::WriteOnly | QIODevice::Truncate));
@@ -870,9 +880,9 @@ void TestLibcurlConsistency::testCase()
                                     || caseId
                                            == QStringLiteral(
                                                "p1_httpauth_anysafe_digest_wrong_pass"));
-        const bool follow        = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_off")
-                             || caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
-        const bool unrestricted  = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
+        const bool follow       = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_off")
+                                   || caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
+        const bool unrestricted = (caseId == QStringLiteral("p1_unrestricted_auth_redirect_on"));
 
         QCNetworkRequest req(withRequestId(QUrl(targetUrl), requestId));
         req.setHttpVersion(httpVersion);
@@ -1023,8 +1033,8 @@ void TestLibcurlConsistency::testCase()
             const bool isPut = caseId.contains(QStringLiteral("_put_"));
             method           = isPut ? HttpMethod::Put : HttpMethod::Post;
             url              = withRequestId(QUrl(QStringLiteral("http://localhost:%1/redir_307")
-                                         .arg(observeHttpPort)),
-                                requestId);
+                                                      .arg(observeHttpPort)),
+                                             requestId);
 
             req = QCNetworkRequest(url);
             req.setHttpVersion(httpVersion);
@@ -1032,8 +1042,8 @@ void TestLibcurlConsistency::testCase()
         } else if (isDigestAnySafe) {
             method = HttpMethod::Post;
             url    = withRequestId(QUrl(QStringLiteral("http://localhost:%1/auth/digest")
-                                         .arg(observeHttpPort)),
-                                requestId);
+                                            .arg(observeHttpPort)),
+                                   requestId);
 
             req = QCNetworkRequest(url);
             req.setHttpVersion(httpVersion);
@@ -1525,17 +1535,21 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(uploadSize > 0);
 
         const QUrl url        = withRequestId(QUrl(QStringLiteral("http://localhost:%1/expect_417")
-                                                .arg(observeHttpPort)),
-                                       requestId);
+                                                       .arg(observeHttpPort)),
+                                              requestId);
         const QByteArray body = makeUploadBody(uploadSize);
+        QBuffer device;
+        device.setData(body);
+        QVERIFY(device.open(QIODevice::ReadOnly));
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
+        req.setUploadDevice(&device, static_cast<qint64>(uploadSize));
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
             req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
         }
-        QCNetworkReply *reply = manager.sendPut(req, body);
+        QCNetworkReply *reply = manager.sendPut(req, QByteArray());
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1547,6 +1561,48 @@ void TestLibcurlConsistency::testCase()
 
         loop.exec();
         QVERIFY2(timer.isActive(), "timeout waiting for expect-100-continue case");
+        QCOMPARE(reply->error(), NetworkError::NoError);
+
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QCOMPARE(*dataOpt, body);
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
+                               *dataOpt,
+                               QIODevice::WriteOnly | QIODevice::Truncate));
+
+        reply->deleteLater();
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_expect_100_continue_inline_body")) {
+        QVERIFY(observeHttpPort > 0);
+        QVERIFY(uploadSize > 0);
+
+        const QUrl url
+            = withRequestId(QUrl(QStringLiteral("http://localhost:%1/expect_417")
+                                     .arg(observeHttpPort)),
+                            requestId);
+        const QByteArray body = makeUploadBody(uploadSize);
+
+        QCNetworkRequest req(url);
+        req.setHttpVersion(httpVersion);
+        if (hasExpect100TimeoutMs) {
+            QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
+            req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
+        }
+
+        auto *reply = manager.sendPut(req, body);
+        QVERIFY(reply);
+
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        timer.start(60000);
+        connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        loop.exec();
+        QVERIFY2(timer.isActive(), "timeout waiting for expect-100-continue inline-body case");
         QCOMPARE(reply->error(), NetworkError::NoError);
 
         const auto dataOpt = reply->readAll();
@@ -2174,6 +2230,7 @@ void TestLibcurlConsistency::testCase()
         QJsonArray eventSeq;
         bool sawOn  = false;
         bool sawOff = false;
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
 
         QPointer<QCNetworkReply> safeReply(reply);
 
@@ -2231,6 +2288,11 @@ void TestLibcurlConsistency::testCase()
         QCOMPARE(reply->error(), NetworkError::NoError);
         QVERIFY(sawOn);
         QVERIFY(sawOff);
+        for (const auto &args : stateSpy) {
+            QVERIFY(!args.isEmpty());
+            const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+            QVERIFY(st != ReplyState::Paused);
+        }
 
         out.close();
 
@@ -2811,9 +2873,9 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(!docname.isEmpty());
         for (int i = 0; i < count; ++i) {
             const QUrl url         = withRequestId(QUrl(QStringLiteral("https://localhost:%1/%2")
-                                                    .arg(httpsPort)
-                                                    .arg(docname)),
-                                           requestId);
+                                                            .arg(httpsPort)
+                                                            .arg(docname)),
+                                                   requestId);
             const QString outFile  = QStringLiteral("download_%1.data").arg(i);
             const NetworkError err = httpMethodToFile(manager,
                                                       HttpMethod::Get,
@@ -2915,10 +2977,10 @@ void TestLibcurlConsistency::testCase()
         for (int i = 0; i < count; ++i) {
             const QString suffix = QStringLiteral("%1").arg(i + 1, 4, 10, QLatin1Char('0'));
             const QUrl url       = withRequestId(QUrl(QStringLiteral("https://localhost:%1/%2%3")
-                                                    .arg(httpsPort)
-                                                    .arg(docname)
-                                                    .arg(suffix)),
-                                           requestId);
+                                                          .arg(httpsPort)
+                                                          .arg(docname)
+                                                          .arg(suffix)),
+                                                 requestId);
 
             QCNetworkRequest req(url);
             req.setSslConfig(QCNetworkSslConfig::insecureConfig());
@@ -2967,10 +3029,10 @@ void TestLibcurlConsistency::testCase()
         for (int i = 0; i < count; ++i) {
             const QString suffix = QStringLiteral("%1").arg(i + 1, 4, 10, QLatin1Char('0'));
             const QUrl url       = withRequestId(QUrl(QStringLiteral("https://localhost:%1/%2%3")
-                                                    .arg(httpsPort)
-                                                    .arg(docname)
-                                                    .arg(suffix)),
-                                           requestId);
+                                                          .arg(httpsPort)
+                                                          .arg(docname)
+                                                          .arg(suffix)),
+                                                 requestId);
 
             QCNetworkRequest req(url);
             req.setSslConfig(QCNetworkSslConfig::insecureConfig());

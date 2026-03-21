@@ -1,70 +1,64 @@
-# LC-15 pause/resume 一致性：落地复盘（LC-15a/LC-15b 均已完成）
+# LC-15 pause/resume handoff
 
-本文用于记录 `tests/libcurl_consistency` 在 **LC-15（pause/resume 过程一致性）** 上的关键决策与落地路径，便于后续迭代时避免重复试错。
+本文只保留 LC-15 的当前合同、关键决策与证据入口，避免后续维护再次回到长篇施工日志模式。
 
-## 当前进度与关键决策
+## 1. 当前合同
 
-- **LC-15a（pause/resume 弱判据门禁）** 与 **LC-15b（强判据/语义合同测试）** 均已落地：目标是“门禁稳定 + 数据一致”，并在需要时提供可执行的强判据约束。
-- 关键决策：**不比较 `cli_hx_download -P` 的 pause window 内数据事件计数**（如 `paused_data_events`）。
-  - 原因：其 stderr 打点顺序不足以稳定定义 pause window，存在“`[t-0] PAUSE` 与 `[t-0] RESUMED` 之间仍出现 `RECV ... total=...` 增长”的可观测现象，导致 baseline 侧先失败，属于 **口径/边界问题** 而非实现必然错误。
-- 回归验证：`python "tests/libcurl_consistency/run_gate.py" --suite all --build`（该命令在部分环境下需要更高权限/依赖完整构建与 curl testenv）。
+### 1.1 LC-15a：弱判据
 
-## 已合入变更（用于追溯）
+- 比较 `pause -> resume -> finished` 的事件存在性与顺序
+- 比较最终文件 `len/hash`
+- 不把 pause window 内的原始 data/progress 事件计数当作稳定契约
 
-### LC-15a（弱判据门禁）
+### 1.2 LC-15b：强判据
 
-- 新增用例：`tests/libcurl_consistency/test_p2_pause_resume.py`
-  - 弱判据：事件存在性/顺序 + 最终文件 `hash/len` 一致（不再要求 pause window “零 data/progress 事件”）。
-- 对比器收敛：`tests/libcurl_consistency/pytest_support/compare.py`
-  - `pause_resume` 仅比较 `pause_offset/pause_count/resume_count/event_seq`，不比较 `paused_data_events`。
-- Gate 接入：`tests/libcurl_consistency/run_gate.py`
-  - `--suite all` 纳入 `test_p2_pause_resume.py`。
-- QCurl 侧执行器：`tests/libcurl_consistency/tst_LibcurlConsistency.cpp`
-  - 增加 `p2_pause_resume` 分支，产出 `pause_resume.json`。
+- 使用 repo 内可控 baseline 与结构化事件边界
+- 核心合同：
+  - `PauseEffective -> ResumeReq` 期间，交付/写盘累计增量必须为 `0`
+  - 最终文件字节必须一致
 
-### LC-15b（强判据/语义合同测试）
+## 2. 关键决策
 
-- baseline（可控、结构化事件边界）：
+### 2.1 不以 `cli_hx_download -P` 的 stderr 打点定义 pause window
+
+原因：
+
+- `PAUSE/RESUMED` 属于文本打点，不是协议级边界
+- 该窗口内仍可能观察到 baseline 侧 `RECV` 增长
+- 直接拿它做强断言会把口径噪声误判成实现错误
+
+### 2.2 强判据必须使用结构化事件边界
+
+因此 LC-15b 选择：
+
+- 自带 baseline
+- 明确 `PauseEffective`
+- 明确 `ResumeReq`
+- 直接比较“窗口内累计增量是否为 0”
+
+## 3. 证据入口
+
+- baseline：
   - `tests/libcurl_consistency/pause_resume_baseline_client.cpp`
-- 用例（强判据断言）：
+- pytest：
+  - `tests/libcurl_consistency/test_p2_pause_resume.py`
   - `tests/libcurl_consistency/test_p2_pause_resume_strict.py`
-- Gate 接入：
-  - `tests/libcurl_consistency/run_gate.py`（`--suite all` 已纳入 strict 用例）
-- 文档口径：
-  - `tests/libcurl_consistency/tasks.md`（LC-15b 已完成）
-  - `tests/libcurl_consistency/README.md`（覆盖矩阵已覆盖）
+- compare：
+  - `tests/libcurl_consistency/pytest_support/compare.py`
+- QCurl 执行器：
+  - `tests/libcurl_consistency/tst_LibcurlConsistency.cpp`
 
-## 关键证据与定位路径（可复现）
+## 4. 何时重开 LC-15
 
-### 1) baseline pause window 的“可观测噪声”
+只有出现以下情况才应重开：
 
-当运行 `test_p2_pause_resume_h2` 生成 artifacts 后，可在如下目录检查 baseline/QCurl 的对比差异（注意：该目录由 curl testenv 生成）：
+1. `pauseTransport()` / `resumeTransport()` 的外部语义改变
+2. `PauseEffective` 的定义不再能稳定描述实现
+3. compare schema 无法表达 pause/resume 的可观测边界
+4. gate 报告显示 pause/resume 相关失败已无法通过现有证据定位
 
-- `curl/tests/http/gen/artifacts/p2_pause_resume/p2_pause_resume_h2/baseline.json`
-  - 历史观测：`pause_resume.paused_data_events = 5`
-- `curl/tests/http/gen/artifacts/p2_pause_resume/p2_pause_resume_h2/qcurl.json`
-  - 历史观测：`pause_resume.paused_data_events = 0`
+## 5. 关联文档
 
-并且在同一目录下的 baseline stderr/日志中，`[t-0] PAUSE` 与 `[t-0] RESUMED` 之间可能出现多条 `RECV ... total=...` 增长。
-
-### 2) `cli_hx_download -P` 的 pause/resume 触发方式（理解边界）
-
-`cli_hx_download -P` 的 pause 由 write callback 返回 `CURL_WRITEFUNC_PAUSE` 触发；`RESUMED` 日志在调用 `curl_easy_pause(..., CURLPAUSE_CONT)` 之后打印：
-
-- `curl/tests/libtest/cli_hx_download.c`
-
-因此仅依赖 stderr 打点将 pause window 当作“无数据/无进度事件窗口”并不稳健。
-
-### 3) 设计解释参考
-
-说明“仅依赖 `curl_easy_pause` 难以对齐 `-P` 的过程一致性”的背景材料：
-
-- `docs/TRANSPORT_PAUSE_RESUME_PLAN.md`
-
-## 备注：LC-15b 的目标与边界
-
-LC-15b 的目标不是复刻 `cli_hx_download -P` 的 stderr 打点，而是建立：
-
-1) **可控 baseline**（repo 内自带、版本固定、输入固定、环境固定）  
-2) **结构化事件边界**（统一事件模型，明确窗口与时间基准）  
-3) **可执行强判据**（PauseEffective→ResumeReq 期间交付/写盘增量为 0，且最终文件一致）
+- `tests/libcurl_consistency/README.md`
+- `tests/libcurl_consistency/tasks.md`
+- `docs/arch/transport-pause-resume.md`

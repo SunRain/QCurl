@@ -16,16 +16,14 @@
 using namespace QCurl;
 
 /**
- * @brief 测试 QCNetworkRequestScheduler（请求优先级调度器）
- * 
- * 测试覆盖：
- * 1. 优先级排序
- * 2. 并发限制（全局 + 每主机）
- * 3. 请求管理（延后/恢复调度/取消）
- * 4. 动态优先级调整
- * 5. 带宽限制
- * 6. 统计信息
- * 7. 信号通知
+ * @brief 验证 QCNetworkRequestScheduler 的稳定调度合同。
+ *
+ * 重点覆盖：
+ * - 非抢占式优先级排序
+ * - 全局/每主机并发限制
+ * - defer/undefer、cancel 的语义边界
+ * - 动态优先级调整、统计信息和信号通知
+ * - 与 QCNetworkAccessManager 的集成路径
  */
 class tst_QCNetworkScheduler : public QObject
 {
@@ -88,7 +86,7 @@ void tst_QCNetworkScheduler::cleanupTestCase()
 }
 
 /**
- * @brief 测试 1：验证启用/禁用调度器
+ * @brief 验证调度器开关状态可被 AccessManager 正确暴露。
  */
 void tst_QCNetworkScheduler::testSchedulerEnabled()
 {
@@ -103,13 +101,11 @@ void tst_QCNetworkScheduler::testSchedulerEnabled()
     m_manager->enableRequestScheduler(false);
     QVERIFY(!m_manager->isSchedulerEnabled());
 
-    qDebug() << "✅ Test 1 passed: Scheduler enable/disable";
+    qDebug() << "Scheduler enable/disable contract verified";
 }
 
 /**
- * @brief 测试 2：验证优先级排序
- * 
- * 创建不同优先级的请求，验证高优先级先执行。
+ * @brief 验证 pending 队列按优先级出队，且不抢占已 running 请求。
  */
 void tst_QCNetworkScheduler::testPriorityQueueOrdering()
 {
@@ -181,11 +177,11 @@ void tst_QCNetworkScheduler::testPriorityQueueOrdering()
     normalReply->deleteLater();
     highReply->deleteLater();
 
-    qDebug() << "✅ Test 2 passed: Priority queue ordering (non-preemptive contract)";
+    qDebug() << "Priority queue ordering verified (non-preemptive)";
 }
 
 /**
- * @brief 测试 3：验证全局并发限制
+ * @brief 验证全局并发限制会把超额请求保留在 pending 队列。
  */
 void tst_QCNetworkScheduler::testConcurrentRequestLimit()
 {
@@ -227,11 +223,11 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
         reply->deleteLater();
     }
 
-    qDebug() << "✅ Test 3 passed: Concurrent request limit";
+    qDebug() << "Global concurrent limit verified";
 }
 
 /**
- * @brief 测试 4：验证每主机并发限制
+ * @brief 验证同一 host 的运行中请求数量受 per-host 限制约束。
  */
 void tst_QCNetworkScheduler::testPerHostLimit()
 {
@@ -272,11 +268,11 @@ void tst_QCNetworkScheduler::testPerHostLimit()
         reply->deleteLater();
     }
 
-    qDebug() << "✅ Test 4 passed: Per-host limit";
+    qDebug() << "Per-host concurrent limit verified";
 }
 
 /**
- * @brief 测试 5：验证延后/恢复调度功能
+ * @brief 验证 defer/undefer 只影响调度层，不表达传输级 pause。
  */
 void tst_QCNetworkScheduler::testDeferUndefer()
 {
@@ -314,11 +310,11 @@ void tst_QCNetworkScheduler::testDeferUndefer()
     m_scheduler->cancelRequest(reply);
     reply->deleteLater();
 
-    qDebug() << "✅ Test 5 passed: Defer/Undefer";
+    qDebug() << "Defer/undefer scheduling contract verified";
 }
 
 /**
- * @brief 测试 6：验证取消单个请求
+ * @brief 验证取消单个请求会发出取消信号并推动 reply 结束。
  */
 void tst_QCNetworkScheduler::testCancelRequest()
 {
@@ -347,11 +343,11 @@ void tst_QCNetworkScheduler::testCancelRequest()
 
     reply->deleteLater();
 
-    qDebug() << "✅ Test 6 passed: Cancel request";
+    qDebug() << "Single-request cancel contract verified";
 }
 
 /**
- * @brief 测试 7：验证取消所有请求
+ * @brief 验证 cancelAllRequests() 会清空 running/pending 状态。
  */
 void tst_QCNetworkScheduler::testCancelAllRequests()
 {
@@ -397,11 +393,11 @@ void tst_QCNetworkScheduler::testCancelAllRequests()
         reply->deleteLater();
     }
 
-    qDebug() << "✅ Test 7 passed: Cancel all requests";
+    qDebug() << "Cancel-all contract verified";
 }
 
 /**
- * @brief 测试 8：验证动态优先级调整
+ * @brief 验证 pending 请求调整优先级时不会破坏队列状态。
  */
 void tst_QCNetworkScheduler::testChangePriority()
 {
@@ -442,11 +438,11 @@ void tst_QCNetworkScheduler::testChangePriority()
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     reply->deleteLater();
 
-    qDebug() << "✅ Test 8 passed: Change priority";
+    qDebug() << "Priority change contract verified";
 }
 
 /**
- * @brief 测试 9：验证统计信息
+ * @brief 验证统计字段在离线调度路径下可读且语义自洽。
  */
 void tst_QCNetworkScheduler::testStatistics()
 {
@@ -493,11 +489,11 @@ void tst_QCNetworkScheduler::testStatistics()
         reply->deleteLater();
     }
 
-    qDebug() << "✅ Test 9 passed: Statistics";
+    qDebug() << "Scheduler statistics contract verified";
 }
 
 /**
- * @brief 测试 10：验证 Critical 优先级立即执行
+ * @brief 验证 Critical 优先级可绕过普通 pending 队列限制立即启动。
  */
 void tst_QCNetworkScheduler::testCriticalPriority()
 {
@@ -553,11 +549,11 @@ void tst_QCNetworkScheduler::testCriticalPriority()
     QTRY_VERIFY_WITH_TIMEOUT(criticalReply->isFinished(), 2000);
     criticalReply->deleteLater();
 
-    qDebug() << "✅ Test 10 passed: Critical priority";
+    qDebug() << "Critical-priority fast path verified";
 }
 
 /**
- * @brief 测试 11：验证队列空信号
+ * @brief 验证队列完全清空时会发出 queueEmpty 信号。
  */
 void tst_QCNetworkScheduler::testQueueEmptySignal()
 {
@@ -591,11 +587,11 @@ void tst_QCNetworkScheduler::testQueueEmptySignal()
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     reply->deleteLater();
 
-    qDebug() << "✅ Test 11 passed: Queue empty signal";
+    qDebug() << "queueEmpty signal contract verified";
 }
 
 /**
- * @brief 测试 12：验证 QCNetworkAccessManager 集成
+ * @brief 验证 AccessManager 在启用调度器后能正确转发异步请求。
  */
 void tst_QCNetworkScheduler::testSchedulerIntegration()
 {
@@ -605,28 +601,58 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
     m_manager->enableRequestScheduler(true);
     QVERIFY(m_manager->isSchedulerEnabled());
 
-    // 通过 manager 创建请求
-    QCNetworkRequest req(QUrl("http://integration.test/test"));
-    req.setPriority(QCNetworkRequestPriority::High);
-    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+    auto runAsyncMethod = [this](HttpMethod method,
+                                 const QUrl &url,
+                                 const QByteArray &body = QByteArray()) {
+        QCNetworkRequest req(url);
+        req.setPriority(QCNetworkRequestPriority::High);
+        m_mock.mockResponse(method, req.url(), QByteArray("OK"));
 
-    auto *reply = m_manager->scheduleGet(req);
-    QVERIFY(reply != nullptr);
+        QSignalSpy queuedSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
+        QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
-    // 验证请求已加入调度器
-    auto stats = m_scheduler->statistics();
-    QVERIFY(stats.pendingRequests + stats.runningRequests >= 1);
+        QCNetworkReply *reply = nullptr;
+        switch (method) {
+            case HttpMethod::Head:
+                reply = m_manager->sendHead(req);
+                break;
+            case HttpMethod::Get:
+                reply = m_manager->sendGet(req);
+                break;
+            case HttpMethod::Post:
+                reply = m_manager->sendPost(req, body);
+                break;
+            case HttpMethod::Put:
+                reply = m_manager->sendPut(req, body);
+                break;
+            case HttpMethod::Delete:
+                reply = m_manager->sendDelete(req, body);
+                break;
+            case HttpMethod::Patch:
+                reply = m_manager->sendPatch(req, body);
+                break;
+        }
 
-    // 清理
-    m_scheduler->cancelRequest(reply);
-    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
-    reply->deleteLater();
+        QVERIFY(reply != nullptr);
+        QVERIFY(reply->parent() == m_manager);
+        QTRY_VERIFY_WITH_TIMEOUT(queuedSpy.count() + startedSpy.count() >= 1, 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        reply->deleteLater();
+    };
+
+    runAsyncMethod(HttpMethod::Head, QUrl("http://integration.test/head"));
+    runAsyncMethod(HttpMethod::Get, QUrl("http://integration.test/get"));
+    runAsyncMethod(HttpMethod::Post, QUrl("http://integration.test/post"), QByteArray("POST"));
+    runAsyncMethod(HttpMethod::Put, QUrl("http://integration.test/put"), QByteArray("PUT"));
+    runAsyncMethod(HttpMethod::Delete, QUrl("http://integration.test/delete"), QByteArray("DEL"));
+    runAsyncMethod(HttpMethod::Patch, QUrl("http://integration.test/patch"), QByteArray("PATCH"));
 
     // 禁用调度器
     m_manager->enableRequestScheduler(false);
     QVERIFY(!m_manager->isSchedulerEnabled());
 
-    qDebug() << "✅ Test 12 passed: Scheduler integration";
+    qDebug() << "AccessManager integration contract verified";
 }
 
 QTEST_MAIN(tst_QCNetworkScheduler)

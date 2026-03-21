@@ -71,14 +71,11 @@ private:
 
 void TestQCNetworkRetry::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "QCNetworkRetry 单元测试开始";
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
     if (m_httpbinBaseUrl.isEmpty()) {
         QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
     }
     qDebug() << "httpbin 服务地址:" << m_httpbinBaseUrl;
-    qDebug() << "========================================";
 
     // 创建网络管理器
     m_manager = new QCNetworkAccessManager(this);
@@ -96,15 +93,11 @@ void TestQCNetworkRetry::initTestCase()
     }
 
     reply->deleteLater();
-    qDebug() << "httpbin 服务验证通过";
 }
 
 void TestQCNetworkRetry::cleanupTestCase()
 {
     m_manager = nullptr;
-    qDebug() << "========================================";
-    qDebug() << "QCNetworkRetry 单元测试完成";
-    qDebug() << "========================================";
 }
 
 void TestQCNetworkRetry::init()

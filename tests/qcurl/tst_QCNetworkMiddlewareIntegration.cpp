@@ -150,7 +150,7 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->scheduleGet(request);
+    auto *reply = m_manager->sendGet(request);
     QVERIFY(reply->parent() == m_manager);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);

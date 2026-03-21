@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <thread>
 
 using namespace QCurl;
@@ -75,6 +76,8 @@ private slots:
     // ========== 数据访问测试 ==========
     void testReadAll();
     void testReadBody();
+    void testReadAllDrainsFinishedBuffer();
+    void testReadBodyEmptyBodyRepeatable();
     void testRawHeaders();
     void testBytesAvailable();
 
@@ -128,7 +131,6 @@ bool TestQCNetworkReply::waitForSignal(QObject *obj, const QMetaMethod &signal, 
 
 void TestQCNetworkReply::initTestCase()
 {
-    qDebug() << "初始化 QCNetworkReply 测试套件";
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
@@ -155,7 +157,6 @@ void TestQCNetworkReply::initTestCase()
 
 void TestQCNetworkReply::cleanupTestCase()
 {
-    qDebug() << "清理 QCNetworkReply 测试套件";
     m_manager = nullptr;
 }
 
@@ -273,8 +274,7 @@ void TestQCNetworkReply::testSyncHeadRequest()
 
 void TestQCNetworkReply::testSyncInvalidUrl()
 {
-    // ✅ 同步测试无效 URL - 验证错误处理
-    // 注意：同步请求即使失败也可能不会设置 isFinished()
+    // 同步无效 URL 用例关注错误语义，不依赖 isFinished() 的具体状态。
 
     // 使用 RFC 保留域名（.invalid）避免 DNS 劫持/搜索建议导致的语义漂移
     QCNetworkRequest request(QUrl("http://this-host-does-not-exist-12345.invalid"));
@@ -284,11 +284,11 @@ void TestQCNetworkReply::testSyncInvalidUrl()
     auto *reply = m_manager->sendGetSync(request);
 
     QVERIFY(reply != nullptr);
-    // ✅ 修改：检查错误而不是 isFinished()，因为同步请求的状态管理可能不一致
+    // 同步失败路径以 error() 为主断言，避免依赖内部 finished 状态时序。
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(isCurlError(reply->error())); // 应该是 curl 错误
 
-    // ✅ 验证错误消息存在
+    // 错误路径应提供可诊断的错误消息。
     QString errorStr = reply->errorString();
     QVERIFY(!errorStr.isEmpty());
 
@@ -315,7 +315,7 @@ void TestQCNetworkReply::testAsyncGetRequest()
     // 异步请求自动启动，状态应该是 Running 而非 Idle
     QVERIFY(reply->state() == ReplyState::Idle || reply->state() == ReplyState::Running);
 
-    // ✅ 增加超时时间到 30 秒
+    // 异步 GET 在慢网络环境下保留更宽松的等待窗口。
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000));
     QCOMPARE(finishedSpy.count(), 1);
 
@@ -735,6 +735,43 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     sendTimer.setInterval(kChunkIntervalMs);
 
     qsizetype bytesSent = 0;
+    std::function<void()> pumpPayload;
+
+    auto resetClient = [&]() {
+        sendTimer.stop();
+        if (!clientSocket) {
+            return;
+        }
+        clientSocket->deleteLater();
+        clientSocket = nullptr;
+    };
+
+    pumpPayload = [&]() {
+        QTcpSocket *socket = clientSocket.data();
+        if (!socket) {
+            sendTimer.stop();
+            return;
+        }
+
+        constexpr qint64 kMaxBufferedBytes = 32 * 1024;
+        while (bytesSent < payload.size() && socket->bytesToWrite() < kMaxBufferedBytes) {
+            const qsizetype remaining = payload.size() - bytesSent;
+            const qsizetype toSend    = std::min(kChunkSize, remaining);
+
+            const qint64 written = socket->write(payload.constData() + bytesSent, toSend);
+            if (written <= 0) {
+                break;
+            }
+            bytesSent += static_cast<qsizetype>(written);
+        }
+
+        socket->flush();
+
+        if (bytesSent >= payload.size() && socket->bytesToWrite() == 0) {
+            sendTimer.stop();
+            socket->disconnectFromHost();
+        }
+    };
 
     connect(&server, &QTcpServer::newConnection, this, [&]() {
         clientSocket = server.nextPendingConnection();
@@ -751,32 +788,13 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 
         clientSocket->write(header);
         clientSocket->flush();
+        connect(clientSocket, &QTcpSocket::bytesWritten, this, [&](qint64) { pumpPayload(); });
+        connect(clientSocket, &QTcpSocket::disconnected, this, resetClient);
         sendTimer.start();
+        pumpPayload();
     });
 
-    connect(&sendTimer, &QTimer::timeout, this, [&]() {
-        if (!clientSocket) {
-            sendTimer.stop();
-            return;
-        }
-
-        if (bytesSent >= payload.size()) {
-            sendTimer.stop();
-            clientSocket->disconnectFromHost();
-            clientSocket->deleteLater();
-            clientSocket = nullptr;
-            return;
-        }
-
-        const qsizetype remaining = payload.size() - bytesSent;
-        const qsizetype toSend    = std::min(kChunkSize, remaining);
-
-        const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
-        if (written > 0) {
-            bytesSent += static_cast<qsizetype>(written);
-            clientSocket->flush();
-        }
-    });
+    connect(&sendTimer, &QTimer::timeout, this, pumpPayload);
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/test").arg(port)));
     auto *reply = m_manager->sendGet(request);
@@ -850,6 +868,43 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
     sendTimer.setInterval(kChunkIntervalMs);
 
     qsizetype bytesSent = 0;
+    std::function<void()> pumpPayload;
+
+    auto resetClient = [&]() {
+        sendTimer.stop();
+        if (!clientSocket) {
+            return;
+        }
+        clientSocket->deleteLater();
+        clientSocket = nullptr;
+    };
+
+    pumpPayload = [&]() {
+        QTcpSocket *socket = clientSocket.data();
+        if (!socket) {
+            sendTimer.stop();
+            return;
+        }
+
+        constexpr qint64 kMaxBufferedBytes = 32 * 1024;
+        while (bytesSent < payload.size() && socket->bytesToWrite() < kMaxBufferedBytes) {
+            const qsizetype remaining = payload.size() - bytesSent;
+            const qsizetype toSend    = std::min(kChunkSize, remaining);
+
+            const qint64 written = socket->write(payload.constData() + bytesSent, toSend);
+            if (written <= 0) {
+                break;
+            }
+            bytesSent += static_cast<qsizetype>(written);
+        }
+
+        socket->flush();
+
+        if (bytesSent >= payload.size() && socket->bytesToWrite() == 0) {
+            sendTimer.stop();
+            socket->disconnectFromHost();
+        }
+    };
 
     connect(&server, &QTcpServer::newConnection, this, [&]() {
         clientSocket = server.nextPendingConnection();
@@ -868,32 +923,13 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
         clientSocket->write(header);
         clientSocket->flush();
+        connect(clientSocket, &QTcpSocket::bytesWritten, this, [&](qint64) { pumpPayload(); });
+        connect(clientSocket, &QTcpSocket::disconnected, this, resetClient);
         sendTimer.start();
+        pumpPayload();
     });
 
-    connect(&sendTimer, &QTimer::timeout, this, [&]() {
-        if (!clientSocket) {
-            sendTimer.stop();
-            return;
-        }
-
-        if (bytesSent >= payload.size()) {
-            sendTimer.stop();
-            clientSocket->disconnectFromHost();
-            clientSocket->deleteLater();
-            clientSocket = nullptr;
-            return;
-        }
-
-        const qsizetype remaining = payload.size() - bytesSent;
-        const qsizetype toSend    = std::min(kChunkSize, remaining);
-
-        const qint64 written = clientSocket->write(payload.constData() + bytesSent, toSend);
-        if (written > 0) {
-            bytesSent += static_cast<qsizetype>(written);
-            clientSocket->flush();
-        }
-    });
+    connect(&sendTimer, &QTimer::timeout, this, pumpPayload);
 
     {
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/no_bp").arg(port)));
@@ -935,6 +971,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QCOMPARE(reply->backpressureResumeBytes(), kResumeBytes);
 
         QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
         QByteArray received;
@@ -991,6 +1028,91 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QCOMPARE(reply->error(), NetworkError::NoError);
         QCOMPARE(received.size(), payload.size());
         QCOMPARE(received, payload);
+        for (const auto &args : stateSpy) {
+            QVERIFY(!args.isEmpty());
+            const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+            QVERIFY(st != ReplyState::Paused);
+        }
+
+        reply->deleteLater();
+    }
+
+    {
+        QCNetworkRequest request(
+            QUrl(QStringLiteral("http://127.0.0.1:%1/bp_user_pause").arg(port)));
+        request.setBackpressureLimitBytes(kLimitBytes);
+        request.setBackpressureResumeBytes(kResumeBytes);
+
+        auto *reply = m_manager->sendGet(request);
+
+        QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+        bool sawActive = false;
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        while (waitTimer.elapsed() < 5000 && !sawActive) {
+            if (!backpressureSpy.wait(500)) {
+                continue;
+            }
+            const auto args = backpressureSpy.takeLast();
+            if (!args.isEmpty() && args.at(0).toBool()) {
+                sawActive = true;
+            }
+        }
+
+        QVERIFY(sawActive);
+        QVERIFY(reply->isBackpressureActive());
+
+        reply->pauseTransport(PauseMode::Recv);
+        QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
+
+        QByteArray received;
+        const auto firstDrain = reply->readAll();
+        if (firstDrain.has_value() && !firstDrain->isEmpty()) {
+            received.append(*firstDrain);
+        }
+
+        QTRY_VERIFY_WITH_TIMEOUT(!reply->isBackpressureActive(), 3000);
+
+        const qint64 pausedBytes = reply->bytesReceived();
+        QTest::qWait(200);
+        const qint64 pausedBytesAfterWait = reply->bytesReceived();
+        QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                received.append(*dataOpt);
+            }
+        });
+
+        reply->resumeTransport();
+        QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running
+                                     || reply->state() == ReplyState::Finished,
+                                 3000);
+
+        QVERIFY(finishedSpy.wait(10000));
+
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            received.append(*tailOpt);
+        }
+
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(received.size(), payload.size());
+        QCOMPARE(received, payload);
+
+        bool sawPaused = false;
+        for (const auto &args : stateSpy) {
+            QVERIFY(!args.isEmpty());
+            const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+            if (st == ReplyState::Paused) {
+                sawPaused = true;
+            }
+        }
+        QVERIFY(sawPaused);
 
         reply->deleteLater();
     }
@@ -1009,6 +1131,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QCOMPARE(reply->backpressureResumeBytes(), kTinyResumeBytes);
 
         QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
         QByteArray received;
@@ -1064,6 +1187,11 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QCOMPARE(reply->error(), NetworkError::NoError);
         QCOMPARE(received.size(), payload.size());
         QCOMPARE(received, payload);
+        for (const auto &args : stateSpy) {
+            QVERIFY(!args.isEmpty());
+            const ReplyState st = static_cast<ReplyState>(args.at(0).toInt());
+            QVERIFY(st != ReplyState::Paused);
+        }
 
         reply->deleteLater();
     }
@@ -1294,6 +1422,65 @@ void TestQCNetworkReply::testReadBody()
     auto body = reply->readBody();
     QVERIFY(body.has_value());
     QVERIFY(body->size() > 0);
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkReply::testReadAllDrainsFinishedBuffer()
+{
+    if (!m_isHttpbinReachable) {
+        QSKIP("httpbin 服务不可用");
+    }
+
+    const QByteArray body = QByteArrayLiteral("drain-contract-body");
+    QCNetworkRequest request(
+        QUrl(m_httpbinBaseUrl + QStringLiteral("/base64/ZHJhaW4tY29udHJhY3QtYm9keQ==")));
+
+    auto *reply = m_manager->sendGetSync(request);
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->bytesAvailable(), static_cast<qint64>(body.size()));
+
+    const auto firstDrain = reply->readAll();
+    QVERIFY(firstDrain.has_value());
+    QCOMPARE(*firstDrain, body);
+    QCOMPARE(reply->bytesAvailable(), 0);
+
+    const auto secondDrain = reply->readAll();
+    QVERIFY(secondDrain.has_value());
+    QVERIFY(secondDrain->isEmpty());
+
+    const auto bodyAliasDrain = reply->readBody();
+    QVERIFY(bodyAliasDrain.has_value());
+    QVERIFY(bodyAliasDrain->isEmpty());
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkReply::testReadBodyEmptyBodyRepeatable()
+{
+    if (!m_isHttpbinReachable) {
+        QSKIP("httpbin 服务不可用");
+    }
+
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/204"));
+
+    auto *reply = m_manager->sendGetSync(request);
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->bytesAvailable(), 0);
+
+    const auto firstBody = reply->readBody();
+    QVERIFY(firstBody.has_value());
+    QVERIFY(firstBody->isEmpty());
+
+    const auto secondBody = reply->readBody();
+    QVERIFY(secondBody.has_value());
+    QVERIFY(secondBody->isEmpty());
+
+    const auto tailDrain = reply->readAll();
+    QVERIFY(tailDrain.has_value());
+    QVERIFY(tailDrain->isEmpty());
 
     reply->deleteLater();
 }

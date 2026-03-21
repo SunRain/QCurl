@@ -98,10 +98,6 @@ bool TestQCWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
 
 void TestQCWebSocketPool::initTestCase()
 {
-    qDebug() << "========================================";
-    qDebug() << "QCurl WebSocket 连接池测试套件 (v2.5.0)";
-    qDebug() << "========================================";
-
     m_localServerSkipReason.clear();
     m_testServerUrl.clear();
     m_testServerUrl2.clear();
@@ -122,7 +118,6 @@ void TestQCWebSocketPool::initTestCase()
 void TestQCWebSocketPool::cleanupTestCase()
 {
     m_testServer.stop();
-    qDebug() << "WebSocket 连接池测试套件完成";
 }
 
 void TestQCWebSocketPool::init()
@@ -147,8 +142,6 @@ void TestQCWebSocketPool::cleanup()
 
 void TestQCWebSocketPool::testConstructor()
 {
-    qDebug() << "========== testConstructor ==========";
-
     // 测试默认构造
     QCWebSocketPool pool1;
     auto config1 = pool1.config();
@@ -168,13 +161,10 @@ void TestQCWebSocketPool::testConstructor()
     QCOMPARE(config2.maxIdleTime, 600);
     QCOMPARE(config2.enableKeepAlive, false);
 
-    qDebug() << "✅ 构造函数测试通过";
 }
 
 void TestQCWebSocketPool::testAcquireAndRelease()
 {
-    qDebug() << "========== testAcquireAndRelease ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -213,13 +203,10 @@ void TestQCWebSocketPool::testAcquireAndRelease()
     QCOMPARE(stats.activeConnections, 0);
     QCOMPARE(stats.idleConnections, 1);
 
-    qDebug() << "✅ 获取和释放测试通过";
 }
 
 void TestQCWebSocketPool::testConnectionReuse()
 {
-    qDebug() << "========== testConnectionReuse ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -257,13 +244,11 @@ void TestQCWebSocketPool::testConnectionReuse()
 
     pool->release(socket2);
 
-    qDebug() << "✅ 连接复用测试通过，命中率:" << stats2.hitRate << "%";
+    qDebug() << "连接复用命中率:" << stats2.hitRate << "%";
 }
 
 void TestQCWebSocketPool::testMultipleUrls()
 {
-    qDebug() << "========== testMultipleUrls ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -298,13 +283,10 @@ void TestQCWebSocketPool::testMultipleUrls()
     pool->release(socket1);
     pool->release(socket2);
 
-    qDebug() << "✅ 多 URL 测试通过";
 }
 
 void TestQCWebSocketPool::testMaxPoolSize()
 {
-    qDebug() << "========== testMaxPoolSize ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -366,7 +348,6 @@ void TestQCWebSocketPool::testMaxPoolSize()
         }
     }
 
-    qDebug() << "✅ 池大小限制测试通过";
 }
 
 // ============================================================================
@@ -375,8 +356,6 @@ void TestQCWebSocketPool::testMaxPoolSize()
 
 void TestQCWebSocketPool::testPreWarm()
 {
-    qDebug() << "========== testPreWarm ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -403,13 +382,10 @@ void TestQCWebSocketPool::testPreWarm()
     // 所有连接都应该是空闲的
     QCOMPARE(stats.activeConnections, 0);
 
-    qDebug() << "✅ 预热连接测试通过";
 }
 
 void TestQCWebSocketPool::testClearPool()
 {
-    qDebug() << "========== testClearPool ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -431,7 +407,6 @@ void TestQCWebSocketPool::testClearPool()
         QCOMPARE(stats.totalConnections, 0);
         QVERIFY(!pool->contains(url));
 
-        qDebug() << "✅ 清理池测试通过";
     } else {
         QSKIP("无法连接到本地 WSS 测试服务器");
     }
@@ -439,8 +414,6 @@ void TestQCWebSocketPool::testClearPool()
 
 void TestQCWebSocketPool::testStatistics()
 {
-    qDebug() << "========== testStatistics ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -478,7 +451,6 @@ void TestQCWebSocketPool::testStatistics()
 
     pool->release(socket2);
 
-    qDebug() << "✅ 统计信息测试通过";
 }
 
 // ============================================================================
@@ -487,8 +459,6 @@ void TestQCWebSocketPool::testStatistics()
 
 void TestQCWebSocketPool::testAcquireFromEmptyPool()
 {
-    qDebug() << "========== testAcquireFromEmptyPool ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -506,7 +476,6 @@ void TestQCWebSocketPool::testAcquireFromEmptyPool()
     if (waitForConnection(socket, 10000)) {
         QCOMPARE(socket->state(), QCWebSocket::State::Connected);
         pool->release(socket);
-        qDebug() << "✅ 空池获取测试通过";
     } else {
         QSKIP("无法连接到本地 WSS 测试服务器");
     }
@@ -514,20 +483,15 @@ void TestQCWebSocketPool::testAcquireFromEmptyPool()
 
 void TestQCWebSocketPool::testReleaseNullPointer()
 {
-    qDebug() << "========== testReleaseNullPointer ==========";
-
     pool = new QCWebSocketPool();
 
     // 释放空指针（应该安全处理，不崩溃）
     pool->release(nullptr);
 
-    qDebug() << "✅ 释放空指针测试通过";
 }
 
 void TestQCWebSocketPool::testReleaseNonPooledSocket()
 {
-    qDebug() << "========== testReleaseNonPooledSocket ==========";
-
     pool = new QCWebSocketPool();
 
     // 创建一个不在池中的 socket
@@ -539,13 +503,10 @@ void TestQCWebSocketPool::testReleaseNonPooledSocket()
     socket->deleteLater();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
-    qDebug() << "✅ 释放非池连接测试通过";
 }
 
 void TestQCWebSocketPool::testMaxTotalConnections()
 {
-    qDebug() << "========== testMaxTotalConnections ==========";
-
     if (!localServerAvailable()) {
         QSKIP(qPrintable(m_localServerSkipReason));
     }
@@ -591,14 +552,10 @@ void TestQCWebSocketPool::testMaxTotalConnections()
     auto *socket4 = pool->acquire(url1);
     QVERIFY(socket4 == nullptr); // 应该失败
     QVERIFY2(spy.count() >= 1, "expected poolLimitReached emitted when maxTotalConnections reached");
-    qDebug() << "✅ 全局连接数限制验证成功";
-
     // 清理
     for (auto *s : sockets) {
         pool->release(s);
     }
-
-    qDebug() << "✅ 全局连接数限制测试通过";
 }
 
 QTEST_MAIN(TestQCWebSocketPool)

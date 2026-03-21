@@ -218,6 +218,7 @@ def _patch_nghttpx_access_log() -> None:
                 "--frontend-quic-early-data",
             ])
         args.extend([
+            "--workers=1",
             f"--backend=127.0.0.1,{self.env.http_port}",
             "--log-level=ERROR",
             f"--pid-file={getattr(self, '_pid_file')}",

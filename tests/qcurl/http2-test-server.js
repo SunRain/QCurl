@@ -96,10 +96,6 @@ async function main() {
   const key = fs.readFileSync(keyPath);
   const cert = fs.readFileSync(certPath);
 
-  // ----------------------------
-  // HTTP/2 over TLS (h2) server
-  // ----------------------------
-
   let nextH2SessionId = 1;
   const h2SessionIds = new WeakMap();
 
@@ -161,10 +157,6 @@ async function main() {
       respondJson(200, payload);
     }
   });
-
-  // ----------------------------
-  // HTTPS HTTP/1.1-only server
-  // ----------------------------
 
   let nextHttp1ConnId = 1;
   const http1ConnIds = new WeakMap();
@@ -246,4 +238,3 @@ main().catch((err) => {
   console.error('QCURL_HTTP2_TEST_SERVER_FATAL', err && err.stack ? err.stack : String(err));
   process.exit(1);
 });
-

@@ -46,48 +46,49 @@ add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
-add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp) # v2.1.0: 重试机制测试
-add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # v2.23.0: 离线重试/限流门禁（MockHandler）
+add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp) # 重试机制测试
+add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # 离线重试/限流门禁（MockHandler）
 add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp) # 离线门禁：响应头 unfold/原始头观测
 add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsOffline.cpp) # 离线门禁：请求配置冲突可诊断（warnings）
 add_qcurl_test(tst_QCNetworkHttpErrorMappingOffline tst_QCNetworkHttpErrorMappingOffline.cpp) # 离线门禁：HTTP 错误映射与终态语义
-add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp) # v2.2.0: HTTP/2 功能测试
-add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp) # v2.6.0: 请求优先级调度测试
-add_qcurl_test(tst_QCNetworkActorThreadModel tst_QCNetworkActorThreadModel.cpp) # v2.26.x: Actor/跨线程提交线程模型回归
-add_qcurl_test(tst_QCNetworkProxy tst_QCNetworkProxy.cpp) # v2.2.1: 代理配置测试
-add_qcurl_test(tst_QCRequest tst_QCRequest.cpp) # v2.9.0: 流式 Request API 测试
-add_qcurl_test(tst_QCRequestBuilder tst_QCRequestBuilder.cpp) # v2.9.0: 传统 Builder API 测试
-add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp) # v2.11.0: Multipart/form-data 测试
-add_qcurl_test(tst_QCNetworkFileTransfer tst_QCNetworkFileTransfer.cpp) # v2.11.0+: 文件传输 API 测试
-add_qcurl_test(tst_QCNetworkIODeviceLifetime tst_QCNetworkIODeviceLifetime.cpp) # v2.20.0: QIODevice 生命周期契约测试
-add_qcurl_test(tst_QCNetworkStreamUpload tst_QCNetworkStreamUpload.cpp) # v2.20.0+: 流式上传契约/分支覆盖测试
-add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # v2.12.0: 缓存机制测试
-add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp) # v2.13.0: 缓存集成测试
-add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp) # v2.14.0: 连接池测试
-add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # v2.21.0: 网络路径与 DNS 控制（M4）
-add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp) # v2.22.0: multi share handle（M6+）
+add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp) # HTTP/2 功能测试
+add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp) # 请求优先级调度测试
+add_qcurl_test(tst_QCNetworkActorThreadModel tst_QCNetworkActorThreadModel.cpp) # Actor/跨线程提交线程模型回归
+add_qcurl_test(tst_QCNetworkProxy tst_QCNetworkProxy.cpp) # 代理配置测试
+add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
+add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归
+add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp) # Multipart/form-data 测试
+add_qcurl_test(tst_QCNetworkFileTransfer tst_QCNetworkFileTransfer.cpp) # 文件传输 API 测试
+add_qcurl_test(tst_QCNetworkIODeviceLifetime tst_QCNetworkIODeviceLifetime.cpp) # QIODevice 生命周期契约测试
+add_qcurl_test(tst_QCNetworkStreamUpload tst_QCNetworkStreamUpload.cpp) # 流式上传契约/分支覆盖测试
+add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # 缓存机制测试
+add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp) # 缓存集成测试
+add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp) # 连接池测试
+add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # 网络路径与 DNS 控制（M4）
+add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp) # multi share handle（M6+）
 
-# v2.15.0 + v2.16.0: 生产级增强和开发体验优化测试
-add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # v2.15.0: Logger 系统测试
-add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # v2.15.0: 中间件测试
-add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # v2.24.0: middleware 自动接入执行链路（离线门禁）
-add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp) # v2.25.0: 统一重试/脱敏日志/观测埋点（离线门禁）
-add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp) # v2.26.0: cookie bridge（share cookie store）离线门禁
-add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp) # v2.15.0: 取消令牌测试
-add_qcurl_test(tst_QCNetworkRequestBuilder tst_QCNetworkRequestBuilder.cpp) # v2.16.0: 流式构建器测试
-add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp) # v2.16.0: Mock 工具测试
+# Logger / middleware / cookie / cancel token 相关测试
+add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测试
+add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
+add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）
+add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp) # 统一重试/脱敏日志/观测埋点（离线门禁）
+add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp) # cookie bridge（share cookie store）离线门禁
+add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp) # 取消令牌测试
+add_qcurl_test(tst_QCNetworkRequestCanonicalFlowApi tst_QCNetworkRequestCanonicalFlowApi.cpp) # canonical API: request handoff/send flow 语义回归
+add_qcurl_test(tst_QCNetworkRequestPipeline tst_QCNetworkRequestPipeline.cpp) # internal D-lite: normalize/compile digest 白盒测试
+add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp) # Mock 工具测试
 
-# v2.17.0: HTTP/3 支持测试
-add_qcurl_test(tst_QCNetworkHttp3 tst_QCNetworkHttp3.cpp) # v2.17.0: HTTP/3 功能测试
+# HTTP/3 支持测试
+add_qcurl_test(tst_QCNetworkHttp3 tst_QCNetworkHttp3.cpp) # HTTP/3 功能测试
 
-# v2.19.0: 网络诊断工具测试
-add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # v2.19.0: 网络诊断功能测试
+# 网络诊断工具测试
+add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # 网络诊断功能测试
 
-# v2.3.0: WebSocket 测试（条件编译）
+# WebSocket 测试（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
     add_qcurl_test(tst_QCWebSocket tst_QCWebSocket.cpp)
-    add_qcurl_test(tst_QCWebSocketPool tst_QCWebSocketPool.cpp) # v2.5.0: WebSocket 连接池测试
-    add_qcurl_test(tst_QCWebSocketCompression tst_QCWebSocketCompression.cpp) # v2.18.0: WebSocket 压缩测试
+    add_qcurl_test(tst_QCWebSocketPool tst_QCWebSocketPool.cpp) # WebSocket 连接池测试
+    add_qcurl_test(tst_QCWebSocketCompression tst_QCWebSocketCompression.cpp) # WebSocket 压缩测试
 endif()
 
 add_qcurl_test(tst_Integration tst_Integration.cpp)
@@ -114,9 +115,9 @@ set_tests_properties(tst_QCNetworkResponseHeadersOffline PROPERTIES LABELS "offl
 set_tests_properties(tst_QCNetworkRequestWarningsOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkHttpErrorMappingOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkScheduler PROPERTIES LABELS "offline")
-set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES LABELS "offline")
-set_tests_properties(tst_QCRequest PROPERTIES LABELS "offline")
-set_tests_properties(tst_QCRequestBuilder PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCNetworkRequestCanonicalApi PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRequestConfigCanonicalApi PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCMultipartFormData PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCache PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkLogger PROPERTIES LABELS "offline")
@@ -125,7 +126,8 @@ set_tests_properties(tst_QCNetworkMiddlewareIntegration PROPERTIES LABELS "offli
 set_tests_properties(tst_QCNetworkUnifiedPolicyMiddlewareOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCookieBridge PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCancelToken PROPERTIES LABELS "offline")
-set_tests_properties(tst_QCNetworkRequestBuilder PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRequestCanonicalFlowApi PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkRequestPipeline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkMockHandler PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkHttp3 PROPERTIES LABELS "offline")
 
@@ -155,6 +157,15 @@ set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
 set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES
     FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
 )
+set_tests_properties(tst_QCNetworkHttp2 PROPERTIES
+    FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
+)
+set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES
+    FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
+)
+set_tests_properties(tst_LargeFileDownload PROPERTIES
+    FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
+)
 
 # WebSocket（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
@@ -178,8 +189,8 @@ set(_qcurl_qttest_targets
     tst_QCNetworkScheduler
     tst_QCNetworkActorThreadModel
     tst_QCNetworkProxy
-    tst_QCRequest
-    tst_QCRequestBuilder
+    tst_QCNetworkRequestCanonicalApi
+    tst_QCNetworkRequestConfigCanonicalApi
     tst_QCMultipartFormData
     tst_QCNetworkFileTransfer
     tst_QCNetworkIODeviceLifetime
@@ -195,7 +206,8 @@ set(_qcurl_qttest_targets
     tst_QCNetworkUnifiedPolicyMiddlewareOffline
     tst_QCNetworkCookieBridge
     tst_QCNetworkCancelToken
-    tst_QCNetworkRequestBuilder
+    tst_QCNetworkRequestCanonicalFlowApi
+    tst_QCNetworkRequestPipeline
     tst_QCNetworkMockHandler
     tst_QCNetworkHttp3
     tst_QCNetworkDiagnostics

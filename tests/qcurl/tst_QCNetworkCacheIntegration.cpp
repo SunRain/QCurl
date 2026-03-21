@@ -1,6 +1,6 @@
 /**
  * @file tst_QCNetworkCacheIntegration.cpp
- * @brief QCurl v2.13.0 - 缓存深度集成测试
+ * @brief 缓存深度集成测试
  *
  * 测试覆盖：
  * - 自动缓存读取（execute 阶段）
@@ -72,10 +72,6 @@ private:
 
 void TestQCNetworkCacheIntegration::initTestCase()
 {
-    qDebug() << "\n========================================";
-    qDebug() << "v2.13.0 缓存集成测试套件";
-    qDebug() << "========================================\n";
-
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
     if (m_httpbinBaseUrl.isEmpty()) {
         QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
@@ -142,7 +138,7 @@ bool TestQCNetworkCacheIntegration::isHttpbinAvailable()
 
 void TestQCNetworkCacheIntegration::testNoCacheBehavior()
 {
-    // 测试：无缓存时，行为与 v2.12.0 完全一致
+    // 无缓存时，请求应保持普通网络路径语义。
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
 
     // 不设置缓存

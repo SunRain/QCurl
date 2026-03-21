@@ -1,6 +1,6 @@
 # QCurl 测试套件
 
-本目录包含 QCurl v2.0 的完整测试套件，包括单元测试和集成测试。
+本目录包含 QCurl 的测试套件，包括单元测试和集成测试。
 
 ---
 
@@ -9,7 +9,7 @@
 - `tests/qcurl/`：QCurl 本身的 QtTest（C++）与本地测试依赖（httpbin/node server/testdata/node_modules）。
 - `tests/libcurl_consistency/`：QCurl ↔ libcurl 一致性测试（pytest + baseline clients + gate）。
 
-## ✅ 证据门禁口径（skip=fail + LABELS）
+## 证据门禁口径（skip=fail + LABELS）
 
 本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
 
@@ -32,7 +32,7 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex env
 - ctest：终端输出（含每个 QtTest 的 `Totals:` 行；无 `SKIP:`）。
 - `libcurl_consistency`（可选 gate）：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`，以及 `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
 
-### ✅ “基本无问题”验收门禁（强制归档）
+### “基本无问题”验收门禁（强制归档）
 
 当需要给出可作为工程证据链的“基本无问题”结论时，必须使用统一 runner：
 
@@ -72,6 +72,32 @@ ctest --test-dir build -N -L env
 QCURL_ALLOW_EXTERNAL_NETWORK=1 ctest --test-dir build -L external_network --output-on-failure
 ```
 
+说明：
+
+- `tst_QCNetworkHttp2`、`tst_QCNetworkActorThreadModel` 这类依赖本地监听端口的测试，在沙箱或受限容器中若出现 `listen EPERM` / 本地端口不可绑定，会显式 `QSKIP`，并通过 `local_port` 语义与离线门禁隔离。
+- `tst_QCNetworkDiagnostics` 在设置了 `QCURL_HTTPBIN_URL` 时，会对本地 httpbin 做有限次短重试；若本地依赖未稳定就绪，会带详细原因跳过，而不是给出缺乏上下文的硬失败。
+
+### 📦 external_heavy（显式 opt-in 的外部大体量 smoke）
+
+`LABELS=external_heavy` 不属于 deterministic 门禁，默认关闭。当前集合仅包含 `tst_LargeFileDownload`，用于验证“真实 HTTPS + 大体量传输”链路。
+
+使用方式：
+
+```bash
+QCURL_RUN_EXTERNAL_HEAVY=1 \
+  ctest --test-dir build -L external_heavy --output-on-failure
+```
+
+可选环境变量：
+
+- `QCURL_LARGE_FILE_URL`：覆盖默认下载 URL。
+- `QCURL_LARGE_FILE_EXPECTED_BYTES`：当使用自定义 URL 时，可显式给出期望字节数。
+
+执行语义：
+
+- 未设置 `QCURL_RUN_EXTERNAL_HEAVY=1` 时默认 `QSKIP`。
+- 执行前会先做一次 HEAD preflight；若出现 DNS 失败、HTTP 404、远端资源下线或超时，则显式 `QSKIP`，避免把第三方镜像漂移误判为产品缺陷。
+
 ---
 
 ## 🚀 快速开始
@@ -100,7 +126,7 @@ source build/test-env/httpbin.env
 - 3. libcurl_consistency Gate（可选）
 - 3.3 全量回归（pytest 直跑；可选）
 
-#### ✅ 全量测试复验命令（提交前建议，一键入口）
+#### 全量测试复验命令（提交前建议，一键入口）
 
 ```bash
 # 1) 构建
@@ -147,69 +173,34 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ---
 
-## 📊 测试覆盖详情
+## 测试覆盖主题
 
-### tst_QCNetworkRequest（31 个测试）
+本节只描述各测试目标的大致职责，不维护静态用例数量；具体清单始终以 `ctest -N` 为准。
 
-**测试内容：**
-- URL 设置和获取
-- HTTP Header 管理
-- SSL 配置
-- 代理配置
-- 超时配置
-- Range 请求
-- HTTP 版本设置
-- 流式 API 调用链
+### tst_QCNetworkRequest
 
-**无需网络连接，可离线运行。**
+- 覆盖 URL、HTTP Header、SSL、代理、超时、Range、HTTP 版本与流式 API 调用链
+- 无需网络连接，可离线运行
 
-### tst_QCNetworkReply（27 个测试）
+### tst_QCNetworkReply
 
-**测试内容：**
-- 同步/异步请求执行
-- 信号发射（finished、readyRead、downloadProgress 等）
-- 错误处理和错误码映射
-- 状态管理
-- 数据读取（readAll、peek）
-- HTTP 状态码获取
-- 请求取消
+- 覆盖同步/异步执行、信号发射、错误处理、状态机、数据读取与取消语义
+- 部分用例依赖本地 httpbin（通过 `QCURL_HTTPBIN_URL` 配置）；在证据门禁口径下，缺失依赖会触发 `QSKIP` 并导致门禁失败
 
-**依赖：** 部分用例需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置）。在证据门禁口径下，缺失依赖会触发 `QSKIP` 并导致门禁失败。
+### tst_QCNetworkError
 
-### tst_QCNetworkError（15 个测试）
+- 覆盖 `CURLcode` / HTTP 状态码到 `NetworkError` 的映射，以及错误字符串和错误类型判断
+- 无需网络连接，可离线运行
 
-**测试内容：**
-- CURLcode → NetworkError 转换
-- HTTP 状态码 → NetworkError 转换
-- 错误字符串生成
-- 错误类型判断（isCurlError、isHttpError）
-- 边界情况处理
+### tst_QCNetworkFileTransfer
 
-**无需网络连接，可离线运行。**
+- 覆盖 `downloadToDevice()` 的流式写入、`uploadFromDevice()` 的回显校验，以及 `downloadFileResumable()` 在“先制造部分下载、再续传”路径上的语义
+- 依赖本地 httpbin，且 `/bytes`、`/post`、`/range` 端点必须可用
 
-### tst_QCNetworkFileTransfer（3 个测试）
+### tst_Integration
 
-**测试内容：**
-- `downloadToDevice()` 流式下载写入 QIODevice
-- `uploadFromDevice()` 流式上传并回显校验
-- `downloadFileResumable()` 断点续传（先取消再续传）
-
-**依赖：** 需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置），同时 `/bytes`、`/post`、`/range` 端点必须可用。
-
-### tst_Integration（27 个测试）
-
-**测试内容：**
-- 真实 HTTP 请求（GET、POST、PUT、DELETE、PATCH、HEAD）
-- Cookie 持久化和发送
-- 自定义 Header（User-Agent、Authorization）
-- 超时配置（连接超时、总超时）
-- 重定向处理（自动跟随、最大重定向次数）
-- SSL/TLS 配置
-- 大文件下载
-- 并发请求（并行和顺序）
-- 错误处理（无效主机、连接拒绝、HTTP 错误码）
-
-**⚠️ 需要本地 httpbin 服务（通过 `QCURL_HTTPBIN_URL` 配置）。**
+- 覆盖真实 HTTP 方法、Cookie、自定义 Header、超时、重定向、SSL/TLS、大文件、并发与错误处理
+- 依赖本地 httpbin（通过 `QCURL_HTTPBIN_URL` 配置）
 
 #### 外部 HTTPS 大文件下载（非门禁）
 
@@ -257,10 +248,9 @@ export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 # 重启 httpbin（以脚本/容器为准）
 ./tests/qcurl/httpbin/stop_httpbin.sh || true
 ./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
-
-# 或增加测试超时时间（编辑测试文件）
-QVERIFY(waitForSignal(reply, SIGNAL(finished()), 30000));  // 改为 30 秒
 ```
+
+若仍超时，优先排查容器资源、网络质量或门禁环境差异；不要把“直接放宽用例超时”当作常规修复手段。
 
 ### Q3: PUT/PATCH 测试失败
 
@@ -325,7 +315,7 @@ void TestIntegration::testNewEndpoint()
 
 ---
 
-## 📚 参考资料
+## 参考资料
 
 - **Qt Test 框架文档**: https://doc.qt.io/qt-6/qtest-overview.html
 - **httpbin API 文档**: https://httpbin.org/
@@ -333,4 +323,4 @@ void TestIntegration::testNewEndpoint()
 
 ---
 
-**QCurl 测试套件** - 确保代码质量和稳定性 ✅
+本目录的长期真相源是测试代码、`tests/qcurl/CMakeLists.txt` 中的 LABELS 分组，以及自动化产出的证据工件。

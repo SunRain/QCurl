@@ -22,8 +22,6 @@
  * 测试：
  *   cd build && ctest -R testFragmentedMessage -V
  * 
- * @author QCurl Team
- * @since v2.4.1
  */
 
 const WebSocket = require('ws');
@@ -150,14 +148,8 @@ server.on('listening', () => {
         // ignore
     }
 
-    console.log('=====================================');
-    console.log('  WebSocket 分片测试服务器');
-    console.log('=====================================');
     const scheme = tls ? 'wss' : 'ws';
-    console.log(`监听地址: ${scheme}://localhost:${actualPort}`);
-    console.log('功能: Echo 服务器（回显所有消息）');
-    console.log('按 Ctrl+C 停止服务器');
-    console.log('=====================================\n');
+    console.log(`WebSocket test server listening on ${scheme}://localhost:${actualPort}`);
 
     // 供测试端解析的 READY marker（必须稳定、单行）
     console.log(`QCURL_WEBSOCKET_TEST_SERVER_READY {"port":${actualPort}}`);
@@ -166,60 +158,58 @@ server.on('listening', () => {
 let clientCount = 0;
 
 wss.on('error', (error) => {
-    console.error('❌ WebSocket 服务器错误:', error.message);
+    console.error('WebSocket 服务器错误:', error.message);
 });
 
 wss.on('connection', (ws, req) => {
     const clientId = ++clientCount;
     const clientIp = req.socket.remoteAddress;
     
-    console.log(`[客户端 #${clientId}] ✅ 已连接（来自 ${clientIp}）`);
+    console.log(`[客户端 #${clientId}] 已连接（来自 ${clientIp}）`);
     
     // 接收消息
     ws.on('message', (data, isBinary) => {
         const size = data.length;
         const type = isBinary ? '二进制' : '文本';
         
-        console.log(`[客户端 #${clientId}] 📨 收到${type}消息: ${size} 字节`);
+        console.log(`[client #${clientId}] message received: type=${type} size=${size}`);
         
         // Echo 回原始消息
         // ws 库会自动处理分片（大于帧大小时自动分片）
         ws.send(data, { binary: isBinary }, (err) => {
             if (err) {
-                console.error(`[客户端 #${clientId}] ❌ 发送失败:`, err.message);
+                console.error(`[客户端 #${clientId}] 发送失败:`, err.message);
             } else {
-                console.log(`[客户端 #${clientId}] ✅ 消息已回显: ${size} 字节`);
+                console.log(`[client #${clientId}] echoed: ${size} bytes`);
             }
         });
     });
     
     // Ping 消息
     ws.on('ping', (data) => {
-        console.log(`[客户端 #${clientId}] 🏓 收到 Ping: ${data.length} 字节`);
+        console.log(`[client #${clientId}] ping received: ${data.length} bytes`);
         // WebSocket 库自动响应 Pong
     });
     
     // Pong 消息
     ws.on('pong', (data) => {
-        console.log(`[客户端 #${clientId}] 🏓 收到 Pong: ${data.length} 字节`);
+        console.log(`[client #${clientId}] pong received: ${data.length} bytes`);
     });
     
     // 连接关闭
     ws.on('close', (code, reason) => {
-        console.log(`[客户端 #${clientId}] ❌ 连接已关闭`);
-        console.log(`  关闭码: ${code}`);
-        console.log(`  原因: ${reason || '(无)'}`);
+        console.log(`[client #${clientId}] closed: code=${code} reason=${reason || '(none)'}`);
     });
     
     // 错误处理
     ws.on('error', (error) => {
-        console.error(`[客户端 #${clientId}] ⚠️  错误:`, error.message);
+        console.error(`[客户端 #${clientId}] 错误:`, error.message);
     });
 });
 
 // 服务器错误处理
 server.on('error', (error) => {
-    console.error('❌ 服务器错误:', error.message);
+    console.error('服务器错误:', error.message);
     if (error.code === 'EADDRINUSE') {
         console.error(`端口 ${port} 已被占用，请先关闭占用该端口的程序或改用 --port 0`);
         process.exit(1);
@@ -239,7 +229,7 @@ process.on('SIGINT', () => {
     });
     
     wss.close(() => server.close(() => {
-        console.log('✅ 服务器已关闭');
+        console.log('服务器已关闭');
         process.exit(0);
     }));
 });

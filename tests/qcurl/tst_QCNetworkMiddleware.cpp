@@ -48,14 +48,10 @@ private:
 };
 
 void TestQCNetworkMiddleware::initTestCase()
-{
-    qDebug() << "=== TestQCNetworkMiddleware Test Suite ===";
-}
+{}
 
 void TestQCNetworkMiddleware::cleanupTestCase()
-{
-    qDebug() << "=== TestQCNetworkMiddleware Completed ===";
-}
+{}
 
 void TestQCNetworkMiddleware::init()
 {

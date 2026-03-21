@@ -473,14 +473,30 @@ class Handler(BaseHTTPRequestHandler):
         # 禁止默认 stdout 访问日志（用 JSONL 代替）
         return
 
+    def handle_expect_100(self) -> bool:
+        """
+        覆写 BaseHTTPRequestHandler 的默认行为，避免它在 /expect_417 上自动发送 100 Continue。
+
+        Python 标准库默认会在解析完请求头后立即回一个 `100 Continue`，这会把本用例需要的
+        “服务端直接拒绝 Expect，并返回最终 417” 语义扭曲成 “100 + 417” 的竞态窗口，进而让
+        libcurl 的 417→retry 路径变得不稳定。
+        """
+        expect = str(self.headers.get("expect") or "")
+        if self.path.startswith("/expect_417") and "100-continue" in expect.lower():
+            # 仅抑制标准库默认的 100 Continue；最终 417 仍由正常的 do_* 分发路径发送，
+            # 这样可以复用现有的 keep-alive / body-drain 逻辑。
+            return True
+        return super().handle_expect_100()
+
     def _drain_request_body_best_effort(self) -> int:
         """
         best-effort drain 当前请求剩余 body（避免 keep-alive 下“未消费的 body 字节污染下一次请求解析”）。
 
         ⚠️ 约束：
-        - 不能阻塞：对于 Expect: 100-continue 场景，客户端可能根本不会发送 body（等待服务端响应），
-          若服务端在这里阻塞读取将导致死锁。
-        - 仅用于稳定性增强：只尝试在短窗口内读取“已到达/已缓冲”的字节；不保证一定读满 Content-Length。
+        - 不能长时间阻塞：对于 Expect: 100-continue 场景，客户端可能根本不会发送 body（等待服务端响应），
+          若服务端在这里无限等待会导致死锁。
+        - 仅用于稳定性增强：在“短超时阻塞读 + 总时长上限”的窗口内尽量读取已在途/已缓冲的字节，
+          不保证一定读满 Content-Length。
         """
         try:
             length = int(self.headers.get("content-length") or "0")
@@ -496,13 +512,18 @@ class Handler(BaseHTTPRequestHandler):
         drained = 0
         original_timeout = sock.gettimeout()
         try:
-            # 置为非阻塞读取：无数据时立即抛出 BlockingIOError/timeout
-            sock.settimeout(0.0)
+            # 用“小超时阻塞读”而不是非阻塞 read1()：后者在暂时无数据时可能返回空字节串，
+            # 容易被误判成 EOF，导致在途 body 提前漏读。
+            sock.settimeout(0.05)
             # 本地回环下 1MB body 通常会在极短时间内到达；这里用“短窗口 + 有进展才继续”的策略：
             # - 若持续一段时间没有任何新字节到达，则认为客户端并未发送 body（或已停止发送），提前结束。
             # - 若持续有字节到达，则尽量读满 Content-Length，降低残留污染概率。
-            idle_deadline_s = 0.2
-            hard_deadline_s = 1.5
+            # 417 在“等待 100 Continue”阶段返回后，客户端仍可能有一小段 body 已经在路上。
+            # 如果这里过早放弃排空，残留字节会污染同连接上的下一次重试请求，表现为偶发的
+            # “第二次 PUT 消失”或请求行解析异常。给首段在途 body 一个稍宽一点的到达窗口，
+            # 仍然保持总时长有上界，避免无 body 场景下的长时间阻塞。
+            idle_deadline_s = 0.75
+            hard_deadline_s = 3.0
             started = time.monotonic()
             last_progress = started
             while drained < length and (time.monotonic() - started) < hard_deadline_s:
@@ -644,8 +665,8 @@ class Handler(BaseHTTPRequestHandler):
         Expect: 100-continue（417→重试）语义探针（参考 curl/tests/data/test357）。
 
         语义：
-        - 当请求头包含 `Expect: 100-continue` 时：立即返回 417（保持连接可复用以触发 libcurl 的 417→重试路径）
-          - 稳定性增强：best-effort drain 可能已发送/已缓冲的 request body（避免 keep-alive 下污染后续请求解析）
+        - 当请求头包含 `Expect: 100-continue` 时：立即返回最终 417（且不发送 100 Continue）
+          - 保持连接可复用，让 libcurl 在同连接上发起“不带 Expect 的重试请求”
         - 否则：读取请求体并 200 回显
         """
         if not self.path.startswith("/expect_417"):
@@ -657,7 +678,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             self._write_log(417, {})
-            self._drain_request_body_best_effort()
             return True
 
         body = self._read_body()

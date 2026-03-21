@@ -16,10 +16,7 @@
 using namespace QCurl;
 
 /**
- * @brief CancelToken 单元测试
- *
- * 测试取消令牌的附加、分离、取消和自动超时功能。
- *
+ * @brief 验证 cancel token 的 attach/detach/cancel/timeout 合同。
  */
 class TestQCNetworkCancelToken : public QObject
 {
@@ -52,14 +49,10 @@ private:
 };
 
 void TestQCNetworkCancelToken::initTestCase()
-{
-    qDebug() << "=== TestQCNetworkCancelToken Test Suite ===";
-}
+{}
 
 void TestQCNetworkCancelToken::cleanupTestCase()
-{
-    qDebug() << "=== TestQCNetworkCancelToken Completed ===";
-}
+{}
 
 void TestQCNetworkCancelToken::init()
 {
@@ -93,71 +86,60 @@ void TestQCNetworkCancelToken::cleanup()
 }
 
 /**
- * @brief 测试创建 CancelToken
+ * @brief 验证新建 token 处于未取消且未附着任何 reply 的初始状态。
  */
 void TestQCNetworkCancelToken::testCreateToken()
 {
-    // Arrange & Act
     auto *newToken = new QCNetworkCancelToken(this);
 
-    // Assert
     QVERIFY(newToken != nullptr);
     QCOMPARE(newToken->attachedCount(), 0);
     QCOMPARE(newToken->isCancelled(), false);
 
-    // Cleanup
     newToken->deleteLater();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 /**
- * @brief 测试附加 Reply
+ * @brief 验证 attach() 会把 reply 纳入 token 管理范围。
  */
 void TestQCNetworkCancelToken::testAttachReply()
 {
-    // Arrange - 创建一个请求（使用 MockHandler 离线回放）
+    // 使用 MockHandler 离线回放，避免该套件退化为真实网络依赖。
     QCNetworkRequest request(QUrl("http://example.com"));
     auto *reply = m_manager->sendGet(request);
 
-    // Act
     m_token->attach(reply);
 
-    // Assert
     QCOMPARE(m_token->attachedCount(), 1);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
-    // Cleanup
     reply->deleteLater();
 }
 
 /**
- * @brief 测试分离 Reply
+ * @brief 验证 detach() 只解除 token 关联，不强制改变 reply 生命周期。
  */
 void TestQCNetworkCancelToken::testDetachReply()
 {
-    // Arrange
     QCNetworkRequest request(QUrl("http://example.com"));
     auto *reply = m_manager->sendGet(request);
     m_token->attach(reply);
     QCOMPARE(m_token->attachedCount(), 1);
 
-    // Act
     m_token->detach(reply);
 
-    // Assert
     QCOMPARE(m_token->attachedCount(), 0);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
-    // Cleanup
     reply->deleteLater();
 }
 
 /**
- * @brief 测试附加多个 Reply
+ * @brief 验证 attachMultiple() 会一次性接管多个 reply。
  */
 void TestQCNetworkCancelToken::testAttachMultiple()
 {
-    // Arrange
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
     QCNetworkRequest request3(QUrl("http://example.com/3"));
@@ -168,43 +150,36 @@ void TestQCNetworkCancelToken::testAttachMultiple()
 
     QList<QCNetworkReply *> replies = {reply1, reply2, reply3};
 
-    // Act
     m_token->attachMultiple(replies);
 
-    // Assert
     QCOMPARE(m_token->attachedCount(), 3);
     for (auto *reply : replies) {
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     }
 
-    // Cleanup
     reply1->deleteLater();
     reply2->deleteLater();
     reply3->deleteLater();
 }
 
 /**
- * @brief 测试取消信号
+ * @brief 验证 cancel() 会立刻发出 cancelled 信号并更新 token 状态。
  */
 void TestQCNetworkCancelToken::testCancelSignal()
 {
-    // Arrange
     QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
-    // Act
     m_token->cancel();
 
-    // Assert
     QCOMPARE(spy.count(), 1);
     QCOMPARE(m_token->isCancelled(), true);
 }
 
 /**
- * @brief 测试取消附加的 Reply
+ * @brief 验证 cancel() 会把已附着 reply 推向 OperationCancelled 终态。
  */
 void TestQCNetworkCancelToken::testCancelAttachedReplies()
 {
-    // Arrange
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
@@ -222,10 +197,8 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
 
     QCOMPARE(m_token->attachedCount(), 2);
 
-    // Act
     m_token->cancel();
 
-    // Assert
     QCOMPARE(m_token->isCancelled(), true);
     QCOMPARE(m_token->attachedCount(), 0); // 取消后应该清空
 
@@ -238,20 +211,18 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     QTRY_VERIFY_WITH_TIMEOUT(reply1->isFinished(), 2000);
     QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
 
-    // Cleanup
     reply1->deleteLater();
     reply2->deleteLater();
 
-    // 恢复为默认（避免影响其他用例）
+    // 恢复为默认，避免影响其他用例的 reply 完成时序。
     m_mock.setGlobalDelay(0);
 }
 
 /**
- * @brief 测试清空 Reply 列表
+ * @brief 验证 clear() 只清空附着列表，不会把 token 标记为已取消。
  */
 void TestQCNetworkCancelToken::testClearReplies()
 {
-    // Arrange
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
@@ -262,34 +233,30 @@ void TestQCNetworkCancelToken::testClearReplies()
     m_token->attach(reply2);
     QCOMPARE(m_token->attachedCount(), 2);
 
-    // Act
     m_token->clear();
 
-    // Assert
     QCOMPARE(m_token->attachedCount(), 0);
     QCOMPARE(m_token->isCancelled(), false); // clear 不会标记为已取消
 
-    // Cleanup
     reply1->deleteLater();
     reply2->deleteLater();
 }
 
 /**
- * @brief 测试自动超时功能
+ * @brief 验证 auto-timeout 会触发取消，且可被显式关闭。
  */
 void TestQCNetworkCancelToken::testAutoTimeout()
 {
-    // Arrange
     QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
-    // Act - 设置 100ms 自动超时
+    // 设置 100ms 自动超时。
     m_token->setAutoTimeout(100);
 
-    // Assert - 应该已自动取消
+    // 应在超时窗口内自动取消。
     QVERIFY(spy.wait(1000));
     QCOMPARE(m_token->isCancelled(), true);
 
-    // Test disabling auto-timeout
+    // 验证禁用 auto-timeout 后不会再触发取消。
     auto *token2 = new QCNetworkCancelToken(this);
     QSignalSpy spy2(token2, &QCNetworkCancelToken::cancelled);
     token2->setAutoTimeout(100);
@@ -298,7 +265,6 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     QVERIFY(!spy2.wait(200));
     QCOMPARE(token2->isCancelled(), false); // 应该未取消
 
-    // Cleanup
     token2->deleteLater();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }

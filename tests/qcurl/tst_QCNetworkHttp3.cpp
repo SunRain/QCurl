@@ -12,6 +12,7 @@
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkHttpVersion_p.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>
@@ -47,11 +48,11 @@ private slots:
 
 void TestQCNetworkHttp3::testHttp3EnumConversion()
 {
-    QVERIFY(toCurlHttpVersion(QCNetworkHttpVersion::Http1_0) == CURL_HTTP_VERSION_1_0);
-    QVERIFY(toCurlHttpVersion(QCNetworkHttpVersion::Http1_1) == CURL_HTTP_VERSION_1_1);
-    QVERIFY(toCurlHttpVersion(QCNetworkHttpVersion::Http2) == CURL_HTTP_VERSION_2_0);
-    QVERIFY(toCurlHttpVersion(QCNetworkHttpVersion::Http2TLS) == CURL_HTTP_VERSION_2TLS);
-    QVERIFY(toCurlHttpVersion(QCNetworkHttpVersion::HttpAny) == CURL_HTTP_VERSION_NONE);
+    QVERIFY(detail::toCurlHttpVersion(QCNetworkHttpVersion::Http1_0) == CURL_HTTP_VERSION_1_0);
+    QVERIFY(detail::toCurlHttpVersion(QCNetworkHttpVersion::Http1_1) == CURL_HTTP_VERSION_1_1);
+    QVERIFY(detail::toCurlHttpVersion(QCNetworkHttpVersion::Http2) == CURL_HTTP_VERSION_2_0);
+    QVERIFY(detail::toCurlHttpVersion(QCNetworkHttpVersion::Http2TLS) == CURL_HTTP_VERSION_2TLS);
+    QVERIFY(detail::toCurlHttpVersion(QCNetworkHttpVersion::HttpAny) == CURL_HTTP_VERSION_NONE);
 }
 
 void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
