@@ -151,3 +151,4 @@ legendary-python/
 helloagents/
 helloagents_backup_*/
 Testing/
+.helloagents/
