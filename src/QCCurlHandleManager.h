@@ -5,48 +5,25 @@
 
 #include <curl/curl.h>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
- * @brief RAII 风格的 curl 句柄管理器
+ * @brief internal easy handle / header list 生命周期守卫
  *
- * 自动管理 CURL 句柄和 curl_slist 的生命周期，确保资源正确释放。
- * 使用 RAII 模式消除内存泄漏风险。
- *
- * @par 特性
- * - 构造时自动初始化 curl easy handle
- * - 析构时自动清理 curl easy handle 和 header list
- * - 支持移动语义，禁止拷贝
- * - 线程安全（每个实例独立使用）
- *
- * @par 示例
- * @code
- * QCCurlHandleManager manager;
- * if (manager.handle()) {
- *     manager.appendHeader("Content-Type: application/json");
- *     curl_easy_setopt(manager.handle(), CURLOPT_URL, "https://example.com");
- *     curl_easy_perform(manager.handle());
- * }
- * // 析构时自动清理
- * @endcode
- *
+ * 负责管理 `CURL*` 与附属 `curl_slist*` 的释放，供库内实现复用。
  */
 class QCCurlHandleManager
 {
 public:
     /**
-     * @brief 构造函数，初始化 curl easy handle
+     * @brief 初始化 easy handle
      *
-     * 调用 curl_easy_init() 创建句柄。如果失败，handle() 返回 nullptr。
+     * 若 `curl_easy_init()` 失败，`handle()` 返回 `nullptr`。
      */
     QCCurlHandleManager();
 
     /**
-     * @brief 析构函数，自动清理资源
-     *
-     * 调用 curl_easy_cleanup() 和 curl_slist_free_all()。
+     * @brief 释放 easy handle 与 header list
      */
     ~QCCurlHandleManager();
 
@@ -63,27 +40,23 @@ public:
     /**
      * @brief 获取 curl easy handle 指针
      *
-     * @return CURL* curl 句柄指针，如果初始化失败则返回 nullptr
+     * @return `CURL*`；初始化失败时返回 `nullptr`
      */
     [[nodiscard]] CURL *handle() const noexcept { return m_curlHandle; }
 
     /**
      * @brief 获取 HTTP header 列表
      *
-     * @return curl_slist* header 列表指针，初始为 nullptr
+     * @return 当前 header list；未添加任何 header 时为 `nullptr`
      */
     [[nodiscard]] curl_slist *headerList() const noexcept { return m_headerList; }
 
     /**
      * @brief 添加 HTTP header
      *
-     * @param header header 字符串，格式为 "Key: Value"
+     * @param header 形如 `"Key: Value"` 的 header 行
      *
-     * @par 示例
-     * @code
-     * manager.appendHeader("Content-Type: application/json");
-     * manager.appendHeader("Authorization: Bearer token123");
-     * @endcode
+     * 失败时保留已有 header list，不会覆盖为 `nullptr`。
      */
     void appendHeader(const QString &header);
 
@@ -100,6 +73,5 @@ private:
 };
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCCURLHANDLEMANAGER_H

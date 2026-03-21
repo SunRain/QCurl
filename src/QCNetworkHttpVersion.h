@@ -1,11 +1,7 @@
 #ifndef QCNETWORKHTTPVERSION_H
 #define QCNETWORKHTTPVERSION_H
 
-#include "QCurlConfig.h"
-
-#include <curl/curl.h>
-
-QT_BEGIN_NAMESPACE
+#include "QCGlobal.h"
 
 namespace QCurl {
 
@@ -47,15 +43,6 @@ enum class QCNetworkHttpVersion {
     HttpAny    ///< 让 libcurl 自动选择最优版本
 };
 
-/**
- * @brief 将 QCNetworkHttpVersion 转换为 libcurl 常量
- *
- * @param version HTTP 版本枚举
- * @return long libcurl 的 CURL_HTTP_VERSION_* 常量
- */
-[[nodiscard]] long toCurlHttpVersion(QCNetworkHttpVersion version) noexcept;
-
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKHTTPVERSION_H

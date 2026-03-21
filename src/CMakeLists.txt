@@ -21,6 +21,7 @@ set(QCURL_LEGACY_HEADERS
 set(QCURL_MODERN_SOURCES
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
+    private/QCRequestPipeline.cpp
     QCNetworkSslConfig.cpp
     QCNetworkProxyConfig.cpp
     QCNetworkTimeoutConfig.cpp
@@ -30,8 +31,6 @@ set(QCURL_MODERN_SOURCES
     QCCurlMultiManager.cpp
     QCNetworkRetryPolicy.cpp
     QCNetworkRequestScheduler.cpp   # v2.6.0: 请求优先级调度
-    QCRequest.cpp                   # v2.9.0: 流式 Request API
-    QCRequestBuilder.cpp            # v2.9.0: 传统 Builder API
     QCMultipartFormData.cpp         # v2.11.0: Multipart 表单数据
     QCNetworkCache.cpp              # v2.12.0: 缓存基类
     QCNetworkMemoryCache.cpp        # v2.12.0: 内存缓存
@@ -41,7 +40,6 @@ set(QCURL_MODERN_SOURCES
     QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.cpp         # v2.15.0: 中间件
     QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
-    QCNetworkRequestBuilder.cpp     # v2.16.0: 流式构建器
     QCNetworkMockHandler.cpp        # v2.16.0: Mock 工具
     QCNetworkDiagnostics.cpp        # v2.19.0: 网络诊断工具
 )
@@ -61,8 +59,6 @@ set(QCURL_MODERN_HEADERS
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h      # v2.6.0: 优先级枚举
     QCNetworkRequestScheduler.h     # v2.6.0: 请求调度器
-    QCRequest.h                     # v2.9.0: 流式 Request API
-    QCRequestBuilder.h              # v2.9.0: 传统 Builder API
     QCMultipartFormData.h           # v2.11.0: Multipart 表单数据
     QCNetworkCachePolicy.h          # v2.12.0: 缓存策略枚举
     QCNetworkCache.h                # v2.12.0: 缓存基类
@@ -74,7 +70,6 @@ set(QCURL_MODERN_HEADERS
     QCNetworkLogRedaction.h         # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
-    QCNetworkRequestBuilder.h       # v2.16.0: 流式构建器
     QCNetworkMockHandler.h          # v2.16.0: Mock 工具
     QCNetworkDiagnostics.h          # v2.19.0: 网络诊断工具
 )
@@ -106,6 +101,43 @@ endif()
 # 合并所有源文件和头文件
 set(QCURL_ALL_SOURCES ${QCURL_LEGACY_SOURCES} ${QCURL_MODERN_SOURCES})
 set(QCURL_ALL_HEADERS ${QCURL_LEGACY_HEADERS} ${QCURL_MODERN_HEADERS})
+set(QCURL_INSTALL_HEADERS
+    CurlGlobalConstructor.h
+    QCGlobal.h
+    QCNetworkAccessManager.h
+    QCNetworkRequest.h
+    QCNetworkSslConfig.h
+    QCNetworkProxyConfig.h
+    QCNetworkTimeoutConfig.h
+    QCNetworkHttpVersion.h
+    QCNetworkError.h
+    QCNetworkReply.h
+    QCNetworkRetryPolicy.h
+    QCNetworkRequestPriority.h
+    QCNetworkRequestScheduler.h
+    QCMultipartFormData.h
+    QCNetworkCachePolicy.h
+    QCNetworkCache.h
+    QCNetworkMemoryCache.h
+    QCNetworkDiskCache.h
+    QCNetworkConnectionPoolConfig.h
+    QCNetworkConnectionPoolManager.h
+    QCNetworkLogger.h
+    QCNetworkLogRedaction.h
+    QCNetworkMiddleware.h
+    QCNetworkCancelToken.h
+    QCNetworkMockHandler.h
+    QCNetworkDiagnostics.h
+)
+
+if(QCURL_WEBSOCKET_SUPPORT)
+    list(APPEND QCURL_INSTALL_HEADERS
+        QCWebSocket.h
+        QCWebSocketReconnectPolicy.h
+        QCWebSocketPool.h
+        QCWebSocketCompressionConfig.h
+    )
+endif()
 
 # 创建 QCurl 共享库
 add_library(QCurl SHARED ${QCURL_ALL_SOURCES} ${QCURL_ALL_HEADERS})
@@ -145,6 +177,7 @@ target_include_directories(QCurl
 # 编译定义
 target_compile_definitions(QCurl
     PRIVATE
+        QCURL_BUILDING_LIBRARY
         # 暂时禁用严格的 Qt 字符串转换检查，以便旧代码能够编译
         # TODO: 在后续阶段逐步修复并重新启用这些定义
         # QT_NO_CAST_FROM_ASCII
@@ -167,7 +200,7 @@ if(QCURL_HTTP2_SUPPORT)
 endif()
 
 # 安装头文件
-install(FILES ${QCURL_ALL_HEADERS}
+install(FILES ${QCURL_INSTALL_HEADERS}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
         COMPONENT Development)
 

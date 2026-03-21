@@ -1,6 +1,6 @@
 #include "QCNetworkError.h"
 
-QT_BEGIN_NAMESPACE
+#include <curl/curl.h>
 
 namespace QCurl {
 
@@ -71,8 +71,9 @@ QString errorString(NetworkError error)
     }
 }
 
-NetworkError fromCurlCode(CURLcode code) noexcept
+NetworkError fromCurlCode(int codeValue) noexcept
 {
+    const CURLcode code = static_cast<CURLcode>(codeValue);
     if (code == CURLE_OK) {
         return NetworkError::NoError;
     }
@@ -144,4 +145,3 @@ bool isCurlError(NetworkError error) noexcept
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

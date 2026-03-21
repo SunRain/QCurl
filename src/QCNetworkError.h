@@ -1,11 +1,9 @@
 #ifndef QCNETWORKERROR_H
 #define QCNETWORKERROR_H
 
+#include "QCGlobal.h"
+
 #include <QString>
-
-#include <curl/curl.h>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -62,15 +60,15 @@ enum class NetworkError {
  * @param error 错误码
  * @return QString 错误描述（中文）
  */
-[[nodiscard]] QString errorString(NetworkError error);
+[[nodiscard]] QCURL_EXPORT QString errorString(NetworkError error);
 
 /**
  * @brief 从 libcurl 错误码转换为 NetworkError
  *
- * @param code libcurl 的 CURLcode
+ * @param code libcurl 的错误码数值（CURLcode）
  * @return NetworkError 对应的网络错误枚举
  */
-[[nodiscard]] NetworkError fromCurlCode(CURLcode code) noexcept;
+[[nodiscard]] QCURL_EXPORT NetworkError fromCurlCode(int code) noexcept;
 
 /**
  * @brief 从 HTTP 状态码转换为 NetworkError
@@ -78,7 +76,7 @@ enum class NetworkError {
  * @param httpCode HTTP 状态码（如 404、500）
  * @return NetworkError 对应的网络错误枚举
  */
-[[nodiscard]] NetworkError fromHttpCode(long httpCode) noexcept;
+[[nodiscard]] QCURL_EXPORT NetworkError fromHttpCode(long httpCode) noexcept;
 
 /**
  * @brief 检查错误是否为 HTTP 错误
@@ -86,7 +84,7 @@ enum class NetworkError {
  * @param error 错误码
  * @return bool true 表示是 HTTP 4xx/5xx 错误
  */
-[[nodiscard]] bool isHttpError(NetworkError error) noexcept;
+[[nodiscard]] QCURL_EXPORT bool isHttpError(NetworkError error) noexcept;
 
 /**
  * @brief 检查错误是否为 libcurl 底层错误
@@ -94,9 +92,8 @@ enum class NetworkError {
  * @param error 错误码
  * @return bool true 表示是 libcurl 的 CURLE_* 错误
  */
-[[nodiscard]] bool isCurlError(NetworkError error) noexcept;
+[[nodiscard]] QCURL_EXPORT bool isCurlError(NetworkError error) noexcept;
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKERROR_H

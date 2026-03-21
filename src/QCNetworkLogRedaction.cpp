@@ -5,7 +5,8 @@
 
 #include <QStringList>
 
-namespace QCurl::QCNetworkLogRedaction {
+namespace QCurl {
+namespace QCNetworkLogRedaction {
 
 bool isSensitiveQueryKey(const QString &keyLower)
 {
@@ -107,4 +108,5 @@ QString redactUrl(const QUrl &url)
     return redactSensitiveQueryParams(url.toString());
 }
 
-} // namespace QCurl::QCNetworkLogRedaction
+} // namespace QCNetworkLogRedaction
+} // namespace QCurl

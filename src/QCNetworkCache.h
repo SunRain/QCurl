@@ -1,13 +1,13 @@
 #ifndef QCNETWORKCACHE_H
 #define QCNETWORKCACHE_H
 
+#include "QCGlobal.h"
+
 #include <QByteArray>
 #include <QDateTime>
 #include <QMap>
 #include <QObject>
 #include <QUrl>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -17,7 +17,7 @@ namespace QCurl {
  * 存储缓存条目的元信息，包括 URL、响应头、过期时间等。
  *
  */
-struct QCNetworkCacheMetadata
+struct QCURL_EXPORT QCNetworkCacheMetadata
 {
     QUrl url;                             ///< 请求 URL
     QMap<QByteArray, QByteArray> headers; ///< HTTP 响应头
@@ -49,7 +49,7 @@ struct QCNetworkCacheMetadata
  * @endcode
  *
  */
-class QCNetworkCache : public QObject
+class QCURL_EXPORT QCNetworkCache : public QObject
 {
     Q_OBJECT
 
@@ -79,8 +79,9 @@ public:
      * @param data 响应数据
      * @param meta 元数据
      */
-    virtual void insert(const QUrl &url, const QByteArray &data, const QCNetworkCacheMetadata &meta)
-        = 0;
+    virtual void insert(const QUrl &url,
+                        const QByteArray &data,
+                        const QCNetworkCacheMetadata &meta) = 0;
 
     /**
      * @brief 从缓存中移除指定 URL 的数据
@@ -130,7 +131,5 @@ protected:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCNETWORKCACHE_H

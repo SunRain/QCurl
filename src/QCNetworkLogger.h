@@ -26,7 +26,7 @@ enum class NetworkLogLevel {
 /**
  * @brief 网络日志记录结构体
  */
-struct NetworkLogEntry
+struct QCURL_EXPORT NetworkLogEntry
 {
     NetworkLogLevel level; ///< 日志级别
     QString category;      ///< 日志分类（如 "Request", "Response"）
@@ -52,16 +52,6 @@ struct NetworkLogEntry
  * @brief HTTP 网络日志抽象基类
  *
  * 提供统一的日志接口，支持多种输出方式和日志级别。
- * 用户可以继承此类实现自定义日志处理。
- *
- *
- * @example
- * @code
- * auto *logger = new QCNetworkDefaultLogger();
- * logger->setMinLogLevel(NetworkLogLevel::Info);
- * logger->enableFileOutput("/tmp/qcurl.log");
- * manager->setLogger(logger);
- * @endcode
  */
 class QCURL_EXPORT QCNetworkLogger
 {
@@ -125,7 +115,7 @@ public:
     /**
      * @brief 启用文件输出
      * @param filePath 日志文件路径
-     * @param maxSize 单个日志文件的最大大小（字节），0 表示无限制
+     * @param maxSize 单个日志文件的最大大小（字节），`<= 0` 时使用默认 10MB
      * @param backupCount 保留的旧日志文件数量
      */
     void enableFileOutput(const QString &filePath, qint64 maxSize = 0, int backupCount = 5);
@@ -138,6 +128,9 @@ public:
     /**
      * @brief 设置自定义日志回调
      * @param callback 回调函数，接收日志条目
+     *
+     * @note 回调在 logger 内部互斥锁持有期间同步执行。回调中不应再次调用
+     * 本 logger 的 `log()/entries()/clear()/set*()`，否则可能形成重入或死锁。
      */
     void setCustomCallback(std::function<void(const NetworkLogEntry &)> callback);
 

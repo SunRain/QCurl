@@ -5,6 +5,8 @@
 
 #include "QCCurlMultiManager.h"
 
+#include <curl/curl.h>
+
 #include <QDebug>
 #include <QMutexLocker>
 
@@ -95,11 +97,13 @@ QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const
 // curl handle 配置
 // ==================
 
-void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QString &host)
+void QCNetworkConnectionPoolManager::configureCurlHandle(void *handle, const QString &host)
 {
     if (!handle) {
         return;
     }
+
+    auto *curlHandle = static_cast<CURL *>(handle);
 
     QMutexLocker locker(&m_mutex);
     QCNetworkConnectionPoolConfig cfg = m_config; // 复制一份，减少锁持有时间
@@ -111,30 +115,30 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
 
     // CURLOPT_MAXCONNECTS: 连接池的最大连接数
     // libcurl 会维护一个连接池，复用空闲连接
-    curl_easy_setopt(handle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections);
+    curl_easy_setopt(curlHandle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections);
 
     // ==================
     // 2. 连接复用配置
     // ==================
 
     // CURLOPT_FRESH_CONNECT: 强制新连接（0 = 允许复用）
-    curl_easy_setopt(handle, CURLOPT_FRESH_CONNECT, 0L);
+    curl_easy_setopt(curlHandle, CURLOPT_FRESH_CONNECT, 0L);
 
     // CURLOPT_FORBID_REUSE: 禁止复用（0 = 允许复用）
-    curl_easy_setopt(handle, CURLOPT_FORBID_REUSE, 0L);
+    curl_easy_setopt(curlHandle, CURLOPT_FORBID_REUSE, 0L);
 
     // ==================
     // 3. Keep-Alive 配置
     // ==================
 
     // CURLOPT_TCP_KEEPALIVE: 启用 TCP Keep-Alive
-    curl_easy_setopt(handle, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPALIVE, 1L);
 
     // CURLOPT_TCP_KEEPIDLE: Keep-Alive 空闲时间（秒）
-    curl_easy_setopt(handle, CURLOPT_TCP_KEEPIDLE, static_cast<long>(cfg.maxIdleTime));
+    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPIDLE, static_cast<long>(cfg.maxIdleTime));
 
     // CURLOPT_TCP_KEEPINTVL: Keep-Alive 探测间隔（秒）
-    curl_easy_setopt(handle, CURLOPT_TCP_KEEPINTVL, 30L);
+    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPINTVL, 30L);
 
     // ==================
     // 4. DNS 缓存配置
@@ -143,9 +147,11 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     if (cfg.enableDnsCache) {
         // CURLOPT_DNS_CACHE_TIMEOUT: DNS 缓存超时（秒）
         // -1 = 永久缓存，0 = 禁用缓存
-        curl_easy_setopt(handle, CURLOPT_DNS_CACHE_TIMEOUT, static_cast<long>(cfg.dnsCacheTimeout));
+        curl_easy_setopt(curlHandle,
+                         CURLOPT_DNS_CACHE_TIMEOUT,
+                         static_cast<long>(cfg.dnsCacheTimeout));
     } else {
-        curl_easy_setopt(handle, CURLOPT_DNS_CACHE_TIMEOUT, 0L);
+        curl_easy_setopt(curlHandle, CURLOPT_DNS_CACHE_TIMEOUT, 0L);
     }
 
     // ==================
@@ -155,7 +161,7 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
     if (cfg.enableMultiplexing) {
         // CURLOPT_HTTP_VERSION: 强制使用 HTTP/2
         // libcurl 会自动协商并启用多路复用
-        curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+        curl_easy_setopt(curlHandle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     }
 
     // ==================
@@ -164,7 +170,7 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
 
     if (cfg.enablePipelining) {
         // CURLOPT_PIPEWAIT: 等待管道化
-        curl_easy_setopt(handle, CURLOPT_PIPEWAIT, 1L);
+        curl_easy_setopt(curlHandle, CURLOPT_PIPEWAIT, 1L);
 
         qDebug() << "QCNetworkConnectionPoolManager: HTTP/1.1 pipelining enabled for" << host;
     }
@@ -176,7 +182,7 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
 #if LIBCURL_VERSION_NUM >= 0x075000
     if (cfg.maxConnectionLifetime > 0) {
         // CURLOPT_MAXLIFETIME_CONN: 连接最大生命周期（秒）
-        curl_easy_setopt(handle,
+        curl_easy_setopt(curlHandle,
                          CURLOPT_MAXLIFETIME_CONN,
                          static_cast<long>(cfg.maxConnectionLifetime));
     }
@@ -194,15 +200,17 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(CURL *handle, const QSt
 // 统计管理
 // ==================
 
-void QCNetworkConnectionPoolManager::recordRequestCompleted(CURL *handle, bool wasReused)
+void QCNetworkConnectionPoolManager::recordRequestCompleted(void *handle, bool wasReused)
 {
     if (!handle) {
         return;
     }
 
+    auto *curlHandle = static_cast<CURL *>(handle);
+
     // CURLINFO_NUM_CONNECTS: 本次 transfer 为完成请求新建的连接数量（通常：新建=1，复用=0）。
     long numConnects  = 0;
-    const CURLcode rc = curl_easy_getinfo(handle, CURLINFO_NUM_CONNECTS, &numConnects);
+    const CURLcode rc = curl_easy_getinfo(curlHandle, CURLINFO_NUM_CONNECTS, &numConnects);
 
     bool actuallyReused = wasReused;
     if (!actuallyReused && rc == CURLE_OK) {

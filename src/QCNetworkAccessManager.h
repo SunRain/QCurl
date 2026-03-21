@@ -1,16 +1,15 @@
 #ifndef QCNETWORKACCESSMANAGER_H
 #define QCNETWORKACCESSMANAGER_H
 
-#include "QCNetworkRequestBuilder.h"
+#include "QCGlobal.h"
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QNetworkCookie>
 #include <QObject>
 #include <QScopedPointer>
-#include <QSet>
-
-#include <curl/curl.h>
+#include <QUrl>
 
 class QTimer;
 class QSocketNotifier;
@@ -26,7 +25,7 @@ class QCNetworkCache;
 class QCNetworkLogger;
 class QCNetworkMiddleware;
 class QCNetworkMockHandler;
-class QCNetworkAccessManager : public QObject
+class QCURL_EXPORT QCNetworkAccessManager : public QObject
 {
     Q_OBJECT
 public:
@@ -44,22 +43,27 @@ public:
 
     CookieFileModeFlag cookieFileMode() const;
 
+    /**
+     * @brief 配置共享 cookie 文件路径与打开模式
+     *
+     * 该设置只更新 manager 持有的配置；是否实际参与请求取决于请求路径
+     * 和 cookie share 配置。
+     */
     void setCookieFilePath(const QString &cookieFilePath,
                            CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
     // ==================
-    // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通；不引入 WebEngine 依赖）
+    // Cookie bridge
     // ==================
 
     /**
      * @brief 导入 cookies 到当前 manager 的 cookie store（仅在 shareCookies 开启时可用）
      *
-     * 说明：
-     * - 该 API 不依赖 Qt WebEngine；调用方可自行从 WebView 侧提取 QNetworkCookie 后导入。
-     * - 若 cookie 的 domain/path 为空且提供 originUrl，则会使用 originUrl.host() 与 "/" 补全。
+     * 该 API 不依赖 Qt WebEngine。若 cookie 的 domain/path 为空且提供
+     * originUrl，会使用 originUrl.host() 与 "/" 补全。
      *
      * @param cookies 需要导入的 cookies
-     * @param originUrl 可选：用于补全 domain/path 的来源 URL
+     * @param originUrl 可选的来源 URL，用于补全 domain/path
      * @param error 可选：失败原因输出
      * @return bool true 表示导入成功
      */
@@ -70,7 +74,7 @@ public:
     /**
      * @brief 导出当前 manager 的 cookies（仅在 shareCookies 开启时可用）
      *
-     * @param filterUrl 可选：按 host/path 过滤导出（KISS：domain 后缀匹配 + path 前缀匹配）
+     * @param filterUrl 可选的过滤 URL，按 host/path 收敛结果
      * @param error 可选：失败原因输出
      * @return QList<QNetworkCookie> 导出的 cookies（失败返回空列表）
      */
@@ -111,9 +115,8 @@ public:
     /**
      * @brief 配置 multi share handle（默认关闭）
      *
-     * 说明：
-     * - 仅对异步（multi）路径生效；同步（send*Sync）不在本阶段覆盖范围。
-     * - 该能力默认关闭；未显式开启时不创建 CURLSH*，不设置 CURLOPT_SHARE。
+     * 仅对异步 multi 路径生效。未显式开启时不会创建 CURLSH*，也不会
+     * 为请求设置 CURLOPT_SHARE。
      */
     void setShareHandleConfig(const ShareHandleConfig &config);
 
@@ -125,9 +128,8 @@ public:
     /**
      * @brief 配置 HSTS/Alt-Svc cache 持久化（默认关闭，显式 opt-in）
      *
-     * 说明：
-     * - 默认关闭：未显式设置时不设置 CURLOPT_HSTS/CURLOPT_ALTSVC，避免行为变化与落盘副作用。
-     * - 路径可控：由调用方提供落盘路径（建议使用临时目录隔离并在用例结束清理）。
+     * 未显式设置时不会配置 CURLOPT_HSTS/CURLOPT_ALTSVC。缓存路径由调用方
+     * 提供，并由调用方负责目录生命周期。
      */
     void setHstsAltSvcCacheConfig(const HstsAltSvcCacheConfig &config);
 
@@ -144,7 +146,7 @@ public:
      * @brief 发送 HEAD 请求（异步）
      * @param request 请求配置
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendHead(const QCNetworkRequest &request);
 
@@ -152,7 +154,7 @@ public:
      * @brief 发送 GET 请求（异步）
      * @param request 请求配置
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendGet(const QCNetworkRequest &request);
 
@@ -161,7 +163,7 @@ public:
      * @param request 请求配置
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendPost(const QCNetworkRequest &request, const QByteArray &data);
 
@@ -170,7 +172,7 @@ public:
      * @param request 请求配置
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendPut(const QCNetworkRequest &request, const QByteArray &data);
 
@@ -178,7 +180,7 @@ public:
      * @brief 发送 DELETE 请求（异步）
      * @param request 请求配置
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendDelete(const QCNetworkRequest &request);
 
@@ -187,7 +189,7 @@ public:
      * @param request 请求配置
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendDelete(const QCNetworkRequest &request, const QByteArray &data);
 
@@ -196,7 +198,7 @@ public:
      * @param request 请求配置
      * @param data 请求体数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 请求会自动启动（已调用 execute()）
+     * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QByteArray &data);
 
@@ -272,19 +274,8 @@ public:
     QList<QCNetworkMiddleware *> middlewares() const;
 
     // ==================
-    // 流式构建器、快捷方法、Mock 工具
+    // 快捷方法、Mock 工具
     // ==================
-
-    /**
-     * @brief 创建流式请求构建器
-     * @param url 请求 URL
-     * @return 请求构建器对象（值语义，可链式调用）
-     *
-     * 说明：
-     * - followLocation 默认 true（与 QCNetworkRequest 一致）；如需禁止重定向，请显式
-     *   调用 builder.withFollowLocation(false)。
-     */
-    QCNetworkRequestBuilder newRequest(const QUrl &url);
 
     /**
      * @brief 发送 JSON POST 请求
@@ -298,18 +289,19 @@ public:
      * @brief 上传单个文件
      * @param url 请求 URL
      * @param filePath 文件路径
-     * @param fieldName 字段名（默认为 "file"）
+     * @param fieldName multipart 字段名
      * @return 网络响应对象
      */
     QCNetworkReply *uploadFile(const QUrl &url,
                                const QString &filePath,
-                               const QString &fieldName = QStringLiteral("file"));
+                               const QString &fieldName);
 
     /**
      * @brief 下载文件到指定路径
      * @param url 请求 URL
      * @param savePath 保存路径
-     * @return 网络响应对象（文件自动保存在 finished 信号触发时）
+     * @return 网络响应对象；网络完成后会在 `finished` 回调中尝试把当前 reply body 写入 `savePath`
+     * @note 写文件失败仅输出 `qWarning()`，不会把 reply 转成错误状态
      */
     QCNetworkReply *downloadFile(const QUrl &url, const QString &savePath);
 
@@ -332,11 +324,11 @@ public:
     /**
      * @brief 启用/禁用请求调度器
      *
-     * 启用后，所有通过 scheduleXXX() 方法发送的请求会经过调度器管理。
+     * 启用后，异步 `send*()` 会经过调度器管理；关闭后直接创建并执行 reply。
      *
-     * @param enable true 为启用调度器，false 为禁用
+     * @param enabled true 为启用调度器，false 为禁用
      */
-    void enableRequestScheduler(bool enable);
+    void enableRequestScheduler(bool enabled);
 
     /**
      * @brief 检查调度器是否已启用
@@ -348,99 +340,19 @@ public:
     /**
      * @brief 获取调度器实例
      *
-     * 用于配置调度器参数（并发限制、带宽限制等）。
-     *
-     * @return 调度器指针
-     *
-     * @code
-     * manager.enableRequestScheduler(true);
-     * auto *scheduler = manager.scheduler();
-     *
-     * QCNetworkRequestScheduler::Config config;
-     * config.maxConcurrentRequests = 10;
-     * config.maxBandwidthBytesPerSec = 1024 * 1024;  // 1 MB/s
-     * scheduler->setConfig(config);
-     * @endcode
+     * 返回当前线程的调度器实例，用于配置并发限制、带宽限制等策略。
      */
     QCNetworkRequestScheduler *scheduler() const;
 
     /**
-     * @brief 使用调度器发送 GET 请求
-     *
-     * 请求会根据优先级（request.priority()）加入队列。
-     *
-     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-     * - 调度器会绕过 pending 队列并立即启动；
-     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-     *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
-     * request，或调整调度器在开始传输前重新执行 pre-send。
-     *
-     * @param request 请求配置（包含优先级）
-     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @note 如果调度器未启用，会回退到 sendGet() 方法
-     */
-    QCNetworkReply *scheduleGet(const QCNetworkRequest &request);
-
-    /**
-     * @brief 使用调度器发送 POST 请求
-     *
-     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-     * - 调度器会绕过 pending 队列并立即启动；
-     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-     *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
-     * request，或调整调度器在开始传输前重新执行 pre-send。
-     *
-     * @param request 请求配置（包含优先级）
-     * @param data 请求体数据
-     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     */
-    QCNetworkReply *schedulePost(const QCNetworkRequest &request, const QByteArray &data);
-
-    /**
-     * @brief 使用调度器发送 PUT 请求
-     *
-     * @warning 当 request.priority() == QCNetworkRequestPriority::Critical 时：
-     * - 调度器会绕过 pending 队列并立即启动；
-     * - 当前实现允许其突破 `QCNetworkRequestScheduler::Config::maxConcurrentRequests`
-     *   与 `Config::maxRequestsPerHost`（可能造成并发尖刺/单主机连接风暴）。
-     *   除非你确实需要“必须立刻发出”的控制类请求，否则建议使用 High/VeryHigh。
-     *
-     * @note 若注册了 `QCNetworkMiddleware`，`schedule*` 路径的 `onRequestPreSend` 会在“创建 reply
-     * 并入队”时执行，队列等待期间不会再次触发；若业务要求等待期间注入最新 token，需要在上层出队/传输前刷新并重建
-     * request，或调整调度器在开始传输前重新执行 pre-send。
-     *
-     * @param request 请求配置（包含优先级）
-     * @param data 请求体数据
-     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     */
-    QCNetworkReply *schedulePut(const QCNetworkRequest &request, const QByteArray &data);
-
-    /**
      * @brief POST URL-encoded 表单数据（快捷方法）
      *
-     * 自动URL编码表单字段并设置 Content-Type: application/x-www-form-urlencoded
+     * 自动 URL 编码表单字段并设置
+     * `Content-Type: application/x-www-form-urlencoded`。
      *
      * @param url 请求 URL
      * @param formData 表单字段键值对
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @code
-     * QMap<QString, QString> form;
-     * form["username"] = "alice";
-     * form["password"] = "secret";
-     *
-     * auto *reply = manager->postForm("https://example.com/login", form);
-     * @endcode
-     *
      */
     QCNetworkReply *postForm(const QUrl &url, const QMap<QString, QString> &formData);
 
@@ -451,45 +363,22 @@ public:
     /**
      * @brief POST Multipart/form-data 数据（快捷方法）
      *
-     * 自动设置 Content-Type: multipart/form-data; boundary=xxx
+     * 该重载会根据 `formData` 自动设置 `Content-Type`。
      *
      * @param url 请求 URL
      * @param formData Multipart 表单数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @code
-     * QCMultipartFormData formData;
-     * formData.addTextField("username", "alice");
-     * formData.addFileField("avatar", "/path/to/avatar.jpg", "image/jpeg");
-     *
-     * auto *reply = manager->postMultipart("https://api.example.com/upload", formData);
-     * connect(reply, &QCNetworkReply::finished, [reply]() {
-     *     qDebug() << "Upload status:" << reply->httpStatusCode();
-     *     reply->deleteLater();
-     * });
-     * @endcode
-     *
      */
     QCNetworkReply *postMultipart(const QUrl &url, const QCMultipartFormData &formData);
 
     /**
      * @brief POST Multipart/form-data 数据（带请求配置）
      *
+     * 调用前会复制 `request`，并使用 `formData` 覆盖 `Content-Type`。
+     *
      * @param request 请求配置（可设置超时、SSL、代理等）
      * @param formData Multipart 表单数据
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @code
-     * QCNetworkRequest request(QUrl("https://api.example.com/upload"));
-     * request.setTimeout(std::chrono::seconds(60));  // 60秒超时
-     *
-     * QCMultipartFormData formData;
-     * formData.addTextField("userId", "12345");
-     * formData.addFileField("document", "/path/to/large-file.pdf");
-     *
-     * auto *reply = manager->postMultipart(request, formData);
-     * @endcode
-     *
      */
     QCNetworkReply *postMultipart(const QCNetworkRequest &request,
                                   const QCMultipartFormData &formData);
@@ -501,20 +390,12 @@ public:
     /**
      * @brief 上传文件（简单版）
      *
-     * 使用 multipart/form-data 格式上传单个文件，字段名为 "file"
+     * 使用 multipart/form-data 上传单个文件，字段名固定为 `"file"`。
      *
      * @param url 上传 URL
      * @param filePath 本地文件路径
-     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @code
-     * auto *reply = manager->uploadFile("https://api.example.com/upload", "/tmp/photo.jpg");
-     * connect(reply, &QCNetworkReply::finished, [reply]() {
-     *     qDebug() << "Upload status:" << reply->httpStatusCode();
-     *     reply->deleteLater();
-     * });
-     * @endcode
-     *
+     * @return 网络响应对象；若文件无法加入 multipart，reply 会以
+     * `InvalidRequest` 结束
      */
     QCNetworkReply *uploadFile(const QUrl &url, const QString &filePath);
 
@@ -532,27 +413,10 @@ public:
      * @param device 目标设备（如 QFile、QBuffer），必须可写
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      *
-     * @code
-     * QFile *file = new QFile("/tmp/large-video.mp4");
-     * if (file->open(QIODevice::WriteOnly)) {
-     *     auto *reply = manager->downloadToDevice(url, file);
-     *     connect(reply, &QCNetworkReply::downloadProgress,
-     *             [](qint64 received, qint64 total) {
-     *         qDebug() << "Progress:" << (received * 100 / total) << "%";
-     *     });
-     *     auto cleanup = [file]() {
-     *         file->close();
-     *         file->deleteLater();
-     *     };
-     *     connect(reply, &QCNetworkReply::finished, cleanup);
-     *     connect(reply, &QCNetworkReply::cancelled, cleanup);
-     * }
-     * @endcode
-     *
-     * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
-     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可写/写入失败，Reply
-     * 将以可诊断错误结束
-     * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
+     * @note 所有权：device 由调用方管理，QCurl 不会关闭或释放该设备
+     * @note 生命周期：device 必须在请求完成前保持有效；中途销毁、不可写或写入失败
+     * 会让 reply 以可诊断错误结束
+     * @note 线程约束：device 必须与对应 reply 处于同一线程
      */
     QCNetworkReply *downloadToDevice(const QUrl &url, QIODevice *device);
 
@@ -569,29 +433,10 @@ public:
      * @param mimeType MIME 类型
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
      *
-     * @code
-     * QFile *largeFile = new QFile("/tmp/large-file.bin");
-     * if (largeFile->open(QIODevice::ReadOnly)) {
-     *     auto *reply = manager->uploadFromDevice(url, "file", largeFile,
-     *                                             "large-file.bin",
-     *                                             "application/octet-stream");
-     *     connect(reply, &QCNetworkReply::uploadProgress,
-     *             [](qint64 sent, qint64 total) {
-     *         qDebug() << "Progress:" << (sent * 100 / total) << "%";
-     *     });
-     *     auto cleanup = [largeFile]() {
-     *         largeFile->close();
-     *         largeFile->deleteLater();
-     *     };
-     *     connect(reply, &QCNetworkReply::finished, cleanup);
-     *     connect(reply, &QCNetworkReply::cancelled, cleanup);
-     * }
-     * @endcode
-     *
-     * @note 所有权：device 由调用方管理，QCurl 不会关闭/释放该设备
-     * @note 生命周期：device 必须在请求完成前保持有效；若中途被销毁/不可读/读取失败，Reply
-     * 将以可诊断错误结束
-     * @note 线程约束：device 必须与对应 Reply 处于同一线程（thread affinity 一致）
+     * @note 所有权：device 由调用方管理，QCurl 不会关闭或释放该设备
+     * @note 生命周期：device 必须在请求完成前保持有效；中途销毁、不可读或读取失败
+     * 会让 reply 以可诊断错误结束
+     * @note 线程约束：device 必须与对应 reply 处于同一线程
      */
     QCNetworkReply *uploadFromDevice(const QUrl &url,
                                      const QString &fieldName,
@@ -602,42 +447,12 @@ public:
     /**
      * @brief 下载文件（支持断点续传）
      *
-     * 如果目标文件已存在，会自动从已下载的大小处继续下载（断点续传）。
-     * 如果不存在，则从头开始下载。
+     * 目标文件已存在且 `overwrite == false` 时，会尝试从现有大小继续下载。
      *
      * @param url 下载 URL
      * @param savePath 保存路径
      * @param overwrite 如果文件已存在，是否覆盖（默认 false，即断点续传）
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @code
-     * // 支持断点续传的下载
-     * auto *reply = manager->downloadFileResumable(
-     *     QUrl("https://example.com/large-file.zip"),
-     *     "/tmp/large-file.zip"
-     * );
-     *
-     * connect(reply, &QCNetworkReply::downloadProgress,
-     *         [](qint64 received, qint64 total) {
-     *     qDebug() << "Progress:" << (received * 100 / total) << "%";
-     * });
-     *
-     * connect(reply, &QCNetworkReply::finished, [reply]() {
-     *     if (reply->error() == NetworkError::NoError) {
-     *         qDebug() << "Download completed!";
-     *     } else {
-     *         qWarning() << "Download failed, can retry later";
-     *     }
-     *     reply->deleteLater();
-     * });
-     *
-     * // 下载失败后，再次调用会从断点继续
-     * auto *retryReply = manager->downloadFileResumable(
-     *     QUrl("https://example.com/large-file.zip"),
-     *     "/tmp/large-file.zip"
-     * );
-     * @endcode
-     *
      * @note 服务器必须支持 HTTP Range 请求（检查响应头 Accept-Ranges: bytes）
      * @warning 如果服务器不支持 Range 请求，会从头开始下载（覆盖现有文件）
      */
@@ -652,17 +467,11 @@ public:
     /**
      * @brief 设置缓存实例
      *
-     * 设置后，所有请求将根据其缓存策略使用此缓存。
+     * 设置后，请求会按各自缓存策略使用该实例。
      *
      * @param cache 缓存实例（QCNetworkMemoryCache 或 QCNetworkDiskCache）
      *
-     * @code
-     * auto *cache = new QCNetworkMemoryCache();
-     * cache->setMaxCacheSize(20 * 1024 * 1024);  // 20MB
-     * manager->setCache(cache);
-     * @endcode
-     *
-     * @note Manager 不会获取缓存的所有权，调用者需要管理缓存的生命周期
+     * @note manager 不获取缓存所有权，调用方需保证其生命周期
      */
     void setCache(QCNetworkCache *cache);
 
@@ -675,15 +484,10 @@ public:
     /**
      * @brief 设置磁盘缓存路径（便捷方法）
      *
-     * 自动创建 QCNetworkDiskCache 实例并设置缓存目录。
+     * 自动创建 `QCNetworkDiskCache` 实例并将其挂到当前 manager。
      *
      * @param path 缓存目录路径
      * @param maxSize 最大缓存大小（字节），默认 50MB
-     *
-     * @code
-     * manager->setCachePath("/tmp/qcurl_cache", 100 * 1024 * 1024);  // 100MB
-     * @endcode
-     *
      * @note 会替换现有的缓存实例
      */
     void setCachePath(const QString &path, qint64 maxSize = 50 * 1024 * 1024);

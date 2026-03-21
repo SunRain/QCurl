@@ -1,15 +1,12 @@
 #ifndef QCUTILITY_H
 #define QCUTILITY_H
 
-#include <QString>
-#include <QUrl>
-
 #include <curl/curl.h>
 
 /**
- * @brief curl_easy_setopt 辅助函数
+ * @brief internal curl_easy_setopt 辅助函数
  *
- * 提供 Qt 类型到 libcurl 参数的便捷适配。
+ * 提供最薄的一层 `curl_easy_setopt` 返回值布尔化包装。
  */
 namespace QCurl {
 
@@ -18,20 +15,6 @@ inline bool set(CURL *handle, CURLoption option, T parameter)
 {
     return curl_easy_setopt(handle, option, parameter) == CURLE_OK;
 }
-
-inline bool set(CURL *handle, CURLoption option, const QString &parameter)
-{
-    return set(handle, option, parameter.toUtf8().constData());
-}
-
-inline bool set(CURL *handle, CURLoption option, const QUrl &parameter)
-{
-    return set(handle, option, parameter.toEncoded().constData());
-}
-
-// 已移除旧 typedef
-// 请用 QCNetworkError.h
-// 使用 NetworkError 枚举
 
 } // namespace QCurl
 

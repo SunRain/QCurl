@@ -1,8 +1,8 @@
 #include "QCCurlHandleManager.h"
 
-#include <utility> // for std::exchange
+#include <QDebug>
 
-QT_BEGIN_NAMESPACE
+#include <utility> // for std::exchange
 
 namespace QCurl {
 
@@ -59,9 +59,14 @@ void QCCurlHandleManager::appendHeader(const QString &header)
     }
 
     // curl_slist_append 会复制字符串，所以临时的 QByteArray 生命周期没问题
-    QByteArray headerBytes = header.toUtf8();
-    m_headerList           = curl_slist_append(m_headerList, headerBytes.constData());
+    QByteArray headerBytes   = header.toUtf8();
+    curl_slist *newHeaderList = curl_slist_append(m_headerList, headerBytes.constData());
+    if (!newHeaderList) {
+        qWarning() << "QCCurlHandleManager::appendHeader: curl_slist_append failed";
+        return;
+    }
+
+    m_headerList = newHeaderList;
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

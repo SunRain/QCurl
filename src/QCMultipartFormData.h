@@ -11,6 +11,8 @@
 #ifndef QCMULTIPARTFORMDATA_H
 #define QCMULTIPARTFORMDATA_H
 
+#include "QCGlobal.h"
+
 #include <QByteArray>
 #include <QIODevice>
 #include <QMap>
@@ -36,7 +38,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCMultipartFormData
+class QCURL_EXPORT QCMultipartFormData
 {
 public:
     /**

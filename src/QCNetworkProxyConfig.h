@@ -5,11 +5,8 @@
 #include "QCNetworkSslConfig.h"
 
 #include <QString>
-#include <QtGlobal>
 
 #include <optional>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -39,7 +36,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCNetworkProxyConfig
+class QCURL_EXPORT QCNetworkProxyConfig
 {
 public:
     /**
@@ -92,7 +89,7 @@ public:
      * 仅在 type == ProxyType::Https 且 tlsConfig.has_value() 时生效。
      * 默认不设置，避免 silent behavior change。
      */
-    struct ProxyTlsConfig
+    struct QCURL_EXPORT ProxyTlsConfig
     {
         bool verifyPeer = true;
         bool verifyHost = true;
@@ -119,6 +116,5 @@ public:
 };
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKPROXYCONFIG_H

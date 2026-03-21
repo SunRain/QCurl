@@ -7,8 +7,6 @@
 #include <QDebug>
 #include <QEventLoop>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 // ==================
@@ -481,7 +479,5 @@ void QCWebSocketPool::onSocketDisconnected()
 }
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT

@@ -1,7 +1,6 @@
 #ifndef QCNETWORKCACHEPOLICY_H
 #define QCNETWORKCACHEPOLICY_H
 
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -54,6 +53,5 @@ enum class QCNetworkCachePolicy {
 
 } // namespace QCurl
 
-QT_END_NAMESPACE
 
 #endif // QCNETWORKCACHEPOLICY_H

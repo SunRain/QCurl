@@ -11,8 +11,6 @@
 #include <QMutex>
 #include <QString>
 
-#include <curl/curl.h>
-
 namespace QCurl {
 
 /**
@@ -20,7 +18,7 @@ namespace QCurl {
  *
  * 用于追踪连接池的效果和性能。
  */
-struct QCNetworkConnectionPoolStatistics
+struct QCURL_EXPORT QCNetworkConnectionPoolStatistics
 {
     /**
      * @brief 总请求数
@@ -98,7 +96,7 @@ struct QCNetworkConnectionPoolStatistics
  * qDebug() << "复用率:" << stats.reuseRate << "%";
  * @endcode
  */
-class QCNetworkConnectionPoolManager
+class QCURL_EXPORT QCNetworkConnectionPoolManager
 {
 public:
     // 类型别名，为向后兼容性和便利性
@@ -139,24 +137,24 @@ public:
      *
      * 此方法由 QCNetworkReply 内部调用，应用程序无需直接使用。
      *
-     * @param handle curl easy handle
+     * @param handle 内部传输句柄（opaque pointer）
      * @param host 目标主机名（用于统计）
      *
      * @note 内部方法
      */
-    void configureCurlHandle(CURL *handle, const QString &host);
+    void configureCurlHandle(void *handle, const QString &host);
 
     /**
      * @brief 记录请求完成（用于统计）
      *
      * 此方法由 QCNetworkReply 内部调用，记录请求完成和连接复用情况。
      *
-     * @param handle curl easy handle
+     * @param handle 内部传输句柄（opaque pointer）
      * @param wasReused 是否复用了连接
      *
      * @note 内部方法
      */
-    void recordRequestCompleted(CURL *handle, bool wasReused);
+    void recordRequestCompleted(void *handle, bool wasReused);
 
     /**
      * @brief 获取统计信息

@@ -1,7 +1,5 @@
 #include "QCNetworkProxyConfig.h"
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 bool QCNetworkProxyConfig::isValid() const noexcept
@@ -15,4 +13,3 @@ bool QCNetworkProxyConfig::isValid() const noexcept
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

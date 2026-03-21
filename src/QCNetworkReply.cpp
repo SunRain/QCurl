@@ -17,6 +17,8 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "QCUtility.h"
+#include "private/QCNetworkHttpVersion_p.h"
+#include "private/QCRequestPipeline_p.h"
 
 #include <QDebug>
 #include <QFile>
@@ -62,6 +64,8 @@ bool shouldForceCapabilityErrorForOption(const char *optionName)
     return false;
 }
 #endif
+
+constexpr const char kTestCurlPlanDigestProperty[] = "_qcurl_testCurlPlanDigest";
 
 template<typename T>
 CURLcode curlEasySetoptWithTestHook(CURL *handle, CURLoption option, const char *optionName, T value)
@@ -507,6 +511,8 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
     , httpMethod(method)
     , executionMode(mode)
     , requestBody(body)
+    , normalizedRequest(Internal::normalizeRequest(req, method, mode, body))
+    , curlPlan(Internal::compileRequest(normalizedRequest))
     , multiProcessor(nullptr)
     , state(ReplyState::Idle)
     , errorCode(NetworkError::NoError)
@@ -566,6 +572,14 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 
 bool QCNetworkReplyPrivate::configureCurlOptions()
 {
+    const auto &plan                  = curlPlan;
+    const auto &normalized            = curlPlan.normalized;
+    const QCNetworkRequest &request   = normalized.request;
+    const HttpMethod httpMethod       = normalized.method;
+    const ExecutionMode executionMode = normalized.executionMode;
+    const auto &bodySpec              = normalized.body;
+    const QByteArray &requestBody     = bodySpec.inlineBytes;
+
     CURL *handle = curlManager.handle();
     if (!handle) {
         qCritical() << "QCNetworkReply: curl handle is null";
@@ -746,9 +760,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedProtocolsBytes = allowedOpt.value().join(QStringLiteral(",")).toUtf8();
         const CURLcode rc     = curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PROTOCOLS_STR,
-                                                       "CURLOPT_PROTOCOLS_STR",
-                                                       allowedProtocolsBytes.constData());
+                                                           CURLOPT_PROTOCOLS_STR,
+                                                           "CURLOPT_PROTOCOLS_STR",
+                                                           allowedProtocolsBytes.constData());
         if (rc == CURLE_OK) {
             applied = true;
         } else if (!isCapabilityRelatedCurlError(rc)) {
@@ -798,7 +812,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
 #if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
         allowedRedirectProtocolsBytes = redirOpt.value().join(QStringLiteral(",")).toUtf8();
-        const CURLcode rc             = curlEasySetoptWithTestHook(handle,
+        const CURLcode rc = curlEasySetoptWithTestHook(handle,
                                                        CURLOPT_REDIR_PROTOCOLS_STR,
                                                        "CURLOPT_REDIR_PROTOCOLS_STR",
                                                        allowedRedirectProtocolsBytes.constData());
@@ -876,11 +890,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         ownedUploadFile = nullptr;
     }
 
-    QIODevice *reqUploadDevice = request.uploadDevice();
-    if (!reqUploadDevice) {
-        const auto filePathOpt = request.uploadFilePath();
-        if (filePathOpt.has_value()) {
-            ownedUploadFile = new QFile(filePathOpt.value(), q_ptr);
+    QIODevice *reqUploadDevice = bodySpec.device.data();
+    if (!reqUploadDevice && bodySpec.kind == Internal::RequestBodyKind::UploadFilePath) {
+        if (!bodySpec.filePath.isEmpty()) {
+            ownedUploadFile = new QFile(bodySpec.filePath, q_ptr);
             if (!ownedUploadFile->open(QIODevice::ReadOnly)) {
                 setError(NetworkError::InvalidRequest,
                          QStringLiteral("uploadFile: 无法打开文件：%1")
@@ -919,12 +932,16 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
 
         uploadDevice         = reqUploadDevice;
-        uploadDeviceBasePos  = reqUploadDevice->pos();
-        uploadDeviceSeekable = !reqUploadDevice->isSequential();
+        uploadDeviceBasePos  = bodySpec.basePos;
+        uploadDeviceSeekable = bodySpec.seekable;
+        uploadBodySizeBytes  = bodySpec.sizeBytes;
 
-        if (const auto sizeOpt = request.uploadBodySizeBytes(); sizeOpt.has_value()) {
-            uploadBodySizeBytes = sizeOpt.value();
-        } else if (uploadDeviceSeekable) {
+        if (bodySpec.kind == Internal::RequestBodyKind::UploadFilePath) {
+            uploadDeviceBasePos  = reqUploadDevice->pos();
+            uploadDeviceSeekable = !reqUploadDevice->isSequential();
+        }
+
+        if (uploadBodySizeBytes < 0 && uploadDeviceSeekable) {
             const qint64 totalSize = reqUploadDevice->size();
             if (totalSize >= 0 && totalSize >= uploadDeviceBasePos) {
                 uploadBodySizeBytes = totalSize - uploadDeviceBasePos;
@@ -932,9 +949,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
 
         if (uploadBodySizeBytes < 0) {
-            const bool allowChunkedPost = (httpMethod == HttpMethod::Post)
-                                          && request.allowChunkedUploadForPost();
-            if (!allowChunkedPost) {
+            if (!bodySpec.allowChunkedPost) {
                 setError(
                     NetworkError::InvalidRequest,
                     QStringLiteral(
@@ -975,87 +990,54 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 2. HTTP 方法配置
     // ==================
 
-    switch (httpMethod) {
-        case HttpMethod::Head:
-            // HEAD 请求：只获取响应头，不获取响应体
-            curl_easy_setopt(handle, CURLOPT_NOBODY, 1L);
-            break;
+    if (plan.setNoBody) {
+        curl_easy_setopt(handle, CURLOPT_NOBODY, 1L);
+    }
 
-        case HttpMethod::Get:
-            // GET 请求：获取完整响应
-            curl_easy_setopt(handle, CURLOPT_HTTPGET, 1L);
-            break;
+    if (plan.setHttpGet) {
+        curl_easy_setopt(handle, CURLOPT_HTTPGET, 1L);
+    }
 
-        case HttpMethod::Post:
-            // POST 请求：发送数据
-            curl_easy_setopt(handle, CURLOPT_POST, 1L);
-            if (uploadDevice) {
-                curl_easy_setopt(handle,
-                                 CURLOPT_READFUNCTION,
-                                 QCNetworkReplyPrivate::curlReadCallback);
-                curl_easy_setopt(handle, CURLOPT_READDATA, this);
+    if (plan.setPost) {
+        curl_easy_setopt(handle, CURLOPT_POST, 1L);
+    }
+
+    if (plan.setUpload) {
+        curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
+    }
+
+    if (!plan.customRequest.isEmpty()) {
+        curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, plan.customRequest.constData());
+    }
+
+    switch (plan.transferMode) {
+        case Internal::CurlTransferMode::None:
+            break;
+        case Internal::CurlTransferMode::InlineBytes:
+            curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
+            curl_easy_setopt(handle,
+                             CURLOPT_POSTFIELDSIZE_LARGE,
+                             static_cast<curl_off_t>(plan.bodySizeBytes));
+            break;
+        case Internal::CurlTransferMode::UploadSource:
+            if (!uploadDevice) {
+                setError(NetworkError::InvalidRequest,
+                         QStringLiteral("uploadDevice/uploadFile 需要有效的上传源"));
+                return false;
+            }
+            curl_easy_setopt(handle, CURLOPT_READFUNCTION, QCNetworkReplyPrivate::curlReadCallback);
+            curl_easy_setopt(handle, CURLOPT_READDATA, this);
+            if (plan.setPost) {
                 curl_easy_setopt(handle, CURLOPT_POSTFIELDS, nullptr);
                 curl_easy_setopt(handle,
                                  CURLOPT_POSTFIELDSIZE_LARGE,
-                                 static_cast<curl_off_t>(uploadBodySizeBytes));
-            } else {
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle,
-                                 CURLOPT_POSTFIELDSIZE,
-                                 static_cast<long>(requestBody.size()));
-            }
-            break;
-
-        case HttpMethod::Put:
-            // PUT 请求：上传资源
-            if (uploadDevice) {
-                curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-                curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PUT");
-                curl_easy_setopt(handle,
-                                 CURLOPT_READFUNCTION,
-                                 QCNetworkReplyPrivate::curlReadCallback);
-                curl_easy_setopt(handle, CURLOPT_READDATA, this);
+                                 static_cast<curl_off_t>(plan.bodySizeBytes));
+            } else if (plan.setUpload) {
                 curl_easy_setopt(handle,
                                  CURLOPT_INFILESIZE_LARGE,
-                                 static_cast<curl_off_t>(uploadBodySizeBytes));
-            } else {
-                curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PUT");
-                if (!requestBody.isEmpty()) {
-                    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                    curl_easy_setopt(handle,
-                                     CURLOPT_POSTFIELDSIZE,
-                                     static_cast<long>(requestBody.size()));
-                }
+                                 static_cast<curl_off_t>(plan.bodySizeBytes));
             }
             break;
-
-        case HttpMethod::Delete:
-            // DELETE 请求：删除资源
-            curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "DELETE");
-            // 支持 DELETE 携带请求体（RFC 允许，部分服务端依赖该语义）
-            if (!requestBody.isEmpty()) {
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle,
-                                 CURLOPT_POSTFIELDSIZE,
-                                 static_cast<long>(requestBody.size()));
-            }
-            break;
-
-        case HttpMethod::Patch:
-            // PATCH 请求：部分更新
-            // PATCH 必须使用 CUSTOMREQUEST，因为 libcurl 没有专门的 PATCH 选项
-            curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PATCH");
-            if (!requestBody.isEmpty()) {
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, requestBody.constData());
-                curl_easy_setopt(handle,
-                                 CURLOPT_POSTFIELDSIZE,
-                                 static_cast<long>(requestBody.size()));
-            }
-            break;
-
-        default:
-            qWarning() << "QCNetworkReply: Unknown HTTP method";
-            return false;
     }
 
     // ==================
@@ -1064,7 +1046,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (const auto timeoutOpt = request.expect100ContinueTimeout(); timeoutOpt.has_value()) {
         const bool isPutOrPost = httpMethod == HttpMethod::Put || httpMethod == HttpMethod::Post;
-        const bool hasBody     = uploadDevice || !requestBody.isEmpty();
+        const bool hasBody     = plan.hasRequestBody;
         if (!isPutOrPost || !hasBody) {
             appendCapabilityWarning(
                 this,
@@ -1693,7 +1675,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     }
 
     if (effectiveHttpVer != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
-        long curlVersion = toCurlHttpVersion(effectiveHttpVer);
+        long curlVersion = detail::toCurlHttpVersion(effectiveHttpVer);
         curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, curlVersion);
     }
 
@@ -1768,9 +1750,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     if (!sslConfig.pinnedPublicKey.isEmpty()) {
         sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey.toUtf8();
         const CURLcode rc       = curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_PINNEDPUBLICKEY,
-                                                       "CURLOPT_PINNEDPUBLICKEY",
-                                                       sslPinnedPublicKeyBytes.constData());
+                                                             CURLOPT_PINNEDPUBLICKEY,
+                                                             "CURLOPT_PINNEDPUBLICKEY",
+                                                             sslPinnedPublicKeyBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_PINNEDPUBLICKEY（%1）")
@@ -1835,9 +1817,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #if LIBCURL_VERSION_NUM >= 0x070900 /* 7.9.0 */
         sslCipherListBytes = sslConfig.cipherList.toUtf8();
         const CURLcode rc  = curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_SSL_CIPHER_LIST,
-                                                       "CURLOPT_SSL_CIPHER_LIST",
-                                                       sslCipherListBytes.constData());
+                                                        CURLOPT_SSL_CIPHER_LIST,
+                                                        "CURLOPT_SSL_CIPHER_LIST",
+                                                        sslCipherListBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_SSL_CIPHER_LIST（%1）")
@@ -1868,9 +1850,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
         sslTls13CiphersBytes = sslConfig.tls13Ciphers.toUtf8();
         const CURLcode rc    = curlEasySetoptWithTestHook(handle,
-                                                       CURLOPT_TLS13_CIPHERS,
-                                                       "CURLOPT_TLS13_CIPHERS",
-                                                       sslTls13CiphersBytes.constData());
+                                                          CURLOPT_TLS13_CIPHERS,
+                                                          "CURLOPT_TLS13_CIPHERS",
+                                                          sslTls13CiphersBytes.constData());
         if (rc != CURLE_OK) {
             if (isCapabilityRelatedCurlError(rc)) {
                 const QString msg = QStringLiteral("libcurl 不支持 CURLOPT_TLS13_CIPHERS（%1）")
@@ -2256,13 +2238,15 @@ void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
         return;
     }
 
-    const int oldMask            = appliedPauseMask;
-    const int desiredAfterResume = desiredPauseMask() & ~CURLPAUSE_RECV;
-    if (!applyPauseMask(desiredAfterResume)) {
+    const int oldMask         = appliedPauseMask;
+    const int oldInternalMask = internalPauseMask;
+    internalPauseMask &= ~CURLPAUSE_RECV;
+
+    if (!applyPauseMask(desiredPauseMask())) {
+        internalPauseMask = oldInternalMask;
         return;
     }
 
-    internalPauseMask &= ~CURLPAUSE_RECV;
     setBackpressureActive(false);
 
     if ((oldMask & CURLPAUSE_RECV) && ((appliedPauseMask & CURLPAUSE_RECV) == 0)) {
@@ -2624,8 +2608,18 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         return 0;
     }
 
-    const QByteArray raw = QByteArray(data, static_cast<int>(size));
+    const QByteArray raw  = QByteArray(data, static_cast<int>(size));
+    const QString message = formatDebugTraceMessage(type, raw);
+    if (message.isEmpty()) {
+        return 0;
+    }
 
+    logger->log(NetworkLogLevel::Debug, QStringLiteral("Trace"), message);
+    return 0;
+}
+
+QString QCNetworkReplyPrivate::formatDebugTraceMessage(curl_infotype type, const QByteArray &raw)
+{
     auto redactBlock = [](const QByteArray &block) -> QString {
         const QList<QByteArray> lines = block.split('\n');
         QStringList out;
@@ -2639,7 +2633,6 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         return out.join(QStringLiteral("\n"));
     };
 
-    QString category = QStringLiteral("Trace");
     QString message;
 
     switch (type) {
@@ -2653,21 +2646,21 @@ int QCNetworkReplyPrivate::curlDebugCallback(
             message = QStringLiteral("HEADER_OUT: %1").arg(redactBlock(raw).trimmed());
             break;
         case CURLINFO_DATA_IN:
-            message = QStringLiteral("DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
+            message = QStringLiteral("DATA_IN: len=%1").arg(static_cast<qulonglong>(raw.size()));
             break;
         case CURLINFO_DATA_OUT:
-            message = QStringLiteral("DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
+            message = QStringLiteral("DATA_OUT: len=%1").arg(static_cast<qulonglong>(raw.size()));
             break;
         case CURLINFO_SSL_DATA_IN:
-            message = QStringLiteral("SSL_DATA_IN: len=%1").arg(static_cast<qulonglong>(size));
+            message = QStringLiteral("SSL_DATA_IN: len=%1").arg(static_cast<qulonglong>(raw.size()));
             break;
         case CURLINFO_SSL_DATA_OUT:
-            message = QStringLiteral("SSL_DATA_OUT: len=%1").arg(static_cast<qulonglong>(size));
+            message = QStringLiteral("SSL_DATA_OUT: len=%1").arg(static_cast<qulonglong>(raw.size()));
             break;
         default:
             message = QStringLiteral("TRACE_%1: len=%2")
                           .arg(static_cast<int>(type))
-                          .arg(static_cast<qulonglong>(size));
+                          .arg(static_cast<qulonglong>(raw.size()));
             break;
     }
 
@@ -2675,8 +2668,7 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         message = message.left(4096) + QStringLiteral("…(truncated)");
     }
 
-    logger->log(NetworkLogLevel::Debug, category, message);
-    return 0;
+    return message;
 }
 
 // ==================
@@ -2692,6 +2684,10 @@ QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
     , d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
 {
     Q_D(QCNetworkReply);
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    setProperty(kTestCurlPlanDigestProperty, Internal::buildCurlPlanDigestForTest(d->curlPlan));
+#endif
 
     // 配置 curl 选项
     if (!d->configureCurlOptions()) {
@@ -2798,32 +2794,43 @@ void QCNetworkReply::execute()
     // MockHandler 集成（离线回归/单元测试）
     // ==================
     if (manager && manager->mockHandler()) {
-        auto *mock = manager->mockHandler();
+        auto *mock             = manager->mockHandler();
+        const auto &normalized = d->curlPlan.normalized;
+        const auto &bodySpec   = normalized.body;
 
         // 请求捕获：用于离线断言 middleware/header 注入、body 形态等
         if (mock->captureEnabled()) {
             QCNetworkMockHandler::CapturedRequest captured;
-            captured.url            = d->request.url();
-            captured.method         = d->httpMethod;
-            captured.followLocation = d->request.followLocation();
-
-            const auto headerNames = d->request.rawHeaderList();
-            for (const auto &name : headerNames) {
-                captured.headers.append(qMakePair(name, d->request.rawHeader(name)));
+            captured.url             = normalized.request.url();
+            captured.method          = normalized.method;
+            captured.followLocation  = normalized.request.followLocation();
+            const auto timeoutConfig = normalized.request.timeoutConfig();
+            if (timeoutConfig.connectTimeout.has_value()) {
+                captured.connectTimeoutMs = timeoutConfig.connectTimeout->count();
+            }
+            if (timeoutConfig.totalTimeout.has_value()) {
+                captured.totalTimeoutMs = timeoutConfig.totalTimeout->count();
             }
 
-            captured.bodySize      = d->requestBody.size();
+            const auto headerNames = normalized.request.rawHeaderList();
+            for (const auto &name : headerNames) {
+                captured.headers.append(qMakePair(name, normalized.request.rawHeader(name)));
+            }
+
+            captured.bodySize = bodySpec.hasKnownSize()
+                                    ? static_cast<qsizetype>(qMax<qint64>(0, bodySpec.sizeBytes))
+                                    : bodySpec.inlineBytes.size();
             const int previewLimit = mock->captureBodyPreviewLimit();
-            captured.bodyPreview   = previewLimit > 0 ? d->requestBody.left(previewLimit)
+            captured.bodyPreview   = previewLimit > 0 ? bodySpec.inlineBytes.left(previewLimit)
                                                       : QByteArray();
             mock->recordRequest(captured);
         }
 
         // 仅当存在 mock 规则时才进入回放分支；否则继续走真实网络
-        if (mock->hasMock(d->httpMethod, d->request.url())) {
+        if (mock->hasMock(normalized.method, normalized.request.url())) {
             // 离线回放同样应具备“可诊断配置冲突”能力（避免仅在真实网络路径提示）
             bool hasExplicitAcceptEncodingHeader = false;
-            const QList<QByteArray> headerNames  = d->request.rawHeaderList();
+            const QList<QByteArray> headerNames  = normalized.request.rawHeaderList();
             for (const QByteArray &headerName : headerNames) {
                 if (headerName.trimmed().toLower() == QByteArrayLiteral("accept-encoding")) {
                     hasExplicitAcceptEncodingHeader = true;
@@ -2832,8 +2839,8 @@ void QCNetworkReply::execute()
             }
 
             if (hasExplicitAcceptEncodingHeader) {
-                if (d->request.autoDecompressionEnabled()
-                    || !d->request.acceptedEncodings().isEmpty()) {
+                if (normalized.request.autoDecompressionEnabled()
+                    || !normalized.request.acceptedEncodings().isEmpty()) {
                     appendCapabilityWarning(
                         d,
                         QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 "
@@ -2853,10 +2860,10 @@ void QCNetworkReply::execute()
 
                 while (true) {
                     QCNetworkMockHandler::MockData mockData;
-                    if (!mock->consumeMock(d->httpMethod, d->request.url(), mockData)) {
+                    if (!mock->consumeMock(normalized.method, normalized.request.url(), mockData)) {
                         d->setError(NetworkError::InvalidRequest,
                                     QStringLiteral("MockHandler: no mock matched for %1")
-                                        .arg(d->request.url().toString()));
+                                        .arg(normalized.request.url().toString()));
                         d->setState(ReplyState::Error);
                         return;
                     }
@@ -2937,124 +2944,130 @@ void QCNetworkReply::execute()
 
             // 异步模式：以定时器回放，支持重试/取消
             QPointer<QCNetworkReply> safeThis(this);
-            QTimer::singleShot(responseDelayMs > 0 ? responseDelayMs : 0, this, [safeThis]() {
-                if (!safeThis) {
-                    return;
-                }
-
-                auto *d = safeThis->d_func();
-                if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
-                    || d->state == ReplyState::Error) {
-                    return;
-                }
-
-                auto *manager = qobject_cast<QCNetworkAccessManager *>(safeThis->parent());
-                auto *mock    = manager ? manager->mockHandler() : nullptr;
-                if (!mock) {
-                    d->setError(NetworkError::InvalidRequest,
-                                QStringLiteral("MockHandler: not set"));
-                    d->setState(ReplyState::Error);
-                    return;
-                }
-
-                QCNetworkMockHandler::MockData mockData;
-                if (!mock->consumeMock(d->httpMethod, d->request.url(), mockData)) {
-                    d->setError(NetworkError::InvalidRequest,
-                                QStringLiteral("MockHandler: no mock matched for %1")
-                                    .arg(d->request.url().toString()));
-                    d->setState(ReplyState::Error);
-                    return;
-                }
-
-                d->bodyBuffer.clear();
-                d->headerData.clear();
-                d->headerMap.clear();
-                d->bytesDownloaded = 0;
-                d->bytesUploaded   = 0;
-                d->downloadTotal   = -1;
-                d->uploadTotal     = -1;
-
-                if (!mockData.response.isEmpty()) {
-                    d->bodyBuffer.append(mockData.response);
-                    d->bytesDownloaded = mockData.response.size();
-                    emit safeThis->readyRead();
-                }
-
-                if (mockData.rawHeaderData.has_value()) {
-                    d->headerData = mockData.rawHeaderData.value();
-                } else {
-                    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
-                        d->headerData.append(it.key());
-                        d->headerData.append(": ");
-                        d->headerData.append(it.value());
-                        d->headerData.append('\n');
+            const HttpMethod normalizedMethod = normalized.method;
+            const QUrl normalizedUrl          = normalized.request.url();
+            QTimer::singleShot(
+                responseDelayMs > 0 ? responseDelayMs : 0,
+                this,
+                [safeThis, normalizedMethod, normalizedUrl]() {
+                    if (!safeThis) {
+                        return;
                     }
-                }
 
-                d->httpStatusCode = mockData.statusCode;
+                    auto *d = safeThis->d_func();
+                    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
+                        || d->state == ReplyState::Error) {
+                        return;
+                    }
 
-                NetworkError error = NetworkError::NoError;
-                QString errorMsg;
-                if (mockData.isError && mockData.error != NetworkError::NoError) {
-                    error    = mockData.error;
-                    errorMsg = QCurl::errorString(error);
-                } else if (mockData.statusCode >= 400) {
-                    error    = fromHttpCode(mockData.statusCode);
-                    errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
-                }
+                    auto *manager = qobject_cast<QCNetworkAccessManager *>(safeThis->parent());
+                    auto *mock    = manager ? manager->mockHandler() : nullptr;
+                    if (!mock) {
+                        d->setError(NetworkError::InvalidRequest,
+                                    QStringLiteral("MockHandler: not set"));
+                        d->setState(ReplyState::Error);
+                        return;
+                    }
 
-                if (error == NetworkError::NoError) {
-                    d->setState(ReplyState::Finished);
-                    return;
-                }
+                    QCNetworkMockHandler::MockData mockData;
+                    if (!mock->consumeMock(normalizedMethod, normalizedUrl, mockData)) {
+                        d->setError(NetworkError::InvalidRequest,
+                                    QStringLiteral("MockHandler: no mock matched for %1")
+                                        .arg(normalizedUrl.toString()));
+                        d->setState(ReplyState::Error);
+                        return;
+                    }
 
-                QCNetworkRetryPolicy policy   = d->request.retryPolicy();
-                const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                                && isHttpError(error)
-                                                && (d->httpMethod != HttpMethod::Get);
+                    d->bodyBuffer.clear();
+                    d->headerData.clear();
+                    d->headerMap.clear();
+                    d->bytesDownloaded = 0;
+                    d->bytesUploaded   = 0;
+                    d->downloadTotal   = -1;
+                    d->uploadTotal     = -1;
 
-                if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
-                    d->attemptCount++;
-                    emit safeThis->retryAttempt(d->attemptCount, error);
+                    if (!mockData.response.isEmpty()) {
+                        d->bodyBuffer.append(mockData.response);
+                        d->bytesDownloaded = mockData.response.size();
+                        emit safeThis->readyRead();
+                    }
 
-                    d->parseHeaders();
-                    const std::optional<std::chrono::milliseconds> retryAfter
-                        = (error == NetworkError::HttpTooManyRequests)
-                              ? parseRetryAfterDelay(d->headerMap)
-                              : std::nullopt;
-
-                    const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
-
-                    QPointer<QCNetworkReply> safeReply(safeThis);
-                    QTimer::singleShot(delay.count(), safeThis.data(), [safeReply, d]() {
-                        if (!safeReply) {
-                            return;
+                    if (mockData.rawHeaderData.has_value()) {
+                        d->headerData = mockData.rawHeaderData.value();
+                    } else {
+                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend();
+                             ++it) {
+                            d->headerData.append(it.key());
+                            d->headerData.append(": ");
+                            d->headerData.append(it.value());
+                            d->headerData.append('\n');
                         }
-                        if (d->state == ReplyState::Cancelled) {
-                            return;
-                        }
+                    }
 
-                        // 准备重试：不发射额外信号，保持与真实网络一致
-                        d->state     = ReplyState::Idle;
-                        d->errorCode = NetworkError::NoError;
-                        d->errorMessage.clear();
-                        d->bodyBuffer.clear();
-                        d->headerData.clear();
-                        d->headerMap.clear();
-                        d->bytesDownloaded = 0;
-                        d->bytesUploaded   = 0;
-                        d->downloadTotal   = -1;
-                        d->uploadTotal     = -1;
+                    d->httpStatusCode = mockData.statusCode;
 
-                        safeReply->execute();
-                    });
+                    NetworkError error = NetworkError::NoError;
+                    QString errorMsg;
+                    if (mockData.isError && mockData.error != NetworkError::NoError) {
+                        error    = mockData.error;
+                        errorMsg = QCurl::errorString(error);
+                    } else if (mockData.statusCode >= 400) {
+                        error    = fromHttpCode(mockData.statusCode);
+                        errorMsg = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
+                    }
 
-                    return;
-                }
+                    if (error == NetworkError::NoError) {
+                        d->setState(ReplyState::Finished);
+                        return;
+                    }
 
-                d->setError(error, errorMsg);
-                d->setState(ReplyState::Error);
-            });
+                    QCNetworkRetryPolicy policy   = d->request.retryPolicy();
+                    const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
+                                                    && isHttpError(error)
+                                                    && (d->httpMethod != HttpMethod::Get);
+
+                    if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
+                        d->attemptCount++;
+                        emit safeThis->retryAttempt(d->attemptCount, error);
+
+                        d->parseHeaders();
+                        const std::optional<std::chrono::milliseconds> retryAfter
+                            = (error == NetworkError::HttpTooManyRequests)
+                                  ? parseRetryAfterDelay(d->headerMap)
+                                  : std::nullopt;
+
+                        const auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
+
+                        QPointer<QCNetworkReply> safeReply(safeThis);
+                        QTimer::singleShot(delay.count(), safeThis.data(), [safeReply, d]() {
+                            if (!safeReply) {
+                                return;
+                            }
+                            if (d->state == ReplyState::Cancelled) {
+                                return;
+                            }
+
+                            // 准备重试：不发射额外信号，保持与真实网络一致
+                            d->state     = ReplyState::Idle;
+                            d->errorCode = NetworkError::NoError;
+                            d->errorMessage.clear();
+                            d->bodyBuffer.clear();
+                            d->headerData.clear();
+                            d->headerMap.clear();
+                            d->bytesDownloaded = 0;
+                            d->bytesUploaded   = 0;
+                            d->downloadTotal   = -1;
+                            d->uploadTotal     = -1;
+
+                            safeReply->execute();
+                        });
+
+                        return;
+                    }
+
+                    d->setError(error, errorMsg);
+                    d->setState(ReplyState::Error);
+                });
 
             return;
         }
@@ -3458,28 +3471,13 @@ void QCNetworkReply::resumeTransport()
     QCCurlMultiManager::instance()->wakeup();
 }
 
-void QCNetworkReply::pause()
-{
-    pauseTransport(PauseMode::All);
-}
-
-void QCNetworkReply::pause(PauseMode mode)
-{
-    pauseTransport(mode);
-}
-
-void QCNetworkReply::resume()
-{
-    resumeTransport();
-}
-
 // ==================
 // 数据访问（现代 C++17 风格）
 // ==================
 
-std::optional<QByteArray> QCNetworkReply::readAll() const
+std::optional<QByteArray> QCNetworkReply::readAll()
 {
-    Q_D(const QCNetworkReply);
+    Q_D(QCNetworkReply);
 
     if (d->bodyBuffer.isEmpty()) {
         // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是 std::nullopt），
@@ -3492,15 +3490,14 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     }
 
     // 注意：这会清空缓冲区（对异步和同步模式都适用）
-    QCByteDataBuffer &buffer = const_cast<QCByteDataBuffer &>(d->bodyBuffer);
-    QByteArray out           = buffer.readAll();
+    QByteArray out = d->bodyBuffer.readAll();
 
     // P2-1：backpressure 自动恢复（仅在启用且处于内部 pause 时触发）
     if (d->executionMode == ExecutionMode::Async && d->backpressureLimitBytes > 0
         && (d->internalPauseMask & CURLPAUSE_RECV)) {
-        QPointer<QCNetworkReply> safeThis(const_cast<QCNetworkReply *>(this));
+        QPointer<QCNetworkReply> safeThis(this);
         QMetaObject::invokeMethod(
-            const_cast<QCNetworkReply *>(this),
+            this,
             [safeThis]() {
                 if (!safeThis) {
                     return;
@@ -3512,9 +3509,9 @@ std::optional<QByteArray> QCNetworkReply::readAll() const
     return out;
 }
 
-std::optional<QByteArray> QCNetworkReply::readBody() const
+std::optional<QByteArray> QCNetworkReply::readBody()
 {
-    Q_D(const QCNetworkReply);
+    Q_D(QCNetworkReply);
 
     // 安全检查：错误状态或未完成状态不应读取 body
     if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
@@ -3764,6 +3761,19 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
     });
 
     return true;
+}
+
+QByteArray Internal::testCurlPlanDigest(const QCNetworkReply *reply)
+{
+    if (!reply) {
+        return QByteArray();
+    }
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    return reply->property(kTestCurlPlanDigestProperty).toByteArray();
+#else
+    return QByteArray();
+#endif
 }
 
 QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()

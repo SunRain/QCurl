@@ -3,8 +3,9 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
+#include "QCGlobal.h"
+
 #include <QSet>
-#include <QtGlobal>
 
 #include <chrono>
 
@@ -40,7 +41,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCWebSocketReconnectPolicy
+class QCURL_EXPORT QCWebSocketReconnectPolicy
 {
 public:
     /**

@@ -2,16 +2,14 @@
 #define SINGLETONPOINTER_P_H
 
 #include <QAtomicInt>
-#include <QMutex>
 #include <QThread>
 #include <QThreadStorage>
-#include <QWaitCondition>
 #include <QtGlobal>
 
 /**
  * @brief 内部：线程安全单例工具
  *
- * 采用 qCallOnce + 原子状态实现“一次性初始化”，用于内部单例创建。
+ * 采用 qCallOnce + 原子状态实现一次性初始化，仅供内部单例辅助使用。
  */
 namespace CallOnce {
 enum ECallOnce { CO_Request, CO_InProgress, CO_Finished };
@@ -22,7 +20,6 @@ Q_GLOBAL_STATIC(QThreadStorage<QBasicAtomicInt>, once_flag)
 template<class Function>
 inline static void qCallOnce(Function func, QBasicAtomicInt &flag)
 {
-    // Qt6 使用 loadRelaxed() 代替 load()
     int protectFlag = flag.fetchAndStoreAcquire(flag.loadRelaxed());
 
     if (protectFlag == CallOnce::CO_Finished) {
@@ -75,8 +72,6 @@ private:
 template<class T>
 T *Singleton<T>::instance(CreateInstanceFunction create)
 {
-    // Qt6 使用 storeRelaxed() 和 loadRelaxed()
-    // 函数指针需要显式转换为 void*
     Singleton::create.storeRelaxed(reinterpret_cast<void *>(create));
     qCallOnce(init, flag);
     return static_cast<T *>(tptr.loadRelaxed());
@@ -87,8 +82,6 @@ void Singleton<T>::init()
 {
     static Singleton singleton;
     if (singleton.inited) {
-        // Qt6 使用 loadRelaxed() 和 storeRelaxed()
-        // 需要显式转换函数指针
         CreateInstanceFunction createFunction = reinterpret_cast<CreateInstanceFunction>(
             Singleton::create.loadRelaxed());
         tptr.storeRelaxed(createFunction());
@@ -108,7 +101,6 @@ Singleton<T>::~Singleton()
     if (createdTptr) {
         delete createdTptr;
     }
-    // Qt6 使用 storeRelaxed()
     create.storeRelaxed(nullptr);
 }
 

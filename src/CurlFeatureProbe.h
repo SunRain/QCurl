@@ -8,13 +8,9 @@
 namespace QCurl {
 
 /**
- * @brief libcurl 能力探测器（运行时缓存）
+ * @brief internal libcurl 能力快照
  *
- * 用于在运行时缓存 libcurl 版本与 feature bitmask，并为“可选能力/门禁”提供统一判定入口。
- *
- * 说明：
- * - QCurl 在编译期要求 libcurl >= 8.0，但仍可能遇到“编译头与运行库不一致”或“编译特性缺失”的场景。
- * - 该类只负责给出“可用/不可用 + 原因”的判断，不负责日志脱敏与业务策略（由上层负责）。
+ * 缓存运行库版本与 feature bitmask，并为库内 capability gating 提供统一判定入口。
  */
 class CurlFeatureProbe
 {

@@ -1,7 +1,5 @@
 #include "QCNetworkTimeoutConfig.h"
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 QCNetworkTimeoutConfig QCNetworkTimeoutConfig::defaultConfig()
@@ -11,4 +9,3 @@ QCNetworkTimeoutConfig QCNetworkTimeoutConfig::defaultConfig()
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

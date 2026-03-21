@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 // ==================
@@ -115,4 +113,3 @@ QCNetworkRetryPolicy QCNetworkRetryPolicy::aggressiveRetry()
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

@@ -8,8 +8,6 @@
 #include <chrono>
 #include <optional>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
@@ -39,7 +37,7 @@ namespace QCurl {
  * \endcode
  *
  */
-class QCNetworkRetryPolicy
+class QCURL_EXPORT QCNetworkRetryPolicy
 {
 public:
     /**
@@ -219,6 +217,5 @@ public:
 };
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKRETRYPOLICY_H

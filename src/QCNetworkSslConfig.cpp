@@ -1,7 +1,5 @@
 #include "QCNetworkSslConfig.h"
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 QCNetworkSslConfig QCNetworkSslConfig::defaultConfig()
@@ -22,4 +20,3 @@ QCNetworkSslConfig QCNetworkSslConfig::insecureConfig()
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE

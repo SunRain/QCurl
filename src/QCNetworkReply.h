@@ -3,7 +3,6 @@
 
 #include "QCNetworkError.h"
 #include "QCNetworkRequest.h"
-#include "QCUtility.h"
 
 #include <QByteArray>
 #include <QList>
@@ -17,6 +16,7 @@
 #include <optional>
 
 namespace QCurl {
+class QCNetworkReply;
 
 // ==================
 // 前向声明
@@ -44,7 +44,7 @@ enum class HttpMethod {
  * @brief 执行模式
  */
 enum class ExecutionMode {
-    Async, ///< 异步执行（使用 CurlMultiHandleProcesser）
+    Async, ///< 异步执行（由 QCCurlMultiManager 驱动）
     Sync   ///< 同步执行（阻塞调用 curl_easy_perform）
 };
 
@@ -88,47 +88,17 @@ using ProgressFunction
 // ==================
 
 /**
- * @brief 统一的网络响应类
+ * @brief 表示单个网络请求的执行状态与结果
  *
- * 整合了原有的 6 个 Reply 类的功能：
- * - QCNetworkAsyncReply (异步基类)
- * - QCNetworkAsyncHttpHeadReply (HEAD)
- * - QCNetworkAsyncHttpGetReply (GET)
- * - QCNetworkAsyncDataPostReply (POST)
- * - QCNetworkSyncReply (同步)
- * - CurlEasyHandleInitializtionClass (curl封装基类)
- *
- * @par 设计特点
- * - 使用 HttpMethod 枚举区分 HTTP 方法（而非继承）
- * - 使用 ExecutionMode 枚举支持同步/异步两种模式
- * - 使用 QCCurlHandleManager 管理 curl 句柄（RAII）
- * - 使用 Pimpl 模式隐藏实现细节
- * - 现代 C++17 风格（[[nodiscard]]、std::optional）
- *
- * @par 异步模式示例
- * @code
- * auto *mgr = new QCNetworkAccessManager();
- * QCNetworkRequest request(QUrl("https://example.com/api"));
- *
- * QCNetworkReply *reply = mgr->sendGet(request);
- *
- * connect(reply, &QCNetworkReply::finished, [reply]() {
- *     if (reply->error() == NetworkError::NoError) {
- *         if (auto data = reply->readAll()) {
- *             qDebug() << "Downloaded:" << data->size() << "bytes";
- *         }
- *     }
- *     reply->deleteLater();
- * });
- * @endcode
- *
+ * reply 同时覆盖同步和异步执行路径，并暴露 body、header、错误状态与
+ * 传输控制入口。
  */
-class QCNetworkReply : public QObject
+class QCURL_EXPORT QCNetworkReply : public QObject
 {
     Q_OBJECT
     friend class QCNetworkAccessManager;
-    friend class CurlMultiHandleProcesser; // 旧实现（待删除）
-    friend class QCCurlMultiManager;       // 新实现（v2.0）
+    friend class CurlMultiHandleProcesser;
+    friend class QCCurlMultiManager;
 
 public:
     // ==================
@@ -185,13 +155,6 @@ public:
      */
     void resumeTransport();
 
-    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
-    void pause();
-    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
-    void pause(PauseMode mode);
-    [[deprecated("已弃用：请使用 pauseTransport/resumeTransport（计划 v3.0 移除）")]]
-    void resume();
-
     // ==================
     // 数据访问（现代 C++17 风格）
     // ==================
@@ -201,18 +164,18 @@ public:
      *
      * 返回值语义：
      * - std::nullopt：尚无数据可读（未到终态且缓冲为空）
-     * - QByteArray()：已到终态且 body 为空
+     * - QByteArray()：已到终态且 body 为空，或已在终态被 drain 过
      *
-     * @note 调用后会清空缓冲区（同步/异步均适用）
+     * @note 这是 drain API，会修改内部缓冲区，因此为非 const
      */
-    [[nodiscard]] std::optional<QByteArray> readAll() const;
+    [[nodiscard]] std::optional<QByteArray> readAll();
 
     /**
      * @brief 读取响应体（readAll 别名）
      *
      * @return 同 readAll；Error/Idle 状态返回 std::nullopt
      */
-    [[nodiscard]] std::optional<QByteArray> readBody() const;
+    [[nodiscard]] std::optional<QByteArray> readBody();
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
     [[nodiscard]] QByteArray rawHeaderData() const;
     [[nodiscard]] QUrl url() const;

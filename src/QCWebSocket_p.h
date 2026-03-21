@@ -17,8 +17,6 @@
 #include <curl/curl.h>
 #include <curl/websockets.h>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
@@ -271,8 +269,6 @@ private:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT
 #endif // QCWEBSOCKET_P_H

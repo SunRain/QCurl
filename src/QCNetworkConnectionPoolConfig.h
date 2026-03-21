@@ -41,7 +41,7 @@ namespace QCurl {
  * manager->setConfig(config);
  * @endcode
  */
-class QCNetworkConnectionPoolConfig
+class QCURL_EXPORT QCNetworkConnectionPoolConfig
 {
 public:
     /**

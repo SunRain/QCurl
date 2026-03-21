@@ -1,7 +1,7 @@
 #ifndef QCWEBSOCKET_H
 #define QCWEBSOCKET_H
 
-#include "QCurlConfig.h"
+#include "QCGlobal.h"
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
@@ -10,8 +10,6 @@
 #include <QScopedPointer>
 #include <QString>
 #include <QUrl>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -22,71 +20,12 @@ class QCNetworkSslConfig;
 struct QCWebSocketCompressionConfig;
 
 /**
- * @brief WebSocket 客户端类
+ * @brief WebSocket 客户端
  *
- * 基于 libcurl WebSocket API（libcurl 7.86.0+）实现的 WebSocket 客户端。
- * 提供类似 Qt WebSocket 的 API 风格，支持文本和二进制消息的双向通信。
- *
- * @par 支持的协议
- * - WebSocket (ws://)
- * - WebSocket Secure (wss://)
- *
- * @par 核心特性
- * - 文本消息和二进制消息双向收发
- * - 自动处理 Ping/Pong 心跳
- * - 优雅的连接关闭握手
- * - Qt 风格的信号槽 API
- * - 完整的连接状态管理
- *
- * @par 快速示例
- * @code
- * QCWebSocket *socket = new QCWebSocket(QUrl("wss://echo.websocket.org"));
- *
- * connect(socket, &QCWebSocket::connected, [socket]() {
- *     qDebug() << "Connected!";
- *     socket->sendTextMessage("Hello WebSocket!");
- * });
- *
- * connect(socket, &QCWebSocket::textMessageReceived, [](const QString &msg) {
- *     qDebug() << "Received:" << msg;
- * });
- *
- * socket->open();
- * @endcode
- *
- * @par 性能优化（v2.4.2）
- *
- * 自动使用事件驱动接收模式（QSocketNotifier），显著降低延迟和 CPU 占用。
- *
- * **事件驱动模式特点**：
- * - ✅ **低延迟**：<1ms（vs 50ms 轮询）
- * - ✅ **低 CPU**：空闲时几乎零 CPU 占用（<0.1% vs ~2%）
- * - ✅ **实时性**：socket 有数据立即处理，无轮询间隔
- * - ⚠️ **依赖**：需要 libcurl 7.45.0+ 支持 CURLINFO_ACTIVESOCKET
- *
- * **降级机制**：
- *
- * 如果获取 socket 描述符失败（如旧版 libcurl、特殊网络环境），
- * 自动降级到轮询模式（QTimer 50ms），保证功能正常但延迟较高。
- *
- * 降级时日志输出：`"QCWebSocket: 降级到轮询模式（50ms）"`
- *
- * @note 用户代码无需修改，模式切换是完全透明的
- *
- * @par 性能对比（本地回环测试）
- *
- * | 指标 | QTimer 轮询 (v2.4.1) | QSocketNotifier 事件驱动 (v2.4.2) |
- * |------|---------------------|----------------------------------|
- * | 平均延迟 | 25ms | <0.5ms |
- * | P95 延迟 | 50ms | <1ms |
- * | 空闲 CPU | ~2% | <0.1% |
- *
- * @par 线程安全性
- * QCWebSocket 不是线程安全的。所有方法必须在创建对象的线程中调用。
- *
- * @version 2.4.2 (事件驱动优化)
+ * 封装基于 libcurl 的 WebSocket 连接、消息收发和关闭握手。
+ * 所有方法都要求在对象所属线程中调用。
  */
-class QCWebSocket : public QObject
+class QCURL_EXPORT QCWebSocket : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
@@ -136,11 +75,6 @@ public:
      *
      * @param url WebSocket 服务器 URL（ws:// 或 wss://）
      * @param parent 父对象（可选）
-     *
-     * @par 示例
-     * @code
-     * QCWebSocket *socket = new QCWebSocket(QUrl("wss://example.com/ws"));
-     * @endcode
      */
     explicit QCWebSocket(const QUrl &url, QObject *parent = nullptr);
 
@@ -175,12 +109,6 @@ public:
      *
      * @param closeCode 关闭状态码（默认 Normal）
      * @param reason 关闭原因描述（可选，最大 123 字节）
-     *
-     * @par 示例
-     * @code
-     * socket->close(QCWebSocket::CloseCode::Normal, "Goodbye");
-     * @endcode
-     *
      * @see disconnected(), CloseCode
      */
     void close(CloseCode closeCode = CloseCode::Normal, const QString &reason = QString());
@@ -206,14 +134,6 @@ public:
      * @return qint64 实际发送的字节数，失败返回 -1
      *
      * @note 只能在 Connected 状态下发送消息
-     *
-     * @par 示例
-     * @code
-     * qint64 sent = socket->sendTextMessage("Hello!");
-     * if (sent < 0) {
-     *     qWarning() << "Failed to send message";
-     * }
-     * @endcode
      */
     qint64 sendTextMessage(const QString &message);
 
@@ -224,12 +144,6 @@ public:
      * @return qint64 实际发送的字节数，失败返回 -1
      *
      * @note 只能在 Connected 状态下发送消息
-     *
-     * @par 示例
-     * @code
-     * QByteArray binaryData = ...;
-     * socket->sendBinaryMessage(binaryData);
-     * @endcode
      */
     qint64 sendBinaryMessage(const QByteArray &data);
 
@@ -274,28 +188,15 @@ public:
     [[nodiscard]] bool isAutoPongEnabled() const;
 
     // ==================
-    // 自动重连配置（v2.4.0）
+    // 自动重连配置
     // ==================
 
     /**
      * @brief 设置自动重连策略
      *
-     * 配置 WebSocket 断开后的自动重连行为。
+     * 配置连接断开后的自动重连行为。
      *
      * @param policy 重连策略配置
-     *
-     * @par 示例
-     * @code
-     * // 使用标准重连策略
-     * socket->setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
-     *
-     * // 自定义重连策略
-     * QCWebSocketReconnectPolicy customPolicy;
-     * customPolicy.maxRetries = 5;
-     * customPolicy.initialDelay = std::chrono::milliseconds(2000);
-     * socket->setReconnectPolicy(customPolicy);
-     * @endcode
-     *
      * @see QCWebSocketReconnectPolicy, reconnectPolicy(), reconnectAttempt()
      */
     void setReconnectPolicy(const QCWebSocketReconnectPolicy &policy);
@@ -307,7 +208,7 @@ public:
     [[nodiscard]] QCWebSocketReconnectPolicy reconnectPolicy() const;
 
     // ==================
-    // SSL/TLS 配置（v2.4.1+）
+    // SSL/TLS 配置
     // ==================
 
     /**
@@ -317,21 +218,7 @@ public:
      * 默认启用对等证书验证和主机名验证（安全配置）。
      *
      * @param config SSL 配置对象
-     *
-     * @par 示例：禁用证书验证（仅测试环境）
-     * @code
-     * socket->setSslConfig(QCNetworkSslConfig::insecureConfig());
-     * @endcode
-     *
-     * @par 示例：自定义 CA 证书
-     * @code
-     * QCNetworkSslConfig sslConfig;
-     * sslConfig.caCertPath = "/path/to/custom-ca.pem";
-     * socket->setSslConfig(sslConfig);
-     * @endcode
-     *
      * @warning 生产环境务必启用证书验证（verifyPeer=true, verifyHost=true）
-     *
      */
     void setSslConfig(const QCNetworkSslConfig &config);
 
@@ -342,7 +229,7 @@ public:
     [[nodiscard]] QCNetworkSslConfig sslConfig() const;
 
     // ==================
-    // 压缩配置（v2.18.0 - RFC 7692 permessage-deflate）
+    // 压缩配置
     // ==================
 
     /**
@@ -352,18 +239,6 @@ public:
      * 压缩设置必须在调用 open() 之前配置，建立连接后修改无效。
      *
      * @param config 压缩配置对象
-     *
-     * @par 示例：启用默认压缩
-     * @code
-     * socket->setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
-     * socket->open();  // 握手时协商压缩参数
-     * @endcode
-     *
-     * @par 示例：低内存配置
-     * @code
-     * socket->setCompressionConfig(QCWebSocketCompressionConfig::lowMemoryConfig());
-     * @endcode
-     *
      * @note 服务器可能不支持压缩，或修改压缩参数。使用 isCompressionNegotiated()
      *       检查实际协商结果。
      *
@@ -385,19 +260,6 @@ public:
      * 则返回 true，后续消息会自动压缩/解压缩。
      *
      * @return bool true 表示压缩已启用，false 表示未启用或服务器拒绝
-     *
-     * @par 示例
-     * @code
-     * connect(socket, &QCWebSocket::connected, [socket]() {
-     *     if (socket->isCompressionNegotiated()) {
-     *         qDebug() << "Compression enabled!";
-     *         qDebug() << "Negotiated params:" << socket->compressionConfig().toExtensionHeader();
-     *     } else {
-     *         qDebug() << "Compression not supported by server";
-     *     }
-     * });
-     * @endcode
-     *
      */
     [[nodiscard]] bool isCompressionNegotiated() const;
 
@@ -407,15 +269,7 @@ public:
      * 返回当前连接的压缩效果统计，包括原始/压缩大小、压缩率等。
      *
      * @return QString 格式化的统计字符串
-     *
-     * @par 示例输出
-     * @code
-     * "Sent: 1024 bytes -> 512 bytes (50.0% compression)
-     *  Recv: 2048 bytes <- 1024 bytes (50.0% compression)"
-     * @endcode
-     *
      * @note 只有在 isCompressionNegotiated() 返回 true 时才有数据
-     *
      */
     [[nodiscard]] QString compressionStats() const;
 
@@ -541,43 +395,21 @@ Q_SIGNALS:
     void sslErrors(const QStringList &errors);
 
     /**
-     * @brief SSL 错误详细信号（v2.4.1+）
+     * @brief SSL 错误详细信号
      *
-     * 提供详细的 SSL 错误列表，包含错误描述和验证结果码。
-     * 比 sslErrors() 提供更多诊断信息。
+     * 提供逐条 SSL 错误详情，比 sslErrors() 更适合诊断输出。
      *
      * @param errors SSL 错误详情列表（每个错误一行描述）
-     *
-     * @par 示例：
-     * @code
-     * connect(socket, &QCWebSocket::sslErrorsDetailed,
-     *         [](const QStringList &errors) {
-     *     for (const QString &err : errors) {
-     *         qWarning() << "SSL 错误:" << err;
-     *     }
-     * });
-     * @endcode
-     *
      */
     void sslErrorsDetailed(const QStringList &errors);
 
     /**
-     * @brief 重连尝试信号（v2.4.0）
+     * @brief 重连尝试信号
      *
      * 当启用自动重连后，每次重连尝试前发射此信号。
      *
      * @param attemptCount 当前重连尝试次数（从 1 开始）
      * @param closeCode 导致断开的关闭状态码
-     *
-     * @par 示例
-     * @code
-     * connect(socket, &QCWebSocket::reconnectAttempt,
-     *         [](int attempt, int closeCode) {
-     *     qDebug() << "Reconnecting, attempt" << attempt
-     *              << "due to close code" << closeCode;
-     * });
-     * @endcode
-     *
      * @see setReconnectPolicy(), QCWebSocketReconnectPolicy
      */
     void reconnectAttempt(int attemptCount, int closeCode);
@@ -590,8 +422,6 @@ private:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT
 #endif // QCWEBSOCKET_H

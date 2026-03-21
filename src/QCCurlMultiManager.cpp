@@ -462,11 +462,11 @@ void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessMan
 
 bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context,
                                                       const ShareConfig &desired,
-                                                      QString *outError)
+                                                      QString *error)
 {
     if (!context || context->activeUsers != 0) {
-        if (outError) {
-            *outError = QStringLiteral("share handle 正在使用中，无法切换配置");
+        if (error) {
+            *error = QStringLiteral("share handle 正在使用中，无法切换配置");
         }
         return false;
     }
@@ -486,8 +486,8 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context,
     }
 
     if (!context->share && context->lastInitFailed && context->lastInitAttempt == desired) {
-        if (outError) {
-            *outError = context->lastInitError;
+        if (error) {
+            *error = context->lastInitError;
         }
         return false;
     }
@@ -506,18 +506,18 @@ bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context,
     if (!share) {
         context->lastInitFailed = true;
         context->lastInitError  = QStringLiteral("curl_share_init 失败");
-        if (outError) {
-            *outError = context->lastInitError;
+        if (error) {
+            *error = context->lastInitError;
         }
         return false;
     }
 
-    auto failHard = [context, share, outError](const QString &message) {
+    auto failHard = [context, share, error](const QString &message) {
         curl_share_cleanup(share);
         context->lastInitFailed = true;
         context->lastInitError  = message;
-        if (outError) {
-            *outError = message;
+        if (error) {
+            *error = message;
         }
     };
 
@@ -590,6 +590,30 @@ void QCCurlMultiManager::releaseShareForEasyHandleLocked(CURL *easy)
     if (context) {
         maybeFinalizeShareContextLocked(context);
     }
+}
+
+void QCCurlMultiManager::cleanupEasyHandleLocked(CURL *easy,
+                                                 bool removeFromMulti,
+                                                 bool decrementRunningCount,
+                                                 const char *context)
+{
+    if (!easy) {
+        return;
+    }
+
+    if (removeFromMulti && m_multiHandle) {
+        const CURLMcode ret = curl_multi_remove_handle(m_multiHandle, easy);
+        if (ret != CURLM_OK && ret != CURLM_BAD_EASY_HANDLE) {
+            qWarning() << context << ": curl_multi_remove_handle failed:" << ret;
+        }
+    }
+
+    const bool removedReply = m_activeReplies.remove(easy) > 0;
+    if (removedReply && decrementRunningCount) {
+        m_runningRequests.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    releaseShareForEasyHandleLocked(easy);
 }
 
 void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
@@ -887,8 +911,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     CURLMcode ret = curl_multi_add_handle(m_multiHandle, easy);
     if (ret != CURLM_OK) {
         qCritical() << "QCCurlMultiManager::addReply: curl_multi_add_handle failed:" << ret;
-        m_activeReplies.remove(easy);
-        releaseShareForEasyHandleLocked(easy);
+        cleanupEasyHandleLocked(easy, false, false, "QCCurlMultiManager::addReply");
         return;
     }
 
@@ -934,16 +957,7 @@ void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
         return;
     }
 
-    // 从 multi handle 移除
-    CURLMcode ret = curl_multi_remove_handle(m_multiHandle, easy);
-    if (ret != CURLM_OK) {
-        qWarning() << "QCCurlMultiManager::removeReply: curl_multi_remove_handle failed:" << ret;
-    }
-
-    // 从活动列表移除
-    m_activeReplies.remove(easy);
-    m_runningRequests.fetch_sub(1, std::memory_order_relaxed);
-    releaseShareForEasyHandleLocked(easy);
+    cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::removeReply");
 
     qDebug() << "QCCurlMultiManager::removeReply: Removed reply" << reply
              << "Remaining:" << m_runningRequests.load();
@@ -957,19 +971,19 @@ int QCCurlMultiManager::runningRequestsCount() const noexcept
 bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *manager,
                                                  const QList<QNetworkCookie> &cookies,
                                                  const QUrl &originUrl,
-                                                 QString *outError)
+                                                 QString *error)
 {
     if (!manager) {
-        if (outError) {
-            *outError = QStringLiteral("manager 为空");
+        if (error) {
+            *error = QStringLiteral("manager 为空");
         }
         return false;
     }
 
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("importCookies 需要启用 ShareHandleConfig.shareCookies");
+        if (error) {
+            *error = QStringLiteral("importCookies 需要启用 ShareHandleConfig.shareCookies");
         }
         return false;
     }
@@ -977,39 +991,39 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
     QMutexLocker locker(&m_mutex);
     ShareContext *context = getOrCreateShareContextLocked(manager);
     if (!context) {
-        if (outError) {
-            *outError = QStringLiteral("share context 不可用");
+        if (error) {
+            *error = QStringLiteral("share context 不可用");
         }
         return false;
     }
 
     if (!context->share || (context->applied != desired)) {
         if (context->activeUsers != 0) {
-            if (outError) {
-                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            if (error) {
+                *error = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
             }
             return false;
         }
         QString err;
         if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
-            if (outError) {
-                *outError = err;
+            if (error) {
+                *error = err;
             }
             return false;
         }
     }
 
     if (!context->share || !context->applied.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("share cookie store 未启用");
+        if (error) {
+            *error = QStringLiteral("share cookie store 未启用");
         }
         return false;
     }
 
     CURL *easy = curl_easy_init();
     if (!easy) {
-        if (outError) {
-            *outError = QStringLiteral("curl_easy_init 失败");
+        if (error) {
+            *error = QStringLiteral("curl_easy_init 失败");
         }
         return false;
     }
@@ -1059,8 +1073,8 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
 
         const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, cookieLine.constData());
         if (rc != CURLE_OK) {
-            if (outError) {
-                *outError = QStringLiteral("导入 cookie 失败（%1）")
+            if (error) {
+                *error = QStringLiteral("导入 cookie 失败（%1）")
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             }
             return false;
@@ -1072,19 +1086,19 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
 }
 
 QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
-    const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *outError)
+    const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error)
 {
     if (!manager) {
-        if (outError) {
-            *outError = QStringLiteral("manager 为空");
+        if (error) {
+            *error = QStringLiteral("manager 为空");
         }
         return {};
     }
 
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("exportCookies 需要启用 ShareHandleConfig.shareCookies");
+        if (error) {
+            *error = QStringLiteral("exportCookies 需要启用 ShareHandleConfig.shareCookies");
         }
         return {};
     }
@@ -1092,39 +1106,39 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
     QMutexLocker locker(&m_mutex);
     ShareContext *context = getOrCreateShareContextLocked(manager);
     if (!context) {
-        if (outError) {
-            *outError = QStringLiteral("share context 不可用");
+        if (error) {
+            *error = QStringLiteral("share context 不可用");
         }
         return {};
     }
 
     if (!context->share || (context->applied != desired)) {
         if (context->activeUsers != 0) {
-            if (outError) {
-                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            if (error) {
+                *error = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
             }
             return {};
         }
         QString err;
         if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
-            if (outError) {
-                *outError = err;
+            if (error) {
+                *error = err;
             }
             return {};
         }
     }
 
     if (!context->share || !context->applied.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("share cookie store 未启用");
+        if (error) {
+            *error = QStringLiteral("share cookie store 未启用");
         }
         return {};
     }
 
     CURL *easy = curl_easy_init();
     if (!easy) {
-        if (outError) {
-            *outError = QStringLiteral("curl_easy_init 失败");
+        if (error) {
+            *error = QStringLiteral("curl_easy_init 失败");
         }
         return {};
     }
@@ -1134,11 +1148,11 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
     struct curl_slist *cookieList = nullptr;
-    const CURLcode rc             = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
-    if (rc != CURLE_OK) {
-        if (outError) {
-            *outError = QStringLiteral("读取 cookie 列表失败（%1）")
-                            .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+    const CURLcode getInfoRc      = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
+    if (getInfoRc != CURLE_OK) {
+        if (error) {
+            *error = QStringLiteral("读取 cookie 列表失败（%1）")
+                         .arg(QString::fromUtf8(curl_easy_strerror(getInfoRc)));
         }
         return {};
     }
@@ -1171,19 +1185,19 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
 }
 
 bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager *manager,
-                                                   QString *outError)
+                                                   QString *error)
 {
     if (!manager) {
-        if (outError) {
-            *outError = QStringLiteral("manager 为空");
+        if (error) {
+            *error = QStringLiteral("manager 为空");
         }
         return false;
     }
 
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("clearAllCookies 需要启用 ShareHandleConfig.shareCookies");
+        if (error) {
+            *error = QStringLiteral("clearAllCookies 需要启用 ShareHandleConfig.shareCookies");
         }
         return false;
     }
@@ -1191,39 +1205,39 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
     QMutexLocker locker(&m_mutex);
     ShareContext *context = getOrCreateShareContextLocked(manager);
     if (!context) {
-        if (outError) {
-            *outError = QStringLiteral("share context 不可用");
+        if (error) {
+            *error = QStringLiteral("share context 不可用");
         }
         return false;
     }
 
     if (!context->share || (context->applied != desired)) {
         if (context->activeUsers != 0) {
-            if (outError) {
-                *outError = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
+            if (error) {
+                *error = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
             }
             return false;
         }
         QString err;
         if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
-            if (outError) {
-                *outError = err;
+            if (error) {
+                *error = err;
             }
             return false;
         }
     }
 
     if (!context->share || !context->applied.cookies) {
-        if (outError) {
-            *outError = QStringLiteral("share cookie store 未启用");
+        if (error) {
+            *error = QStringLiteral("share cookie store 未启用");
         }
         return false;
     }
 
     CURL *easy = curl_easy_init();
     if (!easy) {
-        if (outError) {
-            *outError = QStringLiteral("curl_easy_init 失败");
+        if (error) {
+            *error = QStringLiteral("curl_easy_init 失败");
         }
         return false;
     }
@@ -1234,12 +1248,12 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
 
     const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, "ALL");
     if (rc != CURLE_OK) {
-        if (outError) {
+        if (error) {
             if (isCapabilityRelatedCurlError(rc)) {
-                *outError = QStringLiteral("libcurl 不支持 CURLOPT_COOKIELIST（%1）")
+                *error = QStringLiteral("libcurl 不支持 CURLOPT_COOKIELIST（%1）")
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             } else {
-                *outError = QStringLiteral("清空 cookies 失败（%1）")
+                *error = QStringLiteral("清空 cookies 失败（%1）")
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             }
         }
@@ -1484,9 +1498,7 @@ void QCCurlMultiManager::checkMultiInfo()
         QPointer<QCNetworkReply> replyPtr = m_activeReplies.value(easy);
         if (!replyPtr) {
             qWarning() << "QCCurlMultiManager::checkMultiInfo: Reply object already destroyed";
-            curl_multi_remove_handle(m_multiHandle, easy);
-            m_activeReplies.remove(easy);
-            releaseShareForEasyHandleLocked(easy);
+            cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::checkMultiInfo");
             continue;
         }
 
@@ -1504,11 +1516,7 @@ void QCCurlMultiManager::checkMultiInfo()
                  << "HTTP code:" << responseCode
                  << "Redirect:" << (redirectUrl ? redirectUrl : "none");
 
-        // 从管理器移除
-        curl_multi_remove_handle(m_multiHandle, easy);
-        m_activeReplies.remove(easy);
-        m_runningRequests.fetch_sub(1, std::memory_order_relaxed);
-        releaseShareForEasyHandleLocked(easy);
+        cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::checkMultiInfo");
 
         // 解锁后发射信号（避免死锁）
         locker.unlock();

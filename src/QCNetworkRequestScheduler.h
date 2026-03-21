@@ -23,44 +23,18 @@ namespace QCurl {
 /**
  * @brief 网络请求调度器
  *
- * 管理网络请求的优先级队列、并发控制和带宽限制。
+ * 管理请求的优先级队列、并发控制和带宽限制。
  *
- * 核心功能：
- * - 优先级调度：6 种优先级（VeryLow → Critical）
- * - 并发控制：全局并发限制 + 每主机并发限制
- * - 带宽限制：可配置的带宽上限（字节/秒）
- * - 请求管理：暂停、恢复、取消请求
- * - 统计信息：实时追踪请求状态和流量
- *
- * ## 优先级契约（非抢占 / non-preemptive）
+ * 优先级契约（非抢占 / non-preemptive）：
  *
  * - 调度器是**非抢占式**：一旦请求进入 Running，后续更高优先级请求不会中断/暂停/取消它。
  * - 优先级只影响 pending 队列在“并发槽位释放时”的出队顺序；同一优先级内部为 FIFO。
  * - `Critical` 优先级会绕过 pending 队列并立即启动；它不会抢占已 Running 的请求，但可能突破并发/每主机限制。
  * - 若调用方需要“让出槽位/终止执行”，必须显式调用 `cancelRequest()`/`deferRequest()` 等 API（Running 下 defer 会通过 cancel 终止并转入 deferred）。
  *
- * @note 线程安全：所有公共方法都使用互斥锁保护
- *
- * @code
- * // 启用调度器
- * QCNetworkAccessManager manager;
- * manager.enableRequestScheduler(true);
- *
- * // 配置调度器
- * auto *scheduler = manager.scheduler();
- * QCNetworkRequestScheduler::Config config;
- * config.maxConcurrentRequests = 10;
- * config.maxRequestsPerHost = 3;
- * config.maxBandwidthBytesPerSec = 1024 * 1024;  // 1 MB/s
- * scheduler->setConfig(config);
- *
- * // 调度高优先级请求
- * QCNetworkRequest request(QUrl("https://api.example.com"));
- * request.setPriority(QCNetworkRequestPriority::High);
- * auto *reply = manager.scheduleGet(request);
- * @endcode
+ * @note 所有公共方法都使用互斥锁保护
  */
-class QCNetworkRequestScheduler : public QObject
+class QCURL_EXPORT QCNetworkRequestScheduler : public QObject
 {
     Q_OBJECT
 
@@ -118,9 +92,9 @@ public:
     };
 
     /**
-     * @brief 获取调度器单例
+     * @brief 获取当前线程绑定的调度器实例
      *
-     * @return 调度器实例指针
+     * 实现为 thread-local；不同线程拿到的是不同实例。
      */
     static QCNetworkRequestScheduler *instance();
 
@@ -152,7 +126,7 @@ public:
      * @param body 请求体（对于 POST/PUT/PATCH）
      * @return 网络响应对象
      *
-     * @note 返回的 QCNetworkReply 对象的生命周期由调用者管理
+     * @note 返回的 QCNetworkReply 没有 parent，由调用者负责生命周期
      */
     QCNetworkReply *scheduleRequest(
         const QCNetworkRequest &request,
@@ -167,6 +141,7 @@ public:
      * 的场景，以确保通过 reply->parent() 能回溯到管理器上下文（MockHandler/缓存/中间件等）。
      *
      * @note 该重载不提供默认参数，避免与现有带默认参数的 scheduleRequest 产生重载二义性。
+     * @note `replyParent` 必须与调度器/新建 reply 处于同一线程亲和性。
      */
     QCNetworkReply *scheduleRequest(const QCNetworkRequest &request,
                                     HttpMethod method,
@@ -187,6 +162,8 @@ public:
 
     /**
      * @brief 恢复调度请求（从 deferred 列表重新入队）
+     *
+     * 当前实现会以 `Normal` 优先级重新入队，不会恢复 defer 前的原始优先级。
      *
      * @param reply 要恢复调度的响应对象
      */

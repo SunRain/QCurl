@@ -4,6 +4,7 @@
 #include "QCGlobal.h"
 
 #include <QByteArray>
+#include <QDebug>
 #include <QList>
 #include <QSharedDataPointer>
 #include <QString>
@@ -68,7 +69,7 @@ enum class QCNetworkIpResolve {
  * - Basic 仅建议在 HTTPS 下使用；如在 HTTP 下使用，可选择仅告警不阻断
  * - `allowUnrestrictedAuth` 仅在 followLocation=true 时有意义（跨 host/port 重定向携带凭据）
  */
-struct QCNetworkHttpAuthConfig
+struct QCURL_EXPORT QCNetworkHttpAuthConfig
 {
     QString userName; ///< 用户名
     QString password; ///< 密码
@@ -80,25 +81,10 @@ struct QCNetworkHttpAuthConfig
 /**
  * @brief HTTP 请求配置类
  *
- * QCNetworkRequest 封装了 HTTP 请求的所有配置选项，包括：
- * - URL 和 Headers
- * - SSL/TLS 配置
- * - 代理设置
- * - 超时配置
- * - HTTP 版本选择
- * - 重定向和 Range 请求
- *
- * 支持流式接口（方法链）：
- * @code
- * QCNetworkRequest request(url);
- * request.setTimeout(std::chrono::seconds(30))
- *        .setSslConfig(QCNetworkSslConfig::defaultConfig())
- *        .setHttpVersion(QCNetworkHttpVersion::Http2);
- * @endcode
- *
- * (基础功能)
+ * 封装单个 HTTP 请求的 URL、header、超时、认证、重试和传输相关配置。
+ * 该类型是值语义配置对象，可在发送前按方法链累积修改。
  */
-class QCNetworkRequest
+class QCURL_EXPORT QCNetworkRequest
 {
 public:
     QCNetworkRequest();
@@ -135,9 +121,9 @@ public:
 
     /**
      * @brief 设置最大重定向次数（仅在 followLocation=true 时生效）
-     * @param n 最大重定向次数（n>=0）
+     * @param maxRedirects 最大重定向次数（>=0）
      */
-    QCNetworkRequest &setMaxRedirects(int n);
+    QCNetworkRequest &setMaxRedirects(int maxRedirects);
 
     /**
      * @brief 获取最大重定向次数
@@ -178,7 +164,7 @@ public:
      * @brief 设置自定义 HTTP Header
      * @param headerName Header 名称（如 "User-Agent"）
      * @param headerValue Header 值
-     * @note 相同 Header 会被覆盖
+     * @note 仅相同 `QByteArray` key 会被覆盖；不会做 header 名大小写归一化，因此大小写不同的 key 会并存
      * @return 返回 *this 以支持方法链
      */
     QCNetworkRequest &setRawHeader(const QByteArray &headerName, const QByteArray &headerValue);
@@ -377,36 +363,6 @@ public:
      */
     [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
 
-    /**
-     * @brief 设置异步下载响应体缓冲上限（bytes）
-     * @deprecated 请使用 setBackpressureLimitBytes/backpressureLimitBytes。
-     */
-    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
-    QCNetworkRequest &setAsyncBodyBufferLimitBytes(qint64 bytes);
-
-    /**
-     * @brief 获取异步下载响应体缓冲上限（bytes）
-     * @deprecated 请使用 setBackpressureLimitBytes/backpressureLimitBytes。
-     */
-    [[deprecated(
-        "已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]] [[nodiscard]] qint64
-    asyncBodyBufferLimitBytes() const noexcept;
-
-    /**
-     * @brief 设置异步下载响应体缓冲低水位线（bytes）
-     * @deprecated 请使用 setBackpressureResumeBytes/backpressureResumeBytes。
-     */
-    [[deprecated("已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]]
-    QCNetworkRequest &setAsyncBodyBufferResumeBytes(qint64 bytes);
-
-    /**
-     * @brief 获取异步下载响应体缓冲低水位线（bytes）
-     * @deprecated 请使用 setBackpressureResumeBytes/backpressureResumeBytes。
-     */
-    [[deprecated(
-        "已弃用：请使用 setBackpressure* / backpressure*（计划 v3.0 移除）")]] [[nodiscard]] qint64
-    asyncBodyBufferResumeBytes() const noexcept;
-
     // ========== 流式上传（M2） ==========
 
     /**
@@ -578,11 +534,6 @@ public:
      *
      * @param priority 请求优先级（VeryLow/Low/Normal/High/VeryHigh/Critical）
      * @return 返回 *this 以支持方法链
-     *
-     * @code
-     * QCNetworkRequest request(url);
-     * request.setPriority(QCNetworkRequestPriority::High);
-     * @endcode
      */
     QCNetworkRequest &setPriority(QCNetworkRequestPriority priority);
 
@@ -602,11 +553,6 @@ public:
      *
      * @param policy 缓存策略（AlwaysCache/PreferCache/PreferNetwork/OnlyNetwork/OnlyCache）
      * @return 返回 *this 以支持方法链
-     *
-     * @code
-     * QCNetworkRequest request(url);
-     * request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
-     * @endcode
      */
     QCNetworkRequest &setCachePolicy(QCNetworkCachePolicy policy);
 
@@ -621,7 +567,7 @@ private:
     QSharedDataPointer<QCurl::QCNetworkRequestPrivate> d;
 };
 
-QDebug operator<<(QDebug dbg, const QCNetworkRequest &req);
+QCURL_EXPORT QDebug operator<<(QDebug dbg, const QCNetworkRequest &req);
 
 } // namespace QCurl
 #endif // QCNETWORKREQUEST_H

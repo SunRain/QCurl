@@ -6,8 +6,6 @@
 #include <QCache>
 #include <QMutex>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
@@ -24,7 +22,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCNetworkMemoryCache : public QCNetworkCache
+class QCURL_EXPORT QCNetworkMemoryCache : public QCNetworkCache
 {
     Q_OBJECT
 
@@ -69,7 +67,5 @@ private:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCNETWORKMEMORYCACHE_H

@@ -59,12 +59,16 @@ public:
 
     struct CapturedRequest
     {
+        using RawHeaderPair = QPair<QByteArray, QByteArray>;
+
         QUrl url;
         HttpMethod method;
-        QList<QPair<QByteArray, QByteArray>> headers;
+        QList<RawHeaderPair> headers;
         QByteArray bodyPreview;
-        qsizetype bodySize = 0;
+        qsizetype bodySize  = 0;
         bool followLocation = true;
+        std::optional<qint64> connectTimeoutMs;
+        std::optional<qint64> totalTimeoutMs;
     };
 
     /**

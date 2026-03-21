@@ -18,8 +18,6 @@
 #include <limits>
 #include <optional>
 
-QT_BEGIN_NAMESPACE
-
 class QNetworkCookie; // QtNetwork
 
 namespace QCurl {
@@ -45,45 +43,17 @@ struct SocketInfo
 };
 
 /**
- * @brief 线程安全的 curl 多句柄管理器
+ * @brief 每线程一个的 curl multi manager
  *
- * 全局单例，负责管理所有异步网络请求的 curl multi handle。
- * 替代旧的 CurlMultiHandleProcesser，提供线程安全和更好的资源管理。
- *
- * @par 设计特点
- * - **线程安全**：使用 QMutex 保护所有共享资源
- * - **指针安全**：使用 QPointer 自动检测对象销毁
- * - **RAII**：析构时自动清理所有资源
- * - **单例模式**：全局唯一实例
- * - **事件驱动**：通过 QSocketNotifier 和 QTimer 集成到 Qt 事件循环
- *
- * @par 工作原理
- * 1. QCNetworkReply 异步模式调用 addReply()
- * 2. 管理器将 curl easy handle 加入 multi handle
- * 3. libcurl 通过 socket/timer 回调驱动事件循环
- * 4. Socket 事件触发 QSocketNotifier::activated() 信号
- * 5. 处理完成后通过 requestFinished() 信号通知 Reply 对象
- *
- * @par 线程模型
- * - 管理器必须在主线程创建和使用
- * - 所有 QSocketNotifier 在创建线程运行
- * - 跨线程访问通过互斥锁保护
- *
- * @note 此类不应被直接实例化，使用 instance() 获取单例
- *
+ * `instance()` 返回当前线程绑定的 manager。manager 在其所属线程内维护
+ * `CURLM *`、socket notifier 和活动 reply 集合，并接受跨线程投递的管理操作。
  */
 class QCCurlMultiManager : public QObject
 {
     Q_OBJECT
 
 public:
-    /**
-     * @brief 获取全局单例实例
-     *
-     * @return QCCurlMultiManager* 全局唯一实例
-     *
-     * @note 线程安全，首次调用时创建实例
-     */
+    /// 返回当前线程绑定的 manager 实例。
     static QCCurlMultiManager *instance();
 
     /**
@@ -129,12 +99,12 @@ public:
     bool importCookiesForManager(const QCNetworkAccessManager *manager,
                                  const QList<QNetworkCookie> &cookies,
                                  const QUrl &originUrl,
-                                 QString *outError);
+                                 QString *error);
 
     [[nodiscard]] QList<QNetworkCookie> exportCookiesForManager(
-        const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *outError);
+        const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error);
 
-    bool clearAllCookiesForManager(const QCNetworkAccessManager *manager, QString *outError);
+    bool clearAllCookiesForManager(const QCNetworkAccessManager *manager, QString *error);
 
     /**
      * @brief 触发一次 multi 推进/唤醒
@@ -171,13 +141,7 @@ Q_SIGNALS:
     void requestFinished(QCNetworkReply *reply, int curlCode);
 
 private:
-    /**
-     * @brief 私有构造函数（单例模式）
-     *
-     * 初始化 curl multi handle 并设置回调函数。
-     *
-     * @param parent 父对象（通常为 nullptr）
-     */
+    /// 初始化当前线程绑定的 multi handle 和事件驱动对象。
     explicit QCCurlMultiManager(QObject *parent = nullptr);
 
     /**
@@ -337,7 +301,11 @@ private:
     void onAccessManagerDestroyedLocked(const QCNetworkAccessManager *manager);
     bool applyShareConfigIfIdleLocked(ShareContext *context,
                                       const ShareConfig &desired,
-                                      QString *outError);
+                                      QString *error);
+    void cleanupEasyHandleLocked(CURL *easy,
+                                 bool removeFromMulti,
+                                 bool decrementRunningCount,
+                                 const char *context);
     void releaseShareForEasyHandleLocked(CURL *easy);
     void maybeFinalizeShareContextLocked(ShareContext *context);
 
@@ -379,7 +347,5 @@ private:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCCURLMULTIMANAGER_H

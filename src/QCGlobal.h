@@ -5,21 +5,18 @@
 
 #include <QtGlobal>
 
-#include <curl/curl.h>
-
 // Qt 6 检查（在 QCurlConfig.h 中已包含）
 // 这里主要提供全局的类型别名和工具函数
 
 // 导出宏定义（v2.15.0）
 #ifndef QCURL_EXPORT
-#if defined(QT_BUILD_QCURL_LIB)
+#if defined(QCURL_BUILDING_LIBRARY)
 #define QCURL_EXPORT Q_DECL_EXPORT
 #else
 #define QCURL_EXPORT Q_DECL_IMPORT
 #endif
 #endif
 
-QT_BEGIN_NAMESPACE
 namespace QCurl {
 
 // 版本信息
@@ -67,6 +64,5 @@ constexpr bool hasHttp2Support() noexcept
 }
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCGLOBAL_H

@@ -17,60 +17,15 @@
 #include <QTimer>
 #include <QUrl>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
- * @brief WebSocket 连接池管理类
+ * @brief 复用和管理 `QCWebSocket` 连接
  *
- * QCWebSocketPool 提供 WebSocket 连接的复用和管理功能，
- * 通过避免重复建立连接显著提升性能。
- *
- * @par 核心特性
- * - **连接复用**：减少 TLS 握手开销（连接时间降低 99%）
- * - **智能管理**：自动清理空闲连接，保持池健康
- * - **心跳保活**：定期发送 Ping 帧保持连接活性
- * - **线程安全**：QMutex 保护，支持多线程并发访问
- * - **统计信息**：实时查看命中率、连接数等指标
- *
- * @par 性能提升
- * - 连接建立时间：~2000ms → ~10ms（**-99%**）
- * - 高频场景吞吐量：1 req/2s → 100 req/2s（**+10000%**）
- * - TLS 握手次数：每次连接 → 仅首次（**-90%**）
- *
- * @par 适用场景
- * - 📱 实时通讯应用（频繁短消息）
- * - 🌐 微服务调用（高频 API 请求）
- * - 🎮 在线游戏（心跳 + 事件）
- * - 📊 实时数据推送（股票、物联网）
- *
- * @par 使用示例
- * @code
- * // 创建连接池
- * QCWebSocketPool pool;
- *
- * // 获取连接
- * auto *socket = pool.acquire(QUrl("wss://api.example.com"));
- * if (socket) {
- *     socket->sendTextMessage("Hello from pool!");
- *     // ... 使用 socket ...
- *     pool.release(socket);  // 归还到池中（不会关闭连接）
- * }
- * @endcode
- *
- * @par 自定义配置
- * @code
- * QCWebSocketPool::Config config;
- * config.maxPoolSize = 20;
- * config.maxIdleTime = 600;
- * config.enableKeepAlive = true;
- *
- * QCWebSocketPool pool(config);
- * @endcode
- *
+ * 连接池按 URL 分组维护连接，区分 in-use 与 idle 状态，并负责清理、
+ * keepalive 和连接数限制。
  */
-class QCWebSocketPool : public QObject
+class QCURL_EXPORT QCWebSocketPool : public QObject
 {
     Q_OBJECT
 
@@ -271,8 +226,6 @@ private:
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT
 #endif // QCWEBSOCKETPOOL_H

@@ -4,8 +4,6 @@
 
 #include <QStringList>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 QString QCWebSocketCompressionConfig::toExtensionHeader() const
@@ -122,7 +120,5 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::maxCompressionConfig(
 }
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT

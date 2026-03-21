@@ -8,8 +8,6 @@
 
 #include <zlib.h>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 // ==================
@@ -814,11 +812,11 @@ bool QCWebSocketPrivate::compressData(const QByteArray &input, QByteArray &outpu
 
     int windowBits = -compressionConfig.clientMaxWindowBits; // 负值表示无 zlib 头
     int ret        = deflateInit2(&stream,
-                           compressionConfig.compressionLevel,
-                           Z_DEFLATED,
-                           windowBits,
-                           8,
-                           Z_DEFAULT_STRATEGY);
+                                  compressionConfig.compressionLevel,
+                                  Z_DEFLATED,
+                                  windowBits,
+                                  8,
+                                  Z_DEFAULT_STRATEGY);
 
     if (ret != Z_OK) {
         qWarning() << "QCWebSocket: deflateInit2 failed:" << ret;
@@ -893,7 +891,5 @@ bool QCWebSocketPrivate::decompressData(const QByteArray &input, QByteArray &out
 }
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT

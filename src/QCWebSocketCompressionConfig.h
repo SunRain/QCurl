@@ -1,13 +1,11 @@
 #ifndef QCWEBSOCKETCOMPRESSIONCONFIG_H
 #define QCWEBSOCKETCOMPRESSIONCONFIG_H
 
-#include "QCurlConfig.h"
+#include "QCGlobal.h"
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include <QString>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -35,7 +33,7 @@ namespace QCurl {
  * @endcode
  *
  */
-struct QCWebSocketCompressionConfig
+struct QCURL_EXPORT QCWebSocketCompressionConfig
 {
     /**
      * @brief 是否启用压缩（默认 false）
@@ -159,8 +157,6 @@ struct QCWebSocketCompressionConfig
 };
 
 } // namespace QCurl
-
-QT_END_NAMESPACE
 
 #endif // QCURL_WEBSOCKET_SUPPORT
 

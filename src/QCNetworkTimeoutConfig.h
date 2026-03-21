@@ -1,12 +1,10 @@
 #ifndef QCNETWORKTIMEOUTCONFIG_H
 #define QCNETWORKTIMEOUTCONFIG_H
 
-#include <QtGlobal>
+#include "QCGlobal.h"
 
 #include <chrono>
 #include <optional>
-
-QT_BEGIN_NAMESPACE
 
 namespace QCurl {
 
@@ -36,7 +34,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCNetworkTimeoutConfig
+class QCURL_EXPORT QCNetworkTimeoutConfig
 {
 public:
     /**
@@ -85,6 +83,5 @@ public:
 };
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKTIMEOUTCONFIG_H

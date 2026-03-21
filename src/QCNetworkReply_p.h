@@ -14,6 +14,7 @@
 
 #include "QCCurlHandleManager.h"
 #include "QCNetworkReply.h"
+#include "private/QCRequestPipeline_p.h"
 #include "qbytedata_p.h"
 
 #include <QElapsedTimer>
@@ -25,6 +26,10 @@
 class QFile;
 
 namespace QCurl {
+
+namespace Internal {
+QByteArray testCurlPlanDigest(const QCNetworkReply *reply);
+}
 
 class CurlMultiHandleProcesser; // 前向声明
 
@@ -77,6 +82,8 @@ public:
     HttpMethod httpMethod;       ///< HTTP 方法（HEAD/GET/POST等）
     ExecutionMode executionMode; ///< 执行模式（异步/同步）
     QByteArray requestBody;      ///< 请求体数据（POST/PUT/PATCH使用）
+    Internal::NormalizedRequest normalizedRequest;
+    Internal::CurlPlan curlPlan;
 
     // ==================
     // Curl 管理
@@ -353,6 +360,14 @@ public:
      */
     static int curlDebugCallback(
         CURL *handle, curl_infotype type, char *data, size_t size, void *userptr);
+
+    /**
+     * @brief 生成脱敏后的 debug trace 文本
+     *
+     * 供 libcurl debug 回调与单元测试共用，确保 trace 分类与脱敏规则只有一处实现。
+     */
+    [[nodiscard]] static QString formatDebugTraceMessage(curl_infotype type,
+                                                         const QByteArray &raw);
 };
 
 } // namespace QCurl

@@ -41,8 +41,8 @@ public:
         , acceptedEncodings(QStringList())
         , maxDownloadBytesPerSec(std::nullopt)
         , maxUploadBytesPerSec(std::nullopt)
-        , asyncBodyBufferLimitBytes(0)
-        , asyncBodyBufferResumeBytes(0)
+        , backpressureLimitBytes(0)
+        , backpressureResumeBytes(0)
         , uploadDevice(nullptr)
         , uploadFilePath(std::nullopt)
         , uploadBodySizeBytes(std::nullopt)
@@ -97,8 +97,8 @@ public:
     std::optional<qint64> maxUploadBytesPerSec;
 
     // ========== 下载 backpressure（P2） ==========
-    qint64 asyncBodyBufferLimitBytes;
-    qint64 asyncBodyBufferResumeBytes;
+    qint64 backpressureLimitBytes;
+    qint64 backpressureResumeBytes;
 
     // ========== 流式上传（M2） ==========
     QPointer<QIODevice> uploadDevice;
@@ -215,15 +215,16 @@ bool QCNetworkRequest::followLocation() const
     return d.data()->followLocation;
 }
 
-QCNetworkRequest &QCNetworkRequest::setMaxRedirects(int n)
+QCNetworkRequest &QCNetworkRequest::setMaxRedirects(int maxRedirects)
 {
-    if (n < 0) {
-        qWarning() << "QCNetworkRequest: maxRedirects must be >= 0, got" << n << "(ignored)";
+    if (maxRedirects < 0) {
+        qWarning() << "QCNetworkRequest: maxRedirects must be >= 0, got" << maxRedirects
+                   << "(ignored)";
         d.data()->maxRedirects.reset();
         return *this;
     }
 
-    d.data()->maxRedirects = n;
+    d.data()->maxRedirects = maxRedirects;
     return *this;
 }
 
@@ -503,16 +504,16 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureLimitBytes(qint64 bytes)
         }
     }
 
-    d.data()->asyncBodyBufferLimitBytes = bytes;
+    d.data()->backpressureLimitBytes = bytes;
     if (bytes <= 0) {
-        d.data()->asyncBodyBufferResumeBytes = 0;
+        d.data()->backpressureResumeBytes = 0;
     }
     return *this;
 }
 
 qint64 QCNetworkRequest::backpressureLimitBytes() const noexcept
 {
-    return d.data()->asyncBodyBufferLimitBytes;
+    return d.data()->backpressureLimitBytes;
 }
 
 QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
@@ -523,7 +524,7 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
         bytes = 0;
     }
 
-    const qint64 limit = d.data()->asyncBodyBufferLimitBytes;
+    const qint64 limit = d.data()->backpressureLimitBytes;
     if (limit > 0 && bytes > 0 && bytes >= limit) {
         qWarning()
             << "QCNetworkRequest: backpressureResumeBytes must be < backpressureLimitBytes, got"
@@ -531,33 +532,13 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
         bytes = 0;
     }
 
-    d.data()->asyncBodyBufferResumeBytes = bytes;
+    d.data()->backpressureResumeBytes = bytes;
     return *this;
 }
 
 qint64 QCNetworkRequest::backpressureResumeBytes() const noexcept
 {
-    return d.data()->asyncBodyBufferResumeBytes;
-}
-
-QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferLimitBytes(qint64 bytes)
-{
-    return setBackpressureLimitBytes(bytes);
-}
-
-qint64 QCNetworkRequest::asyncBodyBufferLimitBytes() const noexcept
-{
-    return backpressureLimitBytes();
-}
-
-QCNetworkRequest &QCNetworkRequest::setAsyncBodyBufferResumeBytes(qint64 bytes)
-{
-    return setBackpressureResumeBytes(bytes);
-}
-
-qint64 QCNetworkRequest::asyncBodyBufferResumeBytes() const noexcept
-{
-    return backpressureResumeBytes();
+    return d.data()->backpressureResumeBytes;
 }
 
 QCNetworkRequest &QCNetworkRequest::setUploadDevice(QIODevice *device,

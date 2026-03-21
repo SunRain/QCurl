@@ -7,8 +7,6 @@
 
 #include <optional>
 
-QT_BEGIN_NAMESPACE
-
 namespace QCurl {
 
 /**
@@ -51,7 +49,7 @@ enum class QCNetworkTlsVersion {
  * @endcode
  *
  */
-class QCNetworkSslConfig
+class QCURL_EXPORT QCNetworkSslConfig
 {
 public:
     /**
@@ -163,6 +161,5 @@ public:
 };
 
 } // namespace QCurl
-QT_END_NAMESPACE
 
 #endif // QCNETWORKSSLCONFIG_H

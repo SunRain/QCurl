@@ -1,8 +1,8 @@
-#include "QCNetworkHttpVersion.h"
+#include "private/QCNetworkHttpVersion_p.h"
 
-QT_BEGIN_NAMESPACE
+#include <curl/curl.h>
 
-namespace QCurl {
+namespace QCurl::detail {
 
 long toCurlHttpVersion(QCNetworkHttpVersion version) noexcept
 {
@@ -41,5 +41,4 @@ long toCurlHttpVersion(QCNetworkHttpVersion version) noexcept
     }
 }
 
-} // namespace QCurl
-QT_END_NAMESPACE
+} // namespace QCurl::detail
