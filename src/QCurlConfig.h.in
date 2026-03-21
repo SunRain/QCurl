@@ -32,12 +32,6 @@
 #error "QCurl v2.0 requires Qt 6.0 or later. Please upgrade your Qt installation."
 #endif
 
-// libcurl 版本检查：要求 8.0 或更高
-#include <curl/curlver.h>
-#if LIBCURL_VERSION_NUM < 0x080000
-#error "QCurl v2.0 requires libcurl 8.0 or later. Please upgrade your libcurl installation."
-#endif
-
 // 特性可用性检查宏
 #ifdef QCURL_WEBSOCKET_SUPPORT
 #  define QCURL_HAS_WEBSOCKET 1

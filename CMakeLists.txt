@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(QCurl VERSION 2.0.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 # 要求 C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -150,28 +153,59 @@ if(BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
-    # 安装规则
-    install(TARGETS QCurl
+#
+# install/export 规则应始终可用：
+# - 方案包 7.3 需要在主 build 目录上验证 `cmake --install` + consumer smoke
+# - `QCurl` 仅 PUBLIC 暴露 Qt，libcurl 为 PRIVATE 依赖，因此导出的 package
+#   不需要把 bundled curl 目标一并导出给下游
+#
+install(TARGETS QCurl
+    EXPORT QCurlTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+)
+
+if(QCURL_BUILD_LIBCURL_CONSISTENCY)
+    install(TARGETS libcurl_shared
         EXPORT QCurlTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
     )
+endif()
 
-    # 导出 CMake 配置
-    install(EXPORT QCurlTargets
-        FILE QCurlTargets.cmake
-        NAMESPACE QCurl::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
-    )
+# 导出 CMake 配置
+install(EXPORT QCurlTargets
+    FILE QCurlTargets.cmake
+    NAMESPACE QCurl::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+)
 
-    # 创建 pkg-config 文件
-    configure_file(qcurl.pc.in qcurl.pc @ONLY)
-    install(FILES ${CMAKE_BINARY_DIR}/qcurl.pc
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QCurlConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/QCurl"
+)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+)
 
+# 创建 pkg-config 文件
+configure_file(qcurl.pc.in qcurl.pc @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/qcurl.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     # CPack 配置
     set(CPACK_PACKAGE_NAME "QCurl")
     set(CPACK_PACKAGE_VENDOR "QCurl Project")
@@ -184,7 +218,7 @@ if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase >= 6.2, libcurl >= 8.0")
     include(CPack)
 else()
-    message(STATUS "QCURL_BUILD_LIBCURL_CONSISTENCY=ON：跳过 install/export/CPack（避免将 bundled curl 目标导出到安装包）")
+    message(STATUS "QCURL_BUILD_LIBCURL_CONSISTENCY=ON：保留 install/export 以支持 consumer smoke，跳过 CPack 打包")
 endif()
 
 # 打印配置摘要
