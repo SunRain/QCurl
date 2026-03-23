@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-03-22
+
+### Added
+- 新增顶层 CMake 选项 `QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT`：用于强制关闭 WebSocket 安装面与代码路径，便于在 system libcurl 已支持 WebSocket 的环境中稳定复验 OFF 配置
+
+### Changed
+- 收敛第一梯队 public header include 热点：`QCNetworkRequestScheduler.h`（`#include` 13→6）、`QCWebSocketPool.h`（`#include` 11→5）、`QCNetworkReply.h`（`#include` 12→11，且不再直接 `#include "QCNetworkRequest.h"`）
+- `QCNetworkRequestScheduler` / `QCWebSocketPool` 采用 Pimpl（`QScopedPointer<Impl>`）将队列 bookkeeping、host 计数、带宽窗口、池内映射/统计/定时清理/互斥锁等重依赖下沉到 `.cpp`，降低安装头重量
+- `QCNetworkDefaultLogger` 采用 `QScopedPointer` 管理 d-pointer，统一 Qt 智能指针风格
+- 请求创建/调度职责调整：`QCNetworkReply` 实例仅允许由 `QCNetworkAccessManager::send*()` 创建；调度器不再创建 reply，而是由 manager 创建后交给调度器排队（下游若直接 `new QCNetworkReply(...)` 或调用 `QCNetworkRequestScheduler::scheduleRequest(...)` 需要迁移到 manager 工厂路径）
+- 更新 `docs/arch/public-header-boundary.md`、`docs/dev/build-and-test.md` 与 `tests/README.md`，固化本轮 include 收敛原则与 WebSocket OFF 复验口径
+
+### Testing
+- WebSocket ON（bundled curl 构建，`build/`）：`ctest --test-dir build -L '^public-api$' --output-on-failure`、`ctest --test-dir build -L '^public-api-slow$' --output-on-failure`
+- WebSocket OFF（system curl 构建，`build-public-api-system-no-ws/`，配置 `-DQCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON`）：`cmake --build build-public-api-system-no-ws --target QCurl -j"$(nproc)"`、`ctest --test-dir build-public-api-system-no-ws -L '^public-api$' --output-on-failure`、`ctest --test-dir build-public-api-system-no-ws -L '^public-api-slow$' --output-on-failure`
+
 ## 2026-03-21
 
 ### Added

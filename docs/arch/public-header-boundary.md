@@ -24,6 +24,14 @@ QCurl 的 install surface 只有两个来源：
 - 能用 forward declaration 的地方优先 forward declaration；调试输出、字符串化和实现细节优先放到 `.cpp`。
 - libcurl 语义转换必须下沉到 `.cpp` 或 `src/private/*`，不得通过 public header 把 `CURL*`、`curl_*` 或 `<curl/...>` 透传给下游。
 
+### 2.1 Include 热点收敛（第一梯队，2026-03）
+
+本轮只处理第一梯队热点头文件的“安装面 include 成本”，不扩展到第二梯队（例如 `QCNetworkRequest.h`、`QCNetworkAccessManager.h`）与长尾头文件。
+
+- `QCNetworkReply.h`：不再直接 `#include "QCNetworkRequest.h"`，改为前置声明并把完整依赖下沉到 `.cpp`，避免 reply 头成为 request 配置面的传递依赖中枢。
+- `QCNetworkRequestScheduler.h`：公开头仅保留 Config/Statistics 与调度控制 API；reply 创建统一收口到 `QCNetworkAccessManager::send*()`，队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QQueue/QTimer/QDateTime/QMutex` 等重依赖。
+- `QCWebSocketPool.h`：公开头仅暴露连接池 contract；池内记录、映射、统计与定时器下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QTimer/QDateTime/QMutex` 等重依赖（仍保留必要的 `QCNetworkSslConfig`/`QObject`/`QUrl` 依赖以表达对外 contract）。
+
 ## 3. 不属于安装面的 internal/private 头
 
 以下头文件属于库内实现细节，不安装给 consumer：
