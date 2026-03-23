@@ -51,6 +51,8 @@ private:
     QCNetworkAccessManager *m_manager      = nullptr;
     QCNetworkRequestScheduler *m_scheduler = nullptr;
     QCNetworkMockHandler m_mock;
+
+    QCNetworkReply *sendScheduledGet(const QCNetworkRequest &request);
 };
 
 void tst_QCNetworkScheduler::initTestCase()
@@ -83,6 +85,12 @@ void tst_QCNetworkScheduler::cleanupTestCase()
     // 清理所有请求
     m_scheduler->cancelAllRequests();
     m_manager = nullptr;
+}
+
+QCNetworkReply *tst_QCNetworkScheduler::sendScheduledGet(const QCNetworkRequest &request)
+{
+    m_manager->enableRequestScheduler(true);
+    return m_manager->sendGet(request);
 }
 
 /**
@@ -137,21 +145,9 @@ void tst_QCNetworkScheduler::testPriorityQueueOrdering()
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
     // 按相反顺序入队：先 Low，再 Normal，再 High
-    auto *lowReply    = m_scheduler->scheduleRequest(lowReq,
-                                                  HttpMethod::Get,
-                                                  QCNetworkRequestPriority::Low,
-                                                  QByteArray(),
-                                                  m_manager);
-    auto *normalReply = m_scheduler->scheduleRequest(normalReq,
-                                                     HttpMethod::Get,
-                                                     QCNetworkRequestPriority::Normal,
-                                                     QByteArray(),
-                                                     m_manager);
-    auto *highReply   = m_scheduler->scheduleRequest(highReq,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::High,
-                                                   QByteArray(),
-                                                   m_manager);
+    auto *lowReply    = sendScheduledGet(lowReq);
+    auto *normalReply = sendScheduledGet(normalReq);
+    auto *highReply   = sendScheduledGet(highReq);
 
     // 由于并发限制为 1，只有第一个请求会进入 Running；后续不会“抢占”。
     QCOMPARE(startedSpy.count(), 1);
@@ -200,11 +196,7 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
         QCNetworkRequest req(QUrl(QStringLiteral("http://concurrent-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
         m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-        auto *reply = m_scheduler->scheduleRequest(req,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::Normal,
-                                                   QByteArray(),
-                                                   m_manager);
+        auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
@@ -246,11 +238,7 @@ void tst_QCNetworkScheduler::testPerHostLimit()
         QCNetworkRequest req(QUrl(QStringLiteral("http://same-host.test/test?i=%1").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
         m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-        auto *reply = m_scheduler->scheduleRequest(req,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::Normal,
-                                                   QByteArray(),
-                                                   m_manager);
+        auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
@@ -283,11 +271,7 @@ void tst_QCNetworkScheduler::testDeferUndefer()
     QCNetworkRequest req(QUrl("http://defer.test/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
     m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-    auto *reply = m_scheduler->scheduleRequest(req,
-                                               HttpMethod::Get,
-                                               QCNetworkRequestPriority::Normal,
-                                               QByteArray(),
-                                               m_manager);
+    auto *reply = sendScheduledGet(req);
 
     auto statsBefore  = m_scheduler->statistics();
     int pendingBefore = statsBefore.pendingRequests + statsBefore.runningRequests;
@@ -325,11 +309,7 @@ void tst_QCNetworkScheduler::testCancelRequest()
     QCNetworkRequest req(QUrl("http://cancel-one.test/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
     m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-    auto *reply = m_scheduler->scheduleRequest(req,
-                                               HttpMethod::Get,
-                                               QCNetworkRequestPriority::Normal,
-                                               QByteArray(),
-                                               m_manager);
+    auto *reply = sendScheduledGet(req);
 
     // 监听取消信号
     QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
@@ -365,11 +345,7 @@ void tst_QCNetworkScheduler::testCancelAllRequests()
         QCNetworkRequest req(QUrl(QStringLiteral("http://cancel-all-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
         m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-        auto *reply = m_scheduler->scheduleRequest(req,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::Normal,
-                                                   QByteArray(),
-                                                   m_manager);
+        auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
@@ -414,11 +390,7 @@ void tst_QCNetworkScheduler::testChangePriority()
     QCNetworkRequest req(QUrl("http://priority-change.test/test"));
     req.setPriority(QCNetworkRequestPriority::Low);
     m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-    auto *reply = m_scheduler->scheduleRequest(req,
-                                               HttpMethod::Get,
-                                               QCNetworkRequestPriority::Low,
-                                               QByteArray(),
-                                               m_manager);
+    auto *reply = sendScheduledGet(req);
 
     // 监听队列信号
     QSignalSpy queueSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
@@ -460,11 +432,7 @@ void tst_QCNetworkScheduler::testStatistics()
         QCNetworkRequest req(QUrl(QStringLiteral("http://stats-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
         m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-        auto *reply = m_scheduler->scheduleRequest(req,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::Normal,
-                                                   QByteArray(),
-                                                   m_manager);
+        auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
@@ -511,11 +479,7 @@ void tst_QCNetworkScheduler::testCriticalPriority()
         QCNetworkRequest req(QUrl(QStringLiteral("http://normal-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
         m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-        auto *reply = m_scheduler->scheduleRequest(req,
-                                                   HttpMethod::Get,
-                                                   QCNetworkRequestPriority::Normal,
-                                                   QByteArray(),
-                                                   m_manager);
+        auto *reply = sendScheduledGet(req);
         normalReplies.append(reply);
     }
 
@@ -526,11 +490,7 @@ void tst_QCNetworkScheduler::testCriticalPriority()
     QCNetworkRequest criticalReq(QUrl("http://critical.test/test"));
     criticalReq.setPriority(QCNetworkRequestPriority::Critical);
     m_mock.mockResponse(HttpMethod::Get, criticalReq.url(), QByteArray("OK"));
-    auto *criticalReply = m_scheduler->scheduleRequest(criticalReq,
-                                                       HttpMethod::Get,
-                                                       QCNetworkRequestPriority::Critical,
-                                                       QByteArray(),
-                                                       m_manager);
+    auto *criticalReply = sendScheduledGet(criticalReq);
 
     auto statsAfter  = m_scheduler->statistics();
     int runningAfter = statsAfter.runningRequests;
@@ -567,11 +527,7 @@ void tst_QCNetworkScheduler::testQueueEmptySignal()
     QCNetworkRequest req(QUrl("http://queue-empty.test/test"));
     req.setPriority(QCNetworkRequestPriority::Normal);
     m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
-    auto *reply = m_scheduler->scheduleRequest(req,
-                                               HttpMethod::Get,
-                                               QCNetworkRequestPriority::Normal,
-                                               QByteArray(),
-                                               m_manager);
+    auto *reply = sendScheduledGet(req);
 
     // 立即取消
     m_scheduler->cancelRequest(reply);

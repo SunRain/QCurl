@@ -2,6 +2,7 @@
 #define QCNETWORKACCESSMANAGER_H
 
 #include "QCGlobal.h"
+#include "QCNetworkHttpMethod.h"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -10,6 +11,8 @@
 #include <QObject>
 #include <QScopedPointer>
 #include <QUrl>
+
+#include <functional>
 
 class QTimer;
 class QSocketNotifier;
@@ -497,6 +500,38 @@ signals:
 public slots:
 
 private:
+    using ReplyFactory = std::function<QCNetworkReply *()>;
+
+    QCNetworkReply *dispatchSendRequest(const QCNetworkRequest &request,
+                                        HttpMethod method,
+                                        bool async,
+                                        const QByteArray &body,
+                                        const char *apiName,
+                                        const ReplyFactory &impl);
+    QCNetworkReply *dispatchManagedSendRequest(const QCNetworkRequest &request,
+                                               HttpMethod method,
+                                               bool async,
+                                               const QByteArray &body,
+                                               const char *apiName);
+    QCNetworkReply *createReply(const QCNetworkRequest &request,
+                                HttpMethod method,
+                                bool async,
+                                const QByteArray &body,
+                                QObject *parent);
+    QCNetworkReply *createManagedReply(const QCNetworkRequest &request,
+                                       HttpMethod method,
+                                       bool async,
+                                       const QByteArray &body,
+                                       const QList<QCNetworkMiddleware *> &middlewares);
+    QCNetworkReply *createNoEventLoopErrorReply(const QCNetworkRequest &request,
+                                                HttpMethod method,
+                                                const QByteArray &body,
+                                                QObject *parent,
+                                                const char *apiName);
+    void applyReplyDefaults(QCNetworkReply *reply) const;
+    void prepareManagedReply(QCNetworkReply *reply,
+                             const QList<QCNetworkMiddleware *> &middlewares) const;
+
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;
     CookieFileModeFlag m_cookieModeFlag;

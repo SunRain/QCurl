@@ -4,12 +4,53 @@
 #include "QCNetworkRequestScheduler.h"
 
 #include "QCNetworkReply.h"
-#include "QCNetworkRequest.h"
 
+#include <QDateTime>
 #include <QDebug>
+#include <QHash>
+#include <QMap>
 #include <QMetaObject>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QPointer>
+#include <QQueue>
+#include <QString>
+#include <QTimer>
 
 namespace QCurl {
+
+struct QCNetworkRequestScheduler::Impl
+{
+    struct QueuedRequest
+    {
+        QPointer<QCNetworkReply> reply;    ///< 响应对象（使用 QPointer 防止悬空指针）
+        QCNetworkRequestPriority priority; ///< 请求优先级
+        QDateTime queueTime;               ///< 加入队列的时间
+        QString host;                      ///< 主机名
+    };
+
+    mutable QMutex mutex; ///< 保护所有成员变量的互斥锁
+    QCNetworkRequestScheduler::Config config;
+
+    // 优先级队列
+    QMap<QCNetworkRequestPriority, QQueue<QueuedRequest>> pendingQueue;
+
+    // 运行中的请求
+    QList<QPointer<QCNetworkReply>> runningRequests;
+    QHash<QString, int> hostConnectionCount; ///< 主机连接计数
+
+    // 延后调度的请求（非传输级 pause）
+    QList<QPointer<QCNetworkReply>> deferredRequests;
+
+    // 统计信息
+    QCNetworkRequestScheduler::Statistics stats;
+    QHash<QCNetworkReply *, QDateTime> requestStartTimes; ///< 请求开始时间
+    QHash<QCNetworkReply *, QString> replyHosts;          ///< Reply 对应的主机名
+
+    // 带宽控制
+    QTimer *throttleTimer           = nullptr; ///< 带宽重置定时器
+    qint64 bytesTransferredInWindow = 0;       ///< 当前窗口内传输的字节数
+};
 
 // 单例实现
 QCNetworkRequestScheduler *QCNetworkRequestScheduler::instance()
@@ -21,16 +62,16 @@ QCNetworkRequestScheduler *QCNetworkRequestScheduler::instance()
 
 QCNetworkRequestScheduler::QCNetworkRequestScheduler(QObject *parent)
     : QObject(parent)
-    , m_throttleTimer(new QTimer(this))
-    , m_bytesTransferredInWindow(0)
+    , m_impl(new Impl)
 {
     // 每秒重置带宽窗口
-    m_throttleTimer->setInterval(1000);
-    connect(m_throttleTimer,
+    m_impl->throttleTimer = new QTimer(this);
+    m_impl->throttleTimer->setInterval(1000);
+    connect(m_impl->throttleTimer,
             &QTimer::timeout,
             this,
             &QCNetworkRequestScheduler::updateBandwidthStats);
-    m_throttleTimer->start();
+    m_impl->throttleTimer->start();
 }
 
 QCNetworkRequestScheduler::~QCNetworkRequestScheduler()
@@ -41,8 +82,8 @@ QCNetworkRequestScheduler::~QCNetworkRequestScheduler()
 void QCNetworkRequestScheduler::setConfig(const Config &config)
 {
     {
-        QMutexLocker locker(&m_mutex);
-        m_config = config;
+        QMutexLocker locker(&m_impl->mutex);
+        m_impl->config = config;
     }
 
     // 配置改变后尝试处理队列（避免持锁触发信号回调/重入）
@@ -51,31 +92,18 @@ void QCNetworkRequestScheduler::setConfig(const Config &config)
 
 QCNetworkRequestScheduler::Config QCNetworkRequestScheduler::config() const
 {
-    QMutexLocker locker(&m_mutex);
-    return m_config;
+    QMutexLocker locker(&m_impl->mutex);
+    return m_impl->config;
 }
 
-QCNetworkReply *QCNetworkRequestScheduler::scheduleRequest(const QCNetworkRequest &request,
-                                                           HttpMethod method,
-                                                           QCNetworkRequestPriority priority,
-                                                           const QByteArray &body)
+void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
+                                              QCNetworkRequestPriority priority)
 {
-    return scheduleRequest(request, method, priority, body, nullptr);
-}
+    if (!reply) {
+        return;
+    }
 
-QCNetworkReply *QCNetworkRequestScheduler::scheduleRequest(const QCNetworkRequest &request,
-                                                           HttpMethod method,
-                                                           QCNetworkRequestPriority priority,
-                                                           const QByteArray &body,
-                                                           QObject *replyParent)
-{
-    // 允许调用方显式指定 replyParent（通常为 QCNetworkAccessManager），用于回溯
-    // cache/mock/middleware。 注意：QObject 父子关系要求 thread affinity 一致，跨线程调用方应在
-    // owner 线程创建/调度。
-    QMutexLocker locker(&m_mutex);
-
-    // 创建 Reply 对象（但不立即执行）
-    auto *reply = new QCNetworkReply(request, method, ExecutionMode::Async, body, replyParent);
+    QMutexLocker locker(&m_impl->mutex);
 
     // 兜底：用户可能在 finished 槽内直接 delete reply（而非 deleteLater），导致 queued 的 finished
     // 回调无法执行。 这里监听 destroyed 以回收并发槽位与主机计数，避免队列卡死。
@@ -96,24 +124,24 @@ QCNetworkReply *QCNetworkRequestScheduler::scheduleRequest(const QCNetworkReques
         Qt::QueuedConnection);
 
     // 创建队列项
-    QueuedRequest queuedReq;
+    Impl::QueuedRequest queuedReq;
     queuedReq.reply     = reply;
     queuedReq.priority  = priority;
     queuedReq.queueTime = QDateTime::currentDateTime();
-    queuedReq.host      = request.url().host();
+    queuedReq.host      = reply->url().host();
 
     bool shouldEmitQueued = false;
     if (priority == QCNetworkRequestPriority::Critical) {
         // Critical：跳过队列直接执行（不受并发/主机限制约束）
-        m_runningRequests.append(reply);
-        m_stats.runningRequests = m_runningRequests.size();
-        m_hostConnectionCount[queuedReq.host]++;
-        m_requestStartTimes[reply] = QDateTime::currentDateTime();
-        m_replyHosts[reply]        = queuedReq.host;
+        m_impl->runningRequests.append(reply);
+        m_impl->stats.runningRequests = m_impl->runningRequests.size();
+        m_impl->hostConnectionCount[queuedReq.host]++;
+        m_impl->requestStartTimes[reply] = QDateTime::currentDateTime();
+        m_impl->replyHosts[reply]        = queuedReq.host;
     } else {
         // 加入优先级队列
-        m_pendingQueue[priority].enqueue(queuedReq);
-        m_stats.pendingRequests++;
+        m_impl->pendingQueue[priority].enqueue(queuedReq);
+        m_impl->stats.pendingRequests++;
         shouldEmitQueued = true;
     }
 
@@ -122,18 +150,16 @@ QCNetworkReply *QCNetworkRequestScheduler::scheduleRequest(const QCNetworkReques
     if (shouldEmitQueued) {
         emit requestQueued(reply, priority);
         processQueue();
-        return reply;
+        return;
     }
 
     // Critical：立即启动（避免持锁触发 execute/cancel 的同步信号回调）
-    startRequest(queuedReq);
-
-    return reply;
+    startRequest(reply);
 }
 
 void QCNetworkRequestScheduler::processQueue()
 {
-    QList<QueuedRequest> toStart;
+    QList<QPointer<QCNetworkReply>> toStart;
     bool shouldEmitQueueEmpty         = false;
     bool shouldEmitBandwidthThrottled = false;
     qint64 throttledBytesPerSec       = 0;
@@ -146,7 +172,7 @@ void QCNetworkRequestScheduler::processQueue()
                                                   QCNetworkRequestPriority::VeryLow};
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
         // 兜底清理：running/deferred/pending 中可能存在已销毁的 reply（QPointer 变 null）
         auto prunePointerList = [](QList<QPointer<QCNetworkReply>> &list) {
@@ -156,68 +182,68 @@ void QCNetworkRequestScheduler::processQueue()
                 }
             }
         };
-        prunePointerList(m_runningRequests);
-        prunePointerList(m_deferredRequests);
-        m_stats.runningRequests = m_runningRequests.size();
+        prunePointerList(m_impl->runningRequests);
+        prunePointerList(m_impl->deferredRequests);
+        m_impl->stats.runningRequests = m_impl->runningRequests.size();
 
         for (auto priority : priorities) {
-            auto &queue = m_pendingQueue[priority];
+            auto &queue = m_impl->pendingQueue[priority];
 
             while (!queue.isEmpty()) {
-                const QueuedRequest &req = queue.head();
+                const Impl::QueuedRequest &req = queue.head();
 
                 if (!req.reply) {
                     queue.dequeue();
-                    if (m_stats.pendingRequests > 0) {
-                        m_stats.pendingRequests--;
+                    if (m_impl->stats.pendingRequests > 0) {
+                        m_impl->stats.pendingRequests--;
                     }
                     continue;
                 }
 
                 // 检查并发/主机/带宽限制（锁内只做判定，不发射信号）
-                if (m_stats.runningRequests >= m_config.maxConcurrentRequests) {
+                if (m_impl->stats.runningRequests >= m_impl->config.maxConcurrentRequests) {
                     break;
                 }
-                const int hostCount = m_hostConnectionCount.value(req.host, 0);
-                if (hostCount >= m_config.maxRequestsPerHost) {
+                const int hostCount = m_impl->hostConnectionCount.value(req.host, 0);
+                if (hostCount >= m_impl->config.maxRequestsPerHost) {
                     break;
                 }
-                if (m_config.enableThrottling && m_config.maxBandwidthBytesPerSec > 0) {
-                    if (m_bytesTransferredInWindow >= m_config.maxBandwidthBytesPerSec) {
+                if (m_impl->config.enableThrottling && m_impl->config.maxBandwidthBytesPerSec > 0) {
+                    if (m_impl->bytesTransferredInWindow >= m_impl->config.maxBandwidthBytesPerSec) {
                         shouldEmitBandwidthThrottled = true;
-                        throttledBytesPerSec         = m_bytesTransferredInWindow;
+                        throttledBytesPerSec         = m_impl->bytesTransferredInWindow;
                         break;
                     }
                 }
 
                 // 出队并预占并发槽位（锁内更新状态，锁外真正启动）
-                QueuedRequest queuedReq = queue.dequeue();
-                if (m_stats.pendingRequests > 0) {
-                    m_stats.pendingRequests--;
+                Impl::QueuedRequest queuedReq = queue.dequeue();
+                if (m_impl->stats.pendingRequests > 0) {
+                    m_impl->stats.pendingRequests--;
                 }
 
                 QCNetworkReply *reply = queuedReq.reply.data();
-                m_runningRequests.append(queuedReq.reply);
-                m_stats.runningRequests = m_runningRequests.size();
-                m_hostConnectionCount[queuedReq.host]++;
-                m_requestStartTimes[reply] = QDateTime::currentDateTime();
-                m_replyHosts[reply]        = queuedReq.host;
+                m_impl->runningRequests.append(queuedReq.reply);
+                m_impl->stats.runningRequests = m_impl->runningRequests.size();
+                m_impl->hostConnectionCount[queuedReq.host]++;
+                m_impl->requestStartTimes[reply] = QDateTime::currentDateTime();
+                m_impl->replyHosts[reply]        = queuedReq.host;
 
-                toStart.append(queuedReq);
+                toStart.append(queuedReq.reply);
             }
         }
 
         // 检查队列是否为空（pending 为空即可，不要求 running 为空）
         bool isEmpty = true;
-        for (const auto &queue : m_pendingQueue) {
+        for (const auto &queue : m_impl->pendingQueue) {
             if (!queue.isEmpty()) {
                 isEmpty = false;
                 break;
             }
         }
 
-        if (isEmpty && m_stats.pendingRequests > 0) {
-            m_stats.pendingRequests = 0;
+        if (isEmpty && m_impl->stats.pendingRequests > 0) {
+            m_impl->stats.pendingRequests = 0;
         }
         if (isEmpty) {
             shouldEmitQueueEmpty = true;
@@ -228,8 +254,11 @@ void QCNetworkRequestScheduler::processQueue()
         emit bandwidthThrottled(throttledBytesPerSec);
     }
 
-    for (const auto &req : toStart) {
-        startRequest(req);
+    for (const auto &replyPtr : toStart) {
+        if (!replyPtr) {
+            continue;
+        }
+        startRequest(replyPtr.data());
     }
 
     if (shouldEmitQueueEmpty) {
@@ -237,64 +266,36 @@ void QCNetworkRequestScheduler::processQueue()
     }
 }
 
-bool QCNetworkRequestScheduler::canStartRequest(const QueuedRequest &req) const
+void QCNetworkRequestScheduler::startRequest(QCNetworkReply *reply)
 {
-    // 检查 reply 是否仍然有效
-    if (!req.reply) {
-        return false;
-    }
-
-    // 检查全局并发限制
-    if (m_stats.runningRequests >= m_config.maxConcurrentRequests) {
-        return false;
-    }
-
-    // 检查每个主机的并发限制
-    int hostCount = m_hostConnectionCount.value(req.host, 0);
-    if (hostCount >= m_config.maxRequestsPerHost) {
-        return false;
-    }
-
-    // 检查带宽限制（如果启用）
-    if (m_config.enableThrottling && m_config.maxBandwidthBytesPerSec > 0) {
-        if (m_bytesTransferredInWindow >= m_config.maxBandwidthBytesPerSec) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-void QCNetworkRequestScheduler::startRequest(const QueuedRequest &req)
-{
-    if (!req.reply) {
+    if (!reply) {
         return;
     }
 
     // 连接进度信号以追踪带宽使用
-    connect(req.reply,
+    connect(reply,
             &QCNetworkReply::downloadProgress,
             this,
             [this](qint64 bytesReceived, qint64 /*bytesTotal*/) {
-                QMutexLocker locker(&m_mutex);
-                m_bytesTransferredInWindow += bytesReceived;
+                QMutexLocker locker(&m_impl->mutex);
+                m_impl->bytesTransferredInWindow += bytesReceived;
             });
 
-    connect(req.reply,
+    connect(reply,
             &QCNetworkReply::uploadProgress,
             this,
             [this](qint64 bytesSent, qint64 /*bytesTotal*/) {
-                QMutexLocker locker(&m_mutex);
-                m_bytesTransferredInWindow += bytesSent;
+                QMutexLocker locker(&m_impl->mutex);
+                m_impl->bytesTransferredInWindow += bytesSent;
             });
 
     // 发射信号
-    emit requestStarted(req.reply);
+    emit requestStarted(reply);
 
     // 启动请求（排队到事件循环，避免在 scheduleRequest 返回前同步发射 finished）
-    QPointer<QCNetworkReply> safeReply(req.reply);
+    QPointer<QCNetworkReply> safeReply(reply);
     QMetaObject::invokeMethod(
-        req.reply.data(),
+        reply,
         [safeReply]() {
             if (safeReply) {
                 safeReply->execute();
@@ -313,32 +314,32 @@ void QCNetworkRequestScheduler::deferRequest(QCNetworkReply *reply)
 
     // 检查是否在运行列表中
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
-        if (m_runningRequests.contains(reply)) {
+        if (m_impl->runningRequests.contains(reply)) {
             // 延后执行中的请求：为释放并发槽位，当前实现选择终止执行并转入 deferred
             // 注意：这不是传输级暂停，undefer 后一般会从头重新请求
             shouldCancel = true;
 
-            m_runningRequests.removeOne(reply);
-            m_stats.runningRequests = m_runningRequests.size();
+            m_impl->runningRequests.removeOne(reply);
+            m_impl->stats.runningRequests = m_impl->runningRequests.size();
 
             // 更新主机连接计数
-            if (m_replyHosts.contains(reply)) {
-                const QString host = m_replyHosts[reply];
-                if (m_hostConnectionCount.contains(host)) {
-                    m_hostConnectionCount[host]--;
-                    if (m_hostConnectionCount[host] <= 0) {
-                        m_hostConnectionCount.remove(host);
+            if (m_impl->replyHosts.contains(reply)) {
+                const QString host = m_impl->replyHosts[reply];
+                if (m_impl->hostConnectionCount.contains(host)) {
+                    m_impl->hostConnectionCount[host]--;
+                    if (m_impl->hostConnectionCount[host] <= 0) {
+                        m_impl->hostConnectionCount.remove(host);
                     }
                 }
             }
 
-            m_deferredRequests.append(reply);
+            m_impl->deferredRequests.append(reply);
         } else if (removeFromQueue(reply)) {
-            m_deferredRequests.append(reply);
-            if (m_stats.pendingRequests > 0) {
-                m_stats.pendingRequests--;
+            m_impl->deferredRequests.append(reply);
+            if (m_impl->stats.pendingRequests > 0) {
+                m_impl->stats.pendingRequests--;
             }
         }
     }
@@ -368,22 +369,22 @@ void QCNetworkRequestScheduler::undeferRequest(QCNetworkReply *reply)
     bool requeued                     = false;
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
-        if (!m_deferredRequests.contains(reply)) {
+        if (!m_impl->deferredRequests.contains(reply)) {
             return;
         }
 
-        m_deferredRequests.removeOne(reply);
+        m_impl->deferredRequests.removeOne(reply);
 
-        QueuedRequest req;
+        Impl::QueuedRequest req;
         req.reply     = reply;
         req.priority  = priority;
         req.queueTime = QDateTime::currentDateTime();
         req.host      = reply->url().host(); // 从 reply 的 url() 获取
 
-        m_pendingQueue[priority].enqueue(req);
-        m_stats.pendingRequests++;
+        m_impl->pendingQueue[priority].enqueue(req);
+        m_impl->stats.pendingRequests++;
         requeued = true;
     }
 
@@ -404,35 +405,35 @@ void QCNetworkRequestScheduler::cancelRequest(QCNetworkReply *reply)
     bool shouldEmitCancelled = false;
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
-        if (m_runningRequests.contains(reply)) {
+        if (m_impl->runningRequests.contains(reply)) {
             wasRunning = true;
-            m_runningRequests.removeOne(reply);
-            m_stats.runningRequests = m_runningRequests.size();
-            m_stats.cancelledRequests++;
+            m_impl->runningRequests.removeOne(reply);
+            m_impl->stats.runningRequests = m_impl->runningRequests.size();
+            m_impl->stats.cancelledRequests++;
             shouldProcess       = true;
             shouldEmitCancelled = true;
 
-            if (m_replyHosts.contains(reply)) {
-                const QString host = m_replyHosts[reply];
-                if (m_hostConnectionCount.contains(host)) {
-                    m_hostConnectionCount[host]--;
-                    if (m_hostConnectionCount[host] <= 0) {
-                        m_hostConnectionCount.remove(host);
+            if (m_impl->replyHosts.contains(reply)) {
+                const QString host = m_impl->replyHosts[reply];
+                if (m_impl->hostConnectionCount.contains(host)) {
+                    m_impl->hostConnectionCount[host]--;
+                    if (m_impl->hostConnectionCount[host] <= 0) {
+                        m_impl->hostConnectionCount.remove(host);
                     }
                 }
-                m_replyHosts.remove(reply);
+                m_impl->replyHosts.remove(reply);
             }
-        } else if (m_deferredRequests.contains(reply)) {
-            m_deferredRequests.removeOne(reply);
-            m_stats.cancelledRequests++;
+        } else if (m_impl->deferredRequests.contains(reply)) {
+            m_impl->deferredRequests.removeOne(reply);
+            m_impl->stats.cancelledRequests++;
             shouldEmitCancelled = true;
         } else if (removeFromQueue(reply)) {
-            if (m_stats.pendingRequests > 0) {
-                m_stats.pendingRequests--;
+            if (m_impl->stats.pendingRequests > 0) {
+                m_impl->stats.pendingRequests--;
             }
-            m_stats.cancelledRequests++;
+            m_impl->stats.cancelledRequests++;
             shouldEmitCancelled = true;
         }
     }
@@ -460,38 +461,38 @@ void QCNetworkRequestScheduler::cancelAllRequests()
     QList<QPointer<QCNetworkReply>> toCancel;
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
-        for (const auto &reply : m_runningRequests) {
+        for (const auto &reply : m_impl->runningRequests) {
             if (reply) {
                 toCancel.append(reply);
-                m_stats.cancelledRequests++;
+                m_impl->stats.cancelledRequests++;
             }
         }
-        m_runningRequests.clear();
-        m_stats.runningRequests = 0;
-        m_hostConnectionCount.clear();
-        m_replyHosts.clear();
-        m_requestStartTimes.clear();
+        m_impl->runningRequests.clear();
+        m_impl->stats.runningRequests = 0;
+        m_impl->hostConnectionCount.clear();
+        m_impl->replyHosts.clear();
+        m_impl->requestStartTimes.clear();
 
-        for (const auto &reply : m_deferredRequests) {
+        for (const auto &reply : m_impl->deferredRequests) {
             if (reply) {
                 toCancel.append(reply);
-                m_stats.cancelledRequests++;
+                m_impl->stats.cancelledRequests++;
             }
         }
-        m_deferredRequests.clear();
+        m_impl->deferredRequests.clear();
 
-        for (auto &queue : m_pendingQueue) {
+        for (auto &queue : m_impl->pendingQueue) {
             while (!queue.isEmpty()) {
-                QueuedRequest req = queue.dequeue();
+                Impl::QueuedRequest req = queue.dequeue();
                 if (req.reply) {
                     toCancel.append(req.reply);
-                    m_stats.cancelledRequests++;
+                    m_impl->stats.cancelledRequests++;
                 }
             }
         }
-        m_stats.pendingRequests = 0;
+        m_impl->stats.pendingRequests = 0;
     }
 
     for (const auto &replyPtr : toCancel) {
@@ -522,7 +523,7 @@ void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
 
     bool requeued = false;
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
         // 只能调整队列中的请求
         if (!removeFromQueue(reply)) {
@@ -530,13 +531,13 @@ void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
         }
 
         // 重新加入队列（使用新优先级）
-        QueuedRequest req;
+        Impl::QueuedRequest req;
         req.reply     = reply;
         req.priority  = newPriority;
         req.queueTime = QDateTime::currentDateTime();
         req.host      = reply->url().host(); // 从 reply 的 url() 获取
 
-        m_pendingQueue[newPriority].enqueue(req);
+        m_impl->pendingQueue[newPriority].enqueue(req);
         requeued = true;
     }
 
@@ -548,16 +549,16 @@ void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
 
 QCNetworkRequestScheduler::Statistics QCNetworkRequestScheduler::statistics() const
 {
-    QMutexLocker locker(&m_mutex);
-    return m_stats;
+    QMutexLocker locker(&m_impl->mutex);
+    return m_impl->stats;
 }
 
 QList<QCNetworkReply *> QCNetworkRequestScheduler::pendingRequests() const
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker locker(&m_impl->mutex);
 
     QList<QCNetworkReply *> result;
-    for (const auto &queue : m_pendingQueue) {
+    for (const auto &queue : m_impl->pendingQueue) {
         for (const auto &req : queue) {
             if (req.reply) {
                 result.append(req.reply);
@@ -570,10 +571,10 @@ QList<QCNetworkReply *> QCNetworkRequestScheduler::pendingRequests() const
 
 QList<QCNetworkReply *> QCNetworkRequestScheduler::runningRequests() const
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker locker(&m_impl->mutex);
 
     QList<QCNetworkReply *> result;
-    for (auto reply : m_runningRequests) {
+    for (auto reply : m_impl->runningRequests) {
         if (reply) {
             result.append(reply);
         }
@@ -592,39 +593,40 @@ void QCNetworkRequestScheduler::onRequestFinished(QCNetworkReply *reply)
     const QDateTime finishTime = QDateTime::currentDateTime();
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
-        m_runningRequests.removeOne(reply);
-        m_stats.runningRequests = m_runningRequests.size();
-        m_stats.completedRequests++;
+        m_impl->runningRequests.removeOne(reply);
+        m_impl->stats.runningRequests = m_impl->runningRequests.size();
+        m_impl->stats.completedRequests++;
 
-        if (m_replyHosts.contains(reply)) {
-            const QString host = m_replyHosts[reply];
-            if (m_hostConnectionCount.contains(host)) {
-                m_hostConnectionCount[host]--;
-                if (m_hostConnectionCount[host] <= 0) {
-                    m_hostConnectionCount.remove(host);
+        if (m_impl->replyHosts.contains(reply)) {
+            const QString host = m_impl->replyHosts[reply];
+            if (m_impl->hostConnectionCount.contains(host)) {
+                m_impl->hostConnectionCount[host]--;
+                if (m_impl->hostConnectionCount[host] <= 0) {
+                    m_impl->hostConnectionCount.remove(host);
                 }
             }
-            m_replyHosts.remove(reply);
+            m_impl->replyHosts.remove(reply);
         }
 
-        if (m_requestStartTimes.contains(reply)) {
-            const QDateTime startTime = m_requestStartTimes[reply];
+        if (m_impl->requestStartTimes.contains(reply)) {
+            const QDateTime startTime = m_impl->requestStartTimes[reply];
             const qint64 duration     = startTime.msecsTo(finishTime);
 
-            if (m_stats.completedRequests == 1) {
-                m_stats.avgResponseTime = duration;
+            if (m_impl->stats.completedRequests == 1) {
+                m_impl->stats.avgResponseTime = duration;
             } else {
-                m_stats.avgResponseTime = (m_stats.avgResponseTime * (m_stats.completedRequests - 1)
+                m_impl->stats.avgResponseTime
+                    = (m_impl->stats.avgResponseTime * (m_impl->stats.completedRequests - 1)
                                            + duration)
-                                          / m_stats.completedRequests;
+                      / m_impl->stats.completedRequests;
             }
 
-            m_requestStartTimes.remove(reply);
+            m_impl->requestStartTimes.remove(reply);
         }
 
-        m_stats.totalBytesReceived += bytesReceived;
+        m_impl->stats.totalBytesReceived += bytesReceived;
     }
 
     emit requestFinished(reply);
@@ -635,9 +637,9 @@ void QCNetworkRequestScheduler::updateBandwidthStats()
 {
     bool shouldProcess = false;
     {
-        QMutexLocker locker(&m_mutex);
-        m_bytesTransferredInWindow = 0;
-        shouldProcess              = (m_stats.pendingRequests > 0);
+        QMutexLocker locker(&m_impl->mutex);
+        m_impl->bytesTransferredInWindow = 0;
+        shouldProcess                    = (m_impl->stats.pendingRequests > 0);
     }
 
     if (shouldProcess) {
@@ -651,7 +653,7 @@ void QCNetworkRequestScheduler::onReplyDestroyed(QObject *obj)
     bool shouldKickQueue = false;
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&m_impl->mutex);
 
         // running/deferred：清理空指针，释放并发槽位
         auto prunePointerList = [](QList<QPointer<QCNetworkReply>> &list) {
@@ -662,41 +664,41 @@ void QCNetworkRequestScheduler::onReplyDestroyed(QObject *obj)
             }
         };
 
-        const int runningBefore  = m_runningRequests.size();
-        const int deferredBefore = m_deferredRequests.size();
-        prunePointerList(m_runningRequests);
-        prunePointerList(m_deferredRequests);
-        if (m_runningRequests.size() != runningBefore
-            || m_deferredRequests.size() != deferredBefore) {
-            m_stats.runningRequests = m_runningRequests.size();
+        const int runningBefore  = m_impl->runningRequests.size();
+        const int deferredBefore = m_impl->deferredRequests.size();
+        prunePointerList(m_impl->runningRequests);
+        prunePointerList(m_impl->deferredRequests);
+        if (m_impl->runningRequests.size() != runningBefore
+            || m_impl->deferredRequests.size() != deferredBefore) {
+            m_impl->stats.runningRequests = m_impl->runningRequests.size();
             shouldKickQueue         = true;
         }
 
         // pending：清理空指针，修正 pendingRequests（避免 queueEmpty 永远不触发）
-        for (auto &queue : m_pendingQueue) {
+        for (auto &queue : m_impl->pendingQueue) {
             while (!queue.isEmpty() && !queue.head().reply) {
                 queue.dequeue();
-                if (m_stats.pendingRequests > 0) {
-                    m_stats.pendingRequests--;
+                if (m_impl->stats.pendingRequests > 0) {
+                    m_impl->stats.pendingRequests--;
                 }
                 shouldKickQueue = true;
             }
         }
 
         // host 计数兜底：若 finished 未能回收，这里必须释放 host 槽位
-        if (m_replyHosts.contains(reply)) {
-            const QString host = m_replyHosts[reply];
-            if (m_hostConnectionCount.contains(host)) {
-                m_hostConnectionCount[host]--;
-                if (m_hostConnectionCount[host] <= 0) {
-                    m_hostConnectionCount.remove(host);
+        if (m_impl->replyHosts.contains(reply)) {
+            const QString host = m_impl->replyHosts[reply];
+            if (m_impl->hostConnectionCount.contains(host)) {
+                m_impl->hostConnectionCount[host]--;
+                if (m_impl->hostConnectionCount[host] <= 0) {
+                    m_impl->hostConnectionCount.remove(host);
                 }
             }
-            m_replyHosts.remove(reply);
+            m_impl->replyHosts.remove(reply);
             shouldKickQueue = true;
         }
 
-        m_requestStartTimes.remove(reply);
+        m_impl->requestStartTimes.remove(reply);
     }
 
     if (shouldKickQueue) {
@@ -710,7 +712,7 @@ bool QCNetworkRequestScheduler::removeFromQueue(QCNetworkReply *reply)
         return false;
     }
 
-    for (auto &queue : m_pendingQueue) {
+    for (auto &queue : m_impl->pendingQueue) {
         for (int i = 0; i < queue.size(); ++i) {
             if (queue[i].reply == reply) {
                 queue.removeAt(i);

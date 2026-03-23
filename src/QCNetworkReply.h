@@ -3,7 +3,6 @@
 
 #include "QCNetworkError.h"
 #include "QCNetworkHttpMethod.h"
-#include "QCNetworkRequest.h"
 
 #include <QByteArray>
 #include <QList>
@@ -18,6 +17,7 @@
 
 namespace QCurl {
 class QCNetworkReply;
+class QCNetworkRequest;
 
 // ==================
 // 前向声明
@@ -80,7 +80,7 @@ using ProgressFunction
  * @brief 表示单个网络请求的执行状态与结果
  *
  * reply 同时覆盖同步和异步执行路径，并暴露 body、header、错误状态与
- * 传输控制入口。
+ * 传输控制入口。实例只能由 `QCNetworkAccessManager` 工厂路径创建。
  */
 class QCURL_EXPORT QCNetworkReply : public QObject
 {
@@ -91,25 +91,30 @@ class QCURL_EXPORT QCNetworkReply : public QObject
 
 public:
     // ==================
-    // 构造与析构
+    // Test-only construction
     // ==================
+    //
+    // `QCNetworkReply` instances are intended to be created via
+    // `QCNetworkAccessManager::send*()` so the manager can wire middleware,
+    // mock/cache/logger/scheduler, etc.
+    //
+    // Some in-repo tests need to construct a reply directly (e.g. sync mode with
+    // custom callbacks before execute). To avoid `#define private public` hacks,
+    // we provide a narrowly-scoped constructor under the existing test hook
+    // build flag.
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    struct TestOnlyKey
+    {
+        TestOnlyKey() = default;
+    };
 
-    /**
-     * @brief 构造网络响应对象
-     *
-     * @param request 网络请求配置
-     * @param method HTTP 方法
-     * @param mode 执行模式（异步/同步）
-     * @param requestBody 请求体数据（用于 POST/PUT/PATCH）
-     * @param parent 父对象
-     *
-     * @note 通常不直接构造，而是通过 QCNetworkAccessManager 工厂方法创建
-     */
-    explicit QCNetworkReply(const QCNetworkRequest &request,
+    explicit QCNetworkReply(TestOnlyKey,
+                            const QCNetworkRequest &request,
                             HttpMethod method,
                             ExecutionMode mode,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
+#endif
 
     ~QCNetworkReply() override;
 
@@ -282,6 +287,32 @@ public Q_SLOTS:
     void deleteLater();
 
 private:
+    class FactoryKey
+    {
+        friend class QCNetworkAccessManager;
+
+        FactoryKey() = default;
+    };
+
+    /**
+     * @brief 构造网络响应对象
+     *
+     * @param key 仅 `QCNetworkAccessManager` 可构造的工厂通行证
+     * @param request 网络请求配置
+     * @param method HTTP 方法
+     * @param mode 执行模式（异步/同步）
+     * @param requestBody 请求体数据（用于 POST/PUT/PATCH）
+     * @param parent 父对象
+     *
+     * @note reply 只能通过 `QCNetworkAccessManager` 工厂路径创建
+     */
+    explicit QCNetworkReply(FactoryKey key,
+                            const QCNetworkRequest &request,
+                            HttpMethod method,
+                            ExecutionMode mode,
+                            const QByteArray &requestBody = QByteArray(),
+                            QObject *parent               = nullptr);
+
     // ==================
     // 私有实现（Pimpl 模式）
     // ==================

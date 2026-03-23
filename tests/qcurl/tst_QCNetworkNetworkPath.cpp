@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
 
 #include <QtTest/QtTest>
-
-#include <curl/curlver.h>
 
 using namespace QCurl;
 
@@ -156,12 +153,17 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     request.setAllowedProtocols(QStringList{QStringLiteral("http"), QStringLiteral("https")});
     request.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
 
-    // 仅构造，触发 configureCurlOptions（不发起网络请求）
-    QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), nullptr);
-    QVERIFY(reply.state() != ReplyState::Error);
+    // 触发 configureCurlOptions（不发起网络请求）
+    QCNetworkReplyPrivate replyPrivate(nullptr,
+                                       request,
+                                       HttpMethod::Get,
+                                       ExecutionMode::Sync,
+                                       QByteArray());
+    QVERIFY(replyPrivate.configureCurlOptions());
+    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
 
     // 不应包含敏感明文
-    const QStringList warnings = reply.capabilityWarnings();
+    const QStringList warnings = replyPrivate.capabilityWarnings;
     for (const QString &w : warnings) {
         QVERIFY2(!w.contains(QStringLiteral("Authorization"), Qt::CaseInsensitive),
                  qPrintable(QStringLiteral("capability warning contains sensitive key: %1").arg(w)));

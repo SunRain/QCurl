@@ -46,6 +46,7 @@ add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
+target_compile_definitions(tst_QCNetworkReply PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp) # 重试机制测试
 add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # 离线重试/限流门禁（MockHandler）
 add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp) # 离线门禁：响应头 unfold/原始头观测

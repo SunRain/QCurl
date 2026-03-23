@@ -12,6 +12,7 @@
 #include "QCNetworkLogger.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkProxyConfig.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
 #include "QCNetworkSslConfig.h"
@@ -2675,7 +2676,8 @@ QString QCNetworkReplyPrivate::formatDebugTraceMessage(curl_infotype type, const
 // QCNetworkReply 公共接口实现
 // ==================
 
-QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
+QCNetworkReply::QCNetworkReply(FactoryKey,
+                               const QCNetworkRequest &request,
                                HttpMethod method,
                                ExecutionMode mode,
                                const QByteArray &requestBody,
@@ -2698,6 +2700,31 @@ QCNetworkReply::QCNetworkReply(const QCNetworkRequest &request,
         d->setState(ReplyState::Error);
     }
 }
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+QCNetworkReply::QCNetworkReply(TestOnlyKey,
+                               const QCNetworkRequest &request,
+                               HttpMethod method,
+                               ExecutionMode mode,
+                               const QByteArray &requestBody,
+                               QObject *parent)
+    : QObject(parent)
+    , d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
+{
+    Q_D(QCNetworkReply);
+
+    setProperty(kTestCurlPlanDigestProperty, Internal::buildCurlPlanDigestForTest(d->curlPlan));
+
+    // 配置 curl 选项
+    if (!d->configureCurlOptions()) {
+        if (d->errorCode == NetworkError::NoError) {
+            d->setError(NetworkError::InvalidRequest,
+                        QStringLiteral("Failed to configure curl options"));
+        }
+        d->setState(ReplyState::Error);
+    }
+}
+#endif
 
 QCNetworkReply::~QCNetworkReply()
 {

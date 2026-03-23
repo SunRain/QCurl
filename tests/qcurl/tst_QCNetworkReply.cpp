@@ -16,12 +16,15 @@
 #include "QCNetworkError.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkRequestScheduler.h"
 #include "test_httpbin_env.h"
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QHostAddress>
 #include <QMetaMethod>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -100,6 +103,12 @@ private:
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 5000);
+    QCNetworkReply *sendManagedReply(HttpMethod method,
+                                     const QCNetworkRequest &request,
+                                     const QByteArray &body = QByteArray());
+    QCNetworkRequestScheduler::Config blockScheduler(bool &originalEnabled);
+    void restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
+                          bool originalEnabled);
 };
 
 // ============================================================================
@@ -123,6 +132,57 @@ bool TestQCNetworkReply::waitForSignal(QObject *obj, const QMetaMethod &signal, 
 
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
+}
+
+QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
+                                                     const QCNetworkRequest &request,
+                                                     const QByteArray &body)
+{
+    switch (method) {
+        case HttpMethod::Head:
+            return m_manager->sendHead(request);
+        case HttpMethod::Get:
+            return m_manager->sendGet(request);
+        case HttpMethod::Post:
+            return m_manager->sendPost(request, body);
+        case HttpMethod::Put:
+            return m_manager->sendPut(request, body);
+        case HttpMethod::Delete:
+            return body.isEmpty() ? m_manager->sendDelete(request) : m_manager->sendDelete(request, body);
+        case HttpMethod::Patch:
+            return m_manager->sendPatch(request, body);
+        default:
+            return nullptr;
+    }
+}
+
+QCNetworkRequestScheduler::Config TestQCNetworkReply::blockScheduler(bool &originalEnabled)
+{
+    auto *scheduler = QCNetworkRequestScheduler::instance();
+    Q_ASSERT(scheduler != nullptr);
+
+    originalEnabled = m_manager->isSchedulerEnabled();
+
+    QCNetworkRequestScheduler::Config originalConfig = scheduler->config();
+    QCNetworkRequestScheduler::Config blockedConfig  = originalConfig;
+    blockedConfig.maxConcurrentRequests              = 0;
+    blockedConfig.maxRequestsPerHost                 = std::max(originalConfig.maxRequestsPerHost, 1);
+
+    m_manager->enableRequestScheduler(true);
+    scheduler->setConfig(blockedConfig);
+    return originalConfig;
+}
+
+void TestQCNetworkReply::restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
+                                          bool originalEnabled)
+{
+    auto *scheduler = QCNetworkRequestScheduler::instance();
+    Q_ASSERT(scheduler != nullptr);
+
+    scheduler->cancelAllRequests();
+    QCoreApplication::processEvents();
+    scheduler->setConfig(originalConfig);
+    m_manager->enableRequestScheduler(originalEnabled);
 }
 
 // ============================================================================
@@ -176,31 +236,70 @@ void TestQCNetworkReply::cleanup()
 
 void TestQCNetworkReply::testConstructor()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
+    bool originalSchedulerEnabled = false;
+    const auto originalConfig     = blockScheduler(originalSchedulerEnabled);
+    const auto cleanup            = qScopeGuard([&]() {
+        restoreScheduler(originalConfig, originalSchedulerEnabled);
+    });
 
-    QCOMPARE(reply.state(), ReplyState::Idle);
-    QCOMPARE(reply.error(), NetworkError::NoError);
-    QCOMPARE(reply.url(), request.url());
-    QVERIFY(!reply.isRunning());
-    QVERIFY(!reply.isFinished());
+    QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/get")));
+    auto *reply = sendManagedReply(HttpMethod::Get, request);
+
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->state(), ReplyState::Idle);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->url(), request.url());
+    QCOMPARE(reply->method(), HttpMethod::Get);
+    QVERIFY(!reply->isRunning());
+    QVERIFY(!reply->isFinished());
+
+    reply->deleteLater();
 }
 
 void TestQCNetworkReply::testConstructorWithDifferentMethods()
 {
-    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
+    bool originalSchedulerEnabled = false;
+    const auto originalConfig     = blockScheduler(originalSchedulerEnabled);
+    const auto cleanup            = qScopeGuard([&]() {
+        restoreScheduler(originalConfig, originalSchedulerEnabled);
+    });
 
-    // 测试各种 HTTP 方法
-    QCNetworkReply replyHead(request, HttpMethod::Head, ExecutionMode::Async);
-    QCNetworkReply replyGet(request, HttpMethod::Get, ExecutionMode::Async);
-    QCNetworkReply replyPost(request, HttpMethod::Post, ExecutionMode::Async, "test data");
-    QCNetworkReply replyPut(request, HttpMethod::Put, ExecutionMode::Async);
-    QCNetworkReply replyDelete(request, HttpMethod::Delete, ExecutionMode::Async);
-    QCNetworkReply replyPatch(request, HttpMethod::Patch, ExecutionMode::Async);
+    QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/post")));
 
-    QCOMPARE(replyHead.state(), ReplyState::Idle);
-    QCOMPARE(replyGet.state(), ReplyState::Idle);
-    QCOMPARE(replyPost.state(), ReplyState::Idle);
+    auto *replyHead   = sendManagedReply(HttpMethod::Head, request);
+    auto *replyGet    = sendManagedReply(HttpMethod::Get, request);
+    auto *replyPost   = sendManagedReply(HttpMethod::Post, request, QByteArrayLiteral("test data"));
+    auto *replyPut    = sendManagedReply(HttpMethod::Put, request, QByteArray());
+    auto *replyDelete = sendManagedReply(HttpMethod::Delete, request);
+    auto *replyPatch  = sendManagedReply(HttpMethod::Patch, request, QByteArray());
+
+    QVERIFY(replyHead != nullptr);
+    QVERIFY(replyGet != nullptr);
+    QVERIFY(replyPost != nullptr);
+    QVERIFY(replyPut != nullptr);
+    QVERIFY(replyDelete != nullptr);
+    QVERIFY(replyPatch != nullptr);
+
+    QCOMPARE(replyHead->state(), ReplyState::Idle);
+    QCOMPARE(replyGet->state(), ReplyState::Idle);
+    QCOMPARE(replyPost->state(), ReplyState::Idle);
+    QCOMPARE(replyPut->state(), ReplyState::Idle);
+    QCOMPARE(replyDelete->state(), ReplyState::Idle);
+    QCOMPARE(replyPatch->state(), ReplyState::Idle);
+
+    QCOMPARE(replyHead->method(), HttpMethod::Head);
+    QCOMPARE(replyGet->method(), HttpMethod::Get);
+    QCOMPARE(replyPost->method(), HttpMethod::Post);
+    QCOMPARE(replyPut->method(), HttpMethod::Put);
+    QCOMPARE(replyDelete->method(), HttpMethod::Delete);
+    QCOMPARE(replyPatch->method(), HttpMethod::Patch);
+
+    replyHead->deleteLater();
+    replyGet->deleteLater();
+    replyPost->deleteLater();
+    replyPut->deleteLater();
+    replyDelete->deleteLater();
+    replyPatch->deleteLater();
 }
 
 // ============================================================================
@@ -257,8 +356,15 @@ void TestQCNetworkReply::testSyncHeadRequest()
     }
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    QCNetworkReply reply(request, HttpMethod::Head, ExecutionMode::Sync);
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(3000));
 
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                         request,
+                         HttpMethod::Head,
+                         ExecutionMode::Sync,
+                         QByteArray(),
+                         m_manager);
     reply.execute();
 
     QCOMPARE(reply.error(), NetworkError::NoError);
@@ -698,20 +804,28 @@ void TestQCNetworkReply::testStateCancellation()
 
 void TestQCNetworkReply::testSyncPauseResumeNoOp()
 {
-    QCNetworkRequest request(QUrl("http://example.com"));
-    QCNetworkReply reply(request, HttpMethod::Get, ExecutionMode::Sync);
+    if (!m_isHttpbinReachable) {
+        QSKIP("httpbin 服务不可用");
+    }
+
+    QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
+    auto *reply = m_manager->sendGetSync(request);
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->state(), ReplyState::Finished);
 
     QTest::ignoreMessage(
         QtWarningMsg,
         "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume");
-    reply.pauseTransport(PauseMode::All);
-    QCOMPARE(reply.state(), ReplyState::Idle);
+    reply->pauseTransport(PauseMode::All);
+    QCOMPARE(reply->state(), ReplyState::Finished);
 
     QTest::ignoreMessage(
         QtWarningMsg,
         "QCNetworkReply::resumeTransport: Sync mode does not support transfer pause/resume");
-    reply.resumeTransport();
-    QCOMPARE(reply.state(), ReplyState::Idle);
+    reply->resumeTransport();
+    QCOMPARE(reply->state(), ReplyState::Finished);
+
+    reply->deleteLater();
 }
 
 void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()

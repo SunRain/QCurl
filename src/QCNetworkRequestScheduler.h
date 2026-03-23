@@ -4,25 +4,17 @@
 #ifndef QCNETWORKREQUESTSCHEDULER_H
 #define QCNETWORKREQUESTSCHEDULER_H
 
-#include "QCNetworkHttpMethod.h"
+#include "QCGlobal.h"
 #include "QCNetworkRequestPriority.h"
 
-#include <QByteArray>
-#include <QDateTime>
-#include <QHash>
 #include <QList>
-#include <QMap>
-#include <QMutex>
 #include <QObject>
-#include <QPointer>
-#include <QQueue>
-#include <QString>
-#include <QTimer>
+#include <QScopedPointer>
 
 namespace QCurl {
 
+class QCNetworkAccessManager;
 class QCNetworkReply;
-class QCNetworkRequest;
 
 /**
  * @brief 网络请求调度器
@@ -35,6 +27,7 @@ class QCNetworkRequest;
  * - 优先级只影响 pending 队列在“并发槽位释放时”的出队顺序；同一优先级内部为 FIFO。
  * - `Critical` 优先级会绕过 pending 队列并立即启动；它不会抢占已 Running 的请求，但可能突破并发/每主机限制。
  * - 若调用方需要“让出槽位/终止执行”，必须显式调用 `cancelRequest()`/`deferRequest()` 等 API（Running 下 defer 会通过 cancel 终止并转入 deferred）。
+ * - 调度器不再创建 `QCNetworkReply`；异步请求统一由 `QCNetworkAccessManager::send*()` 创建 reply 后交给调度器排队。
  *
  * @note 所有公共方法都使用互斥锁保护
  */
@@ -115,43 +108,6 @@ public:
      * @return 当前配置的副本
      */
     Config config() const;
-
-    /**
-     * @brief 调度一个网络请求
-     *
-     * 根据优先级将请求加入队列（调度器为**非抢占式**：已 Running 的请求不会被更高优先级请求中断）。
-     *
-     * - 非 Critical：进入 pending 队列，等待并发槽位释放后按优先级出队执行。
-     * - Critical：绕过 pending 队列并立即启动；不会抢占 Running，但可能突破并发/每主机限制。
-     *
-     * @param request 网络请求
-     * @param method HTTP 方法
-     * @param priority 请求优先级（默认：Normal）
-     * @param body 请求体（对于 POST/PUT/PATCH）
-     * @return 网络响应对象
-     *
-     * @note 返回的 QCNetworkReply 没有 parent，由调用者负责生命周期
-     */
-    QCNetworkReply *scheduleRequest(
-        const QCNetworkRequest &request,
-        HttpMethod method,
-        QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal,
-        const QByteArray &body            = QByteArray());
-
-    /**
-     * @brief 调度一个网络请求（显式指定 replyParent）
-     *
-     * 用于需要将 QCNetworkReply 绑定到特定 QObject 父对象（例如 QCNetworkAccessManager）
-     * 的场景，以确保通过 reply->parent() 能回溯到管理器上下文（MockHandler/缓存/中间件等）。
-     *
-     * @note 该重载不提供默认参数，避免与现有带默认参数的 scheduleRequest 产生重载二义性。
-     * @note `replyParent` 必须与调度器/新建 reply 处于同一线程亲和性。
-     */
-    QCNetworkReply *scheduleRequest(const QCNetworkRequest &request,
-                                    HttpMethod method,
-                                    QCNetworkRequestPriority priority,
-                                    const QByteArray &body,
-                                    QObject *replyParent);
 
     /**
      * @brief 延后调度请求（非传输级暂停）
@@ -267,44 +223,23 @@ signals:
     void bandwidthThrottled(qint64 currentBytesPerSec);
 
 private:
+    friend class QCNetworkAccessManager;
+
     explicit QCNetworkRequestScheduler(QObject *parent = nullptr);
     ~QCNetworkRequestScheduler() override;
 
     // 禁止拷贝和赋值
     Q_DISABLE_COPY(QCNetworkRequestScheduler)
 
+    struct Impl;
+    QScopedPointer<Impl> m_impl;
+
     /**
-     * @brief 队列中的请求项
+     * @brief 调度已由 `QCNetworkAccessManager` 创建好的 reply
+     *
+     * 调度器仅负责排队、统计和启动，不再负责构造 reply。
      */
-    struct QueuedRequest
-    {
-        QPointer<QCNetworkReply> reply;    ///< 响应对象（使用 QPointer 防止悬空指针）
-        QCNetworkRequestPriority priority; ///< 请求优先级
-        QDateTime queueTime;               ///< 加入队列的时间
-        QString host;                      ///< 主机名
-    };
-
-    mutable QMutex m_mutex; ///< 保护所有成员变量的互斥锁
-    Config m_config;        ///< 调度器配置
-
-    // 优先级队列
-    QMap<QCNetworkRequestPriority, QQueue<QueuedRequest>> m_pendingQueue;
-
-    // 运行中的请求
-    QList<QPointer<QCNetworkReply>> m_runningRequests;
-    QHash<QString, int> m_hostConnectionCount; ///< 主机连接计数
-
-    // 延后调度的请求（非传输级 pause）
-    QList<QPointer<QCNetworkReply>> m_deferredRequests;
-
-    // 统计信息
-    Statistics m_stats;
-    QHash<QCNetworkReply *, QDateTime> m_requestStartTimes; ///< 请求开始时间
-    QHash<QCNetworkReply *, QString> m_replyHosts;          ///< Reply 对应的主机名
-
-    // 带宽控制
-    QTimer *m_throttleTimer;           ///< 带宽重置定时器
-    qint64 m_bytesTransferredInWindow; ///< 当前窗口内传输的字节数
+    void scheduleReply(QCNetworkReply *reply, QCNetworkRequestPriority priority);
 
     /**
      * @brief 处理队列
@@ -314,19 +249,11 @@ private:
     void processQueue();
 
     /**
-     * @brief 检查是否可以启动请求
-     *
-     * @param req 队列中的请求项
-     * @return true 如果可以启动
-     */
-    bool canStartRequest(const QueuedRequest &req) const;
-
-    /**
      * @brief 启动请求
      *
-     * @param req 队列中的请求项
+     * @param reply 要启动的响应对象
      */
-    void startRequest(const QueuedRequest &req);
+    void startRequest(QCNetworkReply *reply);
 
     /**
      * @brief 请求完成的槽函数

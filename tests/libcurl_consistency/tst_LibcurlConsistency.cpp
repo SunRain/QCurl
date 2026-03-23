@@ -265,7 +265,12 @@ NetworkError httpGetToFile(QCNetworkAccessManager &manager,
     }
 
     qint64 written = 0;
-    QCNetworkReply reply(req, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), &manager);
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                         req,
+                         HttpMethod::Get,
+                         ExecutionMode::Sync,
+                         QByteArray(),
+                         &manager);
     reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
         if (abortAt > 0 && written >= abortAt) {
             return 0; // 触发 CURLE_WRITE_ERROR -> 中断
@@ -313,7 +318,12 @@ NetworkError httpRangeToFile(QCNetworkAccessManager &manager,
         return NetworkError::Unknown;
     }
 
-    QCNetworkReply reply(req, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), &manager);
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                         req,
+                         HttpMethod::Get,
+                         ExecutionMode::Sync,
+                         QByteArray(),
+                         &manager);
     reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
         const qint64 want = static_cast<qint64>(size);
         const qint64 w    = out.write(buffer, want);
@@ -343,7 +353,12 @@ NetworkError httpMethodToFile(QCNetworkAccessManager &manager,
         return NetworkError::Unknown;
     }
 
-    QCNetworkReply reply(req, method, ExecutionMode::Sync, body, &manager);
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                         req,
+                         method,
+                         ExecutionMode::Sync,
+                         body,
+                         &manager);
     reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
         const qint64 want = static_cast<qint64>(size);
         const qint64 w    = out.write(buffer, want);
@@ -1059,7 +1074,12 @@ void TestLibcurlConsistency::testCase()
 
         req.setUploadDevice(device.data(), std::optional<qint64>(static_cast<qint64>(uploadSize)));
 
-        QCNetworkReply reply(req, method, ExecutionMode::Sync, QByteArray(), &manager);
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                             req,
+                             method,
+                             ExecutionMode::Sync,
+                             QByteArray(),
+                             &manager);
         reply.execute();
 
         if (seekable) {
@@ -1104,7 +1124,12 @@ void TestLibcurlConsistency::testCase()
         req.setAllowChunkedUploadForPost(true);
         req.setUploadDevice(device.data(), std::nullopt);
 
-        QCNetworkReply reply(req, HttpMethod::Post, ExecutionMode::Sync, QByteArray(), &manager);
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                             req,
+                             HttpMethod::Post,
+                             ExecutionMode::Sync,
+                             QByteArray(),
+                             &manager);
         reply.execute();
         QCOMPARE(reply.error(), NetworkError::NoError);
 
@@ -2802,7 +2827,12 @@ void TestLibcurlConsistency::testCase()
         QFile out(outFile);
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
 
-        QCNetworkReply reply(req, HttpMethod::Get, ExecutionMode::Sync, QByteArray(), &manager);
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
+                             req,
+                             HttpMethod::Get,
+                             ExecutionMode::Sync,
+                             QByteArray(),
+                             &manager);
         reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
             const qint64 want = static_cast<qint64>(size);
             const qint64 w    = out.write(buffer, want);
