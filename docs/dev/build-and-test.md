@@ -74,6 +74,19 @@ ctest --test-dir build-public-api-system -L '^public-api$' --output-on-failure
 ctest --test-dir build-public-api-system -L '^public-api-slow$' --output-on-failure
 ```
 
+如需额外验证 **WebSocket OFF** 的安装面（模拟 `QCURL_WEBSOCKET_SUPPORT` 关闭时的条件安装/导出合同），可使用：
+
+```bash
+cmake -S . -B build-public-api-system-no-ws -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
+  -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF \
+  -DQCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON
+
+cmake --build build-public-api-system-no-ws --target QCurl qcurl_public_api_self_compile -j"$(nproc)"
+ctest --test-dir build-public-api-system-no-ws -L '^public-api$' --output-on-failure
+ctest --test-dir build-public-api-system-no-ws -L '^public-api-slow$' --output-on-failure
+```
+
 ## 3. HTTP/2 本地验证
 
 `tst_QCNetworkHttp2` 默认使用仓库内置 node server，不依赖公网。

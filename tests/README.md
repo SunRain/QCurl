@@ -19,6 +19,10 @@ ctest --test-dir build -L '^public-api$' --output-on-failure
 ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 ```
 
+如需额外验证 `QCURL_WEBSOCKET_SUPPORT` 关闭时的条件安装面（WebSocket 相关头不应进入安装面），可使用
+`-DQCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON` 配置一套额外 build 目录并复用上述两条命令（示例见
+`docs/dev/build-and-test.md` 的 Public API 章节）。
+
 门禁内容：
 
 - `public-api`：每个安装头作为第一个 include 单独编译，并执行 public header 规则扫描

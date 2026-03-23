@@ -116,7 +116,14 @@ message(STATUS "libcurl provider: ${QCURL_LIBCURL_PROVIDER}")
 message(STATUS "libcurl version: ${QCURL_LIBCURL_VERSION_STRING}")
 
 # 检查 libcurl 版本和特性
-if(QCURL_LIBCURL_VERSION_STRING VERSION_GREATER_EQUAL "7.86.0")
+option(QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT
+       "Force disable QCurl WebSocket API even if libcurl is new enough"
+       OFF)
+
+if(QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT)
+    set(QCURL_WEBSOCKET_SUPPORT OFF)
+    message(STATUS "⏭️ WebSocket support forced OFF (QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON)")
+elseif(QCURL_LIBCURL_VERSION_STRING VERSION_GREATER_EQUAL "7.86.0")
     set(QCURL_WEBSOCKET_SUPPORT ON)
     message(STATUS "✅ WebSocket support enabled (libcurl ${QCURL_LIBCURL_VERSION_STRING})")
 else()
