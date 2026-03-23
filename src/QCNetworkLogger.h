@@ -7,6 +7,7 @@
 #include "QCGlobal.h"
 
 #include <QDateTime>
+#include <QScopedPointer>
 #include <QString>
 
 #include <functional>
@@ -160,7 +161,7 @@ public:
 
 private:
     class Private;
-    std::unique_ptr<Private> d_ptr;
+    QScopedPointer<Private> d_ptr;
 };
 
 /**

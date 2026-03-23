@@ -6,18 +6,12 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCNetworkSslConfig.h"
-#include "QCWebSocket.h"
-
-#include <QDateTime>
-#include <QHash>
-#include <QList>
-#include <QMap>
-#include <QMutex>
 #include <QObject>
-#include <QTimer>
+#include <QScopedPointer>
 #include <QUrl>
 
 namespace QCurl {
+class QCWebSocket;
 
 /**
  * @brief 复用和管理 `QCWebSocket` 连接
@@ -190,29 +184,8 @@ private slots:
     void onSocketDisconnected();
 
 private:
-    /**
-     * @brief 池中的连接记录
-     */
-    struct PooledConnection
-    {
-        QCWebSocket *socket = nullptr; ///< WebSocket 连接
-        QDateTime lastUsedTime;        ///< 最后使用时间
-        QDateTime createdTime;         ///< 创建时间
-        bool inUse     = false;        ///< 是否正在使用
-        int reuseCount = 0;            ///< 复用次数
-    };
-
-    // 数据成员
-    QMap<QUrl, QList<PooledConnection>> m_pools; ///< 连接池（按 URL 分组）
-    QHash<QCWebSocket *, QUrl> m_socketToUrl;    ///< Socket 到 URL 的映射
-    Config m_config;                             ///< 配置
-    QTimer *m_cleanupTimer   = nullptr;          ///< 清理定时器
-    QTimer *m_keepAliveTimer = nullptr;          ///< 心跳定时器
-    mutable QMutex m_mutex;                      ///< 线程安全保护
-
-    // 统计数据
-    QHash<QUrl, int> m_hitCounts;  ///< 命中次数
-    QHash<QUrl, int> m_missCounts; ///< 未命中次数
+    struct Impl;
+    QScopedPointer<Impl> m_impl;
 
     // 内部方法
     QCWebSocket *createNewConnection(const QUrl &url);

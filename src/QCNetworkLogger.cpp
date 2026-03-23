@@ -126,7 +126,7 @@ public:
 // ==================
 
 QCNetworkDefaultLogger::QCNetworkDefaultLogger()
-    : d_ptr(std::make_unique<Private>())
+    : d_ptr(new Private)
 {}
 
 QCNetworkDefaultLogger::~QCNetworkDefaultLogger() = default;
