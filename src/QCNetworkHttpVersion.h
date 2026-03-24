@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 HTTP 版本配置与能力接口。
+ */
+
 #ifndef QCNETWORKHTTPVERSION_H
 #define QCNETWORKHTTPVERSION_H
 

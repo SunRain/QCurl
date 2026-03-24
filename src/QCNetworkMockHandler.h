@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明网络 mock 与请求捕获接口。
+ */
+
 #ifndef QCNETWORKMOCKHANDLER_H
 #define QCNETWORKMOCKHANDLER_H
 
@@ -42,7 +47,9 @@ enum class HttpMethod;
 class QCURL_EXPORT QCNetworkMockHandler
 {
 public:
+    /// 构造 mock 处理器并初始化空的 mock/捕获状态。
     QCNetworkMockHandler();
+    /// 销毁 mock 序列与已捕获请求。
     ~QCNetworkMockHandler();
 
     struct MockData
@@ -209,14 +216,22 @@ public:
     // 请求捕获（用于离线断言：middleware/header 注入、body 形态等）
     // ==================
 
+    /// 启用或关闭请求捕获。
     void setCaptureEnabled(bool enabled);
+    /// 返回请求捕获开关状态。
     bool captureEnabled() const;
+    /// 设置 body 预览的最大截断字节数。
     void setCaptureBodyPreviewLimit(int bytes);
+    /// 返回 body 预览的最大截断字节数。
     int captureBodyPreviewLimit() const;
 
+    /// 记录一次已归一化的请求快照。
     void recordRequest(const CapturedRequest &request);
+    /// 返回当前累计的请求快照副本。
     QList<CapturedRequest> capturedRequests() const;
+    /// 取走并清空当前累计的请求快照。
     QList<CapturedRequest> takeCapturedRequests();
+    /// 清空所有已捕获的请求快照。
     void clearCapturedRequests();
 
     /**

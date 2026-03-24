@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明网络请求配置对象。
+ */
+
 #ifndef QCNETWORKREQUEST_H
 #define QCNETWORKREQUEST_H
 

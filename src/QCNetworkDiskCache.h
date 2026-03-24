@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明磁盘缓存实现。
+ */
+
 #ifndef QCNETWORKDISKCACHE_H
 #define QCNETWORKDISKCACHE_H
 

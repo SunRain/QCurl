@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明请求调度器。
+ */
+
 #ifndef QCNETWORKREQUESTSCHEDULER_H
 #define QCNETWORKREQUESTSCHEDULER_H
 

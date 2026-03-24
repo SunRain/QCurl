@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明缓存抽象接口与元数据结构。
+ */
+
 #ifndef QCNETWORKCACHE_H
 #define QCNETWORKCACHE_H
 
@@ -54,9 +59,11 @@ class QCURL_EXPORT QCNetworkCache : public QObject
     Q_OBJECT
 
 public:
+    /// 构造缓存抽象基类。
     explicit QCNetworkCache(QObject *parent = nullptr)
         : QObject(parent)
     {}
+    /// 通过多态接口释放缓存实现。
     ~QCNetworkCache() override = default;
 
     /**
@@ -127,7 +134,6 @@ public:
      */
     [[nodiscard]] static bool isCacheable(const QMap<QByteArray, QByteArray> &headers);
 
-protected:
 };
 
 } // namespace QCurl

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 easy handle 生命周期守卫。
+ */
+
 #ifndef QCCURLHANDLEMANAGER_H
 #define QCCURLHANDLEMANAGER_H
 
@@ -27,13 +32,13 @@ public:
      */
     ~QCCurlHandleManager();
 
-    // 移动构造函数
+    /// 转移 easy handle 与 header list 的所有权。
     QCCurlHandleManager(QCCurlHandleManager &&other) noexcept;
 
-    // 移动赋值运算符
+    /// 通过移动赋值接管另一个守卫中的 libcurl 资源。
     QCCurlHandleManager &operator=(QCCurlHandleManager &&other) noexcept;
 
-    // 禁止拷贝
+    /// 禁止拷贝，避免重复释放底层句柄。
     QCCurlHandleManager(const QCCurlHandleManager &)            = delete;
     QCCurlHandleManager &operator=(const QCCurlHandleManager &) = delete;
 

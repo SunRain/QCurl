@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 QCWebSocket 的内部状态与辅助接口。
+ */
+
 #ifndef QCWEBSOCKET_P_H
 #define QCWEBSOCKET_P_H
 

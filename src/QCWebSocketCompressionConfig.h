@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 WebSocket 压缩配置。
+ */
+
 #ifndef QCWEBSOCKETCOMPRESSIONCONFIG_H
 #define QCWEBSOCKETCOMPRESSIONCONFIG_H
 

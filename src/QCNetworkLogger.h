@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明网络日志接口与默认实现。
+ */
+
 #ifndef QCNETWORKLOGGER_H
 #define QCNETWORKLOGGER_H
 

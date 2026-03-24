@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 WebSocket 客户端接口。
+ */
+
 #ifndef QCWEBSOCKET_H
 #define QCWEBSOCKET_H
 

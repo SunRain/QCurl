@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明通用网络辅助函数。
+ */
+
 #ifndef QCUTILITY_H
 #define QCUTILITY_H
 

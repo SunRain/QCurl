@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明网络响应对象与传输控制接口。
+ */
+
 #ifndef QCNETWORKREPLY_H
 #define QCNETWORKREPLY_H
 
@@ -23,7 +28,7 @@ class QCNetworkRequest;
 // 前向声明
 // ==================
 
-class QCNetworkReplyPrivate; // 私有实现类（定义在 QCNetworkReply_p.h）
+class QCNetworkReplyPrivate; ///< 私有实现类（定义在 QCNetworkReply_p.h）
 
 // ==================
 // 枚举定义
@@ -103,11 +108,18 @@ public:
     // we provide a narrowly-scoped constructor under the existing test hook
     // build flag.
 #ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 仅供测试构造路径使用的 capability key。
     struct TestOnlyKey
     {
+        /// 允许测试代码显式开启该构造路径。
         TestOnlyKey() = default;
     };
 
+    /**
+     * @brief 仅供测试直接构造 reply
+     *
+     * 该入口绕过 access manager 的工厂封装，供仓内测试搭建同步场景。
+     */
     explicit QCNetworkReply(TestOnlyKey,
                             const QCNetworkRequest &request,
                             HttpMethod method,
@@ -116,6 +128,7 @@ public:
                             QObject *parent               = nullptr);
 #endif
 
+    /// 析构 reply 并释放底层 easy handle、回调和缓存资源。
     ~QCNetworkReply() override;
 
     // 禁止拷贝
@@ -126,8 +139,16 @@ public:
     // 执行控制
     // ==================
 
+    /// 启动当前 reply 的执行流程。
     void execute();
+    /// 取消当前请求，并尽快进入 Cancelled 终态。
     void cancel();
+
+    /**
+     * @brief 以指定错误中止 reply
+     *
+     * 用于在执行前或执行中快速落入错误终态，并保留错误消息。
+     */
     void abortWithError(NetworkError error, const QString &message = QString());
 
     /**
@@ -170,24 +191,38 @@ public:
      * @return 同 readAll；Error/Idle 状态返回 std::nullopt
      */
     [[nodiscard]] std::optional<QByteArray> readBody();
+    /// 返回解析后的原始 header 键值对。
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
+    /// 返回原始 header 数据块。
     [[nodiscard]] QByteArray rawHeaderData() const;
+    /// 返回请求 URL。
     [[nodiscard]] QUrl url() const;
+    /// 返回当前 reply 对应的 HTTP 方法。
     [[nodiscard]] HttpMethod method() const noexcept;
+    /// 返回响应状态码；无响应时通常为 0。
     [[nodiscard]] int httpStatusCode() const noexcept;
+    /// 返回请求耗时（毫秒）。
     [[nodiscard]] qint64 durationMs() const noexcept;
+    /// 返回当前 body 缓冲中可读取的字节数。
     [[nodiscard]] qint64 bytesAvailable() const noexcept;
+    /// 返回 capability 降级或兼容性告警列表。
     [[nodiscard]] QStringList capabilityWarnings() const;
 
     // ==================
     // 状态查询
     // ==================
 
+    /// 返回当前 reply 状态。
     [[nodiscard]] ReplyState state() const noexcept;
+    /// 返回当前错误码。
     [[nodiscard]] NetworkError error() const noexcept;
+    /// 返回当前错误消息。
     [[nodiscard]] QString errorString() const;
+    /// 返回 reply 是否已进入终态。
     [[nodiscard]] bool isFinished() const noexcept;
+    /// 返回 reply 是否处于 Running。
     [[nodiscard]] bool isRunning() const noexcept;
+    /// 返回 reply 是否处于用户显式暂停状态。
     [[nodiscard]] bool isPaused() const noexcept;
 
     /**
@@ -229,17 +264,24 @@ public:
      * @return 0 表示未启用
      */
     [[nodiscard]] qint64 backpressureBufferedBytesPeak() const noexcept;
+    /// 返回当前已接收字节数。
     [[nodiscard]] qint64 bytesReceived() const noexcept;
+    /// 返回当前预期总字节数；未知时可能为 0 或负值映射结果。
     [[nodiscard]] qint64 bytesTotal() const noexcept;
 
     // ==================
     // 同步模式专用 API
     // ==================
 
+    /// 设置同步模式下使用的内联请求体。
     void setRequestBody(const QByteArray &data);
+    /// 设置同步模式写入 body 的数据回调。
     void setWriteCallback(const DataFunction &func);
+    /// 设置同步模式处理响应头的数据回调。
     void setHeaderCallback(const DataFunction &func);
+    /// 设置同步模式上传 seek 回调。
     void setSeekCallback(const SeekFunction &func);
+    /// 设置同步模式进度回调。
     void setProgressCallback(const ProgressFunction &func);
 
     // ==================
@@ -247,11 +289,17 @@ public:
     // ==================
 
 Q_SIGNALS:
+    /// 当 reply 进入终态时发射。
     void finished();
+    /// 当 reply 进入 Error 终态时发射。
     void error(NetworkError errorCode);
+    /// 当 body 缓冲可读时发射。
     void readyRead();
+    /// 下载进度变化时发射。
     void downloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+    /// 上传进度变化时发射。
     void uploadProgress(qint64 bytesSent, qint64 bytesTotal);
+    /// reply 状态发生切换时发射。
     void stateChanged(ReplyState newState);
 
     /**
@@ -267,6 +315,7 @@ Q_SIGNALS:
      * 仅表达内部流控，不改变 ReplyState。
      */
     void uploadSendPausedChanged(bool paused);
+    /// 当请求被显式取消时发射。
     void cancelled();
 
     /**
@@ -284,6 +333,7 @@ Q_SIGNALS:
     // ==================
 
 public Q_SLOTS:
+    /// 通过 Qt 事件循环延迟销毁 reply。
     void deleteLater();
 
 private:

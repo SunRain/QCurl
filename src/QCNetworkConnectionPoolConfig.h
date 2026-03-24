@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明连接池配置项。
+ */
+
 #ifndef QCNETWORKCONNECTIONPOOLCONFIG_H
 #define QCNETWORKCONNECTIONPOOLCONFIG_H
 

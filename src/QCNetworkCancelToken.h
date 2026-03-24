@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明请求取消令牌。
+ */
+
 #ifndef QCNETWORKCANCELTOKEN_H
 #define QCNETWORKCANCELTOKEN_H
 

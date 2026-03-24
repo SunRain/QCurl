@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明缓存策略枚举与辅助接口。
+ */
+
 #ifndef QCNETWORKCACHEPOLICY_H
 #define QCNETWORKCACHEPOLICY_H
 

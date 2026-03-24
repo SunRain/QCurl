@@ -37,6 +37,11 @@
 **
 ****************************************************************************/
 
+/**
+ * @file
+ * @brief 声明 QCByteDataBuffer 内部字节缓冲工具。
+ */
+
 #ifndef QBYTEDATA_P_H
 #define QBYTEDATA_P_H
 
@@ -56,8 +61,12 @@
 
 namespace QCurl {
 
-// this class handles a list of QByteArrays. It is a variant of QRingBuffer
-// that avoid malloc/realloc/memcpy.
+/**
+ * @brief 轻量级 QByteArray 链式缓冲区
+ *
+ * 基于多个 QByteArray 片段组织数据，优先复用已有块，减少不必要的
+ * malloc/realloc/memcpy。
+ */
 class QCByteDataBuffer
 {
 private:
@@ -66,18 +75,22 @@ private:
     qint64 firstPos;
 
 public:
+    /// 构造一个空的字节缓冲区。
     QCByteDataBuffer()
         : bufferCompleteSize(0)
         , firstPos(0)
     {}
 
+    /// 清空所有片段并释放当前缓冲状态。
     ~QCByteDataBuffer() { clear(); }
 
+    /// 从单个 QByteArray 头部弹出指定字节数。
     static inline void popFront(QByteArray &ba, qint64 n)
     {
         ba = QByteArray(ba.constData() + n, ba.size() - n);
     }
 
+    /// 在需要时压缩首块，确保 `firstPos` 回到 0。
     inline void squeezeFirst()
     {
         if (!buffers.isEmpty() && firstPos > 0) {
@@ -122,8 +135,7 @@ public:
         bufferCompleteSize += bd.size();
     }
 
-    // return the first QByteData. User of this function has to free() its .data!
-    // preferably use this function to read data.
+    /// 取出首个数据块；适合零散读取场景。
     inline QByteArray read()
     {
         squeezeFirst();
@@ -131,12 +143,10 @@ public:
         return buffers.takeFirst();
     }
 
-    // return everything. User of this function has to free() its .data!
-    // avoid to use this, it might malloc and memcpy.
+    /// 读取全部数据；可能触发额外的分配与拷贝。
     inline QByteArray readAll() { return read(byteAmount()); }
 
-    // return amount. User of this function has to free() its .data!
-    // avoid to use this, it might malloc and memcpy.
+    /// 读取指定字节数；内部可能产生新的连续缓冲区。
     inline QByteArray read(qint64 amount)
     {
         amount = qMin(byteAmount(), amount);
@@ -146,8 +156,7 @@ public:
         return byteData;
     }
 
-    // return amount bytes. User of this function has to free() its .data!
-    // avoid to use this, it will memcpy.
+    /// 读取指定字节数到外部缓冲区。
     qint64 read(char *dst, qint64 amount)
     {
         amount                = qMin(amount, byteAmount());
@@ -158,7 +167,7 @@ public:
             const QByteArray &first = buffers.first();
             qint64 firstSize        = first.size() - firstPos;
             if (amount >= firstSize) {
-                // take it completely
+                // 整块消费，避免保留额外片段状态。
                 bufferCompleteSize -= firstSize;
                 amount -= firstSize;
                 memcpy(writeDst, first.constData() + firstPos, firstSize);
@@ -166,7 +175,7 @@ public:
                 firstPos = 0;
                 buffers.takeFirst();
             } else {
-                // take a part of it & it is the last one to take
+                // 仅消费首块前缀，保留剩余数据供后续读取。
                 bufferCompleteSize -= amount;
                 memcpy(writeDst, first.constData() + firstPos, amount);
                 firstPos += amount;
@@ -191,10 +200,10 @@ public:
         firstPos           = 0;
     }
 
-    // The byte count of all QByteArrays
+    /// 返回所有片段合计的字节数。
     inline qint64 byteAmount() const { return bufferCompleteSize; }
 
-    // the number of QByteArrays
+    /// 返回当前片段数量。
     inline qint64 bufferCount() const { return buffers.length(); }
 
     inline bool isEmpty() const { return byteAmount() == 0; }

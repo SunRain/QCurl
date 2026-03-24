@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 HTTP 方法枚举。
+ */
+
 #ifndef QCNETWORKHTTPMETHOD_H
 #define QCNETWORKHTTPMETHOD_H
 

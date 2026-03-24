@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明线程绑定的 curl multi 管理器。
+ */
+
 #ifndef QCCURLMULTIMANAGER_H
 #define QCCURLMULTIMANAGER_H
 
@@ -96,14 +101,32 @@ public:
     // Cookie bridge（用于与 Qt WebView 等上层 cookie store 互通）
     // ==================
 
+    /**
+     * @brief 为指定 manager 导入 cookies
+     *
+     * 仅在该 manager 开启 shareCookies 时生效；必要时会根据 originUrl
+     * 为缺失 domain/path 的 cookie 补全作用域。
+     */
     bool importCookiesForManager(const QCNetworkAccessManager *manager,
                                  const QList<QNetworkCookie> &cookies,
                                  const QUrl &originUrl,
                                  QString *error);
 
+    /**
+     * @brief 导出指定 manager 当前持有的 cookies
+     *
+     * @param filterUrl 可选过滤 URL，用于按 host/path 收敛结果
+     * @param error 可选错误输出
+     * @return 当前 share context 可见的 cookies 列表
+     */
     [[nodiscard]] QList<QNetworkCookie> exportCookiesForManager(
         const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error);
 
+    /**
+     * @brief 清空指定 manager 共享的 cookie store
+     *
+     * @return true 表示清空成功；未启用 shareCookies 时返回 false 并写入错误
+     */
     bool clearAllCookiesForManager(const QCNetworkAccessManager *manager, QString *error);
 
     /**

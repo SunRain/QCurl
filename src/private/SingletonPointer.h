@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明单例指针辅助模板。
+ */
+
 #ifndef PRIVATE_SINGLETONPOINTER_H
 #define PRIVATE_SINGLETONPOINTER_H
 

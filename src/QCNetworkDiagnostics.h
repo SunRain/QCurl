@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明诊断与可观测信息接口。
+ */
+
 #ifndef QCNETWORKDIAGNOSTICS_H
 #define QCNETWORKDIAGNOSTICS_H
 

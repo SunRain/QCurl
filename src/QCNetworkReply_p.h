@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 QCNetworkReply 的内部状态与辅助接口。
+ */
+
 #ifndef QCNETWORKREPLY_P_H
 #define QCNETWORKREPLY_P_H
 

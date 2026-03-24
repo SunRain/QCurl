@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明请求/响应中间件接口。
+ */
+
 #ifndef QCNETWORKMIDDLEWARE_H
 #define QCNETWORKMIDDLEWARE_H
 
@@ -39,6 +44,7 @@ class QCNetworkReply;
 class QCURL_EXPORT QCNetworkMiddleware
 {
 public:
+    /// 通过多态接口释放中间件对象。
     virtual ~QCNetworkMiddleware() = default;
 
     /**
@@ -82,8 +88,11 @@ public:
 class QCURL_EXPORT QCLoggingMiddleware : public QCNetworkMiddleware
 {
 public:
+    /// 在发送前记录请求摘要。
     void onRequestPreSend(QCNetworkRequest &request) override;
+    /// 在接收完成后记录响应摘要。
     void onResponseReceived(QCNetworkReply *reply) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCLoggingMiddleware"; }
 };
 
@@ -102,7 +111,9 @@ public:
      */
     void setErrorCallback(std::function<void(const QString &)> callback);
 
+    /// 在响应后统一处理错误和 HTTP 失败。
     void onResponseReceived(QCNetworkReply *reply) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCErrorHandlingMiddleware"; }
 
 private:
@@ -123,7 +134,9 @@ public:
      */
     void setSigningKey(const QString &key);
 
+    /// 在发送前把签名信息写入请求。
     void onRequestPreSend(QCNetworkRequest &request) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCSigningMiddleware"; }
 
 private:
@@ -139,12 +152,17 @@ private:
 class QCURL_EXPORT QCUnifiedRetryPolicyMiddleware : public QCNetworkMiddleware
 {
 public:
+    /// 构造默认重试策略中间件。
     explicit QCUnifiedRetryPolicyMiddleware(const QCNetworkRetryPolicy &defaultPolicy);
 
+    /// 更新默认重试策略。
     void setDefaultPolicy(const QCNetworkRetryPolicy &policy);
+    /// 返回当前默认重试策略。
     [[nodiscard]] QCNetworkRetryPolicy defaultPolicy() const;
 
+    /// 在请求未显式配置时注入默认重试策略。
     void onRequestPreSend(QCNetworkRequest &request) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCUnifiedRetryPolicyMiddleware"; }
 
 private:
@@ -160,8 +178,11 @@ private:
 class QCURL_EXPORT QCRedactingLoggingMiddleware : public QCNetworkMiddleware
 {
 public:
+    /// 在 reply 创建后挂接脱敏日志观察点。
     void onReplyCreated(QCNetworkReply *reply) override;
+    /// 在响应完成后输出脱敏摘要。
     void onResponseReceived(QCNetworkReply *reply) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCRedactingLoggingMiddleware"; }
 };
 
@@ -173,8 +194,11 @@ public:
 class QCURL_EXPORT QCObservabilityMiddleware : public QCNetworkMiddleware
 {
 public:
+    /// 在 reply 创建后绑定观测埋点。
     void onReplyCreated(QCNetworkReply *reply) override;
+    /// 在响应完成后输出关键观测指标。
     void onResponseReceived(QCNetworkReply *reply) override;
+    /// 返回中间件标识名。
     QString name() const override { return "QCObservabilityMiddleware"; }
 };
 

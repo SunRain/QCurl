@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明代理配置。
+ */
+
 #ifndef QCNETWORKPROXYCONFIG_H
 #define QCNETWORKPROXYCONFIG_H
 

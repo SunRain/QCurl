@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 QCurl 导出宏与全局开关。
+ */
+
 #ifndef QCGLOBAL_H
 #define QCGLOBAL_H
 

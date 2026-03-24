@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明超时配置。
+ */
+
 #ifndef QCNETWORKTIMEOUTCONFIG_H
 #define QCNETWORKTIMEOUTCONFIG_H
 

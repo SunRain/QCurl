@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 WebSocket 重连策略。
+ */
+
 #ifndef QCWEBSOCKETRECONNECTPOLICY_H
 #define QCWEBSOCKETRECONNECTPOLICY_H
 

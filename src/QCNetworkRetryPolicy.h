@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明重试策略。
+ */
+
 #ifndef QCNETWORKRETRYPOLICY_H
 #define QCNETWORKRETRYPOLICY_H
 

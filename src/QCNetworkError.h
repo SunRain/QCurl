@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明网络错误类型与映射接口。
+ */
+
 #ifndef QCNETWORKERROR_H
 #define QCNETWORKERROR_H
 

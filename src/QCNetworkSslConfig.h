@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明 SSL/TLS 配置。
+ */
+
 #ifndef QCNETWORKSSLCONFIG_H
 #define QCNETWORKSSLCONFIG_H
 

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明网络访问管理器与发送接口。
+ */
+
 #ifndef QCNETWORKACCESSMANAGER_H
 #define QCNETWORKACCESSMANAGER_H
 
@@ -32,7 +37,18 @@ class QCURL_EXPORT QCNetworkAccessManager : public QObject
 {
     Q_OBJECT
 public:
+    /**
+     * @brief 构造网络访问管理器
+     *
+     * 构造时会确保 libcurl 全局状态已初始化，但不会主动创建请求对象。
+     */
     explicit QCNetworkAccessManager(QObject *parent = nullptr);
+
+    /**
+     * @brief 析构网络访问管理器
+     *
+     * 已创建的 reply 仍遵循 Qt 对象树和 deleteLater() 生命周期。
+     */
     virtual ~QCNetworkAccessManager();
 
     enum CookieFileModeFlag {
@@ -42,8 +58,10 @@ public:
         ReadWrite = ReadOnly | WriteOnly
     };
 
+    /// 返回当前共享 cookie 文件路径；为空表示未配置。
     QString cookieFilePath() const;
 
+    /// 返回当前 cookie 文件的打开模式。
     CookieFileModeFlag cookieFileMode() const;
 
     /**
@@ -94,10 +112,11 @@ public:
 
     struct ShareHandleConfig
     {
-        bool shareDnsCache   = false;
-        bool shareCookies    = false;
-        bool shareSslSession = false;
+        bool shareDnsCache   = false; ///< 是否共享 DNS cache
+        bool shareCookies    = false; ///< 是否共享 cookies
+        bool shareSslSession = false; ///< 是否共享 SSL session
 
+        /// 返回是否至少启用了一个 share 维度。
         [[nodiscard]] bool enabled() const noexcept
         {
             return shareDnsCache || shareCookies || shareSslSession;
@@ -106,9 +125,10 @@ public:
 
     struct HstsAltSvcCacheConfig
     {
-        QString hstsFilePath;
-        QString altSvcFilePath;
+        QString hstsFilePath;   ///< HSTS cache 文件路径
+        QString altSvcFilePath; ///< Alt-Svc cache 文件路径
 
+        /// 返回是否配置了任一持久化 cache 文件。
         [[nodiscard]] bool enabled() const noexcept
         {
             return !hstsFilePath.isEmpty() || !altSvcFilePath.isEmpty();

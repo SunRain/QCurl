@@ -75,6 +75,7 @@ NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
     normalized.executionMode = mode;
 
     if (QIODevice *device = request.uploadDevice()) {
+        // QIODevice 优先级最高：它携带当前位置、可 seek 性与潜在的流式上传语义。
         normalized.body.kind             = RequestBodyKind::UploadDevice;
         normalized.body.device           = device;
         normalized.body.basePos          = device->pos();
@@ -94,6 +95,7 @@ NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
     }
 
     if (const auto filePath = request.uploadFilePath(); filePath.has_value()) {
+        // 文件路径模式在执行期再打开文件，这里只归一化路径和可推断的大小。
         normalized.body.kind             = RequestBodyKind::UploadFilePath;
         normalized.body.filePath         = filePath.value();
         normalized.body.allowChunkedPost = (method == HttpMethod::Post)
@@ -135,11 +137,13 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
             break;
         case HttpMethod::Post:
             plan.setPost = true;
+            // POST 允许内联 body 与上传源两条路径；后者会在执行期走 read callback。
             plan.transferMode = hasUploadSource ? CurlTransferMode::UploadSource
                                                 : CurlTransferMode::InlineBytes;
             plan.bodySizeBytes = hasUploadSource ? normalized.body.sizeBytes : inlineBodySize;
             break;
         case HttpMethod::Put:
+            // PUT 只有在外部上传源存在时才打开 CURLOPT_UPLOAD；内联 body 走自定义请求路径。
             plan.setUpload = hasUploadSource;
             plan.customRequest = QByteArrayLiteral("PUT");
             if (hasUploadSource) {

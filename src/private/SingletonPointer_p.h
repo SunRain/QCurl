@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 声明单例指针内部实现。
+ */
+
 #ifndef SINGLETONPOINTER_P_H
 #define SINGLETONPOINTER_P_H
 
