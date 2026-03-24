@@ -1,15 +1,7 @@
 """
-P2：pause/resume 强判据一致性（LC-15b：语义合同测试）。
+P2：pause/resume 强判据一致性。
 
-判定核心（可观测数据层面，且以“语义合同”定义 PauseEffective 边界）：
-- 最终下载文件字节一致（hash/len）
-- 结构化事件边界一致（start/pause_req/pause_effective/resume_req/finished）
-- 合同条款（强判据）：
-  - PauseEffective 之后到 ResumeReq 之前：bytes_delivered_total / bytes_written_total 严格不变（Δ=0）
-  - 允许 PauseReq → PauseEffective 之间存在一次性“收尾交付/写盘”（通过 PauseEffective 的事件边界吸收）
-
-baseline：repo 内置 `qcurl_lc_pause_resume_baseline`（libcurl easy+multi，结构化 events JSON）
-QCurl：`tst_LibcurlConsistency` case `p2_pause_resume_strict`（输出同构 events JSON）
+以结构化事件边界验证 `PauseEffective` 到 `ResumeReq` 之间的零增量合同。
 """
 
 from __future__ import annotations
@@ -37,7 +29,7 @@ def test_p2_pause_resume_strict_h2(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_pause_resume_strict"
@@ -144,4 +136,3 @@ def test_p2_pause_resume_strict_h2(env, lc_logs, tmp_path):
                 },
             )
         raise
-

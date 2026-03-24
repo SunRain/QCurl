@@ -1,12 +1,7 @@
 """
-P1：HTTP proxy 可观测一致性（本仓库自建 proxy + baseline 可执行）。
+P1：HTTP proxy 可观测一致性。
 
-目标：
-- 对齐“代理侧可观测语义”：method/target + Proxy-* 头（Proxy-Authorization）
-- 覆盖 CONNECT 隧道：HTTPS over proxy 的 CONNECT 目标一致
-
-基线：repo 内置 `qcurl_lc_http_baseline`（client_name=cli_lc_http）
-QCurl：tst_LibcurlConsistency（通过 QCURL_LC_CASE_ID 执行相同场景）
+比较代理侧可见的 method/target、`Proxy-*` 头以及 CONNECT 目标。
 """
 
 from __future__ import annotations
@@ -35,11 +30,14 @@ def _append_req_id(url: str, req_id: str) -> str:
 def _fmt_args(template: List[str], defaults: Dict) -> List[str]:
     return [str(x).format(**defaults) for x in template]
 
+
 def _extract_connect_blocks(raw: bytes) -> list[list[str]]:
     """
-    从 header callback 原始输出中提取 CONNECT 阶段的响应头 blocks（诊断用途，不入门禁）。
-    - block 以 `HTTP/...` 起始，空行结束
-    - 仅选择 status line 含 "Connection established" 的 blocks
+    从 header callback 原始输出中提取 CONNECT 阶段的响应头 blocks。
+
+    这些 blocks 仅用于辅助诊断，不参与一致性断言。
+    - 每个 block 以 `HTTP/...` 起始，以空行结束
+    - 仅保留 status line 含 `Connection established` 的 block
     """
     text = raw.decode("iso-8859-1", errors="replace")
     blocks: list[list[str]] = []
@@ -71,7 +69,7 @@ def test_p1_proxy_basic_auth(case_id, env, lc_logs, lc_http_proxy, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     case = P1_PROXY_CASES[case_id]
@@ -193,7 +191,8 @@ def test_p1_proxy_basic_auth(case_id, env, lc_logs, lc_http_proxy, tmp_path):
         qcurl["payload"]["response"]["http_version"] = origin_obs.http_version
         write_json(qcurl["path"], qcurl["payload"])
 
-        # 诊断型采集：CONNECT 阶段响应头 blocks（不入门禁；缺失不失败）
+        # 诊断型采集：CONNECT 阶段响应头 blocks 仅用于辅助定位；
+        # 缺失不触发失败，也不参与一致性断言。
         if case_id != "proxy_http_basic_auth":
             diag: Dict[str, object] = {}
             try:

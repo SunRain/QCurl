@@ -1,8 +1,8 @@
-# `tst_Integration` 历史说明
+# `tst_Integration` 定位与取证入口
 
-本文件只保留 `tst_Integration` 的长期定位与取证入口，不再维护某次手工回归的日期、通过率、提交号、修复阶段或版本计划。
+本文件只保留 `tst_Integration` 的当前 contract、依赖边界与取证入口。
 
-## 当前用途
+## 用途
 
 - 说明 `tst_Integration` 覆盖的行为主题
 - 给出当前可复现的证据入口
@@ -14,7 +14,7 @@
 - 不记录单次运行结果、历史修复过程、覆盖率估算或里程碑规划
 - 不替代 `tests/README.md`、`docs/dev/build-and-test.md` 或自动化 evidence artifacts
 
-## 当前取证入口
+## 取证入口
 
 - QtTest / ctest：`python3 scripts/ctest_strict.py --build-dir build`
 - 需要 env/httpbin 的集合：`python3 scripts/ctest_strict.py --build-dir build --label-regex env`
@@ -48,4 +48,4 @@
 
 - 当 `tst_Integration` 的覆盖主题或依赖边界发生变化时，更新本文件的“覆盖主题 / 依赖与边界”
 - 若新增需要长期保留的证据入口，补充到“当前取证入口”
-- 不在本文件追加某次运行日志、通过率、手工结论或版本路线图
+- 不在本文件追加单次运行日志、通过率、手工结论或版本路线图

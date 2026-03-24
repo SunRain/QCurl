@@ -1,15 +1,7 @@
 """
-P1：multipart/form-data 语义一致性（LC-35）。
+P1：multipart/form-data 语义一致性。
 
-判定核心（可观测数据层面）：
-- 不比较原始 multipart body 字节（boundary/Content-Length 可能不同）
-- 比较服务端可解析出的 parts 语义摘要（name/filename/content-type/size/sha256）
-
-服务端：repo 内置 http_observe_server.py
-- /multipart：解析 multipart/form-data 并返回稳定 JSON
-
-基线：repo 内置 qcurl_lc_http_baseline（libcurl easy，--multipart-demo）
-QCurl：tst_LibcurlConsistency（p1_multipart_formdata）
+不比较原始 boundary 字节，只比较服务端可解析的 part 摘要。
 """
 
 from __future__ import annotations
@@ -44,7 +36,7 @@ def test_p1_multipart_formdata_http_1_1(env, lc_logs, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -144,4 +136,3 @@ def test_p1_multipart_formdata_http_1_1(env, lc_logs, lc_observe_http):
                 },
             )
         raise
-

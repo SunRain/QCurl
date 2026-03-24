@@ -1,13 +1,7 @@
 """
-LC-45（P2/PR gate）：连接/并发上限弱门禁。
+P2：连接/并发上限 smoke。
 
-约束：
-- 仅做“配置链路 + 不崩溃/不死锁”的弱断言（避免 CI CPU/时钟不稳定导致 flaky）
-- 不对“并发确实被限制到精确阀值”做强断言；强验证留给 bench/soak
-
-实现：
-- 复用 Qt Test case `multi_limits_smoke`（会显式设置 multi limits 并执行并发下载）
-- 仅在 PR gate（QCURL_LC_EXT=1）启用，避免默认 gate 扩容
+只验证配置链路和“不崩溃/不死锁”，不对精确阀值做强断言。
 """
 
 from __future__ import annotations
@@ -22,7 +16,7 @@ from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 
 
 if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
-    pytest.skip("connection limits smoke is only enabled for PR gate (QCURL_LC_EXT=1)", allow_module_level=True)
+    pytest.skip("该 smoke 用例仅在 QCURL_LC_EXT=1 时启用", allow_module_level=True)
 
 
 def test_p2_connection_limits_smoke(env):

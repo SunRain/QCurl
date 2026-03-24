@@ -2,7 +2,8 @@
 
 本目录只回答一个问题：**在外部可观测层面，QCurl 与 libcurl 是否给出相同结果。**
 
-文档只保留稳定 contract、运行入口与排查路径；单次回归记录、环境快照和长篇施工日志不再累积在这里。
+这里只保留稳定 contract、运行入口与排查路径；状态看板和专题决策分别落到
+`tasks.md` 与 handoff 文档。
 
 ## 1. 一致性定义
 
@@ -48,7 +49,7 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 
 ## 4. 产物与证据路径
 
-### 4.1 artifacts
+### 4.1 工件
 
 - `curl/tests/http/gen/artifacts/<suite>/<case>/baseline.json`
 - `curl/tests/http/gen/artifacts/<suite>/<case>/qcurl.json`

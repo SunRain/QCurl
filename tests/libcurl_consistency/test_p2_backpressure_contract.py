@@ -35,7 +35,7 @@ def test_p2_backpressure_contract_h2(env, lc_logs):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_backpressure_contract"

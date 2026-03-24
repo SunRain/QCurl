@@ -1,6 +1,6 @@
 # 构建与测试
 
-本文是仓库内唯一的本地构建与回归命令入口。需要调整命令、门禁口径或前置条件时，请只修改本文，避免说明分叉。
+本文是仓库内唯一的本地构建与回归命令入口。需要调整命令、门禁口径或前置条件时，只修改本文，避免说明分叉。
 
 ## 1. 最小构建
 
@@ -154,14 +154,14 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ## 6. 本地全量自检
 
-如果你只想做一次“我本机能不能全量跑完”的检查，可按顺序执行：
+开发者做一次本地全量自检时，可按顺序执行：
 
 1. 完成 `cmake` 构建
 2. 启动本地 `httpbin`
 3. 运行 `ctest --test-dir build --output-on-failure`
 4. 按需运行 `tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
 
-这一口径用于开发者自检，不等于正式门禁。
+该口径只用于本地自检，不等于正式门禁。
 
 ## 7. external_heavy 显式 smoke
 

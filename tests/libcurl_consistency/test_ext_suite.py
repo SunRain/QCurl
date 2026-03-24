@@ -1,10 +1,6 @@
 """
-可选扩展套件（LC-11）：
-- 默认不作为 Gate，避免波动。
-- 显式开启：QCURL_LC_EXT=1
-
-当前扩展覆盖：
-- 并发下载压力（h2/h3）：用于覆盖 multiplexing/调度路径与数据一致性。
+扩展套件：覆盖默认 gate 之外的并发下载与协议压力场景。
+仅在 `QCURL_LC_EXT=1` 时启用。
 """
 
 from __future__ import annotations
@@ -33,7 +29,7 @@ from tests.libcurl_consistency.pytest_support.service_logs import collect_servic
 
 
 if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
-    pytest.skip("set QCURL_LC_EXT=1 to enable libcurl_consistency ext suite", allow_module_level=True)
+    pytest.skip("该扩展套件仅在 QCURL_LC_EXT=1 时启用", allow_module_level=True)
 
 
 def _fmt_args(template: List[str], defaults: Dict) -> List[str]:
@@ -123,7 +119,7 @@ def test_ext_suite(case_id, env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     protos = ["h2"]
     if env.have_h3():
@@ -131,7 +127,7 @@ def test_ext_suite(case_id, env, lc_logs, tmp_path):
     if case.get("protos"):
         protos = [p for p in case["protos"] if (p != "h3" or env.have_h3())]
         if not protos:
-            pytest.skip("ext case requires h3 but env.have_h3() is false")
+            pytest.skip("当前环境未提供 h3 能力，跳过该扩展用例")
 
     for proto in protos:
         trace_base = f"lc_{uuid.uuid4().hex[:8]}_{case_id}_{proto}"
@@ -194,7 +190,7 @@ def test_ext_suite(case_id, env, lc_logs, tmp_path):
                     download_count=case.get("baseline_download_count"),
                 )
             except FileNotFoundError as exc:
-                pytest.skip(f"libtests 未构建: {exc}")
+                pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
 
             expected_requests = int(case.get("expected_requests") or 0)
             if expected_requests > 1:
@@ -317,14 +313,14 @@ def test_ext_suite(case_id, env, lc_logs, tmp_path):
 
 def test_ext_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
     """
-    LC-31：连接复用可观测一致性（HTTP/1.1 keep-alive）。
+    HTTP/1.1 keep-alive 的连接复用可观测一致性。
     - 通过观测服务端日志中的 peer_port 统计单个 run 内的连接数
     - 仅比较可比统计：unique_connections + 归一化 conn_seq
     """
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

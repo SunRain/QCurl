@@ -1,6 +1,5 @@
 """
-QCurl Qt Test 运行器（LC-4 占位）：
-- 调用 Qt Test 可执行（后续由 CMake 产出），并写出 QCurl artifacts。
+运行 QCurl Qt Test 并写出一致性 artifacts。
 """
 
 from __future__ import annotations

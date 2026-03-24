@@ -1,14 +1,8 @@
 /**
  * @file tst_QCNetworkCacheIntegration.cpp
- * @brief 缓存深度集成测试
+ * @brief 覆盖缓存策略、命中路径和边界条件的集成语义。
  *
- * 测试覆盖：
- * - 自动缓存读取（execute 阶段）
- * - 自动缓存写入（finished 阶段）
- * - 5 种缓存策略完整支持
- * - 向后兼容性验证
- * - 信号顺序和数据一致性
- *
+ * 该套件验证自动缓存读写、五类策略、信号顺序和过期/no-cache 等边界。
  */
 
 #include "QCNetworkAccessManager.h"
@@ -40,14 +34,14 @@ private slots:
     void init();
     void cleanup();
 
-    // ========== 兼容性测试（5个）==========
+    // 基础缓存语义
     void testNoCacheBehavior();   // 无缓存时行为不变
     void testOnlyNetworkPolicy(); // OnlyNetwork 策略不缓存
     void testSignalOrder();       // 信号发射顺序正确
     void testDataConsistency();   // 数据完整性
     void testMultipleRequests();  // 多次请求一致性
 
-    // ========== 缓存功能测试（7个）==========
+    // 策略命中与写入
     void testPreferCacheHit();       // PreferCache 命中
     void testPreferCacheMiss();      // PreferCache 未命中
     void testOnlyCacheHit();         // OnlyCache 命中
@@ -56,7 +50,7 @@ private slots:
     void testPreferNetworkSuccess(); // PreferNetwork 成功
     void testAutoCacheWrite();       // 自动缓存写入验证
 
-    // ========== 边界情况测试（3个）==========
+    // 边界条件
     void testCacheExpiration();    // 缓存过期处理
     void testNoCacheHeader();      // no-cache 头部
     void testConcurrentRequests(); // 并发请求
@@ -77,7 +71,7 @@ void TestQCNetworkCacheIntegration::initTestCase()
         QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
     }
 
-    // 检查 httpbin 可用性
+    // 该套件依赖可访问的本地 httpbin。
     if (!isHttpbinAvailable()) {
         QSKIP(qPrintable(QStringLiteral("httpbin 服务不可用：%1").arg(m_httpbinBaseUrl)));
     }
@@ -87,20 +81,19 @@ void TestQCNetworkCacheIntegration::cleanupTestCase() {}
 
 void TestQCNetworkCacheIntegration::init()
 {
-    // 每个测试前创建新的 manager 和 cache
+    // 每个用例使用独立 manager/cache，避免缓存键互相污染。
     m_manager = new QCNetworkAccessManager(this);
-    m_cache   = new QCNetworkMemoryCache(m_manager); // cache 是 manager 的子对象
-    m_cache->setMaxCacheSize(1024 * 1024);           // 1MB
+    m_cache   = new QCNetworkMemoryCache(m_manager);
+    m_cache->setMaxCacheSize(1024 * 1024); // 1 MiB 即可覆盖当前测试数据量。
 }
 
 void TestQCNetworkCacheIntegration::cleanup()
 {
-    // 清理（manager 会自动删除 cache）
     if (m_manager) {
         m_manager->setCache(nullptr);
         m_manager->deleteLater();
         m_manager = nullptr;
-        m_cache   = nullptr; // 已被 manager 删除
+        m_cache   = nullptr;
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
 }
@@ -133,7 +126,7 @@ bool TestQCNetworkCacheIntegration::isHttpbinAvailable()
 }
 
 // ============================================================================
-// 兼容性测试
+// 基础缓存语义
 // ============================================================================
 
 void TestQCNetworkCacheIntegration::testNoCacheBehavior()
@@ -156,7 +149,7 @@ void TestQCNetworkCacheIntegration::testNoCacheBehavior()
 
 void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
 {
-    // 测试：OnlyNetwork 策略不写入缓存
+    // OnlyNetwork 只走网络路径，不应留下缓存副本。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=onlynetwork"));
@@ -166,7 +159,6 @@ void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    // 验证缓存中没有数据
     QByteArray cachedData = m_cache->data(request.url());
     QVERIFY(cachedData.isEmpty());
 
@@ -175,7 +167,7 @@ void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
 
 void TestQCNetworkCacheIntegration::testSignalOrder()
 {
-    // 测试：信号发射顺序正确（readyRead → finished）
+    // 命中网络路径时，readyRead 必须先于 finished。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
@@ -188,7 +180,6 @@ void TestQCNetworkCacheIntegration::testSignalOrder()
 
     QVERIFY(waitForFinished(reply));
 
-    // 验证信号顺序
     QVERIFY(readySpy.count() >= 1);
     QCOMPARE(finishedSpy.count(), 1);
 
@@ -197,39 +188,35 @@ void TestQCNetworkCacheIntegration::testSignalOrder()
 
 void TestQCNetworkCacheIntegration::testDataConsistency()
 {
-    // 测试：缓存数据与网络数据一致
+    // 同一 URL 的缓存命中必须返回与首次网络读取一致的数据。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=consistency"));
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
 
-    // 第一次请求（网络）
     auto *reply1 = m_manager->sendGet(request);
     QVERIFY(waitForFinished(reply1));
     auto data1 = reply1->readAll();
     QVERIFY(data1.has_value());
     reply1->deleteLater();
 
-    // 第二次请求（缓存）
     auto *reply2 = m_manager->sendGet(request);
     QVERIFY(waitForFinished(reply2, 100)); // 缓存命中应该很快
     auto data2 = reply2->readAll();
     QVERIFY(data2.has_value());
     reply2->deleteLater();
 
-    // 验证数据一致
     QCOMPARE(data1.value(), data2.value());
 }
 
 void TestQCNetworkCacheIntegration::testMultipleRequests()
 {
-    // 测试：多次请求，缓存正确管理
+    // 多次重复请求不应破坏缓存内容和成功路径。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=multiple"));
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    // 发送 3 次请求
     for (int i = 0; i < 3; ++i) {
         auto *reply = m_manager->sendGet(request);
         QVERIFY(waitForFinished(reply));
@@ -244,24 +231,22 @@ void TestQCNetworkCacheIntegration::testMultipleRequests()
 }
 
 // ============================================================================
-// 缓存功能测试
+// 策略命中与写入
 // ============================================================================
 
 void TestQCNetworkCacheIntegration::testPreferCacheHit()
 {
-    // 测试：PreferCache 策略，缓存命中
+    // PreferCache 命中时应直接读取缓存。
     m_manager->setCache(m_cache);
 
     QUrl url(m_httpbinBaseUrl + "/get?test=prefercache");
 
-    // 预先写入缓存
     QByteArray testData = "{\"cached\": true}";
     QCNetworkCacheMetadata meta;
     meta.url            = url;
     meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
     m_cache->insert(url, testData, meta);
 
-    // 发送请求
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
@@ -273,7 +258,7 @@ void TestQCNetworkCacheIntegration::testPreferCacheHit()
 
     qint64 elapsed = timer.elapsed();
 
-    // 验证：缓存命中，响应快
+    // 命中缓存时，完成时间应明显短于网络路径。
     QVERIFY(elapsed < 50); // 缓存命中应该 < 50ms
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -286,7 +271,7 @@ void TestQCNetworkCacheIntegration::testPreferCacheHit()
 
 void TestQCNetworkCacheIntegration::testPreferCacheMiss()
 {
-    // 测试：PreferCache 策略，缓存未命中，发起网络请求
+    // PreferCache 未命中时应回退到网络。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=cachemiss"));
@@ -305,19 +290,17 @@ void TestQCNetworkCacheIntegration::testPreferCacheMiss()
 
 void TestQCNetworkCacheIntegration::testOnlyCacheHit()
 {
-    // 测试：OnlyCache 策略，缓存命中
+    // OnlyCache 命中时不应触发网络失败。
     m_manager->setCache(m_cache);
 
     QUrl url(m_httpbinBaseUrl + "/get?test=onlycache");
 
-    // 预先写入缓存
     QByteArray testData = "{\"only_cache\": true}";
     QCNetworkCacheMetadata meta;
     meta.url            = url;
     meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
     m_cache->insert(url, testData, meta);
 
-    // 发送请求
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::OnlyCache);
 
@@ -333,8 +316,7 @@ void TestQCNetworkCacheIntegration::testOnlyCacheHit()
 
 void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
 {
-    // 测试：OnlyCache 策略，缓存未命中，需要返回错误
-    // 该用例曾被跳过以规避环境/时序波动；取证式门禁要求：未命中必须可靠地走错误路径并结束。
+    // OnlyCache 未命中时必须稳定地走错误终态。
 
     m_manager->setCache(m_cache);
 
@@ -343,10 +325,8 @@ void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
 
     auto *reply = m_manager->sendGet(request);
 
-    // 等待错误信号
     QVERIFY2(waitForFinished(reply, 1000), "OnlyCache miss should trigger error signal");
 
-    // 验证错误（OnlyCache 未命中返回 InvalidRequest 错误）
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     QVERIFY(reply->isFinished());
 
@@ -355,12 +335,11 @@ void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
 
 void TestQCNetworkCacheIntegration::testAlwaysCache()
 {
-    // 测试：AlwaysCache 策略，总是使用缓存（不管网络状态）
+    // AlwaysCache 只消费已有缓存，不依赖当前网络可达性。
     m_manager->setCache(m_cache);
 
-    QUrl url(m_httpbinBaseUrl + "/get?test=alwayscache_unique_12345"); // 使用唯一URL避免干扰
+    QUrl url(m_httpbinBaseUrl + "/get?test=alwayscache_unique_12345");
 
-    // 预先写入有效缓存（提供有效的 headers）
     QByteArray testData = "{\"cached\": true}";
     QCNetworkCacheMetadata meta;
     meta.url            = url;
@@ -368,18 +347,15 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
     meta.expirationDate = QDateTime::currentDateTime().addSecs(3600); // 未过期（1小时后）
     meta.size           = testData.size();
 
-    // 添加有效的响应头（确保 isCacheable() 返回 true）
     meta.headers["Content-Type"]   = "application/json";
     meta.headers["Content-Length"] = QByteArray::number(testData.size());
 
     m_cache->insert(url, testData, meta);
 
-    // 验证缓存已写入
     QByteArray cachedData = m_cache->data(url);
     QVERIFY2(!cachedData.isEmpty(), "Cache insert failed - data is empty");
     QCOMPARE(cachedData, testData);
 
-    // 发送请求（应该使用缓存，即使网络可用）
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
 
@@ -388,14 +364,14 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     auto data = reply->readAll();
-    QCOMPARE(data.value(), testData); // 应该返回缓存数据（不是网络数据）
+    QCOMPARE(data.value(), testData);
 
     reply->deleteLater();
 }
 
 void TestQCNetworkCacheIntegration::testPreferNetworkSuccess()
 {
-    // 测试：PreferNetwork 策略，网络成功
+    // PreferNetwork 在网络成功时应返回新鲜响应。
     m_manager->setCache(m_cache);
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=prefernetwork"));
@@ -413,12 +389,11 @@ void TestQCNetworkCacheIntegration::testPreferNetworkSuccess()
 
 void TestQCNetworkCacheIntegration::testAutoCacheWrite()
 {
-    // 测试：自动缓存写入验证
+    // 首次网络读取后，同一 URL 应留下可直接复用的缓存副本。
     m_manager->setCache(m_cache);
 
     QUrl url(m_httpbinBaseUrl + "/get?test=autowrite");
 
-    // 第一次请求（网络 + 自动写入缓存）
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
@@ -430,12 +405,10 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
     QVERIFY(networkData.has_value());
     reply->deleteLater();
 
-    // 验证缓存已写入
     QByteArray cachedData = m_cache->data(url);
     QVERIFY(!cachedData.isEmpty());
     QCOMPARE(cachedData, networkData.value());
 
-    // 第二次请求（缓存命中）
     auto *reply2 = m_manager->sendGet(request);
     QVERIFY(waitForFinished(reply2, 100));
 
@@ -446,24 +419,22 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
 }
 
 // ============================================================================
-// 边界情况测试
+// 边界条件
 // ============================================================================
 
 void TestQCNetworkCacheIntegration::testCacheExpiration()
 {
-    // 测试：缓存过期处理
+    // 过期缓存不能继续满足 PreferCache。
     m_manager->setCache(m_cache);
 
     QUrl url(m_httpbinBaseUrl + "/get?test=expiration");
 
-    // 写入已过期的缓存
     QByteArray expiredData = "{\"expired\": true}";
     QCNetworkCacheMetadata meta;
     meta.url            = url;
     meta.expirationDate = QDateTime::currentDateTime().addSecs(-1); // 已过期
     m_cache->insert(url, expiredData, meta);
 
-    // PreferCache 策略应该重新请求网络
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
@@ -473,18 +444,16 @@ void TestQCNetworkCacheIntegration::testCacheExpiration()
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
-    QVERIFY(data.value() != expiredData); // 应该是新的网络数据
+    QVERIFY(data.value() != expiredData);
 
     reply->deleteLater();
 }
 
 void TestQCNetworkCacheIntegration::testNoCacheHeader()
 {
-    // 测试：no-cache 头部处理
+    // no-cache 响应头不应被写入缓存。
     m_manager->setCache(m_cache);
 
-    // httpbin 的 /cache 端点返回 Cache-Control: public, max-age=...
-    // /response-headers 可以自定义响应头
     QUrl url(m_httpbinBaseUrl + "/response-headers?Cache-Control=no-cache");
 
     QCNetworkRequest request(url);
@@ -496,19 +465,17 @@ void TestQCNetworkCacheIntegration::testNoCacheHeader()
 
     reply->deleteLater();
 
-    // 验证不应该缓存
     QByteArray cachedData = m_cache->data(url);
     QVERIFY(cachedData.isEmpty());
 }
 
 void TestQCNetworkCacheIntegration::testConcurrentRequests()
 {
-    // 测试：并发请求，缓存正确处理
+    // 并发请求不应破坏完成路径或响应读取。
     m_manager->setCache(m_cache);
 
     QList<QCNetworkReply *> replies;
 
-    // 发起 5 个并发请求
     for (int i = 0; i < 5; ++i) {
         QUrl url(m_httpbinBaseUrl + QStringLiteral("/get?test=concurrent&id=%1").arg(i));
         QCNetworkRequest request(url);
@@ -517,7 +484,6 @@ void TestQCNetworkCacheIntegration::testConcurrentRequests()
         replies.append(m_manager->sendGet(request));
     }
 
-    // 等待所有请求完成
     for (auto *reply : replies) {
         QVERIFY(waitForFinished(reply));
         QCOMPARE(reply->error(), NetworkError::NoError);

@@ -1,13 +1,7 @@
 """
-P2：固定 HTTP 错误码（404/401/503）一致性（含错误字段归一化）。
+P2：固定 HTTP 错误码一致性。
 
-目的：
-- 验证 QCurl 与 libcurl baseline 在“状态码 + 响应字节”一致的前提下，
-  能以统一方式输出“HTTP 错误”的归一化描述（kind/http_status）。
-
-服务端：repo 内置 http_observe_server.py（/status/<code>）
-基线：repo 内置 qcurl_lc_http_baseline
-QCurl：tst_LibcurlConsistency（p2_fixed_http_error）
+比较 404 / 401 / 503 的状态码、响应字节和错误归一化字段。
 """
 
 from __future__ import annotations
@@ -43,7 +37,7 @@ def test_p2_fixed_http_errors(status_code: int, env, lc_logs, lc_observe_http, t
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -151,7 +145,7 @@ def test_p2_retry_501_sequence_http_1_1(env, lc_logs, lc_observe_http, tmp_path)
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

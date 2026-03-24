@@ -1,13 +1,7 @@
 """
-P2：POST 流式上传 sizeBytes 未知（chunked，HTTP/1.1）。
+P2：HTTP/1.1 下 unknown size POST 的 chunked 上传一致性。
 
-目标：
-- baseline（libcurl easy）与 QCurl 在“unknown size + chunked”路径下的可观测语义一致：
-  - 服务端观测到 Transfer-Encoding: chunked
-  - 回显 body 字节一致（len/hash 对齐）
-
-说明：
-- 仅覆盖 HTTP/1.1（与 task_autorun.md 3.9 对齐）。
+比较 `Transfer-Encoding: chunked` 与回显 body 字节。
 """
 
 from __future__ import annotations
@@ -39,7 +33,7 @@ def _has_chunked_post_upload_api() -> bool:
 
 
 if not _has_chunked_post_upload_api():
-    pytest.skip("chunked unknown-size upload API 未落地，跳过该用例", allow_module_level=True)
+    pytest.skip("当前构建未提供 chunked unknown-size POST 上传 API，跳过该用例", allow_module_level=True)
 
 
 def _normalize_req_headers(headers: dict) -> dict:
@@ -60,7 +54,7 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -188,4 +182,3 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
                 },
             )
         raise
-

@@ -1,9 +1,7 @@
 """
-P2：TLS pinned public key（CURLOPT_PINNEDPUBLICKEY）语义一致性。
+P2：TLS pinned public key 语义一致性。
 
-覆盖缺口：
-- QCurl 已具备 pinnedPublicKey 配置入口，但缺少可运行回归门禁。
-- 该用例复用 curl testenv 生成的 CA + localhost 证书（lc_observe_https），并在运行时计算 pinned key（sha256//...）。
+复用本地测试证书，并在运行时计算 `sha256//...` pinned key。
 """
 
 from __future__ import annotations
@@ -89,7 +87,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_https["port"])
@@ -132,7 +130,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
             allowed_exit_codes={0, 6} if mode == "match" else {0, 6, 7},
         )
         if int(baseline["payload"].get("exit_code") or 0) == 6:
-            pytest.skip("libcurl 不支持 CURLOPT_PINNEDPUBLICKEY，跳过 pinned public key 门禁")
+            pytest.skip("当前 libcurl 不支持 CURLOPT_PINNEDPUBLICKEY，跳过 pinned public key 用例")
         if mode != "match":
             curlcode = _parse_curlcode(baseline["payload"].get("stderr"))
             assert curlcode == 90, f"unexpected curlcode: {curlcode}"

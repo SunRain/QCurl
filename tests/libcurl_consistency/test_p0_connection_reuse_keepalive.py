@@ -1,14 +1,8 @@
 """
-P0（补充证据）：连接复用可观测一致性（HTTP/1.1 keep-alive）。
+P0：HTTP/1.1 keep-alive 连接复用一致性。
 
-背景：
-- P0 默认更关注“最终可观测结果”（请求语义摘要 + 响应字节 hash/len）。
-- 连接复用/连接池语义属于“可区分但容易被字节一致掩盖”的维度：
-  - 可能出现：结果一致，但每次请求都新建连接（性能/资源语义差异）
-
-本用例的证据口径：
-- 通过 `http_observe_server.py` 日志中的 `peer_port` 统计同一 run 内的连接复用情况
-- 仅比较可比统计：`unique_connections` + 归一化 `conn_seq`
+从服务端观测日志比较 `unique_connections` 与归一化 `conn_seq`，
+不比较内部连接池实现。
 """
 
 from __future__ import annotations
@@ -92,7 +86,7 @@ def test_p0_connection_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, t
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -204,4 +198,3 @@ def test_p0_connection_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, t
                 },
             )
         raise
-

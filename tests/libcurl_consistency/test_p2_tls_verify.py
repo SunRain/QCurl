@@ -1,12 +1,7 @@
 """
-P2：TLS 校验语义一致性（成功/失败路径）。
+P2：TLS 校验成功/失败路径一致性。
 
-覆盖缺口：
-- TLS 校验语义缺失：对齐 verifyPeer/verifyHost + CAINFO/caCertPath 下的可观测结果（成功/证书错误）
-
-服务端：repo 内置 http_observe_server.py（HTTPS，复用 curl testenv 生成的 CA + localhost 证书）
-基线：repo 内置 qcurl_lc_http_baseline（cli_lc_http，--secure/--cainfo）
-QCurl：tst_LibcurlConsistency（p2_tls_verify_*）
+比较 `verifyPeer`、`verifyHost` 和 `caCertPath` 相关的可观测结果。
 """
 
 from __future__ import annotations
@@ -41,7 +36,7 @@ def test_p2_tls_verify(mode: str, env, lc_logs, lc_observe_https, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_https["port"])

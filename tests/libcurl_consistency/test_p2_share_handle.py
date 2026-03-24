@@ -1,10 +1,7 @@
 """
-LC-46（P2）：CURLOPT_SHARE（share handle）语义与死锁回归（PR gate 适配）。
+P2：share handle 语义与死锁回归。
 
-目标（弱门禁 + 可观测）：
-- 默认关闭：不共享 cookie（/home 返回 401）
-- 显式开启 shareCookies：同一 manager 内可共享 cookie（/home 返回 200 + body）
-- 并发 smoke：开启 shareCookies 后并发请求不死锁不崩溃
+覆盖默认不共享、显式共享 cookie，以及并发 smoke 的稳定终态。
 """
 
 from __future__ import annotations

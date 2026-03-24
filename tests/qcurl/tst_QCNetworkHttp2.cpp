@@ -1,38 +1,11 @@
 /**
  * @file tst_QCNetworkHttp2.cpp
- * @brief QCurl HTTP/2 功能测试 - 验证 HTTP/2 协议支持
+ * @brief 覆盖 HTTP/2 协商、复用、降级和本地 TLS 场景。
  *
- * 测试覆盖：
- * - HTTP/2 协议协商（ALPN）
- * - 多路复用（单连接多请求）
- * - 头部压缩（HPACK）
- * - 协议降级（HTTP/2 → HTTP/1.1）
- * - HTTP/2 over TLS (h2)
- * - 并发流限制
- * - 流控制
- *
- * ============================================================================
- * 测试前准备
- * ============================================================================
- *
- * 1. 确保 libcurl 编译时启用 nghttp2 支持：
- *    curl --version | grep HTTP2
- *
- * 2. 默认使用仓库内置的本地可控 HTTP/2 server（node）：
- *    - 脚本：tests/qcurl/http2-test-server.js
- *    - 证书：tests/qcurl/testdata/http2/localhost.{crt,key}（仅用于测试）
- *
- *    如需对接其他 HTTP/2 server（例如 curl testenv），可通过环境变量覆盖 base URL：
- *    - QCURL_HTTP2_TEST_BASE_URL: 覆盖 HTTP/2 base URL（例如 https://127.0.0.1:PORT）
- *    - QCURL_HTTP2_TEST_HTTP1_BASE_URL: 覆盖 HTTP/1.1-only base URL（用于降级用例）
- *
- *    可选：
- *    - QCURL_HTTP2_DISABLE_DOWNGRADE_TEST=1：禁用“HTTP/2 → HTTP/1.1 降级”用例（仅记录 QWARN）
- *
- * 3. 运行测试：
- *    ./tst_QCNetworkHttp2
- *
- * ============================================================================
+ * 默认使用 `tests/qcurl/http2-test-server.js` 启动本地可控 server。
+ * 也可通过 `QCURL_HTTP2_TEST_BASE_URL` 和
+ * `QCURL_HTTP2_TEST_HTTP1_BASE_URL` 覆盖 HTTP/2 与 HTTP/1.1 入口。
+ * `QCURL_HTTP2_DISABLE_DOWNGRADE_TEST=1` 会显式跳过降级用例。
  */
 
 #include "QCCurlHandleManager.h"
@@ -66,7 +39,7 @@
 using namespace QCurl;
 
 // ============================================================================
-// 测试服务器配置
+// 本地 server 配置
 // ============================================================================
 
 static const char *kHttp2TestBaseUrlEnvName = "QCURL_HTTP2_TEST_BASE_URL";
@@ -95,7 +68,7 @@ private slots:
     void init();
     void cleanup();
 
-    // ========== HTTP/2 功能测试 ==========
+    // 协议能力与协商
     void testHttp2Support();           // 检测 HTTP/2 支持
     void testHttp2Negotiation();       // HTTP/2 协议协商（ALPN）
     void testHttp2Multiplexing();      // 多路复用（单连接多请求）
@@ -105,7 +78,7 @@ private slots:
     void testHttp2ConcurrentStreams(); // 并发流限制
     void testHttp2ConnectionReuse();   // 连接复用验证
 
-    // ========== HTTP/2 vs HTTP/1.1 对比测试 ==========
+    // 顺序请求基线
     void testHttp2VsHttp1Performance(); // 性能对比（简化版）
 
 private:
@@ -360,7 +333,7 @@ QJsonObject TestQCNetworkHttp2::requestJson(const QUrl &url,
 
 void TestQCNetworkHttp2::initTestCase()
 {
-    // 检查 HTTP/2 支持
+    // 没有 HTTP/2 runtime 支持时，整套 contract 都不成立。
     if (!checkHttp2Support()) {
         QSKIP("libcurl 未编译 HTTP/2 支持（需要 nghttp2），跳过所有 HTTP/2 测试");
     }
@@ -410,12 +383,10 @@ void TestQCNetworkHttp2::cleanupTestCase()
 
 void TestQCNetworkHttp2::init()
 {
-    // 每个测试前执行
 }
 
 void TestQCNetworkHttp2::cleanup()
 {
-    // 每个测试后执行
 }
 
 // ============================================================================
@@ -424,11 +395,9 @@ void TestQCNetworkHttp2::cleanup()
 
 void TestQCNetworkHttp2::testHttp2Support()
 {
-    // 验证 QCNetworkHttpVersion 枚举包含 HTTP/2
+    // 枚举层和 runtime 能力都必须暴露 HTTP/2。
     QVERIFY(static_cast<int>(QCNetworkHttpVersion::Http2) > 0);
     QVERIFY(static_cast<int>(QCNetworkHttpVersion::Http2TLS) > 0);
-
-    // 验证 curl 运行时支持
     QVERIFY(checkHttp2Support());
 }
 
@@ -445,7 +414,7 @@ void TestQCNetworkHttp2::testHttp2Negotiation()
 
 void TestQCNetworkHttp2::testHttp2Multiplexing()
 {
-    // 同时发起 5 个请求到同一服务器（HTTP/2 应该复用单个连接）
+    // 同一 server 下的多请求应共享一个 session，并分配不同 streamId。
     QList<QCNetworkReply *> replies;
 
     for (int i = 0; i < 5; ++i) {
@@ -458,7 +427,6 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
         replies.append(reply);
     }
 
-    // 等待所有请求完成
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
@@ -510,12 +478,11 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
 
 void TestQCNetworkHttp2::testHttp2HeaderCompression()
 {
-    // 发送带大量自定义 Header 的请求
+    // 构造高 header 密度请求，验证服务端仍能正确回显。
     QCNetworkRequest request(QUrl(m_h2BaseUrl + QStringLiteral("/reqinfo?case=headers")));
     request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
     request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
-    // 添加多个自定义 Header
     for (int i = 0; i < 10; ++i) {
         request.setRawHeader(QStringLiteral("X-Custom-Header-%1").arg(i).toUtf8(),
                              QStringLiteral("Value-%1-With-Long-Content-For-Compression-Test")
@@ -579,7 +546,6 @@ void TestQCNetworkHttp2::testHttp2Downgrade()
 
 void TestQCNetworkHttp2::testHttp2WithSsl()
 {
-    // HTTP/2 over TLS (h2) - 标准 HTTPS + HTTP/2
     const QUrl url(m_h2BaseUrl + QStringLiteral("/reqinfo?case=h2tls"));
     const QJsonObject obj = requestJson(url, QCNetworkHttpVersion::Http2TLS);
     QVERIFY2(!obj.contains(QString::fromUtf8(kJsonErrorKey)),
@@ -589,8 +555,7 @@ void TestQCNetworkHttp2::testHttp2WithSsl()
 
 void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
 {
-    // 测试并发流（HTTP/2 的核心特性）
-    // 同时发起 10 个请求，验证它们能并发执行
+    // 共享同一 session 的多请求应获得不同的 streamId。
 
     QElapsedTimer timer;
     timer.start();
@@ -607,8 +572,7 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
         replies.append(reply);
     }
 
-    // 在慢环境下保留更宽松的等待窗口，避免将并发流验证误判为失败。
-    // 等待所有请求完成
+    // 慢环境下保留更宽松的等待窗口，避免把环境抖动误判为协议缺陷。
     for (int i = 0; i < replies.size(); ++i) {
         auto *reply = replies[i];
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 30000)) {
@@ -662,7 +626,7 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
 
 void TestQCNetworkHttp2::testHttp2ConnectionReuse()
 {
-    // 验证连接复用：顺序发送 5 个请求，HTTP/2 应该复用同一连接
+    // 顺序请求也应复用同一 session，但 streamId 仍需递增且不重复。
 
     int sessionId = -1;
     QSet<int> streamIds;
@@ -711,7 +675,7 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
 {
     const int requestCount = 10;
 
-    // ========== HTTP/1.1 基准测试 ==========
+    // 顺序请求基线：HTTP/1.1
     QElapsedTimer http1Timer;
     http1Timer.start();
 
@@ -738,7 +702,7 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
 
     qint64 http1Elapsed = http1Timer.elapsed();
 
-    // ========== HTTP/2 基准测试 ==========
+    // 顺序请求基线：HTTP/2
     QElapsedTimer http2Timer;
     http2Timer.start();
 

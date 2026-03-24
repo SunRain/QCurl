@@ -1,11 +1,6 @@
 """
-LC-50（ext）：TLS policy + HSTS/Alt-Svc cache 持久化 smoke。
-
-目标：
-- 仅在 PR gate（QCURL_LC_EXT=1）启用
-- 用本地 httpd/nghttpx 产生 Strict-Transport-Security / Alt-Svc 响应头
-- 落盘路径用临时目录隔离，并在用例结束清理
-- 避免依赖时间窗口/性能断言（只做可追溯 + 不崩溃）
+扩展用例：覆盖 TLS policy 与 HSTS/Alt-Svc cache 持久化的 smoke contract。
+落盘路径使用临时目录隔离，并在用例结束后清理。
 """
 
 from __future__ import annotations
@@ -21,7 +16,7 @@ from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 
 
 if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
-    pytest.skip("set QCURL_LC_EXT=1 to enable libcurl_consistency ext suite", allow_module_level=True)
+    pytest.skip("该扩展用例仅在 QCURL_LC_EXT=1 时启用", allow_module_level=True)
 
 
 def test_ext_tls_policy_and_cache_persistence(env, lc_httpd_cache_headers):
@@ -30,7 +25,7 @@ def test_ext_tls_policy_and_cache_persistence(env, lc_httpd_cache_headers):
     repo_root = Path(__file__).resolve().parents[2]
     ca_cert = repo_root / "curl" / "tests" / "http" / "gen" / "ca" / "ca.pem"
     if not ca_cert.exists():
-        pytest.skip("ca.pem not found (curl testenv CA not generated)")
+        pytest.skip("当前环境未生成 curl testenv ca.pem，跳过该用例")
 
     req_id = uuid.uuid4().hex[:8]
     url = f"https://localhost:{env.https_port}/lc_cache_headers?id={req_id}"

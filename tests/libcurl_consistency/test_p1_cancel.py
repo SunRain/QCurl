@@ -1,16 +1,7 @@
 """
-P1：取消语义一致性（async cancel + 可复现字节边界）。
+P1：取消语义一致性。
 
-目的：
-- 验证 QCurl 与 libcurl baseline 在“取消”场景下的可观测输出一致：
-  - 错误归一化字段一致：kind=cancel、curlcode=42、http_code=200
-  - 落盘 body 字节一致（固定在首个 chunk 边界，避免不稳定的中间态差异）
-
-服务端：repo 内置 http_observe_server.py（/slow_body/<total>/<chunk>/<sleep_ms>）
-- 本用例：/slow_body/8192/4096/5000：先发送 4096 字节，再等待 5 秒发送剩余部分
-
-基线：repo 内置 qcurl_lc_http_baseline（CURLOPT_XFERINFOFUNCTION 中止传输，触发 CURLE_ABORTED_BY_CALLBACK=42）
-QCurl：tst_LibcurlConsistency（p1_cancel_after_first_chunk，基于 downloadProgress 达到阈值后调用 reply.cancel()）
+比较取消后的错误归一化字段，以及首个稳定 chunk 边界处的 body 字节。
 """
 
 from __future__ import annotations
@@ -54,7 +45,7 @@ def test_p1_cancel_after_first_chunk(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

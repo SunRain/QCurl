@@ -1,13 +1,7 @@
 """
-P2（M5）：协议白名单一致性（PROTOCOLS_STR / REDIR_PROTOCOLS_STR）。
+P2：协议白名单与重定向协议限制一致性。
 
-目标：
-- allowedProtocols：作为安全边界（fail-closed），应拒绝不允许的协议访问
-- allowedRedirectProtocols：应拒绝不允许的协议重定向跟随（且不产生第二跳请求）
-
-服务端：repo 内置 http_observe_server.py（/status/<code>、/redir/<n>）
-基线：repo 内置 qcurl_lc_http_baseline（--allowed-protocols / --allowed-redir-protocols）
-QCurl：tst_LibcurlConsistency（p2_protocols_block_http / p2_redir_protocols_block_http）
+验证被禁止协议的直接访问和重定向跟随都显式失败。
 """
 
 from __future__ import annotations
@@ -55,7 +49,7 @@ def test_p2_protocols_block_http_http_1_1(env, lc_logs, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -137,7 +131,7 @@ def test_p2_redir_protocols_block_http_http_1_1(env, lc_logs, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

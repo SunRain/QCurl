@@ -1,15 +1,7 @@
 """
-P1：空响应体一致性（Content-Length: 0 / 204 No Content）。
+P1：空响应体交付一致性。
 
-目的：
-- 验证 QCurl 与 libcurl baseline 在“空响应体”场景下的可观测输出一致：
-  - 落盘 body 为空（len/hash）
-  - 服务端观测到的 status 一致
-  - QCurl 侧无需额外绕过逻辑（`readAll()` 在终态空 body 时应返回 empty QByteArray）
-
-服务端：repo 内置 http_observe_server.py（/empty_200、/no_content）
-基线：repo 内置 qcurl_lc_http_baseline
-QCurl：tst_LibcurlConsistency（p1_empty_body_200 / p1_empty_body_204）
+覆盖 `Content-Length: 0` 与 `204 No Content`，确保 status 和空 body 语义一致。
 """
 
 from __future__ import annotations
@@ -44,7 +36,7 @@ def test_p1_empty_body(case_id: str, path: str, expected_status: int, env, lc_lo
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -134,4 +126,3 @@ def test_p1_empty_body(case_id: str, path: str, expected_status: int, env, lc_lo
                 },
             )
         raise
-

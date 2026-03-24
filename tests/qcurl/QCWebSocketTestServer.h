@@ -1,14 +1,15 @@
 #ifndef QCURL_TEST_QCWEBSOCKETTESTSERVER_H
 #define QCURL_TEST_QCWEBSOCKETTESTSERVER_H
 
-/*
- * QtTest WebSocket 本地测试服务器 helper。
+/**
+ * @file QCWebSocketTestServer.h
+ * @brief 启动和管理 Qt Test 使用的本地 WebSocket server。
  *
- * 封装本地 node WebSocket 测试服务器的启动/停止、READY marker 解析与端口就绪探测。
+ * 默认封装两类本地 server：
+ * - Fragment Echo：依赖 `tests/qcurl/websocket-fragment-server.js`
+ * - Evidence Server：依赖 `tests/qcurl/websocket-evidence-server.js`
  *
- * 当前包含两类 server：
- * - Fragment Echo（message-level）：tests/qcurl/websocket-fragment-server.js（依赖 ws；仅用于回显 smoke）
- * - Evidence Server（frame-level）：tests/qcurl/websocket-evidence-server.js（零外部依赖；用于 fragmentation/close 证据链）
+ * 该 helper 负责 READY marker 解析、端口连通性探测和进程回收。
  */
 
 #include <QCoreApplication>
@@ -29,26 +30,41 @@ namespace QCurl {
 class QCWebSocketTestServer
 {
 public:
+    /// @brief 连接协议模式。
     enum class Mode {
         Ws,
         Wss,
     };
 
+    /// @brief 本地 server 实现类型。
     enum class ServerKind {
         FragmentEcho,
         Evidence,
     };
 
+    /// @brief 构造一个尚未启动的测试 server helper。
     QCWebSocketTestServer() = default;
+
+    /// @brief 停止仍在运行的测试 server。
     ~QCWebSocketTestServer() { stop(); }
 
     QCWebSocketTestServer(const QCWebSocketTestServer &)            = delete;
     QCWebSocketTestServer &operator=(const QCWebSocketTestServer &) = delete;
 
+    /// @brief 返回最近一次启动失败或跳过的原因。
+    /// @return 失败原因；为空表示当前无额外说明。
     [[nodiscard]] QString skipReason() const { return m_skipReason; }
+
+    /// @brief 返回已启动 server 监听的本地端口。
+    /// @return 监听端口；未启动时返回 0。
     [[nodiscard]] quint16 port() const { return m_port; }
+
+    /// @brief 返回 evidence server 输出工件目录。
+    /// @return 工件目录；非 evidence 模式或未启动时为空。
     [[nodiscard]] QString artifactsPath() const { return m_artifactsPath; }
 
+    /// @brief 返回当前 server 的 base URL。
+    /// @return `ws://` 或 `wss://` 开头的本地 URL；未启动时为空。
     [[nodiscard]] QString baseUrl() const
     {
         if (m_port == 0) {
@@ -58,6 +74,9 @@ public:
         return QStringLiteral("%1://localhost:%2").arg(scheme).arg(m_port);
     }
 
+    /// @brief 在 base URL 后拼接路径。
+    /// @param path 以 `/` 开头或不带前导 `/` 的相对路径。
+    /// @return 拼接后的 URL；未启动时为空。
     [[nodiscard]] QString urlWithPath(const QString &path) const
     {
         if (m_port == 0) {
@@ -71,6 +90,8 @@ public:
         return baseUrl() + p;
     }
 
+    /// @brief 返回本地 WSS 测试证书路径。
+    /// @return `tests/qcurl/testdata/http2/localhost.crt` 的绝对路径。
     [[nodiscard]] QString caCertPath() const
     {
         const QString appDir = QCoreApplication::applicationDirPath();
@@ -78,6 +99,10 @@ public:
             QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
     }
 
+    /// @brief 启动指定模式和实现类型的本地 server。
+    /// @param mode `ws` 或 `wss`。
+    /// @param kind 选择 fragment echo 或 evidence server。
+    /// @return 启动并就绪返回 `true`，否则返回 `false` 并设置 skipReason()。
     bool start(Mode mode, ServerKind kind = ServerKind::FragmentEcho)
     {
         stop();
@@ -179,6 +204,7 @@ public:
         return true;
     }
 
+    /// @brief 停止当前 server 进程。
     void stop()
     {
         if (m_process.state() == QProcess::NotRunning) {

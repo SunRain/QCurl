@@ -129,7 +129,7 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 │   ┌────────────────────────────────────────────────┐   │
 │   │  curl 封装                                      │   │
 │   │  - QCCurlHandleManager (RAII 句柄管理)          │   │
-│   │  - CurlGlobalConstructor (全局初始化)           │   │
+│   │  - CurlGlobalConstructor (内部全局初始化)       │   │
 │   └────────────────────────────────────────────────┘   │
 │   ┌────────────────────────────────────────────────┐   │
 │   │  配置类                                         │   │
@@ -244,7 +244,7 @@ public:
 
 #### 7. **单例模式**
 
-- `CurlGlobalConstructor`: 确保 libcurl 全局初始化只执行一次
+- `CurlGlobalConstructor`（internal/private）: 确保 libcurl 全局初始化只执行一次
 - `QCCurlMultiManager`: 管理所有异步请求的多句柄
 
 ---

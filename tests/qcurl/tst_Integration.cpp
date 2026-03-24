@@ -1,30 +1,14 @@
 /**
  * @file tst_Integration.cpp
- * @brief QCurl 集成测试 - 真实网络请求和完整功能验证
+ * @brief 覆盖依赖本地 httpbin 的集成路径。
  *
- * 测试覆盖：
- * - 真实 HTTP 请求（本地 httpbin）
- * - Cookie 持久化和发送
- * - 自定义 Header
- * - 超时配置
- * - 重定向处理
- * - SSL 配置
- * - 大文件下载
- * - 并发请求
- * - 错误恢复
- *
- * ============================================================================
- * 测试前准备
- * ============================================================================
- *
- * 本测试套件需要本地 httpbin 服务，并通过环境变量 `QCURL_HTTPBIN_URL` 获取 base URL（不硬编码端口）。
- *
- * 推荐启动方式（生成 env 文件并做健康检查）：
+ * 该套件验证真实请求、Cookie/Header、超时、重定向、TLS、并发和重试。
+ * 运行前需要可访问的本地 httpbin，并通过 `QCURL_HTTPBIN_URL` 提供 base URL。
+ * 推荐启动方式：
  *
  *     ./tests/qcurl/httpbin/start_httpbin.sh --write-env build/test-env/httpbin.env
  *     source build/test-env/httpbin.env
  *     cd build && ctest -R tst_Integration --output-on-failure
- * ============================================================================
  */
 
 #include "QCNetworkAccessManager.h"
@@ -71,51 +55,45 @@ private slots:
     void init();
     void cleanup();
 
-    // ========== 真实网络请求测试 ==========
+    // HTTP 方法与基础请求
     void testRealHttpGetRequest();
     void testRealHttpPostRequest();
     void testRealHttpPutRequest();
     void testRealHttpDeleteRequest();
     void testRealHttpPatchRequest();
 
-    // ========== Cookie 测试 ==========
+    // Cookie 持久化与发送
     void testCookieSetAndGet();
     void testCookiePersistence();
 
-    // ========== Header 测试 ==========
+    // Header 与鉴权
     void testCustomHeaders();
     void testUserAgentHeader();
     void testAuthorizationHeader();
     void testHttpAuthBasic();
     void testAuthorizationHeaderOverridesHttpAuth();
 
-    // ========== 超时测试 ==========
+    // 超时与重定向
     void testConnectTimeout();
     void testTotalTimeout();
     void testDelayedResponse();
-
-    // ========== 重定向测试 ==========
     void testFollowRedirect();
     void testMaxRedirects();
 
-    // ========== SSL 测试 ==========
+    // TLS 与传输
     void testHttpbinRequestSslConfigAlignment();
     void testLocalHttpsTlsVerification();
     void testSslConfiguration();
-
-    // ========== 进度/大体量传输测试 ==========
     void testProgressTracking();
 
-    // ========== 并发测试 ==========
+    // 并发与错误恢复
     void testConcurrentRequests();
     void testSequentialRequests();
-
-    // ========== 错误恢复测试 ==========
     void testInvalidHost();
     void testConnectionRefused();
     void testHttpErrorCodes();
 
-    // ========== 重试机制集成测试 ==========
+    // 重试集成
     void testRetryWithConcurrentRequests(); // 并发重试无冲突
     void testRetryOnTimeout();              // 超时重试
     void testRetryDelayAccuracy();          // 重试延迟准确性
@@ -176,7 +154,7 @@ static bool waitForPortReady(quint16 port, int timeoutMs)
 }
 
 // ============================================================================
-// 测试初始化
+// 初始化与环境前置
 // ============================================================================
 
 void TestIntegration::initTestCase()
@@ -207,16 +185,14 @@ void TestIntegration::cleanupTestCase()
 
 void TestIntegration::init()
 {
-    // 每个测试前执行
 }
 
 void TestIntegration::cleanup()
 {
-    // 每个测试后执行
 }
 
 // ============================================================================
-// 真实网络请求测试
+// HTTP 方法与基础请求
 // ============================================================================
 
 void TestIntegration::testRealHttpGetRequest()
@@ -230,7 +206,7 @@ void TestIntegration::testRealHttpGetRequest()
     auto data = reply->readAll();
     QVERIFY(data.has_value());
 
-    // 验证 JSON 响应
+    // /get 会回显查询参数。
     QJsonObject json = parseJsonResponse(*data);
     QVERIFY(json.contains("args"));
     QJsonObject args = json["args"].toObject();
@@ -253,7 +229,7 @@ void TestIntegration::testRealHttpPostRequest()
     auto data = reply->readAll();
     QVERIFY(data.has_value());
 
-    // 验证服务器回显了我们的数据
+    // /post 会回显原始请求体。
     QJsonObject json = parseJsonResponse(*data);
     QVERIFY(json.contains("data"));
     QString dataStr = json["data"].toString();
@@ -570,9 +546,7 @@ void TestIntegration::testMaxRedirects()
     const QString redirectPath = QStringLiteral("/redirect/10"); // 10 次重定向，最终应落到 /get
     const QUrl redirectUrl(m_httpbinBaseUrl + redirectPath);
 
-    // ----------------------------
-    // Phase 1: 足够大阈值必须成功
-    // ----------------------------
+    // 上限充足时必须成功跟随到最终目标。
     {
         QCNetworkRequest request(redirectUrl);
         request.setFollowLocation(true);
@@ -598,9 +572,7 @@ void TestIntegration::testMaxRedirects()
         reply->deleteLater();
     }
 
-    // ----------------------------
-    // Phase 2: 足够小阈值必须被上限阻断
-    // ----------------------------
+    // 上限不足时必须显式返回 TooManyRedirects。
     {
         QCNetworkRequest request(redirectUrl);
         request.setFollowLocation(true);
@@ -657,7 +629,7 @@ void TestIntegration::testHttpbinRequestSslConfigAlignment()
 
 void TestIntegration::testLocalHttpsTlsVerification()
 {
-    // 可控 HTTPS 证据：使用仓库自带证书启动本地 HTTPS 服务端，验证 TLS 的失败/成功两条路径。
+    // 使用仓库自带证书启动本地 HTTPS server，分别验证失败和成功路径。
     const QString appDir     = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(
         QStringLiteral("../../tests/qcurl/http2-test-server.js"));
@@ -745,9 +717,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
 
     const QUrl url(QStringLiteral("https://localhost:%1/reqinfo").arg(httpsPort));
 
-    // ----------------------------
-    // Phase 1: 默认安全配置（无自定义 CA）应拒绝自签名证书
-    // ----------------------------
+    // 未注入 CA 时必须拒绝自签名证书。
     {
         QCNetworkRequest request(url);
         request.setSslConfig(QCNetworkSslConfig::defaultConfig());
@@ -764,9 +734,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
         reply->deleteLater();
     }
 
-    // ----------------------------
-    // Phase 2: 配置 CA 后应成功（可复核：status + body sha256）
-    // ----------------------------
+    // 注入测试 CA 后必须成功完成握手和响应读取。
     {
         QCNetworkRequest request(url);
         QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
@@ -800,7 +768,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
 
 void TestIntegration::testSslConfiguration()
 {
-    // 测试禁用 SSL 验证（用于自签名证书）
+    // insecureConfig() 仅用于受控测试环境。
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
 
     QCNetworkSslConfig sslConfig = QCNetworkSslConfig::insecureConfig();
@@ -825,7 +793,7 @@ void TestIntegration::testProgressTracking()
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 20000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    // 应该有进度更新
+    // bytes/102400 至少应触发一次 downloadProgress。
     QVERIFY(progressSpy.count() >= 1);
 
     if (progressSpy.count() > 0) {

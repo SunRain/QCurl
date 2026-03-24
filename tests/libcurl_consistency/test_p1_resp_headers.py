@@ -1,14 +1,7 @@
 """
-P1：响应头“字节级/多值头”一致性（LC-26）。
+P1：原始响应头与重复头交付一致性。
 
-目的：
-- 验证 QCurl 与 libcurl baseline 在“原始响应头可观测数据”上的一致性：
-  - 至少对齐 header 行集合（包含重复头）
-  - 对齐大小写与顺序（在跳过动态头 Date/Server 的前提下）
-
-服务端：repo 内置 http_observe_server.py（/resp_headers）
-基线：repo 内置 qcurl_lc_http_baseline（CURLOPT_HEADERFUNCTION 写出 response_headers_0.data）
-QCurl：tst_LibcurlConsistency（p1_resp_headers，写出 response_headers_0.data）
+比较动态头过滤后的 header 行集合、大小写和顺序。
 """
 
 from __future__ import annotations
@@ -40,7 +33,7 @@ def _append_req_id(url: str, req_id: str) -> str:
 
 
 def _normalize_raw_header_lines(raw: bytes) -> list[str]:
-    # headers 使用 latin-1 解码以“逐字节”保留（避免 utf-8 解码失败影响可比性）
+    # headers 使用 latin-1 解码，尽量保持逐字节可比性，避免 utf-8 解码失败影响结果。
     text = raw.decode("iso-8859-1", errors="replace")
     out: list[str] = []
     for line in text.splitlines():
@@ -64,7 +57,7 @@ def _raw_header_fields(lines: list[str]) -> dict:
 
 
 def _assert_server_headers_shape(lines: list[str]) -> None:
-    # 该断言用于避免“对比器/用例失效却仍然通过”的情况（例如：意外没采集到 headers）。
+    # 该断言用于避免“对比器或用例失效却仍然通过”的情况，例如意外未采集到 headers。
     set_cookie = [l for l in lines if l.lower().startswith("set-cookie:")]
     x_dupe = [l for l in lines if l.lower().startswith("x-dupe:")]
     assert len(set_cookie) == 2, f"Set-Cookie 行数异常: {set_cookie}"
@@ -119,7 +112,7 @@ def test_p1_resp_headers_raw(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -230,7 +223,7 @@ def test_p1_resp_headers_unfold_1940(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

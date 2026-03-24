@@ -1,14 +1,8 @@
 """
-P1：自动内容解码交付口径一致性（LC-42，CURLOPT_ACCEPT_ENCODING）。
+P1：自动内容解码交付一致性。
 
-目标：
-- baseline（libcurl easy）与 QCurl 在启用自动解压时：
-  - 会发送 Accept-Encoding（gzip）
-  - 服务端回包包含 Content-Encoding: gzip
-  - 客户端交付的 body bytes 为解压后的明文字节（len/hash 对齐）
-
-说明：
-- 仅覆盖 gzip（离线稳定、依赖最少）；br/deflate 由 capability 决定可后续扩展。
+启用自动解压时，QCurl 与 libcurl baseline 都应发送 `Accept-Encoding`，
+并交付解压后的 body 字节。
 """
 
 from __future__ import annotations
@@ -40,7 +34,7 @@ def _has_accept_encoding_api() -> bool:
 
 
 if not _has_accept_encoding_api():
-    pytest.skip("Accept-Encoding API 未落地，跳过该用例", allow_module_level=True)
+    pytest.skip("当前构建未提供 Accept-Encoding API，跳过该用例", allow_module_level=True)
 
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -52,7 +46,7 @@ def test_p1_accept_encoding_gzip_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -159,4 +153,3 @@ def test_p1_accept_encoding_gzip_http_1_1(env, lc_observe_http):
                 },
             )
         raise
-

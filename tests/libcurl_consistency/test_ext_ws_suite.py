@@ -1,8 +1,6 @@
 """
-可选扩展：WebSocket 低层帧语义一致性（LC-19/LC-20）
-
-显式开启：
-  QCURL_LC_EXT=1
+扩展用例：覆盖 WebSocket 低层帧语义的一致性。
+仅在 `QCURL_LC_EXT=1` 时启用。
 """
 
 from __future__ import annotations
@@ -24,7 +22,7 @@ from tests.libcurl_consistency.pytest_support.ws_baseline import run_ws_baseline
 
 
 if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
-    pytest.skip("set QCURL_LC_EXT=1 to enable libcurl_consistency ext suite", allow_module_level=True)
+    pytest.skip("该扩展用例仅在 QCURL_LC_EXT=1 时启用", allow_module_level=True)
 
 
 def _append_req_id(url: str, req_id: str) -> str:
@@ -44,11 +42,11 @@ def test_ext_ws_suite(case_id, env, lc_logs, lc_ws_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     ws_baseline_bin = Path(os.environ.get("QCURL_LC_WS_BASELINE", "")).resolve() if os.environ.get("QCURL_LC_WS_BASELINE") else _default_ws_baseline_binary(qt_path)
     if not ws_baseline_bin.exists():
-        pytest.skip(f"WS baseline 可执行不存在：{ws_baseline_bin}")
+        pytest.skip(f"当前环境未提供 WS baseline 可执行文件，跳过该用例: {ws_baseline_bin}")
 
     trace_base = f"lc_{uuid.uuid4().hex[:8]}_{case_id}"
     baseline_req_id = f"{trace_base}__baseline"

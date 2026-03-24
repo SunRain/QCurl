@@ -1,16 +1,7 @@
 """
-P2：错误路径一致性（LC-32：连接拒绝 / proxy 407 / URL malformat）。
+P2：错误路径一致性。
 
-目的：
-- 仅基于可观测输出，对齐 QCurl 与 libcurl baseline 的错误语义：
-  - curlcode / http_code（baseline：stderr；QCurl：基于映射与断言）
-  - QCurl NetworkError 映射：ConnectionRefused / InvalidRequest / HTTP 407
-  - 响应 body 落盘结果（空文件）一致
-
-说明：
-- “连接拒绝/URL 非法”属于“服务端未收到请求”的场景，因此不依赖服务端观测日志；
-  request 语义摘要按输入 URL 构造（与 README 约定一致）。
-- “proxy 407”以代理服务端观测为主（method/target/Proxy-* 头），并比较错误归一化字段。
+覆盖连接拒绝、proxy 407 和 URL malformat 的可观测错误语义。
 """
 
 from __future__ import annotations
@@ -91,7 +82,7 @@ def test_p2_error_connect_refused(env, lc_logs, free_tcp_port, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_error_paths"
@@ -178,7 +169,7 @@ def test_p2_error_url_malformat(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_error_paths"
@@ -263,7 +254,7 @@ def test_p2_error_proxy_407(env, lc_logs, lc_http_proxy, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_error_paths"

@@ -1,10 +1,11 @@
 # QCurl 测试套件
 
-本目录包含 QCurl 的测试套件，包括单元测试和集成测试。
+本目录维护测试入口、门禁口径与证据路径；长期事实以测试代码、`ctest`
+注册结果和自动化工件为准。
 
 ---
 
-## 📁 目录结构（测试分类）
+## 目录结构
 
 - `tests/qcurl/`：QCurl 本身的 QtTest（C++）与本地测试依赖（httpbin/node server/testdata/node_modules）。
 - `tests/libcurl_consistency/`：QCurl ↔ libcurl 一致性测试（pytest + baseline clients + gate）。
@@ -72,7 +73,7 @@ python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-r
 
 门禁组合与前置条件见：[`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md) 的 “基本无问题”章节。
 
-## 📋 测试列表
+## 测试列表与查看入口
 
 测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。  
 测试项的唯一准确来源是 `ctest`（由 `tests/qcurl/CMakeLists.txt` 注册并标注 LABELS）。
@@ -88,7 +89,7 @@ ctest --test-dir build -N -L offline
 ctest --test-dir build -N -L env
 ```
 
-### 🌐 external_network（默认关闭公网探测）
+### external_network（默认关闭公网探测）
 
 `LABELS=external_network` 的测试会优先使用本地依赖（若设置了 `QCURL_HTTPBIN_URL`），并默认跳过公网探测用例。
 
@@ -103,7 +104,7 @@ QCURL_ALLOW_EXTERNAL_NETWORK=1 ctest --test-dir build -L external_network --outp
 - `tst_QCNetworkHttp2`、`tst_QCNetworkActorThreadModel` 这类依赖本地监听端口的测试，在沙箱或受限容器中若出现 `listen EPERM` / 本地端口不可绑定，会显式 `QSKIP`，并通过 `local_port` 语义与离线门禁隔离。
 - `tst_QCNetworkDiagnostics` 在设置了 `QCURL_HTTPBIN_URL` 时，会对本地 httpbin 做有限次短重试；若本地依赖未稳定就绪，会带详细原因跳过，而不是给出缺乏上下文的硬失败。
 
-### 📦 external_heavy（显式 opt-in 的外部大体量 smoke）
+### external_heavy（显式 opt-in 的外部大体量 smoke）
 
 `LABELS=external_heavy` 不属于 deterministic 门禁，默认关闭。当前集合仅包含 `tst_LargeFileDownload`，用于验证“真实 HTTPS + 大体量传输”链路。
 
@@ -126,7 +127,7 @@ QCURL_RUN_EXTERNAL_HEAVY=1 \
 
 ---
 
-## 🚀 快速开始
+## 最小入口
 
 ### 1.（可选）准备 env 测试环境（依赖 httpbin 的用例需要）
 
@@ -142,17 +143,17 @@ source build/test-env/httpbin.env
 
 ### 2. 运行测试
 
-测试运行命令（offline/env 门禁、httpbin、HTTP/2、本地全量回归、libcurl_consistency）已统一维护在：  
+测试运行命令（offline/env 门禁、httpbin、HTTP/2、本地全量回归、libcurl_consistency）统一维护在：
 [`docs/dev/build-and-test.md`](../docs/dev/build-and-test.md)
 
-建议从以下章节开始：
+建议优先查看：
 - 2. 运行 Qt Test（ctest）
 - 2.2（可选）启动本地 httpbin（用于部分集成用例）
 - 2.3 全量回归（本地自检；非门禁）
 - 3. libcurl_consistency Gate（可选）
 - 3.3 全量回归（pytest 直跑；可选）
 
-#### 全量测试复验命令（提交前建议，一键入口）
+#### 本地全量自检入口
 
 ```bash
 # 1) 构建
@@ -172,14 +173,14 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ---
 
-## 🧪 WebSocket 测试说明（smoke vs evidence）
+## WebSocket 取证说明
 
 - `tests/qcurl/websocket-fragment-server.js`：**message-level** echo smoke（基于 `ws`，只能证明回显链路；不提供帧级证据）。
 - `tests/qcurl/websocket-evidence-server.js`：**frame-level** evidence（零外部依赖；显式发送 fragmentation/close，并输出 JSONL 工件供复核）。
 
 在证据口径下，帧级语义（continuation frames / close code&reason）以 evidence server 的工件为准，避免“通过但不证明”的误读。
 
-## 🔒 HTTPS/TLS 证据说明（可控成功/失败）
+## HTTPS/TLS 取证说明
 
 `tst_Integration` 中包含本地 HTTPS 证据用例（自签名证书）：
 - 失败路径：默认安全配置应拒绝（`NetworkError::SslHandshakeFailed`）
@@ -187,7 +188,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 用例会输出 `QCURL_EVIDENCE ...` 行，便于在 CI/日志中复核。
 
-## 🔍 查看详细输出
+## 详细输出
 
 ```bash
 # 运行单个测试并显示详细信息
@@ -235,7 +236,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ---
 
-## 🔧 配置选项
+## 配置入口
 
 ### 配置 httpbin base URL（推荐）
 
@@ -254,7 +255,7 @@ export QCURL_HTTPBIN_URL="http://127.0.0.1:<port>"
 
 ---
 
-## 🐛 常见问题
+## 常见问题
 
 ### Q1: 依赖 httpbin 的测试失败/跳过，提示连接拒绝
 
@@ -296,57 +297,5 @@ cd build/tests
 # 通过 CTest 排除集成测试
 ctest -E Integration
 ```
-
----
-
-## 📝 添加新测试
-
-### 单元测试示例
-
-```cpp
-void TestYourClass::testNewFeature()
-{
-    // Arrange
-    YourClass obj;
-
-    // Act
-    obj.doSomething();
-
-    // Assert
-    QCOMPARE(obj.result(), expectedValue);
-}
-```
-
-### 集成测试示例
-
-```cpp
-void TestIntegration::testNewEndpoint()
-{
-    QCNetworkRequest request(QUrl(HTTPBIN_BASE_URL + "/your-endpoint"));
-    auto *reply = manager->sendGet(request);
-
-    QVERIFY(waitForSignal(reply, SIGNAL(finished()), 10000));
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    auto data = reply->readAll();
-    QVERIFY(data.has_value());
-
-    // 验证响应数据
-    QJsonObject json = parseJsonResponse(*data);
-    QVERIFY(json.contains("expected_field"));
-
-    reply->deleteLater();
-}
-```
-
----
-
-## 参考资料
-
-- **Qt Test 框架文档**: https://doc.qt.io/qt-6/qtest-overview.html
-- **httpbin API 文档**: https://httpbin.org/
-- **Docker httpbin**: https://hub.docker.com/r/kennethreitz/httpbin
-
----
 
 本目录的长期真相源是测试代码、`tests/qcurl/CMakeLists.txt` 中的 LABELS 分组，以及自动化产出的证据工件。

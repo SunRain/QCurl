@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-一致性 Gate 入口（Task1 / LC-16）：
-- 统一完成必要构建（可选）与 pytest 执行
-- 输出 JUnit XML + JSON 报告
+一致性 gate 入口：
+- 可选执行构建，再统一触发 pytest
+- 输出 JUnit XML 和 JSON 报告
 - 默认开启失败日志收集：QCURL_LC_COLLECT_LOGS=1
 """
 

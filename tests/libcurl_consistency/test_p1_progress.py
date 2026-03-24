@@ -1,17 +1,7 @@
 """
-P1：进度与统计信息一致性（LC-30：稳定摘要）。
+P1：进度摘要一致性。
 
-目的：
-- 对齐 libcurl xferinfo 与 QCurl progress signals 的“稳定可比摘要”：
-  - now_max/total_max 的终值一致
-  - 单调性（monotonic）一致
-
-注意：
-- 不比较事件次数/时间戳/瞬时速率，仅比较稳定摘要字段。
-- 场景至少覆盖 h2：下载 data-1m、上传固定大小 body（echo）。
-
-基线：repo 内置 qcurl_lc_http_baseline（--progress-out 写出 progress_summary.json）
-QCurl：tst_LibcurlConsistency（p1_progress_download / p1_progress_upload）
+只比较稳定摘要字段，不比较事件次数、时间戳或瞬时速率。
 """
 
 from __future__ import annotations
@@ -37,7 +27,7 @@ def test_p1_progress_download_h2(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p1_progress"
@@ -90,7 +80,7 @@ def test_p1_progress_download_h2(env, lc_logs, tmp_path):
         qcurl["payload"]["progress_summary"] = _load_json(qcurl_progress)
         write_json(qcurl["path"], qcurl["payload"])
 
-        # 最小健全性：进度终值应对齐响应 body_len（Content-Length 可得）
+        # 进度摘要终值应对齐响应 body_len（该场景下可由 Content-Length 稳定确定）。
         expected_len = int(baseline["payload"]["response"]["body_len"])
         assert expected_len > 0
         assert baseline["payload"]["progress_summary"]["download"]["now_max"] == expected_len
@@ -119,7 +109,7 @@ def test_p1_progress_upload_h2(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p1_progress"
@@ -178,7 +168,7 @@ def test_p1_progress_upload_h2(env, lc_logs, tmp_path):
         qcurl["payload"]["progress_summary"] = _load_json(qcurl_progress)
         write_json(qcurl["path"], qcurl["payload"])
 
-        # 最小健全性：upload now_max/total_max 应对齐 body size
+        # 上传进度摘要的 now_max/total_max 应对齐请求体大小。
         assert baseline["payload"]["progress_summary"]["upload"]["now_max"] == upload_size
         assert baseline["payload"]["progress_summary"]["upload"]["total_max"] == upload_size
         assert qcurl["payload"]["progress_summary"]["upload"]["now_max"] == upload_size

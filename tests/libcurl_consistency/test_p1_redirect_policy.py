@@ -1,12 +1,7 @@
 """
-P1：重定向策略控制一致性（LC-41，CURLOPT_MAXREDIRS/POSTREDIR/AUTOREFERER/REFERER）。
+P1：重定向策略控制一致性。
 
-覆盖：
-- MAXREDIRS：触发 TooManyRedirects 的错误语义与观测序列一致
-- POSTREDIR：POST 301 重定向后保持 POST（KeepPost301）行为一致
-- AUTOREFERER：重定向链路自动注入 Referer
-- REFERER：显式设置 Referer 头
-- 敏感头跨站开关：setAllowUnrestrictedSensitiveHeadersOnRedirect（不依赖 allowUnrestrictedAuth）
+覆盖 `MAXREDIRS`、`POSTREDIR`、`AUTOREFERER`、显式 `Referer` 和敏感头跨站开关。
 """
 
 from __future__ import annotations
@@ -73,7 +68,7 @@ def test_p1_redirect_max_redirs_too_many_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -201,7 +196,7 @@ def test_p1_redirect_postredir_keep_post_301_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -333,7 +328,7 @@ def test_p1_redirect_auto_referer_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -451,7 +446,7 @@ def test_p1_referer_explicit_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -550,7 +545,7 @@ def test_p1_unrestricted_sensitive_headers_redirect(unrestricted: bool, env, lc_
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     a = lc_observe_http_pair["a"]

@@ -1,8 +1,7 @@
 """
-P1：CURLOPT_POSTFIELDS 二进制（含 \\0）一致性（LC-9）。
+P1：`CURLOPT_POSTFIELDS` 二进制 payload 一致性。
 
-基线：repo 内置 `qcurl_lc_postfields_binary_baseline`（对齐 test1531 语义）
-QCurl：tst_LibcurlConsistency 通过 QCURL_LC_CASE_ID 执行相同 payload
+覆盖包含 `\\0` 的 body 交付语义。
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     http_protos = ["http/1.1", "h2"]
     if env.have_h3():
@@ -102,7 +101,7 @@ def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
                     download_count=case.get("baseline_download_count"),
                 )
             except FileNotFoundError as exc:
-                pytest.skip(f"libtests 未构建: {exc}")
+                pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
 
             if proto == "h3":
                 access_log = Path(lc_logs["nghttpx_access_log"])

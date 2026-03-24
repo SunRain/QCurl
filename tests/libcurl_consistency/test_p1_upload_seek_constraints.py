@@ -1,13 +1,7 @@
 """
-P1：带 body 的“可重发约束”（seekable vs non-seekable）。
+P1：带 body 请求的可重发约束。
 
-目标（M2 流式上传落地后启用）：
-- 对齐 QCurl 与 libcurl baseline 在“需要重发 body”的场景下的可观测语义。
-  - seekable body：允许 follow redirect / auth challenge 等触发的重发，并成功完成
-  - non-seekable body：必须明确失败（不允许 silent fallback）
-
-说明：
-- 本模块在 M2（3.1+）接口未落地前会整体 skip（避免 gate 引入无意义噪声）。
+seekable body 应允许重发；non-seekable body 应显式失败，不得静默降级。
 """
 
 from __future__ import annotations
@@ -33,9 +27,9 @@ _CURLINFO_RE = re.compile(r"curlcode=(\d+)\s+http_code=(\d+)")
 
 def _has_m2_upload_device_api() -> bool:
     """
-    以源码为准的“能力门控”：
-    - M2 未落地前跳过本模块，避免 gate 引入无意义失败
-    - M2 落地后自动启用（无需人工改 env）
+    以源码为准的能力门控：
+    - 当前构建未提供 uploadDevice API 时跳过本模块
+    - 构建提供该 API 后自动启用，无需额外环境开关
     """
     header = _REPO_ROOT / "src" / "QCNetworkRequest.h"
     try:
@@ -46,7 +40,7 @@ def _has_m2_upload_device_api() -> bool:
 
 
 if not _has_m2_upload_device_api():
-    pytest.skip("M2 uploadDevice API 未落地（3.1+），跳过 seek/重发约束一致性用例", allow_module_level=True)
+    pytest.skip("当前构建未提供 uploadDevice API，跳过 seek/重发约束一致性用例", allow_module_level=True)
 
 
 def _normalize_req_headers(headers: dict) -> dict:
@@ -81,7 +75,7 @@ def test_p1_stream_body_redirect_307_replay(seekable: bool, method: str, env, lc
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -247,7 +241,7 @@ def test_p1_stream_body_httpauth_anysafe_digest_replay(seekable: bool, env, lc_o
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

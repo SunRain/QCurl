@@ -1,13 +1,7 @@
 """
-P1（M4）：网络路径一致性（RESOLVE / CONNECT_TO）。
+P1：`RESOLVE` / `CONNECT_TO` 网络路径一致性。
 
-目的：
-- RESOLVE：在不依赖真实 DNS 的前提下稳定命中本地服务端
-- CONNECT_TO：路由到指定端口且保持 Host 语义一致（服务端可观测）
-
-服务端：repo 内置 http_observe_server.py（lc_observe_http / lc_observe_http_pair）
-基线：repo 内置 qcurl_lc_http_baseline（--resolve/--connect-to）
-QCurl：tst_LibcurlConsistency（p1_resolve_override / p1_connect_to）
+验证本地路由覆盖与 Host 语义在服务端视角下保持一致。
 """
 
 from __future__ import annotations
@@ -35,7 +29,7 @@ def test_p1_resolve_override_http_1_1(env, lc_logs, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
 
@@ -133,7 +127,7 @@ def test_p1_connect_to_http_1_1(env, lc_logs, lc_observe_http_pair):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
 
@@ -233,4 +227,3 @@ def test_p1_connect_to_http_1_1(env, lc_logs, lc_observe_http_pair):
                 },
             )
         raise
-

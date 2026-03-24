@@ -1,18 +1,7 @@
 """
-P1：超时语义一致性（未收到响应头 / 已收到响应头但 body 长时间无进展）。
+P1：超时语义一致性。
 
-目的：
-- 验证 QCurl 与 libcurl baseline 在超时场景下的可观测输出一致：
-  - 错误归一化字段一致：kind=timeout、curlcode=28、http_code=0/200
-  - 落盘 body 为空（len/hash）
-  - 服务端观测到的 request 语义摘要一致（去掉 query id）
-
-服务端：repo 内置 http_observe_server.py
-- /delay_headers/<ms>：延迟发送响应头（用于 http_code=0）
-- /stall_body/<total>/<stall_ms>：先发响应头后延迟发送 body（用于 http_code=200 + low-speed timeout）
-
-基线：repo 内置 qcurl_lc_http_baseline（libcurl easy）
-QCurl：tst_LibcurlConsistency（p1_timeout_delay_headers / p1_timeout_low_speed）
+覆盖“未收到响应头”和“收到响应头后 body 无进展”两类超时路径。
 """
 
 from __future__ import annotations
@@ -80,7 +69,7 @@ def test_p1_timeouts(case_id: str,
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -98,7 +87,7 @@ def test_p1_timeouts(case_id: str,
     baseline_url = _append_req_id(base_url, baseline_req_id)
     qcurl_url = _append_req_id(base_url, qcurl_req_id)
 
-    # status=0 表示“未收到响应头”（对齐 libcurl http_code=0 的可观测口径）
+    # status=0 表示“尚未收到响应头”，用于对齐 libcurl 的 http_code=0 可观测口径。
     expected_status = 0 if expected_http_code == 0 else 200
     resp_meta = {"status": expected_status, "http_version": proto, "headers": {}, "body": None}
 
@@ -163,7 +152,8 @@ def test_p1_timeouts(case_id: str,
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = obs.response_headers
 
-        # QCurl 的可观测输出不暴露 curlcode，但其 NetworkError::ConnectionTimeout 映射自 CURLE_OPERATION_TIMEDOUT(28)
+        # QCurl 的可观测输出不直接暴露 curlcode；
+        # 这里按 NetworkError::ConnectionTimeout 对齐 CURLE_OPERATION_TIMEDOUT(28)。
         apply_error_namespaces(
             qcurl["payload"],
             kind="timeout",

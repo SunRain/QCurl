@@ -1,10 +1,8 @@
 """
-P1：cookie file/jar 一致性（LC-10）。
+P1：cookie file/jar 一致性。
 
-基线：lib1903（COOKIEFILE -> easy_reset -> COOKIEFILE+COOKIEJAR）
-QCurl：cookiejar_1903（ReadOnly -> ReadWrite）
-
-说明：QCurl 当前只暴露单一路径（cookie file path 同时用于 jar），因此 baseline 也使用同一路径作为输出。
+比较相同 cookie 路径输入下的持久化与后续请求语义。
+QCurl 只暴露单一路径时，baseline 也使用同一路径作为输出。
 """
 
 from __future__ import annotations
@@ -89,7 +87,7 @@ def test_p1_cookiejar_1903(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
     collect_logs = should_collect_service_logs()
 
     proto = "http/1.1"
@@ -133,7 +131,7 @@ def test_p1_cookiejar_1903(env, lc_logs, tmp_path):
                 response_meta=resp_meta,
             )
         except FileNotFoundError as exc:
-            pytest.skip(f"libtests 未构建: {exc}")
+            pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
 
         access_log = Path(lc_logs["httpd_access_log"])
         obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
@@ -216,7 +214,7 @@ def test_p1_cookiejar_1920(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     port = int(lc_observe_http["port"])
     observe_log = Path(str(lc_observe_http["log_file"]))
@@ -284,7 +282,7 @@ def test_p1_cookiejar_1920(env, lc_logs, lc_observe_http, tmp_path):
     qcurl["payload"]["cookiejar"] = _cookiejar_payload(qcurl_records)
     write_json(qcurl["path"], qcurl["payload"])
 
-    # 语义校验：必须包含服务端下发 cookie 与预置 cookie
+    # 语义校验：结果中必须同时包含服务端下发 cookie 与预置 cookie。
     assert any("\tcookiename\tcookiecontent" in r for r in baseline_records)
     assert any("\thas_js\t1" in r for r in baseline_records)
     assert set(baseline_records) == set(qcurl_records)

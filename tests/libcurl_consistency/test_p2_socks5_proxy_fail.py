@@ -1,15 +1,7 @@
 """
-P2：SOCKS5 proxy 失败语义一致性（LC-39，可选）。
+P2：SOCKS5 proxy 失败语义一致性。
 
-目标：
-- baseline 与 QCurl 均通过 SOCKS5 代理发起请求，并稳定触发 proxy 失败语义
-- 对齐可观测输出：失败终态（error.kind=proxy）、curlcode=97、落盘 body 为空
-
-参考 upstream：curl/tests/data/test703（Expect errorcode=97）
-
-代理：repo 内置 socks5_proxy_server.py（固定返回 REP=0x01）
-基线：repo 内置 qcurl_lc_http_baseline（--proxy-type socks5）
-QCurl：tst_LibcurlConsistency（p2_socks5_proxy_connect_fail）
+比较固定失败码、错误归一化字段和空 body 终态。
 """
 
 from __future__ import annotations
@@ -48,7 +40,7 @@ def test_p2_socks5_proxy_connect_fail(env, lc_logs, lc_socks5_proxy):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
 
@@ -59,7 +51,7 @@ def test_p2_socks5_proxy_connect_fail(env, lc_logs, lc_socks5_proxy):
     proto = "http/1.1"
     case_variant = "p2_socks5_proxy_connect_fail_http_1.1"
 
-    # 目标 URL 不要求真实可达：stub proxy 会在握手阶段直接返回失败（不会连接目标）。
+    # 目标 URL 不要求真实可达：stub proxy 会在握手阶段直接返回失败，不会继续连接目标。
     target_url = "http://127.0.0.1:1/"
     proxy = f"127.0.0.1:{proxy_port}"
     resp_meta = {"status": 0, "http_version": proto, "headers": {}, "body": None}

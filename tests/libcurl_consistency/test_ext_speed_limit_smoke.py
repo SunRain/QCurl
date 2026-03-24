@@ -1,10 +1,6 @@
 """
-ext：速率限制 smoke（MAX_RECV_SPEED_LARGE / MAX_SEND_SPEED_LARGE）。
-
-目标：
-- 仅在 PR gate（QCURL_LC_EXT=1）启用
-- 验证限速选项接线不会导致崩溃/死锁/不可取消
-- 用“字节阈值”触发取消（避免时间断言），并对齐 baseline/QCurl 的错误归一化输出
+扩展用例：验证收发限速配置链路不会崩溃、死锁或失去可取消性。
+使用字节阈值触发取消，避免依赖时间断言。
 """
 
 from __future__ import annotations
@@ -25,7 +21,7 @@ from tests.libcurl_consistency.pytest_support.service_logs import collect_servic
 
 
 if os.environ.get("QCURL_LC_EXT", "").strip() != "1":
-    pytest.skip("set QCURL_LC_EXT=1 to enable libcurl_consistency ext suite", allow_module_level=True)
+    pytest.skip("该扩展用例仅在 QCURL_LC_EXT=1 时启用", allow_module_level=True)
 
 
 _CURLINFO_RE = re.compile(r"curlcode=(\d+)\s+http_code=(\d+)")
@@ -48,7 +44,7 @@ def test_ext_speed_limit_smoke_http_1_1(env, lc_logs, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -165,4 +161,3 @@ def test_ext_speed_limit_smoke_http_1_1(env, lc_logs, lc_observe_http):
                 },
             )
         raise
-

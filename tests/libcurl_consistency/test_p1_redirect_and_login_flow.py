@@ -1,14 +1,7 @@
 """
-P1：重定向（FOLLOWLOCATION）与“模拟登录态（Set-Cookie → Cookie）”一致性。
+P1：重定向链路与模拟登录态 cookie 语义一致性。
 
-覆盖缺口：
-- FOLLOWLOCATION 未覆盖：多跳 302 的请求序列与最终落点一致性
-- 关键响应头可观测：Location / Set-Cookie
-- 关键请求头可观测：Host / Cookie
-
-服务端：repo 内置 http_observe_server.py（/redir/<n>、/login、/home）
-基线：repo 内置 qcurl_lc_http_baseline（cli_lc_http）
-QCurl：tst_LibcurlConsistency（p1_redirect_* / p1_login_cookie_flow）
+覆盖多跳 302、`Set-Cookie` 到 `Cookie` 的传递和最终落点行为。
 """
 
 from __future__ import annotations
@@ -68,17 +61,17 @@ def _order_redir_chain(observed_list):
 
 
 def _order_login_chain(observed_list):
-    # 预期顺序：/login -> /home
+    # 按登录跳转链的目标路径排序，稳定化观测结果。
     order = {"/login": 0, "/home": 1}
     return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
 
 def _order_post_301_chain(observed_list):
-    # 预期顺序：/redir_post_301(POST) -> /final_post_301(GET)
+    # 按 POST 301 跳转链的目标路径排序，稳定化观测结果。
     order = {"/redir_post_301": 0, "/final_post_301": 1}
     return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
 
 def _order_cookie_path_chain(observed_list):
-    # 预期顺序：/login_path -> /a/step -> /b/final
+    # 按 Cookie Path 跳转链的目标路径排序，稳定化观测结果。
     order = {"/login_path": 0, "/a/step": 1, "/b/final": 2}
     return sorted(observed_list, key=lambda o: order.get(str(o.url).split("?", 1)[0], 99))
 
@@ -98,7 +91,7 @@ def test_p1_redirect_followlocation(follow: bool, env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -226,14 +219,14 @@ def test_p1_redirect_followlocation(follow: bool, env, lc_observe_http):
 
 def test_p1_redirect_post_301_to_get(env, lc_observe_http):
     """
-    LC-37：重定向方法重写语义（POST 301 → GET，参考 curl/tests/data/test1011）。
+    POST 301 重定向的方法重写语义。
     - 断言服务端观测到的请求序列为 POST -> GET（顺序敏感）
     - 最终响应体字节一致
     """
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -365,7 +358,7 @@ def test_p1_redirect_post_301_to_get(env, lc_observe_http):
 
 def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
     """
-    LC-38：重定向链 + Cookie Path 匹配发送（参考 curl/tests/data/test1024）。
+    重定向链中的 Cookie Path 匹配发送语义。
     - /login_path：Set-Cookie(Path=/a) 并跳转到 /a/step
     - /a/step：必须发送 Cookie（Path 匹配），再跳转到 /b/final
     - /b/final：必须不发送 Cookie（Path 不匹配），最终 200
@@ -373,7 +366,7 @@ def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -510,7 +503,7 @@ def test_p1_login_cookie_state_flow(env, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

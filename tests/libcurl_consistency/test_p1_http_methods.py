@@ -1,18 +1,7 @@
 """
-P1：HTTP 方法面一致性（LC-33：HEAD/PATCH/DELETE）。
+P1：HEAD / PATCH / DELETE 的可观测语义一致性。
 
-目的：
-- 对齐 QCurl 与 libcurl baseline 在 HEAD/PATCH/DELETE（无 body）下的可观测输出：
-  - 服务端观测到的 method/path/关键请求头一致（去掉 query id）
-  - 请求体（PATCH）的 len/sha256 一致（DELETE/HEAD 无 body）
-  - 响应体字节（HEAD=0 字节、PATCH=echo、DELETE=0 字节）一致
-
-服务端：repo 内置 http_observe_server.py
-- /head_with_body：HEAD 响应（服务端故意写 body；客户端必须忽略）
-- /method：回显请求体（PATCH/DELETE）
-
-基线：repo 内置 qcurl_lc_http_baseline（libcurl easy）
-QCurl：tst_LibcurlConsistency（p1_method_head / p1_method_patch / p1_method_delete）
+比较 method、关键请求头、请求体摘要和响应体交付结果。
 """
 
 from __future__ import annotations
@@ -40,7 +29,7 @@ def test_p1_method_head_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -135,7 +124,7 @@ def test_p1_method_patch_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -241,7 +230,7 @@ def test_p1_method_delete_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

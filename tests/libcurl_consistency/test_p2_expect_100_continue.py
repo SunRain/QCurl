@@ -1,18 +1,7 @@
 """
-P2：Expect: 100-continue（LC-40，可选）。
+P2：`Expect: 100-continue` 一致性。
 
-目标：
-- 当 libcurl 自动注入 `Expect: 100-continue` 且服务端返回 417 时，应自动重试并成功完成请求
-- 对齐 baseline 与 QCurl 的可观测数据：请求次数、Expect 头存在性、状态链与最终响应体字节
-
-服务端：repo 内置 http_observe_server.py
-- PUT/POST /expect_417：若带 Expect: 100-continue 则直接返回最终 417（不发送 100 Continue，并保持连接可复用）；否则回显请求体并返回 200
-
-基线：repo 内置 qcurl_lc_http_baseline（client_name=cli_lc_http）
-QCurl：tst_LibcurlConsistency（p2_expect_100_continue）
-
-可选压测（单进程内重复执行同一 case，避免反复启动 curl testenv 的 httpd fixture）：
-- 设置 `QCURL_LC_EXPECT100_REPEAT=N`（N>=2）启用 `test_p2_expect_100_continue_417_retry_repeat_inprocess`
+比较 417 响应后的重试次数、Expect 头可见性和最终响应字节。
 """
 
 from __future__ import annotations
@@ -40,7 +29,7 @@ def _qt_test_binary_or_skip() -> Path:
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
     return qt_path
 
 

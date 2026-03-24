@@ -1,16 +1,7 @@
 """
-P2：pause/resume 弱判据一致性（LC-15a）。
+P2：pause/resume 弱判据一致性。
 
-判定核心（可观测数据层面）：
-- 最终下载文件字节一致（hash/len）
-- pause/resume 事件序列一致（pause -> resume -> finished）
-
-说明：
-- 不比较“暂停持续时间”（时序/调度不稳定）
-- 不比较“pause window 内是否仍有数据回调/进度事件”：
-  - baseline（`cli_hx_download -P`）的 RESUMED 打点发生在 `curl_easy_pause(..., CONT)` 之后，
-    在该调用期间可能出现 RECV 日志，从而导致以 stderr 文本窗口推断 pause window 不稳定。
-  - 因此该用例只做“事件存在性/顺序 + 终态文件字节一致”的弱判据门禁；更强过程一致性留给 LC-15b。
+比较事件顺序与最终文件字节，不比较暂停持续时间。
 """
 
 from __future__ import annotations
@@ -77,8 +68,8 @@ def _parse_pause_resume(stderr_lines: list[str], *, pause_offset: int) -> dict:
         "pause_offset": int(pause_offset),
         "pause_count": int(pause_count),
         "resume_count": int(resume_count),
-        # 诊断字段：以 stderr 文本窗口推断的“pause 与 RESUMED 之间 total 增长次数”
-        # ⚠️ 不作为一致性判据（见文件头说明）
+        # 诊断字段：按 stderr 文本窗口估算“pause 与 RESUMED 之间 total 的增长次数”。
+        # 该字段仅用于辅助定位，不参与一致性判定。
         "paused_data_events": int(paused_total_increase_events),
         "event_seq": event_seq,
     }
@@ -88,7 +79,7 @@ def test_p2_pause_resume_h2(env, lc_logs, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_pause_resume"

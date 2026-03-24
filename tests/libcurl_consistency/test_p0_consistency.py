@@ -1,7 +1,7 @@
 """
-P0 一致性回归骨架：
-- 基于 case_defs 定义的参数模板运行 libcurl baseline 与 QCurl Qt Test。
-- 当前阶段：若缺少 httpd/nghttpx/config.ini/Qt Test 可执行，将跳过用例，提供明确原因。
+P0 一致性基线：
+- 按 case_defs 模板运行 libcurl baseline 与 QCurl Qt Test。
+- 缺少 testenv/config/Qt Test 可执行时显式跳过，并给出原因。
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
-        pytest.skip("QCURL_QTTEST 未设置或可执行不存在")
+        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
 
     require_http3 = (os.environ.get("QCURL_REQUIRE_HTTP3") or "").strip().lower()
     require_http3_enabled = require_http3 in ("1", "true", "yes", "on")
@@ -201,9 +201,9 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
                     download_count=baseline_download_count,
                 )
             except FileNotFoundError as exc:
-                pytest.skip(f"libtests 未构建: {exc}")
+                pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
 
-            # 将 request/response 的关键语义从“构造值”升级为“观测值”（服务端日志）
+            # request/response 语义以服务端观测结果为准，避免仅依赖本地构造值。
             if case_id.startswith("ws_"):
                 ws_log = Path(ws_logs["ws_handshake_log"])
                 obs = ws_observed_for_id(ws_log, baseline_req_id)
@@ -257,7 +257,7 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
                             expected_count=expected_requests,
                             include_content_length=include_content_length,
                         )
-                    # 以 key 排序稳定化（避免并发/完成顺序差异造成假失败）
+                    # 以 key 排序稳定化，避免并发/完成顺序差异干扰对比。
                     obs_list_sorted = sorted(
                         obs_list,
                         key=lambda o: (
@@ -284,7 +284,7 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
                     if missing:
                         raise AssertionError(f"baseline missing download files: {missing}")
                     baseline["payload"]["responses"] = _response_items_from_files(files, proto=expected_proto, status=obs.status)
-            # 重写 baseline artifacts
+            # 用服务端观测结果回填 baseline artifacts。
             write_json(baseline["path"], baseline["payload"])
 
             qcurl = run_qt_test(
