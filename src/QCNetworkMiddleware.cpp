@@ -4,7 +4,7 @@
 #include "QCNetworkMiddleware.h"
 
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkLogRedaction.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"

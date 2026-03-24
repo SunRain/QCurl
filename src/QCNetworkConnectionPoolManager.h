@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+/**
+ * @file
+ * @brief 声明连接池状态管理器。
+ */
+
 #ifndef QCNETWORKCONNECTIONPOOLMANAGER_H
 #define QCNETWORKCONNECTIONPOOLMANAGER_H
 
@@ -12,6 +17,10 @@
 #include <QString>
 
 namespace QCurl {
+
+namespace Internal {
+class QCNetworkConnectionPoolManagerInternal;
+}
 
 /**
  * @brief 连接池统计信息
@@ -67,7 +76,6 @@ struct QCURL_EXPORT QCNetworkConnectionPoolStatistics
  * libcurl 已经内置了优秀的连接池实现，我们无需重复造轮子。
  * 此管理器负责：
  * - 统一管理连接池配置
- * - 为 curl handle 应用连接池设置
  * - 提供连接池统计信息
  *
  * @par 性能提升
@@ -133,30 +141,6 @@ public:
     QCNetworkConnectionPoolConfig config() const;
 
     /**
-     * @brief 为 curl handle 应用连接池配置
-     *
-     * 此方法由 QCNetworkReply 内部调用，应用程序无需直接使用。
-     *
-     * @param handle 内部传输句柄（opaque pointer）
-     * @param host 目标主机名（用于统计）
-     *
-     * @note 内部方法
-     */
-    void configureCurlHandle(void *handle, const QString &host);
-
-    /**
-     * @brief 记录请求完成（用于统计）
-     *
-     * 此方法由 QCNetworkReply 内部调用，记录请求完成和连接复用情况。
-     *
-     * @param handle 内部传输句柄（opaque pointer）
-     * @param wasReused 是否复用了连接
-     *
-     * @note 内部方法
-     */
-    void recordRequestCompleted(void *handle, bool wasReused);
-
-    /**
      * @brief 获取统计信息
      *
      * @return 连接池统计信息
@@ -186,6 +170,8 @@ public:
     void closeIdleConnections();
 
 private:
+    friend class Internal::QCNetworkConnectionPoolManagerInternal;
+
     /**
      * @brief 私有构造函数（单例模式）
      */

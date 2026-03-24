@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-03-24
+
+### Changed
+- 收紧 private header contract：`QCNetworkConnectionPoolManager` 移除对外 internal-only bridge，新增 `src/QCNetworkConnectionPoolManager_p.h` 承接 reply→connection-pool 内部协作；`CurlGlobalConstructor` / `QCNetworkLogRedaction` 保持在 `src/private/*_p.h`，不再进入 `QCURL_INSTALL_HEADERS`
+  - 方案：[202603241541_private-header-contract-audit](.helloagents/archive/2026-03/202603241541_private-header-contract-audit/)
+  - 决策：`private-header-contract-audit#D001`（采用顶层 `_p.h` 薄 companion 收口连接池 internal contract）
+- `tests/public_api/` 新增 manifest 私有头泄漏检查，并把 negative consumer smoke 扩展到 `QCNetworkConnectionPoolManager_p.h`，持续守住 install surface
+
+### Testing
+- `cmake --build build --target QCurl qcurl_public_api_self_compile -j4`
+- `ctest --test-dir build -L '^public-api$' --output-on-failure`
+- `ctest --test-dir build -L '^public-api-slow$' --output-on-failure`
+- `ctest --test-dir build -R '^tst_QCNetworkConnectionPool$' --output-on-failure`
+
 ## 2026-03-22
 
 ### Added

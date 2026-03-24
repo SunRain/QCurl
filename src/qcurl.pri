@@ -10,7 +10,7 @@ HEADERS += \
     $$PWD/QCUtility.h \
     $$PWD/private/SingletonPointer.h \
     $$PWD/private/SingletonPointer_p.h \
-    $$PWD/CurlGlobalConstructor.h \
+    $$PWD/private/CurlGlobalConstructor_p.h \
     $$PWD/QCNetworkRequest.h \
     $$PWD/qbytedata_p.h \
     $$PWD/QCNetworkAccessManager_p.h \
@@ -37,5 +37,4 @@ SOURCES += \
     $$PWD/QCNetworkAsyncReply.cpp \
     $$PWD/QCNetworkAsyncDataPostReply.cpp \
     $$PWD/QCUtility.cpp
-
 

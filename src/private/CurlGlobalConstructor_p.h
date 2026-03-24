@@ -1,5 +1,10 @@
-#ifndef CURLGLOBALCONSTRUCTOR_H
-#define CURLGLOBALCONSTRUCTOR_H
+/**
+ * @file
+ * @brief 声明 libcurl 全局初始化守卫（内部）。
+ */
+
+#ifndef CURLGLOBALCONSTRUCTOR_P_H
+#define CURLGLOBALCONSTRUCTOR_P_H
 
 #include "QCGlobal.h"
 
@@ -8,11 +13,13 @@
 namespace QCurl {
 
 /**
- * @brief libcurl 全局初始化守卫
+ * @brief libcurl 全局初始化守卫（库内使用）
  *
  * 通过函数内静态实例在进程生命周期内调用 `curl_global_init()` / `curl_global_cleanup()`。
+ *
+ * @internal
  */
-class QCURL_EXPORT CurlGlobalConstructor : public QObject
+class CurlGlobalConstructor : public QObject
 {
     Q_OBJECT
 public:
@@ -36,4 +43,4 @@ private:
 };
 
 } // namespace QCurl
-#endif // CURLGLOBALCONSTRUCTOR_H
+#endif // CURLGLOBALCONSTRUCTOR_P_H

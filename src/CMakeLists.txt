@@ -9,7 +9,7 @@ set(QCURL_LEGACY_SOURCES
 )
 
 set(QCURL_LEGACY_HEADERS
-    CurlGlobalConstructor.h
+    private/CurlGlobalConstructor_p.h
     QCNetworkAccessManager.h
     QCNetworkAccessManager_p.h
     QCNetworkRequest.h
@@ -67,8 +67,9 @@ set(QCURL_MODERN_HEADERS
     QCNetworkDiskCache.h            # v2.12.0: 磁盘缓存
     QCNetworkConnectionPoolConfig.h # v2.14.0: 连接池配置
     QCNetworkConnectionPoolManager.h # v2.14.0: 连接池管理器
+    QCNetworkConnectionPoolManager_p.h # v2.14.0: 连接池内部 companion（内部）
     QCNetworkLogger.h               # v2.15.0: 日志系统
-    QCNetworkLogRedaction.h         # v2.20.0: 日志脱敏工具
+    private/QCNetworkLogRedaction_p.h # v2.20.0: 日志脱敏工具（内部）
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
     QCNetworkMockHandler.h          # v2.16.0: Mock 工具
@@ -103,7 +104,6 @@ endif()
 set(QCURL_ALL_SOURCES ${QCURL_LEGACY_SOURCES} ${QCURL_MODERN_SOURCES})
 set(QCURL_ALL_HEADERS ${QCURL_LEGACY_HEADERS} ${QCURL_MODERN_HEADERS})
 set(QCURL_INSTALL_HEADERS
-    CurlGlobalConstructor.h
     QCGlobal.h
     QCNetworkAccessManager.h
     QCNetworkRequest.h
@@ -125,7 +125,6 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkConnectionPoolConfig.h
     QCNetworkConnectionPoolManager.h
     QCNetworkLogger.h
-    QCNetworkLogRedaction.h
     QCNetworkMiddleware.h
     QCNetworkCancelToken.h
     QCNetworkMockHandler.h

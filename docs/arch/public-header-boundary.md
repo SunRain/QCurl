@@ -13,6 +13,7 @@ QCurl 的 install surface 只有两个来源：
 
 - `QCNetworkHttpMethod.h` 现在是独立的 public type header，`HttpMethod` 不再由 `QCNetworkReply.h` 承载。
 - `QCNetworkHttpVersion.h` 只暴露 `QCNetworkHttpVersion` 枚举；libcurl 常量映射函数 `detail::toCurlHttpVersion(...)` 仅存在于 internal header `src/private/QCNetworkHttpVersion_p.h`。
+- `QCNetworkConnectionPoolManager.h` 对外只保留配置、统计和资源控制 contract；reply 与连接池之间的内部协作统一收口到 `src/QCNetworkConnectionPoolManager_p.h`。
 - WebSocket 相关头是否进入安装面，仍由 `QCURL_WEBSOCKET_SUPPORT` 条件追加控制。
 
 任何不在上述清单中的头文件，都不属于对下游的稳定承诺。
@@ -36,9 +37,15 @@ QCurl 的 install surface 只有两个来源：
 
 以下头文件属于库内实现细节，不安装给 consumer：
 
-- `_p.h` / private：`QCNetworkAccessManager_p.h`、`QCNetworkReply_p.h`、`QCWebSocket_p.h`、`qbytedata_p.h`
+- `_p.h` / private：`QCNetworkAccessManager_p.h`、`QCNetworkReply_p.h`、`QCNetworkConnectionPoolManager_p.h`、`QCWebSocket_p.h`、`qbytedata_p.h`、`src/private/CurlGlobalConstructor_p.h`、`src/private/QCNetworkLogRedaction_p.h`
 - internal curl plumbing：`QCCurlHandleManager.h`、`QCCurlMultiManager.h`、`CurlFeatureProbe.h`、`QCUtility.h`
 - internal pipeline / adapters：`src/private/*`
+
+本轮 install surface 审计已确认以下收口对象：
+
+- `QCNetworkConnectionPoolManager::{configureCurlHandle, recordRequestCompleted}` → 已迁移到 `QCNetworkConnectionPoolManager_p.h`
+- `CurlGlobalConstructor` → 已迁移到 `src/private/CurlGlobalConstructor_p.h`
+- `QCNetworkLogRedaction` → 已迁移到 `src/private/QCNetworkLogRedaction_p.h`
 
 这些文件可以在库内自由演进，但不应出现在安装前缀，也不应被对外文档当作 public API 引用。
 
@@ -71,7 +78,7 @@ QCurl 的 install surface 只有两个来源：
 ### 5.3 Consumer Smoke
 
 - 正向 consumer：独立工程只能通过 staging prefix 执行 `find_package(QCurl CONFIG REQUIRED)`，随后 include public headers 并链接 `QCurl::QCurl` 成功。
-- 反向断言：独立 consumer 尝试 `#include <QCNetworkReply_p.h>` 必须编译失败。
+- 反向断言：独立 consumer 尝试 `#include <QCNetworkReply_p.h>` 或 `#include <QCNetworkConnectionPoolManager_p.h>` 必须编译失败。
 - consumer smoke 不允许回落到源码树 include path。
 
 ## 6. 验证口径

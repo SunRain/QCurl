@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#ifndef QCNETWORKLOGREDACTION_H
-#define QCNETWORKLOGREDACTION_H
+/**
+ * @file
+ * @brief 声明日志脱敏辅助接口（内部）。
+ */
+
+#ifndef QCNETWORKLOGREDACTION_P_H
+#define QCNETWORKLOGREDACTION_P_H
 
 #include "QCGlobal.h"
 
@@ -14,6 +19,8 @@
  * @brief 网络日志脱敏工具
  *
  * 用于在日志输出前脱敏 URL 查询参数和常见敏感请求头。
+ *
+ * @internal
  */
 namespace QCurl {
 namespace QCNetworkLogRedaction {
@@ -23,14 +30,14 @@ namespace QCNetworkLogRedaction {
  * @param keyLower 已转换为小写的 key
  * @return true 表示需要脱敏
  */
-[[nodiscard]] QCURL_EXPORT bool isSensitiveQueryKey(const QString &keyLower);
+[[nodiscard]] bool isSensitiveQueryKey(const QString &keyLower);
 
 /**
  * @brief 判断 HTTP 头 key 是否敏感
  * @param keyLower 已转换为小写的 key
  * @return true 表示需要脱敏
  */
-[[nodiscard]] QCURL_EXPORT bool isSensitiveHeaderKey(const QByteArray &keyLower);
+[[nodiscard]] bool isSensitiveHeaderKey(const QByteArray &keyLower);
 
 /**
  * @brief 脱敏 URL 查询参数
@@ -38,7 +45,7 @@ namespace QCNetworkLogRedaction {
  * @param line 可能包含查询参数的任意文本
  * @return 脱敏后的文本；仅保证处理当前实现识别的敏感 key 集合
  */
-[[nodiscard]] QCURL_EXPORT QString redactSensitiveQueryParams(const QString &line);
+[[nodiscard]] QString redactSensitiveQueryParams(const QString &line);
 
 /**
  * @brief 脱敏 libcurl trace 行
@@ -48,16 +55,16 @@ namespace QCNetworkLogRedaction {
  * @param line trace 行（原始字节）
  * @return 脱敏后的文本
  */
-[[nodiscard]] QCURL_EXPORT QString redactSensitiveTraceLine(const QByteArray &line);
+[[nodiscard]] QString redactSensitiveTraceLine(const QByteArray &line);
 
 /**
  * @brief 脱敏 URL
  * @param url 原始 URL
  * @return 脱敏后的 URL 字符串
  */
-[[nodiscard]] QCURL_EXPORT QString redactUrl(const QUrl &url);
+[[nodiscard]] QString redactUrl(const QUrl &url);
 
 } // namespace QCNetworkLogRedaction
 } // namespace QCurl
 
-#endif // QCNETWORKLOGREDACTION_H
+#endif // QCNETWORKLOGREDACTION_P_H

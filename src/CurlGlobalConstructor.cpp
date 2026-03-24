@@ -1,4 +1,4 @@
-#include "CurlGlobalConstructor.h"
+#include "private/CurlGlobalConstructor_p.h"
 
 #include <QDebug>
 

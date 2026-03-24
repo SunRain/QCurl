@@ -104,6 +104,7 @@ def strip_comments_and_strings(source: str) -> str:
 
 def scan_headers(args: argparse.Namespace) -> int:
     """Scan public headers for forbidden code-level tokens."""
+    manifest_violations: list[str] = []
     include_rules = [
         ("curl include", re.compile(r'^\s*#\s*include\s*<curl/')),
         ("private header include", re.compile(r'^\s*#\s*include\s*[<"].*_p\.h[">]')),
@@ -118,6 +119,14 @@ def scan_headers(args: argparse.Namespace) -> int:
 
     violations: list[str] = []
     for header in read_manifest(args.manifest):
+        normalized = header.replace("\\", "/")
+        if normalized.endswith("_p.h"):
+            manifest_violations.append(f"{header}: private header leaked into QCURL_INSTALL_HEADERS")
+            continue
+        if "/private/" in f"/{normalized}":
+            manifest_violations.append(f"{header}: private path leaked into QCURL_INSTALL_HEADERS")
+            continue
+
         header_path = args.source_root / header
         stripped = strip_comments_and_strings(header_path.read_text(encoding="utf-8"))
         for line_number, line in enumerate(stripped.splitlines(), start=1):
@@ -130,8 +139,9 @@ def scan_headers(args: argparse.Namespace) -> int:
                     if pattern.search(line):
                         violations.append(f"{header}:{line_number}: {rule_name}: {line.strip()}")
 
-    if violations:
-        print("\n".join(violations), file=sys.stderr)
+    if manifest_violations or violations:
+        all_violations = manifest_violations + violations
+        print("\n".join(all_violations), file=sys.stderr)
         return 1
 
     print("[public_api] header scan passed")

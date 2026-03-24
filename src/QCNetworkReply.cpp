@@ -5,10 +5,10 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
-#include "QCNetworkConnectionPoolManager.h"
+#include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
-#include "QCNetworkLogRedaction.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkProxyConfig.h"
@@ -72,6 +72,7 @@ template<typename T>
 CURLcode curlEasySetoptWithTestHook(CURL *handle, CURLoption option, const char *optionName, T value)
 {
 #ifdef QCURL_ENABLE_TEST_HOOKS
+    // 测试环境可按 option 名定向注入 capability 缺失，用于验证降级路径。
     if (shouldForceCapabilityErrorForOption(optionName)) {
         return CURLE_NOT_BUILT_IN;
     }
@@ -86,6 +87,7 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
     }
 
     d->capabilityWarnings.append(message);
+    // 同时写入 capabilityWarnings 与日志，便于测试断言和现场排障复用同一事实源。
     qWarning() << "QCNetworkReply capability warning:" << message;
 }
 
@@ -96,6 +98,7 @@ std::optional<long> protocolMaskFromList(const QStringList &protocols, QString *
         if (t.isEmpty()) {
             return false;
         }
+        // 这里接受用户配置的协议白名单，并尽量映射到当前 libcurl 可见的 bitmask。
         if (t == QStringLiteral("all")) {
             mask = CURLPROTO_ALL;
             return true;
@@ -1626,9 +1629,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ==================
 
     // 先应用连接池的通用配置（DNS/复用等），再由请求级别配置覆盖（例如 HTTP 版本）。
-    auto *poolManager  = QCNetworkConnectionPoolManager::instance();
     const QString host = request.url().host();
-    poolManager->configureCurlHandle(handle, host);
+    Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(handle, host);
 
     // ==================
     // HTTP 版本配置
@@ -2007,8 +2009,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // 连接池统计 - 记录连接复用情况
         // ==================
         if (curlManager.handle()) {
-            auto *poolManager = QCNetworkConnectionPoolManager::instance();
-            poolManager->recordRequestCompleted(curlManager.handle(), false);
+            Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(
+                curlManager.handle(),
+                false);
         }
 
         // ==================

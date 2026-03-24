@@ -2,6 +2,7 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkConnectionPoolManager.h"
+#include "QCNetworkConnectionPoolManager_p.h"
 
 #include "QCCurlMultiManager.h"
 
@@ -94,19 +95,21 @@ QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const
 }
 
 // ==================
-// curl handle 配置
+// 内部 companion 实现
 // ==================
 
-void QCNetworkConnectionPoolManager::configureCurlHandle(void *handle, const QString &host)
+void Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(void *handle,
+                                                                           const QString &host)
 {
     if (!handle) {
         return;
     }
 
     auto *curlHandle = static_cast<CURL *>(handle);
+    auto *manager    = QCNetworkConnectionPoolManager::instance();
 
-    QMutexLocker locker(&m_mutex);
-    QCNetworkConnectionPoolConfig cfg = m_config; // 复制一份，减少锁持有时间
+    QMutexLocker locker(&manager->m_mutex);
+    QCNetworkConnectionPoolConfig cfg = manager->m_config; // 复制一份，减少锁持有时间
     locker.unlock();
 
     // ==================
@@ -193,20 +196,22 @@ void QCNetworkConnectionPoolManager::configureCurlHandle(void *handle, const QSt
     // ==================
 
     locker.relock();
-    m_activeConnectionsPerHost[host]++;
+    manager->m_activeConnectionsPerHost[host]++;
 }
 
 // ==================
-// 统计管理
+// 统计管理（内部 companion）
 // ==================
 
-void QCNetworkConnectionPoolManager::recordRequestCompleted(void *handle, bool wasReused)
+void Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(void *handle,
+                                                                              bool wasReused)
 {
     if (!handle) {
         return;
     }
 
     auto *curlHandle = static_cast<CURL *>(handle);
+    auto *manager    = QCNetworkConnectionPoolManager::instance();
 
     // CURLINFO_NUM_CONNECTS: 本次 transfer 为完成请求新建的连接数量（通常：新建=1，复用=0）。
     long numConnects  = 0;
@@ -217,11 +222,11 @@ void QCNetworkConnectionPoolManager::recordRequestCompleted(void *handle, bool w
         actuallyReused = (numConnects == 0);
     }
 
-    QMutexLocker locker(&m_mutex);
-    m_totalRequests++;
+    QMutexLocker locker(&manager->m_mutex);
+    manager->m_totalRequests++;
 
     if (actuallyReused) {
-        m_reusedConnections++;
+        manager->m_reusedConnections++;
     }
 }
 

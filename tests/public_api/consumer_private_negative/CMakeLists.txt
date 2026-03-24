@@ -12,7 +12,10 @@ find_package(QCurl CONFIG REQUIRED
     NO_DEFAULT_PATH
 )
 
-add_executable(qcurl_public_api_consumer_private_negative main.cpp)
+add_executable(qcurl_public_api_consumer_private_negative
+    main.cpp
+    connection_pool_manager_private.cpp
+)
 target_link_libraries(qcurl_public_api_consumer_private_negative
     PRIVATE
         QCurl::QCurl

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include "QCNetworkLogRedaction.h"
+#include "private/QCNetworkLogRedaction_p.h"
 
 #include <QStringList>
 

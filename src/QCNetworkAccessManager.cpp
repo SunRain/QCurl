@@ -1,6 +1,6 @@
 #include "QCNetworkAccessManager.h"
 
-#include "CurlGlobalConstructor.h"
+#include "private/CurlGlobalConstructor_p.h"
 #include "QCCurlMultiManager.h"
 #include "QCMultipartFormData.h"
 #include "QCNetworkAccessManager_p.h"
@@ -58,6 +58,7 @@ QCNetworkRequest applyRequestPreSendMiddlewares(const QCNetworkRequest &request,
     }
 
     QCNetworkRequest modifiedRequest = request;
+    // 先拷贝 request，再按注册顺序串行改写，避免中间件直接污染调用方对象。
     for (auto *middleware : middlewares) {
         if (middleware) {
             middleware->onRequestPreSend(modifiedRequest);
@@ -90,6 +91,7 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply,
     if (reply->property(kMiddlewareResponseInvokedProperty).toBool()) {
         return;
     }
+    // finished 可能被同步路径或已完成 reply 触发多次探测，这里用属性做幂等保护。
     reply->setProperty(kMiddlewareResponseInvokedProperty, true);
 
     for (auto *middleware : middlewares) {
@@ -115,6 +117,7 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
         runResponseMiddlewaresOnce(safeReply.data(), middlewares);
     });
 
+    // 对已完成 reply 立即补跑一次，避免“先 finished、后接线”导致漏掉响应中间件。
     if (reply->isFinished()) {
         runResponseMiddlewaresOnce(reply, middlewares);
     }
