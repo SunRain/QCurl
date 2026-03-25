@@ -292,6 +292,16 @@ public:
      */
     void parseHeaders();
 
+    /**
+     * @brief 异步 multi 完成入口（点对点投递到 reply 线程）
+     *
+     * 该方法由 QCCurlMultiManager 在收到 CURLMSG_DONE 后，通过 invokeMethod 投递到
+     * Reply 所在线程执行，用于处理完成/重试/终态收敛逻辑。
+     *
+     * @note 必须在 Reply 线程执行；调用方应保证在解锁 multi manager 后再投递回调。
+     */
+    void onCurlMultiFinished(CURLcode curlCode);
+
     // ==================
     // Curl 静态回调函数（C 接口）
     // ==================

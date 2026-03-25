@@ -4,7 +4,6 @@
 #include "QCNetworkConnectionPoolConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "QCNetworkRetryPolicy.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -27,49 +26,6 @@ namespace {
 bool isCapabilityRelatedCurlError(CURLcode code)
 {
     return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
-}
-
-std::optional<std::chrono::milliseconds> parseRetryAfterDelay(const QMap<QString, QString> &headers)
-{
-    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
-            continue;
-        }
-
-        const QString raw = it.value().trimmed();
-        if (raw.isEmpty()) {
-            return std::nullopt;
-        }
-
-        bool ok              = false;
-        const qint64 seconds = raw.toLongLong(&ok);
-        if (ok) {
-            if (seconds < 0) {
-                return std::nullopt;
-            }
-            return std::chrono::milliseconds(seconds * 1000);
-        }
-
-        const QByteArray dateBytes = raw.toUtf8();
-        const time_t parsed        = curl_getdate(dateBytes.constData(), nullptr);
-        if (parsed < 0) {
-            return std::nullopt;
-        }
-
-        const time_t now = std::time(nullptr);
-        if (parsed <= now) {
-            return std::chrono::milliseconds(0);
-        }
-
-        const qint64 deltaSeconds = static_cast<qint64>(parsed) - static_cast<qint64>(now);
-        if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
-            return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
-        }
-
-        return std::chrono::milliseconds(deltaSeconds * 1000);
-    }
-
-    return std::nullopt;
 }
 
 bool domainMatchesHost(const QString &cookieDomain, const QString &host)
@@ -755,158 +711,6 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     // 添加到活动列表（使用 QPointer 自动检测对象销毁）
     m_activeReplies.insert(easy, QPointer<QCNetworkReply>(reply));
 
-    // 连接完成信号：
-    // - reply 在重试时会多次调用 execute() 并进入 addReply()
-    // - 若每次 addReply() 都 connect，会导致 requestFinished 处理重复执行（attemptCount 乱序/多次重试/假挂起）
-    // 由于 Lambda 不支持 Qt::UniqueConnection，这里用 reply property 做幂等保护。
-    static constexpr const char kRequestFinishedConnectedProperty[]
-        = "_qcurl_requestFinishedConnected";
-    if (!reply->property(kRequestFinishedConnectedProperty).toBool()) {
-        reply->setProperty(kRequestFinishedConnectedProperty, true);
-
-        connect(this,
-                &QCCurlMultiManager::requestFinished,
-                reply,
-                [reply](QCNetworkReply *finishedReply, int curlCode) {
-                    if (reply == finishedReply) {
-                        // 处理完成逻辑（设置错误、发射信号）
-                        auto *d = reply->d_func();
-
-                        // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
-                        if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
-                            return;
-                        }
-
-                        // ==================
-                        // 检查 HTTP 状态码（即使 CURLcode 成功）
-                        // ==================
-                        CURL *handle  = d->curlManager.handle();
-                        long httpCode = 0;
-                        if (handle) {
-                            curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
-                        }
-                        d->httpStatusCode = static_cast<int>(httpCode);
-
-                        // 确定最终错误：优先使用 HTTP 错误，否则使用 curl 错误
-                        NetworkError error = NetworkError::NoError;
-                        QString errorMsg;
-
-                        if (curlCode != CURLE_OK) {
-                            // libcurl 层面的错误
-                            error    = fromCurlCode(static_cast<CURLcode>(curlCode));
-                            errorMsg = QString::fromUtf8(
-                                curl_easy_strerror(static_cast<CURLcode>(curlCode)));
-                        } else if (httpCode >= 400) {
-                            // HTTP 错误（4xx, 5xx）
-                            error    = fromHttpCode(httpCode);
-                            errorMsg = QStringLiteral("HTTP error %1").arg(httpCode);
-                        }
-
-#if defined(CURLE_SEND_FAIL_REWIND)
-                        if (curlCode == CURLE_SEND_FAIL_REWIND && d->uploadDevice
-                            && !d->hasUploadErrorOverride) {
-                            error    = NetworkError::InvalidRequest;
-                            errorMsg = QStringLiteral(
-                                           "uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
-                                           .arg(QString::fromUtf8(curl_easy_strerror(
-                                               static_cast<CURLcode>(curlCode))));
-                        }
-#endif
-
-                        if (d->hasUploadErrorOverride) {
-                            error    = d->uploadErrorOverrideCode;
-                            errorMsg = d->uploadErrorOverrideMessage;
-                        }
-
-                        // 如果没有错误，标记为完成
-                        if (error == NetworkError::NoError) {
-                            d->setState(ReplyState::Finished);
-                            return;
-                        }
-
-                        // ==================
-                        // 异步重试逻辑
-                        // ==================
-
-                        // 获取重试策略
-                        QCNetworkRetryPolicy policy = d->request.retryPolicy();
-
-                        const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly
-                                                        && isHttpError(error)
-                                                        && (d->httpMethod != HttpMethod::Get);
-
-                        // 检查是否应该重试
-                        if (!httpGetOnlyBlocked && policy.shouldRetry(error, d->attemptCount)) {
-                            // 增加重试计数
-                            d->attemptCount++;
-
-                            // 发射重试尝试信号
-                            emit reply->retryAttempt(d->attemptCount, error);
-
-                            // 计算延迟时间（注意：attemptCount 已经++，所以使用 attemptCount-1）
-                            std::optional<std::chrono::milliseconds> retryAfter;
-                            if (error == NetworkError::HttpTooManyRequests) {
-                                d->parseHeaders();
-                                retryAfter = parseRetryAfterDelay(d->headerMap);
-                            }
-
-                            auto delay = policy.delayForAttempt(d->attemptCount - 1, retryAfter);
-
-                            qDebug()
-                                << "QCCurlMultiManager: Retry scheduled for reply" << reply
-                                << "Attempt" << d->attemptCount << "after" << delay.count() << "ms"
-                                << "Error:" << errorMsg;
-
-                            // 使用 QPointer 防止在延迟期间 reply 被销毁
-                            QPointer<QCNetworkReply> safeReply(reply);
-
-                            // 延迟后重新执行
-                            QTimer::singleShot(delay.count(), reply, [safeReply, d]() {
-                                if (!safeReply) {
-                                    qWarning()
-                                        << "QCCurlMultiManager: Reply destroyed during retry delay";
-                                    return;
-                                }
-
-                                // ⚠️ v2.1.0: 检查是否在重试延迟期间被取消
-                                if (d->state == ReplyState::Cancelled) {
-                                    qDebug() << "QCCurlMultiManager: Retry cancelled for reply"
-                                             << safeReply.data();
-                                    return; // 不继续重试
-                                }
-
-                                // 重置状态和缓冲区（准备重试）
-                                d->state     = ReplyState::Idle;
-                                d->errorCode = NetworkError::NoError;
-                                d->errorMessage.clear();
-                                d->bodyBuffer.clear();
-                                d->headerData.clear();
-                                d->headerMap.clear();
-                                d->bytesDownloaded = 0;
-                                d->bytesUploaded   = 0;
-                                d->downloadTotal   = -1;
-                                d->uploadTotal     = -1;
-
-                                qDebug() << "QCCurlMultiManager: Retrying request for reply"
-                                         << safeReply.data();
-
-                                // 重新执行请求
-                                safeReply->execute();
-                            });
-
-                            return; // ⚠️ 关键：不调用 setState(Error)，避免发射错误信号
-                        }
-
-                        // 超过最大重试次数或错误不可重试，标记为错误
-                        qDebug() << "QCCurlMultiManager: Request failed after" << d->attemptCount
-                                 << "attempts. Error:" << errorMsg;
-
-                        d->setError(error, errorMsg);
-                        d->setState(ReplyState::Error);
-                    }
-                });
-    }
-
     // 添加到 multi handle
     CURLMcode ret = curl_multi_add_handle(m_multiHandle, easy);
     if (ret != CURLM_OK) {
@@ -1495,14 +1299,12 @@ void QCCurlMultiManager::checkMultiInfo()
         // 获取关联的 Reply 对象（线程安全）
         QMutexLocker locker(&m_mutex);
 
-        QPointer<QCNetworkReply> replyPtr = m_activeReplies.value(easy);
-        if (!replyPtr) {
+        QPointer<QCNetworkReply> safeReply = m_activeReplies.value(easy);
+        if (!safeReply) {
             qWarning() << "QCCurlMultiManager::checkMultiInfo: Reply object already destroyed";
             cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::checkMultiInfo");
             continue;
         }
-
-        QCNetworkReply *reply = replyPtr.data();
 
         // 获取响应码和重定向 URL（调试信息）
         long responseCode = 0;
@@ -1512,7 +1314,7 @@ void QCCurlMultiManager::checkMultiInfo()
         curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &redirectUrl);
 
         qDebug() << "QCCurlMultiManager::checkMultiInfo: Request finished"
-                 << "Reply:" << reply << "CURLcode:" << message->data.result
+                 << "Reply:" << safeReply.data() << "CURLcode:" << message->data.result
                  << "HTTP code:" << responseCode
                  << "Redirect:" << (redirectUrl ? redirectUrl : "none");
 
@@ -1521,8 +1323,25 @@ void QCCurlMultiManager::checkMultiInfo()
         // 解锁后发射信号（避免死锁）
         locker.unlock();
 
-        // 发射完成信号（Reply 对象通过连接处理）
-        emit requestFinished(reply, message->data.result);
+        const CURLcode curlCode = message->data.result;
+
+        // 点对点完成分发：投递到 reply 线程执行完成/重试逻辑（不在 multi manager 内做广播+过滤）。
+        if (safeReply) {
+            QMetaObject::invokeMethod(
+                safeReply.data(),
+                [safeReply, curlCode]() {
+                    if (!safeReply) {
+                        return;
+                    }
+                    safeReply->d_func()->onCurlMultiFinished(curlCode);
+                },
+                Qt::AutoConnection); // 同线程直调，跨线程时自动 queued 回 Reply 线程。
+        }
+
+        // requestFinished 仅作为内部 debug/观测信号保留，不作为完成回调 SSOT。
+        if (safeReply) {
+            emit requestFinished(safeReply.data(), static_cast<int>(curlCode));
+        }
 
     } while (messagesLeft > 0);
 }

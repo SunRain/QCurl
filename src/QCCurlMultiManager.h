@@ -154,7 +154,10 @@ Q_SIGNALS:
      * @brief 请求完成信号（内部使用）
      *
      * 当 libcurl 报告请求完成时发射此信号。
-     * QCNetworkReply 对象通过连接此信号来接收完成通知。
+     *
+     * @note 该信号仅用于内部 debug/观测（例如统计 CURLcode 分布），不作为
+     *       QCNetworkReply 完成回调的 SSOT。
+     *       Reply 的完成/重试逻辑通过点对点投递到 Reply 线程执行。
      *
      * @param reply 完成的响应对象
      * @param curlCode libcurl 结果码（CURLE_OK 表示成功）
@@ -200,7 +203,7 @@ private:
      * @brief 检查并处理完成的请求
      *
      * 调用 curl_multi_info_read() 获取完成消息，
-     * 并发射 requestFinished() 信号通知 Reply 对象。
+     * 并将完成事件点对点投递到 Reply 线程执行（完成回调 SSOT）。
      *
      * @note 内部方法，在 handleSocketAction() 后调用
      */

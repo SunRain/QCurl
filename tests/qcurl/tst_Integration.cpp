@@ -43,6 +43,8 @@
 #include <QVector>
 #include <QtTest/QtTest>
 
+#include <atomic>
+
 using namespace QCurl;
 
 class TestIntegration : public QObject
@@ -135,6 +137,63 @@ QJsonObject TestIntegration::parseJsonResponse(const QByteArray &data)
     QJsonDocument doc = QJsonDocument::fromJson(data);
     return doc.object();
 }
+
+namespace {
+
+class QtMessageSubstringWatcher
+{
+public:
+    explicit QtMessageSubstringWatcher(const QString &needle)
+        : m_needle(needle)
+    {
+        s_instance   = this;
+        m_oldHandler = qInstallMessageHandler(QtMessageSubstringWatcher::handler);
+    }
+
+    ~QtMessageSubstringWatcher()
+    {
+        qInstallMessageHandler(m_oldHandler);
+        s_instance = nullptr;
+    }
+
+    QtMessageSubstringWatcher(const QtMessageSubstringWatcher &)            = delete;
+    QtMessageSubstringWatcher &operator=(const QtMessageSubstringWatcher &) = delete;
+
+    [[nodiscard]] bool seen() const noexcept { return m_seen.load(); }
+
+private:
+    static void handler(QtMsgType type, const QMessageLogContext &context, const QString &message)
+    {
+        auto *self = s_instance;
+        if (self) {
+            if (message.contains(self->m_needle)) {
+                self->m_seen.store(true);
+            }
+            if (self->m_oldHandler) {
+                self->m_oldHandler(type, context, message);
+            }
+        }
+    }
+
+    QString m_needle;
+    std::atomic_bool m_seen       = false;
+    QtMessageHandler m_oldHandler = nullptr;
+
+    static QtMessageSubstringWatcher *s_instance;
+};
+
+QtMessageSubstringWatcher *QtMessageSubstringWatcher::s_instance = nullptr;
+
+static void verifyRetryAttemptArgsMonotonic(const QSignalSpy &retrySpy)
+{
+    for (int i = 0; i < retrySpy.count(); ++i) {
+        const QList<QVariant> args = retrySpy.at(i);
+        QVERIFY(!args.isEmpty());
+        QCOMPARE(args.at(0).toInt(), i + 1);
+    }
+}
+
+} // namespace
 
 static bool waitForPortReady(quint16 port, int timeoutMs)
 {
@@ -1076,6 +1135,9 @@ void TestIntegration::testRetryOnTimeout()
     QElapsedTimer timer;
     timer.start();
 
+    QtMessageSubstringWatcher easyHandleRegisteredWatcher(
+        QStringLiteral("easy handle already registered"));
+
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
@@ -1092,7 +1154,11 @@ void TestIntegration::testRetryOnTimeout()
     qDebug() << "Total time elapsed:" << elapsed << "ms";
     qDebug() << "Final error:" << static_cast<int>(reply->error()) << reply->errorString();
 
-    QVERIFY(retrySpy.count() >= 1); // 至少重试了 1 次
+    QVERIFY(retrySpy.count() >= 1);                 // 至少重试了 1 次
+    QVERIFY(retrySpy.count() <= policy.maxRetries); // 不允许重复调度导致的越界重试
+    verifyRetryAttemptArgsMonotonic(retrySpy);
+    QVERIFY(!easyHandleRegisteredWatcher.seen());
+
     // 注意：超时可能返回 ConnectionTimeout (28) 或其他超时相关错误
     QVERIFY(reply->error() != NetworkError::NoError);
 
@@ -1111,6 +1177,9 @@ void TestIntegration::testRetryDelayAccuracy()
 
     QElapsedTimer timer;
     timer.start();
+
+    QtMessageSubstringWatcher easyHandleRegisteredWatcher(
+        QStringLiteral("easy handle already registered"));
 
     auto *reply = m_manager->sendGet(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
@@ -1133,6 +1202,8 @@ void TestIntegration::testRetryDelayAccuracy()
 
     // 只验证重试次数，不严格检查时间（避免因环境差异导致测试不稳定）
     QCOMPARE(retrySpy.count(), 3);
+    verifyRetryAttemptArgsMonotonic(retrySpy);
+    QVERIFY(!easyHandleRegisteredWatcher.seen());
 
     // 可选：记录时间，但不作为失败条件
     if (elapsed < 600 || elapsed > 3000) {

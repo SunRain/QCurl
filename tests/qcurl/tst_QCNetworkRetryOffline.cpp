@@ -36,6 +36,7 @@ private slots:
     void testRetry429RetryAfterHttpDateOverride();
     void testRetry429FallbackToBackoff();
     void testRetryHttpStatusGetOnlyGating();
+    void testCancelDuringRetryDelay();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -251,6 +252,51 @@ void TestQCNetworkRetryOffline::testRetryHttpStatusGetOnlyGating()
     QVERIFY(finishedSpy.wait(2000));
     QCOMPARE(retrySpy.count(), 0);
     QCOMPARE(reply->error(), NetworkError::HttpInternalServerError);
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkRetryOffline::testCancelDuringRetryDelay()
+{
+    const QUrl url("http://example.com/offline/retry/cancel_during_delay");
+
+    // 只提供 1 次失败响应：若取消后仍发生 retry，会触发 “no mock matched” 并把状态覆盖为 Error。
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("svc down"), 503);
+
+    QCNetworkRequest request(url);
+    QCNetworkRetryPolicy policy;
+    policy.maxRetries        = 3;
+    policy.initialDelay      = std::chrono::milliseconds(500);
+    policy.backoffMultiplier = 1.0;
+    policy.maxDelay          = std::chrono::milliseconds(500);
+    request.setRetryPolicy(policy);
+
+    auto *reply = m_manager->sendGet(request);
+    QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
+    QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+    if (retrySpy.count() == 0) {
+        QVERIFY(retrySpy.wait(2000));
+    }
+    QCOMPARE(retrySpy.count(), 1);
+    QCOMPARE(retrySpy.at(0).at(0).toInt(), 1);
+
+    reply->cancel();
+
+    if (cancelledSpy.count() == 0) {
+        QVERIFY(cancelledSpy.wait(2000));
+    }
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+    QCOMPARE(finishedSpy.count(), 1);
+
+    // 等待超过 initialDelay，确保不会再次触发 execute()/consumeMock。
+    QTest::qWait(static_cast<int>((policy.initialDelay * 2).count()));
+    QCOMPARE(retrySpy.count(), 1);
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
 
     reply->deleteLater();
 }
