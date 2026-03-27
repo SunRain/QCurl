@@ -1,0 +1,89 @@
+{
+  "schema": "qcurl-uce/ctbp-contract@v1",
+  "schema_version": 1,
+  "contract_id": "ctbp@v1",
+  "ctbp_schema": "qcurl-lc/ctbp@v1",
+  "required_kinds": [
+    "connection_reuse",
+    "tls_boundary"
+  ],
+  "required_runners": [
+    "baseline",
+    "qcurl"
+  ],
+  "kinds": {
+    "connection_reuse": {
+      "description": "证明在同一 boundary key 内连接可复用，并显式暴露连接池边界 key。",
+      "required_fields": [
+        "schema",
+        "kind",
+        "boundary",
+        "boundary_key",
+        "connection_group_id",
+        "request_count",
+        "unique_connections",
+        "conn_seq",
+        "requests"
+      ],
+      "boundary_fields": [
+        "scheme",
+        "http_version",
+        "proxy_mode",
+        "alpn",
+        "sni",
+        "client_cert",
+        "pinning"
+      ],
+      "invariants": [
+        {
+          "id": "request_count_positive",
+          "description": "request_count 必须大于 0。"
+        },
+        {
+          "id": "conn_seq_matches_request_count",
+          "description": "conn_seq 长度必须等于 request_count。"
+        },
+        {
+          "id": "unique_connections_consistent",
+          "description": "unique_connections 必须等于 conn_seq 去重后的连接数。"
+        },
+        {
+          "id": "cross_boundary_reuse_forbidden",
+          "description": "同一 conn_id 不得关联多个 boundary_key。"
+        }
+      ]
+    },
+    "tls_boundary": {
+      "description": "证明 TLS 边界配置（CA / pinning / ALPN / SNI / HTTP version 等）下的预期结果。",
+      "required_fields": [
+        "schema",
+        "kind",
+        "boundary",
+        "boundary_key",
+        "expected_result"
+      ],
+      "boundary_fields": [
+        "scheme",
+        "http_version",
+        "proxy_mode",
+        "alpn",
+        "sni",
+        "client_cert",
+        "pinning",
+        "verify_peer",
+        "verify_host",
+        "ca_cert"
+      ],
+      "invariants": [
+        {
+          "id": "tls_success_matches_response",
+          "description": "expected_result=pass 时必须观测到 response.status=200 且 http_version 与 boundary 对齐。"
+        },
+        {
+          "id": "tls_failure_matches_error_kind",
+          "description": "expected_result=tls_error 时必须观测到 response.status=0 且 error.kind=tls。"
+        }
+      ]
+    }
+  }
+}

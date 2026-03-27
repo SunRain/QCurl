@@ -14,15 +14,22 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
+#include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
 #include "test_httpbin_env.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QEventLoop>
+#include <QFile>
 #include <QHostAddress>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMetaMethod>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -71,6 +78,9 @@ private slots:
     void testStateTransitionIdleToFinished();
     void testStateTransitionIdleToError();
     void testStateCancellation();
+    void testAsyncMockChaosPauseResume();
+    void testAsyncMockChaosCancel();
+    void testAsyncMockChaosDeleteLater();
     void testSyncPauseResumeNoOp();
     void testAsyncTransferPauseResumeCrossThread();
     void testAsyncDownloadBackpressure();
@@ -110,6 +120,124 @@ private:
     void restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
                           bool originalEnabled);
 };
+
+namespace {
+
+QString sanitizeEvidenceToken(QString value)
+{
+    value.replace(QStringLiteral("::"), QStringLiteral("_"));
+
+    for (QChar &ch : value) {
+        if (ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('-')) {
+            continue;
+        }
+        ch = QLatin1Char('_');
+    }
+
+    value.remove(QLatin1Char(' '));
+    return value;
+}
+
+QString dciEvidenceRoot()
+{
+    const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
+    if (!outDir.isEmpty()) {
+        return QDir(outDir).absolutePath();
+    }
+
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
+        QStringLiteral("../test-artifacts"));
+}
+
+class DciEvidenceRecorder
+{
+public:
+    DciEvidenceRecorder(QString caseName, QString streamSuffix = QString(), int seed = -1)
+        : m_caseName(sanitizeEvidenceToken(caseName)),
+          m_streamId(m_caseName),
+          m_seed(seed)
+    {
+        if (!streamSuffix.isEmpty()) {
+            m_streamId += QStringLiteral(":%1").arg(sanitizeEvidenceToken(streamSuffix));
+        }
+    }
+
+    void addEvent(const QString &event, QJsonObject extra = {})
+    {
+        extra.insert(QStringLiteral("schema"), QStringLiteral("qcurl-uce/dci-evidence@v1"));
+        extra.insert(QStringLiteral("case"), m_caseName);
+        extra.insert(QStringLiteral("stream"), m_streamId);
+        extra.insert(QStringLiteral("event"), event);
+        extra.insert(QStringLiteral("seq"), m_nextSeq++);
+        if (m_seed >= 0) {
+            extra.insert(QStringLiteral("seed"), m_seed);
+        }
+        m_rows.append(extra);
+    }
+
+    void flush() const
+    {
+        if (m_rows.isEmpty()) {
+            return;
+        }
+
+        const QString root = dciEvidenceRoot();
+        QDir dir(root);
+        if (!dir.exists() && !QDir().mkpath(root)) {
+            qWarning() << "DciEvidenceRecorder: failed to create artifact root" << root;
+            return;
+        }
+
+        const QString fileName = QStringLiteral("dci_evidence_%1_%2_%3.jsonl")
+                                     .arg(sanitizeEvidenceToken(m_caseName))
+                                     .arg(sanitizeEvidenceToken(m_streamId))
+                                     .arg(QDateTime::currentMSecsSinceEpoch());
+        QFile file(dir.absoluteFilePath(fileName));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+            qWarning() << "DciEvidenceRecorder: failed to open evidence file" << file.fileName();
+            return;
+        }
+
+        for (const QJsonObject &row : m_rows) {
+            file.write(QJsonDocument(row).toJson(QJsonDocument::Compact));
+            file.write("\n");
+        }
+        file.close();
+    }
+
+private:
+    QString m_caseName;
+    QString m_streamId;
+    int m_seed = -1;
+    int m_nextSeq = 1;
+    QList<QJsonObject> m_rows;
+};
+
+QJsonObject timelineTransferMetrics(const QCNetworkReply *reply,
+                                    qint64 bytesWrittenTotal,
+                                    qint64 chunkLen = -1)
+{
+    QJsonObject metrics;
+    if (reply) {
+        metrics.insert(QStringLiteral("bytes_delivered_total"), reply->bytesReceived());
+    }
+    if (bytesWrittenTotal >= 0) {
+        metrics.insert(QStringLiteral("bytes_written_total"), bytesWrittenTotal);
+    }
+    if (chunkLen >= 0) {
+        metrics.insert(QStringLiteral("chunk_len"), chunkLen);
+    }
+    return metrics;
+}
+
+int envIntOrDefault(const char *name, int fallback)
+{
+    bool ok = false;
+    const int value = qEnvironmentVariableIntValue(name, &ok);
+    return ok ? value : fallback;
+}
+
+} // namespace
 
 // ============================================================================
 // 辅助方法实现
@@ -802,6 +930,350 @@ void TestQCNetworkReply::testStateCancellation()
     reply->deleteLater();
 }
 
+void TestQCNetworkReply::testAsyncMockChaosPauseResume()
+{
+    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 17);
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
+    const auto restoreEnv   = qScopeGuard([oldEnv]() {
+        if (oldEnv.isEmpty()) {
+            qunsetenv("QCURL_TEST_MOCK_CHAOS");
+        } else {
+            qputenv("QCURL_TEST_MOCK_CHAOS", oldEnv);
+        }
+    });
+
+    qputenv("QCURL_TEST_MOCK_CHAOS",
+            QByteArray("seed=" + QByteArray::number(seed)
+                       + ";max_chunk_bytes=7;chunk_delay_ms=5;"
+                         "action=pause;action_point=after_first_chunk;resume_delay_ms=25"));
+
+    QCNetworkMockHandler handler;
+    const QUrl url(QStringLiteral("http://example.com/mock/chaos/pause"));
+    const QByteArray payload("abcdefghijklmnopqrstuvwxyz");
+    handler.mockResponse(url, payload, 200);
+    m_manager->setMockHandler(&handler);
+    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+
+    auto runOnce = [&](QList<int> &chunkSizes,
+                       QList<qint64> &progressValues,
+                       QList<ReplyState> &states,
+                       QByteArray &received,
+                       int attempt) -> bool {
+        DciEvidenceRecorder recorder(QStringLiteral("testAsyncMockChaosPauseResume"),
+                                     QStringLiteral("attempt-%1").arg(attempt),
+                                     seed);
+        const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
+
+        QCNetworkRequest request(url);
+        auto *reply = m_manager->sendGet(request);
+        if (!reply) {
+            return false;
+        }
+
+        recorder.addEvent(QStringLiteral("request_headers"),
+                          QJsonObject{
+                              {QStringLiteral("method"), QStringLiteral("GET")},
+                              {QStringLiteral("url"), url.toString()},
+                          });
+        recorder.addEvent(QStringLiteral("response_headers"),
+                          QJsonObject{
+                              {QStringLiteral("status"), 200},
+                              {QStringLiteral("http_version"), QStringLiteral("mock")},
+                          });
+
+        QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+        QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+        bool sawFirstByte = false;
+        bool sawPause = false;
+
+        connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+            const auto dataOpt = reply->readAll();
+            if (!dataOpt.has_value() || dataOpt->isEmpty()) {
+                return;
+            }
+            if (!sawFirstByte) {
+                sawFirstByte = true;
+                recorder.addEvent(QStringLiteral("first_byte"),
+                                  timelineTransferMetrics(reply, received.size(), 0));
+            }
+            chunkSizes.append(dataOpt->size());
+            received.append(*dataOpt);
+            recorder.addEvent(QStringLiteral("body_chunk"),
+                              timelineTransferMetrics(reply, received.size(), dataOpt->size()));
+        });
+        connect(reply,
+                &QCNetworkReply::stateChanged,
+                this,
+                [&](ReplyState state) {
+                    if (state == ReplyState::Paused) {
+                        sawPause = true;
+                        recorder.addEvent(QStringLiteral("pause_effective"),
+                                          timelineTransferMetrics(reply, received.size()));
+                    } else if (sawPause && state == ReplyState::Running) {
+                        recorder.addEvent(QStringLiteral("resume_req"),
+                                          timelineTransferMetrics(reply, received.size()));
+                    }
+                });
+        connect(reply,
+                &QCNetworkReply::downloadProgress,
+                this,
+                [&](qint64 bytesReceived, qint64) { progressValues.append(bytesReceived); });
+
+        if (finishedSpy.count() == 0 && !finishedSpy.wait(2000)) {
+            reply->deleteLater();
+            return false;
+        }
+        const auto tailOpt = reply->readAll();
+        if (tailOpt.has_value() && !tailOpt->isEmpty()) {
+            chunkSizes.append(tailOpt->size());
+            received.append(*tailOpt);
+            recorder.addEvent(QStringLiteral("body_chunk"),
+                              timelineTransferMetrics(reply, received.size(), tailOpt->size()));
+        }
+        recorder.addEvent(QStringLiteral("body_complete"),
+                          timelineTransferMetrics(reply, received.size(), received.size()));
+        recorder.addEvent(QStringLiteral("finished"),
+                          QJsonObject{
+                              {QStringLiteral("result"), QStringLiteral("pass")},
+                              {QStringLiteral("status"), 200},
+                              {QStringLiteral("body_len"), received.size()},
+                          });
+
+        for (const auto &args : stateSpy) {
+            if (args.isEmpty()) {
+                reply->deleteLater();
+                return false;
+            }
+            states.append(static_cast<ReplyState>(args.at(0).toInt()));
+        }
+
+        const bool finishedOk = reply->state() == ReplyState::Finished
+                                && reply->error() == NetworkError::NoError;
+        reply->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return finishedOk;
+    };
+
+    QList<int> firstChunkSizes;
+    QList<qint64> firstProgress;
+    QList<ReplyState> firstStates;
+    QByteArray firstReceived;
+    QVERIFY(runOnce(firstChunkSizes, firstProgress, firstStates, firstReceived, 1));
+
+    QList<int> secondChunkSizes;
+    QList<qint64> secondProgress;
+    QList<ReplyState> secondStates;
+    QByteArray secondReceived;
+    QVERIFY(runOnce(secondChunkSizes, secondProgress, secondStates, secondReceived, 2));
+
+    QCOMPARE(firstReceived, payload);
+    QCOMPARE(secondReceived, payload);
+    QVERIFY(firstChunkSizes.size() > 1);
+    QCOMPARE(firstChunkSizes, secondChunkSizes);
+
+    QVERIFY(std::any_of(firstStates.cbegin(),
+                        firstStates.cend(),
+                        [](ReplyState state) { return state == ReplyState::Paused; }));
+    QVERIFY(std::any_of(secondStates.cbegin(),
+                        secondStates.cend(),
+                        [](ReplyState state) { return state == ReplyState::Paused; }));
+
+    QVERIFY(!firstProgress.isEmpty());
+    QVERIFY(!secondProgress.isEmpty());
+    QCOMPARE(firstProgress.back(), static_cast<qint64>(payload.size()));
+    QCOMPARE(secondProgress.back(), static_cast<qint64>(payload.size()));
+    QVERIFY(std::is_sorted(firstProgress.cbegin(), firstProgress.cend()));
+    QVERIFY(std::is_sorted(secondProgress.cbegin(), secondProgress.cend()));
+}
+
+void TestQCNetworkReply::testAsyncMockChaosCancel()
+{
+    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 5);
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
+    const auto restoreEnv   = qScopeGuard([oldEnv]() {
+        if (oldEnv.isEmpty()) {
+            qunsetenv("QCURL_TEST_MOCK_CHAOS");
+        } else {
+            qputenv("QCURL_TEST_MOCK_CHAOS", oldEnv);
+        }
+    });
+
+    qputenv("QCURL_TEST_MOCK_CHAOS",
+            QByteArray("seed=" + QByteArray::number(seed)
+                       + ";max_chunk_bytes=6;chunk_delay_ms=5;"
+                         "action=cancel;action_point=after_first_chunk"));
+
+    QCNetworkMockHandler handler;
+    const QUrl url(QStringLiteral("http://example.com/mock/chaos/cancel"));
+    const QByteArray payload("cancel-me-before-finish");
+    handler.mockResponse(url, payload, 200);
+    m_manager->setMockHandler(&handler);
+    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(reply != nullptr);
+
+    DciEvidenceRecorder recorder(QStringLiteral("testAsyncMockChaosCancel"),
+                                 QStringLiteral("cancel"),
+                                 seed);
+    const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
+    recorder.addEvent(QStringLiteral("request_headers"),
+                      QJsonObject{
+                          {QStringLiteral("method"), QStringLiteral("GET")},
+                          {QStringLiteral("url"), url.toString()},
+                      });
+    recorder.addEvent(QStringLiteral("response_headers"),
+                      QJsonObject{
+                          {QStringLiteral("status"), 200},
+                          {QStringLiteral("http_version"), QStringLiteral("mock")},
+                      });
+
+    QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
+    QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QSignalSpy readyReadSpy(reply, &QCNetworkReply::readyRead);
+    QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
+
+    QByteArray received;
+    bool sawFirstByte = false;
+    QList<qint64> progressValues;
+    connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+        const auto dataOpt = reply->readAll();
+        if (!dataOpt.has_value() || dataOpt->isEmpty()) {
+            return;
+        }
+        if (!sawFirstByte) {
+            sawFirstByte = true;
+            recorder.addEvent(QStringLiteral("first_byte"),
+                              timelineTransferMetrics(reply, received.size(), 0));
+        }
+        received.append(*dataOpt);
+        recorder.addEvent(QStringLiteral("body_chunk"),
+                          timelineTransferMetrics(reply, received.size(), dataOpt->size()));
+    });
+    connect(reply,
+            &QCNetworkReply::downloadProgress,
+            this,
+            [&](qint64 bytesReceived, qint64) { progressValues.append(bytesReceived); });
+
+    QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() > 0, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() > 0, 1000);
+
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+    QVERIFY(!received.isEmpty());
+    QVERIFY(received.size() < payload.size());
+
+    QVERIFY(!progressValues.isEmpty());
+    QVERIFY(std::is_sorted(progressValues.cbegin(), progressValues.cend()));
+    QVERIFY(progressValues.back() < payload.size());
+    recorder.addEvent(QStringLiteral("finished"),
+                      QJsonObject{
+                          {QStringLiteral("result"), QStringLiteral("cancelled")},
+                          {QStringLiteral("terminal_state"), QStringLiteral("cancelled")},
+                          {QStringLiteral("body_len"), received.size()},
+                          {QStringLiteral("bytes_delivered_total"), reply->bytesReceived()},
+                          {QStringLiteral("bytes_written_total"), received.size()},
+                      });
+
+    readyReadSpy.clear();
+    progressSpy.clear();
+    stateSpy.clear();
+    QVERIFY(!readyReadSpy.wait(100));
+    QVERIFY(!progressSpy.wait(100));
+    QVERIFY(!stateSpy.wait(100));
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
+{
+    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 23);
+    const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
+    const auto restoreEnv   = qScopeGuard([oldEnv]() {
+        if (oldEnv.isEmpty()) {
+            qunsetenv("QCURL_TEST_MOCK_CHAOS");
+        } else {
+            qputenv("QCURL_TEST_MOCK_CHAOS", oldEnv);
+        }
+    });
+
+    qputenv("QCURL_TEST_MOCK_CHAOS",
+            QByteArray("seed=" + QByteArray::number(seed)
+                       + ";max_chunk_bytes=4;chunk_delay_ms=10"));
+
+    QCNetworkMockHandler handler;
+    const QUrl url(QStringLiteral("http://example.com/mock/chaos/delete-later"));
+    const QByteArray payload("delete-later-before-finish-payload");
+    handler.mockResponse(url, payload, 200);
+    m_manager->setMockHandler(&handler);
+    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(reply != nullptr);
+
+    DciEvidenceRecorder recorder(QStringLiteral("testAsyncMockChaosDeleteLater"),
+                                 QStringLiteral("delete-later"),
+                                 seed);
+    const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
+    recorder.addEvent(QStringLiteral("request_headers"),
+                      QJsonObject{
+                          {QStringLiteral("method"), QStringLiteral("GET")},
+                          {QStringLiteral("url"), url.toString()},
+                      });
+    recorder.addEvent(QStringLiteral("response_headers"),
+                      QJsonObject{
+                          {QStringLiteral("status"), 200},
+                          {QStringLiteral("http_version"), QStringLiteral("mock")},
+                      });
+
+    QPointer<QCNetworkReply> guardedReply(reply);
+    QSignalSpy destroyedSpy(reply, &QObject::destroyed);
+    QByteArray received;
+    bool deleteIssued = false;
+    bool sawFirstByte = false;
+
+    connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+        if (!guardedReply) {
+            return;
+        }
+
+        const auto dataOpt = guardedReply->readAll();
+        if (!dataOpt.has_value() || dataOpt->isEmpty()) {
+            return;
+        }
+        if (!sawFirstByte) {
+            sawFirstByte = true;
+            recorder.addEvent(QStringLiteral("first_byte"),
+                              timelineTransferMetrics(guardedReply.data(), received.size(), 0));
+        }
+        received.append(*dataOpt);
+        recorder.addEvent(QStringLiteral("body_chunk"),
+                          timelineTransferMetrics(guardedReply.data(),
+                                                  received.size(),
+                                                  dataOpt->size()));
+
+        if (!deleteIssued) {
+            deleteIssued = true;
+            guardedReply->deleteLater();
+        }
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(deleteIssued, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(destroyedSpy.count() > 0, 2000);
+    QVERIFY(guardedReply.isNull());
+
+    recorder.addEvent(QStringLiteral("finished"),
+                      QJsonObject{
+                          {QStringLiteral("result"), QStringLiteral("deleted_later")},
+                          {QStringLiteral("terminal_state"), QStringLiteral("deleted_later")},
+                          {QStringLiteral("body_len"), received.size()},
+                          {QStringLiteral("bytes_written_total"), received.size()},
+                      });
+}
+
 void TestQCNetworkReply::testSyncPauseResumeNoOp()
 {
     if (!m_isHttpbinReachable) {
@@ -1158,10 +1630,53 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         request.setBackpressureResumeBytes(kResumeBytes);
 
         auto *reply = m_manager->sendGet(request);
+        DciEvidenceRecorder recorder(QStringLiteral("testAsyncDownloadBackpressure"),
+                                     QStringLiteral("bp-user-pause"));
+        const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
+        recorder.addEvent(QStringLiteral("request_headers"),
+                          QJsonObject{
+                              {QStringLiteral("method"), QStringLiteral("GET")},
+                              {QStringLiteral("url"), request.url().toString()},
+                          });
+        recorder.addEvent(QStringLiteral("response_headers"),
+                          QJsonObject{
+                              {QStringLiteral("status"), 200},
+                              {QStringLiteral("http_version"), QStringLiteral("http/1.1")},
+                          });
 
         QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
         QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+        QByteArray received;
+        bool sawFirstByte = false;
+        bool sawPause = false;
+        connect(reply,
+                &QCNetworkReply::stateChanged,
+                this,
+                [&](ReplyState state) {
+                    if (state == ReplyState::Paused) {
+                        sawPause = true;
+                        recorder.addEvent(QStringLiteral("pause_effective"),
+                                          timelineTransferMetrics(reply, received.size()));
+                    } else if (sawPause && state == ReplyState::Running) {
+                        recorder.addEvent(QStringLiteral("resume_req"),
+                                          timelineTransferMetrics(reply, received.size()));
+                    }
+                });
+        connect(reply,
+                &QCNetworkReply::backpressureStateChanged,
+                this,
+                [&](bool active, qint64 bufferedBytes, qint64 limitBytes) {
+                    recorder.addEvent(active ? QStringLiteral("backpressure_on")
+                                             : QStringLiteral("backpressure_off"),
+                                      QJsonObject{
+                                          {QStringLiteral("buffered_bytes"), bufferedBytes},
+                                          {QStringLiteral("limit_bytes"), limitBytes},
+                                          {QStringLiteral("bytes_delivered_total"), reply->bytesReceived()},
+                                          {QStringLiteral("bytes_written_total"), received.size()},
+                                      });
+                });
 
         bool sawActive = false;
         QElapsedTimer waitTimer;
@@ -1182,10 +1697,16 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         reply->pauseTransport(PauseMode::Recv);
         QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
 
-        QByteArray received;
         const auto firstDrain = reply->readAll();
         if (firstDrain.has_value() && !firstDrain->isEmpty()) {
+            if (!sawFirstByte) {
+                sawFirstByte = true;
+                recorder.addEvent(QStringLiteral("first_byte"),
+                                  timelineTransferMetrics(reply, received.size(), 0));
+            }
             received.append(*firstDrain);
+            recorder.addEvent(QStringLiteral("body_chunk"),
+                              timelineTransferMetrics(reply, received.size(), firstDrain->size()));
         }
 
         QTRY_VERIFY_WITH_TIMEOUT(!reply->isBackpressureActive(), 3000);
@@ -1198,7 +1719,14 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         connect(reply, &QCNetworkReply::readyRead, this, [&]() {
             const auto dataOpt = reply->readAll();
             if (dataOpt.has_value() && !dataOpt->isEmpty()) {
+                if (!sawFirstByte) {
+                    sawFirstByte = true;
+                    recorder.addEvent(QStringLiteral("first_byte"),
+                                      timelineTransferMetrics(reply, received.size(), 0));
+                }
                 received.append(*dataOpt);
+                recorder.addEvent(QStringLiteral("body_chunk"),
+                                  timelineTransferMetrics(reply, received.size(), dataOpt->size()));
             }
         });
 
@@ -1212,11 +1740,21 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         const auto tailOpt = reply->readAll();
         if (tailOpt.has_value() && !tailOpt->isEmpty()) {
             received.append(*tailOpt);
+            recorder.addEvent(QStringLiteral("body_chunk"),
+                              timelineTransferMetrics(reply, received.size(), tailOpt->size()));
         }
 
         QCOMPARE(reply->error(), NetworkError::NoError);
         QCOMPARE(received.size(), payload.size());
         QCOMPARE(received, payload);
+        recorder.addEvent(QStringLiteral("body_complete"),
+                          timelineTransferMetrics(reply, received.size(), received.size()));
+        recorder.addEvent(QStringLiteral("finished"),
+                          QJsonObject{
+                              {QStringLiteral("result"), QStringLiteral("pass")},
+                              {QStringLiteral("status"), 200},
+                              {QStringLiteral("body_len"), received.size()},
+                          });
 
         bool sawPaused = false;
         for (const auto &args : stateSpy) {

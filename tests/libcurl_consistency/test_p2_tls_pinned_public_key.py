@@ -34,6 +34,39 @@ def _parse_curlcode(stderr_lines) -> int:
     return -1
 
 
+def _tls_boundary(*, proto: str) -> dict[str, object]:
+    return {
+        "scheme": "https",
+        "http_version": proto,
+        "proxy_mode": "direct",
+        "alpn": proto,
+        "sni": "localhost",
+        "client_cert": False,
+        "pinning": "sha256_public_key",
+        "verify_peer": True,
+        "verify_host": True,
+        "ca_cert": True,
+    }
+
+
+def _boundary_key(boundary: dict[str, object]) -> str:
+    return ";".join(f"{key}={boundary[key]}" for key in sorted(boundary))
+
+
+def _make_ctbp_payload(*, proto: str, mode: str) -> dict[str, object]:
+    boundary = _tls_boundary(proto=proto)
+    payload: dict[str, object] = {
+        "schema": "qcurl-lc/ctbp@v1",
+        "kind": "tls_boundary",
+        "boundary": boundary,
+        "boundary_key": _boundary_key(boundary),
+        "expected_result": "pass" if mode == "match" else "tls_error",
+    }
+    if mode != "match":
+        payload["expected_error_kind"] = "tls"
+    return payload
+
+
 def _pinned_pubkey_sha256_from_cert(cert_path: Path) -> str:
     if not cert_path.exists():
         raise FileNotFoundError(f"cert not found: {cert_path}")
@@ -135,6 +168,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
             curlcode = _parse_curlcode(baseline["payload"].get("stderr"))
             assert curlcode == 90, f"unexpected curlcode: {curlcode}"
             apply_error_namespaces(baseline["payload"], kind="tls", http_status=0)
+        baseline["payload"]["ctbp"] = _make_ctbp_payload(proto=proto, mode=mode)
         write_json(baseline["path"], baseline["payload"])
 
         qcurl_env = {
@@ -157,6 +191,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
         )
         if mode != "match":
             apply_error_namespaces(qcurl["payload"], kind="tls", http_status=0)
+        qcurl["payload"]["ctbp"] = _make_ctbp_payload(proto=proto, mode=mode)
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

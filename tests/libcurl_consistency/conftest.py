@@ -6,6 +6,7 @@ Pytest 驱动骨架（LC-2）：
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import socket
@@ -14,6 +15,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Dict, Generator
 import uuid
 
@@ -53,8 +55,39 @@ finally:
 
 log = logging.getLogger(__name__)
 
-# 加载上游 pytest 插件（提供 env/httpd/nghttpx/ssh 等 fixtures）
-pytest_plugins = ["conftest"]
+def _inject_upstream_curl_http_fixtures() -> None:
+    """
+    将 `curl/tests/http/conftest.py` 里的 fixtures/hook 注入到当前 conftest 中。
+
+    说明：
+    - pytest 8+ 不再支持在“非顶层 conftest”里声明 `pytest_plugins = [...]`。
+    - 上游 conftest 里的 session autouse fixture（env）不应影响本仓库其它 pytest 用例，
+      因此必须保持“目录级作用域”（仅对本目录 tests/libcurl_consistency 生效）。
+    - 这里通过“导入上游 conftest 作为普通模块 + 复制 fixtures/hook 到当前模块”的方式，
+      达到与旧 `pytest_plugins = ["conftest"]` 等价的行为，但不触发 pytest 的硬错误。
+    """
+
+    upstream_path = CURL_HTTP_DIR / "conftest.py"
+    if not upstream_path.exists():
+        raise RuntimeError(f"missing upstream conftest: {upstream_path}")
+
+    spec = importlib.util.spec_from_file_location(
+        "_qcurl_upstream_curl_http_conftest",
+        upstream_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load upstream conftest spec: {upstream_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    upstream = module
+    assert isinstance(upstream, ModuleType)
+
+    for name, obj in upstream.__dict__.items():
+        # 仅注入非私有符号；保持本地覆盖优先（例如 env_config / worker_id / testrun_uid 等）
+        if name.startswith("_") or name in globals():
+            continue
+        globals()[name] = obj
 
 # 如果 testenv 无法导入（如缺少 config.ini 或 httpd/nghttpx），跳过本模块所有测试
 if TESTENV_IMPORT_ERROR:
@@ -797,3 +830,7 @@ def collect_service_logs(logs: Dict[str, Path], dest: Path) -> Dict[str, str]:
     """
     from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs as _collect
     return _collect(logs, dest)
+
+
+# 注入上游 curl http testenv 的 fixtures/hook（保留目录级作用域）
+_inject_upstream_curl_http_fixtures()

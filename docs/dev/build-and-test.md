@@ -179,7 +179,58 @@ QCURL_RUN_EXTERNAL_HEAVY=1 \
 - 使用自定义 URL 时，可用 `QCURL_LARGE_FILE_EXPECTED_BYTES` 指定期望字节数
 - 用例会先做 HEAD preflight；若资源 404、DNS 失败、远端超时或镜像站下线，会显式 `QSKIP`
 
-## 8. basic-no-problem 归档门禁
+## 8. UCE 统一证据门禁
+
+### 8.1 PR tier
+
+```bash
+git submodule update --init --recursive
+
+cmake -S . -B build-uce-pr -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
+  -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON
+
+cmake --build build-uce-pr --parallel
+
+python3 scripts/run_uce_gate.py --tier pr --build-dir build-uce-pr --run-id "local-pr"
+```
+
+关键工件：
+
+- `build-uce-pr/evidence/uce/local-pr/manifest.json`
+- `build-uce-pr/evidence/uce/local-pr/policy_violations.json`
+- `build-uce-pr/evidence/uce/local-pr.tar.gz`
+
+### 8.2 nightly / soak tier
+
+```bash
+python3 scripts/run_uce_gate.py --tier nightly --build-dir build-uce-pr --run-id "local-nightly"
+python3 scripts/run_uce_gate.py --tier soak --build-dir build-uce-pr --run-id "local-soak"
+```
+
+nightly / soak 会额外启用：
+
+- DCI fixed seed 集
+- BP（backpressure）合同
+- CTBP / HES 扩展 contract
+- `scripts/netproof_strace_gate.py` 的 offline `strace` 证明
+
+### 8.3 sanitizer 放大
+
+```bash
+python3 scripts/run_uce_sanitizers.py --profile asan-ubsan-lsan \
+  --build-dir build-asan --output-dir build/evidence/uce-sanitizers/asan
+
+python3 scripts/run_uce_sanitizers.py --profile tsan \
+  --build-dir build-tsan --output-dir build/evidence/uce-sanitizers/tsan
+```
+
+说明：
+
+- `asan-ubsan-lsan` profile 会单独配置 sanitizer build，并调用 `run_uce_gate.py --tier nightly`
+- `tsan` profile 只运行线程相关子集：`tst_QCNetworkReply`、`tst_QCNetworkScheduler`、`tst_QCNetworkConnectionPool`
+
+## 9. basic-no-problem 归档门禁（legacy acceptance）
 
 当需要生成一套可归档、可复核的最低验收工件时，使用：
 
@@ -198,7 +249,7 @@ python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-r
 - `build/evidence/basic-no-problem/<run-id>/manifest.json`
 - `build/evidence/basic-no-problem/<run-id>.tar.gz`
 
-## 9. 常见失败原因
+## 10. 常见失败原因
 
 - 端口绑定受限：curl testenv / httpbin / 本地服务端无法启动
 - Docker 权限不足：env 组依赖的本地服务无法拉起

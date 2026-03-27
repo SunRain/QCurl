@@ -1,35 +1,20 @@
-# PR 快速门禁（Public API + UCE PR tier）
-name: PR Gate (fast + UCE PR tier)
+# UCE soak：长跑/固定 seed 组
+name: UCE Soak
 
 on:
-  pull_request:
-    branches: [ master, main, develop ]
-    paths:
-      - 'CMakeLists.txt'
-      - 'src/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'docs/**'
-      - '.github/workflows/pr_fast_gate.yml'
-  push:
-    branches: [ master, main, develop ]
-    paths:
-      - 'CMakeLists.txt'
-      - 'src/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'docs/**'
-      - '.github/workflows/pr_fast_gate.yml'
+  schedule:
+    - cron: '40 18 * * 6'
   workflow_dispatch:
 
 env:
-  BUILD_TYPE: Release
-  UCE_RUN_ID: pr-${{ github.run_id }}-${{ github.run_attempt }}
+  BUILD_TYPE: RelWithDebInfo
+  UCE_RUN_ID: soak-${{ github.run_id }}-${{ github.run_attempt }}
+  QCURL_LC_SOAK_DURATION_S: "900"
 
 jobs:
-  pr_fast_gate:
+  uce_soak:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 240
 
     steps:
       - name: Checkout repository
@@ -55,7 +40,8 @@ jobs:
             apache2 \
             apache2-dev \
             libapache2-mod-http2 \
-            libevent-dev
+            libevent-dev \
+            strace
 
       - name: Install Python dependencies
         run: |
@@ -72,40 +58,35 @@ jobs:
             sudo ln -sf "$(command -v apxs2)" /usr/bin/apxs
           fi
 
-      - name: Configure (CMake)
+      - name: Configure soak build
         run: |
           set -euo pipefail
-          cmake -S . -B build \
+          cmake -S . -B build-soak \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DBUILD_TESTING=ON \
-            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON \
             -DBUILD_EXAMPLES=OFF \
-            -DBUILD_BENCHMARKS=OFF
+            -DBUILD_BENCHMARKS=OFF \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON
 
-      - name: Build
+      - name: Build soak targets
         run: |
           set -euo pipefail
-          cmake --build build --parallel
+          cmake --build build-soak --parallel
 
-      - name: Public API fast gate
+      - name: Run UCE soak tier
         run: |
           set -euo pipefail
-          ctest --test-dir build -L '^public-api$' --output-on-failure
+          python3 scripts/run_uce_gate.py --tier soak --build-dir build-soak --run-id "${{ env.UCE_RUN_ID }}"
 
-      - name: Run UCE PR tier
-        run: |
-          set -euo pipefail
-          python3 scripts/run_uce_gate.py --tier pr --build-dir build --run-id "${{ env.UCE_RUN_ID }}"
-
-      - name: Upload UCE evidence [required]
+      - name: Upload UCE soak evidence [required]
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: uce-pr-evidence-${{ env.UCE_RUN_ID }}
+          name: uce-soak-${{ env.UCE_RUN_ID }}
           path: |
-            build/evidence/uce/${{ env.UCE_RUN_ID }}/manifest.json
-            build/evidence/uce/${{ env.UCE_RUN_ID }}/policy_violations.json
-            build/evidence/uce/${{ env.UCE_RUN_ID }}.tar.gz
+            build-soak/evidence/uce/${{ env.UCE_RUN_ID }}/manifest.json
+            build-soak/evidence/uce/${{ env.UCE_RUN_ID }}/policy_violations.json
+            build-soak/evidence/uce/${{ env.UCE_RUN_ID }}.tar.gz
           retention-days: 14
           if-no-files-found: error

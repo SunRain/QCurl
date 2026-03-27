@@ -50,6 +50,17 @@ def _assert_chunked(headers: dict) -> None:
     assert "chunked" in te.lower(), f"expected transfer-encoding chunked, got: {te!r}"
 
 
+def _hes_chunked_payload(headers: dict, proto: str, body_len: int, body_sha: str) -> dict:
+    return {
+        "kind": "chunked_upload",
+        "http_version": proto,
+        "transfer_encoding": str(headers.get("transfer-encoding") or ""),
+        "content_length": str(headers.get("content-length") or ""),
+        "body_len": int(body_len),
+        "body_sha256": body_sha,
+    }
+
+
 def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
@@ -122,6 +133,12 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
         baseline["payload"]["response"]["status"] = obs_base[0].status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_base[0].response_headers)
+        baseline["payload"]["hes"] = _hes_chunked_payload(
+            _normalize_req_headers(obs_base[0].headers),
+            proto,
+            int(baseline["payload"]["response"].get("body_len") or 0),
+            str(baseline["payload"]["response"].get("body_sha256") or ""),
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -162,6 +179,12 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
         qcurl["payload"]["response"]["status"] = obs_q[0].status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_q[0].response_headers)
+        qcurl["payload"]["hes"] = _hes_chunked_payload(
+            _normalize_req_headers(obs_q[0].headers),
+            proto,
+            int(qcurl["payload"]["response"].get("body_len") or 0),
+            str(qcurl["payload"]["response"].get("body_sha256") or ""),
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

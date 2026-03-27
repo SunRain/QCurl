@@ -65,6 +65,15 @@ def _assert_server_headers_shape(lines: list[str]) -> None:
     assert "X-Case: A" in lines, "缺少 X-Case: A"
     assert "x-case: b" in lines, "缺少 x-case: b"
 
+
+def _hes_raw_headers_payload(lines: list[str]) -> dict:
+    return {
+        "kind": "raw_headers",
+        **_raw_header_fields(lines),
+        "set_cookie_count": len([line for line in lines if line.lower().startswith("set-cookie:")]),
+        "x_dupe_count": len([line for line in lines if line.lower().startswith("x-dupe:")]),
+    }
+
 def _parse_curl_easy_header_stdout(lines: list[str]) -> dict[str, object]:
     """
     解析 curl/tests/libtest/lib1940 的 stdout（curl_easy_header 输出），提取可比较的 header 值。
@@ -162,6 +171,7 @@ def test_p1_resp_headers_raw(env, lc_logs, lc_observe_http, tmp_path):
         raw_lines = _normalize_raw_header_lines(baseline_header_file.read_bytes())
         _assert_server_headers_shape(raw_lines)
         baseline["payload"]["response"].update(_raw_header_fields(raw_lines))
+        baseline["payload"]["hes"] = _hes_raw_headers_payload(raw_lines)
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -191,6 +201,7 @@ def test_p1_resp_headers_raw(env, lc_logs, lc_observe_http, tmp_path):
         raw_lines = _normalize_raw_header_lines(qcurl_header_file.read_bytes())
         _assert_server_headers_shape(raw_lines)
         qcurl["payload"]["response"].update(_raw_header_fields(raw_lines))
+        qcurl["payload"]["hes"] = _hes_raw_headers_payload(raw_lines)
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

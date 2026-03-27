@@ -1,0 +1,30 @@
+{
+  "schema": "qcurl-uce/bp-contract@v1",
+  "schema_version": 1,
+  "contract_id": "bp@v1",
+  "runner": "tst_QCNetworkReply",
+  "evidence_schema": "qcurl-uce/dci-evidence@v1",
+  "case": "testAsyncDownloadBackpressure",
+  "stream": "testAsyncDownloadBackpressure:bp-user-pause",
+  "required_tiers": [
+    "nightly",
+    "soak"
+  ],
+  "required_events": [
+    "request_headers",
+    "response_headers",
+    "backpressure_on",
+    "pause_effective",
+    "backpressure_off",
+    "resume_req",
+    "first_byte",
+    "body_chunk",
+    "body_complete",
+    "finished"
+  ],
+  "parameters": {
+    "expected_status": 200,
+    "expected_body_len": 262144,
+    "max_pause_drift_bytes": 8192
+  }
+}

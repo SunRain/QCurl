@@ -31,6 +31,39 @@ def _parse_curlcode(stderr_lines) -> int:
     return -1
 
 
+def _tls_boundary(*, proto: str, ca_cert: bool) -> dict[str, object]:
+    return {
+        "scheme": "https",
+        "http_version": proto,
+        "proxy_mode": "direct",
+        "alpn": proto,
+        "sni": "localhost",
+        "client_cert": False,
+        "pinning": "none",
+        "verify_peer": True,
+        "verify_host": True,
+        "ca_cert": ca_cert,
+    }
+
+
+def _boundary_key(boundary: dict[str, object]) -> str:
+    return ";".join(f"{key}={boundary[key]}" for key in sorted(boundary))
+
+
+def _make_ctbp_payload(*, proto: str, mode: str) -> dict[str, object]:
+    boundary = _tls_boundary(proto=proto, ca_cert=(mode == "success_with_ca"))
+    payload: dict[str, object] = {
+        "schema": "qcurl-lc/ctbp@v1",
+        "kind": "tls_boundary",
+        "boundary": boundary,
+        "boundary_key": _boundary_key(boundary),
+        "expected_result": "pass" if mode == "success_with_ca" else "tls_error",
+    }
+    if mode != "success_with_ca":
+        payload["expected_error_kind"] = "tls"
+    return payload
+
+
 @pytest.mark.parametrize("mode", ["success_with_ca", "fail_no_ca"])
 def test_p2_tls_verify(mode: str, env, lc_logs, lc_observe_https, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
@@ -81,6 +114,7 @@ def test_p2_tls_verify(mode: str, env, lc_logs, lc_observe_https, tmp_path):
             curlcode = _parse_curlcode(baseline["payload"].get("stderr"))
             assert curlcode == 60, f"unexpected curlcode: {curlcode}"
             apply_error_namespaces(baseline["payload"], kind="tls", http_status=0)
+        baseline["payload"]["ctbp"] = _make_ctbp_payload(proto=proto, mode=mode)
         write_json(baseline["path"], baseline["payload"])
 
         qcurl_env = {
@@ -105,6 +139,7 @@ def test_p2_tls_verify(mode: str, env, lc_logs, lc_observe_https, tmp_path):
 
         if mode != "success_with_ca":
             apply_error_namespaces(qcurl["payload"], kind="tls", http_status=0)
+        qcurl["payload"]["ctbp"] = _make_ctbp_payload(proto=proto, mode=mode)
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

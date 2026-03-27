@@ -43,6 +43,19 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _hes_expect100_payload(obs_list, proto: str, final_body_len: int, final_body_sha: str) -> dict:
+    return {
+        "kind": "expect_100_continue",
+        "http_version": proto,
+        "request_count": len(obs_list),
+        "statuses": [int(obs.status) for obs in obs_list],
+        "first_expect_header": str(obs_list[0].headers.get("expect") or ""),
+        "second_expect_present": "expect" in obs_list[1].headers,
+        "final_body_len": int(final_body_len),
+        "final_body_sha256": final_body_sha,
+    }
+
+
 def _run_expect100_417_retry_once(
     *,
     env,
@@ -130,6 +143,12 @@ def _run_expect100_417_retry_once(
     baseline["payload"]["response"]["http_version"] = proto
     baseline["payload"]["response"]["headers"] = obs_list[-1].response_headers
     assert int(baseline["payload"]["response"].get("body_len") or 0) == upload_size
+    baseline["payload"]["hes"] = _hes_expect100_payload(
+        obs_list,
+        proto,
+        int(baseline["payload"]["response"].get("body_len") or 0),
+        str(baseline["payload"]["response"].get("body_sha256") or ""),
+    )
     write_json(baseline["path"], baseline["payload"])
 
     observe_log.write_text("", encoding="utf-8")
@@ -186,6 +205,12 @@ def _run_expect100_417_retry_once(
     qcurl["payload"]["response"]["http_version"] = proto
     qcurl["payload"]["response"]["headers"] = obs_list[-1].response_headers
     assert int(qcurl["payload"]["response"].get("body_len") or 0) == upload_size
+    qcurl["payload"]["hes"] = _hes_expect100_payload(
+        obs_list,
+        proto,
+        int(qcurl["payload"]["response"].get("body_len") or 0),
+        str(qcurl["payload"]["response"].get("body_sha256") or ""),
+    )
     write_json(qcurl["path"], qcurl["payload"])
 
     assert_artifacts_match(baseline["path"], qcurl["path"])

@@ -42,6 +42,16 @@ def _append_req_id(url: str, req_id: str) -> str:
     return f"{url}{sep}id={req_id}"
 
 
+def _hes_accept_encoding_payload(headers: dict, response_headers: dict, body_len: int, body_sha: str) -> dict:
+    return {
+        "kind": "accept_encoding",
+        "request_accept_encoding": str(headers.get("accept-encoding") or ""),
+        "response_content_encoding": str(response_headers.get("content-encoding") or ""),
+        "body_len": int(body_len),
+        "body_sha256": body_sha,
+    }
+
+
 def test_p1_accept_encoding_gzip_http_1_1(env, lc_observe_http):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
@@ -101,6 +111,12 @@ def test_p1_accept_encoding_gzip_http_1_1(env, lc_observe_http):
         baseline["payload"]["response"]["status"] = obs.status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs.response_headers)
+        baseline["payload"]["hes"] = _hes_accept_encoding_payload(
+            dict(obs.headers),
+            dict(obs.response_headers),
+            expected_len,
+            expected_sha,
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -134,6 +150,12 @@ def test_p1_accept_encoding_gzip_http_1_1(env, lc_observe_http):
         qcurl["payload"]["response"]["status"] = obs.status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs.response_headers)
+        qcurl["payload"]["hes"] = _hes_accept_encoding_payload(
+            dict(obs.headers),
+            dict(obs.response_headers),
+            expected_len,
+            expected_sha,
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert_artifacts_match(baseline["path"], qcurl["path"])

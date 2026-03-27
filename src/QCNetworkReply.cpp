@@ -32,7 +32,9 @@
 #include <cstdio>
 #include <ctime>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <random>
 
 namespace QCurl {
 
@@ -568,6 +570,26 @@ struct AttemptErrorInfo
     return info;
 }
 
+void applyMockResponseHeaders(QCNetworkReplyPrivate *d,
+                              const QCNetworkMockHandler::MockData &mockData)
+{
+    if (!d) {
+        return;
+    }
+
+    if (mockData.rawHeaderData.has_value()) {
+        d->headerData = mockData.rawHeaderData.value();
+        return;
+    }
+
+    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
+        d->headerData.append(it.key());
+        d->headerData.append(": ");
+        d->headerData.append(it.value());
+        d->headerData.append('\n');
+    }
+}
+
 [[nodiscard]] std::optional<std::chrono::milliseconds> advanceRetryIfNeeded(QCNetworkReplyPrivate *d,
                                                                             NetworkError error)
 {
@@ -645,6 +667,305 @@ void scheduleAsyncRetry(QPointer<QCNetworkReply> safeReply,
         safeReply->execute();
     });
 }
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+enum class TestMockChaosAction
+{
+    None,
+    PauseRecv,
+    Cancel,
+};
+
+enum class TestMockChaosActionPoint
+{
+    BeforeFirstChunk,
+    AfterFirstChunk,
+    BeforeFinish,
+};
+
+struct TestMockChaosConfig
+{
+    quint32 seed                          = 1u;
+    int maxChunkBytes                     = 0;
+    int chunkDelayMs                      = 0;
+    TestMockChaosAction action            = TestMockChaosAction::None;
+    TestMockChaosActionPoint actionPoint  = TestMockChaosActionPoint::AfterFirstChunk;
+    int resumeDelayMs                     = 0;
+};
+
+struct TestMockChaosReplayState
+{
+    QPointer<QCNetworkReply> reply;
+    QCNetworkReplyPrivate *d = nullptr;
+    QCNetworkMockHandler::MockData mockData;
+    QList<QByteArray> chunks;
+    TestMockChaosConfig config;
+    qint64 totalBytes  = 0;
+    int nextChunkIndex = 0;
+    bool initialized   = false;
+    bool actionFired   = false;
+};
+
+[[nodiscard]] quint32 fnv1a32(const QByteArray &bytes)
+{
+    quint32 hash = 2166136261u;
+    for (const unsigned char byte : bytes) {
+        hash ^= byte;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+[[nodiscard]] std::optional<TestMockChaosConfig> testMockChaosConfigFromEnv()
+{
+    const QByteArray raw = qgetenv("QCURL_TEST_MOCK_CHAOS").trimmed();
+    if (raw.isEmpty() || raw == "0") {
+        return std::nullopt;
+    }
+
+    TestMockChaosConfig config;
+    const QList<QByteArray> entries = raw.split(';');
+    for (QByteArray entry : entries) {
+        entry = entry.trimmed();
+        if (entry.isEmpty() || entry == "1") {
+            continue;
+        }
+
+        const int eqPos = entry.indexOf('=');
+        if (eqPos <= 0) {
+            continue;
+        }
+
+        const QByteArray key   = entry.left(eqPos).trimmed().toLower();
+        const QByteArray value = entry.mid(eqPos + 1).trimmed().toLower();
+
+        if (key == "enabled" && (value == "0" || value == "false" || value == "off")) {
+            return std::nullopt;
+        }
+
+        if (key == "seed") {
+            bool ok            = false;
+            const quint32 seed = value.toUInt(&ok);
+            if (ok) {
+                config.seed = seed;
+            }
+            continue;
+        }
+
+        if (key == "max_chunk_bytes" || key == "chunk_bytes") {
+            bool ok            = false;
+            const int chunkMax = value.toInt(&ok);
+            if (ok) {
+                config.maxChunkBytes = qMax(0, chunkMax);
+            }
+            continue;
+        }
+
+        if (key == "chunk_delay_ms") {
+            bool ok        = false;
+            const int delay = value.toInt(&ok);
+            if (ok) {
+                config.chunkDelayMs = qMax(0, delay);
+            }
+            continue;
+        }
+
+        if (key == "resume_delay_ms") {
+            bool ok         = false;
+            const int delay = value.toInt(&ok);
+            if (ok) {
+                config.resumeDelayMs = qMax(0, delay);
+            }
+            continue;
+        }
+
+        if (key == "action") {
+            if (value == "pause" || value == "pause_recv") {
+                config.action = TestMockChaosAction::PauseRecv;
+            } else if (value == "cancel") {
+                config.action = TestMockChaosAction::Cancel;
+            } else {
+                config.action = TestMockChaosAction::None;
+            }
+            continue;
+        }
+
+        if (key == "action_point") {
+            if (value == "before_first_chunk") {
+                config.actionPoint = TestMockChaosActionPoint::BeforeFirstChunk;
+            } else if (value == "before_finish") {
+                config.actionPoint = TestMockChaosActionPoint::BeforeFinish;
+            } else {
+                config.actionPoint = TestMockChaosActionPoint::AfterFirstChunk;
+            }
+        }
+    }
+
+    return config;
+}
+
+[[nodiscard]] QList<QByteArray> buildDeterministicMockChunks(const QByteArray &payload,
+                                                             const TestMockChaosConfig &config,
+                                                             HttpMethod method,
+                                                             const QUrl &url)
+{
+    QList<QByteArray> chunks;
+    if (payload.isEmpty()) {
+        return chunks;
+    }
+
+    const int maxChunkBytes = config.maxChunkBytes > 0 ? config.maxChunkBytes : payload.size();
+    if (maxChunkBytes >= payload.size()) {
+        chunks.append(payload);
+        return chunks;
+    }
+
+    const QByteArray salt = QByteArray::number(static_cast<int>(method))
+                            + QByteArrayLiteral("|")
+                            + url.toString().toUtf8()
+                            + QByteArrayLiteral("|")
+                            + QByteArray::number(payload.size());
+    std::mt19937 engine(config.seed ^ fnv1a32(salt));
+
+    int offset = 0;
+    while (offset < payload.size()) {
+        const int remaining = payload.size() - offset;
+        const int upper     = qMin(maxChunkBytes, remaining);
+        std::uniform_int_distribution<int> dist(1, upper);
+        const int chunkSize = dist(engine);
+        chunks.append(payload.mid(offset, chunkSize));
+        offset += chunkSize;
+    }
+    return chunks;
+}
+
+void scheduleTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &state, int delayMs);
+
+[[nodiscard]] bool triggerTestMockChaosAction(
+    const std::shared_ptr<TestMockChaosReplayState> &state, TestMockChaosActionPoint point)
+{
+    if (!state || !state->reply || state->actionFired || state->config.action == TestMockChaosAction::None
+        || state->config.actionPoint != point) {
+        return false;
+    }
+
+    state->actionFired = true;
+    auto *reply        = state->reply.data();
+    if (state->config.action == TestMockChaosAction::Cancel) {
+        reply->cancel();
+        return true;
+    }
+
+    state->d->userPauseMask = CURLPAUSE_RECV;
+    state->d->setState(ReplyState::Paused);
+    if (reply->state() == ReplyState::Paused && state->config.resumeDelayMs > 0) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        QCNetworkReplyPrivate *d = state->d;
+        QTimer::singleShot(state->config.resumeDelayMs, reply, [safeReply, d]() {
+            if (safeReply && d && d->state == ReplyState::Paused) {
+                d->userPauseMask = 0;
+                d->setState(ReplyState::Running);
+            }
+        });
+    }
+    return reply->state() == ReplyState::Paused;
+}
+
+void runTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &state)
+{
+    if (!state || !state->reply || !state->d) {
+        return;
+    }
+
+    QCNetworkReply *reply      = state->reply.data();
+    QCNetworkReplyPrivate *d   = state->d;
+    const ReplyState curState  = d->state;
+    const bool terminalReached = curState == ReplyState::Cancelled || curState == ReplyState::Finished
+                                 || curState == ReplyState::Error;
+    if (terminalReached) {
+        return;
+    }
+
+    if (curState == ReplyState::Paused) {
+        scheduleTestMockChaosStep(state, 1);
+        return;
+    }
+
+    if (!state->initialized) {
+        resetForRetry(d, false);
+        d->downloadTotal   = state->totalBytes;
+        d->bytesDownloaded = 0;
+        applyMockResponseHeaders(d, state->mockData);
+        state->initialized = true;
+    }
+
+    if (state->nextChunkIndex == 0
+        && triggerTestMockChaosAction(state, TestMockChaosActionPoint::BeforeFirstChunk)) {
+        if (state->reply && d->state == ReplyState::Paused) {
+            scheduleTestMockChaosStep(state, 1);
+        }
+        return;
+    }
+
+    if (state->nextChunkIndex < state->chunks.size()) {
+        const QByteArray chunk = state->chunks.at(state->nextChunkIndex);
+        state->nextChunkIndex += 1;
+
+        if (!chunk.isEmpty()) {
+            d->bodyBuffer.append(chunk);
+            d->bytesDownloaded += chunk.size();
+            emit reply->readyRead();
+            emit reply->downloadProgress(d->bytesDownloaded, d->downloadTotal);
+        }
+
+        if (state->nextChunkIndex == 1
+            && triggerTestMockChaosAction(state, TestMockChaosActionPoint::AfterFirstChunk)) {
+            if (state->reply && d->state == ReplyState::Paused) {
+                scheduleTestMockChaosStep(state, 1);
+            }
+            return;
+        }
+    }
+
+    if (state->nextChunkIndex < state->chunks.size()) {
+        scheduleTestMockChaosStep(state, state->config.chunkDelayMs);
+        return;
+    }
+
+    if (triggerTestMockChaosAction(state, TestMockChaosActionPoint::BeforeFinish)) {
+        if (state->reply && d->state == ReplyState::Paused) {
+            scheduleTestMockChaosStep(state, 1);
+        }
+        return;
+    }
+
+    const auto info = attemptErrorFromMockData(d, state->mockData);
+    if (info.error == NetworkError::NoError) {
+        d->setState(ReplyState::Finished);
+        return;
+    }
+
+    const auto delay = advanceRetryIfNeeded(d, info.error);
+    if (delay.has_value()) {
+        scheduleAsyncRetry(state->reply, d, delay.value());
+        return;
+    }
+
+    d->setError(info.error, info.message);
+    d->setState(ReplyState::Error);
+}
+
+void scheduleTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &state, int delayMs)
+{
+    if (!state || !state->reply) {
+        return;
+    }
+
+    QTimer::singleShot(delayMs > 0 ? delayMs : 0, state->reply.data(), [state]() {
+        runTestMockChaosStep(state);
+    });
+}
+#endif
 
 } // namespace
 
@@ -3086,17 +3407,7 @@ void QCNetworkReply::execute()
                         d->bytesDownloaded = mockData.response.size();
                     }
 
-                    if (mockData.rawHeaderData.has_value()) {
-                        d->headerData = mockData.rawHeaderData.value();
-                    } else {
-                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend();
-                             ++it) {
-                            d->headerData.append(it.key());
-                            d->headerData.append(": ");
-                            d->headerData.append(it.value());
-                            d->headerData.append('\n');
-                        }
-                    }
+                    applyMockResponseHeaders(d, mockData);
 
                     const auto info = attemptErrorFromMockData(d, mockData);
                     if (info.error == NetworkError::NoError) {
@@ -3155,6 +3466,24 @@ void QCNetworkReply::execute()
                         return;
                     }
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+                    if (const auto chaosConfig = testMockChaosConfigFromEnv(); chaosConfig.has_value()) {
+                        auto replayState      = std::make_shared<TestMockChaosReplayState>();
+                        replayState->reply    = safeThis;
+                        replayState->d        = d;
+                        replayState->mockData = mockData;
+                        replayState->config   = chaosConfig.value();
+                        replayState->totalBytes = mockData.response.size();
+                        replayState->chunks
+                            = buildDeterministicMockChunks(mockData.response,
+                                                           replayState->config,
+                                                           normalizedMethod,
+                                                           normalizedUrl);
+                        scheduleTestMockChaosStep(replayState, 0);
+                        return;
+                    }
+#endif
+
                     resetForRetry(d, false);
 
                     if (!mockData.response.isEmpty()) {
@@ -3163,17 +3492,7 @@ void QCNetworkReply::execute()
                         emit safeThis->readyRead();
                     }
 
-                    if (mockData.rawHeaderData.has_value()) {
-                        d->headerData = mockData.rawHeaderData.value();
-                    } else {
-                        for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend();
-                             ++it) {
-                            d->headerData.append(it.key());
-                            d->headerData.append(": ");
-                            d->headerData.append(it.value());
-                            d->headerData.append('\n');
-                        }
-                    }
+                    applyMockResponseHeaders(d, mockData);
 
                     const auto info = attemptErrorFromMockData(d, mockData);
                     if (info.error == NetworkError::NoError) {

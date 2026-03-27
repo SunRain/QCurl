@@ -1,0 +1,120 @@
+# UCE nightly：统一证据门禁 + sanitizer 放大
+name: UCE Nightly
+
+on:
+  schedule:
+    - cron: '20 17 * * *'
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+  UCE_RUN_ID: nightly-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  uce_nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            qt6-base-dev \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            zlib1g-dev \
+            python3 \
+            python3-pip \
+            apache2 \
+            apache2-dev \
+            libapache2-mod-http2 \
+            libevent-dev \
+            strace
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt
+
+      - name: Ensure curl testenv tool paths (httpd/apxs)
+        run: |
+          set -euo pipefail
+          if [ ! -x /usr/bin/httpd ] && command -v apache2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apache2)" /usr/bin/httpd
+          fi
+          if [ ! -x /usr/bin/apxs ] && command -v apxs2 >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v apxs2)" /usr/bin/apxs
+          fi
+
+      - name: Configure nightly build
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-nightly \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBUILD_TESTING=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_BENCHMARKS=OFF \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON
+
+      - name: Build nightly targets
+        run: |
+          set -euo pipefail
+          cmake --build build-nightly --parallel
+
+      - name: Run UCE nightly tier
+        run: |
+          set -euo pipefail
+          python3 scripts/run_uce_gate.py --tier nightly --build-dir build-nightly --run-id "${{ env.UCE_RUN_ID }}"
+
+      - name: Run ASan/UBSan/LSan bundle
+        run: |
+          set -euo pipefail
+          python3 scripts/run_uce_sanitizers.py \
+            --profile asan-ubsan-lsan \
+            --build-dir build-asan \
+            --output-dir build/evidence/uce-sanitizers/asan \
+            --run-id "${{ env.UCE_RUN_ID }}"
+
+      - name: Run TSAN subset
+        run: |
+          set -euo pipefail
+          python3 scripts/run_uce_sanitizers.py \
+            --profile tsan \
+            --build-dir build-tsan \
+            --output-dir build/evidence/uce-sanitizers/tsan \
+            --run-id "${{ env.UCE_RUN_ID }}"
+
+      - name: Upload UCE nightly evidence [required]
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uce-nightly-${{ env.UCE_RUN_ID }}
+          path: |
+            build-nightly/evidence/uce/${{ env.UCE_RUN_ID }}/manifest.json
+            build-nightly/evidence/uce/${{ env.UCE_RUN_ID }}/policy_violations.json
+            build-nightly/evidence/uce/${{ env.UCE_RUN_ID }}.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload sanitizer evidence [required]
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uce-sanitizers-${{ env.UCE_RUN_ID }}
+          path: |
+            build/evidence/uce-sanitizers/asan/
+            build/evidence/uce-sanitizers/tsan/
+          retention-days: 14
+          if-no-files-found: error

@@ -1,5 +1,5 @@
-# “基本无问题”验收门禁（可复核 + 强制归档工件）
-name: Acceptance Gate (basic-no-problem)
+# legacy acceptance：basic-no-problem（可复核 + 强制归档工件）
+name: Acceptance Gate (legacy basic-no-problem)
 
 on:
   push:

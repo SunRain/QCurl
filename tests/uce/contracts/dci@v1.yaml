@@ -1,0 +1,31 @@
+{
+  "schema": "qcurl-uce/dci-contract@v1",
+  "schema_version": 1,
+  "contract_id": "dci@v1",
+  "timeline_contract": "timeline@v1",
+  "runner": "tst_QCNetworkReply",
+  "seed_env": "QCURL_TEST_MOCK_CHAOS_SEED",
+  "cases": {
+    "testAsyncMockChaosPauseResume": {
+      "description": "固定 seed 的 pause/resume mock chaos，用于证明 pause quiet window 与恢复后 deterministic 完成。",
+      "required_tiers": [
+        "nightly",
+        "soak"
+      ]
+    },
+    "testAsyncMockChaosCancel": {
+      "description": "固定 seed 的 cancel mock chaos，用于证明 cancelled 终态与 cancel 后 quiet window。",
+      "required_tiers": [
+        "nightly",
+        "soak"
+      ]
+    },
+    "testAsyncMockChaosDeleteLater": {
+      "description": "固定 seed 的 deleteLater mock chaos，用于放大生命周期/销毁竞态，并保留 timeline 证据。",
+      "required_tiers": [
+        "nightly",
+        "soak"
+      ]
+    }
+  }
+}

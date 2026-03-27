@@ -82,6 +82,47 @@ def _connection_observed(entries: List[Dict]) -> Dict:
     }
 
 
+def _connection_boundary(proto: str) -> Dict:
+    return {
+        "scheme": "http",
+        "http_version": proto,
+        "proxy_mode": "direct",
+        "alpn": proto,
+        "sni": False,
+        "client_cert": False,
+        "pinning": "none",
+    }
+
+
+def _boundary_key(boundary: Dict) -> str:
+    return ";".join(f"{key}={boundary[key]}" for key in sorted(boundary))
+
+
+def _make_ctbp_payload(*, proto: str, case_variant: str, observed: Dict) -> Dict:
+    boundary = _connection_boundary(proto)
+    boundary_key = _boundary_key(boundary)
+    conn_seq = [int(item) for item in observed.get("conn_seq") or []]
+    return {
+        "schema": "qcurl-lc/ctbp@v1",
+        "kind": "connection_reuse",
+        "boundary": boundary,
+        "boundary_key": boundary_key,
+        "connection_group_id": f"{case_variant}:{proto}",
+        "request_count": int(observed.get("request_count") or 0),
+        "unique_connections": int(observed.get("unique_connections") or 0),
+        "expected_unique_connections": 1,
+        "conn_seq": conn_seq,
+        "requests": [
+            {
+                "seq": index + 1,
+                "conn_id": conn_id,
+                "boundary_key": boundary_key,
+            }
+            for index, conn_id in enumerate(conn_seq)
+        ],
+    }
+
+
 def test_p0_connection_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, tmp_path):
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
@@ -140,6 +181,11 @@ def test_p0_connection_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, t
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = b0.get("response_headers") or {}
         baseline["payload"]["connection_observed"] = _connection_observed(b_entries)
+        baseline["payload"]["ctbp"] = _make_ctbp_payload(
+            proto=proto,
+            case_variant=case_variant,
+            observed=baseline["payload"]["connection_observed"],
+        )
         write_json(baseline["path"], baseline["payload"])
 
         observe_log.write_text("", encoding="utf-8")
@@ -175,6 +221,11 @@ def test_p0_connection_reuse_keepalive_http_1_1(env, lc_logs, lc_observe_http, t
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = q0.get("response_headers") or {}
         qcurl["payload"]["connection_observed"] = _connection_observed(q_entries)
+        qcurl["payload"]["ctbp"] = _make_ctbp_payload(
+            proto=proto,
+            case_variant=case_variant,
+            observed=qcurl["payload"]["connection_observed"],
+        )
         write_json(qcurl["path"], qcurl["payload"])
 
         assert baseline["payload"]["connection_observed"]["unique_connections"] == 1

@@ -1,0 +1,33 @@
+{
+  "schema": "qcurl-uce/hes-contract@v1",
+  "schema_version": 1,
+  "contract_id": "hes@v1",
+  "required_runners": [
+    "baseline",
+    "qcurl"
+  ],
+  "tiers": {
+    "pr": {
+      "required_kinds": [
+        "accept_encoding",
+        "raw_headers"
+      ]
+    },
+    "nightly": {
+      "required_kinds": [
+        "accept_encoding",
+        "raw_headers",
+        "expect_100_continue",
+        "chunked_upload"
+      ]
+    },
+    "soak": {
+      "required_kinds": [
+        "accept_encoding",
+        "raw_headers",
+        "expect_100_continue",
+        "chunked_upload"
+      ]
+    }
+  }
+}

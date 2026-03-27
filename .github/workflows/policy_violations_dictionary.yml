@@ -7,14 +7,14 @@ on:
     paths:
       - 'scripts/**'
       - 'tests/libcurl_consistency/**'
-      - 'helloagents/modules/policy_violations_dictionary.*'
+      - '.helloagents/modules/policy_violations_dictionary.*'
       - '.github/workflows/policy_violations_dictionary.yml'
   push:
     branches: [ master, main, develop ]
     paths:
       - 'scripts/**'
       - 'tests/libcurl_consistency/**'
-      - 'helloagents/modules/policy_violations_dictionary.*'
+      - '.helloagents/modules/policy_violations_dictionary.*'
       - '.github/workflows/policy_violations_dictionary.yml'
   workflow_dispatch:
 

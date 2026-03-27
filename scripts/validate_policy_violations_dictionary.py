@@ -125,13 +125,13 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Validate policy_violations dictionary and forbid unregistered codes.")
     parser.add_argument(
         "--dictionary",
-        default="helloagents/modules/policy_violations_dictionary.json",
-        help="Path to machine-readable dictionary JSON (default: helloagents/modules/policy_violations_dictionary.json).",
+        default=".helloagents/modules/policy_violations_dictionary.json",
+        help="Path to machine-readable dictionary JSON (default: .helloagents/modules/policy_violations_dictionary.json).",
     )
     parser.add_argument(
         "--markdown",
-        default="helloagents/modules/policy_violations_dictionary.md",
-        help="Path to human-readable dictionary MD (default: helloagents/modules/policy_violations_dictionary.md).",
+        default=".helloagents/modules/policy_violations_dictionary.md",
+        help="Path to human-readable dictionary MD (default: .helloagents/modules/policy_violations_dictionary.md).",
     )
     args = parser.parse_args(argv)
 

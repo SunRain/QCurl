@@ -2,6 +2,18 @@
 
 本文总结默认 gate 的可证明边界、非证明边界和最可靠的证据入口。
 
+## 0. 当前入口分层
+
+- `scripts/run_uce_gate.py --tier pr|nightly|soak`
+  - UCE 统一证据入口：产出 `manifest.json`、`policy_violations.json`、专题 report、`test-artifacts/` 与 `tar.gz`
+  - `pr`：最小一致性证据（offline + `libcurl_consistency p0/p1` + TLC/HES 最小 contract）
+  - `nightly`：在 `pr` 基础上补齐 DCI fixed seed、CTBP、HES 扩展、BP（backpressure）与 netproof/strace
+  - `soak`：沿用 nightly contract，并放大固定 seed 组与长跑时长
+- `scripts/run_basic_no_problem_gate.py`
+  - 仍保留为 legacy acceptance gate；在 UCE 完整接管 acceptance 归档前继续作为并行入口
+- `tests/libcurl_consistency/run_gate.py`
+  - 仍保留为专题 provider；UCE 复用其 evidence，不替换其专题 contract
+
 ## 1. 当前最强的证据来源
 
 - `tests/libcurl_consistency/run_gate.py`
@@ -26,6 +38,15 @@
 - 所有头部、压缩和时序语义
 
 默认 gate 比较的是“被定义为可观测 contract 的字段”，不会把所有实现细节都拉进来比较。
+
+当前已纳入 UCE 的“专题补强”如下：
+
+- TLC：时间线不变量（headers-before-body / pause quiet window / terminal quiet）
+- CTBP：连接复用与 TLS 边界
+- HES：头部 / 压缩 / `Expect: 100-continue` / chunked 上传语义
+- DCI：固定 seed 的 mock chaos（pause / cancel / deleteLater）与 Qt timeline 证据（deterministic）
+- BP：backpressure 语义合同（buffer pressure + user pause/resume；独立于 DCI fixed-seed suite）
+- HFG：offline suite 的 `strace` network syscall 证明
 
 ## 3. 应如何解读 P0
 

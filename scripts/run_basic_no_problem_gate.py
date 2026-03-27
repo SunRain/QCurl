@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-“基本无问题”验收门禁（强制归档工件）
+“基本无问题”验收门禁（legacy acceptance，强制归档工件）
 
 门禁组合（全部必须通过）：
 1) QtTest 证据门禁：LABELS=offline（skip=fail，max-skips=0）

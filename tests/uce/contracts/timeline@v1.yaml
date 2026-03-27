@@ -1,0 +1,111 @@
+{
+  "schema": "qcurl-uce/timeline-contract@v1",
+  "schema_version": 1,
+  "contract_id": "timeline@v1",
+  "timeline_event_schema": "qcurl-uce/timeline-event@v1",
+  "events": {
+    "request_headers": {
+      "phase": "headers",
+      "description": "客户端请求头或握手头已对外可观测。"
+    },
+    "response_headers": {
+      "phase": "headers",
+      "description": "响应头已对外可观测。"
+    },
+    "body_chunk": {
+      "phase": "body",
+      "description": "已观测到 body/chunk/frame 数据。"
+    },
+    "body_complete": {
+      "phase": "body",
+      "description": "body 传输已完成，保留总字节数摘要。"
+    },
+    "download_progress_summary": {
+      "phase": "progress",
+      "description": "下载进度摘要（含 monotonic/now_max/total_max）。"
+    },
+    "upload_progress_summary": {
+      "phase": "progress",
+      "description": "上传进度摘要（含 monotonic/now_max/total_max）。"
+    },
+    "start": {
+      "phase": "lifecycle",
+      "description": "请求启动。"
+    },
+    "first_byte": {
+      "phase": "body",
+      "description": "首次收到 body 数据。"
+    },
+    "pause_req": {
+      "phase": "control",
+      "description": "请求进入 pause 流程。"
+    },
+    "pause_effective": {
+      "phase": "control",
+      "description": "pause 已真正生效，后续字节计数应静止。"
+    },
+    "resume_req": {
+      "phase": "control",
+      "description": "请求恢复传输。"
+    },
+    "resume_effective": {
+      "phase": "control",
+      "description": "恢复已真正生效。"
+    },
+    "backpressure_on": {
+      "phase": "control",
+      "description": "backpressure 打开。"
+    },
+    "backpressure_off": {
+      "phase": "control",
+      "description": "backpressure 关闭。"
+    },
+    "upload_pause": {
+      "phase": "control",
+      "description": "上传侧 READFUNC_PAUSE 进入暂停。"
+    },
+    "upload_resume": {
+      "phase": "control",
+      "description": "上传侧 READFUNC_PAUSE 自动恢复。"
+    },
+    "close_frame": {
+      "phase": "control",
+      "description": "WebSocket close frame 已观测。"
+    },
+    "finished": {
+      "phase": "terminal",
+      "terminal": true,
+      "description": "请求/连接达到终态。"
+    }
+  },
+  "invariants": [
+    {
+      "id": "request_before_response",
+      "description": "若同时存在 request_headers 与 response_headers，则请求头必须先于响应头出现。"
+    },
+    {
+      "id": "headers_before_body",
+      "description": "若同时存在 headers 与 body/progress 事件，则 body/progress 只能发生在 headers 之后。"
+    },
+    {
+      "id": "progress_monotonic",
+      "description": "进度/累计字节只能单调不减；progress_summary.monotonic 必须为 true。"
+    },
+    {
+      "id": "finished_once",
+      "description": "finished 终态事件每个 stream 最多出现一次。"
+    },
+    {
+      "id": "pause_window_quiet",
+      "description": "pause_effective 到 resume_req 之间，bytes_delivered_total/bytes_written_total 不能增长。"
+    },
+    {
+      "id": "backpressure_cycle",
+      "description": "backpressure_off 不能先于 backpressure_on，且开启后必须能看到关闭。"
+    },
+    {
+      "id": "terminal_quiet",
+      "description": "finished 之后不得再出现 body/progress/control 增长事件。"
+    }
+  ]
+}

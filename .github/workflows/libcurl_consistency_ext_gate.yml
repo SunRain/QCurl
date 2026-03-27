@@ -1,5 +1,5 @@
-# libcurl_consistency ext gate（HTTP/3 required + ext）
-name: Acceptance Gate (libcurl_consistency, HTTP/3 required + ext)
+# legacy/ext provider：libcurl_consistency ext gate（HTTP/3 required + ext）
+name: Acceptance Gate (legacy libcurl_consistency ext, HTTP/3 required)
 
 on:
   push:
