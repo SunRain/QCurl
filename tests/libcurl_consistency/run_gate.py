@@ -552,6 +552,8 @@ def _gate_env(cfg: GateConfig) -> Dict[str, str]:
     env["CURLINFO"] = str(cfg.curl_build_dir / "src" / "curlinfo")
     env.setdefault("QCURL_LC_COLLECT_LOGS", "1")
     env.setdefault("QCURL_LC_QTTEST_TIMEOUT", str(cfg.qt_timeout_s))
+    if cfg.suite in ("p2", "all"):
+        env.setdefault("QCURL_LC_EXPECT100_REPEAT", "2")
     if cfg.with_ext:
         env["QCURL_LC_EXT"] = "1"
     return env
@@ -575,6 +577,7 @@ def main(argv: List[str]) -> int:
     started = time.time()
     require_http3_raw = (os.environ.get("QCURL_REQUIRE_HTTP3") or "").strip()
     require_http3_enabled = require_http3_raw.lower() in ("1", "true", "yes", "on")
+    gate_env = _gate_env(cfg)
     report: Dict[str, object] = {
         "suite": cfg.suite,
         "with_ext": cfg.with_ext,
@@ -588,14 +591,15 @@ def main(argv: List[str]) -> int:
         "commands": [],
         "pytest_files": _pytest_files(cfg),
         "env": {
-            "QCURL_QTTEST": str(cfg.qcurl_build_dir / "tests" / "tst_LibcurlConsistency"),
-            "QCURL_LC_COLLECT_LOGS": "1",
-            "QCURL_LC_QTTEST_TIMEOUT": str(cfg.qt_timeout_s),
-            "QCURL_LC_EXT": "1" if cfg.with_ext else "0",
+            "QCURL_QTTEST": str(gate_env.get("QCURL_QTTEST") or ""),
+            "QCURL_LC_COLLECT_LOGS": str(gate_env.get("QCURL_LC_COLLECT_LOGS") or "0"),
+            "QCURL_LC_QTTEST_TIMEOUT": str(gate_env.get("QCURL_LC_QTTEST_TIMEOUT") or cfg.qt_timeout_s),
+            "QCURL_LC_EXT": "1" if str(gate_env.get("QCURL_LC_EXT") or "0") == "1" else "0",
+            "QCURL_LC_EXPECT100_REPEAT": str(gate_env.get("QCURL_LC_EXPECT100_REPEAT") or ""),
             "QCURL_REQUIRE_HTTP3": require_http3_raw if require_http3_raw else "0",
-            "CURL_BUILD_DIR": str(cfg.curl_build_dir),
-            "CURL": str(cfg.curl_build_dir / "src" / "curl"),
-            "CURLINFO": str(cfg.curl_build_dir / "src" / "curlinfo"),
+            "CURL_BUILD_DIR": str(gate_env.get("CURL_BUILD_DIR") or ""),
+            "CURL": str(gate_env.get("CURL") or ""),
+            "CURLINFO": str(gate_env.get("CURLINFO") or ""),
         },
         "warnings": [],
         "preflight_http3_required": {
@@ -643,8 +647,8 @@ def main(argv: List[str]) -> int:
         # 供应链/复跑证据：记录 Python 环境（版本 + pip freeze）并落盘到报告目录，便于审计复核。
         try:
             reports_dir = cfg.json_report.parent
-            py_ver = _run(["python3", "--version"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
-            pip_freeze = _run(["python3", "-m", "pip", "freeze"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+            py_ver = _run(["python3", "--version"], cwd=cfg.repo_root, env=gate_env, capture=True)
+            pip_freeze = _run(["python3", "-m", "pip", "freeze"], cwd=cfg.repo_root, env=gate_env, capture=True)
             env_text = []
             env_text.append("# python environment snapshot (for reproducibility/audit)\n")
             env_text.append(f"python3 --version: {(py_ver.stdout or py_ver.stderr or '').strip()}\n")
@@ -662,7 +666,7 @@ def main(argv: List[str]) -> int:
             reports_dir = cfg.json_report.parent
             nghttpx_h3_bin = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
             if nghttpx_h3_bin.exists():
-                ng_ver = _run([str(nghttpx_h3_bin), "--version"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+                ng_ver = _run([str(nghttpx_h3_bin), "--version"], cwd=cfg.repo_root, env=gate_env, capture=True)
                 out = (ng_ver.stdout or "") + "\n" + (ng_ver.stderr or "")
                 text = []
                 text.append("# nghttpx-h3 version snapshot (for reproducibility/audit)\n\n")
@@ -697,7 +701,7 @@ def main(argv: List[str]) -> int:
                 "bundled curl binary not found; cannot probe HTTP/3/WebSockets support (did you build qcurl_lc_deps?)"
             )
         else:
-            rc = _run([str(curl_bin), "-V"], cwd=cfg.repo_root, env=_gate_env(cfg), capture=True)
+            rc = _run([str(curl_bin), "-V"], cwd=cfg.repo_root, env=gate_env, capture=True)
             out = (rc.stdout or "") + "\n" + (rc.stderr or "")
             if out.strip():
                 sys.stderr.write(out.rstrip() + "\n")
@@ -724,7 +728,6 @@ def main(argv: List[str]) -> int:
                         "bundled curl does not report ws/wss in `curl -V`; WS cases may be skipped or fail."
                     )
 
-        env = _gate_env(cfg)
         pytest_cmd = [
             "pytest",
             "-q",
@@ -734,7 +737,7 @@ def main(argv: List[str]) -> int:
             *_pytest_files(cfg),
         ]
         report["commands"].append(pytest_cmd)
-        rc = _run(pytest_cmd, cwd=cfg.repo_root, env=env, capture=True)
+        rc = _run(pytest_cmd, cwd=cfg.repo_root, env=gate_env, capture=True)
         report["pytest_returncode"] = rc.returncode
         redacted_stdout = _redact_text(rc.stdout)
         redacted_stderr = _redact_text(rc.stderr)

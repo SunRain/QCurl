@@ -135,6 +135,7 @@ def test_ext_suite(case_id, env, lc_logs, tmp_path):
         qcurl_req_id = f"{trace_base}__qcurl"
 
         resolved_defaults = dict(case["defaults"])
+        resolved_defaults["ca_cert"] = env.ca.cert_file
         resolved_defaults["proto"] = proto
         resolved_defaults["req_id"] = baseline_req_id
         if "url" in resolved_defaults:

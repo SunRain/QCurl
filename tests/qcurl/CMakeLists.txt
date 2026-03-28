@@ -45,6 +45,7 @@ endfunction()
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
+target_compile_definitions(tst_CurlFeatureProbe PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
 target_compile_definitions(tst_QCNetworkReply PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp) # 重试机制测试
@@ -66,6 +67,7 @@ add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # 缓存机制测试
 add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp) # 缓存集成测试
 add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp) # 连接池测试
 add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # 网络路径与 DNS 控制（M4）
+target_compile_definitions(tst_QCNetworkNetworkPath PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp) # multi share handle（M6+）
 
 # Logger / middleware / cookie / cancel token 相关测试

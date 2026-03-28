@@ -41,7 +41,7 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 |------|---------|------|
 | **C++** | C++17 | 核心语言标准 |
 | **Qt6** | 6.2+ | QtCore、QtNetwork 模块 |
-| **libcurl** | 8.0+ | 底层网络传输（推荐 8.16.0+ 以支持完整特性） |
+| **libcurl** | 7.85.0+ | 底层网络传输（WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+） |
 | **CMake** | 3.16+ | 构建系统 |
 | **编译器** | GCC 11+、Clang 14+、MSVC 2019+ | 支持 C++17 |
 
@@ -468,7 +468,7 @@ version.setVersion(QCNetworkHttpVersion::Version::Http1_1);
 // HTTP/2
 version.setVersion(QCNetworkHttpVersion::Version::Http2);
 
-// HTTP/3 (需要 libcurl 8.0+)
+// HTTP/3（推荐 libcurl 8.16.0+ 且带 QUIC backend）
 version.setVersion(QCNetworkHttpVersion::Version::Http3);
 
 // 自动降级 (HTTP/3 → HTTP/2 → HTTP/1.1)
@@ -1033,7 +1033,7 @@ enum class QCNetworkRequestPriority {
 |------|---------|---------|------|
 | CMake | 3.16 | 3.20+ | 构建系统 |
 | Qt6 | 6.2 | 6.5+ | QtCore、QtNetwork |
-| libcurl | 8.0 | 8.16+ | HTTP/3 需要 8.0+，WebSocket 需要 7.86+ |
+| libcurl | 7.85.0 | 8.16+ | 运行时最低 7.85.0；WebSocket 需要 7.86+；HTTP/3 推荐 8.16+ 且带 QUIC backend |
 | GCC | 11.0 | 12.0+ | Linux |
 | Clang | 14.0 | 15.0+ | macOS |
 | MSVC | 2019 | 2022 | Windows |

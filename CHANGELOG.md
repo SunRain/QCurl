@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-03-27
+
+### Changed
+- 统一 libcurl 版本合同到 `>= 7.85.0`：`find_package(CURL ...)`、bundled provider 校验与 `CPACK_*` 发行包依赖声明现已一致；WebSocket 仍要求 `>= 7.86.0`，HTTP/3 文档口径调整为“推荐更高版本且带 QUIC backend”
+- 移除协议白名单 deprecated fallback：`QCNetworkReply` 与 `tests/libcurl_consistency/http_baseline_client.cpp` 仅保留 `CURLOPT_PROTOCOLS_STR` / `CURLOPT_REDIR_PROTOCOLS_STR`，不再回退到 `CURLOPT_PROTOCOLS` / `CURLOPT_REDIR_PROTOCOLS`
+- 新增 `qcurl_deprecated_curl_api_guard` 源码门禁，自动扫描 `src/` + `tests/` 中的 deprecated curl option/info 与 `CURL_IGNORE_DEPRECATION(` 回流
+
+### Breaking
+- 运行时 `libcurl < 7.85.0` 现在会在请求 preflight 阶段稳定失败，并返回带升级建议的错误信息
+- 当运行库不支持 `CURLOPT_PROTOCOLS_STR` / `CURLOPT_REDIR_PROTOCOLS_STR` 时，不再尝试 legacy fallback；`QCUnsupportedSecurityOptionPolicy::Fail` 会直接报错，`Warn` 会显式记录“协议白名单未生效”的 capability warning
+
+### Testing
+- `cmake --build build -j"$(nproc)"`
+- `ctest --test-dir build --output-on-failure -R '^(tst_CurlFeatureProbe|tst_QCNetworkNetworkPath|qcurl_deprecated_curl_api_guard)$'`
+- `pytest -q tests/libcurl_consistency/test_p2_protocol_restrictions.py`
+
 ## 2026-03-24
 
 ### Changed

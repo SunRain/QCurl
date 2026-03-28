@@ -15,6 +15,8 @@ option(BUILD_TESTING "Build tests" ON)
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
 option(QCURL_BUILD_LIBCURL_CONSISTENCY "Build libcurl_consistency gate dependencies and use bundled curl (build/curl) for tests" OFF)
 
+set(QCURL_MIN_LIBCURL_VERSION "7.85.0")
+
 # 编译选项：启用所有警告
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
@@ -101,11 +103,17 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     unset(_qcurl_lc_curlver_contents)
     unset(_qcurl_lc_curlver_line)
 
+    if(QCURL_LIBCURL_VERSION_STRING VERSION_LESS "${QCURL_MIN_LIBCURL_VERSION}")
+        message(FATAL_ERROR
+            "bundled libcurl ${QCURL_LIBCURL_VERSION_STRING} is too old; "
+            "QCurl requires libcurl >= ${QCURL_MIN_LIBCURL_VERSION}")
+    endif()
+
     set(QCURL_LIBCURL_PROVIDER "bundled(curl submodule @ ${CMAKE_BINARY_DIR}/curl)")
     # 兼容：部分子目录仍使用 CURL_VERSION_STRING 输出信息
     set(CURL_VERSION_STRING "${QCURL_LIBCURL_VERSION_STRING}")
 else()
-    find_package(CURL 8.0 REQUIRED)
+    find_package(CURL ${QCURL_MIN_LIBCURL_VERSION} REQUIRED)
     set(QCURL_LIBCURL_PROVIDER "system(find_package(CURL))")
     set(QCURL_LIBCURL_VERSION_STRING "${CURL_VERSION_STRING}")
 endif()
@@ -231,8 +239,10 @@ if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     set(CPACK_PACKAGE_CONTACT "qcurl@example.com")
     set(CPACK_GENERATOR "TGZ;DEB;RPM")
     set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6core6, libqt6network6, libcurl4 (>= 8.0)")
-    set(CPACK_RPM_PACKAGE_REQUIRES "qt6-qtbase >= 6.2, libcurl >= 8.0")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS
+        "libqt6core6, libqt6network6, libcurl4 (>= ${QCURL_MIN_LIBCURL_VERSION})")
+    set(CPACK_RPM_PACKAGE_REQUIRES
+        "qt6-qtbase >= 6.2, libcurl >= ${QCURL_MIN_LIBCURL_VERSION}")
     include(CPack)
 else()
     message(STATUS "QCURL_BUILD_LIBCURL_CONSISTENCY=ON：保留 install/export 以支持 consumer smoke，跳过 CPack 打包")

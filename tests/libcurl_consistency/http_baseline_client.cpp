@@ -268,164 +268,6 @@ std::string toLowerAscii(const std::string &s)
     return out;
 }
 
-std::optional<long> protocolMaskFromCsv(const std::string &csv)
-{
-    long mask = 0;
-    std::string token;
-
-    auto flushToken = [&]() -> std::optional<long> {
-        const auto first = token.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) {
-            return std::nullopt;
-        }
-        const auto last     = token.find_last_not_of(" \t\r\n");
-        const std::string t = toLowerAscii(token.substr(first, (last - first) + 1));
-        token.clear();
-        if (t.empty()) {
-            return std::nullopt;
-        }
-        if (t == "all") {
-            return CURLPROTO_ALL;
-        }
-
-        long bit = 0;
-        if (t == "http") {
-            bit = CURLPROTO_HTTP;
-        } else if (t == "https") {
-            bit = CURLPROTO_HTTPS;
-#ifdef CURLPROTO_WS
-        } else if (t == "ws") {
-            bit = CURLPROTO_WS;
-#endif
-#ifdef CURLPROTO_WSS
-        } else if (t == "wss") {
-            bit = CURLPROTO_WSS;
-#endif
-        } else if (t == "ftp") {
-            bit = CURLPROTO_FTP;
-        } else if (t == "ftps") {
-            bit = CURLPROTO_FTPS;
-        } else if (t == "file") {
-            bit = CURLPROTO_FILE;
-#ifdef CURLPROTO_SCP
-        } else if (t == "scp") {
-            bit = CURLPROTO_SCP;
-#endif
-#ifdef CURLPROTO_SFTP
-        } else if (t == "sftp") {
-            bit = CURLPROTO_SFTP;
-#endif
-#ifdef CURLPROTO_TELNET
-        } else if (t == "telnet") {
-            bit = CURLPROTO_TELNET;
-#endif
-#ifdef CURLPROTO_DICT
-        } else if (t == "dict") {
-            bit = CURLPROTO_DICT;
-#endif
-#ifdef CURLPROTO_LDAP
-        } else if (t == "ldap") {
-            bit = CURLPROTO_LDAP;
-#endif
-#ifdef CURLPROTO_LDAPS
-        } else if (t == "ldaps") {
-            bit = CURLPROTO_LDAPS;
-#endif
-#ifdef CURLPROTO_IMAP
-        } else if (t == "imap") {
-            bit = CURLPROTO_IMAP;
-#endif
-#ifdef CURLPROTO_IMAPS
-        } else if (t == "imaps") {
-            bit = CURLPROTO_IMAPS;
-#endif
-#ifdef CURLPROTO_POP3
-        } else if (t == "pop3") {
-            bit = CURLPROTO_POP3;
-#endif
-#ifdef CURLPROTO_POP3S
-        } else if (t == "pop3s") {
-            bit = CURLPROTO_POP3S;
-#endif
-#ifdef CURLPROTO_SMTP
-        } else if (t == "smtp") {
-            bit = CURLPROTO_SMTP;
-#endif
-#ifdef CURLPROTO_SMTPS
-        } else if (t == "smtps") {
-            bit = CURLPROTO_SMTPS;
-#endif
-#ifdef CURLPROTO_RTSP
-        } else if (t == "rtsp") {
-            bit = CURLPROTO_RTSP;
-#endif
-#ifdef CURLPROTO_GOPHER
-        } else if (t == "gopher") {
-            bit = CURLPROTO_GOPHER;
-#endif
-#ifdef CURLPROTO_GOPHERS
-        } else if (t == "gophers") {
-            bit = CURLPROTO_GOPHERS;
-#endif
-#ifdef CURLPROTO_TFTP
-        } else if (t == "tftp") {
-            bit = CURLPROTO_TFTP;
-#endif
-#ifdef CURLPROTO_MQTT
-        } else if (t == "mqtt") {
-            bit = CURLPROTO_MQTT;
-#endif
-#ifdef CURLPROTO_IPFS
-        } else if (t == "ipfs") {
-            bit = CURLPROTO_IPFS;
-#endif
-#ifdef CURLPROTO_IPNS
-        } else if (t == "ipns") {
-            bit = CURLPROTO_IPNS;
-#endif
-#ifdef CURLPROTO_SMB
-        } else if (t == "smb") {
-            bit = CURLPROTO_SMB;
-#endif
-#ifdef CURLPROTO_SMBS
-        } else if (t == "smbs") {
-            bit = CURLPROTO_SMBS;
-#endif
-        } else {
-            return std::nullopt;
-        }
-        return bit;
-    };
-
-    const std::string lower = toLowerAscii(csv);
-    for (char c : lower) {
-        if (c == ',') {
-            const auto bit = flushToken();
-            if (!bit.has_value()) {
-                return std::nullopt;
-            }
-            if (bit.value() == CURLPROTO_ALL) {
-                return CURLPROTO_ALL;
-            }
-            mask |= bit.value();
-            continue;
-        }
-        token.push_back(c);
-    }
-    const auto bit = flushToken();
-    if (!bit.has_value()) {
-        return std::nullopt;
-    }
-    if (bit.value() == CURLPROTO_ALL) {
-        return CURLPROTO_ALL;
-    }
-    mask |= bit.value();
-    if (mask == 0) {
-        return std::nullopt;
-    }
-    return mask;
-}
-
 std::optional<unsigned long> httpAuthMask(const std::string &s)
 {
     const std::string v = toLowerAscii(s);
@@ -922,23 +764,10 @@ int main(int argc, char **argv)
                                                       CURLOPT_PROTOCOLS_STR,
                                                       args.allowedProtocols.value().c_str());
         if (protocolsRc == CURLE_UNKNOWN_OPTION || protocolsRc == CURLE_NOT_BUILT_IN) {
-            const auto maskOpt = protocolMaskFromCsv(args.allowedProtocols.value());
-            if (!maskOpt.has_value()) {
-                std::cerr << "invalid allowed-protocols: " << args.allowedProtocols.value() << "\n";
-                curl_easy_cleanup(curl);
-                curl_global_cleanup();
-                return 6;
-            }
-            std::cerr
-                << "[warn] CURLOPT_PROTOCOLS_STR unsupported, fallback to CURLOPT_PROTOCOLS\n";
-            const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_PROTOCOLS, maskOpt.value());
-            if (maskRc != CURLE_OK) {
-                std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS) failed: "
-                          << curl_easy_strerror(maskRc) << "\n";
-                curl_easy_cleanup(curl);
-                curl_global_cleanup();
-                return 5;
-            }
+            std::cerr << "unsupported allowed-protocols (requires CURLOPT_PROTOCOLS_STR)\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
         } else if (protocolsRc != CURLE_OK) {
             std::cerr << "curl_easy_setopt(CURLOPT_PROTOCOLS_STR) failed: "
                       << curl_easy_strerror(protocolsRc) << "\n";
@@ -952,24 +781,11 @@ int main(int argc, char **argv)
                                                   CURLOPT_REDIR_PROTOCOLS_STR,
                                                   args.allowedRedirProtocols.value().c_str());
         if (redirRc == CURLE_UNKNOWN_OPTION || redirRc == CURLE_NOT_BUILT_IN) {
-            const auto maskOpt = protocolMaskFromCsv(args.allowedRedirProtocols.value());
-            if (!maskOpt.has_value()) {
-                std::cerr << "invalid allowed-redir-protocols: "
-                          << args.allowedRedirProtocols.value() << "\n";
-                curl_easy_cleanup(curl);
-                curl_global_cleanup();
-                return 6;
-            }
-            std::cerr << "[warn] CURLOPT_REDIR_PROTOCOLS_STR unsupported, fallback to "
-                         "CURLOPT_REDIR_PROTOCOLS\n";
-            const CURLcode maskRc = curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, maskOpt.value());
-            if (maskRc != CURLE_OK) {
-                std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS) failed: "
-                          << curl_easy_strerror(maskRc) << "\n";
-                curl_easy_cleanup(curl);
-                curl_global_cleanup();
-                return 5;
-            }
+            std::cerr << "unsupported allowed-redir-protocols "
+                         "(requires CURLOPT_REDIR_PROTOCOLS_STR)\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
         } else if (redirRc != CURLE_OK) {
             std::cerr << "curl_easy_setopt(CURLOPT_REDIR_PROTOCOLS_STR) failed: "
                       << curl_easy_strerror(redirRc) << "\n";

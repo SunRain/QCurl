@@ -4,7 +4,7 @@
 
 [![Qt6](https://img.shields.io/badge/Qt-6.2+-41CD52?logo=qt)](https://www.qt.io/)
 [![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
-[![libcurl](https://img.shields.io/badge/libcurl-8.0+-073551?logo=curl)](https://curl.se/libcurl/)
+[![libcurl](https://img.shields.io/badge/libcurl-7.85%2B-073551?logo=curl)](https://curl.se/libcurl/)
 [![CMake](https://img.shields.io/badge/CMake-3.16+-064F8C?logo=cmake)](https://cmake.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -72,7 +72,7 @@
 | ----------- | ----- | ---------------------------- |
 | **CMake**   | 3.16+ | 构建系统                         |
 | **Qt6**     | 6.2+  | QtCore、QtNetwork             |
-| **libcurl** | 8.0+  | 推荐 8.16.0+（HTTP/3 支持）        |
+| **libcurl** | 7.85.0+ | WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend |
 | **编译器**     | C++17 | GCC 11+、Clang 14+、MSVC 2019+ |
 
 ---

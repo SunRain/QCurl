@@ -169,6 +169,7 @@ def _patch_httpd_access_log() -> None:
     """
     为 httpd 注入结构化 access_log（供“请求语义摘要”使用）。
     由于上游 server_reset 每个用例都会 reset_config()，这里通过 monkeypatch 保持默认配置恒有 access_log。
+    注意：CustomLog 必须落在实际处理请求的 VirtualHost 上，放在 base server 只会记启动探针。
     """
     if getattr(Httpd, "_qcurl_lc_access_log_patched", False):
         return
@@ -176,19 +177,25 @@ def _patch_httpd_access_log() -> None:
 
     original_reset_config = Httpd.reset_config
     original_clear_logs = Httpd.clear_logs
+    original_curltest_conf = Httpd._curltest_conf
 
     def access_log_path(self: Httpd) -> str:
         return os.path.join(getattr(self, "_logs_dir"), "access_log")
 
+    def curltest_conf_with_access_log(self: Httpd, servername) -> list[str]:  # type: ignore[no-untyped-def]
+        lines = original_curltest_conf(self, servername)
+        return [
+            f'    CustomLog "{access_log_path(self)}" qcurl_lc_access',
+            *lines,
+        ]
+
     def reset_config_with_access_log(self: Httpd):  # type: ignore[no-untyped-def]
         original_reset_config(self)
-        fmt_name = "qcurl_lc_access"
         self.set_extra_config(
             "base",
             [
                 'LogFormat "%{%Y-%m-%dT%H:%M:%S%z}t|%H|%m|%U%q|%>s|%{Range}i|%{Content-Length}i" '
-                + fmt_name,
-                f'CustomLog "{access_log_path(self)}" {fmt_name}',
+                + "qcurl_lc_access",
             ],
         )
 
@@ -201,6 +208,7 @@ def _patch_httpd_access_log() -> None:
 
     Httpd.reset_config = reset_config_with_access_log  # type: ignore[assignment]
     Httpd.clear_logs = clear_logs_with_access_log  # type: ignore[assignment]
+    Httpd._curltest_conf = curltest_conf_with_access_log  # type: ignore[assignment]
 
 
 def _patch_nghttpx_access_log() -> None:

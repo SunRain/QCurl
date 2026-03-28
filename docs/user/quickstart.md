@@ -6,7 +6,7 @@
 
 - CMake 3.16+
 - Qt6（QtCore / QtNetwork）
-- libcurl 8.0+
+- libcurl 7.85.0+（WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend）
 - 编译器：GCC 11+ / Clang 14+（C++17）
 
 ## 2. 构建（默认启用 examples/tests）

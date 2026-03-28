@@ -109,6 +109,8 @@ def test_p2_pause_resume_h2(env, lc_logs, tmp_path):
                 "1",
                 "-P",
                 str(pause_offset),
+                "-C",
+                env.ca.cert_file,
                 "-V",
                 proto,
                 baseline_url,

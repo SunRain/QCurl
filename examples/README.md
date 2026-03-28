@@ -198,7 +198,7 @@ cmake --build . --target ApiClientDemo -j4
 - **Http2Demo** - HTTP/2 示例（需要 libcurl 支持）
 - **ProxyDemo** - 代理配置示例
 - **UnifiedPolicyMiddlewareOfflineDemo** - 默认纯离线：展示 `setLogger()` + 标准 middleware（默认重试注入/脱敏日志/观测埋点），使用 `QCNetworkMockHandler` 回放
-- **WebSocketDemo** - WebSocket 基础示例（需要 libcurl 8.0+）
+- **WebSocketDemo** - WebSocket 基础示例（需要 libcurl 7.86.0+）
 - **WebSocketPoolDemo** - WebSocket 连接池示例
 
 ---
@@ -206,7 +206,7 @@ cmake --build . --target ApiClientDemo -j4
 ## ⚙️ 技术栈
 
 - **Qt6** (QtCore)
-- **libcurl** 8.16.0+
+- **libcurl** 7.85.0+（WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+）
 - **C++17**
 - **CMake** 3.16+
 

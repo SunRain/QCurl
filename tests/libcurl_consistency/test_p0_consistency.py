@@ -155,6 +155,7 @@ def test_p0_consistency(case_id, env, lc_logs, request, tmp_path):
         qcurl_req_id = f"{trace_base}__qcurl"
 
         resolved_defaults = dict(case["defaults"])
+        resolved_defaults["ca_cert"] = env.ca.cert_file
         if proto is not None:
             resolved_defaults["proto"] = proto
         if is_ws_case:

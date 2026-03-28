@@ -39,10 +39,17 @@ public:
     /// 返回运行期 libcurl 的 feature bitmask。
     [[nodiscard]] long runtimeFeatures() const noexcept;
 
+    /// 检查运行时 libcurl 是否满足 QCurl 的最低版本合同。
+    [[nodiscard]] Availability minimumRuntimeAvailability() const;
     /// 检查指定 easy option 在当前运行库中的可用性。
     [[nodiscard]] Availability easyOptionAvailability(CURLoption option) const;
     /// 检查指定 multi option 在当前运行库中的可用性。
     [[nodiscard]] Availability multiOptionAvailability(CURLMoption option) const;
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 测试专用：在修改环境注入后刷新 runtime capability 快照。
+    void refreshForTesting();
+#endif
 
 private:
     CurlFeatureProbe();
