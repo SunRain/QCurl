@@ -35,7 +35,7 @@ using namespace QCurl;
  * - frame-level 证据链：tests/qcurl/websocket-evidence-server.js（零外部依赖；显式发送 fragmentation/close 并输出工件）。
  * - 两类 server 均使用动态端口（0）并通过 READY marker 回传，避免固定端口导致的并发/占用冲突。
  * - 依赖 node 环境；若本地服务器无法启动则相关用例会 QSKIP。
- *   注意：本仓库的 ctest 取证式门禁为 skip=fail（见 tests/qcurl/CMakeLists.txt 的 FAIL_REGULAR_EXPRESSION "SKIP\\s*:"），
+ *   注意：本仓库的 ctest 取证式门禁为 skip=fail（见 tests/qcurl/CMakeLists.txt 的 FAIL_REGULAR_EXPRESSION "SKIP *:"），
  *   因此 QSKIP 代表“无证据”，在门禁口径下会导致失败而非“软通过”。
  * - WSS/SSL 覆盖同样使用本地 WSS server（自签证书），通过“默认失败 / 配置 CA 后成功”验证证书校验路径。
  */

@@ -193,6 +193,15 @@ static void verifyRetryAttemptArgsMonotonic(const QSignalSpy &retrySpy)
     }
 }
 
+static void verifyRetryAttemptErrors(const QSignalSpy &retrySpy, NetworkError expectedError)
+{
+    for (int i = 0; i < retrySpy.count(); ++i) {
+        const QList<QVariant> args = retrySpy.at(i);
+        QVERIFY(args.size() >= 2);
+        QCOMPARE(qvariant_cast<NetworkError>(args.at(1)), expectedError);
+    }
+}
+
 } // namespace
 
 static bool waitForPortReady(quint16 port, int timeoutMs)
@@ -550,13 +559,25 @@ void TestIntegration::testTotalTimeout()
     timeout.totalTimeout = std::chrono::seconds(2); // 但只允许 2 秒
     request.setTimeoutConfig(timeout);
 
+    QElapsedTimer timer;
+    timer.start();
+
     auto *reply = m_manager->sendGet(request);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
+    const qint64 elapsed = timer.elapsed();
 
-    // 应该超时失败
-    QVERIFY(reply->error() != NetworkError::NoError);
+    QCOMPARE(reply->state(), ReplyState::Error);
+    QCOMPARE(reply->error(), NetworkError::ConnectionTimeout);
+    QCOMPARE(reply->httpStatusCode(), 0);
+    QVERIFY2(elapsed >= 1500, qPrintable(QStringLiteral("total timeout 提前触发：%1 ms").arg(elapsed)));
+    QVERIFY2(elapsed <= 5000, qPrintable(QStringLiteral("total timeout 触发过慢：%1 ms").arg(elapsed)));
 
-    qDebug() << "Total timeout error:" << reply->errorString();
+    qInfo().noquote()
+        << QStringLiteral("QCURL_EVIDENCE total_timeout elapsed_ms=%1 error=%2 state=%3 msg=%4")
+               .arg(elapsed)
+               .arg(static_cast<int>(reply->error()))
+               .arg(static_cast<int>(reply->state()))
+               .arg(reply->errorString());
     reply->deleteLater();
 }
 
@@ -1154,13 +1175,21 @@ void TestIntegration::testRetryOnTimeout()
     qDebug() << "Total time elapsed:" << elapsed << "ms";
     qDebug() << "Final error:" << static_cast<int>(reply->error()) << reply->errorString();
 
-    QVERIFY(retrySpy.count() >= 1);                 // 至少重试了 1 次
-    QVERIFY(retrySpy.count() <= policy.maxRetries); // 不允许重复调度导致的越界重试
+    QCOMPARE(retrySpy.count(), policy.maxRetries);
     verifyRetryAttemptArgsMonotonic(retrySpy);
+    verifyRetryAttemptErrors(retrySpy, NetworkError::ConnectionTimeout);
     QVERIFY(!easyHandleRegisteredWatcher.seen());
+    QCOMPARE(reply->state(), ReplyState::Error);
+    QCOMPARE(reply->error(), NetworkError::ConnectionTimeout);
+    QCOMPARE(reply->httpStatusCode(), 0);
+    QVERIFY2(elapsed >= 1500, qPrintable(QStringLiteral("timeout retry 总耗时过短：%1 ms").arg(elapsed)));
+    QVERIFY2(elapsed <= 6000, qPrintable(QStringLiteral("timeout retry 总耗时过长：%1 ms").arg(elapsed)));
 
-    // 注意：超时可能返回 ConnectionTimeout (28) 或其他超时相关错误
-    QVERIFY(reply->error() != NetworkError::NoError);
+    qInfo().noquote()
+        << QStringLiteral("QCURL_EVIDENCE retry_timeout elapsed_ms=%1 retries=%2 final_error=%3")
+               .arg(elapsed)
+               .arg(retrySpy.count())
+               .arg(static_cast<int>(reply->error()));
 
     reply->deleteLater();
 }

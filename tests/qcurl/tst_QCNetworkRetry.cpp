@@ -116,6 +116,20 @@ void TestQCNetworkRetry::cleanup()
 
 bool TestQCNetworkRetry::waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout)
 {
+    if (!obj) {
+        return false;
+    }
+
+    if (auto *reply = qobject_cast<QCNetworkReply *>(obj)) {
+        if (signal == QMetaMethod::fromSignal(&QCNetworkReply::finished) && reply->isFinished()) {
+            return true;
+        }
+        if (signal == QMetaMethod::fromSignal(&QCNetworkReply::cancelled)
+            && reply->state() == ReplyState::Cancelled) {
+            return true;
+        }
+    }
+
     QSignalSpy spy(obj, signal);
     return spy.wait(timeout);
 }
@@ -131,6 +145,20 @@ QCNetworkRequest TestQCNetworkRetry::createRequestWithRetry(const QUrl &url, int
     request.setRetryPolicy(policy);
     return request;
 }
+
+namespace {
+
+static void verifyRetryAttemptSignals(const QSignalSpy &retrySpy, NetworkError expectedError)
+{
+    for (int i = 0; i < retrySpy.count(); ++i) {
+        const QList<QVariant> args = retrySpy.at(i);
+        QVERIFY(args.size() >= 2);
+        QCOMPARE(args.at(0).toInt(), i + 1);
+        QCOMPARE(qvariant_cast<NetworkError>(args.at(1)), expectedError);
+    }
+}
+
+} // namespace
 
 // ============================================================================
 // QCNetworkRetryPolicy 配置测试
@@ -306,15 +334,17 @@ void TestQCNetworkRetry::testExponentialBackoff()
     timer.start();
 
     auto *reply = m_manager->sendGet(request);
+    QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
     qint64 elapsed = timer.elapsed();
 
-    // 预期总延迟：200 + 300 = 500ms
-    // 允许 ±500ms 误差（网络请求时间和调度延迟）
     qDebug() << "Actual elapsed time:" << elapsed << "ms";
-    QVERIFY(elapsed >= 200);  // 至少等待了初始延迟
-    QVERIFY(elapsed <= 2000); // 不应该超过太多
+    QCOMPARE(retrySpy.count(), policy.maxRetries);
+    verifyRetryAttemptSignals(retrySpy, NetworkError::HttpServiceUnavailable);
+    QCOMPARE(reply->error(), NetworkError::HttpServiceUnavailable);
+    QVERIFY2(elapsed >= 450, qPrintable(QStringLiteral("指数退避总耗时过短：%1 ms").arg(elapsed)));
+    QVERIFY2(elapsed <= 2000, qPrintable(QStringLiteral("指数退避总耗时过长：%1 ms").arg(elapsed)));
 
     reply->deleteLater();
 }
@@ -329,23 +359,35 @@ void TestQCNetworkRetry::testCancelDuringRetry()
     QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
-    // 等待第一次重试完成（约 150ms）
-    QTest::qWait(200);
+    QTRY_VERIFY_WITH_TIMEOUT(retrySpy.count() >= 1, 3000);
+    QCOMPARE(retrySpy.count(), 1);
+    verifyRetryAttemptSignals(retrySpy, NetworkError::HttpServiceUnavailable);
 
     // 取消请求
     reply->cancel();
 
-    // 等待 finished 或 cancelled 信号（取消后应该会触发其中之一）
-    bool signalReceived
-        = waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::cancelled), 2000)
-          || waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 100);
+    QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() >= 1, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() >= 1, 2000);
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
 
-    // 验证：至少收到一个完成信号
-    QVERIFY(signalReceived || cancelledSpy.count() > 0 || finishedSpy.count() > 0);
+    bool extraRetryObserved = false;
+    QEventLoop loop;
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
+    connect(reply, &QCNetworkReply::retryAttempt, &loop, [&](int attempt, NetworkError error) {
+        Q_UNUSED(error);
+        if (attempt > 1) {
+            extraRetryObserved = true;
+        }
+        loop.quit();
+    });
+    deadline.start(1000);
+    loop.exec();
 
-    // 验证：重试次数应小于 5（因为被取消了）
-    qDebug() << "Retry attempts before cancel:" << retrySpy.count();
-    QVERIFY(retrySpy.count() < 5);
+    QVERIFY(!extraRetryObserved);
+    QCOMPARE(retrySpy.count(), 1);
 
     reply->deleteLater();
 }

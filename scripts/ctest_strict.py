@@ -139,6 +139,14 @@ def main(argv: list[str]) -> int:
         ctest_args += ["--timeout", str(int(args.ctest_timeout))]
 
     cmd = [args.ctest, *ctest_args]
+    sys.stderr.write(
+        "[ctest_strict] evidence gate active: this wrapper enforces skip=fail; "
+        "bare ctest output alone is not sufficient evidence.\n"
+    )
+    sys.stderr.write(
+        f"[ctest_strict] build_dir={build_dir} label_regex={args.label_regex or '<none>'} "
+        f"max_skips={args.max_skips}\n"
+    )
     run_env = os.environ.copy()
     # 取证式门禁默认抑制 debug/info 噪声，避免日志爆炸掩盖关键信息；如需详细日志可显式设置 QT_LOGGING_RULES。
     run_env.setdefault(
@@ -185,6 +193,10 @@ def main(argv: list[str]) -> int:
         )
         for name, count in sorted(skipped_by_test.items(), key=lambda x: (-x[1], x[0])):
             sys.stderr.write(f"[ctest_strict] skipped: {name}: {count}\n")
+        sys.stderr.write(
+            "[ctest_strict] use label selection to exclude non-target evidence groups; "
+            "do not treat raw ctest pass output as proof when skips are present.\n"
+        )
         return 3
 
     sys.stderr.write(

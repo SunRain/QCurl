@@ -224,14 +224,27 @@ void QCWebSocketPool::preWarm(const QUrl &url, int count)
 
     qDebug() << "QCWebSocketPool: 预热连接" << url.toString() << "数量:" << count;
 
+    QList<QCWebSocket *> warmedSockets;
+    warmedSockets.reserve(count);
+
     for (int i = 0; i < count; ++i) {
         auto *socket = acquire(url);
         if (socket) {
-            release(socket); // 立即归还（变为空闲状态）
-        } else {
-            qWarning() << "QCWebSocketPool: 预热失败，已创建" << i << "个连接";
+            warmedSockets.append(socket);
+            continue;
+        }
+
+        qWarning() << "QCWebSocketPool: 预热失败，已创建" << warmedSockets.size() << "个连接";
+        break;
+    }
+
+    for (QCWebSocket *socket : warmedSockets) {
+        if (!socket) {
             break;
         }
+
+        // 延后统一归还，避免在预热循环中立刻复用同一条空闲连接。
+        release(socket);
     }
 }
 

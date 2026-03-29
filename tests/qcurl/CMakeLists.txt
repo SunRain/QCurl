@@ -33,7 +33,7 @@ function(add_qcurl_test test_name)
     # - CTest 的 FAIL_REGULAR_EXPRESSION 可对测试输出做正则匹配并判定失败。
     # -----------------------------------------------------------------------------
     set_tests_properties(${test_name} PROPERTIES
-        FAIL_REGULAR_EXPRESSION "SKIP\\s*:"
+        FAIL_REGULAR_EXPRESSION "SKIP *:"
     )
 
     set_target_properties(${test_name} PROPERTIES
@@ -151,19 +151,14 @@ set_tests_properties(tst_Integration PROPERTIES LABELS "env;httpbin")
 set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
 
 # -----------------------------------------------------------------------------
-# external_network：非确定性环境依赖
+# external_*：唯一允许放宽 skip=fail 的例外集合
 #
-# 说明：
-# - 默认回归（CI/受限网络）不应因为“外网不可达/被代理/被阻断”而失败。
-# - 因此该类测试允许使用 QSKIP 来显式跳过外网探测场景。
+# 合同（D003）：
+# - 只有显式 opt-in 的 external_* 集合允许通过 QSKIP 表达“当前未取证”。
+# - 其他标签（offline/env/capability/local_port/...）一律保持 skip=fail；
+#   若前置条件不满足，应在对应 gate 中显式失败，而不是靠 QSKIP 假绿。
 # -----------------------------------------------------------------------------
 set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES
-    FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
-)
-set_tests_properties(tst_QCNetworkHttp2 PROPERTIES
-    FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
-)
-set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES
     FAIL_REGULAR_EXPRESSION "QCURL__FAIL_REGEX_NEVER_MATCH"
 )
 set_tests_properties(tst_LargeFileDownload PROPERTIES

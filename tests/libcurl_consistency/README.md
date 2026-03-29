@@ -30,6 +30,11 @@
 | `p2` | 错误/流控/协议约束 | TLS、cancel、pause/resume、backpressure、protocol restrictions | `run_gate.py --suite p2` |
 | `ext` | 扩展覆盖 | h2/h3 multi、WS 低层、额外 TLS/cache 场景 | `QCURL_LC_EXT=1` + `--with-ext` |
 
+说明：
+
+- `p0/p1/p2` 属于 fail-closed gate 分层；一旦选中执行，就必须由 `run_gate.py` 负责 `skipped/no_tests/schema/redaction` 复核。
+- `ext` 是显式 opt-in 的扩展覆盖层，默认不替代主 gate，也不放宽 `run_gate.py` 的 strict policy。
+
 ## 3. 统一运行入口
 
 构建与环境准备统一参考：
@@ -45,7 +50,9 @@ python3 tests/libcurl_consistency/run_gate.py --suite all --build
 QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
 ```
 
-直接跑 pytest 时，仍应复用本目录的 runner 与 schema，而不是手工拼装 artifacts。
+`run_gate.py` 是唯一受支持的取证入口：它会把 `skipped_tests`、`no_tests_executed`、
+`junit_parse_error`、schema/redaction 违规统一提升为 gate 失败。直接跑裸 `pytest`
+可以用于本地诊断，但不能单独作为通过证据，也不应手工拼装 artifacts。
 
 ## 4. 产物与证据路径
 

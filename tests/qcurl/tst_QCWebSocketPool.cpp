@@ -363,24 +363,31 @@ void TestQCWebSocketPool::testPreWarm()
     pool = new QCWebSocketPool();
     applyLocalWssConfig(pool);
     QUrl url(m_testServerUrl);
+    QSignalSpy createdSpy(pool, &QCWebSocketPool::connectionCreated);
+    QSignalSpy reusedSpy(pool, &QCWebSocketPool::connectionReused);
 
     // 预热 3 个连接
     pool->preWarm(url, 3);
 
-    // 等待连接建立
-    QTest::qWait(2000);
+    QTRY_COMPARE_WITH_TIMEOUT(createdSpy.count(), 3, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).totalConnections == 3, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).idleConnections == 3, 2000);
+
+    auto *socket = pool->acquire(url);
+    QVERIFY2(socket != nullptr, "preWarm 后应能直接从池中拿到可复用连接");
+    QVERIFY(waitForConnection(socket, 10000));
+    QCOMPARE(socket->state(), QCWebSocket::State::Connected);
+    QCOMPARE(reusedSpy.count(), 1);
+    pool->release(socket);
 
     // 检查统计
     auto stats = pool->statistics(url);
     qDebug() << "预热后连接数:" << stats.totalConnections;
     qDebug() << "空闲连接:" << stats.idleConnections;
 
-    // 应该至少有 1 个连接被创建
-    if (stats.totalConnections < 1) {
-        QSKIP("无法连接到本地 WSS 测试服务器，跳过此测试");
-    }
-    // 所有连接都应该是空闲的
+    QCOMPARE(stats.totalConnections, 3);
     QCOMPARE(stats.activeConnections, 0);
+    QCOMPARE(stats.idleConnections, 3);
 
 }
 

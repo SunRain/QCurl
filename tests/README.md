@@ -40,9 +40,17 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 
 本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
 
-- **默认：QSKIP 在 ctest 证据门禁下视为失败（skip=fail）**：`tests/qcurl/CMakeLists.txt` 为（几乎）所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP\\s*:"`，避免“ctest 全绿≠已覆盖”的误读。
-  - **例外：`LABELS=external_network`（如 `tst_QCNetworkDiagnostics`）允许 QSKIP**。该类测试包含公网探测场景，默认不开外网以避免在受限网络/CI 中引入不稳定因素；如需执行公网探测，显式设置 `QCURL_ALLOW_EXTERNAL_NETWORK=1`。
+- **默认：QSKIP 在 ctest 证据门禁下视为失败（skip=fail）**：`tests/qcurl/CMakeLists.txt` 为（几乎）所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP *:"`，避免“ctest 全绿≠已覆盖”的误读。
+  - **唯一例外：显式 opt-in 的 `external_*` 集合允许 QSKIP**，当前仅包含：
+
+    | 测试目标 | LABELS | 允许 QSKIP 的原因 |
+    |---|---|---|
+    | `tst_QCNetworkDiagnostics` | `external_network;diagnostics` | 公网探测默认关闭，避免受限网络/代理环境制造假失败 |
+    | `tst_LargeFileDownload` | `external_heavy` | 第三方 HTTPS + 大体量 smoke 默认不纳入 deterministic gate |
+
+  - `env` / `capability` / `local_port` / `httpbin` / `websocket` 这些集合**不再**放宽 skip contract；一旦选中执行，就必须真实跑完并提供无 skip 证据。
 - **是否运行某类用例，唯一入口是 ctest 的 LABELS 分组**：不要依赖 `QSKIP` 去“规避失败”，而应通过 `-L/--label-regex` 选择要跑的证据集合。
+- **QtTest 取证入口必须使用 `scripts/ctest_strict.py`**：裸 `ctest` 适合列清单或本地诊断，但它不会额外执行“skip=fail”复核，因此不能单独作为通过证据。
 
 推荐入口（可复现命令）：
 
@@ -52,7 +60,20 @@ python3 scripts/ctest_strict.py --build-dir build
 
 # 取证式门禁：跑 LABELS=env（需要先准备本地依赖；见下方 httpbin）
 python3 scripts/ctest_strict.py --build-dir build --label-regex env
+
+# 取证式门禁：跑 capability/local_port 等非默认能力组（仍然 skip=fail）
+python3 scripts/ctest_strict.py --build-dir build --label-regex capability
 ```
+
+### gate / smoke / external 分层矩阵
+
+| 层级 | 入口 / 标签 | skip 口径 | 职责边界 |
+|---|---|---|---|
+| gate | `scripts/ctest_strict.py --label-regex offline|env|capability|local_port|httpbin|websocket` | skip=fail | 真实执行并输出可归档证据；缺前置即失败 |
+| smoke | 统计/健康类断言（例如 scheduler statistics） | 跟随所在 gate 标签 | 只验证粗粒度健康合同；更强语义由对应专题断言覆盖 |
+| external | `external_network` / `external_heavy` | 显式 opt-in，允许 QSKIP | 外网探测或第三方大体量 smoke，不纳入默认 deterministic gate |
+
+- `tests/CMakeLists.txt` 中的 `qcurl_skip_contract_guard` 会静态扫描 `tests/qcurl/CMakeLists.txt`，阻止未来对非 `external_*` 目标关闭 `FAIL_REGULAR_EXPRESSION`。
 
 期望工件（Evidence Artifacts）：
 
@@ -101,7 +122,7 @@ QCURL_ALLOW_EXTERNAL_NETWORK=1 ctest --test-dir build -L external_network --outp
 
 说明：
 
-- `tst_QCNetworkHttp2`、`tst_QCNetworkActorThreadModel` 这类依赖本地监听端口的测试，在沙箱或受限容器中若出现 `listen EPERM` / 本地端口不可绑定，会显式 `QSKIP`，并通过 `local_port` 语义与离线门禁隔离。
+- `tst_QCNetworkHttp2`、`tst_QCNetworkActorThreadModel` 这类依赖本地监听端口或能力前置的测试，不属于 external_* 例外；一旦通过 `capability` / `env` / `local_port` 入口执行，出现 `listen EPERM`、本地端口不可绑定或能力缺失时，严格 gate 应把它们视为失败而不是放过。
 - `tst_QCNetworkDiagnostics` 在设置了 `QCURL_HTTPBIN_URL` 时，会对本地 httpbin 做有限次短重试；若本地依赖未稳定就绪，会带详细原因跳过，而不是给出缺乏上下文的硬失败。
 
 ### external_heavy（显式 opt-in 的外部大体量 smoke）

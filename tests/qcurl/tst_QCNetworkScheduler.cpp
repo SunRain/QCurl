@@ -420,11 +420,13 @@ void tst_QCNetworkScheduler::testStatistics()
 {
     m_scheduler->cancelAllRequests();
     m_mock.clear();
+    m_mock.setGlobalDelay(150);
 
     QCNetworkRequestScheduler::Config config = m_scheduler->config();
     config.maxConcurrentRequests             = 1;
     config.maxRequestsPerHost                = 10;
     m_scheduler->setConfig(config);
+    const auto statsBefore = m_scheduler->statistics();
 
     // 创建几个请求
     QList<QCNetworkReply *> replies;
@@ -436,26 +438,30 @@ void tst_QCNetworkScheduler::testStatistics()
         replies.append(reply);
     }
 
-    // 获取统计信息
-    auto stats = m_scheduler->statistics();
+    QTRY_COMPARE_WITH_TIMEOUT(m_scheduler->statistics().runningRequests, 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(m_scheduler->statistics().pendingRequests, 2, 2000);
 
-    // 验证统计信息
-    QVERIFY(stats.pendingRequests + stats.runningRequests >= 3);
-    QVERIFY(stats.completedRequests >= 0);
-    QVERIFY(stats.cancelledRequests >= 0);
-    QVERIFY(stats.totalBytesReceived >= 0);
-    QVERIFY(stats.totalBytesSent >= 0);
-    QVERIFY(stats.avgResponseTime >= 0);
+    for (auto *reply : replies) {
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 4000);
+    }
 
-    qDebug() << "Stats: pending=" << stats.pendingRequests << "running=" << stats.runningRequests
-             << "completed=" << stats.completedRequests << "cancelled=" << stats.cancelledRequests;
+    const auto stats = m_scheduler->statistics();
+
+    // 统计口径属于 smoke：验证稳定且可重复的粗粒度合同，不在这里绑定每个实现细节。
+    QCOMPARE(stats.pendingRequests, 0);
+    QCOMPARE(stats.runningRequests, 0);
+    QCOMPARE(stats.completedRequests, statsBefore.completedRequests + 3);
+    QCOMPARE(stats.cancelledRequests, statsBefore.cancelledRequests);
+    QVERIFY(stats.totalBytesReceived >= statsBefore.totalBytesReceived + 6);
+    QCOMPARE(stats.totalBytesSent, statsBefore.totalBytesSent);
+    QVERIFY(stats.avgResponseTime >= 0.0);
 
     // 清理
     m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
-        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
         reply->deleteLater();
     }
+    m_mock.setGlobalDelay(0);
 
     qDebug() << "Scheduler statistics contract verified";
 }
