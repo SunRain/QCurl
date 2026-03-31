@@ -56,6 +56,11 @@ private slots:
     void testSetMaxDownloadBytesPerSec();
     void testSetMaxUploadBytesPerSec();
 
+    // lane 测试
+    void testLaneDefaults();
+    void testSetLane();
+    void testCopyAndEqualityPreserveLane();
+
     // P1：Expect: 100-continue
     void testExpect100ContinueTimeoutDefaults();
     void testSetExpect100ContinueTimeout();
@@ -288,6 +293,37 @@ void TestQCNetworkRequest::testSetMaxUploadBytesPerSec()
 
     request.setMaxUploadBytesPerSec(-1);
     QVERIFY(!request.maxUploadBytesPerSec().has_value());
+}
+
+void TestQCNetworkRequest::testLaneDefaults()
+{
+    QCNetworkRequest request;
+    QVERIFY(request.lane().isEmpty());
+}
+
+void TestQCNetworkRequest::testSetLane()
+{
+    QCNetworkRequest request;
+
+    request.setLane(QStringLiteral("  Control  "));
+    QCOMPARE(request.lane(), QStringLiteral("Control"));
+
+    request.setLane(QString());
+    QVERIFY(request.lane().isEmpty());
+}
+
+void TestQCNetworkRequest::testCopyAndEqualityPreserveLane()
+{
+    QCNetworkRequest lhs(QUrl(QStringLiteral("https://example.com/api")));
+    lhs.setFollowLocation(false);
+    lhs.setLane(QStringLiteral("Control"));
+
+    QCNetworkRequest rhs(lhs);
+    QCOMPARE(rhs.lane(), QStringLiteral("Control"));
+    QVERIFY(lhs == rhs);
+
+    rhs.setLane(QStringLiteral("Transfer"));
+    QVERIFY(lhs != rhs);
 }
 
 void TestQCNetworkRequest::testExpect100ContinueTimeoutDefaults()

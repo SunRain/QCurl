@@ -118,6 +118,9 @@ obj-*-linux-gnu/
 # Claude - 临时文件和缓存（注意：CLAUDE.md 项目文档应被跟踪）
 claudecode-session-history
 .mcp.json
+
+# Codex CLI
+.codex
 dev.db
 .claude/
 .spec-workflow/

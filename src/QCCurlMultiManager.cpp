@@ -720,6 +720,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     }
 
     m_runningRequests.fetch_add(1, std::memory_order_relaxed);
+    wakeup();
 
     qDebug() << "QCCurlMultiManager::addReply: Added reply" << reply
              << "Total running:" << m_runningRequests.load();

@@ -20,7 +20,7 @@ using namespace QCurl;
  * 本程序演示 QCNetworkRequestScheduler 的核心功能：
  * 1. 不同优先级的请求执行顺序
  * 2. 并发控制（全局 + 每主机限制）
- * 3. 请求管理（暂停/恢复/取消）
+ * 3. 请求管理（defer/undefer/取消）
  * 4. 带宽限制
  * 5. 实时统计信息
  * 
@@ -34,7 +34,8 @@ public:
     explicit SchedulerDemo(QObject *parent = nullptr)
         : QObject(parent)
         , manager(new QCNetworkAccessManager(this))
-        , scheduler(QCNetworkRequestScheduler::instance())
+        // 必须在 manager owner thread 获取/配置 thread-local shared scheduler。
+        , scheduler(manager->scheduler())
     {
         setupScheduler();
         setupSignals();
@@ -53,7 +54,7 @@ public:
         QTimer::singleShot(2000, this, &SchedulerDemo::demo2_ConcurrencyControl);
 
         // 4 秒后演示 3：暂停恢复
-        QTimer::singleShot(4000, this, &SchedulerDemo::demo3_PauseResume);
+        QTimer::singleShot(4000, this, &SchedulerDemo::demo3_DeferUndefer);
 
         // 6 秒后演示 4：统计信息
         QTimer::singleShot(6000, this, &SchedulerDemo::demo4_Statistics);
@@ -76,12 +77,12 @@ private slots:
                       QCNetworkRequestPriority::VeryHigh,
                       "极高优先级");
 
-        // Critical 优先级应该跳过队列立即执行
+        // Critical 会在 lane 内优先调度，但仍受硬上限约束
         createRequest("https://httpbin.org/delay/1",
                       QCNetworkRequestPriority::Critical,
-                      "紧急优先级（立即执行）");
+                      "紧急优先级（受硬上限约束）");
 
-        qInfo() << "提示：观察输出，Critical 会立即执行，其他按优先级从高到低执行\n";
+        qInfo() << "提示：观察输出，Critical 会优先出队，但不会突破并发/每主机限制\n";
     }
 
     void demo2_ConcurrencyControl()
@@ -106,32 +107,51 @@ private slots:
         printStatistics();
     }
 
-    void demo3_PauseResume()
+    void demo3_DeferUndefer()
     {
-        qInfo() << "\n--- 演示 3：延后/恢复调度（非传输级 pause/resume） ---";
-        qInfo() << "创建请求，2秒后 defer，再2秒后 undefer...\n";
+        qInfo() << "\n--- 演示 3：延后/恢复调度（仅 Pending，非传输级 pause/resume） ---";
+        qInfo() << "先启动一个耗时请求占用并发槽位，使目标请求保持 Pending；随后 deferPendingRequest/undeferRequest...\n";
 
-        QCNetworkRequest request(QUrl("https://httpbin.org/delay/2"));
+        scheduler->cancelAllRequests();
+
+        QCNetworkRequestScheduler::Config config = scheduler->config();
+        config.maxConcurrentRequests             = 1;
+        config.maxRequestsPerHost                = 1;
+        scheduler->setConfig(config);
+
+        // blocker：占用唯一并发槽位
+        QCNetworkRequest blocker(QUrl("https://httpbin.org/delay/4"));
+        blocker.setPriority(QCNetworkRequestPriority::Normal);
+        auto *blockingReply = manager->sendGet(blocker);
+        connect(blockingReply, &QCNetworkReply::finished, this, [blockingReply]() {
+            qInfo() << "✓ blocker 请求完成";
+            blockingReply->deleteLater();
+        });
+
+        // 目标请求：在 blocker 运行期间保持 Pending
+        QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setPriority(QCNetworkRequestPriority::High);
 
         auto *reply     = manager->sendGet(request);
         pauseResumeDemo = reply;
 
-        connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
-            qInfo() << "✓ 暂停/恢复演示请求完成";
+        connect(reply, &QCNetworkReply::finished, this, [reply]() {
+            qInfo() << "✓ 目标请求完成";
             reply->deleteLater();
         });
 
-        // 2 秒后暂停
-        QTimer::singleShot(2000, this, [this]() {
-            if (pauseResumeDemo) {
-                qInfo() << "⏸️  deferRequest...";
-                scheduler->deferRequest(pauseResumeDemo);
+        // 稍后 defer（仅 Pending 生效；若返回 false 表示请求已进入 Running/Finished 等状态）
+        QTimer::singleShot(300, this, [this]() {
+            if (!pauseResumeDemo) {
+                return;
             }
+            qInfo() << "⏸️  deferPendingRequest...";
+            const bool ok = scheduler->deferPendingRequest(pauseResumeDemo);
+            qInfo() << "deferPendingRequest result =" << ok;
         });
 
-        // 4 秒后恢复
-        QTimer::singleShot(4000, this, [this]() {
+        // 再稍后恢复
+        QTimer::singleShot(1800, this, [this]() {
             if (pauseResumeDemo) {
                 qInfo() << "▶️  undeferRequest...";
                 scheduler->undeferRequest(pauseResumeDemo);
@@ -186,25 +206,40 @@ private:
         connect(scheduler,
                 &QCNetworkRequestScheduler::requestQueued,
                 this,
-                [](QCNetworkReply *reply, QCNetworkRequestPriority priority) {
+                [](QCNetworkReply *reply,
+                   const QString &lane,
+                   const QString &hostKey,
+                   QCNetworkRequestPriority priority) {
                     Q_UNUSED(reply);
-                    qInfo() << QString("📥 [%1] 请求加入队列").arg(toString(priority));
+                    qInfo() << QString("📥 [%1] lane=%2 host=%3 请求加入队列")
+                                   .arg(toString(priority), lane, hostKey);
                 });
 
-        // 请求开始执行
+        // 请求即将开始执行（about-to-start）
+        connect(scheduler,
+                &QCNetworkRequestScheduler::requestAboutToStart,
+                this,
+                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
+                    qInfo() << QString("🟡 lane=%1 host=%2 about-to-start: %3")
+                                   .arg(lane, hostKey, reply->url().toString());
+                });
+
+        // 请求已开始执行（started：scheduler 已完成 execute() 调用）
         connect(scheduler,
                 &QCNetworkRequestScheduler::requestStarted,
                 this,
-                [](QCNetworkReply *reply) {
-                    qInfo() << QString("🚀 请求开始执行: %1").arg(reply->url().toString());
+                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
+                    qInfo() << QString("🚀 lane=%1 host=%2 started: %3")
+                                   .arg(lane, hostKey, reply->url().toString());
                 });
 
         // 请求完成
         connect(scheduler,
                 &QCNetworkRequestScheduler::requestFinished,
                 this,
-                [](QCNetworkReply *reply) {
-                    qInfo() << QString("✅ 请求完成: %1").arg(reply->url().toString());
+                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
+                    qInfo() << QString("✅ lane=%1 host=%2 请求完成: %3")
+                                   .arg(lane, hostKey, reply->url().toString());
                 });
 
         // 队列已清空

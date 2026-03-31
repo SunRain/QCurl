@@ -30,6 +30,7 @@ set(QCURL_MODERN_SOURCES
     QCNetworkReply.cpp
     QCCurlMultiManager.cpp
     QCNetworkRetryPolicy.cpp
+    QCNetworkRequestPriorityMetaTypeBootstrap.cpp
     QCNetworkRequestScheduler.cpp   # v2.6.0: 请求优先级调度
     QCMultipartFormData.cpp         # v2.11.0: Multipart 表单数据
     QCNetworkCache.cpp              # v2.12.0: 缓存基类
@@ -152,7 +153,7 @@ add_library(QCurl::QCurl ALIAS QCurl)
 # 设置库属性
 set_target_properties(QCurl PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 2
+    SOVERSION 3
     AUTOMOC ON  # 自动处理 Qt MOC
     EXPORT_NAME QCurl
 )

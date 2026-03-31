@@ -60,9 +60,9 @@
 ### 🎯 开发体验
 
 - **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::send*()` 一套入口覆盖配置与发送
-- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()` 支持链式配置
+- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置
 - **请求重试** - 指数退避算法，自动处理临时性错误
-- **优先级调度** - 6 级优先级，并发控制，带宽限制
+- **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
 
 ---
 
@@ -87,6 +87,11 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 sudo cmake --install build
 ```
+
+发布合同提示：
+
+- 当前 lane-aware scheduler 的 breaking ABI 变更以 `QCurl 3.0.0 / SOVERSION 3` 发布。
+- 若你从旧版 scheduler signals 迁移，请同步更新二进制依赖和 `connect(&QCNetworkRequestScheduler::signal, ...)` 的函数签名。
 
 ### 代码示例
 
@@ -147,6 +152,62 @@ formData.addFileField("avatar", "/path/to/photo.jpg");
 QCurl::QCNetworkRequest uploadRequest(QUrl("https://api.example.com/upload"));
 auto *reply = manager.postMultipart(uploadRequest, formData);
 ```
+
+#### 4. Lane-aware Scheduler
+
+```cpp
+#include <QCNetworkRequestScheduler.h>
+
+// 建议在 manager owner thread 的初始化阶段获取并配置 scheduler。
+auto *scheduler = manager.scheduler();
+
+QCurl::QCNetworkRequestScheduler::LaneConfig controlLane;
+controlLane.weight = 3;
+controlLane.quantum = 1;
+controlLane.reservedGlobal = 1;
+controlLane.reservedPerHost = 1;
+scheduler->setLaneConfig(QStringLiteral("Control"), controlLane);
+
+QCurl::QCNetworkRequestScheduler::LaneConfig transferLane;
+transferLane.weight = 1;
+transferLane.quantum = 1;
+scheduler->setLaneConfig(QStringLiteral("Transfer"), transferLane);
+
+QCurl::QCNetworkRequest controlRequest(QUrl("https://api.example.com/manifest"));
+controlRequest.setLane(QStringLiteral("Control"))
+    .setPriority(QCurl::QCNetworkRequestPriority::High);
+
+QCurl::QCNetworkRequest transferRequest(QUrl("https://cdn.example.com/chunk.bin"));
+transferRequest.setLane(QStringLiteral("Transfer"))
+    .setPriority(QCurl::QCNetworkRequestPriority::Low);
+
+QObject::connect(scheduler,
+                 &QCurl::QCNetworkRequestScheduler::requestAboutToStart,
+                 [](QCurl::QCNetworkReply *, const QString &lane, const QString &hostKey) {
+                     qDebug() << "about-to-start lane=" << lane << "hostKey=" << hostKey;
+                 });
+
+QObject::connect(scheduler,
+                 &QCurl::QCNetworkRequestScheduler::requestStarted,
+                 [](QCurl::QCNetworkReply *, const QString &lane, const QString &hostKey) {
+                     qDebug() << "started lane=" << lane << "hostKey=" << hostKey;
+                 });
+
+scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
+                              QCurl::QCNetworkRequestScheduler::CancelLaneScope::PendingAndRunning);
+```
+
+简要提示：
+
+- `lane` 可以理解成“请求车道”：先按车道分组，再在车道内按优先级排序。
+- `Critical` 现在只影响同一条 lane 内的启动顺序；若需要给控制类请求留保底名额，请使用 lane reservation。
+- 调度器信号现在会携带 `lane + hostKey`；如果你从旧版回调签名迁移，请同步更新 `connect(...)` 的参数列表。
+- `manager.scheduler()` 是 owner-thread only：跨线程误用会 warning 并返回 `nullptr`；跨线程取回 owner scheduler 请使用 `schedulerOnOwnerThread()`（详见 `docs/user/lane-scheduler.md`）。
+- 避免在持锁状态、析构函数或 UI/主线程高频热路径里跨线程调用 `schedulerOnOwnerThread()`（`BlockingQueuedConnection` 可能阻塞甚至死锁）；跨线程配置时优先把“配置动作”marshal 到 owner thread 执行（详见 `docs/user/lane-scheduler.md`）。
+
+完整说明、请求时序图、`Control / Transfer / Background` 配置建议和迁移提醒，统一参考：
+
+- `docs/user/lane-scheduler.md`
 
 ---
 

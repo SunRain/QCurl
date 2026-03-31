@@ -50,7 +50,7 @@ g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
 优先级提示：
 
 - `High/VeryHigh`：与用户交互直接相关、希望优先处理且仍遵守并发/每主机限制的请求（例如页面数据加载、登录/下单/支付确认）。
-- `Critical`：适用于少量需要尽快启动的控制/紧急请求；该优先级会绕过 pending 队列，且当前实现可能突破并发/每主机限制，建议仅在明确需要时使用。
+- 如果你需要把请求分成 `Control / Transfer / Background` 等不同车道，或想理解 `Critical`、lane reservation 和按 lane 批量管理请求，请参考 `docs/user/lane-scheduler.md`。
 
 最小示例（约 5 行）：
 

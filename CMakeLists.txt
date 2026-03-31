@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QCurl VERSION 2.0.0 LANGUAGES CXX)
+project(QCurl VERSION 3.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

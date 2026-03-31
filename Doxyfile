@@ -3,7 +3,7 @@
 # 目标：生成可本地查阅的 API 参考文档（不提交生成产物）。
 
 PROJECT_NAME           = "QCurl"
-PROJECT_NUMBER         = "2.0.0"
+PROJECT_NUMBER         = "3.0.0"
 
 OUTPUT_DIRECTORY       = build
 CREATE_SUBDIRS         = NO

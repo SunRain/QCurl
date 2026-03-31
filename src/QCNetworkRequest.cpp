@@ -68,6 +68,7 @@ public:
         , retryPolicy(QCNetworkRetryPolicy::noRetry())
         , retryPolicyExplicit(false)
         , httpAuthConfig(std::nullopt)
+        , lane(QString())
         , requestPriority(QCNetworkRequestPriority::Normal)
         , cachePolicy(QCNetworkCachePolicy::PreferCache)
     {}
@@ -139,6 +140,9 @@ public:
     // ========== HTTP 认证（请求级） ==========
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
 
+    // ========== 调度 lane ==========
+    QString lane;
+
     // ========== 请求优先级字段 ==========
     QCNetworkRequestPriority requestPriority;
 
@@ -181,7 +185,8 @@ bool QCNetworkRequest::operator==(const QCNetworkRequest &other) const
 
     return lhs->followLocation == rhs->followLocation && lhs->reqUrl == rhs->reqUrl
            && lhs->rawHeaderMap == rhs->rawHeaderMap && lhs->rangeStart == rhs->rangeStart
-           && lhs->rangeEnd == rhs->rangeEnd && lhs->httpVersion == rhs->httpVersion;
+           && lhs->rangeEnd == rhs->rangeEnd && lhs->httpVersion == rhs->httpVersion
+           && lhs->lane == rhs->lane;
     // Note: sslConfig, proxyConfig, timeoutConfig 不参与比较
     // 因为它们是请求执行配置而非请求标识
 }
@@ -875,6 +880,19 @@ QCUnsupportedSecurityOptionPolicy QCNetworkRequest::unsupportedSecurityOptionPol
     return d.data()->unsupportedSecurityOptionPolicy;
 }
 
+// ========== 调度 lane ==========
+
+QCNetworkRequest &QCNetworkRequest::setLane(const QString &lane)
+{
+    d.data()->lane = lane.trimmed();
+    return *this;
+}
+
+QString QCNetworkRequest::lane() const
+{
+    return d.data()->lane;
+}
+
 // ========== 请求优先级 ==========
 
 QCNetworkRequest &QCNetworkRequest::setPriority(QCNetworkRequestPriority priority)
@@ -908,6 +926,7 @@ QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)
     dbg.nospace() << "QCNetworkRequest("
                   << "url=" << req.url().toString() << ", followLocation=" << req.followLocation()
                   << ", range=" << req.rangeStart() << "-" << req.rangeEnd()
+                  << ", lane=" << req.lane()
                   << ", httpVersion=" << static_cast<int>(req.httpVersion()) << ")";
     return dbg.space();
 }

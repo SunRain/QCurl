@@ -170,7 +170,7 @@ QCNetworkReply *QCNetworkAccessManager::createManagedReply(
     }
 
     if (useScheduler) {
-        scheduler()->scheduleReply(reply, request.priority());
+        scheduler()->scheduleReply(reply, request.lane(), request.priority());
     } else {
         reply->execute();
     }
@@ -522,7 +522,50 @@ bool QCNetworkAccessManager::isSchedulerEnabled() const
 
 QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
 {
+    if (QThread::currentThread() != thread()) {
+        qWarning()
+            << "QCNetworkAccessManager::scheduler: called from non-owner thread; use "
+               "schedulerOnOwnerThread() to fetch the manager owner-thread scheduler";
+        Q_ASSERT_X(QThread::currentThread() == thread(),
+                   "QCNetworkAccessManager::scheduler",
+                   "scheduler() must be called on the manager owner thread");
+        return nullptr;
+    }
+
     return QCNetworkRequestScheduler::instance();
+}
+
+QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerOnOwnerThread() const
+{
+    if (!hasEventDispatcher(thread())) {
+        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: manager owner thread has "
+                      "no Qt event dispatcher; blocking call is rejected";
+        return nullptr;
+    }
+
+    if (QThread::currentThread() == thread()) {
+        return QCNetworkRequestScheduler::instance();
+    }
+
+    auto *mutableThis = const_cast<QCNetworkAccessManager *>(this);
+    QCNetworkRequestScheduler *result = nullptr;
+    QElapsedTimer timer;
+    timer.start();
+    const bool invoked = QMetaObject::invokeMethod(
+        mutableThis,
+        [&result]() { result = QCNetworkRequestScheduler::instance(); },
+        Qt::BlockingQueuedConnection);
+    if (!invoked) {
+        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: failed to marshal call "
+                      "back to the manager owner thread";
+        return nullptr;
+    }
+    if (timer.elapsed() > 1000) {
+        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: cross-thread blocking call "
+                      "took"
+                   << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
+    }
+    return result;
 }
 
 // ==================

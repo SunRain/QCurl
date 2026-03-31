@@ -349,6 +349,11 @@ public:
      *
      * 启用后，异步 `send*()` 会经过调度器管理；关闭后直接创建并执行 reply。
      *
+     * `QCNetworkRequestScheduler` 是“当前线程共享”的 thread-local 实例，而不是
+     * `QCNetworkAccessManager` 私有对象。要配置当前 manager 实际使用到的 scheduler，
+     * 必须在 manager owner thread 上调用 `scheduler()` / `setConfig()` /
+     * `setLaneConfig()` 等接口。
+     *
      * @param enabled true 为启用调度器，false 为禁用
      */
     void enableRequestScheduler(bool enabled);
@@ -363,9 +368,29 @@ public:
     /**
      * @brief 获取调度器实例
      *
-     * 返回当前线程的调度器实例，用于配置并发限制、带宽限制等策略。
+     * 仅允许在 manager owner thread 上返回当前线程共享的 thread-local scheduler；
+     * 本函数不会帮调用方跨线程取回 owner-thread scheduler。
+     *
+     * 若从非 owner thread 调用，本函数会给出 warning，并在 debug 构建触发断言，
+     * 随后 fail-closed 返回 `nullptr`，避免误用线程懒创建新的 scheduler 实例。
      */
     QCNetworkRequestScheduler *scheduler() const;
+
+    /**
+     * @brief 获取 manager owner thread 实际使用的 scheduler 实例
+     *
+     * 该接口始终返回 manager owner thread 实际使用的 scheduler。
+     * 若 owner thread 已具备 Qt event dispatcher，则：
+     * - owner thread 调用时直接返回本线程实例；
+     * - 非 owner-thread 调用时通过 `Qt::BlockingQueuedConnection`
+     *   向 owner thread 取回 scheduler。
+     *
+     * @warning 该接口在跨线程调用时可能阻塞；避免在持锁状态、析构函数或 UI 热路径中调用。
+     * @note 若 owner thread 缺少 Qt event dispatcher，函数会 fail-closed 返回 `nullptr`
+     * 并给出 warning；该前置条件对 same-thread 与 cross-thread 调用都成立。
+     * @note 跨线程调用时若 marshal 失败，也会返回 `nullptr` 并给出 warning。
+     */
+    QCNetworkRequestScheduler *schedulerOnOwnerThread() const;
 
     /**
      * @brief POST URL-encoded 表单数据（快捷方法）

@@ -527,6 +527,22 @@ public:
     QCNetworkRequest &setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy);
     [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy() const;
 
+    // ========== 调度 lane ==========
+
+    /**
+     * @brief 设置调度 lane 标签
+     *
+     * 空字符串表示 default lane。
+     */
+    QCNetworkRequest &setLane(const QString &lane);
+
+    /**
+     * @brief 获取调度 lane 标签
+     *
+     * @return 当前 lane；空字符串表示 default lane
+     */
+    [[nodiscard]] QString lane() const;
+
     // ========== 请求优先级 ==========
 
     /**

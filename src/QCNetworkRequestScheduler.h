@@ -15,6 +15,7 @@
 #include <QList>
 #include <QObject>
 #include <QScopedPointer>
+#include <QString>
 
 namespace QCurl {
 
@@ -30,9 +31,20 @@ class QCNetworkReply;
  *
  * - 调度器是**非抢占式**：一旦请求进入 Running，后续更高优先级请求不会中断/暂停/取消它。
  * - 优先级只影响 pending 队列在“并发槽位释放时”的出队顺序；同一优先级内部为 FIFO。
- * - `Critical` 优先级会绕过 pending 队列并立即启动；它不会抢占已 Running 的请求，但可能突破并发/每主机限制。
- * - 若调用方需要“让出槽位/终止执行”，必须显式调用 `cancelRequest()`/`deferRequest()` 等 API（Running 下 defer 会通过 cancel 终止并转入 deferred）。
+ * - `Critical` 优先级仍受全局/每主机/限流硬上限约束；控制面保底由 lane reservation 提供。
+ * - 若调用方需要“让出槽位/终止执行”，应显式调用 `cancelRequest()`（Running 会进入取消流程）。
+ * - `deferPendingRequest()` 仅作用于 Pending：把请求从队列移入 deferred 列表；不表达传输级 pause/resume。
  * - 调度器不再创建 `QCNetworkReply`；异步请求统一由 `QCNetworkAccessManager::send*()` 创建 reply 后交给调度器排队。
+ *
+ * 线程 contract（NetworkEngine 合一线程）：
+ *
+ * - `instance()` 返回当前线程共享的 thread-local scheduler，而不是进程级全局单例。
+ * - scheduler / `QCNetworkReply` / `QCCurlMultiManager` 必须处于同一 owner thread。
+ * - 异步请求要求 owner thread 具备 Qt 事件循环；当 owner thread 事件循环停止或线程退出时，
+ *   先前排队的 queued invoke / 信号投递不再保证可达。
+ * - 从非 owner thread 调用 scheduler API 时，库会统一 marshal 回 scheduler owner thread：
+ *   返回值型接口使用 BlockingQueuedConnection，fire-and-forget 接口使用 QueuedConnection。
+ * - 本类信号始终在 scheduler owner thread 发射，不会漂移到调用线程。
  *
  * @note 所有公共方法都使用互斥锁保护
  */
@@ -94,9 +106,30 @@ public:
     };
 
     /**
+     * @brief lane 级调度配置
+     */
+    struct LaneConfig
+    {
+        int weight          = 1; ///< DRR 权重（>0）
+        int quantum         = 1; ///< deficit 基数（>0）
+        int reservedGlobal  = 0; ///< lane 全局预留并发槽位
+        int reservedPerHost = 0; ///< lane 每 hostKey 预留并发槽位
+    };
+
+    /**
+     * @brief lane 取消范围
+     */
+    enum class CancelLaneScope {
+        PendingOnly,       ///< pending + deferred
+        PendingAndRunning, ///< pending + deferred + running
+    };
+
+    /**
      * @brief 获取当前线程绑定的调度器实例
      *
      * 实现为 thread-local；不同线程拿到的是不同实例。
+     *
+     * @note 该实例是“当前线程共享实例”，不是 `QCNetworkAccessManager` 私有对象。
      */
     static QCNetworkRequestScheduler *instance();
 
@@ -115,20 +148,32 @@ public:
     Config config() const;
 
     /**
-     * @brief 延后调度请求（非传输级暂停）
+     * @brief 设置 lane 调度配置
+     */
+    void setLaneConfig(const QString &lane, const LaneConfig &config);
+
+    /**
+     * @brief 获取 lane 调度配置
+     */
+    LaneConfig laneConfig(const QString &lane) const;
+
+    /**
+     * @brief 延后调度请求（仅 Pending，非传输级 pause/resume）
      *
-     * - pending：从队列移除并进入 deferred 列表（不触发传输级 pause）。
-     * - running：为释放并发槽位允许停止执行并转入 deferred；当前实现使用 cancel 终止执行，
-     *   因此 undefer 后一般会从头重新请求。
+     * 仅对 Pending 状态有效：从 pending 队列移除并进入 deferred 列表。
+     *
+     * 对 Running/Deferred 状态不会做任何事并返回 false。若调用方需要释放并发槽位，
+     * 请使用 `cancelRequest()`（或按 lane/范围使用 `cancelLaneRequests()`）。
      *
      * @param reply 要延后的响应对象
+     * @return 是否成功将请求从 Pending 移入 deferred
      */
-    void deferRequest(QCNetworkReply *reply);
+    bool deferPendingRequest(QCNetworkReply *reply);
 
     /**
      * @brief 恢复调度请求（从 deferred 列表重新入队）
      *
-     * 当前实现会以 `Normal` 优先级重新入队，不会恢复 defer 前的原始优先级。
+     * 当前实现会保留 defer 前的原始 priority 重新入队，不做静默降级。
      *
      * @param reply 要恢复调度的响应对象
      */
@@ -149,6 +194,13 @@ public:
      * 取消所有等待中和执行中的请求。
      */
     void cancelAllRequests();
+
+    /**
+     * @brief 取消指定 lane 的请求
+     *
+     * @return 被取消的请求数量
+     */
+    int cancelLaneRequests(const QString &lane, CancelLaneScope scope);
 
     /**
      * @brief 动态调整请求优先级
@@ -186,30 +238,68 @@ signals:
      * @brief 请求已加入队列
      *
      * @param reply 响应对象
+     * @param lane 调度 lane 快照（空字符串表示 default lane）
+     * @param hostKey origin 快照（`scheme://host:effectivePort`，IPv6 使用方括号）
+     *        默认端口覆盖 `http/https/ws/wss`；未知 scheme 且 URL 未显式带端口时，
+     *        `effectivePort` 固定为 `0`（不会出现 `:-1`）
      * @param priority 请求优先级
      */
-    void requestQueued(QCNetworkReply *reply, QCNetworkRequestPriority priority);
+    void requestQueued(QCNetworkReply *reply,
+                       const QString &lane,
+                       const QString &hostKey,
+                       QCNetworkRequestPriority priority);
 
     /**
-     * @brief 请求已开始执行
+     * @brief 请求即将开始执行（about-to-start）
+     *
+     * 该信号表示 scheduler owner thread 已进入“即将调用 `reply->execute()`”的 handoff，
+     * 且即将尝试触发 reply 的执行。
+     *
+     * contract:
+     * - 这是最后一个可拦截点：若在该信号的 direct slot 中调用 `cancelRequest()`，调度器必须
+     *   阻止后续 `reply->execute()`，并且不会发射 `requestStarted`。
+     * - 若 reply 在 queued handoff 执行前已析构/已 finished/cancelled，则不会发射该信号。
      *
      * @param reply 响应对象
+     * @param lane 调度 lane 快照
+     * @param hostKey origin 快照（IPv6 使用方括号）
      */
-    void requestStarted(QCNetworkReply *reply);
+    void requestAboutToStart(QCNetworkReply *reply, const QString &lane, const QString &hostKey);
+
+    /**
+     * @brief 请求已开始执行（started）
+     *
+     * 该信号表示 scheduler owner thread 已完成对 `reply->execute()` 的调用（启动提交点），
+     * 不再表达 “about-to-start”。
+     *
+     * contract:
+     * - `requestStarted` 只会在对应的 `requestAboutToStart` 之后发射。
+     * - 显式取消（`cancelRequest/cancelAllRequests/cancelLaneRequests`）一旦在 scheduler 侧生效，
+     *   不得再出现同一 reply 的 `requestStarted`。
+     *
+     * @param reply 响应对象
+     * @param lane 调度 lane 快照
+     * @param hostKey origin 快照（IPv6 使用方括号）
+     */
+    void requestStarted(QCNetworkReply *reply, const QString &lane, const QString &hostKey);
 
     /**
      * @brief 请求已完成
      *
      * @param reply 响应对象
+     * @param lane 调度 lane 快照
+     * @param hostKey origin 快照（IPv6 使用方括号）
      */
-    void requestFinished(QCNetworkReply *reply);
+    void requestFinished(QCNetworkReply *reply, const QString &lane, const QString &hostKey);
 
     /**
      * @brief 请求已取消
      *
      * @param reply 响应对象
+     * @param lane 调度 lane 快照
+     * @param hostKey origin 快照（IPv6 使用方括号）
      */
-    void requestCancelled(QCNetworkReply *reply);
+    void requestCancelled(QCNetworkReply *reply, const QString &lane, const QString &hostKey);
 
     /**
      * @brief 队列已清空
@@ -244,7 +334,9 @@ private:
      *
      * 调度器仅负责排队、统计和启动，不再负责构造 reply。
      */
-    void scheduleReply(QCNetworkReply *reply, QCNetworkRequestPriority priority);
+    void scheduleReply(QCNetworkReply *reply,
+                       const QString &lane,
+                       QCNetworkRequestPriority priority);
 
     /**
      * @brief 处理队列

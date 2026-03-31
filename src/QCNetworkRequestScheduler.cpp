@@ -5,57 +5,818 @@
 
 #include "QCNetworkReply.h"
 
+#include <QAbstractEventDispatcher>
 #include <QDateTime>
-#include <QDebug>
 #include <QHash>
-#include <QMap>
 #include <QMetaObject>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
-#include <QQueue>
-#include <QString>
+#include <QSet>
+#include <QStringList>
+#include <QThread>
 #include <QTimer>
+#include <QUrl>
+#include <utility>
 
 namespace QCurl {
+
+namespace {
+
+using ReplyKey = QObject *;
+
+enum class ScheduledState {
+    Pending,
+    Deferred,
+    Running,
+};
+
+struct ReplySnapshot
+{
+    QString lane;
+    QString hostKey;
+    QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal;
+};
+
+struct ReplyOutcome
+{
+    bool cancelled       = false;
+    qint64 bytesReceived = 0;
+};
+
+enum class FinalizeTrigger {
+    FinishedSignal,
+    ExplicitCancel,
+    Destroyed,
+};
+
+struct FinalizeResult
+{
+    ReplySnapshot snapshot;
+    bool wasTracked     = false;
+    bool emitCancelled  = false;
+    bool emitFinished   = false;
+    bool shouldKickQueue = false;
+};
+
+struct ReplyProgressState
+{
+    qint64 lastBytesReceived = 0;
+    qint64 lastBytesSent     = 0;
+    QMetaObject::Connection downloadConnection;
+    QMetaObject::Connection uploadConnection;
+};
+
+QString normalizedLane(const QString &lane)
+{
+    return lane.trimmed();
+}
+
+bool hasEventDispatcher(QThread *thread)
+{
+    return (thread != nullptr) && (QAbstractEventDispatcher::instance(thread) != nullptr);
+}
+
+ReplyKey replyKey(QCNetworkReply *reply)
+{
+    return static_cast<QObject *>(reply);
+}
+
+QCNetworkReply *replyFromKey(ReplyKey key)
+{
+    return static_cast<QCNetworkReply *>(key);
+}
+
+template <typename Functor>
+void invokeOnSchedulerOwnerThread(QCNetworkRequestScheduler *scheduler,
+                                  Functor &&functor,
+                                  const char *context)
+{
+    if (QThread::currentThread() == scheduler->thread()) {
+        std::forward<Functor>(functor)();
+        return;
+    }
+
+    if (!hasEventDispatcher(scheduler->thread())) {
+        qWarning() << context
+                   << ": scheduler owner thread has no Qt event dispatcher; queued call is dropped";
+        return;
+    }
+
+    QMetaObject::invokeMethod(scheduler, std::forward<Functor>(functor), Qt::QueuedConnection);
+}
+
+template <typename Result, typename Functor>
+Result invokeOnSchedulerOwnerThreadBlocking(QCNetworkRequestScheduler *scheduler,
+                                            Result fallback,
+                                            Functor &&functor,
+                                            const char *context)
+{
+    if (QThread::currentThread() == scheduler->thread()) {
+        return std::forward<Functor>(functor)();
+    }
+
+    if (!hasEventDispatcher(scheduler->thread())) {
+        qWarning() << context
+                   << ": scheduler owner thread has no Qt event dispatcher; blocking call is rejected";
+        return fallback;
+    }
+
+    Result result = fallback;
+    const bool invoked = QMetaObject::invokeMethod(
+        scheduler,
+        [functor = std::forward<Functor>(functor), &result]() mutable { result = functor(); },
+        Qt::BlockingQueuedConnection);
+    if (!invoked) {
+        qWarning() << context << ": failed to marshal call back to scheduler owner thread";
+        return fallback;
+    }
+
+    return result;
+}
+
+void assertSchedulerOwnerThread(const QCNetworkRequestScheduler *scheduler, const char *context)
+{
+    Q_ASSERT_X(QThread::currentThread() == scheduler->thread(),
+               context,
+               "QCNetworkRequestScheduler must run on its owner thread");
+}
+
+ReplyOutcome captureReplyOutcome(QCNetworkReply *reply)
+{
+    ReplyOutcome outcome;
+    if (!reply) {
+        return outcome;
+    }
+
+    outcome.cancelled = reply->state() == ReplyState::Cancelled
+                        || reply->error() == NetworkError::OperationCancelled;
+    outcome.bytesReceived = reply->bytesReceived();
+    return outcome;
+}
+
+void invokeReplyCancel(QCNetworkReply *reply)
+{
+    if (!reply) {
+        return;
+    }
+
+    QPointer<QCNetworkReply> safeReply(reply);
+    QMetaObject::invokeMethod(
+        reply,
+        [safeReply]() {
+            if (safeReply) {
+                safeReply->cancel();
+            }
+        },
+        Qt::QueuedConnection);
+}
+
+int effectivePort(const QUrl &url)
+{
+    const QString scheme = url.scheme().toLower();
+    const int explicitPort = url.port(-1);
+    if (explicitPort > 0) {
+        return explicitPort;
+    }
+    if (scheme == QStringLiteral("https")) {
+        return 443;
+    }
+    if (scheme == QStringLiteral("http")) {
+        return 80;
+    }
+    if (scheme == QStringLiteral("wss")) {
+        return 443;
+    }
+    if (scheme == QStringLiteral("ws")) {
+        return 80;
+    }
+    return 0;
+}
+
+QString buildHostKey(const QUrl &url)
+{
+    const QString scheme = url.scheme().toLower();
+    QString host = url.host().toLower();
+    if (host.contains(QLatin1Char(':')) && !host.startsWith(QLatin1Char('['))) {
+        host = QStringLiteral("[%1]").arg(host);
+    }
+    const int port = effectivePort(url);
+    return QStringLiteral("%1://%2:%3").arg(scheme, host).arg(port);
+}
+
+QCNetworkRequestScheduler::LaneConfig sanitizedLaneConfig(
+    QCNetworkRequestScheduler::LaneConfig config)
+{
+    if (config.weight <= 0) {
+        config.weight = 1;
+    }
+    if (config.quantum <= 0) {
+        config.quantum = 1;
+    }
+    if (config.reservedGlobal < 0) {
+        config.reservedGlobal = 0;
+    }
+    if (config.reservedPerHost < 0) {
+        config.reservedPerHost = 0;
+    }
+    return config;
+}
+
+const QList<QCNetworkRequestPriority> &priorityOrder()
+{
+    static const QList<QCNetworkRequestPriority> kOrder = {
+        QCNetworkRequestPriority::Critical,
+        QCNetworkRequestPriority::VeryHigh,
+        QCNetworkRequestPriority::High,
+        QCNetworkRequestPriority::Normal,
+        QCNetworkRequestPriority::Low,
+        QCNetworkRequestPriority::VeryLow,
+    };
+    return kOrder;
+}
+
+int nestedCounter(const QHash<QString, QHash<QString, int>> &counters,
+                  const QString &lane,
+                  const QString &hostKey)
+{
+    return counters.value(lane).value(hostKey, 0);
+}
+
+void incrementNestedCounter(QHash<QString, QHash<QString, int>> &counters,
+                            const QString &lane,
+                            const QString &hostKey)
+{
+    counters[lane][hostKey]++;
+}
+
+void decrementNestedCounter(QHash<QString, QHash<QString, int>> &counters,
+                            const QString &lane,
+                            const QString &hostKey)
+{
+    auto laneIt = counters.find(lane);
+    if (laneIt == counters.end()) {
+        return;
+    }
+
+    auto hostIt = laneIt->find(hostKey);
+    if (hostIt == laneIt->end()) {
+        return;
+    }
+
+    (*hostIt)--;
+    if (*hostIt <= 0) {
+        laneIt->erase(hostIt);
+    }
+    if (laneIt->isEmpty()) {
+        counters.erase(laneIt);
+    }
+}
+
+} // namespace
 
 struct QCNetworkRequestScheduler::Impl
 {
     struct QueuedRequest
     {
-        QPointer<QCNetworkReply> reply;    ///< 响应对象（使用 QPointer 防止悬空指针）
-        QCNetworkRequestPriority priority; ///< 请求优先级
-        QDateTime queueTime;               ///< 加入队列的时间
-        QString host;                      ///< 主机名
+        ReplyKey key           = nullptr;
+        QCNetworkReply *reply = nullptr;
+        ReplySnapshot snapshot;
+        QDateTime queueTime;
     };
 
-    mutable QMutex mutex; ///< 保护所有成员变量的互斥锁
+    template <typename Predicate>
+    static int findQueuedRequestIndex(const QList<QueuedRequest> &requests, Predicate &&predicate)
+    {
+        for (int i = 0; i < requests.size(); ++i) {
+            if (predicate(requests.at(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    static bool takeQueuedRequest(QList<QueuedRequest> &requests,
+                                  ReplyKey key,
+                                  QueuedRequest *out = nullptr)
+    {
+        const int index = findQueuedRequestIndex(
+            requests, [key](const QueuedRequest &request) { return request.key == key; });
+        if (index < 0) {
+            return false;
+        }
+
+        if (out) {
+            *out = requests.at(index);
+        }
+        requests.removeAt(index);
+        return true;
+    }
+
+    static QStringList rotatedLaneHosts(const QList<QueuedRequest> &requests,
+                                        const QString &lane,
+                                        const QString &lastStartedHost)
+    {
+        QStringList hosts;
+        QSet<QString> seenHosts;
+
+        for (const auto &request : requests) {
+            if (!request.reply || request.snapshot.lane != lane) {
+                continue;
+            }
+            if (seenHosts.contains(request.snapshot.hostKey)) {
+                continue;
+            }
+            hosts.append(request.snapshot.hostKey);
+            seenHosts.insert(request.snapshot.hostKey);
+        }
+
+        if (hosts.size() <= 1 || lastStartedHost.isEmpty()) {
+            return hosts;
+        }
+
+        const int lastIndex = hosts.indexOf(lastStartedHost);
+        if (lastIndex < 0) {
+            return hosts;
+        }
+
+        QStringList rotated;
+        rotated.reserve(hosts.size());
+        for (int i = 1; i <= hosts.size(); ++i) {
+            rotated.append(hosts.at((lastIndex + i) % hosts.size()));
+        }
+        return rotated;
+    }
+
+    QCNetworkRequestScheduler::LaneConfig laneConfigFor(const QString &lane) const
+    {
+        return laneConfigs.value(lane, QCNetworkRequestScheduler::LaneConfig{});
+    }
+
+    bool hasRunnablePendingExcluding(const QString &lane,
+                                     ReplyKey excludeKey,
+                                     const QHash<QString, int> &hostCounts) const
+    {
+        for (const auto &request : pendingRequests) {
+            if (!request.reply || request.key == excludeKey) {
+                continue;
+            }
+            if (request.snapshot.lane != lane) {
+                continue;
+            }
+            if (hostCounts.value(request.snapshot.hostKey, 0) < config.maxRequestsPerHost) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool hasRunnablePendingForHostExcluding(const QString &lane,
+                                            const QString &hostKey,
+                                            ReplyKey excludeKey,
+                                            const QHash<QString, int> &hostCounts) const
+    {
+        for (const auto &request : pendingRequests) {
+            if (!request.reply || request.key == excludeKey) {
+                continue;
+            }
+            if (request.snapshot.lane != lane || request.snapshot.hostKey != hostKey) {
+                continue;
+            }
+            if (hostCounts.value(hostKey, 0) < config.maxRequestsPerHost) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool wouldViolateReservation(const QueuedRequest &candidate) const
+    {
+        QHash<QString, int> hostCounts = hostConnectionCount;
+        hostCounts[candidate.snapshot.hostKey]++;
+        if (hostCounts.value(candidate.snapshot.hostKey, 0) > config.maxRequestsPerHost) {
+            return true;
+        }
+
+        QHash<QString, int> laneCounts = runningLaneCount;
+        laneCounts[candidate.snapshot.lane]++;
+
+        QHash<QString, QHash<QString, int>> laneHostCounts = runningLaneHostCount;
+        incrementNestedCounter(laneHostCounts, candidate.snapshot.lane, candidate.snapshot.hostKey);
+
+        const int freeGlobalAfter = config.maxConcurrentRequests - (runningRequests.size() + 1);
+        int globalDemand          = 0;
+
+        QHash<QString, int> hostDemand;
+        for (const auto &lane : laneOrder) {
+            const auto laneCfg = laneConfigFor(lane);
+            if (laneCfg.reservedGlobal > 0
+                && hasRunnablePendingExcluding(lane, candidate.key, hostCounts)) {
+                globalDemand += qMax(0, laneCfg.reservedGlobal - laneCounts.value(lane, 0));
+            }
+
+            if (laneCfg.reservedPerHost <= 0) {
+                continue;
+            }
+
+            QSet<QString> hosts;
+            for (const auto &request : pendingRequests) {
+                if (!request.reply || request.key == candidate.key) {
+                    continue;
+                }
+                if (request.snapshot.lane != lane) {
+                    continue;
+                }
+                hosts.insert(request.snapshot.hostKey);
+            }
+
+            for (const auto &hostKey : hosts) {
+                if (!hasRunnablePendingForHostExcluding(lane, hostKey, candidate.key, hostCounts)) {
+                    continue;
+                }
+                hostDemand[hostKey]
+                    += qMax(0, laneCfg.reservedPerHost - nestedCounter(laneHostCounts, lane, hostKey));
+            }
+        }
+
+        if (globalDemand > freeGlobalAfter) {
+            return true;
+        }
+
+        for (auto it = hostDemand.cbegin(); it != hostDemand.cend(); ++it) {
+            const int freeHostAfter = config.maxRequestsPerHost - hostCounts.value(it.key(), 0);
+            if (it.value() > freeHostAfter) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    template <typename Predicate>
+    int candidateIndexForLane(const QString &lane, Predicate &&predicate) const
+    {
+        const QStringList hosts = rotatedLaneHosts(
+            pendingRequests, lane, laneLastStartedHost.value(lane));
+
+        for (const auto priority : priorityOrder()) {
+            for (const auto &host : hosts) {
+                const int index = findQueuedRequestIndex(
+                    pendingRequests,
+                    [&](const QueuedRequest &request) {
+                        return request.reply && request.snapshot.lane == lane
+                               && request.snapshot.priority == priority
+                               && request.snapshot.hostKey == host && predicate(request);
+                    });
+                if (index >= 0) {
+                    return index;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    int selectReservationHostIndex()
+    {
+        QStringList activeLanes;
+        for (const auto &lane : laneOrder) {
+            const auto laneCfg = laneConfigFor(lane);
+            if (laneCfg.reservedPerHost <= 0) {
+                continue;
+            }
+
+            const bool active = findQueuedRequestIndex(
+                pendingRequests,
+                [&](const QueuedRequest &request) {
+                    return request.reply && request.snapshot.lane == lane
+                           && hostConnectionCount.value(request.snapshot.hostKey, 0)
+                                  < config.maxRequestsPerHost
+                           && nestedCounter(runningLaneHostCount, lane, request.snapshot.hostKey)
+                                  < laneCfg.reservedPerHost;
+                })
+                >= 0;
+
+            if (active) {
+                activeLanes.append(lane);
+            }
+        }
+
+        if (activeLanes.isEmpty()) {
+            return -1;
+        }
+
+        const int laneCount = laneOrder.size();
+        for (int attempt = 0; attempt < laneCount; ++attempt) {
+            const QString &lane = laneOrder.at((hostReservationCursor + attempt) % laneCount);
+            if (!activeLanes.contains(lane)) {
+                continue;
+            }
+
+            const auto laneCfg = laneConfigFor(lane);
+            const int index    = candidateIndexForLane(
+                lane,
+                [&](const QueuedRequest &request) {
+                    return hostConnectionCount.value(request.snapshot.hostKey, 0)
+                               < config.maxRequestsPerHost
+                           && nestedCounter(runningLaneHostCount, lane, request.snapshot.hostKey)
+                                  < laneCfg.reservedPerHost;
+                });
+            if (index >= 0) {
+                hostReservationCursor = (laneOrder.indexOf(lane) + 1) % laneCount;
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    int selectReservationGlobalIndex()
+    {
+        QStringList activeLanes;
+        for (const auto &lane : laneOrder) {
+            const auto laneCfg = laneConfigFor(lane);
+            if (laneCfg.reservedGlobal <= 0) {
+                continue;
+            }
+
+            if (runningLaneCount.value(lane, 0) >= laneCfg.reservedGlobal) {
+                continue;
+            }
+
+            const bool active = findQueuedRequestIndex(
+                pendingRequests,
+                [&](const QueuedRequest &request) {
+                    return request.reply && request.snapshot.lane == lane
+                           && hostConnectionCount.value(request.snapshot.hostKey, 0)
+                                  < config.maxRequestsPerHost;
+                })
+                >= 0;
+            if (active) {
+                activeLanes.append(lane);
+            }
+        }
+
+        if (activeLanes.isEmpty()) {
+            return -1;
+        }
+
+        const int laneCount = laneOrder.size();
+        for (int attempt = 0; attempt < laneCount; ++attempt) {
+            const QString &lane = laneOrder.at((globalReservationCursor + attempt) % laneCount);
+            if (!activeLanes.contains(lane)) {
+                continue;
+            }
+
+            const int index = candidateIndexForLane(
+                lane,
+                [&](const QueuedRequest &request) {
+                    return hostConnectionCount.value(request.snapshot.hostKey, 0)
+                           < config.maxRequestsPerHost;
+                });
+            if (index >= 0) {
+                globalReservationCursor = (laneOrder.indexOf(lane) + 1) % laneCount;
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    int selectBestEffortIndex()
+    {
+        if (laneOrder.isEmpty()) {
+            return -1;
+        }
+
+        const int laneCount = laneOrder.size();
+        for (int attempt = 0; attempt < laneCount; ++attempt) {
+            const int laneIndex = (bestEffortCursor + attempt) % laneCount;
+            const QString &lane = laneOrder.at(laneIndex);
+
+            const bool laneHasPending = findQueuedRequestIndex(
+                pendingRequests,
+                [&](const QueuedRequest &request) {
+                    return request.reply && request.snapshot.lane == lane;
+                })
+                >= 0;
+            if (!laneHasPending) {
+                continue;
+            }
+
+            const auto laneCfg = laneConfigFor(lane);
+            if (laneDeficit.value(lane, 0) < 1) {
+                laneDeficit[lane] += qMax(1, laneCfg.weight * qMax(1, laneCfg.quantum));
+            }
+
+            if (laneDeficit.value(lane, 0) < 1) {
+                continue;
+            }
+
+            const int index = candidateIndexForLane(
+                lane,
+                [&](const QueuedRequest &request) {
+                    return hostConnectionCount.value(request.snapshot.hostKey, 0)
+                               < config.maxRequestsPerHost
+                           && !wouldViolateReservation(request);
+                });
+            if (index >= 0) {
+                laneDeficit[lane] -= 1;
+                if (laneDeficit.value(lane, 0) < 1) {
+                    bestEffortCursor = (laneIndex + 1) % laneCount;
+                } else {
+                    bestEffortCursor = laneIndex;
+                }
+                return index;
+            }
+
+            laneDeficit[lane] = 0;
+        }
+
+        return -1;
+    }
+
+    mutable QMutex mutex;
     QCNetworkRequestScheduler::Config config;
-
-    // 优先级队列
-    QMap<QCNetworkRequestPriority, QQueue<QueuedRequest>> pendingQueue;
-
-    // 运行中的请求
-    QList<QPointer<QCNetworkReply>> runningRequests;
-    QHash<QString, int> hostConnectionCount; ///< 主机连接计数
-
-    // 延后调度的请求（非传输级 pause）
-    QList<QPointer<QCNetworkReply>> deferredRequests;
-
-    // 统计信息
+    QList<QueuedRequest> pendingRequests;
+    QList<QueuedRequest> deferredRequests;
+    QList<QCNetworkReply *> runningRequests;
+    QHash<QString, int> hostConnectionCount;
+    QHash<QString, int> runningLaneCount;
+    QHash<QString, QHash<QString, int>> runningLaneHostCount;
+    QHash<QString, QCNetworkRequestScheduler::LaneConfig> laneConfigs;
+    QStringList laneOrder;
+    QHash<QString, int> laneDeficit;
+    QHash<QString, QString> laneLastStartedHost;
+    int hostReservationCursor   = 0;
+    int globalReservationCursor = 0;
+    int bestEffortCursor        = 0;
     QCNetworkRequestScheduler::Statistics stats;
-    QHash<QCNetworkReply *, QDateTime> requestStartTimes; ///< 请求开始时间
-    QHash<QCNetworkReply *, QString> replyHosts;          ///< Reply 对应的主机名
+    QHash<ReplyKey, QDateTime> requestStartTimes;
+    QHash<ReplyKey, ReplySnapshot> replySnapshots;
+    QHash<ReplyKey, ScheduledState> replyStates;
+    QHash<ReplyKey, ReplyProgressState> replyProgressStates;
+    QSet<ReplyKey> cancelledReplies;
+    quint64 nextStartTicket = 1;
+    QHash<ReplyKey, quint64> startTickets;
+    QTimer *throttleTimer           = nullptr;
+    qint64 bytesTransferredInWindow = 0;
 
-    // 带宽控制
-    QTimer *throttleTimer           = nullptr; ///< 带宽重置定时器
-    qint64 bytesTransferredInWindow = 0;       ///< 当前窗口内传输的字节数
+    void disconnectProgressTracking(ReplyKey key)
+    {
+        auto it = replyProgressStates.find(key);
+        if (it == replyProgressStates.end()) {
+            return;
+        }
+
+        QObject::disconnect(it->downloadConnection);
+        QObject::disconnect(it->uploadConnection);
+        replyProgressStates.erase(it);
+    }
+
+    void clearReplyTracking(ReplyKey key)
+    {
+        disconnectProgressTracking(key);
+        requestStartTimes.remove(key);
+        replyStates.remove(key);
+        replySnapshots.remove(key);
+        cancelledReplies.remove(key);
+        startTickets.remove(key);
+    }
+
+    bool isStartTicketValidLocked(ReplyKey key, quint64 ticket) const
+    {
+        if (!key) {
+            return false;
+        }
+
+        if (cancelledReplies.contains(key)) {
+            return false;
+        }
+
+        const auto stateIt = replyStates.constFind(key);
+        if (stateIt == replyStates.constEnd() || stateIt.value() != ScheduledState::Running) {
+            return false;
+        }
+
+        const auto ticketIt = startTickets.constFind(key);
+        if (ticketIt == startTickets.constEnd() || ticketIt.value() != ticket) {
+            return false;
+        }
+
+        return true;
+    }
+
+    void resetSchedulingRuntimeState()
+    {
+        QStringList configuredLaneOrder;
+        configuredLaneOrder.reserve(laneOrder.size());
+        for (const QString &lane : std::as_const(laneOrder)) {
+            if (!laneConfigs.contains(lane) || configuredLaneOrder.contains(lane)) {
+                continue;
+            }
+            configuredLaneOrder.append(lane);
+        }
+
+        laneOrder = configuredLaneOrder;
+        laneDeficit.clear();
+        for (const QString &lane : std::as_const(laneOrder)) {
+            laneDeficit.insert(lane, 0);
+        }
+        laneLastStartedHost.clear();
+        hostReservationCursor   = 0;
+        globalReservationCursor = 0;
+        bestEffortCursor        = 0;
+    }
+    FinalizeResult finalizeReplyLocked(ReplyKey key,
+                                       FinalizeTrigger trigger,
+                                       const ReplyOutcome &outcome = {})
+    {
+        FinalizeResult result;
+        if (!key) {
+            return result;
+        }
+
+        if (!replySnapshots.contains(key) && !replyStates.contains(key)
+            && !cancelledReplies.contains(key)) {
+            return result;
+        }
+
+        result.wasTracked = true;
+        result.snapshot   = replySnapshots.value(key);
+
+        if (trigger == FinalizeTrigger::FinishedSignal && cancelledReplies.remove(key)) {
+            disconnectProgressTracking(key);
+            return result;
+        }
+
+        const ScheduledState state = replyStates.value(key, ScheduledState::Pending);
+
+        if (state == ScheduledState::Pending) {
+            if (takeQueuedRequest(pendingRequests, key)) {
+                stats.pendingRequests = pendingRequests.size();
+                result.shouldKickQueue = trigger != FinalizeTrigger::ExplicitCancel;
+            }
+        } else if (state == ScheduledState::Deferred) {
+            if (takeQueuedRequest(deferredRequests, key)) {
+                result.shouldKickQueue = trigger == FinalizeTrigger::Destroyed;
+            }
+        } else if (runningRequests.removeOne(replyFromKey(key))) {
+            stats.runningRequests = runningRequests.size();
+            runningLaneCount[result.snapshot.lane]--;
+            if (runningLaneCount.value(result.snapshot.lane, 0) <= 0) {
+                runningLaneCount.remove(result.snapshot.lane);
+            }
+            hostConnectionCount[result.snapshot.hostKey]--;
+            if (hostConnectionCount.value(result.snapshot.hostKey, 0) <= 0) {
+                hostConnectionCount.remove(result.snapshot.hostKey);
+            }
+            decrementNestedCounter(
+                runningLaneHostCount, result.snapshot.lane, result.snapshot.hostKey);
+            result.shouldKickQueue = true;
+        }
+
+        if (trigger == FinalizeTrigger::ExplicitCancel) {
+            disconnectProgressTracking(key);
+            requestStartTimes.remove(key);
+            replyStates.remove(key);
+            replySnapshots.remove(key);
+            startTickets.remove(key);
+            cancelledReplies.insert(key);
+            stats.cancelledRequests++;
+            result.emitCancelled = true;
+            return result;
+        }
+
+        if (trigger == FinalizeTrigger::FinishedSignal) {
+            if (outcome.cancelled) {
+                stats.cancelledRequests++;
+                result.emitCancelled = true;
+            } else if (state == ScheduledState::Running) {
+                const QDateTime finishTime = QDateTime::currentDateTime();
+                const QDateTime startTime  = requestStartTimes.value(key);
+                const qint64 duration      = startTime.isValid() ? startTime.msecsTo(finishTime) : 0;
+
+                stats.completedRequests++;
+                if (stats.completedRequests == 1) {
+                    stats.avgResponseTime = duration;
+                } else {
+                    stats.avgResponseTime
+                        = (stats.avgResponseTime * (stats.completedRequests - 1) + duration)
+                          / stats.completedRequests;
+                }
+                stats.totalBytesReceived += outcome.bytesReceived;
+                result.emitFinished = true;
+            }
+        }
+
+        clearReplyTracking(key);
+        return result;
+    }
 };
 
-// 单例实现
 QCNetworkRequestScheduler *QCNetworkRequestScheduler::instance()
 {
-    // 线程内单例：每个线程拥有独立的调度器，避免跨线程共享状态/回调重入
     static thread_local QCNetworkRequestScheduler instance;
     return &instance;
 }
@@ -64,7 +825,7 @@ QCNetworkRequestScheduler::QCNetworkRequestScheduler(QObject *parent)
     : QObject(parent)
     , m_impl(new Impl)
 {
-    // 每秒重置带宽窗口
+    registerQCNetworkRequestPriorityMetaType();
     m_impl->throttleTimer = new QTimer(this);
     m_impl->throttleTimer->setInterval(1000);
     connect(m_impl->throttleTimer,
@@ -81,36 +842,125 @@ QCNetworkRequestScheduler::~QCNetworkRequestScheduler()
 
 void QCNetworkRequestScheduler::setConfig(const Config &config)
 {
+    if (QThread::currentThread() != thread()) {
+        invokeOnSchedulerOwnerThread(
+            this, [this, config]() { setConfig(config); }, "QCNetworkRequestScheduler::setConfig");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::setConfig");
+
     {
         QMutexLocker locker(&m_impl->mutex);
         m_impl->config = config;
     }
 
-    // 配置改变后尝试处理队列（避免持锁触发信号回调/重入）
     processQueue();
 }
 
 QCNetworkRequestScheduler::Config QCNetworkRequestScheduler::config() const
 {
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            const_cast<QCNetworkRequestScheduler *>(this),
+            Config{},
+            [this]() { return config(); },
+            "QCNetworkRequestScheduler::config");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::config");
+
     QMutexLocker locker(&m_impl->mutex);
     return m_impl->config;
 }
 
+void QCNetworkRequestScheduler::setLaneConfig(const QString &lane, const LaneConfig &config)
+{
+    if (QThread::currentThread() != thread()) {
+        invokeOnSchedulerOwnerThread(this,
+                                     [this, lane, config]() { setLaneConfig(lane, config); },
+                                     "QCNetworkRequestScheduler::setLaneConfig");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::setLaneConfig");
+
+    const QString laneKey = normalizedLane(lane);
+    const LaneConfig sanitized = sanitizedLaneConfig(config);
+
+    {
+        QMutexLocker locker(&m_impl->mutex);
+        m_impl->laneConfigs.insert(laneKey, sanitized);
+        if (!m_impl->laneOrder.contains(laneKey)) {
+            m_impl->laneOrder.append(laneKey);
+        }
+        if (!m_impl->laneDeficit.contains(laneKey)) {
+            m_impl->laneDeficit.insert(laneKey, 0);
+        }
+    }
+
+    processQueue();
+}
+
+QCNetworkRequestScheduler::LaneConfig QCNetworkRequestScheduler::laneConfig(const QString &lane) const
+{
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            const_cast<QCNetworkRequestScheduler *>(this),
+            LaneConfig{},
+            [this, lane]() { return laneConfig(lane); },
+            "QCNetworkRequestScheduler::laneConfig");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::laneConfig");
+
+    QMutexLocker locker(&m_impl->mutex);
+    return m_impl->laneConfigs.value(normalizedLane(lane), LaneConfig{});
+}
+
 void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
+                                              const QString &lane,
                                               QCNetworkRequestPriority priority)
 {
     if (!reply) {
         return;
     }
 
-    QMutexLocker locker(&m_impl->mutex);
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply, lane, priority]() {
+                if (safeReply) {
+                    scheduleReply(safeReply.data(), lane, priority);
+                }
+            },
+            "QCNetworkRequestScheduler::scheduleReply");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::scheduleReply");
+    Q_ASSERT_X(reply->thread() == thread(),
+               "QCNetworkRequestScheduler::scheduleReply",
+               "reply must live on the scheduler owner thread");
 
-    // 兜底：用户可能在 finished 槽内直接 delete reply（而非 deleteLater），导致 queued 的 finished
-    // 回调无法执行。 这里监听 destroyed 以回收并发槽位与主机计数，避免队列卡死。
+    const ReplyKey key = replyKey(reply);
+    const QString laneKey = normalizedLane(lane);
+    const ReplySnapshot snapshot = {laneKey, buildHostKey(reply->url()), priority};
+
+    {
+        QMutexLocker locker(&m_impl->mutex);
+
+        if (!m_impl->laneOrder.contains(laneKey)) {
+            m_impl->laneOrder.append(laneKey);
+        }
+        if (!m_impl->laneDeficit.contains(laneKey)) {
+            m_impl->laneDeficit.insert(laneKey, 0);
+        }
+
+        m_impl->replySnapshots.insert(key, snapshot);
+        m_impl->replyStates.insert(key, ScheduledState::Pending);
+        m_impl->pendingRequests.append({key, reply, snapshot, QDateTime::currentDateTime()});
+        m_impl->stats.pendingRequests = m_impl->pendingRequests.size();
+    }
+
     connect(reply, &QObject::destroyed, this, &QCNetworkRequestScheduler::onReplyDestroyed);
 
-    // 连接 finished 信号（QueuedConnection：避免用户在 finished 槽内直接 delete reply
-    // 导致重入/死锁）
     QPointer<QCNetworkReply> safeReply(reply);
     connect(
         reply,
@@ -123,142 +973,74 @@ void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
         },
         Qt::QueuedConnection);
 
-    // 创建队列项
-    Impl::QueuedRequest queuedReq;
-    queuedReq.reply     = reply;
-    queuedReq.priority  = priority;
-    queuedReq.queueTime = QDateTime::currentDateTime();
-    queuedReq.host      = reply->url().host();
-
-    bool shouldEmitQueued = false;
-    if (priority == QCNetworkRequestPriority::Critical) {
-        // Critical：跳过队列直接执行（不受并发/主机限制约束）
-        m_impl->runningRequests.append(reply);
-        m_impl->stats.runningRequests = m_impl->runningRequests.size();
-        m_impl->hostConnectionCount[queuedReq.host]++;
-        m_impl->requestStartTimes[reply] = QDateTime::currentDateTime();
-        m_impl->replyHosts[reply]        = queuedReq.host;
-    } else {
-        // 加入优先级队列
-        m_impl->pendingQueue[priority].enqueue(queuedReq);
-        m_impl->stats.pendingRequests++;
-        shouldEmitQueued = true;
-    }
-
-    locker.unlock();
-
-    if (shouldEmitQueued) {
-        emit requestQueued(reply, priority);
-        processQueue();
-        return;
-    }
-
-    // Critical：立即启动（避免持锁触发 execute/cancel 的同步信号回调）
-    startRequest(reply);
+    emit requestQueued(reply, snapshot.lane, snapshot.hostKey, snapshot.priority);
+    processQueue();
 }
 
 void QCNetworkRequestScheduler::processQueue()
 {
-    QList<QPointer<QCNetworkReply>> toStart;
+    if (QThread::currentThread() != thread()) {
+        invokeOnSchedulerOwnerThread(
+            this, [this]() { processQueue(); }, "QCNetworkRequestScheduler::processQueue");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::processQueue");
+
+    QList<QCNetworkReply *> toStart;
     bool shouldEmitQueueEmpty         = false;
     bool shouldEmitBandwidthThrottled = false;
     qint64 throttledBytesPerSec       = 0;
 
-    // 按优先级从高到低处理（注意：不包括 Critical，因为它会直接执行）
-    QList<QCNetworkRequestPriority> priorities = {QCNetworkRequestPriority::VeryHigh,
-                                                  QCNetworkRequestPriority::High,
-                                                  QCNetworkRequestPriority::Normal,
-                                                  QCNetworkRequestPriority::Low,
-                                                  QCNetworkRequestPriority::VeryLow};
-
     {
         QMutexLocker locker(&m_impl->mutex);
 
-        // 兜底清理：running/deferred/pending 中可能存在已销毁的 reply（QPointer 变 null）
-        auto prunePointerList = [](QList<QPointer<QCNetworkReply>> &list) {
-            for (int i = list.size() - 1; i >= 0; --i) {
-                if (!list.at(i)) {
-                    list.removeAt(i);
-                }
-            }
-        };
-        prunePointerList(m_impl->runningRequests);
-        prunePointerList(m_impl->deferredRequests);
-        m_impl->stats.runningRequests = m_impl->runningRequests.size();
-
-        for (auto priority : priorities) {
-            auto &queue = m_impl->pendingQueue[priority];
-
-            while (!queue.isEmpty()) {
-                const Impl::QueuedRequest &req = queue.head();
-
-                if (!req.reply) {
-                    queue.dequeue();
-                    if (m_impl->stats.pendingRequests > 0) {
-                        m_impl->stats.pendingRequests--;
-                    }
-                    continue;
-                }
-
-                // 检查并发/主机/带宽限制（锁内只做判定，不发射信号）
-                if (m_impl->stats.runningRequests >= m_impl->config.maxConcurrentRequests) {
-                    break;
-                }
-                const int hostCount = m_impl->hostConnectionCount.value(req.host, 0);
-                if (hostCount >= m_impl->config.maxRequestsPerHost) {
-                    break;
-                }
-                if (m_impl->config.enableThrottling && m_impl->config.maxBandwidthBytesPerSec > 0) {
-                    if (m_impl->bytesTransferredInWindow >= m_impl->config.maxBandwidthBytesPerSec) {
-                        shouldEmitBandwidthThrottled = true;
-                        throttledBytesPerSec         = m_impl->bytesTransferredInWindow;
-                        break;
-                    }
-                }
-
-                // 出队并预占并发槽位（锁内更新状态，锁外真正启动）
-                Impl::QueuedRequest queuedReq = queue.dequeue();
-                if (m_impl->stats.pendingRequests > 0) {
-                    m_impl->stats.pendingRequests--;
-                }
-
-                QCNetworkReply *reply = queuedReq.reply.data();
-                m_impl->runningRequests.append(queuedReq.reply);
-                m_impl->stats.runningRequests = m_impl->runningRequests.size();
-                m_impl->hostConnectionCount[queuedReq.host]++;
-                m_impl->requestStartTimes[reply] = QDateTime::currentDateTime();
-                m_impl->replyHosts[reply]        = queuedReq.host;
-
-                toStart.append(queuedReq.reply);
-            }
-        }
-
-        // 检查队列是否为空（pending 为空即可，不要求 running 为空）
-        bool isEmpty = true;
-        for (const auto &queue : m_impl->pendingQueue) {
-            if (!queue.isEmpty()) {
-                isEmpty = false;
+        while (true) {
+            if (m_impl->runningRequests.size() >= m_impl->config.maxConcurrentRequests) {
                 break;
             }
+
+            if (m_impl->config.enableThrottling && m_impl->config.maxBandwidthBytesPerSec > 0
+                && m_impl->bytesTransferredInWindow >= m_impl->config.maxBandwidthBytesPerSec) {
+                shouldEmitBandwidthThrottled = true;
+                throttledBytesPerSec         = m_impl->bytesTransferredInWindow;
+                break;
+            }
+
+            int nextIndex = m_impl->selectReservationHostIndex();
+            if (nextIndex < 0) {
+                nextIndex = m_impl->selectReservationGlobalIndex();
+            }
+            if (nextIndex < 0) {
+                nextIndex = m_impl->selectBestEffortIndex();
+            }
+            if (nextIndex < 0) {
+                break;
+            }
+
+            const Impl::QueuedRequest request = m_impl->pendingRequests.takeAt(nextIndex);
+            m_impl->stats.pendingRequests     = m_impl->pendingRequests.size();
+            m_impl->runningRequests.append(request.reply);
+            m_impl->replyStates[request.key] = ScheduledState::Running;
+            m_impl->requestStartTimes.insert(request.key, QDateTime::currentDateTime());
+            m_impl->runningLaneCount[request.snapshot.lane]++;
+            m_impl->hostConnectionCount[request.snapshot.hostKey]++;
+            incrementNestedCounter(
+                m_impl->runningLaneHostCount, request.snapshot.lane, request.snapshot.hostKey);
+            m_impl->laneLastStartedHost.insert(request.snapshot.lane, request.snapshot.hostKey);
+            m_impl->stats.runningRequests = m_impl->runningRequests.size();
+
+            toStart.append(request.reply);
         }
 
-        if (isEmpty && m_impl->stats.pendingRequests > 0) {
-            m_impl->stats.pendingRequests = 0;
-        }
-        if (isEmpty) {
-            shouldEmitQueueEmpty = true;
-        }
+        shouldEmitQueueEmpty = m_impl->pendingRequests.isEmpty();
     }
 
     if (shouldEmitBandwidthThrottled) {
         emit bandwidthThrottled(throttledBytesPerSec);
     }
 
-    for (const auto &replyPtr : toStart) {
-        if (!replyPtr) {
-            continue;
-        }
-        startRequest(replyPtr.data());
+    for (auto *reply : std::as_const(toStart)) {
+        startRequest(reply);
     }
 
     if (shouldEmitQueueEmpty) {
@@ -272,90 +1054,163 @@ void QCNetworkRequestScheduler::startRequest(QCNetworkReply *reply)
         return;
     }
 
-    // 连接进度信号以追踪带宽使用
-    connect(reply,
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    startRequest(safeReply.data());
+                }
+            },
+            "QCNetworkRequestScheduler::startRequest");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::startRequest");
+    Q_ASSERT_X(reply->thread() == thread(),
+               "QCNetworkRequestScheduler::startRequest",
+               "reply must live on the scheduler owner thread");
+
+    const ReplyKey key = replyKey(reply);
+    ReplySnapshot snapshot;
+    quint64 startTicket = 0;
+    {
+        QMutexLocker locker(&m_impl->mutex);
+        m_impl->disconnectProgressTracking(key);
+        auto &progressState = m_impl->replyProgressStates[key];
+        progressState.downloadConnection = connect(
+            reply,
             &QCNetworkReply::downloadProgress,
             this,
-            [this](qint64 bytesReceived, qint64 /*bytesTotal*/) {
+            [this, key](qint64 bytesReceived, qint64 /*bytesTotal*/) {
                 QMutexLocker locker(&m_impl->mutex);
-                m_impl->bytesTransferredInWindow += bytesReceived;
-            });
+                auto it = m_impl->replyProgressStates.find(key);
+                if (it == m_impl->replyProgressStates.end()) {
+                    return;
+                }
 
-    connect(reply,
+                const qint64 delta = qMax<qint64>(0, bytesReceived - it->lastBytesReceived);
+                it->lastBytesReceived = bytesReceived;
+                m_impl->bytesTransferredInWindow += delta;
+            },
+            Qt::QueuedConnection);
+
+        progressState.uploadConnection = connect(
+            reply,
             &QCNetworkReply::uploadProgress,
             this,
-            [this](qint64 bytesSent, qint64 /*bytesTotal*/) {
+            [this, key](qint64 bytesSent, qint64 /*bytesTotal*/) {
                 QMutexLocker locker(&m_impl->mutex);
-                m_impl->bytesTransferredInWindow += bytesSent;
-            });
+                auto it = m_impl->replyProgressStates.find(key);
+                if (it == m_impl->replyProgressStates.end()) {
+                    return;
+                }
 
-    // 发射信号
-    emit requestStarted(reply);
+                const qint64 delta = qMax<qint64>(0, bytesSent - it->lastBytesSent);
+                it->lastBytesSent = bytesSent;
+                m_impl->bytesTransferredInWindow += delta;
+            },
+            Qt::QueuedConnection);
 
-    // 启动请求（排队到事件循环，避免在 scheduleRequest 返回前同步发射 finished）
+        snapshot = m_impl->replySnapshots.value(key);
+        startTicket = m_impl->nextStartTicket++;
+        m_impl->startTickets.insert(key, startTicket);
+    }
+
+    QPointer<QCNetworkRequestScheduler> safeScheduler(this);
     QPointer<QCNetworkReply> safeReply(reply);
     QMetaObject::invokeMethod(
         reply,
-        [safeReply]() {
-            if (safeReply) {
-                safeReply->execute();
+        [safeScheduler, safeReply, snapshot, key, startTicket]() {
+            if (!safeScheduler || !safeReply) {
+                return;
             }
+
+            auto isStartStillValid = [&]() -> bool {
+                QMutexLocker locker(&safeScheduler->m_impl->mutex);
+                return safeScheduler->m_impl->isStartTicketValidLocked(key, startTicket);
+            };
+
+            if (!isStartStillValid()) {
+                return;
+            }
+
+            if (safeReply->state() == ReplyState::Cancelled || safeReply->isFinished()) {
+                return;
+            }
+
+            Q_EMIT safeScheduler->requestAboutToStart(safeReply.data(),
+                                                      snapshot.lane,
+                                                      snapshot.hostKey);
+
+            if (!safeScheduler || !safeReply) {
+                return;
+            }
+
+            // 允许在 requestAboutToStart 的 direct slot 中触发显式 cancel；
+            // 该路径必须阻止后续 execute() 与 requestStarted。
+            if (!isStartStillValid()) {
+                return;
+            }
+
+            if (safeReply->state() == ReplyState::Cancelled || safeReply->isFinished()) {
+                return;
+            }
+
+            safeReply->execute();
+
+            if (!safeScheduler || !safeReply) {
+                return;
+            }
+
+            // 防止“显式取消已生效 → 仍发 started”的违约序列。
+            if (!isStartStillValid()) {
+                return;
+            }
+
+            Q_EMIT safeScheduler->requestStarted(safeReply.data(), snapshot.lane, snapshot.hostKey);
         },
         Qt::QueuedConnection);
 }
 
-void QCNetworkRequestScheduler::deferRequest(QCNetworkReply *reply)
+bool QCNetworkRequestScheduler::deferPendingRequest(QCNetworkReply *reply)
 {
     if (!reply) {
-        return;
+        return false;
     }
 
-    bool shouldCancel = false;
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        return invokeOnSchedulerOwnerThreadBlocking(
+            this,
+            false,
+            [this, safeReply]() {
+                return safeReply ? deferPendingRequest(safeReply.data()) : false;
+            },
+            "QCNetworkRequestScheduler::deferPendingRequest");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::deferPendingRequest");
 
-    // 检查是否在运行列表中
+    const ReplyKey key = replyKey(reply);
+    bool deferred = false;
+
     {
         QMutexLocker locker(&m_impl->mutex);
 
-        if (m_impl->runningRequests.contains(reply)) {
-            // 延后执行中的请求：为释放并发槽位，当前实现选择终止执行并转入 deferred
-            // 注意：这不是传输级暂停，undefer 后一般会从头重新请求
-            shouldCancel = true;
-
-            m_impl->runningRequests.removeOne(reply);
-            m_impl->stats.runningRequests = m_impl->runningRequests.size();
-
-            // 更新主机连接计数
-            if (m_impl->replyHosts.contains(reply)) {
-                const QString host = m_impl->replyHosts[reply];
-                if (m_impl->hostConnectionCount.contains(host)) {
-                    m_impl->hostConnectionCount[host]--;
-                    if (m_impl->hostConnectionCount[host] <= 0) {
-                        m_impl->hostConnectionCount.remove(host);
-                    }
-                }
-            }
-
-            m_impl->deferredRequests.append(reply);
-        } else if (removeFromQueue(reply)) {
-            m_impl->deferredRequests.append(reply);
-            if (m_impl->stats.pendingRequests > 0) {
-                m_impl->stats.pendingRequests--;
-            }
+        Impl::QueuedRequest request;
+        if (Impl::takeQueuedRequest(m_impl->pendingRequests, key, &request)) {
+            m_impl->deferredRequests.append(request);
+            m_impl->replyStates[key]      = ScheduledState::Deferred;
+            m_impl->stats.pendingRequests = m_impl->pendingRequests.size();
+            deferred = true;
         }
     }
 
-    if (shouldCancel) {
-        QPointer<QCNetworkReply> safeReply(reply);
-        QMetaObject::invokeMethod(
-            reply,
-            [safeReply]() {
-                if (safeReply) {
-                    safeReply->cancel();
-                }
-            },
-            Qt::QueuedConnection);
+    if (deferred) {
         processQueue();
     }
+
+    return deferred;
 }
 
 void QCNetworkRequestScheduler::undeferRequest(QCNetworkReply *reply)
@@ -364,34 +1219,36 @@ void QCNetworkRequestScheduler::undeferRequest(QCNetworkReply *reply)
         return;
     }
 
-    // 重新加入队列（使用 Normal 优先级，因为无法从 reply 获取原优先级）
-    QCNetworkRequestPriority priority = QCNetworkRequestPriority::Normal;
-    bool requeued                     = false;
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    undeferRequest(safeReply.data());
+                }
+            },
+            "QCNetworkRequestScheduler::undeferRequest");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::undeferRequest");
 
+    const ReplyKey key = replyKey(reply);
+    Impl::QueuedRequest request;
     {
         QMutexLocker locker(&m_impl->mutex);
-
-        if (!m_impl->deferredRequests.contains(reply)) {
+        if (!Impl::takeQueuedRequest(m_impl->deferredRequests, key, &request)) {
             return;
         }
-
-        m_impl->deferredRequests.removeOne(reply);
-
-        Impl::QueuedRequest req;
-        req.reply     = reply;
-        req.priority  = priority;
-        req.queueTime = QDateTime::currentDateTime();
-        req.host      = reply->url().host(); // 从 reply 的 url() 获取
-
-        m_impl->pendingQueue[priority].enqueue(req);
-        m_impl->stats.pendingRequests++;
-        requeued = true;
+        request.queueTime = QDateTime::currentDateTime();
+        m_impl->pendingRequests.append(request);
+        m_impl->replyStates[key]      = ScheduledState::Pending;
+        m_impl->stats.pendingRequests = m_impl->pendingRequests.size();
     }
 
-    if (requeued) {
-        emit requestQueued(reply, priority);
-        processQueue();
-    }
+    emit requestQueued(
+        reply, request.snapshot.lane, request.snapshot.hostKey, request.snapshot.priority);
+    processQueue();
 }
 
 void QCNetworkRequestScheduler::cancelRequest(QCNetworkReply *reply)
@@ -400,118 +1257,166 @@ void QCNetworkRequestScheduler::cancelRequest(QCNetworkReply *reply)
         return;
     }
 
-    bool wasRunning          = false;
-    bool shouldProcess       = false;
-    bool shouldEmitCancelled = false;
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    cancelRequest(safeReply.data());
+                }
+            },
+            "QCNetworkRequestScheduler::cancelRequest");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::cancelRequest");
+
+    const ReplyKey key = replyKey(reply);
+    FinalizeResult result;
 
     {
         QMutexLocker locker(&m_impl->mutex);
-
-        if (m_impl->runningRequests.contains(reply)) {
-            wasRunning = true;
-            m_impl->runningRequests.removeOne(reply);
-            m_impl->stats.runningRequests = m_impl->runningRequests.size();
-            m_impl->stats.cancelledRequests++;
-            shouldProcess       = true;
-            shouldEmitCancelled = true;
-
-            if (m_impl->replyHosts.contains(reply)) {
-                const QString host = m_impl->replyHosts[reply];
-                if (m_impl->hostConnectionCount.contains(host)) {
-                    m_impl->hostConnectionCount[host]--;
-                    if (m_impl->hostConnectionCount[host] <= 0) {
-                        m_impl->hostConnectionCount.remove(host);
-                    }
-                }
-                m_impl->replyHosts.remove(reply);
-            }
-        } else if (m_impl->deferredRequests.contains(reply)) {
-            m_impl->deferredRequests.removeOne(reply);
-            m_impl->stats.cancelledRequests++;
-            shouldEmitCancelled = true;
-        } else if (removeFromQueue(reply)) {
-            if (m_impl->stats.pendingRequests > 0) {
-                m_impl->stats.pendingRequests--;
-            }
-            m_impl->stats.cancelledRequests++;
-            shouldEmitCancelled = true;
-        }
+        result = m_impl->finalizeReplyLocked(key, FinalizeTrigger::ExplicitCancel);
     }
 
-    if (shouldEmitCancelled) {
-        QPointer<QCNetworkReply> safeReply(reply);
-        QMetaObject::invokeMethod(
-            reply,
-            [safeReply]() {
-                if (safeReply) {
-                    safeReply->cancel();
-                }
-            },
-            Qt::QueuedConnection);
-        emit requestCancelled(reply);
+    if (!result.wasTracked) {
+        return;
     }
 
-    if (wasRunning && shouldProcess) {
+    invokeReplyCancel(reply);
+    if (result.emitCancelled) {
+        emit requestCancelled(reply, result.snapshot.lane, result.snapshot.hostKey);
+    }
+
+    if (result.shouldKickQueue) {
         processQueue();
     }
 }
 
 void QCNetworkRequestScheduler::cancelAllRequests()
 {
-    QList<QPointer<QCNetworkReply>> toCancel;
+    if (QThread::currentThread() != thread()) {
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this]() { cancelAllRequests(); },
+            "QCNetworkRequestScheduler::cancelAllRequests");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::cancelAllRequests");
+
+    QList<QCNetworkReply *> replies;
+    QList<ReplySnapshot> snapshots;
+    QList<ReplyKey> keysToCancel;
 
     {
         QMutexLocker locker(&m_impl->mutex);
 
-        for (const auto &reply : m_impl->runningRequests) {
-            if (reply) {
-                toCancel.append(reply);
-                m_impl->stats.cancelledRequests++;
+        for (const auto &request : std::as_const(m_impl->pendingRequests)) {
+            if (request.reply && !keysToCancel.contains(request.key)) {
+                keysToCancel.append(request.key);
             }
         }
-        m_impl->runningRequests.clear();
-        m_impl->stats.runningRequests = 0;
-        m_impl->hostConnectionCount.clear();
-        m_impl->replyHosts.clear();
-        m_impl->requestStartTimes.clear();
+        for (const auto &request : std::as_const(m_impl->deferredRequests)) {
+            if (request.reply && !keysToCancel.contains(request.key)) {
+                keysToCancel.append(request.key);
+            }
+        }
+        for (auto *reply : std::as_const(m_impl->runningRequests)) {
+            const ReplyKey key = replyKey(reply);
+            if (reply && !keysToCancel.contains(key)) {
+                keysToCancel.append(key);
+            }
+        }
 
-        for (const auto &reply : m_impl->deferredRequests) {
-            if (reply) {
-                toCancel.append(reply);
-                m_impl->stats.cancelledRequests++;
+        for (ReplyKey key : std::as_const(keysToCancel)) {
+            const FinalizeResult result
+                = m_impl->finalizeReplyLocked(key, FinalizeTrigger::ExplicitCancel);
+            if (result.wasTracked) {
+                replies.append(replyFromKey(key));
+                snapshots.append(result.snapshot);
             }
         }
-        m_impl->deferredRequests.clear();
 
-        for (auto &queue : m_impl->pendingQueue) {
-            while (!queue.isEmpty()) {
-                Impl::QueuedRequest req = queue.dequeue();
-                if (req.reply) {
-                    toCancel.append(req.reply);
-                    m_impl->stats.cancelledRequests++;
-                }
-            }
-        }
-        m_impl->stats.pendingRequests = 0;
+        m_impl->bytesTransferredInWindow = 0;
+        m_impl->resetSchedulingRuntimeState();
     }
 
-    for (const auto &replyPtr : toCancel) {
-        if (!replyPtr) {
-            continue;
-        }
-        QPointer<QCNetworkReply> safeReply(replyPtr);
-        QMetaObject::invokeMethod(
-            replyPtr.data(),
-            [safeReply]() {
-                if (safeReply) {
-                    safeReply->cancel();
-                }
-            },
-            Qt::QueuedConnection);
-        emit requestCancelled(replyPtr.data());
+    for (int i = 0; i < replies.size(); ++i) {
+        auto *reply = replies.at(i);
+        const ReplySnapshot &snapshot = snapshots.at(i);
+        invokeReplyCancel(reply);
+        emit requestCancelled(reply, snapshot.lane, snapshot.hostKey);
     }
 
     emit queueEmpty();
+}
+
+int QCNetworkRequestScheduler::cancelLaneRequests(const QString &lane, CancelLaneScope scope)
+{
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            this,
+            0,
+            [this, lane, scope]() { return cancelLaneRequests(lane, scope); },
+            "QCNetworkRequestScheduler::cancelLaneRequests");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::cancelLaneRequests");
+
+    const QString laneKey = normalizedLane(lane);
+    QList<QCNetworkReply *> replies;
+    QList<ReplySnapshot> snapshots;
+    bool shouldKickQueue = false;
+    QList<ReplyKey> keysToCancel;
+
+    {
+        QMutexLocker locker(&m_impl->mutex);
+
+        auto collectKeysFromQueue = [&](const QList<Impl::QueuedRequest> &queue) {
+            for (const auto &request : queue) {
+                if (!request.reply || request.snapshot.lane != laneKey
+                    || keysToCancel.contains(request.key)) {
+                    continue;
+                }
+                keysToCancel.append(request.key);
+            }
+        };
+
+        collectKeysFromQueue(m_impl->pendingRequests);
+        collectKeysFromQueue(m_impl->deferredRequests);
+
+        if (scope == CancelLaneScope::PendingAndRunning) {
+            for (auto *reply : std::as_const(m_impl->runningRequests)) {
+                const ReplyKey key = replyKey(reply);
+                const ReplySnapshot snapshot = m_impl->replySnapshots.value(key);
+                if (reply && snapshot.lane == laneKey && !keysToCancel.contains(key)) {
+                    keysToCancel.append(key);
+                }
+            }
+        }
+
+        for (ReplyKey key : std::as_const(keysToCancel)) {
+            const FinalizeResult result
+                = m_impl->finalizeReplyLocked(key, FinalizeTrigger::ExplicitCancel);
+            if (result.wasTracked) {
+                replies.append(replyFromKey(key));
+                snapshots.append(result.snapshot);
+                shouldKickQueue = shouldKickQueue || result.shouldKickQueue;
+            }
+        }
+    }
+
+    for (int i = 0; i < replies.size(); ++i) {
+        auto *reply = replies.at(i);
+        const ReplySnapshot &snapshot = snapshots.at(i);
+        invokeReplyCancel(reply);
+        emit requestCancelled(reply, snapshot.lane, snapshot.hostKey);
+    }
+
+    if (shouldKickQueue) {
+        processQueue();
+    }
+
+    return replies.size();
 }
 
 void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
@@ -521,66 +1426,95 @@ void QCNetworkRequestScheduler::changePriority(QCNetworkReply *reply,
         return;
     }
 
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply, newPriority]() {
+                if (safeReply) {
+                    changePriority(safeReply.data(), newPriority);
+                }
+            },
+            "QCNetworkRequestScheduler::changePriority");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::changePriority");
+
+    const ReplyKey key = replyKey(reply);
+    ReplySnapshot snapshot;
     bool requeued = false;
     {
         QMutexLocker locker(&m_impl->mutex);
-
-        // 只能调整队列中的请求
-        if (!removeFromQueue(reply)) {
-            return; // 请求不在队列中
+        const int index = Impl::findQueuedRequestIndex(
+            m_impl->pendingRequests,
+            [key](const Impl::QueuedRequest &request) { return request.key == key; });
+        if (index < 0) {
+            return;
         }
 
-        // 重新加入队列（使用新优先级）
-        Impl::QueuedRequest req;
-        req.reply     = reply;
-        req.priority  = newPriority;
-        req.queueTime = QDateTime::currentDateTime();
-        req.host      = reply->url().host(); // 从 reply 的 url() 获取
-
-        m_impl->pendingQueue[newPriority].enqueue(req);
-        requeued = true;
+        m_impl->pendingRequests[index].snapshot.priority = newPriority;
+        m_impl->replySnapshots[key].priority             = newPriority;
+        snapshot                                         = m_impl->pendingRequests.at(index).snapshot;
+        requeued                                         = true;
     }
 
     if (requeued) {
-        emit requestQueued(reply, newPriority);
+        emit requestQueued(reply, snapshot.lane, snapshot.hostKey, snapshot.priority);
         processQueue();
     }
 }
 
 QCNetworkRequestScheduler::Statistics QCNetworkRequestScheduler::statistics() const
 {
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            const_cast<QCNetworkRequestScheduler *>(this),
+            Statistics{},
+            [this]() { return statistics(); },
+            "QCNetworkRequestScheduler::statistics");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::statistics");
+
     QMutexLocker locker(&m_impl->mutex);
     return m_impl->stats;
 }
 
 QList<QCNetworkReply *> QCNetworkRequestScheduler::pendingRequests() const
 {
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            const_cast<QCNetworkRequestScheduler *>(this),
+            QList<QCNetworkReply *>{},
+            [this]() { return pendingRequests(); },
+            "QCNetworkRequestScheduler::pendingRequests");
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::pendingRequests");
+
     QMutexLocker locker(&m_impl->mutex);
 
     QList<QCNetworkReply *> result;
-    for (const auto &queue : m_impl->pendingQueue) {
-        for (const auto &req : queue) {
-            if (req.reply) {
-                result.append(req.reply);
-            }
+    result.reserve(m_impl->pendingRequests.size());
+    for (const auto &request : std::as_const(m_impl->pendingRequests)) {
+        if (request.reply) {
+            result.append(request.reply);
         }
     }
-
     return result;
 }
 
 QList<QCNetworkReply *> QCNetworkRequestScheduler::runningRequests() const
 {
-    QMutexLocker locker(&m_impl->mutex);
-
-    QList<QCNetworkReply *> result;
-    for (auto reply : m_impl->runningRequests) {
-        if (reply) {
-            result.append(reply);
-        }
+    if (QThread::currentThread() != thread()) {
+        return invokeOnSchedulerOwnerThreadBlocking(
+            const_cast<QCNetworkRequestScheduler *>(this),
+            QList<QCNetworkReply *>{},
+            [this]() { return runningRequests(); },
+            "QCNetworkRequestScheduler::runningRequests");
     }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::runningRequests");
 
-    return result;
+    QMutexLocker locker(&m_impl->mutex);
+    return m_impl->runningRequests;
 }
 
 void QCNetworkRequestScheduler::onRequestFinished(QCNetworkReply *reply)
@@ -589,57 +1523,64 @@ void QCNetworkRequestScheduler::onRequestFinished(QCNetworkReply *reply)
         return;
     }
 
-    const qint64 bytesReceived = reply->bytesReceived();
-    const QDateTime finishTime = QDateTime::currentDateTime();
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeReply]() {
+                if (safeReply) {
+                    onRequestFinished(safeReply.data());
+                }
+            },
+            "QCNetworkRequestScheduler::onRequestFinished");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::onRequestFinished");
+    Q_ASSERT_X(reply->thread() == thread(),
+               "QCNetworkRequestScheduler::onRequestFinished",
+               "reply must live on the scheduler owner thread");
 
+    const ReplyKey key        = replyKey(reply);
+    const ReplyOutcome outcome = captureReplyOutcome(reply);
+    FinalizeResult result;
     {
         QMutexLocker locker(&m_impl->mutex);
-
-        m_impl->runningRequests.removeOne(reply);
-        m_impl->stats.runningRequests = m_impl->runningRequests.size();
-        m_impl->stats.completedRequests++;
-
-        if (m_impl->replyHosts.contains(reply)) {
-            const QString host = m_impl->replyHosts[reply];
-            if (m_impl->hostConnectionCount.contains(host)) {
-                m_impl->hostConnectionCount[host]--;
-                if (m_impl->hostConnectionCount[host] <= 0) {
-                    m_impl->hostConnectionCount.remove(host);
-                }
-            }
-            m_impl->replyHosts.remove(reply);
-        }
-
-        if (m_impl->requestStartTimes.contains(reply)) {
-            const QDateTime startTime = m_impl->requestStartTimes[reply];
-            const qint64 duration     = startTime.msecsTo(finishTime);
-
-            if (m_impl->stats.completedRequests == 1) {
-                m_impl->stats.avgResponseTime = duration;
-            } else {
-                m_impl->stats.avgResponseTime
-                    = (m_impl->stats.avgResponseTime * (m_impl->stats.completedRequests - 1)
-                                           + duration)
-                      / m_impl->stats.completedRequests;
-            }
-
-            m_impl->requestStartTimes.remove(reply);
-        }
-
-        m_impl->stats.totalBytesReceived += bytesReceived;
+        result = m_impl->finalizeReplyLocked(key, FinalizeTrigger::FinishedSignal, outcome);
     }
 
-    emit requestFinished(reply);
-    processQueue();
+    if (!result.wasTracked) {
+        return;
+    }
+
+    if (result.emitCancelled) {
+        emit requestCancelled(reply, result.snapshot.lane, result.snapshot.hostKey);
+    }
+
+    if (result.emitFinished) {
+        emit requestFinished(reply, result.snapshot.lane, result.snapshot.hostKey);
+    }
+
+    if (result.shouldKickQueue) {
+        processQueue();
+    }
 }
 
 void QCNetworkRequestScheduler::updateBandwidthStats()
 {
+    if (QThread::currentThread() != thread()) {
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this]() { updateBandwidthStats(); },
+            "QCNetworkRequestScheduler::updateBandwidthStats");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::updateBandwidthStats");
+
     bool shouldProcess = false;
     {
         QMutexLocker locker(&m_impl->mutex);
         m_impl->bytesTransferredInWindow = 0;
-        shouldProcess                    = (m_impl->stats.pendingRequests > 0);
+        shouldProcess = !m_impl->pendingRequests.isEmpty();
     }
 
     if (shouldProcess) {
@@ -649,59 +1590,32 @@ void QCNetworkRequestScheduler::updateBandwidthStats()
 
 void QCNetworkRequestScheduler::onReplyDestroyed(QObject *obj)
 {
-    auto *reply          = static_cast<QCNetworkReply *>(obj);
-    bool shouldKickQueue = false;
-
-    {
-        QMutexLocker locker(&m_impl->mutex);
-
-        // running/deferred：清理空指针，释放并发槽位
-        auto prunePointerList = [](QList<QPointer<QCNetworkReply>> &list) {
-            for (int i = list.size() - 1; i >= 0; --i) {
-                if (!list.at(i)) {
-                    list.removeAt(i);
-                }
-            }
-        };
-
-        const int runningBefore  = m_impl->runningRequests.size();
-        const int deferredBefore = m_impl->deferredRequests.size();
-        prunePointerList(m_impl->runningRequests);
-        prunePointerList(m_impl->deferredRequests);
-        if (m_impl->runningRequests.size() != runningBefore
-            || m_impl->deferredRequests.size() != deferredBefore) {
-            m_impl->stats.runningRequests = m_impl->runningRequests.size();
-            shouldKickQueue         = true;
-        }
-
-        // pending：清理空指针，修正 pendingRequests（避免 queueEmpty 永远不触发）
-        for (auto &queue : m_impl->pendingQueue) {
-            while (!queue.isEmpty() && !queue.head().reply) {
-                queue.dequeue();
-                if (m_impl->stats.pendingRequests > 0) {
-                    m_impl->stats.pendingRequests--;
-                }
-                shouldKickQueue = true;
-            }
-        }
-
-        // host 计数兜底：若 finished 未能回收，这里必须释放 host 槽位
-        if (m_impl->replyHosts.contains(reply)) {
-            const QString host = m_impl->replyHosts[reply];
-            if (m_impl->hostConnectionCount.contains(host)) {
-                m_impl->hostConnectionCount[host]--;
-                if (m_impl->hostConnectionCount[host] <= 0) {
-                    m_impl->hostConnectionCount.remove(host);
-                }
-            }
-            m_impl->replyHosts.remove(reply);
-            shouldKickQueue = true;
-        }
-
-        m_impl->requestStartTimes.remove(reply);
+    if (!obj) {
+        return;
     }
 
-    if (shouldKickQueue) {
+    if (QThread::currentThread() != thread()) {
+        QPointer<QObject> safeObject(obj);
+        invokeOnSchedulerOwnerThread(
+            this,
+            [this, safeObject]() {
+                if (safeObject) {
+                    onReplyDestroyed(safeObject.data());
+                }
+            },
+            "QCNetworkRequestScheduler::onReplyDestroyed");
+        return;
+    }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::onReplyDestroyed");
+
+    const ReplyKey key = obj;
+    FinalizeResult result;
+    {
+        QMutexLocker locker(&m_impl->mutex);
+        result = m_impl->finalizeReplyLocked(key, FinalizeTrigger::Destroyed);
+    }
+
+    if (result.shouldKickQueue) {
         QMetaObject::invokeMethod(this, [this]() { processQueue(); }, Qt::QueuedConnection);
     }
 }
@@ -712,16 +1626,18 @@ bool QCNetworkRequestScheduler::removeFromQueue(QCNetworkReply *reply)
         return false;
     }
 
-    for (auto &queue : m_impl->pendingQueue) {
-        for (int i = 0; i < queue.size(); ++i) {
-            if (queue[i].reply == reply) {
-                queue.removeAt(i);
-                return true;
-            }
-        }
+    if (QThread::currentThread() != thread()) {
+        QPointer<QCNetworkReply> safeReply(reply);
+        return invokeOnSchedulerOwnerThreadBlocking(
+            this,
+            false,
+            [this, safeReply]() { return safeReply ? removeFromQueue(safeReply.data()) : false; },
+            "QCNetworkRequestScheduler::removeFromQueue");
     }
+    assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::removeFromQueue");
 
-    return false;
+    QMutexLocker locker(&m_impl->mutex);
+    return Impl::takeQueuedRequest(m_impl->pendingRequests, replyKey(reply));
 }
 
 } // namespace QCurl

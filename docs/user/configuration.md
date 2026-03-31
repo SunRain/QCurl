@@ -20,10 +20,10 @@
 
 `setPriority(...)` 会设置 `QCNetworkRequestPriority`，用于调度器出队顺序。当前调度契约为**非抢占式**（non-preemptive）：已 Running 的请求不会因更高优先级到来而被中断。
 
-说明（Critical）：
+补充说明：
 
-- `Critical` 会绕过 pending 队列立即启动；当前实现可能突破 `maxConcurrentRequests/maxRequestsPerHost`，建议仅在明确需要时使用。
-- 通常优先使用 `High/VeryHigh`：会优先出队且仍遵守并发/每主机限制。
+- 通常优先使用 `High/VeryHigh`，适合大多数“希望尽快处理”的前台请求。
+- 如果你还需要理解 `lane`、`Critical`、lane reservation，或想按 `Control / Transfer / Background` 分车道配置，请统一参考 `docs/user/lane-scheduler.md`。
 
 ## 2. 管理器级配置（统一策略与复用）
 
@@ -32,8 +32,8 @@
 补充说明（优先级调度契约）：
 
 - 调度器为**非抢占式**（non-preemptive）：优先级只影响 pending 出队顺序；已 Running 的请求不会因更高优先级到来而被中断。
-- `Critical` 会绕过 pending 队列立即启动，但同样不会抢占 Running；当前实现可能突破并发/每主机限制，建议仅在明确需要时使用。
-- 详细定义以 `src/QCNetworkRequestScheduler.h` 与 `src/QCNetworkRequestPriority.h` 的注释为准。
+- 与 lane 相关的完整行为、推荐车道划分和配置建议，统一参考 `docs/user/lane-scheduler.md`。
+- 更细的底层定义仍以 `src/QCNetworkRequestScheduler.h` 与 `src/QCNetworkRequestPriority.h` 的注释为准。
 
 ## 3. WebSocket 配置
 

@@ -17,9 +17,10 @@
 
 ### 1.2 调度器层 defer/undefer
 
-- 调度层语义使用 `deferRequest()` / `undeferRequest()`
+- 调度层语义使用 `deferPendingRequest()` / `undeferRequest()`
 - 该语义只表示“延后调度”，不表示“保留同一次传输继续执行”
-- 对 running 请求的 defer 允许释放并发槽位；后续恢复时按调度语义重新开始，而不是继续原传输
+- `deferPendingRequest()` **仅对 Pending 生效**：把请求从队列移入 deferred；对 Running/Deferred 返回 false
+- 若调用方需要释放并发槽位，应显式 `cancelRequest()`（或按 lane/范围使用 `cancelLaneRequests()`）；不要把它包装成“传输暂停”
 
 ### 1.3 恢复推进
 

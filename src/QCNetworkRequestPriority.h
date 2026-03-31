@@ -9,9 +9,13 @@
 #ifndef QCNETWORKREQUESTPRIORITY_H
 #define QCNETWORKREQUESTPRIORITY_H
 
+#include <QMetaType>
+#include <QObject>
 #include <QString>
 
 namespace QCurl {
+
+Q_NAMESPACE
 
 /**
  * @brief 网络请求的优先级枚举
@@ -65,12 +69,29 @@ enum class QCNetworkRequestPriority {
     /**
      * @brief 紧急优先级
      *
-     * 最高优先级，绕过 pending 队列立即启动（不会抢占已 Running 的请求）。
-     * 当前实现允许 Critical 突破并发/每主机限制：用于极少数“必须立即发出”的控制类请求。
+     * 最高优先级，优先于同 lane 中的其他 pending 请求启动（不会抢占已 Running 的请求）。
+     * Critical 仍受全局并发、每主机并发和限流等硬上限约束；若需要控制面保底，请使用 lane reservation。
      * 用于紧急通知、实时数据更新、安全相关请求等。
      */
     Critical = 5
 };
+
+Q_ENUM_NS(QCNetworkRequestPriority)
+
+/**
+ * @brief 注册 `QCNetworkRequestPriority` 的 canonical Qt 元类型名。
+ *
+ * 该 helper 只注册单一 canonical name：`QCurl::QCNetworkRequestPriority`。
+ * 适用于 queued connection、QSignalSpy、QVariant 与运行时反射场景。
+ *
+ * @return 注册后的 Qt 元类型 id
+ */
+inline int registerQCNetworkRequestPriorityMetaType()
+{
+    static const int kMetaTypeId
+        = qRegisterMetaType<QCNetworkRequestPriority>("QCurl::QCNetworkRequestPriority");
+    return kMetaTypeId;
+}
 
 /**
  * @brief 将优先级枚举转换为字符串
@@ -161,5 +182,7 @@ inline QCNetworkRequestPriority fromString(const QString &str, bool *ok = nullpt
 }
 
 } // namespace QCurl
+
+Q_DECLARE_METATYPE(QCurl::QCNetworkRequestPriority)
 
 #endif // QCNETWORKREQUESTPRIORITY_H

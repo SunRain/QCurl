@@ -7,6 +7,54 @@
 
 ---
 
+## 2026-04-05
+
+### Added
+- `QCNetworkRequestScheduler` 新增 `requestAboutToStart(reply, lane, hostKey)` 信号，作为 “即将调用 `reply->execute()`” 的最后可拦截点（可在 direct slot 里 `cancelRequest()` 阻止后续 `execute()` / `requestStarted`）。
+
+### Changed
+- `QCNetworkRequestScheduler::requestStarted(reply, lane, hostKey)` 的语义升级为“已完成对 `reply->execute()` 的调用（启动提交点）”，不再表达 about-to-start。
+
+### Fixed
+- 修复显式取消与 queued start handoff 的竞态：当 `cancelRequest/cancelAllRequests/cancelLaneRequests` 在 “start lambda 已入队但未执行” 窗口内触发，或在 `requestAboutToStart` 的 direct slot 内触发时，不再出现 “先 cancelled，后又 started/execute” 的违约序列，避免幽灵请求导致的并发计数失真。
+
+### Breaking
+- 下游若此前把 `requestStarted` 当成 about-to-start 的拦截点（例如在 direct slot 里取消/改写请求），请迁移到 `requestAboutToStart`。
+
+### Testing
+- `ctest --test-dir build --output-on-failure -R '^tst_QCNetworkScheduler$'`
+
+## 2026-03-30
+
+### Added
+- `QCNetworkRequest` 新增 `setLane()` / `lane()`，支持以 `QString` tag 标记请求调度 lane；空字符串表示 default lane
+- `QCNetworkRequestScheduler` 新增 `LaneConfig`、`setLaneConfig()` / `laneConfig()` 与 `cancelLaneRequests()`，提供 lane reservation、DRR 公平调度和按 lane 精准取消
+
+### Changed
+- `QCNetworkAccessManager::send*()` 在进入 scheduler 时显式传递 lane 快照；scheduler 内部不再从 reply 动态读取 lane
+- scheduler signals `requestQueued/requestStarted/requestFinished/requestCancelled` 统一携带 `lane + hostKey` 快照参数，便于测试断言与运行期诊断
+- scheduler 的 `hostKey` 口径统一为 origin：`scheme://host:effectivePort`，默认端口 `http=80`、`https=443`
+- `Critical` 优先级不再突破全局并发、每主机并发或限流硬上限；控制面保底应通过 lane reservation（例如 `Control` lane）实现
+
+### Breaking
+- 该组 scheduler ABI 变更按 `QCurl 3.0.0 / SOVERSION 3` 发布；下游若从 2.x 升级，需要同时升级二进制依赖与函数指针 `connect` 签名
+- 所有监听 `QCNetworkRequestScheduler` 队列信号的下游代码都需要适配新签名：
+  - `requestQueued(reply, lane, hostKey, priority)`
+  - `requestStarted(reply, lane, hostKey)`
+  - `requestFinished(reply, lane, hostKey)`
+  - `requestCancelled(reply, lane, hostKey)`
+- 下游若依赖旧的 `Critical` “绕过并发/每主机上限”语义，需要迁移为 lane reservation；推荐默认配置为 `Control` / `Transfer` 两条 lane
+
+### Migration
+- Qt6 函数指针连接方式需要同步补齐 `lane + hostKey` 参数，例如：
+  - 旧：`connect(scheduler, &QCNetworkRequestScheduler::requestStarted, this, [](QCNetworkReply *) { ... })`
+  - 新：`connect(scheduler, &QCNetworkRequestScheduler::requestStarted, this, [](QCNetworkReply *, const QString &, const QString &) { ... })`
+
+### Testing
+- `cmake -S legendary/QCurl -B legendary/QCurl/build-ha-lane -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON -DBUILD_EXAMPLES=ON -DBUILD_BENCHMARKS=OFF -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF`
+- `ctest --output-on-failure --test-dir legendary/QCurl/build-ha-lane -R '^(tst_QCNetworkRequest|tst_QCNetworkScheduler|tst_QCNetworkMiddlewareIntegration)$'`
+- `source build/test-env/httpbin.env && ctest --output-on-failure --test-dir build-ha-lane -R '^tst_QCNetworkReply$'`
+
 ## 2026-03-27
 
 ### Changed
@@ -639,10 +687,11 @@
   - 总流量
 
 ### Added (Signals)
-- `requestQueued(reply, priority)` - 请求已加入队列
-- `requestStarted(reply)` - 请求已开始执行
-- `requestFinished(reply)` - 请求已完成
-- `requestCancelled(reply)` - 请求已取消
+- 以下为 **2.x 历史签名**（已在 2026-03-30 的 breaking 变更中被新签名取代）：
+  - `requestQueued(reply, priority)` - 请求已加入队列
+  - `requestStarted(reply)` - 请求已开始执行
+  - `requestFinished(reply)` - 请求已完成
+  - `requestCancelled(reply)` - 请求已取消
 - `queueEmpty()` - 队列已清空
 - `bandwidthThrottled(currentBytesPerSec)` - 带宽被限流
 

@@ -8,6 +8,7 @@
 
 - 快速开始：`docs/user/quickstart.md`
 - 常见配置（超时/重试/代理/TLS）：`docs/user/configuration.md`
+- Lane Scheduler（按请求类别分车道调度）：`docs/user/lane-scheduler.md`
 - FlowControl（pause/resume、backpressure、上传 source pause）：`docs/user/flow-control.md`
 - 示例集合：`examples/README.md`
 

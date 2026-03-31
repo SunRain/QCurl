@@ -43,8 +43,9 @@ QCurl 需要同时区分两类语义：
 
 ## 4. `QCNetworkRequestScheduler` 的合同
 
-- `deferRequest()` / `undeferRequest()` 表达的是调度层语义
-- running 请求的 defer 可以释放槽位，但不得被包装成“传输暂停”
+- `deferPendingRequest()` / `undeferRequest()` 表达的是调度层语义
+- `deferPendingRequest()` **仅对 Pending 生效**：把请求从队列移入 deferred；对 Running/Deferred 返回 false
+- 若调用方需要释放并发槽位，应显式 `cancelRequest()`（或按 lane/范围使用 `cancelLaneRequests()`）；不得被包装成“传输暂停”
 - 因此调用方如果需要“真正继续同一次传输”，必须使用 reply 侧 pause/resume，而不是 scheduler API
 
 ## 5. backpressure 与传输 pause 的关系
@@ -77,7 +78,7 @@ QCurl 需要同时区分两类语义：
 - `PauseMode`
 - `pauseTransport()` / `resumeTransport()`
 - `QCCurlMultiManager::wakeup()`
-- `deferRequest()` / `undeferRequest()`
+- `deferPendingRequest()` / `undeferRequest()`
 - 下载 backpressure
 
 ## 8. 非目标
