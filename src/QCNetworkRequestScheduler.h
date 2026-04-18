@@ -15,12 +15,16 @@
 #include <QList>
 #include <QObject>
 #include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QString>
 
 namespace QCurl {
 
 class QCNetworkAccessManager;
 class QCNetworkReply;
+class QCNetworkRequestSchedulerConfigData;
+class QCNetworkRequestSchedulerStatisticsData;
+class QCNetworkRequestSchedulerLaneConfigData;
 
 /**
  * @brief 网络请求调度器
@@ -54,74 +58,115 @@ class QCURL_EXPORT QCNetworkRequestScheduler : public QObject
 
 public:
     /**
-     * @brief 调度器配置
+     * @brief 调度器配置（ABI 友好的值类型）
      */
-    struct Config
+    class QCURL_EXPORT Config
     {
-        /**
-         * @brief 全局最大并发请求数
-         *
-         * 限制同时执行的请求总数。
-         * 默认值：6
-         */
-        int maxConcurrentRequests = 6;
+    public:
+        Config();
+        Config(const Config &other);
+        Config(Config &&other);
+        ~Config();
+        Config &operator=(const Config &other);
+        Config &operator=(Config &&other);
 
-        /**
-         * @brief 每个主机的最大并发请求数
-         *
-         * 防止单个主机被过多请求压垮。
-         * 默认值：2
-         */
-        int maxRequestsPerHost = 2;
+        /// 全局最大并发请求数（默认 6）
+        [[nodiscard]] int maxConcurrentRequests() const;
+        void setMaxConcurrentRequests(int value);
 
-        /**
-         * @brief 最大带宽限制（字节/秒）
-         *
-         * 0 表示无限制。
-         * 默认值：0（无限制）
-         */
-        qint64 maxBandwidthBytesPerSec = 0;
+        /// 每个主机最大并发请求数（默认 2）
+        [[nodiscard]] int maxRequestsPerHost() const;
+        void setMaxRequestsPerHost(int value);
 
-        /**
-         * @brief 启用流量控制
-         *
-         * 如果为 true，调度器会监控带宽使用情况并在超限时暂停新请求。
-         * 默认值：true
-         */
-        bool enableThrottling = true;
+        /// 最大带宽限制（字节/秒，0 表示无限制）
+        [[nodiscard]] qint64 maxBandwidthBytesPerSec() const;
+        void setMaxBandwidthBytesPerSec(qint64 value);
+
+        /// 是否启用流量控制（默认 true）
+        [[nodiscard]] bool enableThrottling() const;
+        void setEnableThrottling(bool enabled);
+
+    private:
+        QSharedDataPointer<QCNetworkRequestSchedulerConfigData> d;
     };
 
     /**
-     * @brief 调度器统计信息
+     * @brief 调度器统计信息（ABI 友好的值类型）
      */
-    struct Statistics
+    class QCURL_EXPORT Statistics
     {
-        int pendingRequests       = 0;   ///< 等待中的请求数
-        int runningRequests       = 0;   ///< 执行中的请求数
-        int completedRequests     = 0;   ///< 已完成的请求数
-        int cancelledRequests     = 0;   ///< 已取消的请求数
-        qint64 totalBytesReceived = 0;   ///< 总接收字节数
-        qint64 totalBytesSent     = 0;   ///< 总发送字节数
-        double avgResponseTime    = 0.0; ///< 平均响应时间（毫秒）
+    public:
+        Statistics();
+        Statistics(const Statistics &other);
+        Statistics(Statistics &&other);
+        ~Statistics();
+        Statistics &operator=(const Statistics &other);
+        Statistics &operator=(Statistics &&other);
+
+        [[nodiscard]] int pendingRequests() const;
+        void setPendingRequests(int value);
+
+        [[nodiscard]] int runningRequests() const;
+        void setRunningRequests(int value);
+
+        [[nodiscard]] int completedRequests() const;
+        void setCompletedRequests(int value);
+
+        [[nodiscard]] int cancelledRequests() const;
+        void setCancelledRequests(int value);
+
+        [[nodiscard]] qint64 totalBytesReceived() const;
+        void setTotalBytesReceived(qint64 value);
+
+        [[nodiscard]] qint64 totalBytesSent() const;
+        void setTotalBytesSent(qint64 value);
+
+        [[nodiscard]] double avgResponseTime() const;
+        void setAvgResponseTime(double value);
+
+    private:
+        QSharedDataPointer<QCNetworkRequestSchedulerStatisticsData> d;
     };
 
     /**
-     * @brief lane 级调度配置
+     * @brief lane 级调度配置（ABI 友好的值类型）
      */
-    struct LaneConfig
+    class QCURL_EXPORT LaneConfig
     {
-        int weight          = 1; ///< DRR 权重（>0）
-        int quantum         = 1; ///< deficit 基数（>0）
-        int reservedGlobal  = 0; ///< lane 全局预留并发槽位
-        int reservedPerHost = 0; ///< lane 每 hostKey 预留并发槽位
+    public:
+        LaneConfig();
+        LaneConfig(const LaneConfig &other);
+        LaneConfig(LaneConfig &&other);
+        ~LaneConfig();
+        LaneConfig &operator=(const LaneConfig &other);
+        LaneConfig &operator=(LaneConfig &&other);
+
+        /// DRR 权重（仅 best-effort 阶段生效，>0）
+        [[nodiscard]] int weight() const;
+        void setWeight(int value);
+
+        /// 每轮补充给 deficit 的基数（>0）
+        [[nodiscard]] int quantum() const;
+        void setQuantum(int value);
+
+        /// 在 best-effort 前先为该 lane 预留的全局槽位
+        [[nodiscard]] int reservedGlobal() const;
+        void setReservedGlobal(int value);
+
+        /// 在 best-effort 前先为该 lane+host 预留的槽位
+        [[nodiscard]] int reservedPerHost() const;
+        void setReservedPerHost(int value);
+
+    private:
+        QSharedDataPointer<QCNetworkRequestSchedulerLaneConfigData> d;
     };
 
     /**
      * @brief lane 取消范围
      */
     enum class CancelLaneScope {
-        PendingOnly,       ///< pending + deferred
-        PendingAndRunning, ///< pending + deferred + running
+        PendingOnly,       ///< 只清 pending + deferred，不打断已 Running 的请求
+        PendingAndRunning, ///< pending + deferred + running 一并取消，用于整条 lane 排空
     };
 
     /**
@@ -149,6 +194,8 @@ public:
 
     /**
      * @brief 设置 lane 调度配置
+     *
+     * lane 名称会先做 trim；空字符串表示 default lane。
      */
     void setLaneConfig(const QString &lane, const LaneConfig &config);
 
@@ -197,6 +244,9 @@ public:
 
     /**
      * @brief 取消指定 lane 的请求
+     *
+     * `PendingOnly` 适合只清理排队中的控制/数据面请求，
+     * `PendingAndRunning` 则会把正在执行的同 lane 请求也纳入取消。
      *
      * @return 被取消的请求数量
      */
@@ -333,6 +383,7 @@ private:
      * @brief 调度已由 `QCNetworkAccessManager` 创建好的 reply
      *
      * 调度器仅负责排队、统计和启动，不再负责构造 reply。
+     * lane/hostKey/priority 会在这里被快照，后续 scheduler 信号都引用这份快照。
      */
     void scheduleReply(QCNetworkReply *reply,
                        const QString &lane,
@@ -341,12 +392,16 @@ private:
     /**
      * @brief 处理队列
      *
-     * 从高到低优先级处理队列中的请求，直到达到并发限制或带宽限制。
+     * 按 per-host reservation → lane global reservation → DRR best-effort
+     * 的顺序选择下一批请求，直到达到并发限制或带宽限制。
      */
     void processQueue();
 
     /**
      * @brief 启动请求
+     *
+     * 该步骤会把 `reply->execute()` 排回 reply owner thread，并维护
+     * requestAboutToStart/requestStarted 的启动 handoff contract。
      *
      * @param reply 要启动的响应对象
      */
@@ -354,6 +409,8 @@ private:
 
     /**
      * @brief 请求完成的槽函数
+     *
+     * finished/cancelled 共用同一条 finalize 路径，确保计数和信号顺序稳定。
      *
      * @param reply 完成的响应对象
      */

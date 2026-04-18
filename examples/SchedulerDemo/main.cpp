@@ -16,14 +16,16 @@ using namespace QCurl;
 
 /**
  * @brief SchedulerDemo - 请求优先级调度器演示程序
- * 
+ *
+ * `QCNetworkRequestScheduler` 属于 QCurl Core install surface；本示例按公开 contract 演示用法。
+ *
  * 本程序演示 QCNetworkRequestScheduler 的核心功能：
  * 1. 不同优先级的请求执行顺序
  * 2. 并发控制（全局 + 每主机限制）
  * 3. 请求管理（defer/undefer/取消）
  * 4. 带宽限制
  * 5. 实时统计信息
- * 
+ *
  * @note 本程序使用 httpbin.org 作为测试服务器
  */
 class SchedulerDemo : public QObject
@@ -47,6 +49,7 @@ public:
         qInfo() << "QCurl 请求优先级调度器演示程序";
         qInfo() << "========================================\n";
 
+        // 四个演示串行排队，避免前一个 demo 遗留的 scheduler 状态污染后一个结论。
         // 演示 1：优先级排序
         demo1_PriorityOrdering();
 
@@ -93,8 +96,8 @@ private slots:
 
         // 修改配置
         QCNetworkRequestScheduler::Config config = scheduler->config();
-        config.maxConcurrentRequests             = 3;
-        config.maxRequestsPerHost                = 2;
+        config.setMaxConcurrentRequests(3);
+        config.setMaxRequestsPerHost(2);
         scheduler->setConfig(config);
 
         // 创建多个请求到同一主机
@@ -112,11 +115,12 @@ private slots:
         qInfo() << "\n--- 演示 3：延后/恢复调度（仅 Pending，非传输级 pause/resume） ---";
         qInfo() << "先启动一个耗时请求占用并发槽位，使目标请求保持 Pending；随后 deferPendingRequest/undeferRequest...\n";
 
+        // 先清空前两个 demo 遗留的 reply，确保此处观察到的都是 defer/undefer 合同本身。
         scheduler->cancelAllRequests();
 
         QCNetworkRequestScheduler::Config config = scheduler->config();
-        config.maxConcurrentRequests             = 1;
-        config.maxRequestsPerHost                = 1;
+        config.setMaxConcurrentRequests(1);
+        config.setMaxRequestsPerHost(1);
         scheduler->setConfig(config);
 
         // blocker：占用唯一并发槽位
@@ -188,20 +192,21 @@ private:
 
         // 配置调度器
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests   = 3;
-        config.maxRequestsPerHost      = 2;
-        config.maxBandwidthBytesPerSec = 0; // 无带宽限制
-        config.enableThrottling        = false;
+        config.setMaxConcurrentRequests(3);
+        config.setMaxRequestsPerHost(2);
+        config.setMaxBandwidthBytesPerSec(0); // 无带宽限制
+        config.setEnableThrottling(false);
 
         scheduler->setConfig(config);
 
         qInfo() << "✓ 调度器已启用";
-        qInfo() << "  - 最大并发请求数:" << config.maxConcurrentRequests;
-        qInfo() << "  - 每主机最大并发:" << config.maxRequestsPerHost;
+        qInfo() << "  - 最大并发请求数:" << config.maxConcurrentRequests();
+        qInfo() << "  - 每主机最大并发:" << config.maxRequestsPerHost();
     }
 
     void setupSignals()
     {
+        // 这些日志直接映射新的 queue/about-to-start/started/finished 合同观察点。
         // 请求加入队列
         connect(scheduler,
                 &QCNetworkRequestScheduler::requestQueued,
@@ -255,6 +260,7 @@ private:
         QUrl requestUrl(url);
         QCNetworkRequest request(requestUrl);
         request.setPriority(priority);
+        // 示例默认都走 default lane，便于聚焦优先级/并发合同本身。
 
         auto *reply = manager->sendGet(request);
 
@@ -278,12 +284,12 @@ private:
         auto stats = scheduler->statistics();
 
         qInfo() << "\n📊 当前统计信息:";
-        qInfo() << "  ├─ 等待中:" << stats.pendingRequests << "个";
-        qInfo() << "  ├─ 执行中:" << stats.runningRequests << "个";
-        qInfo() << "  ├─ 已完成:" << stats.completedRequests << "个";
-        qInfo() << "  ├─ 已取消:" << stats.cancelledRequests << "个";
-        qInfo() << "  ├─ 总接收:" << stats.totalBytesReceived << "字节";
-        qInfo() << "  └─ 平均响应时间:" << QString::number(stats.avgResponseTime, 'f', 2) << "ms\n";
+        qInfo() << "  ├─ 等待中:" << stats.pendingRequests() << "个";
+        qInfo() << "  ├─ 执行中:" << stats.runningRequests() << "个";
+        qInfo() << "  ├─ 已完成:" << stats.completedRequests() << "个";
+        qInfo() << "  ├─ 已取消:" << stats.cancelledRequests() << "个";
+        qInfo() << "  ├─ 总接收:" << stats.totalBytesReceived() << "字节";
+        qInfo() << "  └─ 平均响应时间:" << QString::number(stats.avgResponseTime(), 'f', 2) << "ms\n";
     }
 
     QCNetworkAccessManager *manager;

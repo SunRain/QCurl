@@ -10,7 +10,6 @@
 #include "QCNetworkHttpMethod.h"
 
 #include <QByteArray>
-#include <QJsonObject>
 #include <QMap>
 #include <QNetworkCookie>
 #include <QObject>
@@ -21,6 +20,7 @@
 
 class QTimer;
 class QSocketNotifier;
+class QJsonObject;
 
 namespace QCurl {
 
@@ -370,6 +370,7 @@ public:
      *
      * 仅允许在 manager owner thread 上返回当前线程共享的 thread-local scheduler；
      * 本函数不会帮调用方跨线程取回 owner-thread scheduler。
+     * 通过本接口拿到的实例，才是当前 manager 的异步 `send*()` 真正会使用的 scheduler。
      *
      * 若从非 owner thread 调用，本函数会给出 warning，并在 debug 构建触发断言，
      * 随后 fail-closed 返回 `nullptr`，避免误用线程懒创建新的 scheduler 实例。
@@ -579,12 +580,6 @@ private:
 
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;
-    CookieFileModeFlag m_cookieModeFlag;
-    QString m_cookieFilePath;
-    bool m_schedulerEnabled;
-    QCNetworkCache *m_cache;
-    ShareHandleConfig m_shareHandleConfig;
-    HstsAltSvcCacheConfig m_hstsAltSvcCacheConfig;
 };
 
 } // namespace QCurl

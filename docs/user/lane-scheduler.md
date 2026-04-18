@@ -2,6 +2,7 @@
 
 > 本页面面向 **QCurl 使用者（下游项目）**，说明 `lane` 是什么、它怎么工作、以及你应该怎么用。  
 > **Ground Truth：** 如本文与代码不一致，以 `src/QCNetworkRequest.h`、`src/QCNetworkRequestScheduler.h` 和相关测试为准。
+> `QCNetworkRequestScheduler.h` 属于 **Core install surface**：下游可直接 include 并按本文 contract 使用。
 
 ## 1. 先用一句话理解 `lane`
 
@@ -82,6 +83,11 @@ scheduler->cancelLaneRequests(
     QStringLiteral("Transfer"),
     QCurl::QCNetworkRequestScheduler::CancelLaneScope::PendingAndRunning);
 ```
+
+scope 语义：
+
+- `PendingOnly`：只清理 pending + deferred，不打断已 running 请求
+- `PendingAndRunning`：pending + deferred + running 一并取消（用于整条 lane 排空）
 
 这很适合下面的场景：
 
@@ -242,31 +248,31 @@ sequenceDiagram
 auto *scheduler = manager.scheduler();
 
 QCurl::QCNetworkRequestScheduler::Config cfg;
-cfg.maxConcurrentRequests = 6;
-cfg.maxRequestsPerHost = 2;
-cfg.maxBandwidthBytesPerSec = 0;
-cfg.enableThrottling = false;
+cfg.setMaxConcurrentRequests(6);
+cfg.setMaxRequestsPerHost(2);
+cfg.setMaxBandwidthBytesPerSec(0);
+cfg.setEnableThrottling(false);
 scheduler->setConfig(cfg);
 
 QCurl::QCNetworkRequestScheduler::LaneConfig control;
-control.weight = 4;
-control.quantum = 1;
-control.reservedGlobal = 2;
-control.reservedPerHost = 1;
+control.setWeight(4);
+control.setQuantum(1);
+control.setReservedGlobal(2);
+control.setReservedPerHost(1);
 scheduler->setLaneConfig(QStringLiteral("Control"), control);
 
 QCurl::QCNetworkRequestScheduler::LaneConfig transfer;
-transfer.weight = 2;
-transfer.quantum = 1;
-transfer.reservedGlobal = 0;
-transfer.reservedPerHost = 0;
+transfer.setWeight(2);
+transfer.setQuantum(1);
+transfer.setReservedGlobal(0);
+transfer.setReservedPerHost(0);
 scheduler->setLaneConfig(QStringLiteral("Transfer"), transfer);
 
 QCurl::QCNetworkRequestScheduler::LaneConfig background;
-background.weight = 1;
-background.quantum = 1;
-background.reservedGlobal = 0;
-background.reservedPerHost = 0;
+background.setWeight(1);
+background.setQuantum(1);
+background.setReservedGlobal(0);
+background.setReservedPerHost(0);
 scheduler->setLaneConfig(QStringLiteral("Background"), background);
 ```
 
@@ -426,8 +432,8 @@ QMetaObject::invokeMethod(
 - 不要把所有请求都塞进 `Control`，否则 lane 就失去意义了。
 - `reservedGlobal` 的总和不要大于 `maxConcurrentRequests`。
 - `reservedPerHost` 不要大于 `maxRequestsPerHost`。
-- 如果你的总并发只有 2 或 3，建议先把 `Control.reservedGlobal` 设为 1。
-- 如果下载明显太慢，可以先把 `Transfer.weight` 从 2 调到 3，再观察。
+- 如果你的总并发只有 2 或 3，建议先把 `Control.reservedGlobal()` 设为 1。
+- 如果下载明显太慢，可以先把 `Transfer.weight()` 从 2 调到 3，再观察。
 - 如果登录、拉配置仍然偶尔慢，优先检查：
   - 这些请求是否真的被放进了 `Control`
   - `Control` 是否配置了保底名额

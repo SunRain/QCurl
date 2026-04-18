@@ -20,7 +20,9 @@ using namespace QCurl;
 
 /**
  * @brief StressTest - 调度器压力测试程序
- * 
+ *
+ * `QCNetworkRequestScheduler` 属于 QCurl Core install surface；本示例按公开 contract 做压力验证。
+ *
  * 测试目标：
  * 1. 大量并发请求的稳定性（500-1000 个）
  * 2. 内存使用监控
@@ -94,8 +96,8 @@ private slots:
                        .arg(totalRequests)
                        .arg(successCount.load())
                        .arg(failureCount.load())
-                       .arg(scheduler->statistics().pendingRequests)
-                       .arg(scheduler->statistics().runningRequests);
+                       .arg(scheduler->statistics().pendingRequests())
+                       .arg(scheduler->statistics().runningRequests());
 
         // 检查是否完成
         if (completed >= totalRequests) {
@@ -138,10 +140,10 @@ private slots:
         // 调度器统计
         auto stats = scheduler->statistics();
         qInfo() << "\n📈 调度器统计：";
-        qInfo() << QString("  已完成: %1").arg(stats.completedRequests);
-        qInfo() << QString("  已取消: %1").arg(stats.cancelledRequests);
-        qInfo() << QString("  总接收字节: %1").arg(stats.totalBytesReceived);
-        qInfo() << QString("  平均响应时间: %1 ms").arg(stats.avgResponseTime, 0, 'f', 2);
+        qInfo() << QString("  已完成: %1").arg(stats.completedRequests());
+        qInfo() << QString("  已取消: %1").arg(stats.cancelledRequests());
+        qInfo() << QString("  总接收字节: %1").arg(stats.totalBytesReceived());
+        qInfo() << QString("  平均响应时间: %1 ms").arg(stats.avgResponseTime(), 0, 'f', 2);
 
         // 稳定性评估
         qInfo() << "\n✅ 稳定性评估：";
@@ -192,17 +194,17 @@ private:
         manager->enableRequestScheduler(true);
 
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests   = 50; // 高并发
-        config.maxRequestsPerHost      = 20;
-        config.maxBandwidthBytesPerSec = 10 * 1024 * 1024; // 10 MB/s
-        config.enableThrottling        = true;
+        config.setMaxConcurrentRequests(50); // 高并发
+        config.setMaxRequestsPerHost(20);
+        config.setMaxBandwidthBytesPerSec(10 * 1024 * 1024); // 10 MB/s
+        config.setEnableThrottling(true);
 
         scheduler->setConfig(config);
 
         qInfo() << "✓ 调度器已配置";
-        qInfo() << "  - maxConcurrentRequests:" << config.maxConcurrentRequests;
-        qInfo() << "  - maxRequestsPerHost:" << config.maxRequestsPerHost;
-        qInfo() << "  - maxBandwidthBytesPerSec:" << config.maxBandwidthBytesPerSec / 1024 / 1024
+        qInfo() << "  - maxConcurrentRequests:" << config.maxConcurrentRequests();
+        qInfo() << "  - maxRequestsPerHost:" << config.maxRequestsPerHost();
+        qInfo() << "  - maxBandwidthBytesPerSec:" << config.maxBandwidthBytesPerSec() / 1024 / 1024
                 << "MB/s\n";
     }
 

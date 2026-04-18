@@ -100,7 +100,8 @@ public:
      * 异步建立到服务器的连接。连接成功后发射 connected() 信号。
      * 如果连接失败，发射 errorOccurred() 信号。
      *
-     * @note 如果已经处于连接状态，此方法无效
+     * @note 仅在 Connecting / Connected / Closing 状态下无效；Closed 状态可再次调用，
+     *       用于在同一对象上重新建立连接。
      *
      * @see connected(), errorOccurred()
      */
@@ -183,7 +184,8 @@ public:
      * - enabled=false：禁用自动 Pong（CURLWS_NOAUTOPONG），应用需在 pingReceived() 中自行回复
      * pong()
      *
-     * @note 必须在 open() 之前设置，连接建立后修改无效
+     * @note 必须在下一次 open() 之前设置；Connecting / Connected / Closing 状态下调用会
+     *       warning 并保持旧值不变
      */
     void setAutoPongEnabled(bool enabled);
 
@@ -241,7 +243,8 @@ public:
      * @brief 设置 WebSocket 压缩配置
      *
      * 启用 RFC 7692 permessage-deflate 扩展，对 WebSocket 消息进行压缩。
-     * 压缩设置必须在调用 open() 之前配置，建立连接后修改无效。
+     * 压缩设置必须在下一次调用 open() 之前配置；Connecting / Connected / Closing
+     * 状态下调用会 warning 并保持旧值不变。
      *
      * @param config 压缩配置对象
      * @note 服务器可能不支持压缩，或修改压缩参数。使用 isCompressionNegotiated()

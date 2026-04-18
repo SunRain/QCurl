@@ -7,6 +7,7 @@ namespace {
 
 void registerQCNetworkRequestPriorityMetaTypeOnLoad()
 {
+    // 让库在首个 queued connection / QSignalSpy 触发前就具备稳定的 canonical metatype。
     QCurl::registerQCNetworkRequestPriorityMetaType();
 }
 

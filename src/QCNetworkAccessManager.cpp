@@ -128,9 +128,6 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
 QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     : QObject(parent)
     , d_ptr(new QCNetworkAccessManagerPrivate(this))
-    , m_cookieModeFlag(NotOpen)
-    , m_schedulerEnabled(false)
-    , m_cache(nullptr)
 {
     CurlGlobalConstructor::instance();
 }
@@ -170,6 +167,7 @@ QCNetworkReply *QCNetworkAccessManager::createManagedReply(
     }
 
     if (useScheduler) {
+        // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
         scheduler()->scheduleReply(reply, request.lane(), request.priority());
     } else {
         reply->execute();
@@ -198,13 +196,14 @@ QCNetworkReply *QCNetworkAccessManager::createNoEventLoopErrorReply(
 
 void QCNetworkAccessManager::applyReplyDefaults(QCNetworkReply *reply) const
 {
+    Q_D(const QCNetworkAccessManager);
     if (!reply) {
         return;
     }
 
-    if (m_cookieModeFlag != NotOpen && !m_cookieFilePath.isEmpty()) {
-        reply->d_func()->cookieFilePath = m_cookieFilePath;
-        reply->d_func()->cookieMode     = m_cookieModeFlag;
+    if (d->cookieModeFlag != NotOpen && !d->cookieFilePath.isEmpty()) {
+        reply->d_func()->cookieFilePath = d->cookieFilePath;
+        reply->d_func()->cookieMode     = d->cookieModeFlag;
     }
 }
 
@@ -274,19 +273,22 @@ QCNetworkReply *QCNetworkAccessManager::dispatchSendRequest(const QCNetworkReque
 
 QString QCNetworkAccessManager::cookieFilePath() const
 {
-    return m_cookieFilePath;
+    Q_D(const QCNetworkAccessManager);
+    return d->cookieFilePath;
 }
 
 QCNetworkAccessManager::CookieFileModeFlag QCNetworkAccessManager::cookieFileMode() const
 {
-    return m_cookieModeFlag;
+    Q_D(const QCNetworkAccessManager);
+    return d->cookieModeFlag;
 }
 
 void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath,
                                                CookieFileModeFlag flag)
 {
-    m_cookieFilePath = cookieFilePath;
-    m_cookieModeFlag = flag;
+    Q_D(QCNetworkAccessManager);
+    d->cookieFilePath = cookieFilePath;
+    d->cookieModeFlag = flag;
 }
 
 bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
@@ -401,23 +403,27 @@ bool QCNetworkAccessManager::clearAllCookies(QString *error)
 
 void QCNetworkAccessManager::setShareHandleConfig(const ShareHandleConfig &config)
 {
-    m_shareHandleConfig = config;
+    Q_D(QCNetworkAccessManager);
+    d->shareHandleConfig = config;
 }
 
 QCNetworkAccessManager::ShareHandleConfig QCNetworkAccessManager::shareHandleConfig() const noexcept
 {
-    return m_shareHandleConfig;
+    Q_D(const QCNetworkAccessManager);
+    return d->shareHandleConfig;
 }
 
 void QCNetworkAccessManager::setHstsAltSvcCacheConfig(const HstsAltSvcCacheConfig &config)
 {
-    m_hstsAltSvcCacheConfig = config;
+    Q_D(QCNetworkAccessManager);
+    d->hstsAltSvcCacheConfig = config;
 }
 
 QCNetworkAccessManager::HstsAltSvcCacheConfig QCNetworkAccessManager::hstsAltSvcCacheConfig()
     const noexcept
 {
-    return m_hstsAltSvcCacheConfig;
+    Q_D(const QCNetworkAccessManager);
+    return d->hstsAltSvcCacheConfig;
 }
 
 // ==================
@@ -512,17 +518,20 @@ QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
 
 void QCNetworkAccessManager::enableRequestScheduler(bool enabled)
 {
-    m_schedulerEnabled = enabled;
+    Q_D(QCNetworkAccessManager);
+    d->schedulerEnabled = enabled;
 }
 
 bool QCNetworkAccessManager::isSchedulerEnabled() const
 {
-    return m_schedulerEnabled;
+    Q_D(const QCNetworkAccessManager);
+    return d->schedulerEnabled;
 }
 
 QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
 {
     if (QThread::currentThread() != thread()) {
+        // 这里若直接返回 instance()，调用方拿到的会是“当前调用线程”的错误 scheduler。
         qWarning()
             << "QCNetworkAccessManager::scheduler: called from non-owner thread; use "
                "schedulerOnOwnerThread() to fetch the manager owner-thread scheduler";
@@ -537,6 +546,7 @@ QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
 
 QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerOnOwnerThread() const
 {
+    // BlockingQueuedConnection 依赖 owner thread 的事件循环仍然可达。
     if (!hasEventDispatcher(thread())) {
         qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: manager owner thread has "
                       "no Qt event dispatcher; blocking call is rejected";
@@ -551,6 +561,7 @@ QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerOnOwnerThread() cons
     QCNetworkRequestScheduler *result = nullptr;
     QElapsedTimer timer;
     timer.start();
+    // 跨线程 accessor 必须回 owner thread 获取共享 scheduler，避免 thread-local 漂移。
     const bool invoked = QMetaObject::invokeMethod(
         mutableThis,
         [&result]() { result = QCNetworkRequestScheduler::instance(); },
@@ -560,6 +571,7 @@ QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerOnOwnerThread() cons
                       "back to the manager owner thread";
         return nullptr;
     }
+    // 超时只告警不改变结果，用于暴露 owner thread 被锁住的风险窗口。
     if (timer.elapsed() > 1000) {
         qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: cross-thread blocking call "
                       "took"
@@ -934,20 +946,23 @@ QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
 
 void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
 {
-    m_cache = cache;
+    Q_D(QCNetworkAccessManager);
+    d->cache = cache;
 }
 
 QCNetworkCache *QCNetworkAccessManager::cache() const
 {
-    return m_cache;
+    Q_D(const QCNetworkAccessManager);
+    return d->cache;
 }
 
 void QCNetworkAccessManager::setCachePath(const QString &path, qint64 maxSize)
 {
+    Q_D(QCNetworkAccessManager);
     auto *diskCache = new QCNetworkDiskCache(this);
     diskCache->setCacheDirectory(path);
     diskCache->setMaxCacheSize(maxSize);
-    m_cache = diskCache;
+    d->cache = diskCache;
 }
 
 // ==================

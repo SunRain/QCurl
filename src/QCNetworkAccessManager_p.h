@@ -17,6 +17,7 @@
 namespace QCurl {
 
 class QCNetworkAsyncReply;
+class QCNetworkCache;
 
 /**
  * @brief QCNetworkAccessManager 私有实现（PIMPL）
@@ -28,7 +29,12 @@ class QCNetworkAccessManagerPrivate
 public:
     /// 构造 access manager 的私有状态对象。
     QCNetworkAccessManagerPrivate(QCNetworkAccessManager *self)
-        : cookieFilePath()
+        : cookieModeFlag(QCNetworkAccessManager::NotOpen)
+        , cookieFilePath()
+        , schedulerEnabled(false)
+        , cache(nullptr)
+        , shareHandleConfig()
+        , hstsAltSvcCacheConfig()
         , replyList()
         , curlMultiHandle(nullptr)
         , timer(nullptr)
@@ -45,7 +51,12 @@ public:
     /// 释放私有状态对象本身，底层资源由各成员生命周期负责。
     ~QCNetworkAccessManagerPrivate() = default;
 
+    QCNetworkAccessManager::CookieFileModeFlag cookieModeFlag; ///< cookie 文件打开模式
     QString cookieFilePath; ///< 共享 cookie 文件路径
+    bool schedulerEnabled; ///< 请求调度开关
+    QCNetworkCache *cache; ///< 外部注入的缓存实例（manager 不持有所有权）
+    QCNetworkAccessManager::ShareHandleConfig shareHandleConfig; ///< share handle 配置
+    QCNetworkAccessManager::HstsAltSvcCacheConfig hstsAltSvcCacheConfig; ///< HSTS/Alt-Svc 持久化配置
 
     QSet<QCNetworkAsyncReply *> replyList; ///< 当前活跃的异步 reply 集合
 

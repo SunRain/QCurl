@@ -159,18 +159,20 @@ auto *reply = manager.postMultipart(uploadRequest, formData);
 #include <QCNetworkRequestScheduler.h>
 
 // 建议在 manager owner thread 的初始化阶段获取并配置 scheduler。
+`QCNetworkRequestScheduler.h` 属于 QCurl 的 **Core install surface**（默认安装，按稳定公开 contract 维护）。
+
 auto *scheduler = manager.scheduler();
 
 QCurl::QCNetworkRequestScheduler::LaneConfig controlLane;
-controlLane.weight = 3;
-controlLane.quantum = 1;
-controlLane.reservedGlobal = 1;
-controlLane.reservedPerHost = 1;
+controlLane.setWeight(3);
+controlLane.setQuantum(1);
+controlLane.setReservedGlobal(1);
+controlLane.setReservedPerHost(1);
 scheduler->setLaneConfig(QStringLiteral("Control"), controlLane);
 
 QCurl::QCNetworkRequestScheduler::LaneConfig transferLane;
-transferLane.weight = 1;
-transferLane.quantum = 1;
+transferLane.setWeight(1);
+transferLane.setQuantum(1);
 scheduler->setLaneConfig(QStringLiteral("Transfer"), transferLane);
 
 QCurl::QCNetworkRequest controlRequest(QUrl("https://api.example.com/manifest"));
@@ -206,6 +208,7 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 - 避免在持锁状态、析构函数或 UI/主线程高频热路径里跨线程调用 `schedulerOnOwnerThread()`（`BlockingQueuedConnection` 可能阻塞甚至死锁）；跨线程配置时优先把“配置动作”marshal 到 owner thread 执行（详见 `docs/user/lane-scheduler.md`）。
 
 完整说明、请求时序图、`Control / Transfer / Background` 配置建议和迁移提醒，统一参考：
+- `cancelLaneRequests()` 语义：`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
 
 - `docs/user/lane-scheduler.md`
 

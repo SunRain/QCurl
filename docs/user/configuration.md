@@ -51,9 +51,10 @@ WebSocket 的 public 配置入口集中在以下头文件注释：
 
 常见边界可先关注：
 
+- `QCWebSocket::open()` 在 `Closed` 状态下允许再次调用；只有 `Connecting / Connected / Closing` 状态会拒绝并发 `open()`
 - `close(reason)` 的 `reason` 最大 123 字节
 - `ping(...)` / `pong(...)` 的 payload 最大 125 字节
-- `setAutoPongEnabled(...)` 必须在 `open()` 前设置，连接建立后修改无效
+- `setAutoPongEnabled(...)` / `setCompressionConfig(...)` 必须在下一次 `open()` 前设置；`Closed` 状态可为重连前重新配置，`Connecting / Connected / Closing` 阶段会拒绝修改并保留旧值
 - `QCWebSocketCompressionConfig` 的 `clientMaxWindowBits` / `serverMaxWindowBits` 约束为 8-15
 
 示例目录（`examples/WebSocketDemo/`、`examples/WebSocketCompressionDemo/`、`examples/WebSocketPoolDemo/`）只演示典型用法，不定义参数合同。

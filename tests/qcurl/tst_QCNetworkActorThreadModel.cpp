@@ -5,6 +5,7 @@
 #include "../src/QCCurlMultiManager.h"
 #include "../src/QCNetworkReply.h"
 #include "../src/QCNetworkRequest.h"
+#include "test_wait_utils.h"
 
 #include <QAbstractEventDispatcher>
 #include <QHostAddress>
@@ -61,13 +62,9 @@ bool waitForEventDispatcher(QThread *thread, int timeoutMs = 1000)
         return false;
     }
 
-    QElapsedTimer timer;
-    timer.start();
-    while (QAbstractEventDispatcher::instance(thread) == nullptr && timer.elapsed() < timeoutMs) {
-        QTest::qWait(10);
-    }
-
-    return QAbstractEventDispatcher::instance(thread) != nullptr;
+    return TestWaitUtils::waitUntil(
+        [thread]() { return QAbstractEventDispatcher::instance(thread) != nullptr; },
+        timeoutMs);
 }
 
 class DelayedHttpServer
@@ -163,13 +160,9 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
     });
 
     DelayedHttpServer server(400);
-    if (!server.start()) {
-        const QByteArray skipReason = QStringLiteral(
-                                          "Cannot bind local port for actor thread model test server: %1")
-                                          .arg(server.errorString())
-                                          .toUtf8();
-        QSKIP(skipReason.constData());
-    }
+    QVERIFY2(server.start(),
+             qPrintable(QStringLiteral("Cannot bind local port for actor thread model test server: %1")
+                            .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/test")));
     QCNetworkReply *reply = sendGetOnOwnerThread(manager, request);
@@ -260,13 +253,9 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
     });
 
     DelayedHttpServer server(250);
-    if (!server.start()) {
-        const QByteArray skipReason = QStringLiteral(
-                                          "Cannot bind local port for actor thread model test server: %1")
-                                          .arg(server.errorString())
-                                          .toUtf8();
-        QSKIP(skipReason.constData());
-    }
+    QVERIFY2(server.start(),
+             qPrintable(QStringLiteral("Cannot bind local port for actor thread model test server: %1")
+                            .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/finish-count")));
     QCNetworkReply *reply = manager->sendGet(request);

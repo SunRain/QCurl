@@ -10,6 +10,16 @@
 
 namespace QCurl {
 
+namespace {
+
+bool isConfigurationLockedState(QCWebSocket::State state)
+{
+    return state == QCWebSocket::State::Connecting || state == QCWebSocket::State::Connected
+           || state == QCWebSocket::State::Closing;
+}
+
+} // namespace
+
 // ==================
 // QCWebSocketPrivate 实现
 // ==================
@@ -41,6 +51,8 @@ QCWebSocketPrivate::~QCWebSocketPrivate()
         reconnectTimer->deleteLater();
         reconnectTimer = nullptr;
     }
+
+    clearRequestHeaders();
 
     // 清理 curl 资源（QCCurlHandleManager 的 RAII 机制会自动清理）
 }
@@ -185,6 +197,8 @@ void QCWebSocketPrivate::handleError(const QString &error)
 
 void QCWebSocketPrivate::cleanupConnection()
 {
+    clearRequestHeaders();
+
     // 停止并删除 Socket 通知器
     if (socketReadNotifier) {
         socketReadNotifier->setEnabled(false);
@@ -215,6 +229,19 @@ void QCWebSocketPrivate::cleanupConnection()
         setState(QCWebSocket::State::Closed);
         Q_Q(QCWebSocket);
         emit q->disconnected();
+    }
+}
+
+void QCWebSocketPrivate::clearRequestHeaders()
+{
+    CURL *curl = curlManager.handle();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
+    }
+
+    if (requestHeaders) {
+        curl_slist_free_all(requestHeaders);
+        requestHeaders = nullptr;
     }
 }
 
@@ -286,11 +313,19 @@ void QCWebSocket::open()
 {
     Q_D(QCWebSocket);
 
-    // 如果已经连接或正在连接，直接返回
-    if (d->state != State::Unconnected) {
-        qWarning() << "QCWebSocket: Already connected or connecting";
+    // 允许在 Closed 状态下重新 open()，但仍禁止与活动连接/关闭握手并发。
+    if (d->state == State::Connecting || d->state == State::Connected
+        || d->state == State::Closing) {
+        qWarning() << "QCWebSocket: Already connected, connecting, or closing";
         return;
     }
+
+    d->errorString.clear();
+    d->compressionNegotiated = false;
+    d->sentBytesRaw          = 0;
+    d->sentBytesCompressed   = 0;
+    d->receivedBytesCompressed = 0;
+    d->receivedBytesRaw        = 0;
 
     d->setState(State::Connecting);
 
@@ -321,39 +356,55 @@ void QCWebSocket::open()
 
         // 应用 SSL/TLS 配置（仅对 wss:// 协议）
         if (d->url.scheme() == "wss") {
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, d->sslConfig.verifyPeer ? 1L : 0L);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, d->sslConfig.verifyHost ? 2L : 0L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, d->sslConfig.verifyPeer() ? 1L : 0L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, d->sslConfig.verifyHost() ? 2L : 0L);
 
-            if (!d->sslConfig.caCertPath.isEmpty()) {
-                QByteArray caPath = d->sslConfig.caCertPath.toUtf8();
-                curl_easy_setopt(curl, CURLOPT_CAINFO, caPath.constData());
-            }
+            d->sslCaInfoUtf8      = d->sslConfig.caCertPath().toUtf8();
+            d->sslCertUtf8        = d->sslConfig.clientCertPath().toUtf8();
+            d->sslKeyUtf8         = d->sslConfig.clientKeyPath().toUtf8();
+            d->sslKeyPasswordUtf8 = d->sslConfig.clientKeyPassword().toUtf8();
 
-            if (!d->sslConfig.clientCertPath.isEmpty()) {
-                QByteArray certPath = d->sslConfig.clientCertPath.toUtf8();
-                curl_easy_setopt(curl, CURLOPT_SSLCERT, certPath.constData());
-            }
-
-            if (!d->sslConfig.clientKeyPath.isEmpty()) {
-                QByteArray keyPath = d->sslConfig.clientKeyPath.toUtf8();
-                curl_easy_setopt(curl, CURLOPT_SSLKEY, keyPath.constData());
-            }
-
-            if (!d->sslConfig.clientKeyPassword.isEmpty()) {
-                QByteArray keyPass = d->sslConfig.clientKeyPassword.toUtf8();
-                curl_easy_setopt(curl, CURLOPT_KEYPASSWD, keyPass.constData());
-            }
+            curl_easy_setopt(
+                curl,
+                CURLOPT_CAINFO,
+                d->sslCaInfoUtf8.isEmpty() ? nullptr : d->sslCaInfoUtf8.constData());
+            curl_easy_setopt(
+                curl,
+                CURLOPT_SSLCERT,
+                d->sslCertUtf8.isEmpty() ? nullptr : d->sslCertUtf8.constData());
+            curl_easy_setopt(
+                curl,
+                CURLOPT_SSLKEY,
+                d->sslKeyUtf8.isEmpty() ? nullptr : d->sslKeyUtf8.constData());
+            curl_easy_setopt(curl,
+                             CURLOPT_KEYPASSWD,
+                             d->sslKeyPasswordUtf8.isEmpty()
+                                 ? nullptr
+                                 : d->sslKeyPasswordUtf8.constData());
+        } else {
+            d->sslCaInfoUtf8.clear();
+            d->sslCertUtf8.clear();
+            d->sslKeyUtf8.clear();
+            d->sslKeyPasswordUtf8.clear();
+            curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+            curl_easy_setopt(curl, CURLOPT_SSLCERT, nullptr);
+            curl_easy_setopt(curl, CURLOPT_SSLKEY, nullptr);
+            curl_easy_setopt(curl, CURLOPT_KEYPASSWD, nullptr);
         }
 
         // 添加 WebSocket 压缩扩展请求头
-        struct curl_slist *headers = nullptr;
+        d->clearRequestHeaders();
         if (d->compressionConfig.enabled) {
-            QString extHeader = d->compressionConfig.toExtensionHeader();
+            const QString extHeader = d->compressionConfig.toExtensionHeader();
             if (!extHeader.isEmpty()) {
-                QString headerStr = QStringLiteral("Sec-WebSocket-Extensions: %1").arg(extHeader);
-                QByteArray headerBytes = headerStr.toUtf8();
-                headers                = curl_slist_append(headers, headerBytes.constData());
-                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+                const QString headerStr
+                    = QStringLiteral("Sec-WebSocket-Extensions: %1").arg(extHeader);
+                d->requestHeaders = curl_slist_append(nullptr, headerStr.toUtf8().constData());
+                if (!d->requestHeaders) {
+                    d->handleError(tr("Failed to allocate WebSocket extension headers"));
+                    return;
+                }
+                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, d->requestHeaders);
 
                 qDebug() << "QCWebSocket: Requesting compression:" << extHeader;
             }
@@ -361,11 +412,6 @@ void QCWebSocket::open()
 
         // 执行连接（这是阻塞调用，但在 QTimer 回调中不会阻塞 open() 方法本身）
         CURLcode res = curl_easy_perform(curl);
-
-        // 清理自定义头
-        if (headers) {
-            curl_slist_free_all(headers);
-        }
         if (res != CURLE_OK) {
             QString errorMsg = QString::fromUtf8(curl_easy_strerror(res));
 
@@ -552,11 +598,13 @@ void QCWebSocket::pong(const QByteArray &payload)
 void QCWebSocket::setAutoPongEnabled(bool enabled)
 {
     Q_D(QCWebSocket);
-    d->autoPongEnabled = enabled;
-
-    if (d->state != State::Unconnected) {
-        qWarning() << "QCWebSocket::setAutoPongEnabled: 必须在 open() 之前设置";
+    if (isConfigurationLockedState(d->state)) {
+        qWarning() << "QCWebSocket::setAutoPongEnabled: active connection state rejects config "
+                      "changes; keeping the previous value";
+        return;
     }
+
+    d->autoPongEnabled = enabled;
 }
 
 bool QCWebSocket::isAutoPongEnabled() const
@@ -628,12 +676,13 @@ QCNetworkSslConfig QCWebSocket::sslConfig() const
 void QCWebSocket::setCompressionConfig(const QCWebSocketCompressionConfig &config)
 {
     Q_D(QCWebSocket);
-    d->compressionConfig = config;
-
-    // 如果已连接，发出警告
-    if (d->state != State::Unconnected) {
-        qWarning() << "QCWebSocket::setCompressionConfig: 压缩配置必须在 open() 之前设置";
+    if (isConfigurationLockedState(d->state)) {
+        qWarning() << "QCWebSocket::setCompressionConfig: active connection state rejects config "
+                      "changes; keeping the previous value";
+        return;
     }
+
+    d->compressionConfig = config;
 }
 
 QCWebSocketCompressionConfig QCWebSocket::compressionConfig() const

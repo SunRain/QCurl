@@ -19,6 +19,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
 #include "test_httpbin_env.h"
+#include "test_wait_utils.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -259,7 +260,7 @@ bool TestQCNetworkReply::waitForSignal(QObject *obj, const QMetaMethod &signal, 
     }
 
     QSignalSpy spy(obj, signal);
-    return spy.wait(timeout);
+    return TestWaitUtils::waitForSpyCount(spy, 1, timeout);
 }
 
 QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
@@ -293,8 +294,8 @@ QCNetworkRequestScheduler::Config TestQCNetworkReply::blockScheduler(bool &origi
 
     QCNetworkRequestScheduler::Config originalConfig = scheduler->config();
     QCNetworkRequestScheduler::Config blockedConfig  = originalConfig;
-    blockedConfig.maxConcurrentRequests              = 0;
-    blockedConfig.maxRequestsPerHost                 = std::max(originalConfig.maxRequestsPerHost, 1);
+    blockedConfig.setMaxConcurrentRequests(0);
+    blockedConfig.setMaxRequestsPerHost(std::max(originalConfig.maxRequestsPerHost(), 1));
 
     m_manager->enableRequestScheduler(true);
     scheduler->setConfig(blockedConfig);
@@ -699,7 +700,7 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     QVERIFY(reply != nullptr);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
-    QVERIFY(finishedSpy.wait(5000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     QCOMPARE(reply->error(), NetworkError::NoError);
     const auto dataOpt = reply->readAll();
@@ -763,7 +764,7 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
     QVERIFY(reply != nullptr);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
-    QVERIFY(finishedSpy.wait(5000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
 
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -923,9 +924,9 @@ void TestQCNetworkReply::testStateCancellation()
     readyReadSpy.clear();
     progressSpy.clear();
     stateSpy.clear();
-    QVERIFY(!readyReadSpy.wait(300));
-    QVERIFY(!progressSpy.wait(300));
-    QVERIFY(!stateSpy.wait(300));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(readyReadSpy, 300));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(progressSpy, 300));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(stateSpy, 300));
 
     reply->deleteLater();
 }
@@ -1019,7 +1020,7 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
                 this,
                 [&](qint64 bytesReceived, qint64) { progressValues.append(bytesReceived); });
 
-        if (finishedSpy.count() == 0 && !finishedSpy.wait(2000)) {
+        if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 2000)) {
             reply->deleteLater();
             return false;
         }
@@ -1180,9 +1181,9 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
     readyReadSpy.clear();
     progressSpy.clear();
     stateSpy.clear();
-    QVERIFY(!readyReadSpy.wait(100));
-    QVERIFY(!progressSpy.wait(100));
-    QVERIFY(!stateSpy.wait(100));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(readyReadSpy, 100));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(progressSpy, 100));
+    QVERIFY(TestWaitUtils::waitForNoAdditionalSignal(stateSpy, 100));
 
     reply->deleteLater();
 }
@@ -1306,6 +1307,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     constexpr qsizetype kChunkSize    = 4096;
     constexpr int kChunkIntervalMs    = 5;
     constexpr qint64 kPauseAfterBytes = 32 * 1024;
+    constexpr qint64 kMaxBufferedBytes = kChunkSize * 2;
 
     const QByteArray payload(kPayloadSize, 'x');
 
@@ -1339,7 +1341,8 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
             return;
         }
 
-        constexpr qint64 kMaxBufferedBytes = 32 * 1024;
+        // Limit server-side prebuffering so cross-thread pause has time to take effect
+        // before the whole response is already queued into the socket buffer.
         while (bytesSent < payload.size() && socket->bytesToWrite() < kMaxBufferedBytes) {
             const qsizetype remaining = payload.size() - bytesSent;
             const qsizetype toSend    = std::min(kChunkSize, remaining);
@@ -1389,14 +1392,15 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
     qint64 bytesAtPause = -1;
+    int progressEventIndex = 0;
     QElapsedTimer progressTimer;
     progressTimer.start();
     while (progressTimer.elapsed() < 5000 && bytesAtPause < kPauseAfterBytes) {
-        if (!progressSpy.wait(500)) {
+        if (!TestWaitUtils::waitForSpyGrowth(progressSpy, progressEventIndex, 500)) {
             continue;
         }
 
-        const auto args = progressSpy.takeLast();
+        const auto args = progressSpy.at(progressEventIndex++);
         bytesAtPause    = args.at(0).toLongLong();
     }
     QVERIFY(bytesAtPause >= kPauseAfterBytes);
@@ -1407,8 +1411,12 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
 
     const qint64 pausedBytes = reply->bytesReceived();
-    QTest::qWait(200);
-    const qint64 pausedBytesAfterWait = reply->bytesReceived();
+    qint64 pausedBytesAfterWait = pausedBytes;
+    QVERIFY2(TestWaitUtils::waitForStableValue([reply]() { return reply->bytesReceived(); },
+                                               150,
+                                               2000,
+                                               &pausedBytesAfterWait),
+             "reply->bytesReceived() did not stabilize after pauseTransport");
     QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
 
     std::thread resumeThread([reply]() { reply->resumeTransport(); });
@@ -1532,7 +1540,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
             }
         });
 
-        QVERIFY(finishedSpy.wait(10000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
         const auto tailOpt = reply->readAll();
         if (tailOpt.has_value() && !tailOpt->isEmpty()) {
             received.append(*tailOpt);
@@ -1561,15 +1569,16 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
         QByteArray received;
+        int backpressureEventIndex = 0;
 
         bool sawActive = false;
         QElapsedTimer waitTimer;
         waitTimer.start();
         while (waitTimer.elapsed() < 5000 && !sawActive) {
-            if (!backpressureSpy.wait(500)) {
+            if (!TestWaitUtils::waitForSpyGrowth(backpressureSpy, backpressureEventIndex, 500)) {
                 continue;
             }
-            const auto args = backpressureSpy.takeLast();
+            const auto args = backpressureSpy.at(backpressureEventIndex++);
             if (!args.isEmpty() && args.at(0).toBool()) {
                 sawActive = true;
             }
@@ -1594,17 +1603,17 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         bool sawInactive = false;
         waitTimer.restart();
         while (waitTimer.elapsed() < 5000 && !sawInactive) {
-            if (!backpressureSpy.wait(500)) {
+            if (!TestWaitUtils::waitForSpyGrowth(backpressureSpy, backpressureEventIndex, 500)) {
                 continue;
             }
-            const auto args = backpressureSpy.takeLast();
+            const auto args = backpressureSpy.at(backpressureEventIndex++);
             if (!args.isEmpty() && !args.at(0).toBool()) {
                 sawInactive = true;
             }
         }
 
         QVERIFY(sawInactive);
-        QVERIFY(finishedSpy.wait(10000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
         const auto tailOpt = reply->readAll();
         if (tailOpt.has_value() && !tailOpt->isEmpty()) {
@@ -1651,6 +1660,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QByteArray received;
         bool sawFirstByte = false;
         bool sawPause = false;
+        int backpressureEventIndex = 0;
         connect(reply,
                 &QCNetworkReply::stateChanged,
                 this,
@@ -1682,10 +1692,10 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QElapsedTimer waitTimer;
         waitTimer.start();
         while (waitTimer.elapsed() < 5000 && !sawActive) {
-            if (!backpressureSpy.wait(500)) {
+            if (!TestWaitUtils::waitForSpyGrowth(backpressureSpy, backpressureEventIndex, 500)) {
                 continue;
             }
-            const auto args = backpressureSpy.takeLast();
+            const auto args = backpressureSpy.at(backpressureEventIndex++);
             if (!args.isEmpty() && args.at(0).toBool()) {
                 sawActive = true;
             }
@@ -1712,8 +1722,12 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QTRY_VERIFY_WITH_TIMEOUT(!reply->isBackpressureActive(), 3000);
 
         const qint64 pausedBytes = reply->bytesReceived();
-        QTest::qWait(200);
-        const qint64 pausedBytesAfterWait = reply->bytesReceived();
+        qint64 pausedBytesAfterWait = pausedBytes;
+        QVERIFY2(TestWaitUtils::waitForStableValue([reply]() { return reply->bytesReceived(); },
+                                                   150,
+                                                   2000,
+                                                   &pausedBytesAfterWait),
+                 "reply->bytesReceived() did not stabilize after user pause");
         QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
 
         connect(reply, &QCNetworkReply::readyRead, this, [&]() {
@@ -1735,7 +1749,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
                                      || reply->state() == ReplyState::Finished,
                                  3000);
 
-        QVERIFY(finishedSpy.wait(10000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
         const auto tailOpt = reply->readAll();
         if (tailOpt.has_value() && !tailOpt->isEmpty()) {
@@ -1787,15 +1801,16 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
         QByteArray received;
+        int backpressureEventIndex = 0;
 
         bool sawActive = false;
         QElapsedTimer waitTimer;
         waitTimer.start();
         while (waitTimer.elapsed() < 5000 && !sawActive) {
-            if (!backpressureSpy.wait(500)) {
+            if (!TestWaitUtils::waitForSpyGrowth(backpressureSpy, backpressureEventIndex, 500)) {
                 continue;
             }
-            const auto args = backpressureSpy.takeLast();
+            const auto args = backpressureSpy.at(backpressureEventIndex++);
             if (!args.isEmpty() && args.at(0).toBool()) {
                 sawActive = true;
             }
@@ -1819,17 +1834,17 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         bool sawInactive = false;
         waitTimer.restart();
         while (waitTimer.elapsed() < 5000 && !sawInactive) {
-            if (!backpressureSpy.wait(500)) {
+            if (!TestWaitUtils::waitForSpyGrowth(backpressureSpy, backpressureEventIndex, 500)) {
                 continue;
             }
-            const auto args = backpressureSpy.takeLast();
+            const auto args = backpressureSpy.at(backpressureEventIndex++);
             if (!args.isEmpty() && !args.at(0).toBool()) {
                 sawInactive = true;
             }
         }
 
         QVERIFY(sawInactive);
-        QVERIFY(finishedSpy.wait(10000));
+        QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
         const auto tailOpt = reply->readAll();
         if (tailOpt.has_value() && !tailOpt->isEmpty()) {
@@ -2010,7 +2025,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
     QSignalSpy sendPausedSpy(reply, &QCNetworkReply::uploadSendPausedChanged);
 
-    QVERIFY(finishedSpy.wait(15000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     for (const auto &args : stateSpy) {

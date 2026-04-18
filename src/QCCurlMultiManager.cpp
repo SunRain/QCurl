@@ -720,6 +720,7 @@ void QCCurlMultiManager::addReply(QCNetworkReply *reply)
     }
 
     m_runningRequests.fetch_add(1, std::memory_order_relaxed);
+    // scheduler 的 start handoff 依赖 multi loop 及时被唤醒，否则 execute() 后可能延迟首轮 poll。
     wakeup();
 
     qDebug() << "QCCurlMultiManager::addReply: Added reply" << reply

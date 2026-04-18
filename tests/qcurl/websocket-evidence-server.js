@@ -132,6 +132,89 @@ function buildWsFrame(opcode, payload, fin) {
   return Buffer.concat([header, payload]);
 }
 
+function buildClosePayload(code, reason) {
+  const reasonBuf = Buffer.from(String(reason || ''), 'utf8');
+  const payload = Buffer.alloc(2 + reasonBuf.length);
+  payload.writeUInt16BE(code, 0);
+  reasonBuf.copy(payload, 2);
+  return payload;
+}
+
+function parseClosePayload(payload) {
+  if (!payload || payload.length === 0) {
+    return { code: 1005, reason: '' };
+  }
+  if (payload.length === 1) {
+    return { code: 1002, reason: 'invalid_close_payload' };
+  }
+  return {
+    code: payload.readUInt16BE(0),
+    reason: payload.slice(2).toString('utf8'),
+  };
+}
+
+function tryParseWsFrame(buf) {
+  if (buf.length < 2) {
+    return null;
+  }
+
+  const b0 = buf[0];
+  const b1 = buf[1];
+  let offset = 2;
+  let payloadLen = (b1 & 0x7f);
+
+  if (payloadLen === 126) {
+    if (buf.length < offset + 2) {
+      return null;
+    }
+    payloadLen = buf.readUInt16BE(offset);
+    offset += 2;
+  } else if (payloadLen === 127) {
+    if (buf.length < offset + 8) {
+      return null;
+    }
+    const high = buf.readUInt32BE(offset);
+    const low = buf.readUInt32BE(offset + 4);
+    if (high !== 0) {
+      throw new Error('payload too large');
+    }
+    payloadLen = low;
+    offset += 8;
+  }
+
+  const masked = (b1 & 0x80) !== 0;
+  let maskingKey = null;
+  if (masked) {
+    if (buf.length < offset + 4) {
+      return null;
+    }
+    maskingKey = buf.slice(offset, offset + 4);
+    offset += 4;
+  }
+
+  if (buf.length < offset + payloadLen) {
+    return null;
+  }
+
+  const payload = Buffer.from(buf.slice(offset, offset + payloadLen));
+  if (masked) {
+    for (let i = 0; i < payload.length; i += 1) {
+      payload[i] ^= maskingKey[i % 4];
+    }
+  }
+
+  return {
+    frame: {
+      fin: (b0 & 0x80) !== 0,
+      opcode: b0 & 0x0f,
+      rsv: (b0 >> 4) & 0x07,
+      masked,
+      payload,
+    },
+    remaining: buf.slice(offset + payloadLen),
+  };
+}
+
 function safeJsonlAppend(stream, obj) {
   try {
     stream.write(`${JSON.stringify(obj)}\n`);
@@ -270,13 +353,21 @@ function main() {
   }
 
   let nextConnId = 1;
+  const handledSockets = new WeakSet();
 
-  server.on('connection', (socket) => {
+  const handleAcceptedSocket = (socket, sourceEvent) => {
+    if (!socket || handledSockets.has(socket)) {
+      return;
+    }
+    handledSockets.add(socket);
+
     const connId = nextConnId++;
     let buf = Buffer.alloc(0);
     let handshakeDone = false;
     let caseId = '';
     let targetInfo = null;
+    let closeSent = false;
+    let messageState = null;
 
     const remote = `${socket.remoteAddress || ''}:${socket.remotePort || ''}`.replace(/^:/, '');
     safeJsonlAppend(artifactsStream, {
@@ -284,12 +375,158 @@ function main() {
       event: 'connection',
       connId,
       remote,
+      source: sourceEvent,
+      tls: !!cfg.tls,
     });
+
+    const recordFrame = (direction, opcode, fin, payload, extra = {}) => {
+      const entry = {
+        ts: new Date().toISOString(),
+        event: 'ws_frame',
+        connId,
+        case: caseId,
+        direction,
+        fin: fin ? 1 : 0,
+        opcode,
+        payload_len: payload.length,
+        payload_sha256: sha256Hex(payload),
+        ...extra,
+      };
+      safeJsonlAppend(artifactsStream, entry);
+    };
+
+    const sendFrame = (opcode, payload, fin = true, extra = {}) => {
+      const framePayload = Buffer.isBuffer(payload) ? payload : Buffer.from(payload || '');
+      socket.write(buildWsFrame(opcode, framePayload, fin));
+      recordFrame('send', opcode, fin, framePayload, extra);
+    };
+
+    const closeWithCode = (code, reason) => {
+      if (closeSent) {
+        return;
+      }
+      closeSent = true;
+      const payload = buildClosePayload(code, reason);
+      sendFrame(0x8, payload, true, {
+        close_code: code,
+        close_reason: reason,
+      });
+      setTimeout(() => {
+        try { socket.end(); } catch (e) { /* ignore */ }
+        try { socket.destroy(); } catch (e) { /* ignore */ }
+      }, 50);
+    };
+
+    const handleWsFrame = (frame) => {
+      if (frame.rsv !== 0) {
+        closeWithCode(1002, 'unsupported_rsv_bits');
+        return;
+      }
+      if (!frame.masked) {
+        closeWithCode(1002, 'client_must_mask');
+        return;
+      }
+
+      const extra = {};
+      if (frame.opcode === 0x8) {
+        const parsedClose = parseClosePayload(frame.payload);
+        extra.close_code = parsedClose.code;
+        extra.close_reason = parsedClose.reason;
+      }
+      recordFrame('recv', frame.opcode, frame.fin, frame.payload, extra);
+
+      if ((frame.opcode & 0x08) !== 0 && !frame.fin) {
+        closeWithCode(1002, 'fragmented_control_frame');
+        return;
+      }
+
+      if (frame.opcode === 0x9) {
+        sendFrame(0xA, frame.payload, true);
+        return;
+      }
+
+      if (frame.opcode === 0xA) {
+        return;
+      }
+
+      if (frame.opcode === 0x8) {
+        const parsedClose = parseClosePayload(frame.payload);
+        if (!closeSent) {
+          closeSent = true;
+          const payload = buildClosePayload(parsedClose.code, parsedClose.reason);
+          sendFrame(0x8, payload, true, {
+            close_code: parsedClose.code,
+            close_reason: parsedClose.reason,
+          });
+        }
+        setTimeout(() => {
+          try { socket.end(); } catch (e) { /* ignore */ }
+          try { socket.destroy(); } catch (e) { /* ignore */ }
+        }, 20);
+        return;
+      }
+
+      if (frame.opcode === 0x1 || frame.opcode === 0x2) {
+        if (messageState) {
+          closeWithCode(1002, 'new_data_frame_before_fragment_completion');
+          return;
+        }
+        if (frame.fin) {
+          sendFrame(frame.opcode, frame.payload, true);
+          return;
+        }
+        messageState = {
+          opcode: frame.opcode,
+          chunks: [frame.payload],
+        };
+        return;
+      }
+
+      if (frame.opcode === 0x0) {
+        if (!messageState) {
+          closeWithCode(1002, 'unexpected_continuation');
+          return;
+        }
+        messageState.chunks.push(frame.payload);
+        if (!frame.fin) {
+          return;
+        }
+        const payload = Buffer.concat(messageState.chunks);
+        const opcode = messageState.opcode;
+        messageState = null;
+        sendFrame(opcode, payload, true);
+        return;
+      }
+
+      closeWithCode(1003, `unsupported_opcode:${frame.opcode}`);
+    };
+
+    const flushWsFrames = () => {
+      while (buf.length > 0) {
+        let parsedFrame = null;
+        try {
+          parsedFrame = tryParseWsFrame(buf);
+        } catch (err) {
+          closeWithCode(1009, err && err.message ? err.message : 'frame_parse_error');
+          return;
+        }
+        if (!parsedFrame) {
+          return;
+        }
+        buf = parsedFrame.remaining;
+        handleWsFrame(parsedFrame.frame);
+        if (closeSent) {
+          return;
+        }
+      }
+    };
 
     const onData = (chunk) => {
       buf = Buffer.concat([buf, chunk]);
       if (handshakeDone) {
-        // 证据服务器最小化：不解析 client->server frames（避免噪声/复杂度）。
+        if (targetInfo && (targetInfo.pathname === '/' || targetInfo.pathname === '/echo')) {
+          flushWsFrames();
+        }
         return;
       }
 
@@ -337,6 +574,11 @@ function main() {
 
       // 场景选择：握手成功后立即执行一次“可证伪动作”。
       try {
+        if (targetInfo.pathname === '/' || targetInfo.pathname === '/echo') {
+          flushWsFrames();
+          return;
+        }
+
         if (targetInfo.pathname === '/fragment') {
           const type = String(targetInfo.params.type || 'binary');
           const totalLen = Math.max(1, Math.min(1024 * 1024, Number.parseInt(String(targetInfo.params.len || '4096'), 10) || 4096));
@@ -377,19 +619,7 @@ function main() {
             offset += size;
             const fin = (i === sizes.length - 1);
             const op = (i === 0) ? opcode : 0x0; // continuation
-            const frame = buildWsFrame(op, chunkPayload, fin);
-            socket.write(frame);
-            safeJsonlAppend(artifactsStream, {
-              ts: new Date().toISOString(),
-              event: 'ws_frame',
-              connId,
-              case: caseId,
-              direction: 'send',
-              fin: fin ? 1 : 0,
-              opcode: op,
-              payload_len: chunkPayload.length,
-              payload_sha256: sha256Hex(chunkPayload),
-            });
+            sendFrame(op, chunkPayload, fin);
           }
 
           safeJsonlAppend(artifactsStream, {
@@ -404,22 +634,9 @@ function main() {
         if (targetInfo.pathname === '/close') {
           const code = Math.max(1000, Math.min(4999, Number.parseInt(String(targetInfo.params.code || '1001'), 10) || 1001));
           const reason = String(targetInfo.params.reason || 'bye');
-          const reasonBuf = Buffer.from(reason, 'utf8');
-          const payload = Buffer.alloc(2 + reasonBuf.length);
-          payload.writeUInt16BE(code, 0);
-          reasonBuf.copy(payload, 2);
-          const frame = buildWsFrame(0x8, payload, true);
-          socket.write(frame);
-          safeJsonlAppend(artifactsStream, {
-            ts: new Date().toISOString(),
-            event: 'ws_frame',
-            connId,
-            case: caseId,
-            direction: 'send',
-            fin: 1,
-            opcode: 0x8,
-            payload_len: payload.length,
-            payload_sha256: sha256Hex(payload),
+          closeSent = true;
+          const payload = buildClosePayload(code, reason);
+          sendFrame(0x8, payload, true, {
             close_code: code,
             close_reason: reason,
           });
@@ -439,28 +656,7 @@ function main() {
         // 未知 path：明确拒绝（close 1008）
         const code = 1008;
         const reason = `unknown_path:${targetInfo.pathname || ''}`;
-        const reasonBuf = Buffer.from(reason, 'utf8');
-        const payload = Buffer.alloc(2 + reasonBuf.length);
-        payload.writeUInt16BE(code, 0);
-        reasonBuf.copy(payload, 2);
-        socket.write(buildWsFrame(0x8, payload, true));
-        safeJsonlAppend(artifactsStream, {
-          ts: new Date().toISOString(),
-          event: 'ws_frame',
-          connId,
-          case: caseId,
-          direction: 'send',
-          fin: 1,
-          opcode: 0x8,
-          payload_len: payload.length,
-          payload_sha256: sha256Hex(payload),
-          close_code: code,
-          close_reason: reason,
-        });
-        setTimeout(() => {
-          try { socket.end(); } catch (e) { /* ignore */ }
-          try { socket.destroy(); } catch (e) { /* ignore */ }
-        }, 50);
+        closeWithCode(code, reason);
       } catch (err) {
         const msg = err && err.message ? err.message : String(err);
         safeJsonlAppend(artifactsStream, {
@@ -492,7 +688,17 @@ function main() {
         case: caseId,
       });
     });
-  });
+  };
+
+  if (cfg.tls) {
+    server.on('secureConnection', (socket) => {
+      handleAcceptedSocket(socket, 'secureConnection');
+    });
+  } else {
+    server.on('connection', (socket) => {
+      handleAcceptedSocket(socket, 'connection');
+    });
+  }
 
   server.on('error', (err) => {
     const msg = err && err.message ? err.message : String(err);

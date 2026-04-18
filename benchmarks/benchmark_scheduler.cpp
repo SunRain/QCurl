@@ -104,8 +104,8 @@ private slots:
             // 2.2 有调度器（配置为 10 个并发）
             manager->enableRequestScheduler(true);
             QCNetworkRequestScheduler::Config config;
-            config.maxConcurrentRequests = 10;
-            config.maxRequestsPerHost = 5;
+            config.setMaxConcurrentRequests(10);
+            config.setMaxRequestsPerHost(5);
             scheduler->setConfig(config);
 
             auto withSchedulerResult = runConcurrentBenchmark("有调度器（并发）", 50, true);
@@ -120,8 +120,8 @@ private slots:
         manager->enableRequestScheduler(true);
         
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests = 3;  // 限制并发，突显优先级效果
-        config.maxRequestsPerHost = 2;
+        config.setMaxConcurrentRequests(3);  // 限制并发，突显优先级效果
+        config.setMaxRequestsPerHost(2);
         scheduler->setConfig(config);
 
         // 使用堆上的共享指针来存储结果
@@ -199,8 +199,8 @@ private slots:
         manager->enableRequestScheduler(true);
         
         QCNetworkRequestScheduler::Config config;
-        config.maxConcurrentRequests = 20;
-        config.maxRequestsPerHost = 10;
+        config.setMaxConcurrentRequests(20);
+        config.setMaxRequestsPerHost(10);
         scheduler->setConfig(config);
 
         auto result = runConcurrentBenchmark("高负载测试", 100, true);

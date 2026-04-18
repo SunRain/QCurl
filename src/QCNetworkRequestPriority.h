@@ -15,6 +15,7 @@
 
 namespace QCurl {
 
+// 让优先级枚举走 Qt 的 canonical 反射路径，供 queued connection/QSignalSpy/QVariant 复用。
 Q_NAMESPACE
 
 /**
@@ -88,6 +89,7 @@ Q_ENUM_NS(QCNetworkRequestPriority)
  */
 inline int registerQCNetworkRequestPriorityMetaType()
 {
+    // 函数内静态值确保整个进程只注册一次 canonical name。
     static const int kMetaTypeId
         = qRegisterMetaType<QCNetworkRequestPriority>("QCurl::QCNetworkRequestPriority");
     return kMetaTypeId;

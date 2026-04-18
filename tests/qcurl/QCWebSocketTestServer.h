@@ -5,9 +5,9 @@
  * @file QCWebSocketTestServer.h
  * @brief 启动和管理 Qt Test 使用的本地 WebSocket server。
  *
- * 默认封装两类本地 server：
- * - Fragment Echo：依赖 `tests/qcurl/websocket-fragment-server.js`
+ * 默认使用零外部依赖的 Evidence Server；Fragment Echo 仅保留为补充资产。
  * - Evidence Server：依赖 `tests/qcurl/websocket-evidence-server.js`
+ * - Fragment Echo：依赖 `tests/qcurl/websocket-fragment-server.js`
  *
  * 该 helper 负责 READY marker 解析、端口连通性探测和进程回收。
  */
@@ -101,9 +101,9 @@ public:
 
     /// @brief 启动指定模式和实现类型的本地 server。
     /// @param mode `ws` 或 `wss`。
-    /// @param kind 选择 fragment echo 或 evidence server。
+    /// @param kind 选择 evidence server（默认）或 fragment echo。
     /// @return 启动并就绪返回 `true`，否则返回 `false` 并设置 skipReason()。
-    bool start(Mode mode, ServerKind kind = ServerKind::FragmentEcho)
+    bool start(Mode mode, ServerKind kind = ServerKind::Evidence)
     {
         stop();
 
@@ -121,6 +121,22 @@ public:
         if (!QFileInfo::exists(scriptPath)) {
             m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本：%1").arg(scriptPath);
             return false;
+        }
+        if (m_kind == ServerKind::FragmentEcho) {
+            const QString lockPath = QDir(appDir).absoluteFilePath(
+                QStringLiteral("../../tests/qcurl/package-lock.json"));
+            const QString wsPath = QDir(appDir).absoluteFilePath(
+                QStringLiteral("../../tests/qcurl/node_modules/ws/package.json"));
+            if (!QFileInfo::exists(lockPath)) {
+                m_skipReason = QStringLiteral("Fragment Echo server 缺少 package-lock.json：%1")
+                                   .arg(lockPath);
+                return false;
+            }
+            if (!QFileInfo::exists(wsPath)) {
+                m_skipReason = QStringLiteral("Fragment Echo server 缺少受控 ws 依赖：%1")
+                                   .arg(wsPath);
+                return false;
+            }
         }
 
         QStringList args{scriptPath, QStringLiteral("--port"), QStringLiteral("0")};
@@ -161,8 +177,8 @@ public:
                                "%1")
                                .arg((m_kind == ServerKind::FragmentEcho)
                                         ? QStringLiteral(
-                                              "（Fragment Echo 依赖 tests/qcurl/node_modules，可尝试 "
-                                              "`cd tests/qcurl && npm ci`）")
+                                              "（Fragment Echo 依赖受控的 tests/qcurl/package-lock.json "
+                                              "与 node_modules/ws）")
                                         : QString());
             return false;
         }
@@ -282,7 +298,7 @@ private:
     }
 
     Mode m_mode       = Mode::Ws;
-    ServerKind m_kind = ServerKind::FragmentEcho;
+    ServerKind m_kind = ServerKind::Evidence;
     quint16 m_port    = 0;
     QString m_skipReason;
     QString m_artifactsPath;

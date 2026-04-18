@@ -109,6 +109,12 @@ public:
     /// SSL 配置（默认为安全配置：启用证书验证）
     QCNetworkSslConfig sslConfig;
 
+    /// libcurl TLS 字符串选项需要在 easy handle 生命周期内保持有效。
+    QByteArray sslCaInfoUtf8;
+    QByteArray sslCertUtf8;
+    QByteArray sslKeyUtf8;
+    QByteArray sslKeyPasswordUtf8;
+
     // ==================
     // 压缩配置（v2.18.0）
     // ==================
@@ -141,6 +147,9 @@ public:
 
     /// 是否启用事件驱动模式（true=QSocketNotifier, false=QTimer）
     bool eventDrivenMode = false;
+
+    /// WebSocket 握手 header list，cleanup 时必须显式解除 CURLOPT_HTTPHEADER 绑定。
+    curl_slist *requestHeaders = nullptr;
 
     // ==================
     // 内部方法
@@ -179,6 +188,11 @@ public:
      * 发射 disconnected() 信号。
      */
     void cleanupConnection();
+
+    /**
+     * @brief 清理握手 header list，并从 easy handle 上解除绑定
+     */
+    void clearRequestHeaders();
 
     /**
      * @brief 发送 WebSocket 数据帧
