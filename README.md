@@ -120,6 +120,10 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 
 #### 2. WebSocket 连接
 
+> 说明：从这里开始的 WebSocket / Multipart 示例使用 `QCURL_INSTALL_HEADERS_EXTRAS`
+> 中的扩展头。默认稳定安装面仍然只有 `QCURL_INSTALL_HEADERS + QCurlConfig.h`；
+> 只有当你的发行包显式包含 Extras 时，这些头文件才应被视为 consumer contract。
+
 ```cpp
 #include <QCWebSocket.h>
 
@@ -155,12 +159,12 @@ auto *reply = manager.postMultipart(uploadRequest, formData);
 
 #### 4. Lane-aware Scheduler
 
+`QCNetworkRequestScheduler.h` 属于 QCurl 的 **Core install surface**（默认安装，按稳定公开 contract 维护）。
+
 ```cpp
 #include <QCNetworkRequestScheduler.h>
 
 // 建议在 manager owner thread 的初始化阶段获取并配置 scheduler。
-`QCNetworkRequestScheduler.h` 属于 QCurl 的 **Core install surface**（默认安装，按稳定公开 contract 维护）。
-
 auto *scheduler = manager.scheduler();
 
 QCurl::QCNetworkRequestScheduler::LaneConfig controlLane;
@@ -204,11 +208,11 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 - `lane` 可以理解成“请求车道”：先按车道分组，再在车道内按优先级排序。
 - `Critical` 现在只影响同一条 lane 内的启动顺序；若需要给控制类请求留保底名额，请使用 lane reservation。
 - 调度器信号现在会携带 `lane + hostKey`；如果你从旧版回调签名迁移，请同步更新 `connect(...)` 的参数列表。
+- `cancelLaneRequests()` 语义：`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
 - `manager.scheduler()` 是 owner-thread only：跨线程误用会 warning 并返回 `nullptr`；跨线程取回 owner scheduler 请使用 `schedulerOnOwnerThread()`（详见 `docs/user/lane-scheduler.md`）。
 - 避免在持锁状态、析构函数或 UI/主线程高频热路径里跨线程调用 `schedulerOnOwnerThread()`（`BlockingQueuedConnection` 可能阻塞甚至死锁）；跨线程配置时优先把“配置动作”marshal 到 owner thread 执行（详见 `docs/user/lane-scheduler.md`）。
 
 完整说明、请求时序图、`Control / Transfer / Background` 配置建议和迁移提醒，统一参考：
-- `cancelLaneRequests()` 语义：`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
 
 - `docs/user/lane-scheduler.md`
 

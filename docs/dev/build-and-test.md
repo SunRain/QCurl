@@ -56,13 +56,21 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 
 说明：
 
-- `public-api`：逐头 self-compile + 规则扫描（禁止 `<curl/...>` / `CURL*` / `curl_*` / Qt private / `*_p.h` / `tuple` 泄漏）
+- `public-api`：逐头 self-compile + 规则扫描（禁止 `<curl/...>` / `CURL*` / `curl_*` / Qt private / `*_p.h` / `tuple` / `QCPimpl.h` / `QCURL_DECLARE_*` 泄漏）
 - `public-api-slow`：staging install、安装头集合校验、导出合同校验、staging-isolated consumer smoke（含 `QCNetworkReply_p.h` 反向断言）
 - 为避免 `public-api` 正则误匹配 `public-api-slow`，文档统一使用带锚点的 label 写法
 
+Linux-only 支持边界如下：
+
+| 组合 | 级别 | 说明 |
+|------|------|------|
+| `Linux + bundled curl + WebSocket ON` | must | 默认 gate 与发布阻断路径，修改 public/install contract 时必须提供证据 |
+| `Linux + system libcurl` | should | 涉及 install/export/public-api 或发行包契约时，建议补跑对应 public-api 验证 |
+| `Linux + QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON` | optional | 仅在变更 WebSocket 安装面、导出合同或 feature gate 时按需补跑 |
+
 若当前 `build/` 是 bundled curl 一致性构建（`QCURL_BUILD_LIBCURL_CONSISTENCY=ON`），上述两条命令直接可用。
 
-如需额外验证 system libcurl 构建路径，可使用一套更轻的本地构建目录：
+如需按 `should` 级别额外验证 system libcurl 构建路径，可使用一套更轻的本地构建目录：
 
 ```bash
 cmake -S . -B build-public-api-system -DCMAKE_BUILD_TYPE=Release \
@@ -74,7 +82,7 @@ ctest --test-dir build-public-api-system -L '^public-api$' --output-on-failure
 ctest --test-dir build-public-api-system -L '^public-api-slow$' --output-on-failure
 ```
 
-如需额外验证 **WebSocket OFF** 的安装面（模拟 `QCURL_WEBSOCKET_SUPPORT` 关闭时的条件安装/导出合同），可使用：
+如需按 `optional` 级别额外验证 **WebSocket OFF** 的安装面（模拟 `QCURL_WEBSOCKET_SUPPORT` 关闭时的条件安装/导出合同），可使用：
 
 ```bash
 cmake -S . -B build-public-api-system-no-ws -DCMAKE_BUILD_TYPE=Release \
@@ -86,6 +94,8 @@ cmake --build build-public-api-system-no-ws --target QCurl qcurl_public_api_self
 ctest --test-dir build-public-api-system-no-ws -L '^public-api$' --output-on-failure
 ctest --test-dir build-public-api-system-no-ws -L '^public-api-slow$' --output-on-failure
 ```
+
+最近一次本地复验：`2026-04-16` 已按上述命令在 `build-public-api-system-no-ws` 路径执行，`public-api` 与 `public-api-slow` 均通过。
 
 ## 3. HTTP/2 本地验证
 

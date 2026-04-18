@@ -1,0 +1,13 @@
+# Baseline findings for ABI/layout guardrail regression check.
+# This file records known legacy exposures and prevents new regressions:
+# - findings listed here are allowed temporarily
+# - any new finding not in this list fails `qcurl_public_api_scan`
+# - stale entries (already fixed) fail the gate so we prune this file promptly
+
+# QCNetworkAccessManager
+struct-layout:nested:QCNetworkAccessManager.h:QCNetworkAccessManager::ShareHandleConfig
+struct-layout:nested:QCNetworkAccessManager.h:QCNetworkAccessManager::HstsAltSvcCacheConfig
+struct-layout:signature:QCNetworkAccessManager.h:QCNetworkAccessManager:HstsAltSvcCacheConfig
+struct-layout:signature:QCNetworkAccessManager.h:QCNetworkAccessManager:ShareHandleConfig
+
+# QCNetworkRequest family

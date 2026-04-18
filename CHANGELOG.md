@@ -7,6 +7,36 @@
 
 ---
 
+## 2026-04-15
+
+### Changed
+- 删除 `QCPimpl.h`，默认 Core install surface 不再暴露 QCurl 的 helper macro 头；`tests/public_api/run_public_api_checks.py` 现会阻止 `#include <QCPimpl.h>` 与 `QCURL_DECLARE_*` helper macro 回流到 install headers
+- `QCNetworkSslConfig`、`QCNetworkTimeoutConfig`、`QCNetworkRetryPolicy`、`QCNetworkProxyConfig`、`QCNetworkProxyConfig::ProxyTlsConfig`、`QCNetworkHttpAuthConfig`、`QCNetworkRequestScheduler::{Config, Statistics, LaneConfig}` 已统一收敛为 accessor-only 的 implicit-sharing 值类型；默认安装面的配置/统计 contract 不再暴露 public fields
+- `QCNetworkLogger.h` 收敛为 Core 最小 observability contract：`NetworkLogEntry` 采用 `NetworkLogEntryData + QSharedDataPointer` 的 accessor-only 值类型，只保留 `level` / `category` / `message` / `timestampUtc`；`QCNetworkLogger` 只保留 `log(const NetworkLogEntry &)` 和便利重载
+- `QCNetworkProxyConfig::setTlsConfig()` 现在只接受 `ProxyTlsConfig`；清空 TLS 配置继续使用 `clearTlsConfig()`，避免 `setTlsConfig({})` / brace-init 调用面出现重载二义性
+- 新增 `QCNetworkDefaultLogger.h` / `QCNetworkDefaultLogger.cpp`，将默认实现、文件输出、轮转、回调与缓存能力继续留在 `QCURL_INSTALL_HEADERS_EXTRAS`
+- `QCNetworkCancelToken` 的 d-pointer 命名改为 `QCNetworkCancelTokenPrivate`，与当前 `ClassPrivate` 规范对齐
+- 更新 `docs/dev/pimpl-and-shared-data-style.md`、`docs/arch/public-header-boundary.md`、`docs/dev/build-and-test.md` 与 `.helloagents/modules/*`，把 `QCPimpl` removal、Core/Extras 分流与 Linux-only `must / should / optional` 支持边界写回 SSOT
+
+### Breaking
+- 直接 `#include <QCPimpl.h>` 或依赖 `QCURL_DECLARE_DPTR` / `QCURL_DECLARE_SHARED_DATA` 的下游代码需要迁移到显式 `ClassPrivate` / `ClassData` 写法
+- 以下类型不再支持 direct field / aggregate 风格的 consumer 用法：`QCNetworkSslConfig`、`QCNetworkTimeoutConfig`、`QCNetworkRetryPolicy`、`QCNetworkProxyConfig`、`QCNetworkProxyConfig::ProxyTlsConfig`、`QCNetworkHttpAuthConfig`、`QCNetworkRequestScheduler::{Config, Statistics, LaneConfig}`
+- `QCNetworkLogger` 的抽象接口已变更：下游自定义 logger 需要改为重写 `void log(const NetworkLogEntry &entry)`；`setMinLogLevel()` / `minLogLevel()` / `clear()` / `entries()` / `sourceFile` / `sourceLine` / `toJson()` / `toPlainText()` 不再属于 Core contract
+- `QCNetworkProxyConfig::setTlsConfig(std::optional<ProxyTlsConfig>)` 不再属于 public contract；需要禁用 proxy TLS 时请显式调用 `clearTlsConfig()`
+
+### Migration
+- 默认 logger 现在位于 `QCNetworkDefaultLogger.h`；使用 `QCNetworkDefaultLogger` 的代码需要显式 include 新头文件
+- `NetworkLogEntry` 现为 accessor-only 值类型：请将 `entry.message` / `entry.category` / `entry.timestamp` 等直接字段访问改为 `message()` / `category()` / `timestampUtc()`
+- accessor-only 配置/统计族的迁移口径如下：
+  - `policy.maxRetries = 3` → `policy.setMaxRetries(3)`；读取改为 `policy.maxRetries()`
+  - `sslConfig.verifyPeer = true` / `timeout.totalTimeout = ...` / `proxy.type = ...` / `auth.userName = ...` → 统一改为对应 `set*()` / `*()` accessor
+  - `scheduler.config().maxConcurrentRequests`、`lane.weight`、`stats.pendingRequests` 等 direct field 访问 → 改为 `maxConcurrentRequests()` / `setMaxConcurrentRequests()`、`weight()` / `setWeight()`、`pendingRequests()` 等 accessor
+  - `proxy.setTlsConfig(std::nullopt)` 或直接清空 `tlsConfig` → 改为 `proxy.clearTlsConfig()`；保留 `proxy.setTlsConfig({})` 作为“设置默认 `ProxyTlsConfig`”的明确写法
+
+### Testing
+- `cmake --build build --target tst_QCNetworkLogger tst_QCNetworkUnifiedPolicyMiddlewareOffline qcurl_public_api_self_compile LoggingDemo UnifiedPolicyMiddlewareOfflineDemo`
+- `ctest --test-dir build -R '^tst_QCNetworkLogger$' --output-on-failure`
+
 ## 2026-04-05
 
 ### Added

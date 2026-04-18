@@ -41,6 +41,7 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
 
 - **默认：QSKIP 在 ctest 证据门禁下视为失败（skip=fail）**：`tests/qcurl/CMakeLists.txt` 为（几乎）所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP *:"`，避免“ctest 全绿≠已覆盖”的误读。
+  - `env` / `capability` / `local_port` / `httpbin` / `websocket` 相关 QtTest 现在通过 `tests/qcurl/run_qttest_with_preflight.py` 先做 suite 级前置检查；缺少 `QCURL_HTTPBIN_URL`、本地端口能力、`node` 或受控 `ws` 依赖时，会在进入 QtTest 之前 fail-closed，而不是把“环境未准备好”留给测试体内的 `QSKIP`。
   - **唯一例外：显式 opt-in 的 `external_*` 集合允许 QSKIP**，当前仅包含：
 
     | 测试目标 | LABELS | 允许 QSKIP 的原因 |
@@ -79,6 +80,8 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex capability
 
 - ctest：终端输出（含每个 QtTest 的 `Totals:` 行；无 `SKIP:`）。
 - `libcurl_consistency`（可选 gate）：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`，以及 `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
+  - `run_gate.py` 会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`，再由 planner 决定是否纳入 `Accept-Encoding`、`uploadDevice` replay、unknown-size chunked POST、`TLS pinned public key` 等 feature-dependent 文件。
+  - `TLS pinned public key` match/mismatch 用例只读取仓库内固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`。
 
 ### “基本无问题”验收门禁（强制归档）
 
@@ -124,6 +127,12 @@ QCURL_ALLOW_EXTERNAL_NETWORK=1 ctest --test-dir build -L external_network --outp
 
 - `tst_QCNetworkHttp2`、`tst_QCNetworkActorThreadModel` 这类依赖本地监听端口或能力前置的测试，不属于 external_* 例外；一旦通过 `capability` / `env` / `local_port` 入口执行，出现 `listen EPERM`、本地端口不可绑定或能力缺失时，严格 gate 应把它们视为失败而不是放过。
 - `tst_QCNetworkDiagnostics` 在设置了 `QCURL_HTTPBIN_URL` 时，会对本地 httpbin 做有限次短重试；若本地依赖未稳定就绪，会带详细原因跳过，而不是给出缺乏上下文的硬失败。
+
+### diagnostics 分层
+
+- `tst_QCNetworkDiagnosticsLocal` 是默认 deterministic diagnostics provider（`LABELS=env;local_port;diagnostics`）；通过 suite preflight 先验证本地端口能力，再覆盖 `resolveDNS(localhost)`、本地 HTTP 200/404 probe、本地 HTTP `diagnose()`，以及 repo TLS fixture 的 `checkSSL()` 合同。
+- `tst_QCNetworkDiagnostics` 继续保留在 `external_network;diagnostics`，只用于公网探测或“本地 httpbin + 外网兜底”场景；它允许 `QSKIP`，但不属于默认 gate 证据。
+- `ctest --test-dir build -N -L diagnostics` 应同时看到这两个目标，前者用于默认 gate，后者用于显式 opt-in 的公网诊断。
 
 ### external_heavy（显式 opt-in 的外部大体量 smoke）
 
@@ -196,8 +205,9 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ## WebSocket 取证说明
 
-- `tests/qcurl/websocket-fragment-server.js`：**message-level** echo smoke（基于 `ws`，只能证明回显链路；不提供帧级证据）。
-- `tests/qcurl/websocket-evidence-server.js`：**frame-level** evidence（零外部依赖；显式发送 fragmentation/close，并输出 JSONL 工件供复核）。
+- `tests/qcurl/websocket-evidence-server.js`：默认的 `ws://` / `wss://` gate server，提供 **message-level echo + frame-level evidence**
+  （零外部依赖；支持 echo/ping-pong/close，并能显式发送 fragmentation/close 后输出 JSONL 工件）。
+- `tests/qcurl/websocket-fragment-server.js`：**message-level** 补充资产（基于 `ws`；仅用于额外兼容性验证，不再作为默认 gate 前提）。
 
 在证据口径下，帧级语义（continuation frames / close code&reason）以 evidence server 的工件为准，避免“通过但不证明”的误读。
 
@@ -208,6 +218,14 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 - 成功路径：配置 `caCertPath=tests/qcurl/testdata/http2/localhost.crt` 后应成功
 
 用例会输出 `QCURL_EVIDENCE ...` 行，便于在 CI/日志中复核。
+
+## 跨平台本地依赖边界
+
+- `local_port`：Linux/macOS/Windows 的 gate 口径一致，都是先尝试绑定 `127.0.0.1:0`；若执行环境禁止创建或绑定本地端口，`run_qttest_with_preflight.py` 会直接 fail-closed，而不是进入 QtTest 之后再 `QSKIP`。
+- `node`：默认 WebSocket gate 只要求 `node` 能从当前 `PATH` 解析出来，不依赖硬编码绝对路径；POSIX shell、PowerShell 或 CMD 都应先把 `node` 放进 `PATH`，preflight 只认这一条 contract。
+- `ws` 资产：默认 gate 使用零外部依赖的 `websocket-evidence-server.js`；只有补充性的 fragment echo 才要求受控的 `tests/qcurl/package-lock.json` 与 `tests/qcurl/node_modules/ws/package.json`，避免把 npm 安装步骤变成默认门禁前提。
+- `TLS fixture`：`tests/qcurl/testdata/http2/localhost.{crt,key}` 是仓库受控的跨平台 TLS 资产，HTTP/2、本地 WSS 和 `tst_QCNetworkDiagnosticsLocal` 共用这一套文件；需要成功链路时通过显式 `caCertPath` 注入信任，而 `QCNetworkDiagnostics::checkSSL()` 默认 gate 只验证“fixture 会产生可观测的证书结果或明确 SSL 失败”，不把系统信任库状态当作隐藏前置。
+- `pinned public key` fixture：`tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt` 是跨平台唯一真源；gate/pytest 不允许在 Linux/macOS/Windows 上运行时调用系统 `openssl` 重新生成。
 
 ## 详细输出
 
@@ -233,7 +251,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 ### tst_QCNetworkReply
 
 - 覆盖同步/异步执行、信号发射、错误处理、状态机、数据读取与取消语义
-- 部分用例依赖本地 httpbin（通过 `QCURL_HTTPBIN_URL` 配置）；在证据门禁口径下，缺失依赖会触发 `QSKIP` 并导致门禁失败
+- 部分用例依赖本地 httpbin（通过 `QCURL_HTTPBIN_URL` 配置）；在证据门禁口径下，缺失依赖会由 suite preflight 直接 fail-closed，而不是落到测试体内 `QSKIP`
 
 ### tst_QCNetworkError
 

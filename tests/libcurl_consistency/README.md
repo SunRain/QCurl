@@ -54,6 +54,12 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 `junit_parse_error`、schema/redaction 违规统一提升为 gate 失败。直接跑裸 `pytest`
 可以用于本地诊断，但不能单独作为通过证据，也不应手工拼装 artifacts。
 
+`run_gate.py` 还会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`：
+
+- planner 按 manifest 决定是否纳入 feature-dependent 文件，而不是让 pytest 在运行时读取 `src/*.h` 再 `skip`
+- 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、`uploadDevice` replay、unknown-size chunked POST、`TLS pinned public key`
+- `TLS pinned public key` 用例只消费固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`
+
 ## 4. 产物与证据路径
 
 ### 4.1 工件
@@ -72,6 +78,7 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 
 - `build/libcurl_consistency/reports/gate_<suite>.json`
 - `build/libcurl_consistency/reports/junit_<suite>.xml`
+- `build/libcurl_consistency/reports/capabilities.json`
 
 ### 4.3 失败时的服务端日志
 

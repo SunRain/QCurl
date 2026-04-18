@@ -198,9 +198,7 @@ void TestConnectionPool::testConnectionReuse()
 {
     // 检查网络可用性
     const QString httpbinBaseUrl = TestEnv::httpbinBaseUrl();
-    if (httpbinBaseUrl.isEmpty()) {
-        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
-    }
+    QVERIFY2(!httpbinBaseUrl.isEmpty(), qPrintable(TestEnv::httpbinMissingReason()));
 
     QUrl testUrl(httpbinBaseUrl + "/get");
     QCNetworkRequest testRequest(testUrl);
@@ -209,18 +207,13 @@ void TestConnectionPool::testConnectionReuse()
     auto *testReply = m_manager->sendGet(testRequest);
     QSignalSpy testSpy(testReply, &QCNetworkReply::finished);
 
-    if (!testSpy.wait(10000)) {
-        testReply->deleteLater();
-        QSKIP(qPrintable(QStringLiteral("httpbin 不可达：%1").arg(httpbinBaseUrl)));
-        return;
-    }
+    QVERIFY2(testSpy.wait(10000),
+             qPrintable(TestEnv::httpbinUnavailableReason(httpbinBaseUrl,
+                                                          QStringLiteral("health check timed out"))));
 
-    if (testReply->error() != NetworkError::NoError) {
-        qWarning() << "Network test failed:" << testReply->errorString();
-        testReply->deleteLater();
-        QSKIP(qPrintable(QStringLiteral("httpbin 健康检查失败：%1").arg(httpbinBaseUrl)));
-        return;
-    }
+    QVERIFY2(testReply->error() == NetworkError::NoError,
+             qPrintable(TestEnv::httpbinUnavailableReason(httpbinBaseUrl,
+                                                          testReply->errorString())));
 
     testReply->deleteLater();
 

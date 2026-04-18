@@ -15,26 +15,13 @@ import pytest
 
 from tests.libcurl_consistency.pytest_support.artifacts import sha256_bytes, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
+from tests.libcurl_consistency.pytest_support.capability_manifest import guard_planned_test
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _has_accept_encoding_api() -> bool:
-    header = _REPO_ROOT / "src" / "QCNetworkRequest.h"
-    try:
-        text = header.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return False
-    return "setAcceptedEncodings" in text and "setAutoDecompressionEnabled" in text
-
-
-if not _has_accept_encoding_api():
-    pytest.skip("当前构建未提供 Accept-Encoding API，跳过该用例", allow_module_level=True)
+guard_planned_test(Path(__file__).name)
 
 
 def _append_req_id(url: str, req_id: str) -> str:

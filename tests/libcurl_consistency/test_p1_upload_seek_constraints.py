@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
+from tests.libcurl_consistency.pytest_support.capability_manifest import guard_planned_test
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
@@ -21,26 +22,8 @@ from tests.libcurl_consistency.pytest_support.service_logs import collect_servic
 from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, sha256_bytes, write_json
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _CURLINFO_RE = re.compile(r"curlcode=(\d+)\s+http_code=(\d+)")
-
-
-def _has_m2_upload_device_api() -> bool:
-    """
-    以源码为准的能力门控：
-    - 当前构建未提供 uploadDevice API 时跳过本模块
-    - 构建提供该 API 后自动启用，无需额外环境开关
-    """
-    header = _REPO_ROOT / "src" / "QCNetworkRequest.h"
-    try:
-        text = header.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return False
-    return "setUploadDevice" in text
-
-
-if not _has_m2_upload_device_api():
-    pytest.skip("当前构建未提供 uploadDevice API，跳过 seek/重发约束一致性用例", allow_module_level=True)
+guard_planned_test(Path(__file__).name)
 
 
 def _normalize_req_headers(headers: dict) -> dict:

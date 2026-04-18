@@ -134,9 +134,7 @@ void TestQCNetworkIODeviceLifetime::testDownloadToDeviceDeviceDestroyedDuringTra
     }
 
     SlowBodyServer server(payload, 4096, 10);
-    if (!server.start()) {
-        QSKIP("Cannot start local slow HTTP server (port binding failed)");
-    }
+    QVERIFY2(server.start(), "Cannot start local slow HTTP server (port binding failed)");
 
     QCNetworkAccessManager manager;
 

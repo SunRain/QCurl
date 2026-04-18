@@ -1,16 +1,13 @@
 """
 P2：TLS pinned public key 语义一致性。
 
-复用本地测试证书，并在运行时计算 `sha256//...` pinned key。
+复用仓库内固定 fixture，不在运行时调用 openssl。
 """
 
 from __future__ import annotations
 
-import base64
 import os
 import re
-import shutil
-import subprocess
 import uuid
 from pathlib import Path
 
@@ -18,12 +15,14 @@ import pytest
 
 from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
+from tests.libcurl_consistency.pytest_support.capability_manifest import guard_planned_test
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
 _CURLCODE_RE = re.compile(r"curlcode=(\d+)")
+_PINNED_FIXTURE = Path(__file__).resolve().parent / "testdata" / "pinned_public_key_sha256.txt"
 
 
 def _parse_curlcode(stderr_lines) -> int:
@@ -67,42 +66,13 @@ def _make_ctbp_payload(*, proto: str, mode: str) -> dict[str, object]:
     return payload
 
 
-def _pinned_pubkey_sha256_from_cert(cert_path: Path) -> str:
-    if not cert_path.exists():
-        raise FileNotFoundError(f"cert not found: {cert_path}")
-    openssl = shutil.which("openssl")  # type: ignore[name-defined]
-    if not openssl:
-        raise RuntimeError("openssl not found")
-
-    # openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
-    p1 = subprocess.run(
-        [openssl, "x509", "-in", str(cert_path), "-pubkey", "-noout"],
-        capture_output=True,
-        check=False,
-    )
-    if p1.returncode != 0:
-        raise RuntimeError(f"openssl x509 failed: {p1.stderr.decode(errors='replace')}")
-
-    p2 = subprocess.run(
-        [openssl, "pkey", "-pubin", "-outform", "DER"],
-        input=p1.stdout,
-        capture_output=True,
-        check=False,
-    )
-    if p2.returncode != 0:
-        raise RuntimeError(f"openssl pkey failed: {p2.stderr.decode(errors='replace')}")
-
-    p3 = subprocess.run(
-        [openssl, "dgst", "-sha256", "-binary"],
-        input=p2.stdout,
-        capture_output=True,
-        check=False,
-    )
-    if p3.returncode != 0:
-        raise RuntimeError(f"openssl dgst failed: {p3.stderr.decode(errors='replace')}")
-
-    b64 = base64.b64encode(p3.stdout).decode("ascii").strip()
-    return f"sha256//{b64}"
+def _read_pinned_fixture() -> str:
+    if not _PINNED_FIXTURE.exists():
+        pytest.fail(f"missing pinned public key fixture: {_PINNED_FIXTURE}")
+    value = _PINNED_FIXTURE.read_text(encoding="utf-8").strip()
+    if not value.startswith("sha256//"):
+        pytest.fail(f"invalid pinned public key fixture: {_PINNED_FIXTURE}")
+    return value
 
 
 def _mutate_pinned(pinned: str) -> str:
@@ -117,6 +87,7 @@ def _mutate_pinned(pinned: str) -> str:
 
 @pytest.mark.parametrize("mode", ["match", "mismatch"])
 def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp_path):
+    guard_planned_test(Path(__file__).name)
     qt_bin = os.environ.get("QCURL_QTTEST")
     qt_path = Path(qt_bin).resolve() if qt_bin else None
     if not qt_path or not qt_path.exists():
@@ -125,12 +96,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_https["port"])
     ca_cert = str(lc_observe_https["ca_cert"])
-    cert = Path(str(lc_observe_https["cert"]))
-
-    try:
-        pinned = _pinned_pubkey_sha256_from_cert(cert)
-    except Exception as e:
-        pytest.skip(f"pinned public key 计算失败: {e}")
+    pinned = _read_pinned_fixture()
 
     if mode == "mismatch":
         pinned = _mutate_pinned(pinned)
@@ -163,7 +129,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
             allowed_exit_codes={0, 6} if mode == "match" else {0, 6, 7},
         )
         if int(baseline["payload"].get("exit_code") or 0) == 6:
-            pytest.skip("当前 libcurl 不支持 CURLOPT_PINNEDPUBLICKEY，跳过 pinned public key 用例")
+            pytest.fail("gate/planner should have excluded pinned public key case for this runtime")
         if mode != "match":
             curlcode = _parse_curlcode(baseline["payload"].get("stderr"))
             assert curlcode == 90, f"unexpected curlcode: {curlcode}"
@@ -208,6 +174,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
                     "baseline_req_id": baseline_req_id,
                     "qcurl_req_id": qcurl_req_id,
                     "observe_https_port": port,
+                    "fixture": str(_PINNED_FIXTURE),
                 },
             )
         raise

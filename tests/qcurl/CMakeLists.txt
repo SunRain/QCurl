@@ -1,8 +1,25 @@
 # QCurl QtTest（C++）与单侧集成测试
 
+include(CMakeParseArguments)
+
 # 测试辅助函数：添加单个测试
-function(add_qcurl_test test_name)
-    set(test_sources ${ARGN})
+function(_add_qcurl_test_impl test_name)
+    set(options
+        REQUIRE_FRAGMENT_WS
+        REQUIRE_HTTPBIN
+        REQUIRE_HTTP2_SUITE
+        REQUIRE_LOCAL_PORT
+        REQUIRE_NODE
+        REQUIRE_PYTHON
+    )
+    set(oneValueArgs HTTP2_PROBE_BIN)
+    set(multiValueArgs SOURCES)
+    cmake_parse_arguments(QT "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    set(test_sources ${QT_SOURCES})
+    if(NOT test_sources)
+        set(test_sources ${QT_UNPARSED_ARGUMENTS})
+    endif()
 
     add_executable(${test_name} ${test_sources})
 
@@ -19,7 +36,46 @@ function(add_qcurl_test test_name)
             ${CMAKE_BINARY_DIR}/src
     )
 
-    add_test(NAME ${test_name} COMMAND ${test_name})
+    if(QT_REQUIRE_HTTPBIN
+       OR QT_REQUIRE_HTTP2_SUITE
+       OR QT_REQUIRE_LOCAL_PORT
+       OR QT_REQUIRE_NODE
+       OR QT_REQUIRE_PYTHON
+       OR QT_REQUIRE_FRAGMENT_WS)
+        set(test_command
+            "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/qcurl/run_qttest_with_preflight.py"
+            "--test-bin" "$<TARGET_FILE:${test_name}>"
+            "--test-name" "${test_name}"
+        )
+        if(QT_REQUIRE_HTTPBIN)
+            list(APPEND test_command "--require-httpbin")
+        endif()
+        if(QT_REQUIRE_HTTP2_SUITE)
+            list(APPEND test_command "--require-http2-suite")
+            if(QT_HTTP2_PROBE_BIN)
+                list(APPEND test_command "--http2-probe-bin" "${QT_HTTP2_PROBE_BIN}")
+            else()
+                list(APPEND test_command "--http2-probe-bin"
+                     "$<TARGET_FILE:qcurl_http2_capability_probe>")
+            endif()
+        endif()
+        if(QT_REQUIRE_LOCAL_PORT)
+            list(APPEND test_command "--require-local-port")
+        endif()
+        if(QT_REQUIRE_NODE)
+            list(APPEND test_command "--require-node")
+        endif()
+        if(QT_REQUIRE_PYTHON)
+            list(APPEND test_command "--require-python")
+        endif()
+        if(QT_REQUIRE_FRAGMENT_WS)
+            list(APPEND test_command "--require-fragment-ws")
+        endif()
+        add_test(NAME ${test_name} COMMAND ${test_command})
+    else()
+        add_test(NAME ${test_name} COMMAND ${test_name})
+    endif()
 
     # -----------------------------------------------------------------------------
     # 取证式门禁：QSKIP 视为失败（避免 “ctest 全绿≠已覆盖” 的误读）
@@ -41,34 +97,117 @@ function(add_qcurl_test test_name)
     )
 endfunction()
 
+function(add_qcurl_test test_name)
+    _add_qcurl_test_impl(${test_name} SOURCES ${ARGN})
+endfunction()
+
+function(add_qcurl_test_with_preflight test_name)
+    _add_qcurl_test_impl(${test_name} ${ARGN})
+endfunction()
+
 # 添加测试文件
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 target_compile_definitions(tst_CurlFeatureProbe PRIVATE QCURL_ENABLE_TEST_HOOKS)
-add_qcurl_test(tst_QCNetworkReply tst_QCNetworkReply.cpp)
+
+add_executable(qcurl_http2_capability_probe qcurl_http2_capability_probe.cpp)
+target_link_libraries(qcurl_http2_capability_probe
+    PRIVATE
+        Qt6::Core
+        QCurl
+        CURL::libcurl
+)
+target_include_directories(qcurl_http2_capability_probe
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+)
+set_target_properties(qcurl_http2_capability_probe PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
+add_qcurl_test_with_preflight(
+    tst_QCNetworkReply
+    REQUIRE_HTTPBIN
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkReply.cpp
+)
 target_compile_definitions(tst_QCNetworkReply PRIVATE QCURL_ENABLE_TEST_HOOKS)
-add_qcurl_test(tst_QCNetworkRetry tst_QCNetworkRetry.cpp) # 重试机制测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkRetry
+    REQUIRE_HTTPBIN
+    SOURCES
+    tst_QCNetworkRetry.cpp
+) # 重试机制测试
 add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # 离线重试/限流门禁（MockHandler）
 add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp) # 离线门禁：响应头 unfold/原始头观测
 add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsOffline.cpp) # 离线门禁：请求配置冲突可诊断（warnings）
 add_qcurl_test(tst_QCNetworkHttpErrorMappingOffline tst_QCNetworkHttpErrorMappingOffline.cpp) # 离线门禁：HTTP 错误映射与终态语义
-add_qcurl_test(tst_QCNetworkHttp2 tst_QCNetworkHttp2.cpp) # HTTP/2 功能测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkHttp2
+    REQUIRE_HTTP2_SUITE
+    HTTP2_PROBE_BIN "$<TARGET_FILE:qcurl_http2_capability_probe>"
+    SOURCES
+    tst_QCNetworkHttp2.cpp
+) # HTTP/2 功能测试
 add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp) # 请求优先级调度测试
-add_qcurl_test(tst_QCNetworkActorThreadModel tst_QCNetworkActorThreadModel.cpp) # Actor/跨线程提交线程模型回归
-add_qcurl_test(tst_QCNetworkProxy tst_QCNetworkProxy.cpp) # 代理配置测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkActorThreadModel
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkActorThreadModel.cpp
+) # Actor/跨线程提交线程模型回归
+add_qcurl_test_with_preflight(
+    tst_QCNetworkProxy
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkProxy.cpp
+) # 代理配置测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
 add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归
 add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp) # Multipart/form-data 测试
-add_qcurl_test(tst_QCNetworkFileTransfer tst_QCNetworkFileTransfer.cpp) # 文件传输 API 测试
-add_qcurl_test(tst_QCNetworkIODeviceLifetime tst_QCNetworkIODeviceLifetime.cpp) # QIODevice 生命周期契约测试
-add_qcurl_test(tst_QCNetworkStreamUpload tst_QCNetworkStreamUpload.cpp) # 流式上传契约/分支覆盖测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkFileTransfer
+    REQUIRE_HTTPBIN
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkFileTransfer.cpp
+) # 文件传输 API 测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkIODeviceLifetime
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkIODeviceLifetime.cpp
+) # QIODevice 生命周期契约测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkStreamUpload
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkStreamUpload.cpp
+) # 流式上传契约/分支覆盖测试
 add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # 缓存机制测试
-add_qcurl_test(tst_QCNetworkCacheIntegration tst_QCNetworkCacheIntegration.cpp) # 缓存集成测试
-add_qcurl_test(tst_QCNetworkConnectionPool tst_QCNetworkConnectionPool.cpp) # 连接池测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkCacheIntegration
+    REQUIRE_HTTPBIN
+    SOURCES
+    tst_QCNetworkCacheIntegration.cpp
+) # 缓存集成测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkConnectionPool
+    REQUIRE_HTTPBIN
+    SOURCES
+    tst_QCNetworkConnectionPool.cpp
+) # 连接池测试
 add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # 网络路径与 DNS 控制（M4）
 target_compile_definitions(tst_QCNetworkNetworkPath PRIVATE QCURL_ENABLE_TEST_HOOKS)
-add_qcurl_test(tst_QCNetworkShareHandle tst_QCNetworkShareHandle.cpp) # multi share handle（M6+）
+add_qcurl_test_with_preflight(
+    tst_QCNetworkShareHandle
+    REQUIRE_LOCAL_PORT
+    REQUIRE_PYTHON
+    SOURCES
+    tst_QCNetworkShareHandle.cpp
+) # multi share handle（M6+）
 
 # Logger / middleware / cookie / cancel token 相关测试
 add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测试
@@ -86,15 +225,40 @@ add_qcurl_test(tst_QCNetworkHttp3 tst_QCNetworkHttp3.cpp) # HTTP/3 功能测试
 
 # 网络诊断工具测试
 add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # 网络诊断功能测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkDiagnosticsLocal
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkDiagnosticsLocal.cpp
+) # 本地 deterministic diagnostics gate
 
 # WebSocket 测试（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
-    add_qcurl_test(tst_QCWebSocket tst_QCWebSocket.cpp)
-    add_qcurl_test(tst_QCWebSocketPool tst_QCWebSocketPool.cpp) # WebSocket 连接池测试
+    add_qcurl_test_with_preflight(
+        tst_QCWebSocket
+        REQUIRE_LOCAL_PORT
+        REQUIRE_NODE
+        SOURCES
+        tst_QCWebSocket.cpp
+    )
+    add_qcurl_test_with_preflight(
+        tst_QCWebSocketPool
+        REQUIRE_LOCAL_PORT
+        REQUIRE_NODE
+        SOURCES
+        tst_QCWebSocketPool.cpp
+    ) # WebSocket 连接池测试
     add_qcurl_test(tst_QCWebSocketCompression tst_QCWebSocketCompression.cpp) # WebSocket 压缩测试
 endif()
 
-add_qcurl_test(tst_Integration tst_Integration.cpp)
+add_qcurl_test_with_preflight(
+    tst_Integration
+    REQUIRE_HTTPBIN
+    REQUIRE_LOCAL_PORT
+    REQUIRE_NODE
+    SOURCES
+    tst_Integration.cpp
+)
 add_qcurl_test(tst_LargeFileDownload tst_LargeFileDownload.cpp)
 
 # -----------------------------------------------------------------------------
@@ -147,6 +311,7 @@ set_tests_properties(tst_QCNetworkConnectionPool PROPERTIES LABELS "env;httpbin;
 set_tests_properties(tst_QCNetworkNetworkPath PROPERTIES LABELS "capability;network_path")
 set_tests_properties(tst_QCNetworkShareHandle PROPERTIES LABELS "env;local_port;python")
 set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES LABELS "external_network;diagnostics")
+set_tests_properties(tst_QCNetworkDiagnosticsLocal PROPERTIES LABELS "env;local_port;diagnostics")
 set_tests_properties(tst_Integration PROPERTIES LABELS "env;httpbin")
 set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
 
@@ -209,6 +374,7 @@ set(_qcurl_qttest_targets
     tst_QCNetworkMockHandler
     tst_QCNetworkHttp3
     tst_QCNetworkDiagnostics
+    tst_QCNetworkDiagnosticsLocal
     tst_Integration
     tst_LargeFileDownload
 )

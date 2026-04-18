@@ -421,6 +421,7 @@ void TestLibcurlConsistency::testCase()
     const QString referer         = qEnvironmentVariable("QCURL_LC_REFERER");
     const int bpLimitBytes  = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_LIMIT_BYTES"));
     const int bpResumeBytes = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_RESUME_BYTES"));
+    const QString connectionSummaryPath = qEnvironmentVariable("QCURL_LC_CONN_SUMMARY_PATH");
 
     const QString outDir = qEnvironmentVariable("QCURL_LC_OUT_DIR");
     if (!outDir.isEmpty()) {
@@ -2981,8 +2982,11 @@ void TestLibcurlConsistency::testCase()
     }
 
     if (caseId == QStringLiteral("multi_limits_smoke")) {
-        QVERIFY(!docname.isEmpty());
-        QVERIFY(httpsPort > 0);
+        const bool useObserveHttp = (observeHttpPort > 0);
+        if (!useObserveHttp) {
+            QVERIFY(!docname.isEmpty());
+            QVERIFY(httpsPort > 0);
+        }
 
         // 显式配置 multi limits（M3），用于覆盖 curl_multi_setopt + 线程切换路径。
         auto *poolManager                 = QCNetworkConnectionPoolManager::instance();
@@ -2993,6 +2997,7 @@ void TestLibcurlConsistency::testCase()
         cfg.multiMaxConnects              = 16;
         QVERIFY(cfg.isValid());
         poolManager->setConfig(cfg);
+        poolManager->resetStatistics();
 
         QEventLoop loop;
         QTimer timer;
@@ -3006,14 +3011,24 @@ void TestLibcurlConsistency::testCase()
 
         for (int i = 0; i < count; ++i) {
             const QString suffix = QStringLiteral("%1").arg(i + 1, 4, 10, QLatin1Char('0'));
-            const QUrl url       = withRequestId(QUrl(QStringLiteral("https://localhost:%1/%2%3")
-                                                          .arg(httpsPort)
-                                                          .arg(docname)
-                                                          .arg(suffix)),
-                                                 requestId);
+            QUrl url;
+            if (useObserveHttp) {
+                url = QUrl(QStringLiteral("http://localhost:%1/empty_200").arg(observeHttpPort));
+                QUrlQuery query(url);
+                query.addQueryItem(QStringLiteral("slot"), suffix);
+                url.setQuery(query);
+            } else {
+                url = QUrl(QStringLiteral("https://localhost:%1/%2%3")
+                               .arg(httpsPort)
+                               .arg(docname)
+                               .arg(suffix));
+            }
+            url = withRequestId(url, requestId);
 
             QCNetworkRequest req(url);
-            req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            if (!useObserveHttp) {
+                req.setSslConfig(QCNetworkSslConfig::insecureConfig());
+            }
             req.setHttpVersion(httpVersion);
 
             QCNetworkReply *reply = manager.sendGet(req);
@@ -3037,6 +3052,18 @@ void TestLibcurlConsistency::testCase()
         QVERIFY2(timer.isActive(), "timeout waiting for multi-limits smoke downloads");
         for (int i = 0; i < errors.size(); ++i) {
             QCOMPARE(errors[i], NetworkError::NoError);
+        }
+        const auto stats = poolManager->statistics();
+        QCOMPARE(stats.totalRequests, static_cast<qint64>(count));
+        const qint64 uniqueConnections = stats.totalRequests > 0
+                                             ? qMax<qint64>(1, stats.totalRequests - stats.reusedConnections)
+                                             : 0;
+        if (!connectionSummaryPath.isEmpty()) {
+            QJsonObject summary;
+            summary.insert(QStringLiteral("request_count"), stats.totalRequests);
+            summary.insert(QStringLiteral("reused_connections"), stats.reusedConnections);
+            summary.insert(QStringLiteral("unique_connections"), uniqueConnections);
+            QVERIFY(writeJsonObjectToFile(connectionSummaryPath, summary));
         }
         return;
     }

@@ -323,11 +323,7 @@ void TestQCNetworkReply::initTestCase()
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
-    if (m_httpbinBaseUrl.isEmpty()) {
-        qWarning().noquote() << TestEnv::httpbinMissingReason();
-        m_isHttpbinReachable = false;
-        return;
-    }
+    QVERIFY2(!m_httpbinBaseUrl.isEmpty(), qPrintable(TestEnv::httpbinMissingReason()));
     qDebug() << "httpbin 服务地址:" << m_httpbinBaseUrl;
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/200"));
@@ -336,11 +332,12 @@ void TestQCNetworkReply::initTestCase()
 
     QCNetworkReply *reply = m_manager->sendGet(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
-    if (finishedSpy.wait(4000) && reply->error() == NetworkError::NoError) {
-        m_isHttpbinReachable = true;
-    } else {
-        qWarning() << "httpbin 服务不可用:" << m_httpbinBaseUrl << reply->errorString();
-    }
+    QVERIFY2(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 4000),
+             qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl,
+                                                          QStringLiteral("health check timed out"))));
+    QVERIFY2(reply->error() == NetworkError::NoError,
+             qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl, reply->errorString())));
+    m_isHttpbinReachable = true;
     reply->deleteLater();
 }
 
@@ -437,9 +434,7 @@ void TestQCNetworkReply::testConstructorWithDifferentMethods()
 
 void TestQCNetworkReply::testSyncGetRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -458,9 +453,7 @@ void TestQCNetworkReply::testSyncGetRequest()
 
 void TestQCNetworkReply::testSyncPostRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"test\": \"data\"}";
@@ -480,9 +473,7 @@ void TestQCNetworkReply::testSyncPostRequest()
 
 void TestQCNetworkReply::testSyncHeadRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     request.setConnectTimeout(std::chrono::milliseconds(1000));
@@ -537,9 +528,7 @@ void TestQCNetworkReply::testSyncInvalidUrl()
 
 void TestQCNetworkReply::testAsyncGetRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
@@ -567,9 +556,7 @@ void TestQCNetworkReply::testAsyncGetRequest()
 
 void TestQCNetworkReply::testAsyncPostRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"async\": \"test\"}";
@@ -593,9 +580,8 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     const QByteArray body = QByteArrayLiteral("delete-body=test&x=1");
 
     QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("Cannot bind local port for test HTTP server");
-    }
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for test HTTP server");
     const quint16 port = server.serverPort();
 
     QByteArray recvBuf;
@@ -718,9 +704,8 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
 void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
 {
     QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("Cannot bind local port for test HTTP server");
-    }
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for test HTTP server");
     const quint16 port = server.serverPort();
 
     QByteArray recvBuf;
@@ -783,9 +768,7 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
 
 void TestQCNetworkReply::testAsyncHeadRequest()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendHead(request);
@@ -807,9 +790,7 @@ void TestQCNetworkReply::testAsyncHeadRequest()
 
 void TestQCNetworkReply::testAsyncMultipleRequests()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     // 测试并发请求
     auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/get")));
@@ -853,9 +834,7 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
 
 void TestQCNetworkReply::testStateTransitionIdleToFinished()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
@@ -893,9 +872,7 @@ void TestQCNetworkReply::testStateTransitionIdleToError()
 
 void TestQCNetworkReply::testStateCancellation()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/5"));
     auto *reply = m_manager->sendGet(request);
@@ -1277,9 +1254,7 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
 
 void TestQCNetworkReply::testSyncPauseResumeNoOp()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -1312,9 +1287,8 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     const QByteArray payload(kPayloadSize, 'x');
 
     QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("Cannot bind local port for test HTTP server");
-    }
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for test HTTP server");
 
     const quint16 port = server.serverPort();
 
@@ -1426,7 +1400,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
                                  || reply->state() == ReplyState::Finished,
                              3000);
 
-    QVERIFY(finishedSpy.wait(10000));
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->bytesReceived(), static_cast<qint64>(payload.size()));
 
@@ -1451,9 +1425,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
     const QByteArray payload(kPayloadSize, 'b');
 
     QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("Cannot bind local port for test HTTP server");
-    }
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for test HTTP server");
 
     const quint16 port = server.serverPort();
 
@@ -1933,9 +1906,8 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     const QByteArray payload(kPayloadSize, 'u');
 
     QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("Cannot bind local port for test HTTP server");
-    }
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for test HTTP server");
 
     QByteArray requestBuffer;
     QByteArray receivedBody;
@@ -2062,9 +2034,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
 
 void TestQCNetworkReply::testReadAll()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -2079,9 +2049,7 @@ void TestQCNetworkReply::testReadAll()
 
 void TestQCNetworkReply::testReadBody()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -2095,9 +2063,7 @@ void TestQCNetworkReply::testReadBody()
 
 void TestQCNetworkReply::testReadAllDrainsFinishedBuffer()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     const QByteArray body = QByteArrayLiteral("drain-contract-body");
     QCNetworkRequest request(
@@ -2126,9 +2092,7 @@ void TestQCNetworkReply::testReadAllDrainsFinishedBuffer()
 
 void TestQCNetworkReply::testReadBodyEmptyBodyRepeatable()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/204"));
 
@@ -2154,9 +2118,7 @@ void TestQCNetworkReply::testReadBodyEmptyBodyRepeatable()
 
 void TestQCNetworkReply::testRawHeaders()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -2180,9 +2142,7 @@ void TestQCNetworkReply::testRawHeaders()
 
 void TestQCNetworkReply::testBytesAvailable()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
@@ -2229,9 +2189,7 @@ void TestQCNetworkReply::testNetworkError()
 
 void TestQCNetworkReply::testHttpError404()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/404"));
     auto *reply = m_manager->sendGetSync(request);
@@ -2265,9 +2223,7 @@ void TestQCNetworkReply::testErrorString()
 
 void TestQCNetworkReply::testFinishedSignal()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);
@@ -2304,9 +2260,7 @@ void TestQCNetworkReply::testErrorSignal()
 
 void TestQCNetworkReply::testProgressSignal()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/10240")); // 下载 10KB
     auto *reply = m_manager->sendGet(request);
@@ -2331,9 +2285,7 @@ void TestQCNetworkReply::testProgressSignal()
 
 void TestQCNetworkReply::testStateChangedSignal()
 {
-    if (!m_isHttpbinReachable) {
-        QSKIP("httpbin 服务不可用");
-    }
+    QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGet(request);

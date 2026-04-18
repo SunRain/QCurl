@@ -2,6 +2,12 @@
 
 本目录包含 QCurl 库的实用示例程序，展示如何在实际场景中使用 QCurl 进行网络编程。
 
+> 安装面说明：默认稳定 consumer contract 只有 `QCURL_INSTALL_HEADERS + QCurlConfig.h`。
+> 本目录中的 `SchedulerDemo` 等 Core 示例直接对应这套默认安装面；`WebSocket*`、
+> `Multipart*`、`LoggingDemo`、`MiddlewareDemo`、`UnifiedPolicyMiddlewareOfflineDemo`
+> 等使用 Extras 头的示例，默认按“源码树 / 显式包含 Extras 的发行包”口径维护，不自动纳入
+> 当前 `public-api` / `consumer_smoke` 门禁。
+
 ## 📦 示例列表
 
 ### 1. FileDownloadDemo - 文件下载管理器

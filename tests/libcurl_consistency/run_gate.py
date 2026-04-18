@@ -37,6 +37,7 @@ class GateConfig:
     repo_root: Path
     qcurl_build_dir: Path
     curl_build_dir: Path
+    capability_manifest: Path
     suite: str
     build: bool
     with_ext: bool
@@ -436,6 +437,10 @@ def _default_reports_dir(qcurl_build_dir: Path) -> Path:
     return qcurl_build_dir / "libcurl_consistency" / "reports"
 
 
+def _default_capability_manifest(qcurl_build_dir: Path) -> Path:
+    return _default_reports_dir(qcurl_build_dir) / "capabilities.json"
+
+
 def _detect_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -446,12 +451,14 @@ def _resolve_config(args: argparse.Namespace) -> GateConfig:
     curl_build_dir = (repo_root / args.curl_build).resolve() if args.curl_build else (qcurl_build_dir / "curl").resolve()
 
     reports_dir = (repo_root / args.reports_dir).resolve() if args.reports_dir else _default_reports_dir(qcurl_build_dir)
+    capability_manifest = _default_capability_manifest(qcurl_build_dir)
     junit_xml = reports_dir / f"junit_{args.suite}.xml"
     json_report = reports_dir / f"gate_{args.suite}.json"
     return GateConfig(
         repo_root=repo_root,
         qcurl_build_dir=qcurl_build_dir,
         curl_build_dir=curl_build_dir,
+        capability_manifest=capability_manifest,
         suite=args.suite,
         build=bool(args.build),
         with_ext=bool(args.with_ext),
@@ -484,6 +491,45 @@ def _build_targets(cfg: GateConfig) -> None:
     rc = _run(["cmake", "--build", str(cfg.qcurl_build_dir), "--target", "qcurl_nghttpx_h3", "-j", jobs])
     if rc.returncode != 0:
         sys.stderr.write("[warn] build qcurl_nghttpx_h3 failed (h3 variants may be skipped)\n")
+
+
+def _capability_probe_bin(cfg: GateConfig) -> Path:
+    candidates = [
+        cfg.qcurl_build_dir / "tests" / "qcurl_lc_capability_probe",
+        cfg.qcurl_build_dir / "tests" / "qcurl_lc_capability_probe.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _generate_capability_manifest(cfg: GateConfig) -> None:
+    probe_bin = _capability_probe_bin(cfg)
+    if not probe_bin.exists():
+        raise RuntimeError(f"capability probe binary not found: {probe_bin}")
+    _ensure_parent(cfg.capability_manifest)
+    rc = _run(
+        [str(probe_bin), "--output", str(cfg.capability_manifest)],
+        cwd=cfg.repo_root,
+        env=_gate_env(cfg),
+        capture=True,
+    )
+    if rc.stdout:
+        sys.stdout.write(_redact_text(rc.stdout))
+    if rc.stderr:
+        sys.stderr.write(_redact_text(rc.stderr))
+    if rc.returncode != 0:
+        raise RuntimeError(f"capability probe failed: rc={rc.returncode}")
+
+
+def _load_capability_manifest(cfg: GateConfig) -> Dict[str, object]:
+    if not cfg.capability_manifest.exists():
+        _generate_capability_manifest(cfg)
+    try:
+        return json.loads(cfg.capability_manifest.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"failed to read capability manifest: {exc}") from exc
 
 
 def _pytest_files(cfg: GateConfig) -> List[str]:
@@ -543,6 +589,27 @@ def _pytest_files(cfg: GateConfig) -> List[str]:
     return base
 
 
+def _plan_pytest_files(cfg: GateConfig,
+                       capability_manifest: Dict[str, object]) -> tuple[List[str], Dict[str, str]]:
+    planned: List[str] = []
+    exclusions: Dict[str, str] = {}
+    tests = capability_manifest.get("tests") if isinstance(capability_manifest, dict) else {}
+    tests_map = tests if isinstance(tests, dict) else {}
+
+    for path in _pytest_files(cfg):
+        rule = tests_map.get(Path(path).name)
+        enabled = True
+        reason = ""
+        if isinstance(rule, dict):
+            enabled = bool(rule.get("enabled", True))
+            reason = str(rule.get("reason") or "")
+        if enabled:
+            planned.append(path)
+        else:
+            exclusions[path] = reason or "disabled by capability manifest"
+    return planned, exclusions
+
+
 def _gate_env(cfg: GateConfig) -> Dict[str, str]:
     env = os.environ.copy()
     qt_bin = cfg.qcurl_build_dir / "tests" / "tst_LibcurlConsistency"
@@ -550,6 +617,7 @@ def _gate_env(cfg: GateConfig) -> Dict[str, str]:
     env["CURL_BUILD_DIR"] = str(cfg.curl_build_dir)
     env["CURL"] = str(cfg.curl_build_dir / "src" / "curl")
     env["CURLINFO"] = str(cfg.curl_build_dir / "src" / "curlinfo")
+    env["QCURL_LC_CAPABILITY_MANIFEST"] = str(cfg.capability_manifest)
     env.setdefault("QCURL_LC_COLLECT_LOGS", "1")
     env.setdefault("QCURL_LC_QTTEST_TIMEOUT", str(cfg.qt_timeout_s))
     if cfg.suite in ("p2", "all"):
@@ -585,17 +653,19 @@ def main(argv: List[str]) -> int:
         "repo_root": str(cfg.repo_root),
         "qcurl_build_dir": str(cfg.qcurl_build_dir),
         "curl_build_dir": str(cfg.curl_build_dir),
+        "capability_manifest_path": str(cfg.capability_manifest),
         "junit_xml": str(cfg.junit_xml),
         "json_report": str(cfg.json_report),
         "qt_timeout_s": cfg.qt_timeout_s,
         "commands": [],
-        "pytest_files": _pytest_files(cfg),
+        "pytest_files": [],
         "env": {
             "QCURL_QTTEST": str(gate_env.get("QCURL_QTTEST") or ""),
             "QCURL_LC_COLLECT_LOGS": str(gate_env.get("QCURL_LC_COLLECT_LOGS") or "0"),
             "QCURL_LC_QTTEST_TIMEOUT": str(gate_env.get("QCURL_LC_QTTEST_TIMEOUT") or cfg.qt_timeout_s),
             "QCURL_LC_EXT": "1" if str(gate_env.get("QCURL_LC_EXT") or "0") == "1" else "0",
             "QCURL_LC_EXPECT100_REPEAT": str(gate_env.get("QCURL_LC_EXPECT100_REPEAT") or ""),
+            "QCURL_LC_CAPABILITY_MANIFEST": str(gate_env.get("QCURL_LC_CAPABILITY_MANIFEST") or ""),
             "QCURL_REQUIRE_HTTP3": require_http3_raw if require_http3_raw else "0",
             "CURL_BUILD_DIR": str(gate_env.get("CURL_BUILD_DIR") or ""),
             "CURL": str(gate_env.get("CURL") or ""),
@@ -643,6 +713,14 @@ def main(argv: List[str]) -> int:
 
         if cfg.build:
             _build_targets(cfg)
+
+        capability_manifest = _load_capability_manifest(cfg)
+        planned_pytest_files, planner_exclusions = _plan_pytest_files(cfg, capability_manifest)
+        report["capability_manifest"] = capability_manifest
+        report["planner_exclusions"] = planner_exclusions
+        report["pytest_files"] = planned_pytest_files
+        if not planned_pytest_files:
+            raise RuntimeError("capability planner excluded every pytest file; gate would have no executable cases")
 
         # 供应链/复跑证据：记录 Python 环境（版本 + pip freeze）并落盘到报告目录，便于审计复核。
         try:
@@ -734,7 +812,7 @@ def main(argv: List[str]) -> int:
             "--maxfail=1",
             "--junitxml",
             str(cfg.junit_xml),
-            *_pytest_files(cfg),
+            *planned_pytest_files,
         ]
         report["commands"].append(pytest_cmd)
         rc = _run(pytest_cmd, cwd=cfg.repo_root, env=gate_env, capture=True)

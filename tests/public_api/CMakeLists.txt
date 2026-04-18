@@ -4,6 +4,18 @@ if(NOT DEFINED QCURL_INSTALL_HEADERS OR QCURL_INSTALL_HEADERS STREQUAL "")
     message(FATAL_ERROR "tests/public_api requires QCURL_INSTALL_HEADERS from src/CMakeLists.txt")
 endif()
 
+# 该套件只审计默认稳定安装面（QCURL_INSTALL_HEADERS + QCurlConfig.h）。
+# QCURL_INSTALL_HEADERS_EXTRAS 属于非默认 Extras，不能混入 manifest。
+if(DEFINED QCURL_INSTALL_HEADERS_EXTRAS)
+    foreach(extra_header IN LISTS QCURL_INSTALL_HEADERS_EXTRAS)
+        list(FIND QCURL_INSTALL_HEADERS "${extra_header}" _qcurl_public_api_extra_index)
+        if(NOT _qcurl_public_api_extra_index EQUAL -1)
+            message(FATAL_ERROR
+                "public-api manifest must not include Extras header: ${extra_header}")
+        endif()
+    endforeach()
+endif()
+
 set(QCURL_PUBLIC_API_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(QCURL_PUBLIC_API_SELF_COMPILE_DIR "${QCURL_PUBLIC_API_GENERATED_DIR}/self_compile")
 set(QCURL_PUBLIC_API_MANIFEST "${QCURL_PUBLIC_API_GENERATED_DIR}/public_headers.txt")

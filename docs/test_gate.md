@@ -20,12 +20,16 @@
   - skip=fail
   - schema 校验
   - 脱敏扫描
+  - capability manifest 选案：先产出 `build/libcurl_consistency/reports/capabilities.json`，再决定是否纳入 feature-dependent pytest 文件
 - 强判据专题
   - `pause_resume_strict`
   - `resp_headers_raw`
   - 其他明确比较原始字节或结构化事件边界的用例
 - `tests/qcurl/CMakeLists.txt`
   - 通过 `FAIL_REGULAR_EXPRESSION` 把 `QSKIP` 视为无证据失败
+  - `env/local_port/httpbin/websocket` 组通过 `tests/qcurl/run_qttest_with_preflight.py` 在进入 QtTest 前先做 suite 级前置检查，缺少本地端口、`QCURL_HTTPBIN_URL`、`node` 或受控 `ws` 依赖时直接 fail-closed
+  - `tst_QCNetworkHttp2` 额外通过 `qcurl_http2_capability_probe` + `--require-http2-suite` 把 HTTP/2 编译期/运行期能力与本地 fixture 前置统一到 preflight
+  - `tst_QCNetworkDiagnosticsLocal` 已作为 `env;local_port;diagnostics` 的 deterministic provider 接入默认 gate：覆盖 `resolveDNS(localhost)`、本地 HTTP 200/404 probe、local HTTP `diagnose()`，以及 repo TLS fixture 的 `checkSSL()` 合同；原 `tst_QCNetworkDiagnostics` 保持 `external_network`，只负责公网探测
 
 ## 2. 当前门禁不能证明的内容
 
@@ -38,6 +42,8 @@
 - 所有头部、压缩和时序语义
 
 默认 gate 比较的是“被定义为可观测 contract 的字段”，不会把所有实现细节都拉进来比较。
+
+其中 `QCNetworkDiagnostics::checkSSL()` 目前没有显式 CA 注入入口，所以 local diagnostics TLS gate 只证明“repo fixture 会走到证书校验路径，并返回明确的证书结果或 SSL 失败”，不把“默认必须通过”当作当前 contract。
 
 当前已纳入 UCE 的“专题补强”如下：
 

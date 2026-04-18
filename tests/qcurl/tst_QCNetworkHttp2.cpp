@@ -5,10 +5,12 @@
  * 默认使用 `tests/qcurl/http2-test-server.js` 启动本地可控 server。
  * 也可通过 `QCURL_HTTP2_TEST_BASE_URL` 和
  * `QCURL_HTTP2_TEST_HTTP1_BASE_URL` 覆盖 HTTP/2 与 HTTP/1.1 入口。
- * `QCURL_HTTP2_DISABLE_DOWNGRADE_TEST=1` 会显式跳过降级用例。
+ * `QCURL_HTTP2_DISABLE_DOWNGRADE_TEST=1` 仅用于 gate/planner 侧显式排除降级用例，
+ * 不应依赖 suite 内部跳过。
  */
 
 #include "QCCurlHandleManager.h"
+#include "QCGlobal.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
@@ -92,12 +94,11 @@ private:
     QString m_localH2BaseUrl;
     QString m_localHttp1BaseUrl;
     QString m_serverError;
-    bool m_localServerRestricted = false;
     bool m_disableDowngradeTest = false;
 
     // 辅助方法
     bool waitForSignal(QObject *obj, const QMetaMethod &signal, int timeout = 10000);
-    bool checkHttp2Support(); // 检查 libcurl 是否支持 HTTP/2
+    bool checkHttp2Support(); // 检查编译期与运行期 HTTP/2 能力
     static bool waitForPortReady(quint16 port, int timeoutMs);
     bool startLocalTestServer();
     void stopLocalTestServer();
@@ -138,8 +139,8 @@ bool TestQCNetworkHttp2::waitForSignal(QObject *obj, const QMetaMethod &signal, 
 
 bool TestQCNetworkHttp2::checkHttp2Support()
 {
-    curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
-    return (ver->features & CURL_VERSION_HTTP2) != 0;
+    const curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
+    return QCurl::hasHttp2Support() && ver && ((ver->features & CURL_VERSION_HTTP2) != 0);
 }
 
 bool TestQCNetworkHttp2::waitForPortReady(quint16 port, int timeoutMs)
@@ -166,7 +167,6 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     m_serverError.clear();
     m_localH2BaseUrl.clear();
     m_localHttp1BaseUrl.clear();
-    m_localServerRestricted = false;
 
     const QString appDir     = QCoreApplication::applicationDirPath();
     const QString scriptPath = QDir(appDir).absoluteFilePath(
@@ -240,7 +240,6 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     if (!outText.isEmpty()) {
         qWarning().noquote() << "Local HTTP/2 server output:\n" << outText;
         if (outputSuggestsLocalListenRestriction(outText)) {
-            m_localServerRestricted = true;
             m_serverError = QStringLiteral(
                 "当前执行环境禁止本地 HTTP/2 测试服务器监听 127.0.0.1");
         }
@@ -333,10 +332,8 @@ QJsonObject TestQCNetworkHttp2::requestJson(const QUrl &url,
 
 void TestQCNetworkHttp2::initTestCase()
 {
-    // 没有 HTTP/2 runtime 支持时，整套 contract 都不成立。
-    if (!checkHttp2Support()) {
-        QSKIP("libcurl 未编译 HTTP/2 支持（需要 nghttp2），跳过所有 HTTP/2 测试");
-    }
+    QVERIFY2(checkHttp2Support(),
+             "HTTP/2 capability preflight 应已阻止无 HTTP/2 能力的环境运行该 suite。");
 
     m_disableDowngradeTest = !qgetenv(kDisableDowngradeEnvName).trimmed().isEmpty()
                              && qgetenv(kDisableDowngradeEnvName).trimmed() != "0";
@@ -352,14 +349,10 @@ void TestQCNetworkHttp2::initTestCase()
     }
 
     if (m_h2BaseUrl.isEmpty() || m_http1BaseUrl.isEmpty()) {
-        if (!startLocalTestServer()) {
-            const QString reason
-                = QStringLiteral("本地 HTTP/2 测试服务器不可用：%1").arg(m_serverError);
-            if (m_localServerRestricted) {
-                QSKIP(qPrintable(reason));
-            }
-            QFAIL(qPrintable(reason));
-        }
+        const bool localServerReady = startLocalTestServer();
+        const QString reason
+            = QStringLiteral("本地 HTTP/2 测试服务器不可用：%1").arg(m_serverError);
+        QVERIFY2(localServerReady, qPrintable(reason));
 
         if (m_h2BaseUrl.isEmpty()) {
             m_h2BaseUrl = m_localH2BaseUrl;
@@ -526,12 +519,9 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
 
 void TestQCNetworkHttp2::testHttp2Downgrade()
 {
-    if (m_disableDowngradeTest) {
-        // 证据口径：禁用关键用例不应“静默通过”，避免误读为已验证。
-        // 注意：本仓库 ctest 取证式门禁为 skip=fail（见 tests/qcurl/CMakeLists.txt），因此该 QSKIP 代表“无证据”。
-        QSKIP(
-            "已通过 QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 禁用降级用例（证据门禁口径下视为无证据）。");
-    }
+    QVERIFY2(
+        !m_disableDowngradeTest,
+        "QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 已设置；请在 gate/planner 侧显式排除降级用例，而不是依赖 suite 内跳过。");
 
     QVERIFY2(
         !m_http1BaseUrl.isEmpty(),

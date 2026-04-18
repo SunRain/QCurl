@@ -67,14 +67,11 @@ private:
 void TestQCNetworkCacheIntegration::initTestCase()
 {
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
-    if (m_httpbinBaseUrl.isEmpty()) {
-        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
-    }
+    QVERIFY2(!m_httpbinBaseUrl.isEmpty(), qPrintable(TestEnv::httpbinMissingReason()));
 
     // 该套件依赖可访问的本地 httpbin。
-    if (!isHttpbinAvailable()) {
-        QSKIP(qPrintable(QStringLiteral("httpbin 服务不可用：%1").arg(m_httpbinBaseUrl)));
-    }
+    QVERIFY2(isHttpbinAvailable(),
+             qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl)));
 }
 
 void TestQCNetworkCacheIntegration::cleanupTestCase() {}

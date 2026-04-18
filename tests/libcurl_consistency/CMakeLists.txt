@@ -59,6 +59,12 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
+    add_executable(qcurl_lc_share_handle_baseline share_handle_baseline_client.cpp)
+    target_link_libraries(qcurl_lc_share_handle_baseline PRIVATE CURL::libcurl)
+    set_target_properties(qcurl_lc_share_handle_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
     add_executable(qcurl_lc_pause_resume_baseline pause_resume_baseline_client.cpp)
     target_link_libraries(qcurl_lc_pause_resume_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_pause_resume_baseline PROPERTIES
@@ -74,6 +80,22 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     add_executable(qcurl_lc_upload_pause_resume_baseline upload_pause_resume_baseline_client.cpp)
     target_link_libraries(qcurl_lc_upload_pause_resume_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_upload_pause_resume_baseline PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    add_executable(qcurl_lc_capability_probe qcurl_lc_capability_probe.cpp)
+    target_link_libraries(qcurl_lc_capability_probe
+        PRIVATE
+            Qt6::Core
+            QCurl
+            CURL::libcurl
+    )
+    target_include_directories(qcurl_lc_capability_probe
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_BINARY_DIR}/src
+    )
+    set_target_properties(qcurl_lc_capability_probe PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
@@ -97,10 +119,12 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         qcurl_lc_range_resume_baseline
         qcurl_lc_postfields_binary_baseline
         qcurl_lc_http_baseline
+        qcurl_lc_share_handle_baseline
         qcurl_lc_pause_resume_baseline
         qcurl_lc_backpressure_baseline
         qcurl_lc_upload_pause_resume_baseline
         qcurl_lc_multi_get4_baseline
+        qcurl_lc_capability_probe
         qcurl_lc_ws_baseline
     )
 endif()

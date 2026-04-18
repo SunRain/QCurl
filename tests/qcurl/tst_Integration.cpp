@@ -230,9 +230,7 @@ void TestIntegration::initTestCase()
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
-    if (m_httpbinBaseUrl.isEmpty()) {
-        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
-    }
+    QVERIFY2(!m_httpbinBaseUrl.isEmpty(), qPrintable(TestEnv::httpbinMissingReason()));
     qDebug() << "httpbin base URL:" << m_httpbinBaseUrl;
 
     QCNetworkRequest healthCheck(QUrl(m_httpbinBaseUrl + "/status/200"));
@@ -241,9 +239,7 @@ void TestIntegration::initTestCase()
                     && reply->error() == NetworkError::NoError;
     reply->deleteLater();
 
-    if (!ok) {
-        QSKIP(qPrintable(QStringLiteral("httpbin 服务不可用：%1").arg(m_httpbinBaseUrl)));
-    }
+    QVERIFY2(ok, qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl)));
 }
 
 void TestIntegration::cleanupTestCase()
@@ -727,9 +723,8 @@ void TestIntegration::testLocalHttpsTlsVerification()
     localServer.setProcessChannelMode(QProcess::MergedChannels);
     localServer.start();
 
-    if (!localServer.waitForStarted(2000)) {
-        QSKIP("无法启动本地 HTTPS 测试服务器（node）。请确认 node 可用。");
-    }
+    QVERIFY2(localServer.waitForStarted(2000),
+             "无法启动本地 HTTPS 测试服务器（node）。请确认 node 可用。");
 
     struct ProcessGuard
     {
@@ -967,9 +962,8 @@ void TestIntegration::testConnectionRefused()
     // 策略：先申请一个临时端口并立即释放，然后连接该端口期望得到“连接失败”终态。
     // 这仍存在极小竞态窗口，但显著优于固定端口假设，且在 CI/门禁环境中可重复性更强。
     QTcpServer portPicker;
-    if (!portPicker.listen(QHostAddress::LocalHost, 0)) {
-        QSKIP("无法绑定本机端口用于生成确定性 connection-refused 场景");
-    }
+    QVERIFY2(portPicker.listen(QHostAddress::LocalHost, 0),
+             "无法绑定本机端口用于生成确定性 connection-refused 场景");
     const quint16 port = portPicker.serverPort();
     portPicker.close();
 

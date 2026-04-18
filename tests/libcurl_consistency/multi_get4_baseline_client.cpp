@@ -17,6 +17,21 @@ struct Args
     std::string requestId;
     std::string proto;
     std::string urlPrefix;
+    std::string summaryOut;
+    long maxConnects = 1;
+    long maxHostConnections = 0;
+    long maxTotalConnections = 0;
+    long maxConcurrentStreams = 0;
+};
+
+struct Transfer
+{
+    int index = 0;
+    std::string url;
+    std::ofstream file;
+    std::uint64_t written = 0;
+    CURLcode result       = CURLE_OK;
+    long localPort        = 0;
 };
 
 bool setHttpVersion(CURL *curl, const std::string &proto)
@@ -53,15 +68,6 @@ std::string appendRequestId(const std::string &url, const std::string &requestId
     return url + sep + "id=" + requestId;
 }
 
-struct Transfer
-{
-    int index = 0;
-    std::string url;
-    std::ofstream file;
-    std::uint64_t written = 0;
-    CURLcode result       = CURLE_OK;
-};
-
 size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
     auto *t = static_cast<Transfer *>(userdata);
@@ -81,6 +87,15 @@ size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     }
     t->written += total;
     return static_cast<size_t>(total);
+}
+
+std::optional<long> parseLongArg(const char *raw)
+{
+    const auto parsed = qcurl::lc::parseInt<long>(raw ? std::string_view(raw) : std::string_view());
+    if (!parsed.has_value() || *parsed < 0) {
+        return std::nullopt;
+    }
+    return parsed;
 }
 
 std::optional<Args> parseArgs(int argc, char **argv)
@@ -104,6 +119,42 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.proto = argv[++i];
             continue;
         }
+        if (arg == "--summary-out" && i + 1 < argc) {
+            out.summaryOut = argv[++i];
+            continue;
+        }
+        if (arg == "--maxconnects" && i + 1 < argc) {
+            const auto value = parseLongArg(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxConnects = *value;
+            continue;
+        }
+        if (arg == "--max-host-connections" && i + 1 < argc) {
+            const auto value = parseLongArg(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxHostConnections = *value;
+            continue;
+        }
+        if (arg == "--max-total-connections" && i + 1 < argc) {
+            const auto value = parseLongArg(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxTotalConnections = *value;
+            continue;
+        }
+        if (arg == "--max-concurrent-streams" && i + 1 < argc) {
+            const auto value = parseLongArg(argv[++i]);
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            out.maxConcurrentStreams = *value;
+            continue;
+        }
         if (!arg.empty() && arg[0] == '-') {
             return std::nullopt;
         }
@@ -121,9 +172,85 @@ std::optional<Args> parseArgs(int argc, char **argv)
 
 int printUsage()
 {
-    std::cerr << "Usage: qcurl_lc_multi_get4_baseline -n <count> -I <req_id> -V <h2|h3|http/1.1> "
-                 "<url_prefix>\n";
+    std::cerr
+        << "Usage: qcurl_lc_multi_get4_baseline -n <count> -I <req_id> -V <h2|h3|http/1.1> "
+           "[--summary-out <path>] [--maxconnects <n>] [--max-host-connections <n>] "
+           "[--max-total-connections <n>] [--max-concurrent-streams <n>] <url_prefix>\n";
     return 2;
+}
+
+void recordTransferResult(CURL *easy, CURLcode code)
+{
+    Transfer *t = nullptr;
+    curl_easy_getinfo(easy, CURLINFO_PRIVATE, &t);
+    if (!t) {
+        return;
+    }
+    t->result = code;
+    long localPort = 0;
+    if (curl_easy_getinfo(easy, CURLINFO_LOCAL_PORT, &localPort) == CURLE_OK) {
+        t->localPort = localPort;
+    }
+}
+
+bool writeConnectionSummary(const Args &args, const std::vector<Transfer> &transfers)
+{
+    if (args.summaryOut.empty()) {
+        return true;
+    }
+
+    std::vector<int> connSeq;
+    connSeq.reserve(transfers.size());
+    std::vector<long> localPorts;
+    localPorts.reserve(transfers.size());
+    std::vector<long> seenPorts;
+    int nextConnId = 1;
+
+    for (const auto &transfer : transfers) {
+        if (transfer.result != CURLE_OK || transfer.localPort <= 0) {
+            return false;
+        }
+        localPorts.push_back(transfer.localPort);
+        int connId = 0;
+        for (std::size_t idx = 0; idx < seenPorts.size(); ++idx) {
+            if (seenPorts[idx] == transfer.localPort) {
+                connId = static_cast<int>(idx) + 1;
+                break;
+            }
+        }
+        if (connId == 0) {
+            seenPorts.push_back(transfer.localPort);
+            connId = nextConnId++;
+        }
+        connSeq.push_back(connId);
+    }
+
+    std::ofstream out(args.summaryOut, std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+
+    out << "{\n";
+    out << "  \"request_count\": " << transfers.size() << ",\n";
+    out << "  \"unique_connections\": " << seenPorts.size() << ",\n";
+    out << "  \"local_ports\": [";
+    for (std::size_t i = 0; i < localPorts.size(); ++i) {
+        if (i > 0) {
+            out << ", ";
+        }
+        out << localPorts[i];
+    }
+    out << "],\n";
+    out << "  \"conn_seq\": [";
+    for (std::size_t i = 0; i < connSeq.size(); ++i) {
+        if (i > 0) {
+            out << ", ";
+        }
+        out << connSeq[i];
+    }
+    out << "]\n";
+    out << "}\n";
+    return out.good();
 }
 
 } // namespace
@@ -149,42 +276,63 @@ int main(int argc, char **argv)
         return 4;
     }
 
-    curl_multi_setopt(multi, CURLMOPT_MAXCONNECTS, 1L);
+    curl_multi_setopt(multi, CURLMOPT_MAXCONNECTS, args.maxConnects);
+#ifdef CURLMOPT_PIPELINING
+    curl_multi_setopt(multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+#endif
+#ifdef CURLMOPT_MAX_HOST_CONNECTIONS
+    if (args.maxHostConnections > 0) {
+        curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, args.maxHostConnections);
+    }
+#endif
+#ifdef CURLMOPT_MAX_TOTAL_CONNECTIONS
+    if (args.maxTotalConnections > 0) {
+        curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, args.maxTotalConnections);
+    }
+#endif
+#ifdef CURLMOPT_MAX_CONCURRENT_STREAMS
+    if (args.maxConcurrentStreams > 0) {
+        curl_multi_setopt(multi, CURLMOPT_MAX_CONCURRENT_STREAMS, args.maxConcurrentStreams);
+    }
+#endif
 
     std::vector<CURL *> handles;
-    handles.reserve(static_cast<size_t>(args.count));
     std::vector<Transfer> transfers;
-    transfers.reserve(static_cast<size_t>(args.count));
+    handles.reserve(static_cast<std::size_t>(args.count));
+    transfers.reserve(static_cast<std::size_t>(args.count));
 
     for (int i = 0; i < args.count; ++i) {
         transfers.emplace_back();
-        Transfer &t = transfers.back();
-        t.index     = i;
-        t.url       = appendRequestId(args.urlPrefix + formatSuffix(i + 1), args.requestId);
+        auto &transfer = transfers.back();
+        transfer.index = i;
+        transfer.url = appendRequestId(args.urlPrefix + formatSuffix(i + 1), args.requestId);
 
         const std::string outFile = "download_" + std::to_string(i) + ".data";
-        t.file.open(outFile, std::ios::binary | std::ios::trunc);
-        if (!t.file.is_open()) {
+        transfer.file.open(outFile, std::ios::binary | std::ios::trunc);
+        if (!transfer.file.is_open()) {
+            std::cerr << "failed to open output file: " << outFile << "\n";
             curl_multi_cleanup(multi);
             curl_global_cleanup();
-            std::cerr << "failed to open output file: " << outFile << "\n";
             return 5;
         }
 
         CURL *easy = curl_easy_init();
         if (!easy) {
+            std::cerr << "curl_easy_init failed\n";
             curl_multi_cleanup(multi);
             curl_global_cleanup();
-            std::cerr << "curl_easy_init failed\n";
             return 6;
         }
 
-        curl_easy_setopt(easy, CURLOPT_URL, t.url.c_str());
+        curl_easy_setopt(easy, CURLOPT_URL, transfer.url.c_str());
         curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
         curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
         curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, 60000L);
+#ifdef CURLOPT_PIPEWAIT
+        curl_easy_setopt(easy, CURLOPT_PIPEWAIT, 1L);
+#endif
         if (!setHttpVersion(easy, args.proto)) {
             curl_easy_cleanup(easy);
             curl_multi_cleanup(multi);
@@ -194,80 +342,66 @@ int main(int argc, char **argv)
         }
 
         curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, &writeCallback);
-        curl_easy_setopt(easy, CURLOPT_WRITEDATA, &t);
-        curl_easy_setopt(easy, CURLOPT_PRIVATE, &t);
-
-        const CURLMcode mc = curl_multi_add_handle(multi, easy);
-        if (mc != CURLM_OK) {
+        curl_easy_setopt(easy, CURLOPT_WRITEDATA, &transfer);
+        curl_easy_setopt(easy, CURLOPT_PRIVATE, &transfer);
+        if (curl_multi_add_handle(multi, easy) != CURLM_OK) {
             curl_easy_cleanup(easy);
             curl_multi_cleanup(multi);
             curl_global_cleanup();
-            std::cerr << "curl_multi_add_handle failed: " << curl_multi_strerror(mc) << "\n";
+            std::cerr << "curl_multi_add_handle failed\n";
             return 8;
         }
         handles.push_back(easy);
     }
 
     int running = 0;
+    bool multiOk = true;
     curl_multi_perform(multi, &running);
-
     while (running > 0) {
-        int numfds         = 0;
-        const CURLMcode mc = curl_multi_poll(multi, nullptr, 0, 1000, &numfds);
-        if (mc != CURLM_OK) {
-            std::cerr << "curl_multi_poll failed: " << curl_multi_strerror(mc) << "\n";
+        int numfds = 0;
+        if (curl_multi_poll(multi, nullptr, 0, 1000, &numfds) != CURLM_OK) {
+            std::cerr << "curl_multi_poll failed\n";
+            multiOk = false;
             break;
         }
         curl_multi_perform(multi, &running);
 
         int msgsLeft = 0;
         while (CURLMsg *msg = curl_multi_info_read(multi, &msgsLeft)) {
-            if (msg->msg != CURLMSG_DONE) {
-                continue;
-            }
-            Transfer *t = nullptr;
-            curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &t);
-            if (t) {
-                t->result = msg->data.result;
+            if (msg->msg == CURLMSG_DONE) {
+                recordTransferResult(msg->easy_handle, msg->data.result);
             }
         }
     }
 
     int msgsLeft = 0;
     while (CURLMsg *msg = curl_multi_info_read(multi, &msgsLeft)) {
-        if (msg->msg != CURLMSG_DONE) {
-            continue;
-        }
-        Transfer *t = nullptr;
-        curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &t);
-        if (t) {
-            t->result = msg->data.result;
+        if (msg->msg == CURLMSG_DONE) {
+            recordTransferResult(msg->easy_handle, msg->data.result);
         }
     }
 
-    bool ok = true;
+    bool ok = writeConnectionSummary(args, transfers);
     for (CURL *easy : handles) {
         curl_multi_remove_handle(multi, easy);
         curl_easy_cleanup(easy);
     }
     curl_multi_cleanup(multi);
+    curl_global_cleanup();
 
-    for (const auto &t : transfers) {
-        if (t.result != CURLE_OK) {
-            ok = false;
-            std::cerr << "transfer failed: idx=" << t.index << " url=" << t.url
-                      << " err=" << curl_easy_strerror(t.result) << "\n";
-        }
-        if (!t.file.good()) {
-            ok = false;
-            std::cerr << "output file not good: idx=" << t.index << "\n";
-        }
-        if (t.written == 0) {
-            ok = false;
-            std::cerr << "empty response: idx=" << t.index << " url=" << t.url << "\n";
+    if (!ok) {
+        std::cerr << "failed to write connection summary\n";
+        return 9;
+    }
+    if (!multiOk) {
+        return 10;
+    }
+    for (const auto &transfer : transfers) {
+        if (transfer.result != CURLE_OK) {
+            std::cerr << "transfer failed: " << transfer.url << " => "
+                      << curl_easy_strerror(transfer.result) << "\n";
+            return 11;
         }
     }
-
-    curl_global_cleanup();
-    return ok ? 0 : 9;
+    return 0;
 }

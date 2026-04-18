@@ -106,6 +106,9 @@ endif()
 # 合并所有源文件和头文件
 set(QCURL_ALL_SOURCES ${QCURL_LEGACY_SOURCES} ${QCURL_MODERN_SOURCES})
 set(QCURL_ALL_HEADERS ${QCURL_LEGACY_HEADERS} ${QCURL_MODERN_HEADERS})
+# 默认稳定安装面（public package SSOT）只包含 Core contract：
+# - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入默认安装前缀
+# - `QCNetworkLogger.h` 因 `QCNetworkAccessManager` 的对外接口依赖而进入 Core
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
     QCNetworkAccessManager.h
@@ -120,6 +123,13 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h
     QCNetworkRequestScheduler.h
+    QCNetworkLogger.h
+)
+
+# 非默认 Extras：
+# - 用于源码树示例、可选发行包或后续独立 package
+# - 不参与默认 install surface / public-api / consumer smoke 合同
+set(QCURL_INSTALL_HEADERS_EXTRAS
     QCMultipartFormData.h
     QCNetworkCachePolicy.h
     QCNetworkCache.h
@@ -127,7 +137,7 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkDiskCache.h
     QCNetworkConnectionPoolConfig.h
     QCNetworkConnectionPoolManager.h
-    QCNetworkLogger.h
+    QCNetworkDefaultLogger.h
     QCNetworkMiddleware.h
     QCNetworkCancelToken.h
     QCNetworkMockHandler.h
@@ -135,7 +145,7 @@ set(QCURL_INSTALL_HEADERS
 )
 
 if(QCURL_WEBSOCKET_SUPPORT)
-    list(APPEND QCURL_INSTALL_HEADERS
+    list(APPEND QCURL_INSTALL_HEADERS_EXTRAS
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h
@@ -144,6 +154,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
 endif()
 
 set(QCURL_INSTALL_HEADERS "${QCURL_INSTALL_HEADERS}" PARENT_SCOPE)
+set(QCURL_INSTALL_HEADERS_EXTRAS "${QCURL_INSTALL_HEADERS_EXTRAS}" PARENT_SCOPE)
 set(QCURL_GENERATED_CONFIG_HEADER "${CMAKE_BINARY_DIR}/src/QCurlConfig.h" PARENT_SCOPE)
 
 # 创建 QCurl 共享库

@@ -193,20 +193,14 @@ void TestQCNetworkFileTransfer::initTestCase()
     m_manager = new QCNetworkAccessManager(this);
 
     m_httpbinBaseUrl = TestEnv::httpbinBaseUrl();
-    if (m_httpbinBaseUrl.isEmpty()) {
-        QSKIP(qPrintable(TestEnv::httpbinMissingReason()));
-    }
+    QVERIFY2(!m_httpbinBaseUrl.isEmpty(), qPrintable(TestEnv::httpbinMissingReason()));
     qDebug() << "httpbin base URL:" << m_httpbinBaseUrl;
 
     QCNetworkRequest healthCheck(QUrl(m_httpbinBaseUrl + "/status/200"));
     auto *reply = m_manager->sendGet(healthCheck);
     QVERIFY(waitForFinished(reply, 5000));
-    if (reply->error() != NetworkError::NoError) {
-        const QString message = QStringLiteral("无法连接 httpbin 服务: %1 (%2)")
-                                    .arg(m_httpbinBaseUrl, reply->errorString());
-        reply->deleteLater();
-        QSKIP(qPrintable(message));
-    }
+    QVERIFY2(reply->error() == NetworkError::NoError,
+             qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl, reply->errorString())));
     reply->deleteLater();
 }
 
@@ -308,9 +302,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     const qint64 totalBytes = 256 * 1024;
 
     ThrottledRangeServer server(totalBytes);
-    if (!server.start()) {
-        QSKIP("Cannot start local throttled HTTP server (port binding failed)");
-    }
+    QVERIFY2(server.start(), "Cannot start local throttled HTTP server (port binding failed)");
 
     const QUrl url = server.url(QStringLiteral("/range.bin"));
 

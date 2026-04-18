@@ -31,6 +31,21 @@ inline QString httpbinMissingReason()
                           "输出的 env 文件，或设置环境变量 QCURL_HTTPBIN_URL。");
 }
 
+/// @brief 返回 httpbin 不可达时的统一提示。
+/// @param baseUrl 规范化后的 httpbin base URL。
+/// @param detail 额外错误细节，可为空。
+/// @return 统一的失败说明文本。
+inline QString httpbinUnavailableReason(const QString &baseUrl, const QString &detail = {})
+{
+    if (baseUrl.trimmed().isEmpty()) {
+        return httpbinMissingReason();
+    }
+    if (detail.trimmed().isEmpty()) {
+        return QStringLiteral("httpbin 服务不可用：%1").arg(baseUrl);
+    }
+    return QStringLiteral("httpbin 服务不可用：%1 (%2)").arg(baseUrl, detail);
+}
+
 } // namespace QCurl::TestEnv
 
 #endif // QCURL_TEST_HTTPBIN_ENV_H

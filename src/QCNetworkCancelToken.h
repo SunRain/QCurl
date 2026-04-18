@@ -20,6 +20,7 @@
 namespace QCurl {
 
 class QCNetworkReply;
+class QCNetworkCancelTokenPrivate;
 
 /**
  * @brief 网络请求取消令牌
@@ -109,7 +110,7 @@ public:
      */
     void clear();
 
-signals:
+Q_SIGNALS:
     /**
      * @brief 当令牌被取消时发射此信号
      */
@@ -121,13 +122,13 @@ signals:
      */
     void requestCompleted(QCNetworkReply *reply);
 
-private slots:
+private Q_SLOTS:
     void onReplyFinished();
     void onAutoTimeoutTriggered();
 
 private:
-    class Private;
-    QScopedPointer<Private> d_ptr;
+    Q_DECLARE_PRIVATE(QCNetworkCancelToken)
+    QScopedPointer<QCNetworkCancelTokenPrivate> d_ptr;
 };
 
 } // namespace QCurl

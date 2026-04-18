@@ -22,6 +22,7 @@
 #include "QCNetworkRequest.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimer>

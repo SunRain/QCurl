@@ -59,9 +59,7 @@ private:
 
 void TestQCNetworkShareHandle::initTestCase()
 {
-    if (!startObserveServer()) {
-        QWARN(qPrintable(m_skipReason));
-    }
+    QVERIFY2(startObserveServer(), qPrintable(m_skipReason));
 }
 
 void TestQCNetworkShareHandle::cleanupTestCase()
@@ -172,10 +170,6 @@ void TestQCNetworkShareHandle::stopObserveServer()
 
 void TestQCNetworkShareHandle::testCookieShareDisabledByDefault()
 {
-    if (!m_skipReason.isEmpty()) {
-        QSKIP(qPrintable(m_skipReason));
-    }
-
     QCNetworkAccessManager manager;
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
@@ -197,10 +191,6 @@ void TestQCNetworkShareHandle::testCookieShareDisabledByDefault()
 
 void TestQCNetworkShareHandle::testCookieShareWithinManager()
 {
-    if (!m_skipReason.isEmpty()) {
-        QSKIP(qPrintable(m_skipReason));
-    }
-
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
     shareCfg.shareCookies = true;
@@ -228,10 +218,6 @@ void TestQCNetworkShareHandle::testCookieShareWithinManager()
 
 void TestQCNetworkShareHandle::testCookieShareIsolationAcrossManagers()
 {
-    if (!m_skipReason.isEmpty()) {
-        QSKIP(qPrintable(m_skipReason));
-    }
-
     QCNetworkAccessManager managerA;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
     shareCfg.shareCookies = true;
@@ -265,10 +251,6 @@ void TestQCNetworkShareHandle::testCookieShareIsolationAcrossManagers()
 
 void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 {
-    if (!m_skipReason.isEmpty()) {
-        QSKIP(qPrintable(m_skipReason));
-    }
-
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
     shareCfg.shareCookies = true;
