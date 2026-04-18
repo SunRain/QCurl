@@ -3,7 +3,7 @@
 
 /**
  * @file
- * @brief 声明网络日志接口与默认实现。
+ * @brief 声明 Core 级网络日志 contract。
  */
 
 #ifndef QCNETWORKLOGGER_H
@@ -12,172 +12,101 @@
 #include "QCGlobal.h"
 
 #include <QDateTime>
-#include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QString>
-
-#include <functional>
+#include <QtGlobal>
 
 namespace QCurl {
 
 /**
  * @brief HTTP 网络日志级别
  */
-enum class NetworkLogLevel {
+enum class NetworkLogLevel : quint8 {
     Debug,   ///< 调试日志
     Info,    ///< 信息日志
     Warning, ///< 警告日志
     Error    ///< 错误日志
 };
 
+class NetworkLogEntryData;
+
 /**
- * @brief 网络日志记录结构体
+ * @brief Network log entry 的 accessor-only 值类型。
  */
-struct QCURL_EXPORT NetworkLogEntry
+class QCURL_EXPORT NetworkLogEntry
 {
-    NetworkLogLevel level; ///< 日志级别
-    QString category;      ///< 日志分类（如 "Request", "Response"）
-    QString message;       ///< 日志消息
-    QDateTime timestamp;   ///< 时间戳
-    QString sourceFile;    ///< 源文件名（可选）
-    int sourceLine = -1;   ///< 源代码行号（可选）
+public:
+    /// 构造一条默认日志；时间戳默认使用当前 UTC 时间。
+    NetworkLogEntry();
 
-    /**
-     * @brief 将日志转换为 JSON 格式
-     * @return JSON 格式的日志字符串
-     */
-    QString toJson() const;
+    /// 使用显式字段构造日志；`timestampUtc` 会被规范化为 UTC。
+    NetworkLogEntry(NetworkLogLevel level,
+                    const QString &category,
+                    const QString &message,
+                    const QDateTime &timestampUtc);
 
-    /**
-     * @brief 将日志转换为纯文本格式
-     * @return 纯文本格式的日志字符串
-     */
-    QString toPlainText() const;
+    /// 复制构造，保持 implicit-sharing 语义。
+    NetworkLogEntry(const NetworkLogEntry &other);
+
+    /// 移动构造，保持 implicit-sharing 语义。
+    NetworkLogEntry(NetworkLogEntry &&other) noexcept;
+
+    /// 析构函数 out-of-line，避免不完整类型删除风险。
+    ~NetworkLogEntry();
+
+    /// 复制赋值。
+    NetworkLogEntry &operator=(const NetworkLogEntry &other);
+
+    /// 移动赋值。
+    NetworkLogEntry &operator=(NetworkLogEntry &&other) noexcept;
+
+    /// 返回日志级别。
+    [[nodiscard]] NetworkLogLevel level() const;
+
+    /// 返回日志分类。
+    [[nodiscard]] QString category() const;
+
+    /// 返回日志消息。
+    [[nodiscard]] QString message() const;
+
+    /// 返回 UTC 时间戳。
+    [[nodiscard]] QDateTime timestampUtc() const;
+
+    /// 设置日志级别。
+    void setLevel(NetworkLogLevel level);
+
+    /// 设置日志分类。
+    void setCategory(const QString &category);
+
+    /// 设置日志消息。
+    void setMessage(const QString &message);
+
+    /// 设置 UTC 时间戳；非 UTC 输入会被转换为 UTC。
+    void setTimestampUtc(const QDateTime &timestampUtc);
+
+private:
+    QSharedDataPointer<NetworkLogEntryData> d;
 };
 
 /**
- * @brief HTTP 网络日志抽象基类
- *
- * 提供统一的日志接口，支持多种输出方式和日志级别。
+ * @brief Core 级网络日志抽象基类。
  */
 class QCURL_EXPORT QCNetworkLogger
 {
 public:
     virtual ~QCNetworkLogger() = default;
 
-    /**
-     * @brief 记录日志
-     * @param level 日志级别
-     * @param category 日志分类
-     * @param message 日志消息
-     */
-    virtual void log(NetworkLogLevel level, const QString &category, const QString &message) = 0;
+    /// 记录一条结构化日志。
+    virtual void log(const NetworkLogEntry &entry) = 0;
 
-    /**
-     * @brief 记录带详细信息的日志
-     * @param entry 日志条目
-     */
-    virtual void logEntry(const NetworkLogEntry &entry)
-    {
-        log(entry.level, entry.category, entry.message);
-    }
-
-    /**
-     * @brief 设置最小日志级别
-     * @param level 日志级别（低于此级别的日志将被忽略）
-     */
-    virtual void setMinLogLevel(NetworkLogLevel level) = 0;
-
-    /**
-     * @brief 获取当前最小日志级别
-     */
-    virtual NetworkLogLevel minLogLevel() const = 0;
-
-    /**
-     * @brief 清空日志
-     */
-    virtual void clear() {}
-};
-
-/**
- * @brief 默认的日志实现
- *
- * 支持多种输出方式：
- * - 控制台输出（qDebug）
- * - 文件输出
- * - 自定义回调
- *
- */
-class QCURL_EXPORT QCNetworkDefaultLogger : public QCNetworkLogger
-{
-public:
-    QCNetworkDefaultLogger();
-    ~QCNetworkDefaultLogger() override;
-
-    /**
-     * @brief 启用控制台输出
-     */
-    void enableConsoleOutput(bool enable = true);
-
-    /**
-     * @brief 启用文件输出
-     * @param filePath 日志文件路径
-     * @param maxSize 单个日志文件的最大大小（字节），`<= 0` 时使用默认 10MB
-     * @param backupCount 保留的旧日志文件数量
-     */
-    void enableFileOutput(const QString &filePath, qint64 maxSize = 0, int backupCount = 5);
-
-    /**
-     * @brief 禁用文件输出
-     */
-    void disableFileOutput();
-
-    /**
-     * @brief 设置自定义日志回调
-     * @param callback 回调函数，接收日志条目
-     *
-     * @note 回调在 logger 内部互斥锁持有期间同步执行。回调中不应再次调用
-     * 本 logger 的 `log()/entries()/clear()/set*()`，否则可能形成重入或死锁。
-     */
-    void setCustomCallback(std::function<void(const NetworkLogEntry &)> callback);
-
-    /**
-     * @brief 设置日志格式
-     * @param format 格式字符串，支持以下占位符：
-     *   - %{level}   日志级别
-     *   - %{time}    时间戳
-     *   - %{category} 日志分类
-     *   - %{message} 日志消息
-     *
-     * 默认格式："%{time} [%{level}] %{category}: %{message}"
-     */
-    void setLogFormat(const QString &format);
-
-    // QCNetworkLogger interface
-    void log(NetworkLogLevel level, const QString &category, const QString &message) override;
-    void setMinLogLevel(NetworkLogLevel level) override;
-    NetworkLogLevel minLogLevel() const override;
-    void clear() override;
-
-    /**
-     * @brief 获取所有日志条目
-     * @return 日志条目列表
-     */
-    QList<NetworkLogEntry> entries() const;
-
-private:
-    class Private;
-    QScopedPointer<Private> d_ptr;
+    /// 便利重载：以当前 UTC 时间构造 entry 并转发给虚函数。
+    void log(NetworkLogLevel level, const QString &category, const QString &message);
 };
 
 /**
  * @brief 日志级别转字符串
  */
 QCURL_EXPORT QString logLevelToString(NetworkLogLevel level);
-
-/**
- * @brief 字符串转日志级别
- */
-QCURL_EXPORT NetworkLogLevel stringToLogLevel(const QString &str);
 
 } // namespace QCurl
 

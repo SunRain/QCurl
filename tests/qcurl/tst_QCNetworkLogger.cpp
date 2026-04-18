@@ -2,56 +2,55 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDefaultLogger.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "QCNetworkRequest.h"
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QEvent>
+#include <QFile>
+#include <QTemporaryDir>
+#include <QTime>
+#include <QTimeZone>
 #include <QUrl>
 #include <QtTest>
 
+#include <type_traits>
+#include <utility>
+
 using namespace QCurl;
 
+static_assert(!std::is_copy_constructible_v<QCNetworkDefaultLogger>);
+static_assert(!std::is_move_constructible_v<QCNetworkDefaultLogger>);
+
 /**
- * @brief 验证 logger 接入点、debug trace 脱敏和自定义实现合同。
+ * @brief 验证 logger Core contract、默认实现与 manager wiring。
  */
 class TestQCNetworkLogger : public QObject
 {
     Q_OBJECT
 
 private slots:
-    void initTestCase();
-    void cleanupTestCase();
     void init();
     void cleanup();
 
-    // 基础功能测试
-    void testDefaultLogger();
+    void testLogEntryDefaults();
+    void testLogEntryAccessorsNormalizeUtc();
+    void testLogEntryCopyAndMove();
+    void testConvenienceOverloadForwards();
+    void testDefaultLoggerFiltersAndStoresEntries();
+    void testDefaultLoggerCallbackAndClear();
+    void testDefaultLoggerFileOutput();
     void testSetAndGetLogger();
     void testLoggerNullptr();
-    void testMultipleLoggers();
     void testDebugTraceFlag();
     void testDebugTraceRedaction();
-
-    // 日志记录测试
-    void testRequestLogging();
-    void testResponseLogging();
-    void testErrorLogging();
-
-    // 自定义 Logger 测试
-    void testCustomLogger();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
 };
-
-void TestQCNetworkLogger::initTestCase()
-{}
-
-void TestQCNetworkLogger::cleanupTestCase()
-{}
 
 void TestQCNetworkLogger::init()
 {
@@ -69,19 +68,191 @@ void TestQCNetworkLogger::cleanup()
 }
 
 /**
- * @brief 验证默认 logger 可被 AccessManager 正确持有与读取。
+ * @brief 验证默认构造出的 log entry 拥有可用的 UTC 时间戳。
  */
-void TestQCNetworkLogger::testDefaultLogger()
+void TestQCNetworkLogger::testLogEntryDefaults()
 {
-    QCNetworkDefaultLogger logger;
-    m_manager->setLogger(&logger);
-    auto *retrievedLogger = m_manager->logger();
-    QCOMPARE(retrievedLogger, &logger);
-    m_manager->setLogger(nullptr);
+    const NetworkLogEntry entry;
+
+    QCOMPARE(entry.level(), NetworkLogLevel::Info);
+    QCOMPARE(entry.category(), QString());
+    QCOMPARE(entry.message(), QString());
+    QVERIFY(entry.timestampUtc().isValid());
+    QCOMPARE(entry.timestampUtc().timeSpec(), Qt::UTC);
 }
 
 /**
- * @brief 验证替换 logger 时，manager 总是暴露当前实例。
+ * @brief 验证 accessor-only contract 会把时间语义统一收口到 UTC。
+ */
+void TestQCNetworkLogger::testLogEntryAccessorsNormalizeUtc()
+{
+    const QDateTime seed(
+        QDate(2026, 4, 15), QTime(23, 30, 0), QTimeZone::fromSecondsAheadOfUtc(8 * 3600));
+    NetworkLogEntry entry(
+        NetworkLogLevel::Debug, QStringLiteral("Request"), QStringLiteral("payload"), seed);
+
+    QCOMPARE(entry.level(), NetworkLogLevel::Debug);
+    QCOMPARE(entry.category(), QStringLiteral("Request"));
+    QCOMPARE(entry.message(), QStringLiteral("payload"));
+    QCOMPARE(entry.timestampUtc().offsetFromUtc(), 0);
+    QCOMPARE(entry.timestampUtc().toMSecsSinceEpoch(), seed.toMSecsSinceEpoch());
+
+    entry.setLevel(NetworkLogLevel::Warning);
+    entry.setCategory(QStringLiteral("Trace"));
+    entry.setMessage(QStringLiteral("redacted"));
+
+    const QDateTime second(
+        QDate(2026, 4, 16), QTime(8, 0, 0), QTimeZone::fromSecondsAheadOfUtc(-5 * 3600));
+    entry.setTimestampUtc(second);
+
+    QCOMPARE(entry.level(), NetworkLogLevel::Warning);
+    QCOMPARE(entry.category(), QStringLiteral("Trace"));
+    QCOMPARE(entry.message(), QStringLiteral("redacted"));
+    QCOMPARE(entry.timestampUtc().offsetFromUtc(), 0);
+    QCOMPARE(entry.timestampUtc().toMSecsSinceEpoch(), second.toMSecsSinceEpoch());
+}
+
+/**
+ * @brief 验证 log entry 的 copy/move special members 保持值语义。
+ */
+void TestQCNetworkLogger::testLogEntryCopyAndMove()
+{
+    const NetworkLogEntry original(NetworkLogLevel::Error,
+                                   QStringLiteral("Response"),
+                                   QStringLiteral("boom"),
+                                   QDateTime::currentDateTimeUtc());
+
+    const NetworkLogEntry copied(original);
+    QCOMPARE(copied.level(), original.level());
+    QCOMPARE(copied.category(), original.category());
+    QCOMPARE(copied.message(), original.message());
+    QCOMPARE(copied.timestampUtc(), original.timestampUtc());
+
+    NetworkLogEntry assigned;
+    assigned = copied;
+    QCOMPARE(assigned.level(), copied.level());
+    QCOMPARE(assigned.category(), copied.category());
+    QCOMPARE(assigned.message(), copied.message());
+    QCOMPARE(assigned.timestampUtc(), copied.timestampUtc());
+
+    NetworkLogEntry moved(std::move(assigned));
+    QCOMPARE(moved.level(), copied.level());
+    QCOMPARE(moved.category(), copied.category());
+    QCOMPARE(moved.message(), copied.message());
+    QCOMPARE(moved.timestampUtc(), copied.timestampUtc());
+}
+
+/**
+ * @brief 验证 Core logger 的便利重载会转发到 `log(const NetworkLogEntry &)`.
+ */
+void TestQCNetworkLogger::testConvenienceOverloadForwards()
+{
+    class CapturingLogger : public QCNetworkLogger
+    {
+    public:
+        using QCNetworkLogger::log;
+
+        int count = 0;
+        NetworkLogEntry lastEntry;
+
+        void log(const NetworkLogEntry &entry) override
+        {
+            ++count;
+            lastEntry = entry;
+        }
+    };
+
+    CapturingLogger logger;
+    logger.log(NetworkLogLevel::Warning, QStringLiteral("Trace"), QStringLiteral("masked"));
+
+    QCOMPARE(logger.count, 1);
+    QCOMPARE(logger.lastEntry.level(), NetworkLogLevel::Warning);
+    QCOMPARE(logger.lastEntry.category(), QStringLiteral("Trace"));
+    QCOMPARE(logger.lastEntry.message(), QStringLiteral("masked"));
+    QVERIFY(logger.lastEntry.timestampUtc().isValid());
+    QCOMPARE(logger.lastEntry.timestampUtc().timeSpec(), Qt::UTC);
+}
+
+/**
+ * @brief 验证默认 logger 会按最小级别过滤并缓存 entry。
+ */
+void TestQCNetworkLogger::testDefaultLoggerFiltersAndStoresEntries()
+{
+    QCNetworkDefaultLogger logger;
+    logger.enableConsoleOutput(false);
+    logger.setMinLogLevel(NetworkLogLevel::Warning);
+
+    logger.log(NetworkLogEntry(NetworkLogLevel::Info,
+                               QStringLiteral("Request"),
+                               QStringLiteral("skip"),
+                               QDateTime::currentDateTimeUtc()));
+    logger.log(NetworkLogEntry(NetworkLogLevel::Error,
+                               QStringLiteral("Response"),
+                               QStringLiteral("kept"),
+                               QDateTime::currentDateTimeUtc()));
+
+    const QList<NetworkLogEntry> stored = logger.entries();
+    QCOMPARE(stored.size(), 1);
+    QCOMPARE(stored.first().level(), NetworkLogLevel::Error);
+    QCOMPARE(stored.first().category(), QStringLiteral("Response"));
+    QCOMPARE(stored.first().message(), QStringLiteral("kept"));
+}
+
+/**
+ * @brief 验证默认 logger 的回调和 clear 合同仍然成立。
+ */
+void TestQCNetworkLogger::testDefaultLoggerCallbackAndClear()
+{
+    QCNetworkDefaultLogger logger;
+    logger.enableConsoleOutput(false);
+    logger.setMinLogLevel(NetworkLogLevel::Debug);
+
+    QList<NetworkLogEntry> callbacks;
+    logger.setCustomCallback(
+        [&callbacks](const NetworkLogEntry &entry) { callbacks.append(entry); });
+
+    logger.log(NetworkLogEntry(NetworkLogLevel::Debug,
+                               QStringLiteral("Trace"),
+                               QStringLiteral("payload"),
+                               QDateTime::currentDateTimeUtc()));
+
+    QCOMPARE(callbacks.size(), 1);
+    QCOMPARE(callbacks.first().category(), QStringLiteral("Trace"));
+    QCOMPARE(logger.entries().size(), 1);
+
+    logger.clear();
+    QVERIFY(logger.entries().isEmpty());
+}
+
+/**
+ * @brief 验证默认 logger 仍可写入文件输出。
+ */
+void TestQCNetworkLogger::testDefaultLoggerFileOutput()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString logPath = dir.filePath(QStringLiteral("qcurl-default.log"));
+
+    QCNetworkDefaultLogger logger;
+    logger.enableConsoleOutput(false);
+    logger.enableFileOutput(logPath, 1024 * 1024, 2);
+    logger.log(NetworkLogEntry(NetworkLogLevel::Info,
+                               QStringLiteral("File"),
+                               QStringLiteral("written"),
+                               QDateTime::currentDateTimeUtc()));
+
+    QFile file(logPath);
+    QVERIFY(file.exists());
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+
+    const QString content = QString::fromUtf8(file.readAll());
+    QVERIFY(content.contains(QStringLiteral("File")));
+    QVERIFY(content.contains(QStringLiteral("written")));
+}
+
+/**
+ * @brief 验证默认 logger 可被 AccessManager 正确持有与替换。
  */
 void TestQCNetworkLogger::testSetAndGetLogger()
 {
@@ -93,7 +264,6 @@ void TestQCNetworkLogger::testSetAndGetLogger()
 
     m_manager->setLogger(&logger2);
     QCOMPARE(m_manager->logger(), &logger2);
-    m_manager->setLogger(nullptr);
 }
 
 /**
@@ -103,35 +273,8 @@ void TestQCNetworkLogger::testLoggerNullptr()
 {
     QCNetworkDefaultLogger logger;
     m_manager->setLogger(&logger);
-
     m_manager->setLogger(nullptr);
-
     QCOMPARE(m_manager->logger(), nullptr);
-}
-
-/**
- * @brief 验证不同 AccessManager 的 logger 状态彼此独立。
- */
-void TestQCNetworkLogger::testMultipleLoggers()
-{
-    auto *manager1 = new QCNetworkAccessManager(this);
-    auto *manager2 = new QCNetworkAccessManager(this);
-
-    QCNetworkDefaultLogger logger1;
-    QCNetworkDefaultLogger logger2;
-
-    manager1->setLogger(&logger1);
-    manager2->setLogger(&logger2);
-
-    QCOMPARE(manager1->logger(), &logger1);
-    QCOMPARE(manager2->logger(), &logger2);
-    QVERIFY(manager1->logger() != manager2->logger());
-
-    manager1->setLogger(nullptr);
-    manager2->setLogger(nullptr);
-    manager1->deleteLater();
-    manager2->deleteLater();
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 void TestQCNetworkLogger::testDebugTraceFlag()
@@ -166,96 +309,6 @@ void TestQCNetworkLogger::testDebugTraceRedaction()
     QVERIFY(message.contains("Set-Cookie: [REDACTED]"));
     QVERIFY(message.contains("token=[REDACTED]"));
     QVERIFY(message.contains("foo=bar"));
-}
-
-/**
- * @brief 验证请求路径至少具备 logger wiring，不要求真实网络日志。
- */
-void TestQCNetworkLogger::testRequestLogging()
-{
-    QCNetworkDefaultLogger logger;
-    m_manager->setLogger(&logger);
-
-    QCNetworkRequest request(QUrl("http://example.com/test"));
-    request.setRawHeader("User-Agent", "QCurl Test");
-
-    QVERIFY(m_manager->logger() != nullptr);
-
-    // 该用例只验证 logger 能被挂接；真实日志内容由发送路径和实现细节决定。
-    Q_UNUSED(request);
-    m_manager->setLogger(nullptr);
-}
-
-/**
- * @brief 验证响应路径具备 logger wiring，不在此伪造响应日志。
- */
-void TestQCNetworkLogger::testResponseLogging()
-{
-    QCNetworkDefaultLogger logger;
-    m_manager->setLogger(&logger);
-
-    QVERIFY(m_manager->logger() != nullptr);
-
-    m_manager->setLogger(nullptr);
-}
-
-/**
- * @brief 验证错误路径具备 logger wiring，不在此构造额外错误源。
- */
-void TestQCNetworkLogger::testErrorLogging()
-{
-    QCNetworkDefaultLogger logger;
-    m_manager->setLogger(&logger);
-
-    QVERIFY(m_manager->logger() != nullptr);
-
-    m_manager->setLogger(nullptr);
-}
-
-/**
- * @brief 验证自定义 logger 实现能接收消息并维护最小状态。
- */
-void TestQCNetworkLogger::testCustomLogger()
-{
-    class TestLogger : public QCNetworkLogger
-    {
-    public:
-        int m_logCount             = 0;
-        NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
-        QString m_lastCategory;
-        QString m_lastMessage;
-
-        void log(NetworkLogLevel level, const QString &category, const QString &message) override
-        {
-            Q_UNUSED(level);
-            m_logCount++;
-            m_lastCategory = category;
-            m_lastMessage  = message;
-        }
-
-        void setMinLogLevel(NetworkLogLevel level) override { m_minLevel = level; }
-
-        NetworkLogLevel minLogLevel() const override { return m_minLevel; }
-    };
-
-    TestLogger customLogger;
-    m_manager->setLogger(&customLogger);
-
-    QCOMPARE(m_manager->logger(), &customLogger);
-    QCOMPARE(customLogger.m_logCount, 0);
-
-    customLogger.log(NetworkLogLevel::Info, "Test", "Message 1");
-    QCOMPARE(customLogger.m_logCount, 1);
-    QCOMPARE(customLogger.m_lastCategory, QStringLiteral("Test"));
-    QCOMPARE(customLogger.m_lastMessage, QStringLiteral("Message 1"));
-
-    customLogger.log(NetworkLogLevel::Error, "Error", "Message 2");
-    QCOMPARE(customLogger.m_logCount, 2);
-    QCOMPARE(customLogger.m_lastCategory, QStringLiteral("Error"));
-
-    customLogger.setMinLogLevel(NetworkLogLevel::Warning);
-    QCOMPARE(customLogger.minLogLevel(), NetworkLogLevel::Warning);
-    m_manager->setLogger(nullptr);
 }
 
 QTEST_MAIN(TestQCNetworkLogger)

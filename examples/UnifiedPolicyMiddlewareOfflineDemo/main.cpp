@@ -15,7 +15,7 @@
  */
 
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkLogger.h"
+#include "QCNetworkDefaultLogger.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"

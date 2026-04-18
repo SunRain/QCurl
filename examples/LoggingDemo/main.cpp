@@ -17,6 +17,7 @@
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDefaultLogger.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -39,39 +40,20 @@ class StatisticsLogger : public QCNetworkLogger
 public:
     int totalRequests          = 0;
     int errorRequests          = 0;
-    NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
+    using QCNetworkLogger::log;
 
-    void log(NetworkLogLevel level, const QString &category, const QString &message) override
+    void log(const NetworkLogEntry &entry) override
     {
         totalRequests++;
 
-        if (level == NetworkLogLevel::Error) {
+        if (entry.level() == NetworkLogLevel::Error) {
             errorRequests++;
         }
 
-        // 打印日志
-        QString levelStr;
-        switch (level) {
-            case NetworkLogLevel::Debug:
-                levelStr = "DEBUG";
-                break;
-            case NetworkLogLevel::Info:
-                levelStr = "INFO";
-                break;
-            case NetworkLogLevel::Warning:
-                levelStr = "WARNING";
-                break;
-            case NetworkLogLevel::Error:
-                levelStr = "ERROR";
-                break;
-        }
-
-        qDebug().noquote() << QString("[%1] %2: %3").arg(levelStr, category, message);
+        qDebug().noquote()
+            << QStringLiteral("[%1] %2: %3")
+                   .arg(logLevelToString(entry.level()), entry.category(), entry.message());
     }
-
-    void setMinLogLevel(NetworkLogLevel level) override { m_minLevel = level; }
-
-    NetworkLogLevel minLogLevel() const override { return m_minLevel; }
 
     void printStatistics()
     {

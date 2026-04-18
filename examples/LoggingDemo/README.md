@@ -55,6 +55,8 @@ Logger 已设置，最小日志级别: 1
 ### QCNetworkDefaultLogger
 
 ```cpp
+#include "QCNetworkDefaultLogger.h"
+
 // 创建默认 Logger
 auto *logger = new QCNetworkDefaultLogger();
 
@@ -80,21 +82,11 @@ manager->setLogger(logger);
 class MyLogger : public QCNetworkLogger
 {
 public:
-    void log(NetworkLogLevel level, const QString &category,
-             const QString &message) override {
+    using QCNetworkLogger::log;
+
+    void log(const NetworkLogEntry &entry) override {
         // 实现自己的日志逻辑
     }
-
-    void setMinLogLevel(NetworkLogLevel level) override {
-        m_minLevel = level;
-    }
-
-    NetworkLogLevel minLogLevel() const override {
-        return m_minLevel;
-    }
-
-private:
-    NetworkLogLevel m_minLevel = NetworkLogLevel::Info;
 };
 ```
 

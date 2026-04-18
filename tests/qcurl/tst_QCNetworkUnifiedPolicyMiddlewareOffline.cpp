@@ -4,7 +4,7 @@
  */
 
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkLogger.h"
+#include "QCNetworkDefaultLogger.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
@@ -143,7 +143,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
 
     bool sawRedacted = false;
     for (const auto &entry : logger.entries()) {
-        const QString msg = entry.message;
+        const QString msg = entry.message();
         QVERIFY2(!msg.contains(QString::fromLatin1(secret)), "日志中泄漏了敏感 token 明文");
         if (msg.contains(QStringLiteral("[REDACTED]"))) {
             sawRedacted = true;
@@ -188,10 +188,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
 
     bool found = false;
     for (const auto &entry : logger.entries()) {
-        if (entry.category != QStringLiteral("Observability")) {
+        if (entry.category() != QStringLiteral("Observability")) {
             continue;
         }
-        const QByteArray jsonBytes = entry.message.toUtf8();
+        const QByteArray jsonBytes = entry.message().toUtf8();
         const auto doc             = QJsonDocument::fromJson(jsonBytes);
         QVERIFY(doc.isObject());
         const QJsonObject obj = doc.object();
