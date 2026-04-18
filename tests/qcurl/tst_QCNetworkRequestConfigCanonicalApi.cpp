@@ -127,12 +127,12 @@ void TestQCNetworkRequestConfigCanonicalApi::testSetTimeoutVariants()
     request.setTimeout(std::chrono::seconds(30));
 
     const auto timeout = request.timeoutConfig();
-    QVERIFY(timeout.totalTimeout.has_value());
-    QCOMPARE(timeout.totalTimeout->count(), std::chrono::milliseconds(30000).count());
+    QVERIFY(timeout.totalTimeout().has_value());
+    QCOMPARE(timeout.totalTimeout()->count(), std::chrono::milliseconds(30000).count());
     request.setTimeout(std::chrono::milliseconds(5000));
     const auto timeoutMs = request.timeoutConfig();
-    QVERIFY(timeoutMs.totalTimeout.has_value());
-    QCOMPARE(timeoutMs.totalTimeout->count(), std::chrono::milliseconds(5000).count());
+    QVERIFY(timeoutMs.totalTimeout().has_value());
+    QCOMPARE(timeoutMs.totalTimeout()->count(), std::chrono::milliseconds(5000).count());
 }
 
 void TestQCNetworkRequestConfigCanonicalApi::testSendPostRawBody()

@@ -47,17 +47,17 @@ public:
         std::cout << "\n=== 演示 2：HTTP 代理（无认证）===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
-        proxyConfig.hostName = "proxy.example.com";
-        proxyConfig.port     = 8080;
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxyConfig.setHostName("proxy.example.com");
+        proxyConfig.setPort(8080);
 
         QCNetworkRequest request(QUrl("http://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: HTTP" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
 
         makeRequest(request);
     }
@@ -67,21 +67,21 @@ public:
         std::cout << "\n=== 演示 3：HTTP 代理（带认证）===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
-        proxyConfig.hostName = "auth-proxy.example.com";
-        proxyConfig.port     = 8080;
-        proxyConfig.userName = "username";
-        proxyConfig.password = "password";
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxyConfig.setHostName("auth-proxy.example.com");
+        proxyConfig.setPort(8080);
+        proxyConfig.setUserName("username");
+        proxyConfig.setPassword("password");
 
         QCNetworkRequest request(QUrl("http://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: HTTP（认证）" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
-        std::cout << "  用户名: " << proxyConfig.userName.toStdString() << std::endl;
-        std::cout << "  密码: " << QString(proxyConfig.password.length(), '*').toStdString()
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
+        std::cout << "  用户名: " << proxyConfig.userName().toStdString() << std::endl;
+        std::cout << "  密码: " << QString(proxyConfig.password().length(), '*').toStdString()
                   << std::endl;
 
         makeRequest(request);
@@ -92,17 +92,17 @@ public:
         std::cout << "\n=== 演示 4：HTTPS 代理 ===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Https;
-        proxyConfig.hostName = "secure-proxy.example.com";
-        proxyConfig.port     = 443;
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Https);
+        proxyConfig.setHostName("secure-proxy.example.com");
+        proxyConfig.setPort(443);
 
         QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: HTTPS（加密代理）" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
 
         makeRequest(request);
     }
@@ -112,17 +112,17 @@ public:
         std::cout << "\n=== 演示 5：SOCKS5 代理（无认证）===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Socks5;
-        proxyConfig.hostName = "socks5.example.com";
-        proxyConfig.port     = 1080;
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Socks5);
+        proxyConfig.setHostName("socks5.example.com");
+        proxyConfig.setPort(1080);
 
         QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: SOCKS5" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
 
         makeRequest(request);
     }
@@ -132,21 +132,21 @@ public:
         std::cout << "\n=== 演示 6：SOCKS5 代理（带认证）===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Socks5;
-        proxyConfig.hostName = "socks5-auth.example.com";
-        proxyConfig.port     = 1080;
-        proxyConfig.userName = "socks_user";
-        proxyConfig.password = "socks_pass";
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Socks5);
+        proxyConfig.setHostName("socks5-auth.example.com");
+        proxyConfig.setPort(1080);
+        proxyConfig.setUserName("socks_user");
+        proxyConfig.setPassword("socks_pass");
 
         QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: SOCKS5（认证）" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
-        std::cout << "  用户名: " << proxyConfig.userName.toStdString() << std::endl;
-        std::cout << "  密码: " << QString(proxyConfig.password.length(), '*').toStdString()
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
+        std::cout << "  用户名: " << proxyConfig.userName().toStdString() << std::endl;
+        std::cout << "  密码: " << QString(proxyConfig.password().length(), '*').toStdString()
                   << std::endl;
 
         makeRequest(request);
@@ -157,13 +157,13 @@ public:
         std::cout << "\n=== 演示 7：代理 + SSL 证书验证 ===" << std::endl;
 
         QCNetworkProxyConfig proxyConfig;
-        proxyConfig.type     = QCNetworkProxyConfig::ProxyType::Http;
-        proxyConfig.hostName = "proxy.example.com";
-        proxyConfig.port     = 8080;
+        proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxyConfig.setHostName("proxy.example.com");
+        proxyConfig.setPort(8080);
 
         QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-        sslConfig.verifyPeer         = true;
-        sslConfig.verifyHost         = true;
+        sslConfig.setVerifyPeer(true);
+        sslConfig.setVerifyHost(true);
 
         QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setProxyConfig(proxyConfig);
@@ -171,11 +171,11 @@ public:
 
         std::cout << "代理配置：" << std::endl;
         std::cout << "  类型: HTTP" << std::endl;
-        std::cout << "  地址: " << proxyConfig.hostName.toStdString() << ":" << proxyConfig.port
-                  << std::endl;
+        std::cout << "  地址: " << proxyConfig.hostName().toStdString() << ":"
+                  << proxyConfig.port() << std::endl;
         std::cout << "\nSSL 配置：" << std::endl;
-        std::cout << "  验证对等证书: " << (sslConfig.verifyPeer ? "是" : "否") << std::endl;
-        std::cout << "  验证主机名: " << (sslConfig.verifyHost ? "是" : "否") << std::endl;
+        std::cout << "  验证对等证书: " << (sslConfig.verifyPeer() ? "是" : "否") << std::endl;
+        std::cout << "  验证主机名: " << (sslConfig.verifyHost() ? "是" : "否") << std::endl;
 
         makeRequest(request);
     }

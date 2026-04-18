@@ -22,6 +22,7 @@
 class QDebug;
 class QIODevice;
 namespace QCurl {
+class QCNetworkHttpAuthConfigData;
 class QCNetworkRequestPrivate;
 class QCNetworkSslConfig;
 class QCNetworkProxyConfig;
@@ -74,13 +75,33 @@ enum class QCNetworkIpResolve {
  * - Basic 仅建议在 HTTPS 下使用；如在 HTTP 下使用，可选择仅告警不阻断
  * - `allowUnrestrictedAuth` 仅在 followLocation=true 时有意义（跨 host/port 重定向携带凭据）
  */
-struct QCURL_EXPORT QCNetworkHttpAuthConfig
+class QCURL_EXPORT QCNetworkHttpAuthConfig
 {
-    QString userName; ///< 用户名
-    QString password; ///< 密码
-    QCNetworkHttpAuthMethod method = QCNetworkHttpAuthMethod::Basic;
-    bool allowUnrestrictedAuth     = false; ///< 映射到 CURLOPT_UNRESTRICTED_AUTH
-    bool warnIfBasicOverHttp       = true;  ///< Basic + http:// 时输出 Warning（不阻断）
+public:
+    QCNetworkHttpAuthConfig();
+    QCNetworkHttpAuthConfig(const QCNetworkHttpAuthConfig &other);
+    QCNetworkHttpAuthConfig(QCNetworkHttpAuthConfig &&other);
+    ~QCNetworkHttpAuthConfig();
+    QCNetworkHttpAuthConfig &operator=(const QCNetworkHttpAuthConfig &other);
+    QCNetworkHttpAuthConfig &operator=(QCNetworkHttpAuthConfig &&other);
+
+    [[nodiscard]] QString userName() const; ///< 用户名
+    void setUserName(const QString &userName);
+
+    [[nodiscard]] QString password() const; ///< 密码
+    void setPassword(const QString &password);
+
+    [[nodiscard]] QCNetworkHttpAuthMethod method() const;
+    void setMethod(QCNetworkHttpAuthMethod method);
+
+    [[nodiscard]] bool allowUnrestrictedAuth() const; ///< 映射到 CURLOPT_UNRESTRICTED_AUTH
+    void setAllowUnrestrictedAuth(bool enabled);
+
+    [[nodiscard]] bool warnIfBasicOverHttp() const; ///< Basic + http:// 时输出 Warning（不阻断）
+    void setWarnIfBasicOverHttp(bool enabled);
+
+private:
+    QSharedDataPointer<QCNetworkHttpAuthConfigData> d;
 };
 
 /**
@@ -98,6 +119,13 @@ public:
     virtual ~QCNetworkRequest();
 
     QCNetworkRequest &operator=(const QCNetworkRequest &other);
+    /**
+     * @brief 比较请求的规范化标识
+     *
+     * 当前只比较 URL、followLocation、raw headers、Range、HTTP version 与 lane。
+     * `sslConfig()` / `proxyConfig()` / `timeoutConfig()` / `retryPolicy()` / `httpAuth()`
+     * 等执行配置族不参与比较，因此不要把该运算符当作“完整执行配置完全一致”的判断。
+     */
     bool operator==(const QCNetworkRequest &other) const;
     bool operator!=(const QCNetworkRequest &other) const;
 
@@ -532,7 +560,8 @@ public:
     /**
      * @brief 设置调度 lane 标签
      *
-     * 空字符串表示 default lane。
+     * 输入会先做 trim；空字符串表示 default lane。
+     * scheduler 在入队时会快照该值，用于 lane 级取消和观测信号。
      */
     QCNetworkRequest &setLane(const QString &lane);
 

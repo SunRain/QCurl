@@ -198,11 +198,11 @@ QByteArray buildCurlPlanDigestForTest(const CurlPlan &plan)
     parts << QStringLiteral("headers=%1").arg(headerParts.join(QStringLiteral(";")));
 
     const auto timeout = normalized.request.timeoutConfig();
-    if (timeout.connectTimeout.has_value()) {
-        parts << QStringLiteral("connect_timeout_ms=%1").arg(timeout.connectTimeout->count());
+    if (timeout.connectTimeout().has_value()) {
+        parts << QStringLiteral("connect_timeout_ms=%1").arg(timeout.connectTimeout()->count());
     }
-    if (timeout.totalTimeout.has_value()) {
-        parts << QStringLiteral("total_timeout_ms=%1").arg(timeout.totalTimeout->count());
+    if (timeout.totalTimeout().has_value()) {
+        parts << QStringLiteral("total_timeout_ms=%1").arg(timeout.totalTimeout()->count());
     }
 
     return parts.join(QStringLiteral("|")).toUtf8();

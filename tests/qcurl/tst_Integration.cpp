@@ -485,9 +485,9 @@ void TestIntegration::testHttpAuthBasic()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/basic-auth/user/passwd"));
 
     QCNetworkHttpAuthConfig auth;
-    auth.userName = QStringLiteral("user");
-    auth.password = QStringLiteral("passwd");
-    auth.method   = QCNetworkHttpAuthMethod::Basic;
+    auth.setUserName(QStringLiteral("user"));
+    auth.setPassword(QStringLiteral("passwd"));
+    auth.setMethod(QCNetworkHttpAuthMethod::Basic);
     request.setHttpAuth(auth);
 
     auto *reply = m_manager->sendGet(request);
@@ -514,9 +514,9 @@ void TestIntegration::testAuthorizationHeaderOverridesHttpAuth()
 
     // 同时配置正确的 httpAuth（应被忽略）
     QCNetworkHttpAuthConfig auth;
-    auth.userName = QStringLiteral("user");
-    auth.password = QStringLiteral("passwd");
-    auth.method   = QCNetworkHttpAuthMethod::Basic;
+    auth.setUserName(QStringLiteral("user"));
+    auth.setPassword(QStringLiteral("passwd"));
+    auth.setMethod(QCNetworkHttpAuthMethod::Basic);
     request.setHttpAuth(auth);
 
     auto *reply = m_manager->sendGet(request);
@@ -536,8 +536,8 @@ void TestIntegration::testConnectTimeout()
     QCNetworkRequest request(QUrl("http://192.0.2.1")); // TEST-NET-1, 不可路由
 
     QCNetworkTimeoutConfig timeout;
-    timeout.connectTimeout = std::chrono::seconds(2);
-    timeout.totalTimeout   = std::chrono::seconds(3);
+    timeout.setConnectTimeout(std::chrono::seconds(2));
+    timeout.setTotalTimeout(std::chrono::seconds(3));
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -556,7 +556,7 @@ void TestIntegration::testTotalTimeout()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/10")); // 延迟 10 秒
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(2); // 但只允许 2 秒
+    timeout.setTotalTimeout(std::chrono::seconds(2)); // 但只允许 2 秒
     request.setTimeoutConfig(timeout);
 
     QElapsedTimer timer;
@@ -587,7 +587,7 @@ void TestIntegration::testDelayedResponse()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/2"));
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(5); // 给足够的时间
+    timeout.setTotalTimeout(std::chrono::seconds(5)); // 给足够的时间
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -818,7 +818,7 @@ void TestIntegration::testLocalHttpsTlsVerification()
     {
         QCNetworkRequest request(url);
         QCNetworkSslConfig sslConfig = QCNetworkSslConfig::defaultConfig();
-        sslConfig.caCertPath         = certPath;
+        sslConfig.setCaCertPath(certPath);
         request.setSslConfig(sslConfig);
 
         auto *reply = m_manager->sendGet(request);
@@ -976,7 +976,7 @@ void TestIntegration::testConnectionRefused()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1").arg(port)));
 
     QCNetworkTimeoutConfig timeout;
-    timeout.connectTimeout = std::chrono::seconds(2);
+    timeout.setConnectTimeout(std::chrono::seconds(2));
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);
@@ -1045,13 +1045,13 @@ void TestIntegration::testRetryWithConcurrentRequests()
 
         // 避免在 httpbin 偶发卡顿时导致测试长时间悬挂（每次 attempt 的上限）
         QCNetworkTimeoutConfig timeout;
-        timeout.connectTimeout = std::chrono::milliseconds(1000);
-        timeout.totalTimeout   = std::chrono::milliseconds(3000);
+        timeout.setConnectTimeout(std::chrono::milliseconds(1000));
+        timeout.setTotalTimeout(std::chrono::milliseconds(3000));
         request.setTimeoutConfig(timeout);
 
         QCNetworkRetryPolicy policy;
-        policy.maxRetries   = 2;
-        policy.initialDelay = std::chrono::milliseconds(100);
+        policy.setMaxRetries(2);
+        policy.setInitialDelay(std::chrono::milliseconds(100));
         request.setRetryPolicy(policy);
 
         auto *reply = m_manager->sendGet(request);
@@ -1144,12 +1144,12 @@ void TestIntegration::testRetryOnTimeout()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/3")); // httpbin 延迟 3 秒响应
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::milliseconds(500); // 500ms 超时
+    timeout.setTotalTimeout(std::chrono::milliseconds(500)); // 500ms 超时
     request.setTimeoutConfig(timeout);
 
     QCNetworkRetryPolicy policy;
-    policy.maxRetries   = 2;
-    policy.initialDelay = std::chrono::milliseconds(100);
+    policy.setMaxRetries(2);
+    policy.setInitialDelay(std::chrono::milliseconds(100));
     // ConnectionTimeout 已在默认 retryableErrors 中，无需手动添加
     request.setRetryPolicy(policy);
 
@@ -1175,7 +1175,7 @@ void TestIntegration::testRetryOnTimeout()
     qDebug() << "Total time elapsed:" << elapsed << "ms";
     qDebug() << "Final error:" << static_cast<int>(reply->error()) << reply->errorString();
 
-    QCOMPARE(retrySpy.count(), policy.maxRetries);
+    QCOMPARE(retrySpy.count(), policy.maxRetries());
     verifyRetryAttemptArgsMonotonic(retrySpy);
     verifyRetryAttemptErrors(retrySpy, NetworkError::ConnectionTimeout);
     QVERIFY(!easyHandleRegisteredWatcher.seen());
@@ -1199,9 +1199,9 @@ void TestIntegration::testRetryDelayAccuracy()
     // 配置精确的重试延迟
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
-    policy.maxRetries        = 3;
-    policy.initialDelay      = std::chrono::milliseconds(200);
-    policy.backoffMultiplier = 1.5;
+    policy.setMaxRetries(3);
+    policy.setInitialDelay(std::chrono::milliseconds(200));
+    policy.setBackoffMultiplier(1.5);
     request.setRetryPolicy(policy);
 
     QElapsedTimer timer;

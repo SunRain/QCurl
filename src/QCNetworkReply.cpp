@@ -398,8 +398,8 @@ void applyMockResponseHeaders(QCNetworkReplyPrivate *d,
     }
 
     const QCNetworkRetryPolicy policy = d->request.retryPolicy();
-    const bool httpGetOnlyBlocked     = policy.retryHttpStatusErrorsForGetOnly && isHttpError(error)
-                                        && (d->httpMethod != HttpMethod::Get);
+    const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly() && isHttpError(error)
+                                    && (d->httpMethod != HttpMethod::Get);
     if (httpGetOnlyBlocked) {
         return std::nullopt;
     }
@@ -1428,7 +1428,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         const auto &cfg = httpAuthOpt.value();
 
         // Basic over HTTP 风险提示（不阻断）
-        if (cfg.method == QCNetworkHttpAuthMethod::Basic && cfg.warnIfBasicOverHttp
+        if (cfg.method() == QCNetworkHttpAuthMethod::Basic && cfg.warnIfBasicOverHttp()
             && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
             qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider "
                           "HTTPS. url="
@@ -1438,18 +1438,18 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         // 显式 Authorization header 优先：存在时不启用 libcurl 自动认证（避免重复/覆盖不确定性）
         if (!hasExplicitAuthorizationHeader) {
             hasSensitiveHeader = true;
-            if (cfg.allowUnrestrictedAuth && request.followLocation()) {
+            if (cfg.allowUnrestrictedAuth() && request.followLocation()) {
                 wantsUnrestrictedSensitiveHeaders = true;
             }
 
-            httpAuthUserBytes     = cfg.userName.toUtf8();
-            httpAuthPasswordBytes = cfg.password.toUtf8();
+            httpAuthUserBytes     = cfg.userName().toUtf8();
+            httpAuthPasswordBytes = cfg.password().toUtf8();
 
             curl_easy_setopt(handle, CURLOPT_USERNAME, httpAuthUserBytes.constData());
             curl_easy_setopt(handle, CURLOPT_PASSWORD, httpAuthPasswordBytes.constData());
 
             unsigned long httpAuth = CURLAUTH_BASIC;
-            switch (cfg.method) {
+            switch (cfg.method()) {
                 case QCNetworkHttpAuthMethod::Basic:
                     httpAuth = CURLAUTH_BASIC;
                     break;
@@ -1495,19 +1495,21 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
     if (const auto proxyConfigOpt = request.proxyConfig(); proxyConfigOpt.has_value()) {
         const QCNetworkProxyConfig &proxyConfig = proxyConfigOpt.value();
-        if (proxyConfig.type != QCNetworkProxyConfig::ProxyType::None) {
+        if (proxyConfig.type() != QCNetworkProxyConfig::ProxyType::None) {
             if (!proxyConfig.isValid()) {
                 qWarning() << "QCNetworkReply: invalid proxy configuration ignored";
             } else {
-                proxyHostBytes = proxyConfig.hostName.toUtf8();
+                proxyHostBytes = proxyConfig.hostName().toUtf8();
                 curl_easy_setopt(handle, CURLOPT_PROXY, proxyHostBytes.constData());
 
-                if (proxyConfig.port > 0) {
-                    curl_easy_setopt(handle, CURLOPT_PROXYPORT, static_cast<long>(proxyConfig.port));
+                if (proxyConfig.port() > 0) {
+                    curl_easy_setopt(handle,
+                                     CURLOPT_PROXYPORT,
+                                     static_cast<long>(proxyConfig.port()));
                 }
 
                 long proxyType = CURLPROXY_HTTP;
-                switch (proxyConfig.type) {
+                switch (proxyConfig.type()) {
                     case QCNetworkProxyConfig::ProxyType::Http:
                         proxyType = CURLPROXY_HTTP;
                         break;
@@ -1515,8 +1517,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #ifdef CURLPROXY_HTTPS
                         proxyType = CURLPROXY_HTTPS;
 #else
-                        if (proxyConfig.tlsConfig.has_value()
-                            && proxyConfig.tlsConfig->unsupportedSecurityPolicy
+                        if (const auto proxyTlsConfigOpt = proxyConfig.tlsConfig();
+                            proxyTlsConfigOpt.has_value()
+                            && proxyTlsConfigOpt->unsupportedSecurityPolicy()
                                    == QCUnsupportedSecurityOptionPolicy::Fail) {
                             setError(NetworkError::InvalidRequest,
                                      QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
@@ -1548,21 +1551,21 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 }
                 curl_easy_setopt(handle, CURLOPT_PROXYTYPE, proxyType);
 
-                if (!proxyConfig.userName.isEmpty()) {
-                    proxyUserBytes = proxyConfig.userName.toUtf8();
+                if (!proxyConfig.userName().isEmpty()) {
+                    proxyUserBytes = proxyConfig.userName().toUtf8();
                     curl_easy_setopt(handle, CURLOPT_PROXYUSERNAME, proxyUserBytes.constData());
                 } else {
                     proxyUserBytes.clear();
                 }
 
-                if (!proxyConfig.password.isEmpty()) {
-                    proxyPasswordBytes = proxyConfig.password.toUtf8();
+                if (!proxyConfig.password().isEmpty()) {
+                    proxyPasswordBytes = proxyConfig.password().toUtf8();
                     curl_easy_setopt(handle, CURLOPT_PROXYPASSWORD, proxyPasswordBytes.constData());
                 } else {
                     proxyPasswordBytes.clear();
                 }
 
-                if (!proxyConfig.userName.isEmpty() || !proxyConfig.password.isEmpty()) {
+                if (!proxyConfig.userName().isEmpty() || !proxyConfig.password().isEmpty()) {
                     curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
                 }
 
@@ -1571,11 +1574,12 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 // ==================
 
 #ifdef CURLPROXY_HTTPS
-                if (proxyConfig.type == QCNetworkProxyConfig::ProxyType::Https
-                    && proxyConfig.tlsConfig.has_value() && proxyType == CURLPROXY_HTTPS) {
-                    const auto &tlsCfg = proxyConfig.tlsConfig.value();
+                if (const auto proxyTlsConfigOpt = proxyConfig.tlsConfig();
+                    proxyConfig.type() == QCNetworkProxyConfig::ProxyType::Https
+                    && proxyTlsConfigOpt.has_value() && proxyType == CURLPROXY_HTTPS) {
+                    const auto &tlsCfg = proxyTlsConfigOpt.value();
                     const QCUnsupportedSecurityOptionPolicy tlsPolicy
-                        = tlsCfg.unsupportedSecurityPolicy;
+                        = tlsCfg.unsupportedSecurityPolicy();
 
 #if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
                     {
@@ -1583,7 +1587,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                             = curlEasySetoptWithTestHook(handle,
                                                          CURLOPT_PROXY_SSL_VERIFYPEER,
                                                          "CURLOPT_PROXY_SSL_VERIFYPEER",
-                                                         tlsCfg.verifyPeer ? 1L : 0L);
+                                                         tlsCfg.verifyPeer() ? 1L : 0L);
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
                                 const QString msg
@@ -1622,7 +1626,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                             = curlEasySetoptWithTestHook(handle,
                                                          CURLOPT_PROXY_SSL_VERIFYHOST,
                                                          "CURLOPT_PROXY_SSL_VERIFYHOST",
-                                                         tlsCfg.verifyHost ? 2L : 0L);
+                                                         tlsCfg.verifyHost() ? 2L : 0L);
                         if (rc != CURLE_OK) {
                             if (isCapabilityRelatedCurlError(rc)) {
                                 const QString msg
@@ -1655,9 +1659,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                         QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_PROXY_SSL_VERIFYHOST"));
 #endif
 
-                    if (!tlsCfg.caCertPath.isEmpty()) {
+                    if (!tlsCfg.caCertPath().isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
-                        proxySslCaCertPathBytes = tlsCfg.caCertPath.toUtf8();
+                        proxySslCaCertPathBytes = tlsCfg.caCertPath().toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
                                                          CURLOPT_PROXY_CAINFO,
@@ -1693,9 +1697,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #endif
                     }
 
-                    if (tlsCfg.minTlsVersion.has_value()) {
+                    if (tlsCfg.minTlsVersion().has_value()) {
                         const std::optional<long> sslVer = toCurlSslVersionMin(
-                            tlsCfg.minTlsVersion.value());
+                            tlsCfg.minTlsVersion().value());
                         if (!sslVer.has_value()) {
                             const QString msg = QStringLiteral("不支持的 TLS 版本配置（proxy）");
                             if (tlsPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -1744,9 +1748,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                         }
                     }
 
-                    if (!tlsCfg.cipherList.isEmpty()) {
+                    if (!tlsCfg.cipherList().isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x073400 /* 7.52.0 */
-                        proxySslCipherListBytes = tlsCfg.cipherList.toUtf8();
+                        proxySslCipherListBytes = tlsCfg.cipherList().toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
                                                          CURLOPT_PROXY_SSL_CIPHER_LIST,
@@ -1786,9 +1790,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #endif
                     }
 
-                    if (!tlsCfg.tls13Ciphers.isEmpty()) {
+                    if (!tlsCfg.tls13Ciphers().isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
-                        proxySslTls13CiphersBytes = tlsCfg.tls13Ciphers.toUtf8();
+                        proxySslTls13CiphersBytes = tlsCfg.tls13Ciphers().toUtf8();
                         const CURLcode rc
                             = curlEasySetoptWithTestHook(handle,
                                                          CURLOPT_PROXY_TLS13_CIPHERS,
@@ -1903,11 +1907,11 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ==================
 
     const QCNetworkSslConfig sslConfig = request.sslConfig();
-    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, sslConfig.verifyPeer ? 1L : 0L);
-    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, sslConfig.verifyHost ? 2L : 0L);
+    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, sslConfig.verifyPeer() ? 1L : 0L);
+    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, sslConfig.verifyHost() ? 2L : 0L);
 
-    if (!sslConfig.caCertPath.isEmpty()) {
-        sslCaCertPathBytes = sslConfig.caCertPath.toUtf8();
+    if (!sslConfig.caCertPath().isEmpty()) {
+        sslCaCertPathBytes = sslConfig.caCertPath().toUtf8();
         curl_easy_setopt(handle, CURLOPT_CAINFO, sslCaCertPathBytes.constData());
     } else {
         // ✅ 修复：如果未指定 CA 证书路径，尝试使用系统默认路径
@@ -1936,24 +1940,24 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    if (!sslConfig.clientCertPath.isEmpty()) {
-        sslClientCertPathBytes = sslConfig.clientCertPath.toUtf8();
+    if (!sslConfig.clientCertPath().isEmpty()) {
+        sslClientCertPathBytes = sslConfig.clientCertPath().toUtf8();
         curl_easy_setopt(handle, CURLOPT_SSLCERT, sslClientCertPathBytes.constData());
     } else {
         sslClientCertPathBytes.clear();
         curl_easy_setopt(handle, CURLOPT_SSLCERT, nullptr);
     }
 
-    if (!sslConfig.clientKeyPath.isEmpty()) {
-        sslClientKeyPathBytes = sslConfig.clientKeyPath.toUtf8();
+    if (!sslConfig.clientKeyPath().isEmpty()) {
+        sslClientKeyPathBytes = sslConfig.clientKeyPath().toUtf8();
         curl_easy_setopt(handle, CURLOPT_SSLKEY, sslClientKeyPathBytes.constData());
     } else {
         sslClientKeyPathBytes.clear();
         curl_easy_setopt(handle, CURLOPT_SSLKEY, nullptr);
     }
 
-    if (!sslConfig.clientKeyPassword.isEmpty()) {
-        sslClientKeyPasswordBytes = sslConfig.clientKeyPassword.toUtf8();
+    if (!sslConfig.clientKeyPassword().isEmpty()) {
+        sslClientKeyPasswordBytes = sslConfig.clientKeyPassword().toUtf8();
         curl_easy_setopt(handle, CURLOPT_KEYPASSWD, sslClientKeyPasswordBytes.constData());
     } else {
         sslClientKeyPasswordBytes.clear();
@@ -1964,10 +1968,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // 7.1 TLS 策略（M5，可选；安全相关能力默认失败，可配置为 warning）
     // ==================
 
-    const QCUnsupportedSecurityOptionPolicy sslPolicy = sslConfig.unsupportedSecurityPolicy;
+    const QCUnsupportedSecurityOptionPolicy sslPolicy = sslConfig.unsupportedSecurityPolicy();
 
-    if (!sslConfig.pinnedPublicKey.isEmpty()) {
-        sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey.toUtf8();
+    if (!sslConfig.pinnedPublicKey().isEmpty()) {
+        sslPinnedPublicKeyBytes = sslConfig.pinnedPublicKey().toUtf8();
         const CURLcode rc       = curlEasySetoptWithTestHook(handle,
                                                              CURLOPT_PINNEDPUBLICKEY,
                                                              "CURLOPT_PINNEDPUBLICKEY",
@@ -1990,8 +1994,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    if (sslConfig.minTlsVersion.has_value()) {
-        const std::optional<long> sslVer = toCurlSslVersionMin(sslConfig.minTlsVersion.value());
+    if (sslConfig.minTlsVersion().has_value()) {
+        const std::optional<long> sslVer = toCurlSslVersionMin(sslConfig.minTlsVersion().value());
         if (!sslVer.has_value()) {
             const QString msg = QStringLiteral("不支持的 TLS 版本配置（ssl）");
             if (sslPolicy == QCUnsupportedSecurityOptionPolicy::Fail) {
@@ -2032,9 +2036,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
     }
 
-    if (!sslConfig.cipherList.isEmpty()) {
+    if (!sslConfig.cipherList().isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x070900 /* 7.9.0 */
-        sslCipherListBytes = sslConfig.cipherList.toUtf8();
+        sslCipherListBytes = sslConfig.cipherList().toUtf8();
         const CURLcode rc  = curlEasySetoptWithTestHook(handle,
                                                         CURLOPT_SSL_CIPHER_LIST,
                                                         "CURLOPT_SSL_CIPHER_LIST",
@@ -2065,9 +2069,9 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 #endif
     }
 
-    if (!sslConfig.tls13Ciphers.isEmpty()) {
+    if (!sslConfig.tls13Ciphers().isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x073d00 /* 7.61.0 */
-        sslTls13CiphersBytes = sslConfig.tls13Ciphers.toUtf8();
+        sslTls13CiphersBytes = sslConfig.tls13Ciphers().toUtf8();
         const CURLcode rc    = curlEasySetoptWithTestHook(handle,
                                                           CURLOPT_TLS13_CIPHERS,
                                                           "CURLOPT_TLS13_CIPHERS",
@@ -2105,28 +2109,30 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     QCNetworkTimeoutConfig timeout = request.timeoutConfig();
 
     // 连接超时（TCP 三次握手超时）
-    if (timeout.connectTimeout.has_value() && timeout.connectTimeout->count() > 0) {
+    if (timeout.connectTimeout().has_value() && timeout.connectTimeout()->count() > 0) {
         curl_easy_setopt(handle,
                          CURLOPT_CONNECTTIMEOUT_MS,
-                         static_cast<long>(timeout.connectTimeout->count()));
+                         static_cast<long>(timeout.connectTimeout()->count()));
     }
 
     // 总超时（整个请求的最大时间）
-    if (timeout.totalTimeout.has_value() && timeout.totalTimeout->count() > 0) {
+    if (timeout.totalTimeout().has_value() && timeout.totalTimeout()->count() > 0) {
         curl_easy_setopt(handle,
                          CURLOPT_TIMEOUT_MS,
-                         static_cast<long>(timeout.totalTimeout->count()));
+                         static_cast<long>(timeout.totalTimeout()->count()));
     }
 
     // 低速检测：如果在 lowSpeedTime 内速度低于 lowSpeedLimit，则超时
-    if (timeout.lowSpeedTime.has_value() && timeout.lowSpeedTime->count() > 0) {
+    if (timeout.lowSpeedTime().has_value() && timeout.lowSpeedTime()->count() > 0) {
         curl_easy_setopt(handle,
                          CURLOPT_LOW_SPEED_TIME,
-                         static_cast<long>(timeout.lowSpeedTime->count()));
+                         static_cast<long>(timeout.lowSpeedTime()->count()));
     }
 
-    if (timeout.lowSpeedLimit.has_value() && *timeout.lowSpeedLimit > 0) {
-        curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(*timeout.lowSpeedLimit));
+    if (timeout.lowSpeedLimit().has_value() && *timeout.lowSpeedLimit() > 0) {
+        curl_easy_setopt(handle,
+                         CURLOPT_LOW_SPEED_LIMIT,
+                         static_cast<long>(*timeout.lowSpeedLimit()));
     }
 
     // ==================
@@ -3083,11 +3089,11 @@ void QCNetworkReply::execute()
             captured.method          = normalized.method;
             captured.followLocation  = normalized.request.followLocation();
             const auto timeoutConfig = normalized.request.timeoutConfig();
-            if (timeoutConfig.connectTimeout.has_value()) {
-                captured.connectTimeoutMs = timeoutConfig.connectTimeout->count();
+            if (timeoutConfig.connectTimeout().has_value()) {
+                captured.connectTimeoutMs = timeoutConfig.connectTimeout()->count();
             }
-            if (timeoutConfig.totalTimeout.has_value()) {
-                captured.totalTimeoutMs = timeoutConfig.totalTimeout->count();
+            if (timeoutConfig.totalTimeout().has_value()) {
+                captured.totalTimeoutMs = timeoutConfig.totalTimeout()->count();
             }
 
             const auto headerNames = normalized.request.rawHeaderList();

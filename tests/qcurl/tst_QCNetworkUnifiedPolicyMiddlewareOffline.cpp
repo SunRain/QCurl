@@ -66,10 +66,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDefaultRetryPolicyInjected
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries        = 1;
-    defaultPolicy.initialDelay      = std::chrono::milliseconds(1);
-    defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay          = std::chrono::milliseconds(10);
+    defaultPolicy.setMaxRetries(1);
+    defaultPolicy.setInitialDelay(std::chrono::milliseconds(1));
+    defaultPolicy.setBackoffMultiplier(1.0);
+    defaultPolicy.setMaxDelay(std::chrono::milliseconds(10));
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -96,10 +96,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testExplicitNoRetryNotOverridd
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries        = 2;
-    defaultPolicy.initialDelay      = std::chrono::milliseconds(1);
-    defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay          = std::chrono::milliseconds(10);
+    defaultPolicy.setMaxRetries(2);
+    defaultPolicy.setInitialDelay(std::chrono::milliseconds(1));
+    defaultPolicy.setBackoffMultiplier(1.0);
+    defaultPolicy.setMaxDelay(std::chrono::milliseconds(10));
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -174,10 +174,10 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRetryPolicy policy;
-    policy.maxRetries        = 1;
-    policy.initialDelay      = std::chrono::milliseconds(1);
-    policy.backoffMultiplier = 1.0;
-    policy.maxDelay          = std::chrono::milliseconds(10);
+    policy.setMaxRetries(1);
+    policy.setInitialDelay(std::chrono::milliseconds(1));
+    policy.setBackoffMultiplier(1.0);
+    policy.setMaxDelay(std::chrono::milliseconds(10));
 
     QCNetworkRequest request(url);
     request.setRetryPolicy(policy);

@@ -9,11 +9,14 @@
 #include "QCNetworkError.h"
 
 #include <QSet>
+#include <QSharedDataPointer>
 
 #include <chrono>
 #include <optional>
 
 namespace QCurl {
+
+class QCNetworkRetryPolicyData;
 
 /**
  * @brief 网络请求重试策略配置类
@@ -32,10 +35,10 @@ namespace QCurl {
  * @par 使用示例
  * \code
  * QCNetworkRetryPolicy policy;
- * policy.maxRetries = 3;               // 最多重试 3 次
- * policy.initialDelay = std::chrono::milliseconds(1000);  // 初始延迟 1 秒
- * policy.backoffMultiplier = 2.0;      // 每次延迟翻倍
- * policy.maxDelay = std::chrono::milliseconds(30000);     // 最大延迟 30 秒
+ * policy.setMaxRetries(3);               // 最多重试 3 次
+ * policy.setInitialDelay(std::chrono::milliseconds(1000)); // 初始延迟 1 秒
+ * policy.setBackoffMultiplier(2.0);      // 每次延迟翻倍
+ * policy.setMaxDelay(std::chrono::milliseconds(30000));    // 最大延迟 30 秒
  *
  * QCNetworkRequest request(QUrl("https://example.com/api"));
  * request.setRetryPolicy(policy);
@@ -56,10 +59,19 @@ public:
      * @brief 创建启用重试的策略
      *
      * @param retries 最大重试次数（>0 表示启用重试）
-     * @param initialDelayMs 初始延迟毫秒数
+     * @param initialDelay 初始延迟
      * @param backoff 指数退避倍数
      */
-    QCNetworkRetryPolicy(int retries, int initialDelayMs = 1000, double backoff = 2.0);
+    explicit QCNetworkRetryPolicy(
+        int retries,
+        std::chrono::milliseconds initialDelay = std::chrono::milliseconds{1000},
+        double backoff = 2.0);
+
+    QCNetworkRetryPolicy(const QCNetworkRetryPolicy &other);
+    QCNetworkRetryPolicy(QCNetworkRetryPolicy &&other);
+    ~QCNetworkRetryPolicy();
+    QCNetworkRetryPolicy &operator=(const QCNetworkRetryPolicy &other);
+    QCNetworkRetryPolicy &operator=(QCNetworkRetryPolicy &&other);
 
     // ==================
     // 配置参数
@@ -73,7 +85,8 @@ public:
      *
      * @note 总请求次数 = 1 + maxRetries
      */
-    int maxRetries = 0;
+    [[nodiscard]] int maxRetries() const;
+    void setMaxRetries(int retries);
 
     /**
      * @brief 初始延迟时间
@@ -81,7 +94,8 @@ public:
      * 第一次重试前的等待时间。
      * 后续延迟将根据指数退避算法递增。
      */
-    std::chrono::milliseconds initialDelay{1000};
+    [[nodiscard]] std::chrono::milliseconds initialDelay() const;
+    void setInitialDelay(std::chrono::milliseconds delay);
 
     /**
      * @brief 指数退避倍数
@@ -91,14 +105,16 @@ public:
      * - 2.0 = 每次延迟翻倍（推荐）
      * - 1.5 = 每次延迟增加 50%
      */
-    double backoffMultiplier = 2.0;
+    [[nodiscard]] double backoffMultiplier() const;
+    void setBackoffMultiplier(double multiplier);
 
     /**
      * @brief 最大延迟时间
      *
      * 防止延迟时间无限增长的上限。
      */
-    std::chrono::milliseconds maxDelay{30000};
+    [[nodiscard]] std::chrono::milliseconds maxDelay() const;
+    void setMaxDelay(std::chrono::milliseconds delay);
 
     /**
      * @brief 可重试的错误集合
@@ -106,20 +122,8 @@ public:
      * 只有这些错误类型会触发重试。
      * 默认包含临时性网络错误和 HTTP 5xx 错误。
      */
-    QSet<NetworkError> retryableErrors = {
-        // 网络层临时性错误
-        NetworkError::ConnectionRefused,
-        NetworkError::ConnectionTimeout,
-        NetworkError::HostNotFound,
-
-        // HTTP 临时性错误
-        NetworkError::HttpTimeout,
-        NetworkError::HttpTooManyRequests,
-        NetworkError::HttpInternalServerError,
-        NetworkError::HttpNotImplemented,
-        NetworkError::HttpBadGateway,
-        NetworkError::HttpServiceUnavailable,
-        NetworkError::HttpGatewayTimeout};
+    [[nodiscard]] QSet<NetworkError> retryableErrors() const;
+    void setRetryableErrors(const QSet<NetworkError> &errors);
 
     /**
      * @brief HTTP 状态码重试的 method 限制（与 legendary 迁移语义对齐）
@@ -130,7 +134,8 @@ public:
      *
      * 默认关闭以保持兼容性。
      */
-    bool retryHttpStatusErrorsForGetOnly = false;
+    [[nodiscard]] bool retryHttpStatusErrorsForGetOnly() const;
+    void setRetryHttpStatusErrorsForGetOnly(bool enabled);
 
     // ==================
     // 公共方法
@@ -185,7 +190,7 @@ public:
      *
      * @return bool true 表示 maxRetries > 0
      */
-    [[nodiscard]] bool isEnabled() const noexcept { return maxRetries > 0; }
+    [[nodiscard]] bool isEnabled() const noexcept { return maxRetries() > 0; }
 
     /**
      * @brief 创建默认的重试策略（禁用重试）
@@ -219,6 +224,9 @@ public:
      * @return QCNetworkRetryPolicy 激进重试策略对象
      */
     [[nodiscard]] static QCNetworkRetryPolicy aggressiveRetry();
+
+private:
+    QSharedDataPointer<QCNetworkRetryPolicyData> d;
 };
 
 } // namespace QCurl

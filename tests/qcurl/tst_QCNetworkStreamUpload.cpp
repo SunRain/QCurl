@@ -398,9 +398,7 @@ private slots:
 void TestQCNetworkStreamUpload::testSeekablePutEchoAndOwnershipPreserved()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -437,9 +435,7 @@ void TestQCNetworkStreamUpload::testSeekablePutEchoAndOwnershipPreserved()
 void TestQCNetworkStreamUpload::testSeekablePostEchoAndOwnershipPreserved()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -521,9 +517,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
 void TestQCNetworkStreamUpload::testNonSeekableFollowLocationFailsFast()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -562,7 +556,7 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
-    request.setRetryPolicy(QCNetworkRetryPolicy(1, 1));
+    request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
     request.setUploadDevice(&device, payload.size());
 
     QCNetworkReply *reply = manager.sendPut(request, QByteArray());
@@ -584,7 +578,7 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
-    request.setRetryPolicy(QCNetworkRetryPolicy(1, 1));
+    request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
     request.setUploadDevice(&buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(5000));
@@ -607,9 +601,7 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
 void TestQCNetworkStreamUpload::testSeekableFollowLocationSeekFailureIsDiagnosable()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -639,9 +631,7 @@ void TestQCNetworkStreamUpload::testSeekableFollowLocationSeekFailureIsDiagnosab
 void TestQCNetworkStreamUpload::testUploadDeviceCloseDuringTransferFails()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -680,9 +670,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceCloseDuringTransferFails()
 void TestQCNetworkStreamUpload::testUploadDeviceDestroyedDuringTransferFails()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -723,9 +711,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceDestroyedDuringTransferFails()
 void TestQCNetworkStreamUpload::testUploadDeviceReadFailureFails()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     QCNetworkAccessManager manager;
 
@@ -754,9 +740,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceReadFailureFails()
 void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
 {
     UploadEchoServer server;
-    if (!server.start()) {
-        QSKIP("Cannot bind local port for stream upload test server");
-    }
+    QVERIFY2(server.start(), "Cannot bind local port for stream upload test server");
 
     // hang：不读 body、不响应 → 形成 backpressure，便于触发 cancel
     server.setReadBodyEnabled(false);

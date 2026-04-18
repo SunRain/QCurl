@@ -583,7 +583,7 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(!caCertPath.isEmpty());
 
         QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
-        ssl.caCertPath         = caCertPath;
+        ssl.setCaCertPath(caCertPath);
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
@@ -627,8 +627,8 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(!pinnedPublicKey.isEmpty());
 
         QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
-        ssl.caCertPath         = caCertPath;
-        ssl.pinnedPublicKey    = pinnedPublicKey;
+        ssl.setCaCertPath(caCertPath);
+        ssl.setPinnedPublicKey(pinnedPublicKey);
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
@@ -654,8 +654,8 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(!pinnedPublicKey.isEmpty());
 
         QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
-        ssl.caCertPath         = caCertPath;
-        ssl.pinnedPublicKey    = pinnedPublicKey;
+        ssl.setCaCertPath(caCertPath);
+        ssl.setPinnedPublicKey(pinnedPublicKey);
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
@@ -709,9 +709,9 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(socks5Port > 0);
 
         QCNetworkProxyConfig proxy;
-        proxy.type     = QCNetworkProxyConfig::ProxyType::Socks5;
-        proxy.hostName = QStringLiteral("127.0.0.1");
-        proxy.port     = static_cast<quint16>(socks5Port);
+        proxy.setType(QCNetworkProxyConfig::ProxyType::Socks5);
+        proxy.setHostName(QStringLiteral("127.0.0.1"));
+        proxy.setPort(static_cast<quint16>(socks5Port));
 
         QCNetworkRequest req{QUrl(targetUrl)};
         req.setHttpVersion(httpVersion);
@@ -862,10 +862,10 @@ void TestLibcurlConsistency::testCase()
         }
 
         QCNetworkHttpAuthConfig auth;
-        auth.userName              = authUser;
-        auth.password              = authPass;
-        auth.method                = QCNetworkHttpAuthMethod::Basic;
-        auth.allowUnrestrictedAuth = false;
+        auth.setUserName(authUser);
+        auth.setPassword(authPass);
+        auth.setMethod(QCNetworkHttpAuthMethod::Basic);
+        auth.setAllowUnrestrictedAuth(false);
         req.setHttpAuth(auth);
 
         auto *reply = manager.sendGetSync(req);
@@ -904,17 +904,17 @@ void TestLibcurlConsistency::testCase()
         req.setFollowLocation(follow);
 
         QCNetworkHttpAuthConfig auth;
-        auth.userName              = authUser;
-        auth.password              = authPass;
-        auth.allowUnrestrictedAuth = unrestricted;
+        auth.setUserName(authUser);
+        auth.setPassword(authPass);
+        auth.setAllowUnrestrictedAuth(unrestricted);
         if (caseId == QStringLiteral("p1_httpauth_any_basic")
             || caseId == QStringLiteral("p1_httpauth_any_basic_wrong_pass")) {
-            auth.method = QCNetworkHttpAuthMethod::Any;
+            auth.setMethod(QCNetworkHttpAuthMethod::Any);
         } else if (caseId == QStringLiteral("p1_httpauth_anysafe_digest")
                    || caseId == QStringLiteral("p1_httpauth_anysafe_digest_wrong_pass")) {
-            auth.method = QCNetworkHttpAuthMethod::AnySafe;
+            auth.setMethod(QCNetworkHttpAuthMethod::AnySafe);
         } else {
-            auth.method = QCNetworkHttpAuthMethod::Basic;
+            auth.setMethod(QCNetworkHttpAuthMethod::Basic);
         }
         req.setHttpAuth(auth);
 
@@ -1064,9 +1064,9 @@ void TestLibcurlConsistency::testCase()
             req.setHttpVersion(httpVersion);
 
             QCNetworkHttpAuthConfig cfg;
-            cfg.userName = QStringLiteral("user");
-            cfg.password = QStringLiteral("passwd");
-            cfg.method   = QCNetworkHttpAuthMethod::AnySafe;
+            cfg.setUserName(QStringLiteral("user"));
+            cfg.setPassword(QStringLiteral("passwd"));
+            cfg.setMethod(QCNetworkHttpAuthMethod::AnySafe);
             req.setHttpAuth(cfg);
         } else {
             QFAIL("unexpected stream-body case id");
@@ -1694,7 +1694,7 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(observeHttpPort > 0);
 
         QCNetworkTimeoutConfig timeout;
-        timeout.totalTimeout = std::chrono::milliseconds(200);
+        timeout.setTotalTimeout(std::chrono::milliseconds(200));
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("http://localhost:%1/delay_headers/1000")
@@ -1720,8 +1720,8 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(observeHttpPort > 0);
 
         QCNetworkTimeoutConfig timeout;
-        timeout.lowSpeedTime  = std::chrono::seconds(2);
-        timeout.lowSpeedLimit = 1024;
+        timeout.setLowSpeedTime(std::chrono::seconds(2));
+        timeout.setLowSpeedLimit(1024);
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("http://localhost:%1/stall_body/8192/5000")
@@ -2754,9 +2754,9 @@ void TestLibcurlConsistency::testCase()
                                        requestId);
 
         QCNetworkRetryPolicy policy;
-        policy.maxRetries   = 1;
-        policy.initialDelay = std::chrono::milliseconds(1);
-        policy.maxDelay     = std::chrono::milliseconds(1);
+        policy.setMaxRetries(1);
+        policy.setInitialDelay(std::chrono::milliseconds(1));
+        policy.setMaxDelay(std::chrono::milliseconds(1));
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
@@ -2782,12 +2782,12 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
 
         QCNetworkProxyConfig proxy;
-        proxy.type     = QCNetworkProxyConfig::ProxyType::Http;
-        proxy.hostName = QStringLiteral("localhost");
-        proxy.port     = proxyPort;
+        proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxy.setHostName(QStringLiteral("localhost"));
+        proxy.setPort(proxyPort);
         // 不提供凭据：触发 407（可观测一致性用例）
-        proxy.userName = QString();
-        proxy.password = QString();
+        proxy.setUserName(QString());
+        proxy.setPassword(QString());
         req.setProxyConfig(proxy);
 
         auto *reply = manager.sendGetSync(req);
@@ -2816,11 +2816,11 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
 
         QCNetworkProxyConfig proxy;
-        proxy.type     = QCNetworkProxyConfig::ProxyType::Http;
-        proxy.hostName = QStringLiteral("localhost");
-        proxy.port     = proxyPort;
-        proxy.userName = proxyUser;
-        proxy.password = proxyPass;
+        proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxy.setHostName(QStringLiteral("localhost"));
+        proxy.setPort(proxyPort);
+        proxy.setUserName(proxyUser);
+        proxy.setPassword(proxyPass);
         req.setProxyConfig(proxy);
 
         const QString outFile = QStringLiteral("download_0.data");
@@ -2925,7 +2925,7 @@ void TestLibcurlConsistency::testCase()
                  "QCURL_LC_HSTS_PATH or QCURL_LC_ALTSVC_PATH required");
 
         QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
-        ssl.caCertPath         = caCertPath;
+        ssl.setCaCertPath(caCertPath);
 
         QCNetworkRequest req(
             withRequestId(QUrl(QStringLiteral("https://localhost:%1/lc_cache_headers")

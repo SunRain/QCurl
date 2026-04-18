@@ -19,6 +19,83 @@ namespace QCurl {
 
 typedef QPair<QByteArray, QByteArray> RawHeaderPair;
 
+class QCNetworkHttpAuthConfigData : public QSharedData
+{
+public:
+    QString userName;
+    QString password;
+    QCNetworkHttpAuthMethod method = QCNetworkHttpAuthMethod::Basic;
+    bool allowUnrestrictedAuth = false;
+    bool warnIfBasicOverHttp = true;
+};
+
+QCNetworkHttpAuthConfig::QCNetworkHttpAuthConfig()
+    : d(new QCNetworkHttpAuthConfigData)
+{
+}
+
+QCNetworkHttpAuthConfig::QCNetworkHttpAuthConfig(const QCNetworkHttpAuthConfig &other) = default;
+
+QCNetworkHttpAuthConfig::QCNetworkHttpAuthConfig(QCNetworkHttpAuthConfig &&other) = default;
+
+QCNetworkHttpAuthConfig::~QCNetworkHttpAuthConfig() = default;
+
+QCNetworkHttpAuthConfig &QCNetworkHttpAuthConfig::operator=(const QCNetworkHttpAuthConfig &other)
+    = default;
+
+QCNetworkHttpAuthConfig &QCNetworkHttpAuthConfig::operator=(QCNetworkHttpAuthConfig &&other)
+    = default;
+
+QString QCNetworkHttpAuthConfig::userName() const
+{
+    return d->userName;
+}
+
+void QCNetworkHttpAuthConfig::setUserName(const QString &userName)
+{
+    d->userName = userName;
+}
+
+QString QCNetworkHttpAuthConfig::password() const
+{
+    return d->password;
+}
+
+void QCNetworkHttpAuthConfig::setPassword(const QString &password)
+{
+    d->password = password;
+}
+
+QCNetworkHttpAuthMethod QCNetworkHttpAuthConfig::method() const
+{
+    return d->method;
+}
+
+void QCNetworkHttpAuthConfig::setMethod(QCNetworkHttpAuthMethod method)
+{
+    d->method = method;
+}
+
+bool QCNetworkHttpAuthConfig::allowUnrestrictedAuth() const
+{
+    return d->allowUnrestrictedAuth;
+}
+
+void QCNetworkHttpAuthConfig::setAllowUnrestrictedAuth(bool enabled)
+{
+    d->allowUnrestrictedAuth = enabled;
+}
+
+bool QCNetworkHttpAuthConfig::warnIfBasicOverHttp() const
+{
+    return d->warnIfBasicOverHttp;
+}
+
+void QCNetworkHttpAuthConfig::setWarnIfBasicOverHttp(bool enabled)
+{
+    d->warnIfBasicOverHttp = enabled;
+}
+
 /**
  * @brief QCNetworkRequest 的私有数据（Pimpl 模式）
  *
@@ -141,6 +218,7 @@ public:
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
 
     // ========== 调度 lane ==========
+    // 空串表示 default lane；该值会在 reply 入队时被 scheduler 快照。
     QString lane;
 
     // ========== 请求优先级字段 ==========
@@ -408,13 +486,13 @@ QCNetworkRequest &QCNetworkRequest::clearHttpAuth()
 
 QCNetworkRequest &QCNetworkRequest::setTimeout(std::chrono::milliseconds timeout)
 {
-    d.data()->timeoutConfig.totalTimeout = timeout;
+    d.data()->timeoutConfig.setTotalTimeout(timeout);
     return *this;
 }
 
 QCNetworkRequest &QCNetworkRequest::setConnectTimeout(std::chrono::milliseconds timeout)
 {
-    d.data()->timeoutConfig.connectTimeout = timeout;
+    d.data()->timeoutConfig.setConnectTimeout(timeout);
     return *this;
 }
 
@@ -884,6 +962,7 @@ QCUnsupportedSecurityOptionPolicy QCNetworkRequest::unsupportedSecurityOptionPol
 
 QCNetworkRequest &QCNetworkRequest::setLane(const QString &lane)
 {
+    // 统一做 trim，避免仅靠首尾空白区分出多个“看起来相同”的 lane。
     d.data()->lane = lane.trimmed();
     return *this;
 }
@@ -923,6 +1002,7 @@ QCNetworkCachePolicy QCNetworkRequest::cachePolicy() const
 
 QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)
 {
+    // 调试输出携带 lane，便于和 scheduler 的 lane/hostKey 信号做对照排查。
     dbg.nospace() << "QCNetworkRequest("
                   << "url=" << req.url().toString() << ", followLocation=" << req.followLocation()
                   << ", range=" << req.rangeStart() << "-" << req.rangeEnd()

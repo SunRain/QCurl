@@ -72,10 +72,10 @@ int main(int argc, char *argv[])
 
     // 3) Middleware：显式注入（库默认行为不变）
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.maxRetries        = 1;
-    defaultPolicy.initialDelay      = std::chrono::milliseconds(10);
-    defaultPolicy.backoffMultiplier = 1.0;
-    defaultPolicy.maxDelay          = std::chrono::milliseconds(100);
+    defaultPolicy.setMaxRetries(1);
+    defaultPolicy.setInitialDelay(std::chrono::milliseconds(10));
+    defaultPolicy.setBackoffMultiplier(1.0);
+    defaultPolicy.setMaxDelay(std::chrono::milliseconds(100));
 
     QCUnifiedRetryPolicyMiddleware retryPolicyMw(defaultPolicy);
     QCRedactingLoggingMiddleware redactingLogMw;

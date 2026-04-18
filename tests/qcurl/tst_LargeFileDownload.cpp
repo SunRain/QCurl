@@ -116,7 +116,7 @@ void TestLargeFileDownload::testHttpsLargeFileDownload()
     preflightRequest.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
     QCNetworkTimeoutConfig preflightTimeout;
-    preflightTimeout.totalTimeout = std::chrono::seconds(15);
+    preflightTimeout.setTotalTimeout(std::chrono::seconds(15));
     preflightRequest.setTimeoutConfig(preflightTimeout);
 
     auto *preflightReply = m_manager->sendHead(preflightRequest);
@@ -146,7 +146,7 @@ void TestLargeFileDownload::testHttpsLargeFileDownload()
     request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
     QCNetworkTimeoutConfig timeout;
-    timeout.totalTimeout = std::chrono::seconds(120);
+    timeout.setTotalTimeout(std::chrono::seconds(120));
     request.setTimeoutConfig(timeout);
 
     auto *reply = m_manager->sendGet(request);

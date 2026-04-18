@@ -4,6 +4,11 @@
  */
 
 #include "QCNetworkRequest.h"
+#include "QCNetworkProxyConfig.h"
+#include "QCNetworkRequestPriority.h"
+#include "QCNetworkRetryPolicy.h"
+#include "QCNetworkSslConfig.h"
+#include "QCNetworkTimeoutConfig.h"
 
 #include <QtTest/QtTest>
 
@@ -60,6 +65,7 @@ private slots:
     void testLaneDefaults();
     void testSetLane();
     void testCopyAndEqualityPreserveLane();
+    void testEqualityIgnoresExecutionConfigFamily();
 
     // P1：Expect: 100-continue
     void testExpect100ContinueTimeoutDefaults();
@@ -298,6 +304,7 @@ void TestQCNetworkRequest::testSetMaxUploadBytesPerSec()
 void TestQCNetworkRequest::testLaneDefaults()
 {
     QCNetworkRequest request;
+    // 空串是 default lane 的稳定编码，避免 public API 再引入额外枚举态。
     QVERIFY(request.lane().isEmpty());
 }
 
@@ -305,6 +312,7 @@ void TestQCNetworkRequest::testSetLane()
 {
     QCNetworkRequest request;
 
+    // setter 会做 trim，确保 scheduler 不会把首尾空白当成不同 lane。
     request.setLane(QStringLiteral("  Control  "));
     QCOMPARE(request.lane(), QStringLiteral("Control"));
 
@@ -318,12 +326,44 @@ void TestQCNetworkRequest::testCopyAndEqualityPreserveLane()
     lhs.setFollowLocation(false);
     lhs.setLane(QStringLiteral("Control"));
 
+    // lane 是请求标识的一部分：copy/equality 必须保留它，才能支撑 lane-aware scheduler contract。
     QCNetworkRequest rhs(lhs);
     QCOMPARE(rhs.lane(), QStringLiteral("Control"));
     QVERIFY(lhs == rhs);
 
     rhs.setLane(QStringLiteral("Transfer"));
     QVERIFY(lhs != rhs);
+}
+
+void TestQCNetworkRequest::testEqualityIgnoresExecutionConfigFamily()
+{
+    QCNetworkRequest lhs(QUrl(QStringLiteral("https://example.com/api")));
+    lhs.setFollowLocation(false);
+    lhs.setLane(QStringLiteral("Control"));
+    lhs.setRawHeader(QByteArrayLiteral("X-Test"), QByteArrayLiteral("lhs"));
+
+    QCNetworkRequest rhs(lhs);
+
+    QCNetworkSslConfig sslConfig;
+    sslConfig.setPinnedPublicKey(QStringLiteral("sha256//consumer"));
+    rhs.setSslConfig(sslConfig);
+
+    QCNetworkProxyConfig proxyConfig;
+    proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Http);
+    proxyConfig.setHostName(QStringLiteral("proxy.example.com"));
+    proxyConfig.setPort(8080);
+    rhs.setProxyConfig(proxyConfig);
+
+    QCNetworkTimeoutConfig timeoutConfig;
+    timeoutConfig.setTotalTimeout(std::chrono::seconds(30));
+    rhs.setTimeoutConfig(timeoutConfig);
+
+    QCNetworkRetryPolicy retryPolicy(3, std::chrono::milliseconds(250));
+    rhs.setRetryPolicy(retryPolicy);
+    rhs.setPriority(QCNetworkRequestPriority::High);
+
+    // operator== 只比较 request identity/routing 子集，不把 execution config family 纳入比较。
+    QVERIFY(lhs == rhs);
 }
 
 void TestQCNetworkRequest::testExpect100ContinueTimeoutDefaults()

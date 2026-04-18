@@ -8,11 +8,14 @@
 
 #include "QCGlobal.h"
 
+#include <QSharedDataPointer>
 #include <QString>
 
 #include <optional>
 
 namespace QCurl {
+
+class QCNetworkSslConfigData;
 
 /**
  * @brief TLS 最低版本策略（M5，可选）
@@ -47,9 +50,9 @@ enum class QCNetworkTlsVersion {
  * @par 示例：自定义 CA 证书
  * @code
  * QCNetworkSslConfig sslConfig;
- * sslConfig.verifyPeer = true;
- * sslConfig.verifyHost = true;
- * sslConfig.caCertPath = "/path/to/custom-ca.pem";
+ * sslConfig.setVerifyPeer(true);
+ * sslConfig.setVerifyHost(true);
+ * sslConfig.setCaCertPath("/path/to/custom-ca.pem");
  * request.setSslConfig(sslConfig);
  * @endcode
  *
@@ -57,13 +60,21 @@ enum class QCNetworkTlsVersion {
 class QCURL_EXPORT QCNetworkSslConfig
 {
 public:
+    QCNetworkSslConfig();
+    QCNetworkSslConfig(const QCNetworkSslConfig &other);
+    QCNetworkSslConfig(QCNetworkSslConfig &&other);
+    ~QCNetworkSslConfig();
+    QCNetworkSslConfig &operator=(const QCNetworkSslConfig &other);
+    QCNetworkSslConfig &operator=(QCNetworkSslConfig &&other);
+
     /**
      * @brief 是否验证对等证书
      *
      * 对应 libcurl 的 CURLOPT_SSL_VERIFYPEER 选项。
      * 默认值：true（安全）
      */
-    bool verifyPeer = true;
+    [[nodiscard]] bool verifyPeer() const;
+    void setVerifyPeer(bool value);
 
     /**
      * @brief 是否验证主机名
@@ -71,7 +82,8 @@ public:
      * 对应 libcurl 的 CURLOPT_SSL_VERIFYHOST 选项。
      * 默认值：true（安全）
      */
-    bool verifyHost = true;
+    [[nodiscard]] bool verifyHost() const;
+    void setVerifyHost(bool value);
 
     /**
      * @brief CA 证书文件路径
@@ -79,28 +91,32 @@ public:
      * 用于验证服务器证书的 CA 证书包（PEM 格式）。
      * 如果为空，libcurl 使用系统默认 CA 证书。
      */
-    QString caCertPath;
+    [[nodiscard]] QString caCertPath() const;
+    void setCaCertPath(const QString &path);
 
     /**
      * @brief 客户端证书文件路径
      *
      * 用于双向 TLS 认证的客户端证书（PEM 格式）。
      */
-    QString clientCertPath;
+    [[nodiscard]] QString clientCertPath() const;
+    void setClientCertPath(const QString &path);
 
     /**
      * @brief 客户端私钥文件路径
      *
      * 客户端证书对应的私钥文件（PEM 格式）。
      */
-    QString clientKeyPath;
+    [[nodiscard]] QString clientKeyPath() const;
+    void setClientKeyPath(const QString &path);
 
     /**
      * @brief 客户端私钥密码
      *
      * 如果私钥文件有密码保护，在此设置。
      */
-    QString clientKeyPassword;
+    [[nodiscard]] QString clientKeyPassword() const;
+    void setClientKeyPassword(const QString &password);
 
     /**
      * @brief 公钥 pin（可选）
@@ -110,36 +126,40 @@ public:
      *
      * 默认空（不设置），避免 silent behavior change。
      */
-    QString pinnedPublicKey;
+    [[nodiscard]] QString pinnedPublicKey() const;
+    void setPinnedPublicKey(const QString &pinnedPublicKey);
 
     /**
      * @brief TLS 最低版本（可选）
      *
      * 默认 std::nullopt（不设置）。
      */
-    std::optional<QCNetworkTlsVersion> minTlsVersion = std::nullopt;
+    [[nodiscard]] std::optional<QCNetworkTlsVersion> minTlsVersion() const;
+    void setMinTlsVersion(const std::optional<QCNetworkTlsVersion> &version);
 
     /**
      * @brief TLS cipher 列表（可选，OpenSSL 风格）
      *
      * 映射到 CURLOPT_SSL_CIPHER_LIST。
      */
-    QString cipherList;
+    [[nodiscard]] QString cipherList() const;
+    void setCipherList(const QString &cipherList);
 
     /**
      * @brief TLS 1.3 cipher 列表（可选）
      *
      * 映射到 CURLOPT_TLS13_CIPHERS。
      */
-    QString tls13Ciphers;
+    [[nodiscard]] QString tls13Ciphers() const;
+    void setTls13Ciphers(const QString &cipherList);
 
     /**
      * @brief 安全相关能力不可用时的处理策略
      *
      * 默认 Fail（更安全）。
      */
-    QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy
-        = QCUnsupportedSecurityOptionPolicy::Fail;
+    [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityPolicy() const;
+    void setUnsupportedSecurityPolicy(QCUnsupportedSecurityOptionPolicy policy);
 
     /**
      * @brief 返回默认的安全配置
@@ -163,6 +183,9 @@ public:
      * @return QCNetworkSslConfig 不安全配置实例
      */
     [[nodiscard]] static QCNetworkSslConfig insecureConfig();
+
+private:
+    QSharedDataPointer<QCNetworkSslConfigData> d;
 };
 
 } // namespace QCurl
