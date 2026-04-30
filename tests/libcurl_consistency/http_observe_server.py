@@ -54,6 +54,13 @@ TLS_CERT: Optional[Path] = None
 TLS_KEY: Optional[Path] = None
 
 _COOKIE_SID = "lc123"
+_OBSERVE_SERVER_BACKLOG = 128
+
+
+class ObserveHTTPServer(ThreadingHTTPServer):
+    """Threaded server with a larger accept backlog for concurrency contract tests."""
+
+    request_queue_size = _OBSERVE_SERVER_BACKLOG
 
 
 def _utc_ts() -> str:
@@ -1459,7 +1466,7 @@ def main() -> int:
     global LOG_FILE
     LOG_FILE = Path(args.log_file)
 
-    httpd = ThreadingHTTPServer(("localhost", args.port), Handler)
+    httpd = ObserveHTTPServer(("localhost", args.port), Handler)
     if args.tls_cert and args.tls_key:
         global TLS_CERT, TLS_KEY
         TLS_CERT = Path(args.tls_cert)

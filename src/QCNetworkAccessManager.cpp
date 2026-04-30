@@ -13,6 +13,8 @@
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequestScheduler.h"
 #include "QCUtility.h"
+#include "private/QCRequestPipeline_p.h"
+#include "private/QCSingleFileMultipartBodyDevice.h"
 
 #include <QAbstractEventDispatcher>
 #include <QDebug>
@@ -23,6 +25,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
+#include <QSaveFile>
 #include <QSet>
 #include <QSharedPointer>
 #include <QSocketNotifier>
@@ -42,6 +45,62 @@ static bool hasEventDispatcher(QThread *thread)
     return (thread != nullptr) && (QAbstractEventDispatcher::instance(thread) != nullptr);
 }
 
+static QString rawBodyOwnerThreadErrorMessage(const char *apiName)
+{
+    return QStringLiteral("%1: manager-level raw-body QIODevice overload 必须在 owner 线程调用")
+        .arg(QString::fromUtf8(apiName));
+}
+
+static std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValue)
+{
+    const QByteArray trimmed = headerValue.trimmed();
+    const QByteArray prefix = QByteArrayLiteral("bytes */");
+    if (!trimmed.startsWith(prefix)) {
+        return std::nullopt;
+    }
+
+    bool ok = false;
+    const qint64 totalSize = trimmed.mid(prefix.size()).toLongLong(&ok);
+    if (!ok || totalSize < 0) {
+        return std::nullopt;
+    }
+    return totalSize;
+}
+
+struct ContentRangeInfo
+{
+    qint64 start = -1;
+    qint64 end = -1;
+    qint64 total = -1;
+};
+
+static std::optional<ContentRangeInfo> parseContentRangeBytesSpec(const QByteArray &headerValue)
+{
+    const QByteArray trimmed = headerValue.trimmed();
+    const QByteArray prefix = QByteArrayLiteral("bytes ");
+    if (!trimmed.startsWith(prefix)) {
+        return std::nullopt;
+    }
+
+    const int dashPos = trimmed.indexOf('-', prefix.size());
+    const int slashPos = trimmed.indexOf('/', prefix.size());
+    if (dashPos < 0 || slashPos < 0 || dashPos >= slashPos) {
+        return std::nullopt;
+    }
+
+    bool startOk = false;
+    bool endOk = false;
+    bool totalOk = false;
+    const qint64 start = trimmed.mid(prefix.size(), dashPos - prefix.size()).toLongLong(&startOk);
+    const qint64 end = trimmed.mid(dashPos + 1, slashPos - dashPos - 1).toLongLong(&endOk);
+    const qint64 total = trimmed.mid(slashPos + 1).toLongLong(&totalOk);
+    if (!startOk || !endOk || !totalOk || start < 0 || end < start || total < 0) {
+        return std::nullopt;
+    }
+
+    return ContentRangeInfo{start, end, total};
+}
+
 } // namespace
 
 namespace QCurl {
@@ -49,6 +108,29 @@ namespace QCurl {
 namespace {
 
 constexpr const char kMiddlewareResponseInvokedProperty[] = "_qcurl_middleware_response_invoked";
+
+QList<QCNetworkMiddleware *> sanitizeMiddlewares(const QList<QCNetworkMiddleware *> &middlewares)
+{
+    QList<QCNetworkMiddleware *> alive;
+    alive.reserve(middlewares.size());
+    for (auto *middleware : middlewares) {
+        if (middleware) {
+            alive.append(middleware);
+        }
+    }
+    return alive;
+}
+
+QCNetworkMiddleware *middlewareFromEntry(const QCNetworkAccessManagerPrivate::MiddlewareEntry &entry)
+{
+    return entry.middleware;
+}
+
+bool middlewareEntryMatches(const QCNetworkAccessManagerPrivate::MiddlewareEntry &entry,
+                            QCNetworkMiddleware *middleware)
+{
+    return entry.middleware == middleware;
+}
 
 QCNetworkRequest applyRequestPreSendMiddlewares(const QCNetworkRequest &request,
                                                 const QList<QCNetworkMiddleware *> &middlewares)
@@ -82,9 +164,10 @@ void runReplyCreatedMiddlewares(QCNetworkReply *reply,
 }
 
 void runResponseMiddlewaresOnce(QCNetworkReply *reply,
+                                QCNetworkAccessManager *manager,
                                 const QList<QCNetworkMiddleware *> &middlewares)
 {
-    if (!reply || middlewares.isEmpty()) {
+    if (!reply || !manager || middlewares.isEmpty()) {
         return;
     }
 
@@ -94,7 +177,11 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply,
     // finished 可能被同步路径或已完成 reply 触发多次探测，这里用属性做幂等保护。
     reply->setProperty(kMiddlewareResponseInvokedProperty, true);
 
+    const QList<QCNetworkMiddleware *> activeMiddlewares = manager->middlewares();
     for (auto *middleware : middlewares) {
+        if (!activeMiddlewares.contains(middleware)) {
+            continue;
+        }
         if (middleware) {
             middleware->onResponseReceived(reply);
         }
@@ -110,17 +197,264 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
     }
 
     QPointer<QCNetworkReply> safeReply(reply);
-    QObject::connect(reply, &QCNetworkReply::finished, manager, [safeReply, middlewares]() {
+    QPointer<QCNetworkAccessManager> safeManager(manager);
+    QObject::connect(reply, &QCNetworkReply::finished, manager, [safeReply, safeManager, middlewares]() {
+        if (!safeManager) {
+            return;
+        }
         if (!safeReply) {
             return;
         }
-        runResponseMiddlewaresOnce(safeReply.data(), middlewares);
+        runResponseMiddlewaresOnce(safeReply.data(), safeManager.data(), middlewares);
     });
 
     // 对已完成 reply 立即补跑一次，避免“先 finished、后接线”导致漏掉响应中间件。
     if (reply->isFinished()) {
-        runResponseMiddlewaresOnce(reply, middlewares);
+        runResponseMiddlewaresOnce(reply, manager, middlewares);
     }
+}
+
+struct ResumableWriteContext
+{
+    bool modeDecided = false;
+    bool appendMode = false;
+    bool safeOverwriteMode = false;
+    bool writeFailed = false;
+    QSharedPointer<QFile> appendFile;
+    QSharedPointer<QFile> directFile;
+    QSharedPointer<QSaveFile> overwriteFile;
+};
+
+bool isResumableAlreadyComplete(QCNetworkReply *reply, qint64 existingSize)
+{
+    return reply && existingSize > 0 && reply->httpStatusCode() == 416
+           && parseContentRangeCompleteSize(reply->rawHeader(QByteArrayLiteral("Content-Range")))
+                  .value_or(-1)
+                  == existingSize;
+}
+
+void closeResumableTargets(const QSharedPointer<ResumableWriteContext> &context)
+{
+    if (context->appendFile && context->appendFile->isOpen()) {
+        context->appendFile->close();
+    }
+    if (context->directFile && context->directFile->isOpen()) {
+        context->directFile->close();
+    }
+    if (context->overwriteFile && context->overwriteFile->isOpen()) {
+        context->overwriteFile->cancelWriting();
+    }
+}
+
+QIODevice *activeResumableTarget(const QSharedPointer<ResumableWriteContext> &context)
+{
+    if (context->appendMode) {
+        return context->appendFile.data();
+    }
+    if (context->safeOverwriteMode) {
+        return context->overwriteFile.data();
+    }
+    return context->directFile.data();
+}
+
+std::optional<QString> decideResumableWriteMode(QCNetworkReply *reply,
+                                                const QSharedPointer<ResumableWriteContext> &context,
+                                                const QString &savePath,
+                                                qint64 existingSize,
+                                                bool hadExistingFile)
+{
+    if (isResumableAlreadyComplete(reply, existingSize)) {
+        context->modeDecided = true;
+        context->appendMode = false;
+        context->safeOverwriteMode = false;
+        return std::nullopt;
+    }
+
+    const auto contentRange =
+        parseContentRangeBytesSpec(reply->rawHeader(QByteArrayLiteral("Content-Range")));
+    context->appendMode = existingSize > 0 && reply->httpStatusCode() == 206
+                          && contentRange.has_value() && contentRange->start == existingSize;
+    if (reply->httpStatusCode() == 206 && !context->appendMode) {
+        return QStringLiteral(
+                   "downloadFileResumable: 206 响应的 Content-Range.start 与本地文件大小不匹配: %1")
+            .arg(savePath);
+    }
+    context->safeOverwriteMode = !context->appendMode && hadExistingFile;
+    context->modeDecided = true;
+    return std::nullopt;
+}
+
+std::optional<QString> ensureResumableWriteTarget(
+    QCNetworkReply *reply,
+    const QSharedPointer<ResumableWriteContext> &context,
+    const QString &savePath,
+    qint64 existingSize,
+    bool hadExistingFile)
+{
+    if (!context->modeDecided) {
+        if (const auto error =
+                decideResumableWriteMode(reply, context, savePath, existingSize, hadExistingFile);
+            error.has_value()) {
+            return error;
+        }
+    }
+    if (isResumableAlreadyComplete(reply, existingSize)) {
+        return std::nullopt;
+    }
+    if (context->appendMode && !context->appendFile->isOpen()
+        && !context->appendFile->open(QIODevice::Append)) {
+        return QStringLiteral("downloadFileResumable: 无法以追加模式打开目标文件: %1")
+            .arg(context->appendFile->fileName());
+    }
+    if (context->safeOverwriteMode) {
+        if (!context->overwriteFile) {
+            context->overwriteFile = QSharedPointer<QSaveFile>::create(savePath);
+        }
+        if (!context->overwriteFile->isOpen()
+            && !context->overwriteFile->open(QIODevice::WriteOnly)) {
+            return QStringLiteral("downloadFileResumable: 无法以安全覆盖模式打开目标文件: %1")
+                .arg(savePath);
+        }
+    } else if (!context->appendMode && !context->directFile->isOpen()
+               && !context->directFile->open(QIODevice::WriteOnly)) {
+        return QStringLiteral("downloadFileResumable: 无法创建目标文件: %1").arg(savePath);
+    }
+    return std::nullopt;
+}
+
+std::optional<QString> commitResumableOverwrite(
+    QCNetworkReply *reply,
+    const QSharedPointer<ResumableWriteContext> &context,
+    const QString &savePath,
+    qint64 existingSize,
+    bool hadExistingFile)
+{
+    if (isResumableAlreadyComplete(reply, existingSize)) {
+        return std::nullopt;
+    }
+    if (const auto error =
+            ensureResumableWriteTarget(reply, context, savePath, existingSize, hadExistingFile);
+        error.has_value()) {
+        context->writeFailed = true;
+        return error;
+    }
+    if (!context->safeOverwriteMode || !context->overwriteFile
+        || !context->overwriteFile->isOpen()) {
+        return std::nullopt;
+    }
+    if (context->overwriteFile->commit()) {
+        return std::nullopt;
+    }
+    context->writeFailed = true;
+    return QStringLiteral("downloadFileResumable: 覆盖写入提交失败: %1").arg(savePath);
+}
+
+void writeResumableChunk(QCNetworkReply *reply,
+                         const QSharedPointer<ResumableWriteContext> &context,
+                         const QString &savePath,
+                         qint64 existingSize,
+                         bool hadExistingFile)
+{
+    if (const auto error =
+            ensureResumableWriteTarget(reply, context, savePath, existingSize, hadExistingFile);
+        error.has_value()) {
+        context->writeFailed = true;
+        closeResumableTargets(context);
+        reply->abortWithError(NetworkError::InvalidRequest, error.value());
+        return;
+    }
+
+    QIODevice *target = activeResumableTarget(context);
+    if (!target || !target->isWritable()) {
+        qWarning() << "Resumable target is not writable:" << savePath;
+        context->writeFailed = true;
+        closeResumableTargets(context);
+        reply->cancel();
+        return;
+    }
+
+    auto data = reply->readAll();
+    if (!data.has_value() || data->isEmpty()) {
+        return;
+    }
+
+    const QByteArray &chunk = data.value();
+    if (target->write(chunk) != chunk.size()) {
+        context->writeFailed = true;
+        closeResumableTargets(context);
+        reply->abortWithError(
+            NetworkError::InvalidRequest,
+            QStringLiteral("downloadFileResumable: 写入目标文件失败: %1").arg(savePath));
+    }
+}
+
+void finishResumableDownload(QCNetworkReply *reply,
+                             const QSharedPointer<ResumableWriteContext> &context,
+                             const QString &savePath,
+                             qint64 existingSize)
+{
+    const bool alreadyComplete =
+        reply->error() == NetworkError::NoError && isResumableAlreadyComplete(reply, existingSize);
+
+    if (reply->error() != NetworkError::NoError || !context->safeOverwriteMode
+        || !context->overwriteFile || !context->overwriteFile->isOpen()) {
+        closeResumableTargets(context);
+    }
+    if (context->appendFile && context->appendFile->isOpen()) {
+        context->appendFile->close();
+    }
+    if (context->directFile && context->directFile->isOpen()) {
+        context->directFile->close();
+    }
+    if (context->writeFailed) {
+        qWarning() << "Download failed while writing file:" << savePath << reply->errorString();
+    } else if (alreadyComplete) {
+        qDebug() << "Download already complete:" << savePath;
+    } else if (reply->error() == NetworkError::NoError) {
+        qDebug() << "Download completed:" << savePath;
+    } else {
+        qWarning() << "Download failed:" << reply->errorString();
+    }
+}
+
+void wireResumableDownload(QCNetworkReply *reply,
+                           QCNetworkReplyPrivate *replyPrivate,
+                           const QString &savePath,
+                           qint64 existingSize,
+                           bool hadExistingFile)
+{
+    if (!reply || !replyPrivate) {
+        return;
+    }
+
+    reply->setProperty("_qcurl_resumable_existing_size", existingSize);
+
+    auto writeContext = QSharedPointer<ResumableWriteContext>::create();
+    writeContext->appendFile = QSharedPointer<QFile>::create(savePath);
+    writeContext->directFile = QSharedPointer<QFile>::create(savePath);
+
+    replyPrivate->beforeFinishTransition =
+        [reply, writeContext, savePath, existingSize, hadExistingFile]() {
+        return commitResumableOverwrite(reply,
+                                        writeContext,
+                                        savePath,
+                                        existingSize,
+                                        hadExistingFile);
+    };
+
+    QObject::connect(reply,
+                     &QCNetworkReply::readyRead,
+                     reply,
+                     [reply, writeContext, savePath, existingSize, hadExistingFile]() {
+        writeResumableChunk(reply, writeContext, savePath, existingSize, hadExistingFile);
+    });
+
+    QObject::connect(reply,
+                     &QCNetworkReply::finished,
+                     reply,
+                     [reply, writeContext, savePath, existingSize]() {
+        finishResumableDownload(reply, writeContext, savePath, existingSize);
+    });
 }
 
 } // namespace
@@ -132,11 +466,15 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     CurlGlobalConstructor::instance();
 }
 
-QCNetworkAccessManager::~QCNetworkAccessManager() {}
+QCNetworkAccessManager::~QCNetworkAccessManager()
+{
+    clearMiddlewares();
+}
 
 QCNetworkReply *QCNetworkAccessManager::createReply(const QCNetworkRequest &request,
                                                     HttpMethod method,
                                                     bool async,
+                                                    const Internal::RequestBody &requestBodySource,
                                                     const QByteArray &body,
                                                     QObject *parent)
 {
@@ -145,6 +483,7 @@ QCNetworkReply *QCNetworkAccessManager::createReply(const QCNetworkRequest &requ
                                      request,
                                      method,
                                      mode,
+                                     requestBodySource,
                                      body,
                                      parent);
     applyReplyDefaults(reply);
@@ -155,35 +494,30 @@ QCNetworkReply *QCNetworkAccessManager::createManagedReply(
     const QCNetworkRequest &request,
     HttpMethod method,
     bool async,
+    const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const QList<QCNetworkMiddleware *> &middlewares)
 {
-    const bool useScheduler = async && isSchedulerEnabled();
-    auto *reply = createReply(request, method, async, body, this);
+    auto *reply = createReply(request, method, async, requestBodySource, body, this);
     prepareManagedReply(reply, middlewares);
 
     if (!reply) {
         return nullptr;
     }
 
-    if (useScheduler) {
-        // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
-        scheduler()->scheduleReply(reply, request.lane(), request.priority());
-    } else {
-        reply->execute();
-    }
-
+    startManagedReply(reply, request, async);
     return reply;
 }
 
 QCNetworkReply *QCNetworkAccessManager::createNoEventLoopErrorReply(
     const QCNetworkRequest &request,
     HttpMethod method,
+    const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     QObject *parent,
     const char *apiName)
 {
-    auto *reply = createReply(request, method, true, body, parent);
+    auto *reply = createReply(request, method, true, requestBodySource, body, parent);
     if (!reply) {
         return nullptr;
     }
@@ -191,6 +525,42 @@ QCNetworkReply *QCNetworkAccessManager::createNoEventLoopErrorReply(
     reply->abortWithError(NetworkError::InvalidRequest,
                           QStringLiteral("%1: owner 线程缺少 Qt 事件循环，无法执行异步请求")
                               .arg(QString::fromUtf8(apiName)));
+    return reply;
+}
+
+QCNetworkReply *QCNetworkAccessManager::createInvalidRequestReply(const QCNetworkRequest &request,
+                                                                  HttpMethod method,
+                                                                  bool async,
+                                                                  const QString &message,
+                                                                  QObject *parent)
+{
+    auto *reply =
+        createReply(request, method, async, Internal::makeEmptyRequestBody(), QByteArray(), parent);
+    if (!reply) {
+        return nullptr;
+    }
+
+    reply->abortWithError(NetworkError::InvalidRequest, message);
+    return reply;
+}
+
+QCNetworkReply *QCNetworkAccessManager::createManagedErrorReply(
+    const QCNetworkRequest &request,
+    HttpMethod method,
+    const QString &message,
+    const QList<QCNetworkMiddleware *> &middlewares)
+{
+    auto *reply = createReply(request,
+                              method,
+                              true,
+                              Internal::makeEmptyRequestBody(),
+                              QByteArray(),
+                              this);
+    prepareManagedReply(reply, middlewares);
+    QMetaObject::invokeMethod(
+        reply,
+        [reply, message]() { reply->abortWithError(NetworkError::InvalidRequest, message); },
+        Qt::QueuedConnection);
     return reply;
 }
 
@@ -215,10 +585,28 @@ void QCNetworkAccessManager::prepareManagedReply(
     runReplyCreatedMiddlewares(reply, middlewares);
 }
 
+void QCNetworkAccessManager::startManagedReply(QCNetworkReply *reply,
+                                               const QCNetworkRequest &request,
+                                               bool async) const
+{
+    if (!reply) {
+        return;
+    }
+
+    if (async && isSchedulerEnabled()) {
+        // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
+        scheduler()->scheduleReply(reply, request.lane(), request.priority());
+        return;
+    }
+
+    reply->execute();
+}
+
 QCNetworkReply *QCNetworkAccessManager::dispatchManagedSendRequest(
     const QCNetworkRequest &request,
     HttpMethod method,
     bool async,
+    const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const char *apiName)
 {
@@ -226,15 +614,17 @@ QCNetworkReply *QCNetworkAccessManager::dispatchManagedSendRequest(
         request,
         method,
         async,
+        requestBodySource,
         body,
         apiName,
-        [this, request, method, async, body]() {
+        [this, request, method, async, requestBodySource, body]() {
             const auto middlewaresSnapshot = middlewares();
             const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(
                 request, middlewaresSnapshot);
             return createManagedReply(modifiedRequest,
                                       method,
                                       async,
+                                      requestBodySource,
                                       body,
                                       middlewaresSnapshot);
         });
@@ -243,13 +633,15 @@ QCNetworkReply *QCNetworkAccessManager::dispatchManagedSendRequest(
 QCNetworkReply *QCNetworkAccessManager::dispatchSendRequest(const QCNetworkRequest &request,
                                                             HttpMethod method,
                                                             bool async,
+                                                            const Internal::RequestBody &requestBodySource,
                                                             const QByteArray &body,
                                                             const char *apiName,
                                                             const ReplyFactory &impl)
 {
     if (QThread::currentThread() != thread()) {
         if (!hasEventDispatcher(thread())) {
-            return createNoEventLoopErrorReply(request, method, body, nullptr, apiName);
+            return createNoEventLoopErrorReply(
+                request, method, requestBodySource, body, nullptr, apiName);
         }
 
         QCNetworkReply *result = nullptr;
@@ -265,7 +657,7 @@ QCNetworkReply *QCNetworkAccessManager::dispatchSendRequest(const QCNetworkReque
     }
 
     if (async && !hasEventDispatcher(thread())) {
-        return createNoEventLoopErrorReply(request, method, body, this, apiName);
+        return createNoEventLoopErrorReply(request, method, requestBodySource, body, this, apiName);
     }
 
     return impl();
@@ -435,6 +827,7 @@ QCNetworkReply *QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Head,
                                       true,
+                                      Internal::makeEmptyRequestBody(),
                                       QByteArray(),
                                       "QCNetworkAccessManager::sendHead");
 }
@@ -444,6 +837,7 @@ QCNetworkReply *QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Get,
                                       true,
+                                      Internal::makeEmptyRequestBody(),
                                       QByteArray(),
                                       "QCNetworkAccessManager::sendGet");
 }
@@ -454,8 +848,30 @@ QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Post,
                                       true,
+                                      Internal::makeInlineRequestBody(data),
                                       data,
                                       "QCNetworkAccessManager::sendPost");
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request,
+                                                 QIODevice *device,
+                                                 std::optional<qint64> sizeBytes)
+{
+    constexpr const char *apiName = "QCNetworkAccessManager::sendPost";
+    if (QThread::currentThread() != thread()) {
+        return createInvalidRequestReply(request,
+                                         HttpMethod::Post,
+                                         true,
+                                         rawBodyOwnerThreadErrorMessage(apiName),
+                                         nullptr);
+    }
+
+    return dispatchManagedSendRequest(request,
+                                      HttpMethod::Post,
+                                      true,
+                                      Internal::makeDeviceRequestBody(device, sizeBytes, true),
+                                      QByteArray(),
+                                      apiName);
 }
 
 QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
@@ -464,8 +880,30 @@ QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Put,
                                       true,
+                                      Internal::makeInlineRequestBody(data),
                                       data,
                                       "QCNetworkAccessManager::sendPut");
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
+                                                QIODevice *device,
+                                                std::optional<qint64> sizeBytes)
+{
+    constexpr const char *apiName = "QCNetworkAccessManager::sendPut";
+    if (QThread::currentThread() != thread()) {
+        return createInvalidRequestReply(request,
+                                         HttpMethod::Put,
+                                         true,
+                                         rawBodyOwnerThreadErrorMessage(apiName),
+                                         nullptr);
+    }
+
+    return dispatchManagedSendRequest(request,
+                                      HttpMethod::Put,
+                                      true,
+                                      Internal::makeDeviceRequestBody(device, sizeBytes, false),
+                                      QByteArray(),
+                                      apiName);
 }
 
 QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request)
@@ -479,6 +917,7 @@ QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &reque
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Delete,
                                       true,
+                                      Internal::makeInlineRequestBody(data),
                                       data,
                                       "QCNetworkAccessManager::sendDelete");
 }
@@ -489,6 +928,7 @@ QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Patch,
                                       true,
+                                      Internal::makeInlineRequestBody(data),
                                       data,
                                       "QCNetworkAccessManager::sendPatch");
 }
@@ -498,6 +938,7 @@ QCNetworkReply *QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &requ
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Get,
                                       false,
+                                      Internal::makeEmptyRequestBody(),
                                       QByteArray(),
                                       "QCNetworkAccessManager::sendGetSync");
 }
@@ -508,8 +949,62 @@ QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &req
     return dispatchManagedSendRequest(request,
                                       HttpMethod::Post,
                                       false,
+                                      Internal::makeInlineRequestBody(data),
                                       data,
                                       "QCNetworkAccessManager::sendPostSync");
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request,
+                                                     QIODevice *device,
+                                                     std::optional<qint64> sizeBytes)
+{
+    constexpr const char *apiName = "QCNetworkAccessManager::sendPostSync";
+    if (QThread::currentThread() != thread()) {
+        return createInvalidRequestReply(request,
+                                         HttpMethod::Post,
+                                         false,
+                                         rawBodyOwnerThreadErrorMessage(apiName),
+                                         nullptr);
+    }
+
+    return dispatchManagedSendRequest(request,
+                                      HttpMethod::Post,
+                                      false,
+                                      Internal::makeDeviceRequestBody(device, sizeBytes, true),
+                                      QByteArray(),
+                                      apiName);
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendPutSync(const QCNetworkRequest &request,
+                                                    const QByteArray &data)
+{
+    return dispatchManagedSendRequest(request,
+                                      HttpMethod::Put,
+                                      false,
+                                      Internal::makeInlineRequestBody(data),
+                                      data,
+                                      "QCNetworkAccessManager::sendPutSync");
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendPutSync(const QCNetworkRequest &request,
+                                                    QIODevice *device,
+                                                    std::optional<qint64> sizeBytes)
+{
+    constexpr const char *apiName = "QCNetworkAccessManager::sendPutSync";
+    if (QThread::currentThread() != thread()) {
+        return createInvalidRequestReply(request,
+                                         HttpMethod::Put,
+                                         false,
+                                         rawBodyOwnerThreadErrorMessage(apiName),
+                                         nullptr);
+    }
+
+    return dispatchManagedSendRequest(request,
+                                      HttpMethod::Put,
+                                      false,
+                                      Internal::makeDeviceRequestBody(device, sizeBytes, false),
+                                      QByteArray(),
+                                      apiName);
 }
 
 // ==================
@@ -650,6 +1145,106 @@ QCNetworkReply *QCNetworkAccessManager::postMultipart(const QCNetworkRequest &re
     return sendPost(modifiedRequest, multipartData);
 }
 
+QCNetworkReply *QCNetworkAccessManager::postMultipartFile(const QUrl &url,
+                                                          const QString &fieldName,
+                                                          const QString &filePath,
+                                                          const QString &mimeType)
+{
+    QCMultipartFormData formData;
+    if (!formData.addFileField(fieldName, filePath, mimeType)) {
+        const auto middlewaresSnapshot = middlewares();
+        const QCNetworkRequest modifiedRequest =
+            applyRequestPreSendMiddlewares(QCNetworkRequest(url), middlewaresSnapshot);
+        return createManagedErrorReply(
+            modifiedRequest,
+            HttpMethod::Post,
+            QStringLiteral("postMultipartFile: 无法加入文件字段: %1").arg(filePath),
+            middlewaresSnapshot);
+    }
+
+    return postMultipart(url, formData);
+}
+
+QCNetworkReply *QCNetworkAccessManager::postMultipartDevice(const QUrl &url,
+                                                            const QString &fieldName,
+                                                            QIODevice *device,
+                                                            const QString &fileName,
+                                                            const QString &mimeType,
+                                                            std::optional<qint64> sizeBytes)
+{
+    constexpr const char *apiName = "QCNetworkAccessManager::postMultipartDevice";
+    QCNetworkRequest request(url);
+    if (QThread::currentThread() != thread()) {
+        return createInvalidRequestReply(request,
+                                         HttpMethod::Post,
+                                         true,
+                                         rawBodyOwnerThreadErrorMessage(apiName),
+                                         nullptr);
+    }
+
+    return dispatchSendRequest(
+        request,
+        HttpMethod::Post,
+        true,
+        Internal::makeEmptyRequestBody(),
+        QByteArray(),
+        apiName,
+        [this, request, fieldName, device, fileName, mimeType, sizeBytes]() {
+            const auto middlewaresSnapshot = middlewares();
+            QCNetworkRequest modifiedRequest =
+                applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+            auto fail = [this, &modifiedRequest, &middlewaresSnapshot](const QString &message) {
+                return createManagedErrorReply(modifiedRequest,
+                                               HttpMethod::Post,
+                                               message,
+                                               middlewaresSnapshot);
+            };
+
+            if (!device) {
+                return fail(QStringLiteral("postMultipartDevice: 源 QIODevice 为空"));
+            }
+            if (device->thread() != thread()) {
+                return fail(QStringLiteral("postMultipartDevice: 源 QIODevice 与 Reply 不在同一线程"));
+            }
+            if (!device->isReadable()) {
+                return fail(QStringLiteral("postMultipartDevice: 源 QIODevice 不可读"));
+            }
+            if (device->isSequential() || !sizeBytes.has_value() || sizeBytes.value() < 0) {
+                return fail(QStringLiteral(
+                    "postMultipartDevice: 单文件 multipart 设备上传要求已知长度且设备可 seek"));
+            }
+
+            QCMultipartFormData formData;
+            modifiedRequest.setRawHeader("Content-Type", formData.contentType().toUtf8());
+
+            auto *multipartDevice = new Internal::QCSingleFileMultipartBodyDevice(
+                formData.boundary(),
+                fieldName,
+                device,
+                fileName,
+                mimeType.isEmpty() ? QStringLiteral("application/octet-stream") : mimeType,
+                sizeBytes.value(),
+                this);
+            auto *reply = createReply(modifiedRequest,
+                                      HttpMethod::Post,
+                                      true,
+                                      Internal::makeDeviceRequestBody(multipartDevice,
+                                                                      multipartDevice->size(),
+                                                                      false,
+                                                                      false),
+                                      QByteArray(),
+                                      this);
+            if (reply) {
+                multipartDevice->setParent(reply);
+                prepareManagedReply(reply, middlewaresSnapshot);
+                startManagedReply(reply, modifiedRequest, true);
+            } else {
+                multipartDevice->deleteLater();
+            }
+            return reply;
+        });
+}
+
 // ==================
 // 文件操作便捷 API
 // ==================
@@ -684,55 +1279,24 @@ QCNetworkReply *QCNetworkAccessManager::downloadFile(const QUrl &url, const QStr
     return reply;
 }
 
-QCNetworkReply *QCNetworkAccessManager::uploadFile(const QUrl &url, const QString &filePath)
-{
-    return uploadFile(url, filePath, QStringLiteral("file"));
-}
-
-QCNetworkReply *QCNetworkAccessManager::uploadFile(const QUrl &url,
-                                                   const QString &filePath,
-                                                   const QString &fieldName)
-{
-    // 创建 Multipart 表单数据
-    QCMultipartFormData formData;
-
-    // 添加文件字段
-    if (!formData.addFileField(fieldName, filePath)) {
-        qWarning() << "Cannot add file to form:" << filePath;
-        auto *reply = createReply(QCNetworkRequest(url),
-                                  HttpMethod::Post,
-                                  true,
-                                  QByteArray(),
-                                  this);
-        QMetaObject::invokeMethod(
-            reply,
-            [reply, filePath]() {
-                reply->abortWithError(NetworkError::InvalidRequest,
-                                      QStringLiteral("uploadFile: 无法加入文件字段: %1")
-                                          .arg(filePath));
-            },
-            Qt::QueuedConnection);
-        return reply;
-    }
-
-    // 使用 postMultipart 发送
-    return postMultipart(url, formData);
-}
-
 // ==================
 // 流式下载/上传 API
 // ==================
 
 QCNetworkReply *QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODevice *device)
 {
-    Q_D(QCNetworkAccessManager);
-    const auto middlewaresSnapshot = d->middlewares;
+    const auto middlewaresSnapshot = middlewares();
 
     QCNetworkRequest request(url);
     const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
                                                                             middlewaresSnapshot);
 
-    auto *reply = createReply(modifiedRequest, HttpMethod::Get, true, QByteArray(), this);
+    auto *reply = createReply(modifiedRequest,
+                              HttpMethod::Get,
+                              true,
+                              Internal::makeEmptyRequestBody(),
+                              QByteArray(),
+                              this);
     prepareManagedReply(reply, middlewaresSnapshot);
 
     if (!device || !device->isWritable()) {
@@ -807,89 +1371,16 @@ QCNetworkReply *QCNetworkAccessManager::downloadToDevice(const QUrl &url, QIODev
     return reply;
 }
 
-QCNetworkReply *QCNetworkAccessManager::uploadFromDevice(const QUrl &url,
-                                                         const QString &fieldName,
-                                                         QIODevice *device,
-                                                         const QString &fileName,
-                                                         const QString &mimeType)
-{
-    Q_D(QCNetworkAccessManager);
-    const auto middlewaresSnapshot = d->middlewares;
-
-    if (!device || !device->isReadable()) {
-        qWarning() << "uploadFromDevice: device is null or not readable";
-        QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
-                                                                                middlewaresSnapshot);
-        auto *reply = createReply(modifiedRequest, HttpMethod::Post, true, QByteArray(), this);
-        prepareManagedReply(reply, middlewaresSnapshot);
-
-        QMetaObject::invokeMethod(
-            reply,
-            [reply]() {
-                reply->abortWithError(NetworkError::InvalidRequest,
-                                      QStringLiteral(
-                                          "uploadFromDevice: 源 QIODevice 为空或不可读"));
-            },
-            Qt::QueuedConnection);
-        return reply;
-    }
-
-    if (device->thread() != thread()) {
-        qWarning() << "uploadFromDevice: device thread mismatch. deviceThread=" << device->thread()
-                   << "managerThread=" << thread();
-        QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
-                                                                                middlewaresSnapshot);
-        auto *reply = createReply(modifiedRequest, HttpMethod::Post, true, QByteArray(), this);
-        prepareManagedReply(reply, middlewaresSnapshot);
-
-        QMetaObject::invokeMethod(
-            reply,
-            [reply]() {
-                reply->abortWithError(NetworkError::InvalidRequest,
-                                      QStringLiteral(
-                                          "uploadFromDevice: 源 QIODevice 与 Reply 不在同一线程"));
-            },
-            Qt::QueuedConnection);
-        return reply;
-    }
-
-    QCMultipartFormData formData;
-
-    if (!formData.addFileFieldStream(fieldName, device, fileName, mimeType)) {
-        qWarning() << "uploadFromDevice: cannot add stream field to form";
-        QCNetworkRequest request(url);
-        const QCNetworkRequest modifiedRequest = applyRequestPreSendMiddlewares(request,
-                                                                                middlewaresSnapshot);
-        auto *reply = createReply(modifiedRequest, HttpMethod::Post, true, QByteArray(), this);
-        prepareManagedReply(reply, middlewaresSnapshot);
-
-        QMetaObject::invokeMethod(
-            reply,
-            [reply]() {
-                reply
-                    ->abortWithError(NetworkError::InvalidRequest,
-                                     QStringLiteral(
-                                         "uploadFromDevice: 无法从 QIODevice 构建 multipart 表单"));
-            },
-            Qt::QueuedConnection);
-        return reply;
-    }
-
-    // 使用 postMultipart 发送
-    return postMultipart(url, formData);
-}
-
 QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
                                                               const QString &savePath,
                                                               bool overwrite)
 {
     // 检查文件是否存在，用于断点续传
     QFile file(savePath);
+    const bool hadExistingFile = file.exists();
     qint64 existingSize = 0;
 
-    if (!overwrite && file.exists()) {
+    if (!overwrite && hadExistingFile) {
         existingSize = file.size();
         qDebug() << "File exists, resuming download from byte:" << existingSize;
     }
@@ -902,42 +1393,29 @@ QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
         request.setRawHeader("Range", rangeHeader.toUtf8());
     }
 
-    QCNetworkReply *reply = sendGet(request);
+    return dispatchSendRequest(
+        request,
+        HttpMethod::Get,
+        true,
+        Internal::makeEmptyRequestBody(),
+        QByteArray(),
+        "QCNetworkAccessManager::downloadFileResumable",
+        [this, request, savePath, existingSize, hadExistingFile]() {
+            const auto middlewaresSnapshot = middlewares();
+            const QCNetworkRequest modifiedRequest =
+                applyRequestPreSendMiddlewares(request, middlewaresSnapshot);
+            auto *reply = createReply(modifiedRequest,
+                                      HttpMethod::Get,
+                                      true,
+                                      Internal::makeEmptyRequestBody(),
+                                      QByteArray(),
+                                      this);
 
-    // 使用 QSharedPointer 管理文件句柄生命周期
-    auto filePtr = QSharedPointer<QFile>::create(savePath);
-
-    QObject::connect(reply, &QCNetworkReply::readyRead, reply, [reply, filePtr, existingSize]() {
-        if (!filePtr->isOpen()) {
-            QIODevice::OpenMode mode = existingSize > 0 ? QIODevice::Append : QIODevice::WriteOnly;
-
-            if (!filePtr->open(mode)) {
-                qWarning() << "Cannot open file:" << filePtr->fileName();
-                reply->cancel();
-                return;
-            }
-        }
-
-        auto data = reply->readAll();
-        if (data.has_value()) {
-            filePtr->write(data.value());
-            filePtr->flush();
-        }
-    });
-
-    QObject::connect(reply, &QCNetworkReply::finished, reply, [reply, filePtr, savePath]() {
-        if (filePtr->isOpen()) {
-            filePtr->close();
-        }
-
-        if (reply->error() == NetworkError::NoError) {
-            qDebug() << "Download completed:" << savePath;
-        } else {
-            qWarning() << "Download failed:" << reply->errorString();
-        }
-    });
-
-    return reply;
+            wireResumableDownload(reply, reply->d_func(), savePath, existingSize, hadExistingFile);
+            prepareManagedReply(reply, middlewaresSnapshot);
+            startManagedReply(reply, modifiedRequest, true);
+            return reply;
+        });
 }
 
 // ==================
@@ -947,6 +1425,10 @@ QCNetworkReply *QCNetworkAccessManager::downloadFileResumable(const QUrl &url,
 void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
 {
     Q_D(QCNetworkAccessManager);
+    if (d->autoCreatedCache && d->cache == d->autoCreatedCache && d->autoCreatedCache != cache) {
+        d->autoCreatedCache->deleteLater();
+        d->autoCreatedCache = nullptr;
+    }
     d->cache = cache;
 }
 
@@ -959,10 +1441,14 @@ QCNetworkCache *QCNetworkAccessManager::cache() const
 void QCNetworkAccessManager::setCachePath(const QString &path, qint64 maxSize)
 {
     Q_D(QCNetworkAccessManager);
+    if (d->autoCreatedCache && d->cache == d->autoCreatedCache) {
+        d->autoCreatedCache->deleteLater();
+    }
     auto *diskCache = new QCNetworkDiskCache(this);
     diskCache->setCacheDirectory(path);
     diskCache->setMaxCacheSize(maxSize);
     d->cache = diskCache;
+    d->autoCreatedCache = diskCache;
 }
 
 // ==================
@@ -1000,27 +1486,57 @@ bool QCNetworkAccessManager::debugTraceEnabled() const noexcept
 void QCNetworkAccessManager::addMiddleware(QCNetworkMiddleware *middleware)
 {
     Q_D(QCNetworkAccessManager);
-    if (middleware && !d->middlewares.contains(middleware)) {
-        d->middlewares.append(middleware);
+    if (!middleware) {
+        return;
     }
+
+    for (const auto &entry : d->middlewares) {
+        if (middlewareEntryMatches(entry, middleware)) {
+            return;
+        }
+    }
+
+    d->middlewares.append(QCNetworkAccessManagerPrivate::MiddlewareEntry{middleware});
+    middleware->registerManager(this);
 }
 
 void QCNetworkAccessManager::removeMiddleware(QCNetworkMiddleware *middleware)
 {
     Q_D(QCNetworkAccessManager);
-    d->middlewares.removeAll(middleware);
+    if (!middleware) {
+        return;
+    }
+
+    for (qsizetype i = d->middlewares.size() - 1; i >= 0; --i) {
+        if (middlewareEntryMatches(d->middlewares.at(i), middleware)) {
+            d->middlewares.removeAt(i);
+        }
+    }
+    middleware->unregisterManager(this);
 }
 
 void QCNetworkAccessManager::clearMiddlewares()
 {
     Q_D(QCNetworkAccessManager);
+    for (const auto &entry : d->middlewares) {
+        if (auto *middleware = middlewareFromEntry(entry)) {
+            middleware->unregisterManager(this);
+        }
+    }
     d->middlewares.clear();
 }
 
 QList<QCNetworkMiddleware *> QCNetworkAccessManager::middlewares() const
 {
     Q_D(const QCNetworkAccessManager);
-    return d->middlewares;
+    QList<QCNetworkMiddleware *> result;
+    result.reserve(d->middlewares.size());
+    for (const auto &entry : d->middlewares) {
+        if (auto *middleware = middlewareFromEntry(entry)) {
+            result.append(middleware);
+        }
+    }
+    return sanitizeMiddlewares(result);
 }
 
 // ==================

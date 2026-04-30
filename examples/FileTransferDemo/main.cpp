@@ -83,11 +83,12 @@ private:
         QUrl url(baseUrl() + "/post");
         qDebug() << "[2/3] 从文件流式上传:" << url.toString();
 
-        auto *reply = m_manager.uploadFromDevice(url,
-                                                 QStringLiteral("file"),
-                                                 file,
-                                                 QFileInfo(*file).fileName(),
-                                                 QStringLiteral("application/octet-stream"));
+        auto *reply = m_manager.postMultipartDevice(url,
+                                                    QStringLiteral("file"),
+                                                    file,
+                                                    QFileInfo(*file).fileName(),
+                                                    QStringLiteral("application/octet-stream"),
+                                                    file->size());
 
         connect(reply, &QCNetworkReply::uploadProgress, this, [](qint64 sent, qint64 total) {
             if (total > 0) {

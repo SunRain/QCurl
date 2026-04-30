@@ -22,6 +22,7 @@ set(QCURL_MODERN_SOURCES
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
     private/QCRequestPipeline.cpp
+    private/QCSingleFileMultipartBodyDevice.cpp
     QCNetworkSslConfig.cpp
     QCNetworkProxyConfig.cpp
     QCNetworkTimeoutConfig.cpp
@@ -50,6 +51,8 @@ set(QCURL_MODERN_HEADERS
     QCGlobal.h
     QCCurlHandleManager.h
     CurlFeatureProbe.h
+    private/QCMultipartHeaderEncoding_p.h
+    private/QCSingleFileMultipartBodyDevice.h
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h

@@ -160,6 +160,7 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
                                        request,
                                        HttpMethod::Get,
                                        ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
                                        QByteArray());
     QVERIFY(replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
@@ -190,6 +191,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            request,
                                            HttpMethod::Get,
                                            ExecutionMode::Sync,
+                                           Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(!replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
@@ -210,6 +212,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            request,
                                            HttpMethod::Get,
                                            ExecutionMode::Sync,
+                                           Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
@@ -232,6 +235,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            request,
                                            HttpMethod::Get,
                                            ExecutionMode::Sync,
+                                           Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(!replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
@@ -253,6 +257,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                                            request,
                                            HttpMethod::Get,
                                            ExecutionMode::Sync,
+                                           Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(replyPrivate.configureCurlOptions());
         QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
@@ -278,7 +283,12 @@ void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
     probe.refreshForTesting();
 
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-    QCNetworkReplyPrivate replyPrivate(nullptr, request, HttpMethod::Get, ExecutionMode::Sync, QByteArray());
+    QCNetworkReplyPrivate replyPrivate(nullptr,
+                                       request,
+                                       HttpMethod::Get,
+                                       ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
+                                       QByteArray());
     QVERIFY(!replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
     QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("7.85.0")));

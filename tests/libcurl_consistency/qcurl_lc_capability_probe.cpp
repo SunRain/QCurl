@@ -1,5 +1,7 @@
 #include "CurlFeatureProbe.h"
 
+#include <QCNetworkAccessManager.h>
+#include <QCNetworkReply.h>
 #include <QCNetworkRequest.h>
 #include <QCNetworkSslConfig.h>
 
@@ -51,16 +53,19 @@ QJsonObject buildManifest()
     request.setAutoDecompressionEnabled(true);
     request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
 
-    QBuffer buffer;
-    buffer.open(QIODevice::ReadWrite);
-    request.setUploadDevice(&buffer);
-    request.setAllowChunkedUploadForPost(true);
+    static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
+        const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>)>(
+        &QCurl::QCNetworkAccessManager::sendPost));
+    static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
+        const QUrl &, const QString &, QIODevice *, const QString &, const QString &, std::optional<qint64>)>(
+        &QCurl::QCNetworkAccessManager::postMultipartDevice));
 
     QCurl::QCNetworkSslConfig ssl;
     ssl.setPinnedPublicKey(QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
 
-    const bool uploadDeviceApi = (request.uploadDevice() == &buffer);
-    const bool chunkedApi = request.allowChunkedUploadForPost();
+    const bool rawBodyDeviceApi = true;
+    const bool unknownSizePostApi = true;
+    const bool singleFileMultipartDeviceApi = true;
     const bool pinnedApi = (ssl.pinnedPublicKey()
                             == QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
     const bool acceptEncodingApi = request.autoDecompressionEnabled()
@@ -68,8 +73,9 @@ QJsonObject buildManifest()
 
     QJsonObject qcurl;
     qcurl.insert(QStringLiteral("acceptEncodingApi"), acceptEncodingApi);
-    qcurl.insert(QStringLiteral("uploadDeviceApi"), uploadDeviceApi);
-    qcurl.insert(QStringLiteral("chunkedUnknownSizePostApi"), chunkedApi);
+    qcurl.insert(QStringLiteral("rawBodyDeviceApi"), rawBodyDeviceApi);
+    qcurl.insert(QStringLiteral("unknownSizeRawBodyPostApi"), unknownSizePostApi);
+    qcurl.insert(QStringLiteral("singleFileMultipartDeviceApi"), singleFileMultipartDeviceApi);
     qcurl.insert(QStringLiteral("pinnedPublicKeyApi"), pinnedApi);
 
     QJsonObject libcurl;
@@ -92,19 +98,20 @@ QJsonObject buildManifest()
     tests.insert(
         QStringLiteral("test_p1_upload_seek_constraints.py"),
         QJsonObject{
-            {QStringLiteral("enabled"), uploadDeviceApi},
+            {QStringLiteral("enabled"), rawBodyDeviceApi},
             {QStringLiteral("reason"),
-             uploadDeviceApi ? QStringLiteral("QCNetworkRequest uploadDevice API available")
-                             : QStringLiteral("QCNetworkRequest uploadDevice API unavailable")},
+             rawBodyDeviceApi
+                 ? QStringLiteral("manager-level raw-body device API available")
+                 : QStringLiteral("manager-level raw-body device API unavailable")},
         });
     tests.insert(
         QStringLiteral("test_p2_stream_upload_chunked_post.py"),
         QJsonObject{
-            {QStringLiteral("enabled"), uploadDeviceApi && chunkedApi},
+            {QStringLiteral("enabled"), rawBodyDeviceApi && unknownSizePostApi},
             {QStringLiteral("reason"),
-             (uploadDeviceApi && chunkedApi)
-                 ? QStringLiteral("unknown-size POST chunked upload API available")
-                 : QStringLiteral("unknown-size POST chunked upload API unavailable")},
+             (rawBodyDeviceApi && unknownSizePostApi)
+                 ? QStringLiteral("unknown-size POST raw-body API available")
+                 : QStringLiteral("unknown-size POST raw-body API unavailable")},
         });
     tests.insert(
         QStringLiteral("test_p2_tls_pinned_public_key.py"),

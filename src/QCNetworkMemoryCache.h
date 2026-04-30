@@ -43,15 +43,9 @@ public:
      */
     ~QCNetworkMemoryCache() override;
 
-    /**
-     * @brief 读取指定 URL 的缓存 body
-     *
-     * 未命中时返回空 QByteArray。
-     */
-    [[nodiscard]] QByteArray data(const QUrl &url) override;
-
-    /// 读取指定 URL 的缓存元数据。
-    [[nodiscard]] QCNetworkCacheMetadata metadata(const QUrl &url) override;
+    /// Reads metadata and body through the canonical lookup API.
+    [[nodiscard]] QCNetworkCacheLookupResult lookup(const QUrl &url,
+                                                    QCNetworkCacheReadMode mode) override;
 
     /// 插入或覆盖指定 URL 的缓存条目。
     void insert(const QUrl &url,

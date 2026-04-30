@@ -24,6 +24,10 @@ namespace QCurl {
 class QCNetworkReply;
 class QCNetworkRequest;
 
+namespace Internal {
+struct RequestBody;
+}
+
 // ==================
 // 前向声明
 // ==================
@@ -124,6 +128,14 @@ public:
                             const QCNetworkRequest &request,
                             HttpMethod method,
                             ExecutionMode mode,
+                            const Internal::RequestBody &requestBodySource,
+                            const QByteArray &requestBody = QByteArray(),
+                            QObject *parent               = nullptr);
+
+    explicit QCNetworkReply(TestOnlyKey,
+                            const QCNetworkRequest &request,
+                            HttpMethod method,
+                            ExecutionMode mode,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
 #endif
@@ -193,6 +205,10 @@ public:
     [[nodiscard]] std::optional<QByteArray> readBody();
     /// 返回解析后的原始 header 键值对。
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
+    /// 返回最终响应头 block 中指定 header 的值；未命中返回空数组。
+    [[nodiscard]] QByteArray rawHeader(const QByteArray &name) const;
+    /// 返回最终响应头 block 中是否存在指定 header。
+    [[nodiscard]] bool hasRawHeader(const QByteArray &name) const;
     /// 返回原始 header 数据块。
     [[nodiscard]] QByteArray rawHeaderData() const;
     /// 返回请求 URL。
@@ -360,6 +376,7 @@ private:
                             const QCNetworkRequest &request,
                             HttpMethod method,
                             ExecutionMode mode,
+                            const Internal::RequestBody &requestBodySource,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
 

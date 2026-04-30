@@ -12,12 +12,14 @@
 #include "QCGlobal.h"
 #include "QCNetworkRetryPolicy.h"
 
+#include <QSet>
 #include <QString>
 
 #include <memory>
 
 namespace QCurl {
 
+class QCNetworkAccessManager;
 class QCNetworkRequest;
 class QCNetworkReply;
 
@@ -38,14 +40,15 @@ class QCNetworkReply;
  *     }
  * };
  *
- * manager->addMiddleware(new AuthMiddleware());
+ * AuthMiddleware auth;
+ * manager->addMiddleware(&auth); // manager 不持有 middleware 所有权
  * @endcode
  */
 class QCURL_EXPORT QCNetworkMiddleware
 {
 public:
     /// 通过多态接口释放中间件对象。
-    virtual ~QCNetworkMiddleware() = default;
+    virtual ~QCNetworkMiddleware();
 
     /**
      * @brief 请求发送前拦截
@@ -77,6 +80,14 @@ public:
      * @return 中间件的标识名称
      */
     virtual QString name() const { return "QCNetworkMiddleware"; }
+
+private:
+    void registerManager(QCNetworkAccessManager *manager);
+    void unregisterManager(QCNetworkAccessManager *manager);
+
+    QSet<QCNetworkAccessManager *> m_registeredManagers;
+
+    friend class QCNetworkAccessManager;
 };
 
 /**

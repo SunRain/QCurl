@@ -38,7 +38,10 @@ private slots:
     // 中间件行为测试
     void testMultipleMiddlewares();
     void testMiddlewareOrder();
+    void testMixedQObjectAndRawMiddlewaresKeepRegistrationOrder();
     void testDuplicateMiddleware();
+    void testDestroyedQObjectMiddlewareRemovedAutomatically();
+    void testDestroyedRawMiddlewareRemovedAutomatically();
 
     // 内置中间件测试
     void testBuiltinMiddlewares();
@@ -227,6 +230,32 @@ void TestQCNetworkMiddleware::testMiddlewareOrder()
     m_manager->clearMiddlewares();
 }
 
+void TestQCNetworkMiddleware::testMixedQObjectAndRawMiddlewaresKeepRegistrationOrder()
+{
+    class RawMiddleware final : public QCNetworkMiddleware
+    {};
+
+    class QObjectMiddleware final : public QObject, public QCNetworkMiddleware
+    {
+    public:
+        using QObject::QObject;
+    };
+
+    RawMiddleware rawFirst;
+    QObjectMiddleware objectSecond;
+    RawMiddleware rawThird;
+
+    m_manager->addMiddleware(&rawFirst);
+    m_manager->addMiddleware(&objectSecond);
+    m_manager->addMiddleware(&rawThird);
+
+    const auto registered = m_manager->middlewares();
+    QCOMPARE(registered.size(), 3);
+    QCOMPARE(registered.at(0), &rawFirst);
+    QCOMPARE(registered.at(1), &objectSecond);
+    QCOMPARE(registered.at(2), &rawThird);
+}
+
 /**
  * @brief 测试重复添加同一中间件
  */
@@ -244,6 +273,35 @@ void TestQCNetworkMiddleware::testDuplicateMiddleware()
     QCOMPARE(m_manager->middlewares().size(), 1);
     QCOMPARE(m_manager->middlewares().first(), &middleware);
     m_manager->clearMiddlewares();
+}
+
+void TestQCNetworkMiddleware::testDestroyedQObjectMiddlewareRemovedAutomatically()
+{
+    class QObjectLoggingMiddleware final : public QObject, public QCNetworkMiddleware
+    {
+    public:
+        using QObject::QObject;
+    };
+
+    auto *middleware = new QObjectLoggingMiddleware();
+    m_manager->addMiddleware(middleware);
+    QCOMPARE(m_manager->middlewares().size(), 1);
+
+    delete middleware;
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    QVERIFY(m_manager->middlewares().isEmpty());
+}
+
+void TestQCNetworkMiddleware::testDestroyedRawMiddlewareRemovedAutomatically()
+{
+    auto *middleware = new QCLoggingMiddleware();
+    m_manager->addMiddleware(middleware);
+    QCOMPARE(m_manager->middlewares().size(), 1);
+
+    delete middleware;
+
+    QVERIFY(m_manager->middlewares().isEmpty());
 }
 
 /**

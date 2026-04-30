@@ -53,7 +53,7 @@
 
 ### 📁 文件操作
 
-- **流式下载/上传** - `downloadToDevice()` / `uploadFromDevice()` 支持大文件
+- **流式下载/上传** - `downloadToDevice()`、manager-level `sendPost()/sendPut()` raw-body device overload 与 `postMultipartDevice()` 支持大文件
 - **断点续传** - HTTP Range 请求自动恢复下载
 - **Multipart/form-data** - RFC 7578 兼容，自动 MIME 类型推断
 

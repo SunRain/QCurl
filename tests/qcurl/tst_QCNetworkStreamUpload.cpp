@@ -1,6 +1,6 @@
 /**
  * @file tst_QCNetworkStreamUpload.cpp
- * @brief 流式上传（uploadDevice/uploadFile）契约与分支覆盖测试
+ * @brief manager-level raw-body 请求体来源契约与分支覆盖测试
  *
  * 约束：
  * - 仅使用本进程内的 QTcpServer（listen 端口 0），不依赖外网/本地 httpbin。
@@ -25,6 +25,7 @@
 #include <QTimer>
 #include <QtTest/QtTest>
 
+#include <atomic>
 #include <chrono>
 
 using namespace QCurl;
@@ -361,6 +362,49 @@ public:
     }
 };
 
+class ObservedUploadBuffer final : public QBuffer
+{
+public:
+    explicit ObservedUploadBuffer(const QByteArray &data, QObject *parent = nullptr)
+        : QBuffer(parent)
+    {
+        setData(data);
+    }
+
+    int metadataProbeCount() const { return m_metadataProbeCount.load(); }
+    int crossThreadMetadataProbeCount() const { return m_crossThreadMetadataProbeCount.load(); }
+
+    bool isSequential() const override
+    {
+        recordMetadataProbe();
+        return QBuffer::isSequential();
+    }
+
+    qint64 pos() const override
+    {
+        recordMetadataProbe();
+        return QBuffer::pos();
+    }
+
+    qint64 size() const override
+    {
+        recordMetadataProbe();
+        return QBuffer::size();
+    }
+
+private:
+    void recordMetadataProbe() const
+    {
+        ++m_metadataProbeCount;
+        if (QThread::currentThread() != thread()) {
+            ++m_crossThreadMetadataProbeCount;
+        }
+    }
+
+    mutable std::atomic<int> m_metadataProbeCount{0};
+    mutable std::atomic<int> m_crossThreadMetadataProbeCount{0};
+};
+
 static bool waitForFinished(QCNetworkReply *reply, int timeoutMs = 20000)
 {
     if (!reply) {
@@ -384,6 +428,7 @@ private slots:
     void testSeekablePostEchoAndOwnershipPreserved();
 
     void testUploadDeviceThreadMismatchFailsFast();
+    void testDeviceOverloadFromNonOwnerThreadFailsBeforeDeviceProbe();
     void testNonSeekableFollowLocationFailsFast();
     void testNonSeekableRetryPolicyFailsFast();
     void testSeekableRetryPreSeekFailureIsDiagnosable();
@@ -408,11 +453,10 @@ void TestQCNetworkStreamUpload::testSeekablePutEchoAndOwnershipPreserved()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QCNetworkRequest request(server.url(QStringLiteral("/echo_put")));
-    request.setUploadDevice(&buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(8000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -445,11 +489,10 @@ void TestQCNetworkStreamUpload::testSeekablePostEchoAndOwnershipPreserved()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QCNetworkRequest request(server.url(QStringLiteral("/echo_post")));
-    request.setUploadDevice(&buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(8000));
 
-    QCNetworkReply *reply = manager.sendPost(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPost(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -478,33 +521,29 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
     ctx.moveToThread(&worker);
 
     QByteArray payload(1024, 't');
-    QBuffer *device = nullptr;
+    ObservedUploadBuffer *device = nullptr;
 
     QMetaObject::invokeMethod(
         &ctx,
         [&]() {
-            device = new QBuffer();
-            device->setData(payload);
-            device->open(QIODevice::ReadOnly);
+            device = new ObservedUploadBuffer(payload);
         },
         Qt::BlockingQueuedConnection);
 
     QVERIFY(device != nullptr);
-    QPointer<QBuffer> safeDevice(device);
-    QVERIFY(device->isReadable());
+    QPointer<ObservedUploadBuffer> safeDevice(device);
     QCOMPARE(device->thread(), &worker);
 
     QCNetworkAccessManager manager;
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
-    request.setUploadDevice(device, payload.size());
-
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, device, payload.size());
     QVERIFY(reply);
 
-    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
-    QVERIFY2(reply->errorString().contains(QStringLiteral("同一线程")),
-             "thread mismatch should be diagnosable");
+    const NetworkError error = reply->error();
+    const QString errorString = reply->errorString();
+    const int metadataProbeCount = device->metadataProbeCount();
+    const int crossThreadMetadataProbeCount = device->crossThreadMetadataProbeCount();
 
     reply->deleteLater();
 
@@ -512,6 +551,59 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
     QTRY_VERIFY_WITH_TIMEOUT(!safeDevice, 2000);
     worker.quit();
     QVERIFY(worker.wait(2000));
+
+    QCOMPARE(error, NetworkError::InvalidRequest);
+    QVERIFY2(errorString.contains(QStringLiteral("同一线程")),
+             "thread mismatch should be diagnosable");
+    QCOMPARE(metadataProbeCount, 0);
+    QCOMPARE(crossThreadMetadataProbeCount, 0);
+}
+
+void TestQCNetworkStreamUpload::testDeviceOverloadFromNonOwnerThreadFailsBeforeDeviceProbe()
+{
+    QThread worker;
+    worker.start();
+
+    QObject ctx;
+    ctx.moveToThread(&worker);
+
+    QCNetworkAccessManager *manager = nullptr;
+    QMetaObject::invokeMethod(
+        &ctx,
+        [&]() { manager = new QCNetworkAccessManager(); },
+        Qt::BlockingQueuedConnection);
+    QVERIFY(manager != nullptr);
+    QCOMPARE(manager->thread(), &worker);
+
+    const QByteArray payload(1024, 'o');
+    ObservedUploadBuffer device(payload);
+    QVERIFY(device.open(QIODevice::ReadOnly));
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
+    request.setFollowLocation(false);
+
+    QCNetworkReply *reply = manager->sendPut(request, &device, payload.size());
+    QVERIFY(reply);
+    const NetworkError error = reply->error();
+    const QString errorString = reply->errorString();
+    const int metadataProbeCount = device.metadataProbeCount();
+    const int crossThreadMetadataProbeCount = device.crossThreadMetadataProbeCount();
+
+    if (reply->thread() == QThread::currentThread()) {
+        reply->deleteLater();
+    } else {
+        QMetaObject::invokeMethod(reply, &QObject::deleteLater, Qt::QueuedConnection);
+    }
+
+    QMetaObject::invokeMethod(manager, &QObject::deleteLater, Qt::QueuedConnection);
+    worker.quit();
+    QVERIFY(worker.wait(2000));
+
+    QCOMPARE(error, NetworkError::InvalidRequest);
+    QVERIFY2(errorString.contains(QStringLiteral("owner 线程")),
+             "non-owner manager call should be rejected at the public API boundary");
+    QCOMPARE(metadataProbeCount, 0);
+    QCOMPARE(crossThreadMetadataProbeCount, 0);
 }
 
 void TestQCNetworkStreamUpload::testNonSeekableFollowLocationFailsFast()
@@ -527,11 +619,10 @@ void TestQCNetworkStreamUpload::testNonSeekableFollowLocationFailsFast()
 
     // followLocation 默认 true：当遇到需要重发 body 的 307 重定向时，non-seekable 应明确失败
     QCNetworkRequest request(server.url(QStringLiteral("/redir_307_put")));
-    request.setUploadDevice(&device, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(20000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &device, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -557,9 +648,7 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
     request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
-    request.setUploadDevice(&device, payload.size());
-
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &device, payload.size());
     QVERIFY(reply);
 
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
@@ -579,11 +668,10 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
     request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
-    request.setUploadDevice(&buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(5000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -609,11 +697,10 @@ void TestQCNetworkStreamUpload::testSeekableFollowLocationSeekFailureIsDiagnosab
     SeekFailBuffer buffer(payload, this);
 
     QCNetworkRequest request(server.url(QStringLiteral("/redir_307_put")));
-    request.setUploadDevice(&buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -641,11 +728,10 @@ void TestQCNetworkStreamUpload::testUploadDeviceCloseDuringTransferFails()
 
     QCNetworkRequest request(server.url(QStringLiteral("/close_during_upload")));
     request.setFollowLocation(false);
-    request.setUploadDevice(buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
     QVERIFY(reply);
 
     bool closed = false;
@@ -681,11 +767,10 @@ void TestQCNetworkStreamUpload::testUploadDeviceDestroyedDuringTransferFails()
 
     QCNetworkRequest request(server.url(QStringLiteral("/destroy_during_upload")));
     request.setFollowLocation(false);
-    request.setUploadDevice(buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
     QVERIFY(reply);
 
     bool destroyed = false;
@@ -720,11 +805,10 @@ void TestQCNetworkStreamUpload::testUploadDeviceReadFailureFails()
 
     QCNetworkRequest request(server.url(QStringLiteral("/read_fail")));
     request.setFollowLocation(false);
-    request.setUploadDevice(&device, 4096);
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, &device, 4096);
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -754,11 +838,10 @@ void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
 
     QCNetworkRequest request(server.url(QStringLiteral("/hang")));
     request.setFollowLocation(false);
-    request.setUploadDevice(buffer, payload.size());
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(30000));
 
-    QCNetworkReply *reply = manager.sendPut(request, QByteArray());
+    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
     QVERIFY(reply);
 
     QTRY_VERIFY_WITH_TIMEOUT(buffer->readCalls() > 0, 2000);

@@ -27,6 +27,11 @@ namespace {
 class ThrottledRangeServer final : public QObject
 {
 public:
+    enum class PartialResponseMode {
+        MatchingRange,
+        MismatchedRangeStart,
+    };
+
     explicit ThrottledRangeServer(qint64 totalBytes, QObject *parent = nullptr)
         : QObject(parent)
         , m_totalBytes(totalBytes)
@@ -55,6 +60,7 @@ public:
     }
 
     QByteArray expectedPayload() const { return m_payload; }
+    void setPartialResponseMode(PartialResponseMode mode) { m_partialResponseMode = mode; }
 
 private:
     static qint64 parseRangeStart(const QByteArray &headerValue)
@@ -110,9 +116,11 @@ private:
                              }
 
                              if (rangeStart >= m_totalBytes) {
-                                 const QByteArray resp = QByteArray(
+                                 QByteArray resp = QByteArray(
                                      "HTTP/1.1 416 Range Not Satisfiable\r\n"
-                                     "Connection: close\r\n\r\n");
+                                     "Content-Range: bytes */");
+                                 resp += QByteArray::number(m_totalBytes);
+                                 resp += QByteArrayLiteral("\r\nConnection: close\r\n\r\n");
                                  socket->write(resp);
                                  socket->disconnectFromHost();
                                  return;
@@ -128,8 +136,19 @@ private:
                              resp += "Accept-Ranges: bytes\r\n";
                              resp += "Content-Length: " + QByteArray::number(remaining) + "\r\n";
                              if (isPartial) {
+                                 qint64 responseRangeStart = rangeStart;
+                                 if (m_partialResponseMode
+                                     == PartialResponseMode::MismatchedRangeStart) {
+                                     responseRangeStart = qMin(rangeStart + 1, m_totalBytes - 1);
+                                 }
+                                 const qint64 responseRemaining = m_totalBytes - responseRangeStart;
+                                 resp.replace(resp.indexOf("Content-Length: "),
+                                              QByteArray("Content-Length: ").size()
+                                                  + QByteArray::number(remaining).size(),
+                                              QByteArray("Content-Length: ")
+                                                  + QByteArray::number(responseRemaining));
                                  resp += "Content-Range: bytes ";
-                                 resp += QByteArray::number(rangeStart);
+                                 resp += QByteArray::number(responseRangeStart);
                                  resp += "-";
                                  resp += QByteArray::number(m_totalBytes - 1);
                                  resp += "/";
@@ -152,7 +171,13 @@ private:
                                  return;
                              }
 
-                             socket->write(m_payload.constData() + rangeStart, remaining);
+                             const qint64 responseStart = (isPartial
+                                                               && m_partialResponseMode
+                                                                      == PartialResponseMode::MismatchedRangeStart)
+                                                             ? qMin(rangeStart + 1, m_totalBytes - 1)
+                                                             : rangeStart;
+                             const qint64 responseBytes = m_totalBytes - responseStart;
+                             socket->write(m_payload.constData() + responseStart, responseBytes);
                              socket->flush();
                              socket->disconnectFromHost();
                          });
@@ -163,6 +188,7 @@ private:
     QTcpServer m_server;
     bool m_dropFirstFullResponse = true;
     qint64 m_dropBytes           = 64 * 1024;
+    PartialResponseMode m_partialResponseMode = PartialResponseMode::MatchingRange;
 };
 
 } // namespace
@@ -176,8 +202,12 @@ private slots:
     void cleanupTestCase();
 
     void testDownloadToDeviceWritesExpectedBytes();
-    void testUploadFromDeviceSendsPayload();
+    void testPostMultipartDeviceSendsPayload();
+    void testPostMultipartDeviceReplyOwnsStreamingBody();
     void testDownloadFileResumableContinuesFromPartialFile();
+    void testDownloadFileResumableTreats416MatchingContentRangeAsAlreadyComplete();
+    void testDownloadFileResumableTreats416MatchingContentRangeAsAlreadyCompleteWithoutErrorSignal();
+    void testDownloadFileResumableFailsWhenContentRangeStartDoesNotMatch();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -245,7 +275,7 @@ void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
     reply->deleteLater();
 }
 
-void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
+void TestQCNetworkFileTransfer::testPostMultipartDeviceSendsPayload()
 {
     QByteArray payload(2048, Qt::Uninitialized);
     for (int i = 0; i < payload.size(); ++i) {
@@ -256,11 +286,12 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QUrl url(m_httpbinBaseUrl + "/post");
-    auto *reply = m_manager->uploadFromDevice(url,
-                                              QStringLiteral("file"),
-                                              &buffer,
-                                              QStringLiteral("payload.bin"),
-                                              QStringLiteral("application/octet-stream"));
+    auto *reply = m_manager->postMultipartDevice(url,
+                                                 QStringLiteral("file"),
+                                                 &buffer,
+                                                 QStringLiteral("payload.bin"),
+                                                 QStringLiteral("application/octet-stream"),
+                                                 payload.size());
 
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -290,6 +321,38 @@ void TestQCNetworkFileTransfer::testUploadFromDeviceSendsPayload()
 
     QCOMPARE(echoed, payload);
 
+    reply->deleteLater();
+}
+
+void TestQCNetworkFileTransfer::testPostMultipartDeviceReplyOwnsStreamingBody()
+{
+    QByteArray payload(1024, 'm');
+    QBuffer buffer(&payload);
+    QVERIFY(buffer.open(QIODevice::ReadOnly));
+
+    QUrl url(m_httpbinBaseUrl + "/post");
+    auto *reply = m_manager->postMultipartDevice(url,
+                                                 QStringLiteral("file"),
+                                                 &buffer,
+                                                 QStringLiteral("payload.bin"),
+                                                 QStringLiteral("application/octet-stream"),
+                                                 payload.size());
+
+    QVERIFY(reply != nullptr);
+    const auto children = reply->children();
+    bool foundMultipartDevice = false;
+    for (QObject *child : children) {
+        if (child && child->metaObject()
+                         && QByteArray(child->metaObject()->className())
+                                .contains("QCSingleFileMultipartBodyDevice")) {
+            foundMultipartDevice = true;
+            break;
+        }
+    }
+    QVERIFY(foundMultipartDevice);
+
+    QVERIFY(waitForFinished(reply));
+    QCOMPARE(reply->error(), NetworkError::NoError);
     reply->deleteLater();
 }
 
@@ -330,6 +393,105 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     QByteArray finalData = finalFile.readAll();
     QCOMPARE(static_cast<qint64>(finalData.size()), totalBytes);
     QCOMPARE(finalData, server.expectedPayload());
+}
+
+void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingContentRangeAsAlreadyComplete()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString savePath  = dir.filePath(QStringLiteral("already-complete.bin"));
+    const qint64 totalBytes = 128 * 1024;
+
+    ThrottledRangeServer server(totalBytes);
+    QVERIFY2(server.start(), "Cannot start local throttled HTTP server (port binding failed)");
+
+    QFile complete(savePath);
+    QVERIFY(complete.open(QIODevice::WriteOnly));
+    complete.write(server.expectedPayload());
+    complete.close();
+
+    const QUrl url = server.url(QStringLiteral("/range.bin"));
+
+    auto *reply = m_manager->downloadFileResumable(url, savePath);
+    QVERIFY(reply);
+    QVERIFY(waitForFinished(reply, 10000));
+
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->httpStatusCode(), 416);
+    QCOMPARE(reply->rawHeader(QByteArrayLiteral("Content-Range")),
+             QByteArray("bytes */" + QByteArray::number(totalBytes)));
+
+    QFile finalFile(savePath);
+    QVERIFY(finalFile.open(QIODevice::ReadOnly));
+    const QByteArray finalData = finalFile.readAll();
+    QCOMPARE(static_cast<qint64>(finalData.size()), totalBytes);
+    QCOMPARE(finalData, server.expectedPayload());
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingContentRangeAsAlreadyCompleteWithoutErrorSignal()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString savePath  = dir.filePath(QStringLiteral("already-complete-no-error.bin"));
+    const qint64 totalBytes = 64 * 1024;
+
+    ThrottledRangeServer server(totalBytes);
+    QVERIFY2(server.start(), "Cannot start local throttled HTTP server (port binding failed)");
+
+    QFile complete(savePath);
+    QVERIFY(complete.open(QIODevice::WriteOnly));
+    complete.write(server.expectedPayload());
+    complete.close();
+
+    const QUrl url = server.url(QStringLiteral("/range.bin"));
+    auto *reply = m_manager->downloadFileResumable(url, savePath);
+    QVERIFY(reply);
+
+    QSignalSpy errorSpy(reply,
+                        static_cast<void (QCNetworkReply::*)(NetworkError)>(
+                            &QCNetworkReply::error));
+    QVERIFY(waitForFinished(reply, 10000));
+    QCOMPARE(errorSpy.count(), 0);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkFileTransfer::testDownloadFileResumableFailsWhenContentRangeStartDoesNotMatch()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString savePath  = dir.filePath(QStringLiteral("mismatched-range.bin"));
+    const qint64 totalBytes = 96 * 1024;
+
+    ThrottledRangeServer server(totalBytes);
+    server.setPartialResponseMode(ThrottledRangeServer::PartialResponseMode::MismatchedRangeStart);
+    QVERIFY2(server.start(), "Cannot start local throttled HTTP server (port binding failed)");
+
+    QFile partial(savePath);
+    QVERIFY(partial.open(QIODevice::WriteOnly));
+    const QByteArray stalePrefix(4096, 'z');
+    partial.write(stalePrefix);
+    partial.close();
+
+    const QUrl url = server.url(QStringLiteral("/range.bin"));
+    auto *reply = m_manager->downloadFileResumable(url, savePath);
+    QVERIFY(reply);
+    QVERIFY(waitForFinished(reply, 10000));
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(QStringLiteral("Content-Range.start")));
+
+    QFile finalFile(savePath);
+    QVERIFY(finalFile.open(QIODevice::ReadOnly));
+    const QByteArray finalData = finalFile.readAll();
+    QCOMPARE(finalData, stalePrefix);
+
+    reply->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkFileTransfer)

@@ -64,8 +64,8 @@ public:
     [[nodiscard]] QString cacheDirectory() const;
 
     // QCNetworkCache 接口实现
-    [[nodiscard]] QByteArray data(const QUrl &url) override;
-    [[nodiscard]] QCNetworkCacheMetadata metadata(const QUrl &url) override;
+    [[nodiscard]] QCNetworkCacheLookupResult lookup(const QUrl &url,
+                                                    QCNetworkCacheReadMode mode) override;
     void insert(const QUrl &url,
                 const QByteArray &data,
                 const QCNetworkCacheMetadata &meta) override;

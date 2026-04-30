@@ -1988,9 +1988,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     });
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/upload").arg(port)));
-    request.setUploadDevice(&device, payload.size());
-
-    auto *reply = m_manager->sendPut(request, QByteArray());
+    auto *reply = m_manager->sendPut(request, &device, payload.size());
     QVERIFY(reply);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);

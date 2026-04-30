@@ -14,7 +14,18 @@
 - 优先级：`setPriority(...)`
 - 重试策略：`setRetryPolicy(...)`
 - 认证：`setHttpAuth(...)`
-- 上传：`setUploadDevice(...)` / `setUploadFile(...)`
+- 上传：
+  - raw body：`QCNetworkAccessManager::sendPost(..., QIODevice *, sizeBytes)` / `sendPut(..., QIODevice *, sizeBytes)`
+  - 单文件 multipart：`QCNetworkAccessManager::postMultipartDevice(...)` / `postMultipartFile(...)`
+
+上传入口的关键合同：
+
+- raw-body `QIODevice *` 是借用对象，调用方持有所有权，并负责保持到 reply 结束。
+- device overload 必须从 manager 所在线程调用，且 `device->thread()` 必须与 manager/reply 线程一致；异步请求还需要该线程存在 Qt event loop。
+- raw-body 从调用时的当前 `pos()` 开始读；需要重定向、重试或认证协商重发 body 时，设备必须能 seek 回起点。
+- POST 未知长度只支持 HTTP/1.1 chunked raw-body；PUT 必须有已知长度或可从 seekable device 推导。
+- async raw-body 可以通过 `readyRead()` 从 source-not-ready 恢复；sync raw-body 遇到 `read() == 0 && !atEnd()` 会失败。
+- `postMultipartDevice()` 要求已知长度、可 seek、同线程、借用生命周期；不支持 unknown-size/sequential source。
 
 ### 值语义与 `operator==`
 

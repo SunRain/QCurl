@@ -26,6 +26,9 @@ private slots:
     void testSendGet_AutoWiredMiddleware();
     void testScheduleGet_AutoWiredMiddleware();
     void testXsrfCookieToHeader_InMiddleware();
+    void testDestroyedQObjectMiddlewareNotInvokedOnResponse();
+    void testRemovedRawMiddlewareNotInvokedOnResponse();
+    void testDestroyedRawMiddlewareNotInvokedOnResponse();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -313,6 +316,127 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
         QVERIFY(!hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
         reply->deleteLater();
     }
+}
+
+void tst_QCNetworkMiddlewareIntegration::testDestroyedQObjectMiddlewareNotInvokedOnResponse()
+{
+    class CountingQObjectMiddleware final : public QObject, public QCNetworkMiddleware
+    {
+    public:
+        explicit CountingQObjectMiddleware(int &responseCount)
+            : m_responseCount(responseCount)
+        {}
+
+        void onResponseReceived(QCNetworkReply *reply) override
+        {
+            Q_UNUSED(reply);
+            ++m_responseCount;
+        }
+
+    private:
+        int &m_responseCount;
+    };
+
+    int responseCount = 0;
+    auto *middleware = new CountingQObjectMiddleware(responseCount);
+    m_manager->addMiddleware(middleware);
+
+    m_mockHandler.setGlobalDelay(50);
+    const QUrl url("http://example.com/mw/destroyed-response");
+    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(request);
+
+    delete middleware;
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(m_manager->middlewares().isEmpty());
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QVERIFY(finishedSpy.wait(1000));
+    QCOMPARE(responseCount, 0);
+    reply->deleteLater();
+    m_mockHandler.setGlobalDelay(0);
+}
+
+void tst_QCNetworkMiddlewareIntegration::testRemovedRawMiddlewareNotInvokedOnResponse()
+{
+    class CountingRawMiddleware final : public QCNetworkMiddleware
+    {
+    public:
+        explicit CountingRawMiddleware(int &responseCount)
+            : m_responseCount(responseCount)
+        {}
+
+        void onResponseReceived(QCNetworkReply *reply) override
+        {
+            Q_UNUSED(reply);
+            ++m_responseCount;
+        }
+
+    private:
+        int &m_responseCount;
+    };
+
+    int responseCount = 0;
+    CountingRawMiddleware middleware(responseCount);
+    m_manager->addMiddleware(&middleware);
+
+    m_mockHandler.setGlobalDelay(50);
+    const QUrl url("http://example.com/mw/removed-response");
+    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(request);
+
+    m_manager->removeMiddleware(&middleware);
+    QVERIFY(m_manager->middlewares().isEmpty());
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QVERIFY(finishedSpy.wait(1000));
+    QCOMPARE(responseCount, 0);
+    reply->deleteLater();
+    m_mockHandler.setGlobalDelay(0);
+}
+
+void tst_QCNetworkMiddlewareIntegration::testDestroyedRawMiddlewareNotInvokedOnResponse()
+{
+    class CountingRawMiddleware final : public QCNetworkMiddleware
+    {
+    public:
+        explicit CountingRawMiddleware(int &responseCount)
+            : m_responseCount(responseCount)
+        {}
+
+        void onResponseReceived(QCNetworkReply *reply) override
+        {
+            Q_UNUSED(reply);
+            ++m_responseCount;
+        }
+
+    private:
+        int &m_responseCount;
+    };
+
+    int responseCount = 0;
+    auto *middleware = new CountingRawMiddleware(responseCount);
+    m_manager->addMiddleware(middleware);
+
+    m_mockHandler.setGlobalDelay(50);
+    const QUrl url("http://example.com/mw/destroyed-raw-response");
+    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendGet(request);
+
+    delete middleware;
+    QVERIFY(m_manager->middlewares().isEmpty());
+
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    QVERIFY(finishedSpy.wait(1000));
+    QCOMPARE(responseCount, 0);
+    reply->deleteLater();
+    m_mockHandler.setGlobalDelay(0);
 }
 
 QTEST_MAIN(tst_QCNetworkMiddlewareIntegration)

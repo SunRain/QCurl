@@ -20,6 +20,7 @@
 #include <QEventLoop>
 #include <QSignalSpy>
 #include <QTimer>
+#include <QVector>
 #include <QtTest/QtTest>
 
 using namespace QCurl;
@@ -46,7 +47,14 @@ private slots:
     void testPreferCacheMiss();      // PreferCache 未命中
     void testOnlyCacheHit();         // OnlyCache 命中
     void testOnlyCacheMiss();        // OnlyCache 未命中（错误）
+    void testOnlyCacheHitWithZeroByteBody();
+    void testOnlyCacheHitWithZeroByteBodyAndNoHeaders();
+    void testOnlyCacheHitWithExpiredBody();
+    void testOnlyCacheHitWithExpiredZeroByteBody();
+    void testPreferCacheHitWithZeroByteBody();
     void testAlwaysCache();          // AlwaysCache 策略
+    void testAlwaysCacheHitWithExpiredBody();
+    void testAlwaysCacheHitWithExpiredZeroByteBody();
     void testPreferNetworkSuccess(); // PreferNetwork 成功
     void testAutoCacheWrite();       // 自动缓存写入验证
 
@@ -62,6 +70,11 @@ private:
 
     bool waitForFinished(QCNetworkReply *reply, int timeout = 5000);
     bool isHttpbinAvailable();
+    void verifyCacheHitSignalContract(QCNetworkCachePolicy policy,
+                                      const QUrl &url,
+                                      const QByteArray &cachedData,
+                                      bool expectReadyRead,
+                                      int expiresInSeconds = 3600);
 };
 
 void TestQCNetworkCacheIntegration::initTestCase()
@@ -122,6 +135,63 @@ bool TestQCNetworkCacheIntegration::isHttpbinAvailable()
     return available;
 }
 
+void TestQCNetworkCacheIntegration::verifyCacheHitSignalContract(
+    QCNetworkCachePolicy policy,
+    const QUrl &url,
+    const QByteArray &cachedData,
+    bool expectReadyRead,
+    int expiresInSeconds)
+{
+    m_manager->setCache(m_cache);
+
+    QCNetworkCacheMetadata meta;
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(expiresInSeconds);
+    meta.headers.insert(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain"));
+    meta.size = cachedData.size();
+    m_cache->insert(url, cachedData, meta);
+
+    QCNetworkRequest request(url);
+    request.setCachePolicy(policy);
+
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(reply);
+    QVERIFY2(!reply->isFinished(), "cache hit must finish asynchronously after sendGet returns");
+
+    QVector<QByteArray> events;
+    QSignalSpy readySpy(reply, &QCNetworkReply::readyRead);
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    connect(reply, &QCNetworkReply::readyRead, this, [&events]() {
+        events.append(QByteArrayLiteral("readyRead"));
+    });
+    connect(reply, &QCNetworkReply::finished, this, [&events]() {
+        events.append(QByteArrayLiteral("finished"));
+    });
+
+    QVERIFY(waitForFinished(reply, 100));
+    QCOMPARE(finishedSpy.count(), 1);
+
+    if (expectReadyRead) {
+        QCOMPARE(readySpy.count(), 1);
+        const qsizetype readyIndex = events.indexOf(QByteArrayLiteral("readyRead"));
+        const qsizetype finishedIndex = events.indexOf(QByteArrayLiteral("finished"));
+        QVERIFY(readyIndex >= 0);
+        QVERIFY(finishedIndex >= 0);
+        QVERIFY(readyIndex < finishedIndex);
+    } else {
+        QCOMPARE(readySpy.count(), 0);
+        QCOMPARE(events, QVector<QByteArray>{QByteArrayLiteral("finished")});
+    }
+
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->httpStatusCode(), 200);
+    const auto data = reply->readAll();
+    QVERIFY(data.has_value());
+    QCOMPARE(data.value(), cachedData);
+
+    reply->deleteLater();
+}
+
 // ============================================================================
 // 基础缓存语义
 // ============================================================================
@@ -156,8 +226,8 @@ void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
-    QByteArray cachedData = m_cache->data(request.url());
-    QVERIFY(cachedData.isEmpty());
+    const auto cached = m_cache->lookup(request.url(), QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(cached.status, QCNetworkCacheLookupStatus::Miss);
 
     reply->deleteLater();
 }
@@ -234,36 +304,9 @@ void TestQCNetworkCacheIntegration::testMultipleRequests()
 void TestQCNetworkCacheIntegration::testPreferCacheHit()
 {
     // PreferCache 命中时应直接读取缓存。
-    m_manager->setCache(m_cache);
-
     QUrl url(m_httpbinBaseUrl + "/get?test=prefercache");
-
     QByteArray testData = "{\"cached\": true}";
-    QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
-    m_cache->insert(url, testData, meta);
-
-    QCNetworkRequest request(url);
-    request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
-
-    QElapsedTimer timer;
-    timer.start();
-
-    auto *reply = m_manager->sendGet(request);
-    QVERIFY(waitForFinished(reply, 100));
-
-    qint64 elapsed = timer.elapsed();
-
-    // 命中缓存时，完成时间应明显短于网络路径。
-    QVERIFY(elapsed < 50); // 缓存命中应该 < 50ms
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    auto data = reply->readAll();
-    QVERIFY(data.has_value());
-    QCOMPARE(data.value(), testData);
-
-    reply->deleteLater();
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::PreferCache, url, testData, true);
 }
 
 void TestQCNetworkCacheIntegration::testPreferCacheMiss()
@@ -288,27 +331,9 @@ void TestQCNetworkCacheIntegration::testPreferCacheMiss()
 void TestQCNetworkCacheIntegration::testOnlyCacheHit()
 {
     // OnlyCache 命中时不应触发网络失败。
-    m_manager->setCache(m_cache);
-
     QUrl url(m_httpbinBaseUrl + "/get?test=onlycache");
-
     QByteArray testData = "{\"only_cache\": true}";
-    QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
-    m_cache->insert(url, testData, meta);
-
-    QCNetworkRequest request(url);
-    request.setCachePolicy(QCNetworkCachePolicy::OnlyCache);
-
-    auto *reply = m_manager->sendGet(request);
-    QVERIFY(waitForFinished(reply, 100));
-    QCOMPARE(reply->error(), NetworkError::NoError);
-
-    auto data = reply->readAll();
-    QCOMPARE(data.value(), testData);
-
-    reply->deleteLater();
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::OnlyCache, url, testData, true);
 }
 
 void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
@@ -330,6 +355,56 @@ void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
     reply->deleteLater();
 }
 
+void TestQCNetworkCacheIntegration::testOnlyCacheHitWithZeroByteBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/status/204?test=onlycache-zero");
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::OnlyCache, url, QByteArray(), false);
+}
+
+void TestQCNetworkCacheIntegration::testOnlyCacheHitWithZeroByteBodyAndNoHeaders()
+{
+    m_manager->setCache(m_cache);
+
+    const QUrl url(m_httpbinBaseUrl + "/status/204?test=onlycache-zero-no-headers");
+    QCNetworkCacheMetadata meta;
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
+    m_cache->insert(url, QByteArray(), meta);
+
+    QCNetworkRequest request(url);
+    request.setCachePolicy(QCNetworkCachePolicy::OnlyCache);
+
+    auto *reply = m_manager->sendGet(request);
+    QVERIFY(waitForFinished(reply, 100));
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->httpStatusCode(), 200);
+
+    const auto data = reply->readAll();
+    QVERIFY(data.has_value());
+    QVERIFY(data->isEmpty());
+
+    reply->deleteLater();
+}
+
+void TestQCNetworkCacheIntegration::testOnlyCacheHitWithExpiredBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/get?test=onlycache-expired");
+    const QByteArray testData = "{\"only_cache_expired\": true}";
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::OnlyCache, url, testData, true, -60);
+}
+
+void TestQCNetworkCacheIntegration::testOnlyCacheHitWithExpiredZeroByteBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/status/204?test=onlycache-expired-zero");
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::OnlyCache, url, QByteArray(), false, -60);
+}
+
+void TestQCNetworkCacheIntegration::testPreferCacheHitWithZeroByteBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/status/204?test=prefercache-zero");
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::PreferCache, url, QByteArray(), false);
+}
+
 void TestQCNetworkCacheIntegration::testAlwaysCache()
 {
     // AlwaysCache 只消费已有缓存，不依赖当前网络可达性。
@@ -349,9 +424,9 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
 
     m_cache->insert(url, testData, meta);
 
-    QByteArray cachedData = m_cache->data(url);
-    QVERIFY2(!cachedData.isEmpty(), "Cache insert failed - data is empty");
-    QCOMPARE(cachedData, testData);
+    const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QVERIFY2(cached.hit(), "Cache insert failed");
+    QCOMPARE(cached.body, testData);
 
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
@@ -364,6 +439,19 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
     QCOMPARE(data.value(), testData);
 
     reply->deleteLater();
+}
+
+void TestQCNetworkCacheIntegration::testAlwaysCacheHitWithExpiredBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/get?test=alwayscache-expired");
+    const QByteArray testData = "{\"always_cache_expired\": true}";
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::AlwaysCache, url, testData, true, -60);
+}
+
+void TestQCNetworkCacheIntegration::testAlwaysCacheHitWithExpiredZeroByteBody()
+{
+    const QUrl url(m_httpbinBaseUrl + "/status/204?test=alwayscache-expired-zero");
+    verifyCacheHitSignalContract(QCNetworkCachePolicy::AlwaysCache, url, QByteArray(), false, -60);
 }
 
 void TestQCNetworkCacheIntegration::testPreferNetworkSuccess()
@@ -402,9 +490,9 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
     QVERIFY(networkData.has_value());
     reply->deleteLater();
 
-    QByteArray cachedData = m_cache->data(url);
-    QVERIFY(!cachedData.isEmpty());
-    QCOMPARE(cachedData, networkData.value());
+    const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QVERIFY(cached.hit());
+    QCOMPARE(cached.body, networkData.value());
 
     auto *reply2 = m_manager->sendGet(request);
     QVERIFY(waitForFinished(reply2, 100));
@@ -462,8 +550,8 @@ void TestQCNetworkCacheIntegration::testNoCacheHeader()
 
     reply->deleteLater();
 
-    QByteArray cachedData = m_cache->data(url);
-    QVERIFY(cachedData.isEmpty());
+    const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(cached.status, QCNetworkCacheLookupStatus::Miss);
 }
 
 void TestQCNetworkCacheIntegration::testConcurrentRequests()

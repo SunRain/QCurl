@@ -63,6 +63,7 @@ public:
                                    const QCNetworkRequest &req,
                                    HttpMethod method,
                                    ExecutionMode mode,
+                                   const Internal::RequestBody &requestBodySource,
                                    const QByteArray &body);
 
     /**
@@ -103,7 +104,9 @@ public:
 
     QCByteDataBuffer bodyBuffer;      ///< 响应体缓冲区（异步模式使用）
     QByteArray headerData;            ///< 原始响应头数据
-    QMap<QString, QString> headerMap; ///< 解析后的响应头键值对
+    QList<RawHeaderPair> finalHeaderList; ///< 最终响应头 block 的 header 列表
+    QMap<QByteArray, QByteArray> finalHeaderMap; ///< 最终响应头 block 的大小写归一化索引
+    QMap<QString, QString> headerMap; ///< 最终响应头 block 的兼容索引
 
     // ==================
     // 状态管理
@@ -234,17 +237,16 @@ public:
     // 流式上传（M2）
     // ==================
 
-    QPointer<QIODevice> uploadDevice; ///< 上传来源（调用方/内部文件，所有权不在 Reply）
-    QPointer<QFile>
-        ownedUploadFile; ///< 若来源为 uploadFilePath，则由 Reply 打开并持有（父子树/事件循环析构）
-    qint64 uploadDeviceBasePos = 0;     ///< 首次执行时记录的起始位置（支持非 0 起点）
-    qint64 uploadBodySizeBytes = -1;    ///< 约定：-1 表示未知/未设置
-    qint64 uploadBytesRead     = 0;     ///< 已从 uploadDevice 读取的字节数（相对 basePos）
-    bool uploadDeviceSeekable  = false; ///< uploadDevice 是否可 seek（用于重发 body）
+    QPointer<QIODevice> requestBodyDevice; ///< 请求体设备来源（所有权不在 Reply）
+    qint64 requestBodyBasePos = 0;     ///< 首次执行时记录的起始位置（支持非 0 起点）
+    qint64 requestBodySizeBytes = -1;  ///< 约定：-1 表示未知/未设置
+    qint64 requestBodyBytesRead = 0;   ///< 已从请求体设备读取的字节数（相对 basePos）
+    bool requestBodySeekable = false;  ///< 请求体设备是否可 seek（用于重发 body）
 
-    bool hasUploadErrorOverride          = false;
-    NetworkError uploadErrorOverrideCode = NetworkError::NoError;
-    QString uploadErrorOverrideMessage;
+    bool hasRequestBodyErrorOverride          = false;
+    NetworkError requestBodyErrorOverrideCode = NetworkError::NoError;
+    QString requestBodyErrorOverrideMessage;
+    std::function<std::optional<QString>()> beforeFinishTransition;
 
     // ==================
     // 内部方法
@@ -256,7 +258,7 @@ public:
     void setBackpressureActive(bool active);
     void setUploadSendPaused(bool paused);
     void maybeResumeRecvFromBackpressure();
-    void resumeSendFromUploadSourceIfNeeded();
+    void resumeSendFromRequestBodySourceIfNeeded();
 
     /**
      * @brief 配置 curl 选项

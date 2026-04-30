@@ -45,11 +45,11 @@
 ### 2. FileTransferDemo - 流式/断点续传示例
 
 **位置**: `examples/FileTransferDemo/`
-**功能**: 演示 `downloadToDevice()`、`uploadFromDevice()` 与 `downloadFileResumable()` 的组合用法
+**功能**: 演示 `downloadToDevice()`、`postMultipartDevice()` 与 `downloadFileResumable()` 的组合用法
 
 **核心特性**:
 - ✅ `downloadToDevice()`：流式下载 64KB 数据到本地文件
-- ✅ `uploadFromDevice()`：将下载的文件以 multipart/form-data 方式回传至 httpbin
+- ✅ `postMultipartDevice()`：将下载的文件以 multipart/form-data 方式回传至 httpbin
 - ✅ `downloadFileResumable()`：先人为取消，再自动继续下载，展示断点续传
 - ✅ 环境自适应：可通过 `QCURL_HTTPBIN_BASE` 环境变量自定义 httpbin 地址
 

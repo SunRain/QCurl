@@ -307,6 +307,22 @@ struct AttemptErrorInfo
     QString message;
 };
 
+static std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValue)
+{
+    const QByteArray trimmed = headerValue.trimmed();
+    const QByteArray prefix = QByteArrayLiteral("bytes */");
+    if (!trimmed.startsWith(prefix)) {
+        return std::nullopt;
+    }
+
+    bool ok = false;
+    const qint64 totalSize = trimmed.mid(prefix.size()).toLongLong(&ok);
+    if (!ok || totalSize < 0) {
+        return std::nullopt;
+    }
+    return totalSize;
+}
+
 [[nodiscard]] AttemptErrorInfo attemptErrorFromCurlAndHttp(QCNetworkReplyPrivate *d,
                                                            CURLcode curlCode,
                                                            long httpCode)
@@ -324,20 +340,35 @@ struct AttemptErrorInfo
         info.message = QString::fromUtf8(curl_easy_strerror(curlCode));
 
 #if defined(CURLE_SEND_FAIL_REWIND)
-        if (curlCode == CURLE_SEND_FAIL_REWIND && d->uploadDevice && !d->hasUploadErrorOverride) {
+        if (curlCode == CURLE_SEND_FAIL_REWIND && d->requestBodyDevice
+            && !d->hasRequestBodyErrorOverride) {
             info.error   = NetworkError::InvalidRequest;
-            info.message = QStringLiteral("uploadDevice: 无法重发 body（seek/rewind 失败：%1）")
+            info.message = QStringLiteral("request body source: 无法重发 body（seek/rewind 失败：%1）")
                                .arg(QString::fromUtf8(curl_easy_strerror(curlCode)));
         }
 #endif
+    } else if (httpCode == 416) {
+        d->parseHeaders();
+        const QVariant existingSizeVar = d->q_ptr->property("_qcurl_resumable_existing_size");
+        bool ok = false;
+        const qint64 existingSize = existingSizeVar.toLongLong(&ok);
+        const auto completeSize =
+            parseContentRangeCompleteSize(d->finalHeaderMap.value(QByteArrayLiteral("content-range")));
+        if (ok && existingSize >= 0 && completeSize.has_value() && completeSize.value() == existingSize) {
+            info.error = NetworkError::NoError;
+            info.message.clear();
+        } else {
+            info.error   = fromHttpCode(httpCode);
+            info.message = QStringLiteral("HTTP error %1").arg(httpCode);
+        }
     } else if (httpCode >= 400) {
         info.error   = fromHttpCode(httpCode);
         info.message = QStringLiteral("HTTP error %1").arg(httpCode);
     }
 
-    if (d->hasUploadErrorOverride) {
-        info.error   = d->uploadErrorOverrideCode;
-        info.message = d->uploadErrorOverrideMessage;
+    if (d->hasRequestBodyErrorOverride) {
+        info.error   = d->requestBodyErrorOverrideCode;
+        info.message = d->requestBodyErrorOverrideMessage;
     }
 
     return info;
@@ -362,9 +393,9 @@ struct AttemptErrorInfo
         info.message = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
     }
 
-    if (d->hasUploadErrorOverride) {
-        info.error   = d->uploadErrorOverrideCode;
-        info.message = d->uploadErrorOverrideMessage;
+    if (d->hasRequestBodyErrorOverride) {
+        info.error   = d->requestBodyErrorOverrideCode;
+        info.message = d->requestBodyErrorOverrideMessage;
     }
 
     return info;
@@ -438,6 +469,8 @@ void resetForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
 
     d->bodyBuffer.clear();
     d->headerData.clear();
+    d->finalHeaderList.clear();
+    d->finalHeaderMap.clear();
     d->headerMap.clear();
     d->bytesDownloaded = 0;
     d->bytesUploaded   = 0;
@@ -777,13 +810,14 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              const QCNetworkRequest &req,
                                              HttpMethod method,
                                              ExecutionMode mode,
+                                             const Internal::RequestBody &requestBodySource,
                                              const QByteArray &body)
     : q_ptr(q)
     , request(req)
     , httpMethod(method)
     , executionMode(mode)
     , requestBody(body)
-    , normalizedRequest(Internal::normalizeRequest(req, method, mode, body))
+    , normalizedRequest(Internal::normalizeRequest(req, method, mode, requestBodySource))
     , curlPlan(Internal::compileRequest(normalizedRequest))
     , multiProcessor(nullptr)
     , state(ReplyState::Idle)
@@ -820,15 +854,6 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
             qWarning() << "QCNetworkReplyPrivate: reply 在非所属线程销毁，无法安全从 multi engine "
                           "移除（请使用 deleteLater 或在 reply 线程销毁）";
         }
-    }
-
-    if (ownedUploadFile) {
-        if (ownedUploadFile->isOpen()) {
-            ownedUploadFile->close();
-        }
-        // 事件循环析构，避免手动 delete QObject
-        ownedUploadFile->deleteLater();
-        ownedUploadFile = nullptr;
     }
 
     if (resolveSlist) {
@@ -1092,47 +1117,17 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     // ==================
 
     // 清理上一次配置残留（正常情况下构造期只会调用一次，但保持幂等）
-    uploadDevice            = nullptr;
-    uploadDeviceSeekable    = false;
-    uploadDeviceBasePos     = 0;
-    uploadBodySizeBytes     = -1;
-    uploadBytesRead         = 0;
-    hasUploadErrorOverride  = false;
-    uploadErrorOverrideCode = NetworkError::NoError;
-    uploadErrorOverrideMessage.clear();
+    requestBodyDevice            = nullptr;
+    requestBodySeekable          = false;
+    requestBodyBasePos           = 0;
+    requestBodySizeBytes         = -1;
+    requestBodyBytesRead         = 0;
+    hasRequestBodyErrorOverride  = false;
+    requestBodyErrorOverrideCode = NetworkError::NoError;
+    requestBodyErrorOverrideMessage.clear();
 
-    if (ownedUploadFile) {
-        if (ownedUploadFile->isOpen()) {
-            ownedUploadFile->close();
-        }
-        // 事件循环析构，避免手动 delete QObject
-        ownedUploadFile->deleteLater();
-        ownedUploadFile = nullptr;
-    }
-
-    QIODevice *reqUploadDevice = bodySpec.device.data();
-    if (!reqUploadDevice && bodySpec.kind == Internal::RequestBodyKind::UploadFilePath) {
-        if (!bodySpec.filePath.isEmpty()) {
-            ownedUploadFile = new QFile(bodySpec.filePath, q_ptr);
-            if (!ownedUploadFile->open(QIODevice::ReadOnly)) {
-                setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadFile: 无法打开文件：%1")
-                             .arg(ownedUploadFile->errorString()));
-                ownedUploadFile->deleteLater();
-                ownedUploadFile = nullptr;
-                return false;
-            }
-            reqUploadDevice = ownedUploadFile;
-        }
-    }
-
-    if (reqUploadDevice) {
-        if (!reqUploadDevice->isReadable()) {
-            setError(NetworkError::InvalidRequest,
-                     QStringLiteral("uploadDevice: 源 QIODevice 不可读"));
-            return false;
-        }
-
+    QIODevice *requestBodySourceDevice = bodySpec.device.data();
+    if (requestBodySourceDevice) {
         // 异步模式下，curl 回调运行在 QCCurlMultiManager 线程；必须保证线程一致性。
         if (executionMode == ExecutionMode::Async) {
             auto *multiManager = QCCurlMultiManager::instance();
@@ -1140,68 +1135,69 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                 setError(
                     NetworkError::InvalidRequest,
                     QStringLiteral(
-                        "uploadDevice: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
+                        "request body source: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
                 return false;
             }
         }
 
-        if (q_ptr && reqUploadDevice->thread() != q_ptr->thread()) {
+        if (q_ptr && requestBodySourceDevice->thread() != q_ptr->thread()) {
             setError(NetworkError::InvalidRequest,
-                     QStringLiteral("uploadDevice: 源 QIODevice 与 Reply 不在同一线程"));
+                     QStringLiteral("request body source: 源 QIODevice 与 Reply 不在同一线程"));
             return false;
         }
 
-        uploadDevice         = reqUploadDevice;
-        uploadDeviceBasePos  = bodySpec.basePos;
-        uploadDeviceSeekable = bodySpec.seekable;
-        uploadBodySizeBytes  = bodySpec.sizeBytes;
-
-        if (bodySpec.kind == Internal::RequestBodyKind::UploadFilePath) {
-            uploadDeviceBasePos  = reqUploadDevice->pos();
-            uploadDeviceSeekable = !reqUploadDevice->isSequential();
+        if (!requestBodySourceDevice->isReadable()) {
+            setError(NetworkError::InvalidRequest,
+                     QStringLiteral("request body source: 源 QIODevice 不可读"));
+            return false;
         }
 
-        if (uploadBodySizeBytes < 0 && uploadDeviceSeekable) {
-            const qint64 totalSize = reqUploadDevice->size();
-            if (totalSize >= 0 && totalSize >= uploadDeviceBasePos) {
-                uploadBodySizeBytes = totalSize - uploadDeviceBasePos;
+        requestBodyDevice    = requestBodySourceDevice;
+        requestBodyBasePos   = requestBodySourceDevice->pos();
+        requestBodySeekable  = !requestBodySourceDevice->isSequential();
+        requestBodySizeBytes = bodySpec.sizeBytes;
+
+        if (requestBodySizeBytes < 0 && bodySpec.inferDeviceSize && requestBodySeekable) {
+            const qint64 totalSize = requestBodySourceDevice->size();
+            if (totalSize >= 0 && totalSize >= requestBodyBasePos) {
+                requestBodySizeBytes = totalSize - requestBodyBasePos;
             }
         }
 
-        if (uploadBodySizeBytes < 0) {
+        if (requestBodySizeBytes < 0) {
             if (!bodySpec.allowChunkedPost) {
                 setError(
                     NetworkError::InvalidRequest,
                     QStringLiteral(
-                        "uploadDevice: 未指定 sizeBytes，且无法从设备推导长度（如需 unknown size "
-                        "的 POST，请显式启用 request.setAllowChunkedUploadForPost(true)）"));
+                        "request body source: 未指定 sizeBytes，且无法从设备推导长度（unknown-size raw "
+                        "body 仅支持 manager-level POST device 入口）"));
                 return false;
             }
 
             if (request.httpVersion() != QCNetworkHttpVersion::Http1_1) {
                 setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadDevice: unknown size 的 POST chunked 仅支持 "
+                         QStringLiteral("request body source: unknown size 的 POST chunked 仅支持 "
                                         "HTTP/1.1（请改为 Http1_1 或指定 sizeBytes）"));
                 return false;
             }
         }
 
-        if (executionMode == ExecutionMode::Async && uploadDevice && q_ptr) {
-            QObject::connect(uploadDevice, &QIODevice::readyRead, q_ptr, [this]() {
-                resumeSendFromUploadSourceIfNeeded();
+        if (executionMode == ExecutionMode::Async && requestBodyDevice && q_ptr) {
+            QObject::connect(requestBodyDevice, &QIODevice::readyRead, q_ptr, [this]() {
+                resumeSendFromRequestBodySourceIfNeeded();
             });
         }
     }
 
-    if (uploadDevice && httpMethod != HttpMethod::Post && httpMethod != HttpMethod::Put) {
+    if (requestBodyDevice && httpMethod != HttpMethod::Post && httpMethod != HttpMethod::Put) {
         setError(NetworkError::InvalidRequest,
-                 QStringLiteral("uploadDevice/uploadFile 仅支持 PUT/POST（当前方法未支持）"));
+                 QStringLiteral("request body source 仅支持 PUT/POST（当前方法未支持）"));
         return false;
     }
 
-    if (uploadDevice && request.retryPolicy().isEnabled() && !uploadDeviceSeekable) {
+    if (requestBodyDevice && request.retryPolicy().isEnabled() && !requestBodySeekable) {
         setError(NetworkError::InvalidRequest,
-                 QStringLiteral("uploadDevice: non-seekable body 不支持自动重试（需要重发 "
+                 QStringLiteral("request body source: non-seekable body 不支持自动重试（需要重发 "
                                 "body；请关闭 retryPolicy 或使用 seekable 来源）"));
         return false;
     }
@@ -1239,10 +1235,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
                              CURLOPT_POSTFIELDSIZE_LARGE,
                              static_cast<curl_off_t>(plan.bodySizeBytes));
             break;
-        case Internal::CurlTransferMode::UploadSource:
-            if (!uploadDevice) {
+        case Internal::CurlTransferMode::RequestBodySource:
+            if (!requestBodyDevice) {
                 setError(NetworkError::InvalidRequest,
-                         QStringLiteral("uploadDevice/uploadFile 需要有效的上传源"));
+                         QStringLiteral("request body source 需要有效的设备来源"));
                 return false;
             }
             curl_easy_setopt(handle, CURLOPT_READFUNCTION, QCNetworkReplyPrivate::curlReadCallback);
@@ -2147,7 +2143,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
     curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION, QCNetworkReplyPrivate::curlHeaderCallback);
     curl_easy_setopt(handle, CURLOPT_HEADERDATA, this);
 
-    // 注意：READFUNCTION 仅在 M2 流式上传（uploadDevice/uploadFile）时启用；
+    // 注意：READFUNCTION 仅在 M2 请求体来源路径下启用；
     // 旧的 QByteArray body 路径仍使用 CURLOPT_POSTFIELDS（避免默认行为变化）。
 
     // 定位回调
@@ -2168,6 +2164,14 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
 
     if (state == newState) {
         return;
+    }
+
+    if (newState == ReplyState::Finished && beforeFinishTransition) {
+        if (const auto finishError = beforeFinishTransition(); finishError.has_value()) {
+            setError(NetworkError::InvalidRequest, finishError.value());
+            newState = ReplyState::Error;
+        }
+        beforeFinishTransition = nullptr;
     }
 
     state = newState;
@@ -2202,10 +2206,12 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
     }
 
     // 根据新状态发射对应信号
-    if (newState == ReplyState::Finished) {
-        // 完成时解析响应头
+    if (newState == ReplyState::Finished || newState == ReplyState::Error) {
+        // 终态统一解析当前已收到的响应头；Error 场景下也需要保留最终 header block 可读性。
         parseHeaders();
+    }
 
+    if (newState == ReplyState::Finished) {
         // ==================
         // Cookie jar flush：当启用 COOKIEJAR 时，确保请求完成后立即落盘
         // ==================
@@ -2296,6 +2302,8 @@ void QCNetworkReplyPrivate::setError(NetworkError error, const QString &message)
 
 void QCNetworkReplyPrivate::parseHeaders()
 {
+    finalHeaderList.clear();
+    finalHeaderMap.clear();
     headerMap.clear();
 
     // 解析并 unfold 响应头数据（兼容折叠行与 TAB；对齐 curl header API 的可观测语义）
@@ -2322,6 +2330,8 @@ void QCNetworkReplyPrivate::parseHeaders()
             }
             value.append(part);
         }
+        finalHeaderList.append(qMakePair(name, value));
+        finalHeaderMap.insert(name.trimmed().toLower(), value);
         headerMap.insert(QString::fromUtf8(name), QString::fromUtf8(value));
     };
 
@@ -2342,8 +2352,19 @@ void QCNetworkReplyPrivate::parseHeaders()
         if (line.startsWith("HTTP/")) {
             // 新的 header block（redirect/1xx/CONNECT 等）开始，先落盘上一段
             flushCurrent(currentName, currentSegments);
+            finalHeaderList.clear();
+            finalHeaderMap.clear();
+            headerMap.clear();
             currentName.clear();
             currentSegments.clear();
+            const QList<QByteArray> parts = line.split(' ');
+            if (parts.size() >= 2) {
+                bool ok = false;
+                const int parsedStatus = parts.at(1).trimmed().toInt(&ok);
+                if (ok) {
+                    httpStatusCode = parsedStatus;
+                }
+            }
             continue;
         }
 
@@ -2480,7 +2501,7 @@ void QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
     }
 }
 
-void QCNetworkReplyPrivate::resumeSendFromUploadSourceIfNeeded()
+void QCNetworkReplyPrivate::resumeSendFromRequestBodySourceIfNeeded()
 {
     if (executionMode != ExecutionMode::Async) {
         return;
@@ -2493,7 +2514,7 @@ void QCNetworkReplyPrivate::resumeSendFromUploadSourceIfNeeded()
         return;
     }
 
-    QIODevice *device = uploadDevice.data();
+    QIODevice *device = requestBodyDevice.data();
     if (!device || !device->isReadable()) {
         return;
     }
@@ -2602,6 +2623,10 @@ size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr,
 
     // 累积原始响应头数据（异步和同步模式都需要）
     d->headerData.append(ptr, static_cast<int>(totalSize));
+    if (d->headerData.endsWith(QByteArrayLiteral("\r\n\r\n"))
+        || d->headerData.endsWith(QByteArrayLiteral("\n\n"))) {
+        d->parseHeaders();
+    }
 
     // 同步模式：调用用户回调
     if (d->executionMode == ExecutionMode::Sync && d->headerCallback) {
@@ -2624,18 +2649,18 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
         return CURL_READFUNC_ABORT;
     }
 
-    QIODevice *device = d->uploadDevice.data();
+    QIODevice *device = d->requestBodyDevice.data();
     if (!device) {
-        d->hasUploadErrorOverride     = true;
-        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-        d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 源 QIODevice 在传输中被销毁");
+        d->hasRequestBodyErrorOverride     = true;
+        d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+        d->requestBodyErrorOverrideMessage = QStringLiteral("request body source: 源 QIODevice 在传输中被销毁");
         return CURL_READFUNC_ABORT;
     }
 
     if (!device->isReadable()) {
-        d->hasUploadErrorOverride     = true;
-        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-        d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 源 QIODevice 已不可读");
+        d->hasRequestBodyErrorOverride     = true;
+        d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+        d->requestBodyErrorOverrideMessage = QStringLiteral("request body source: 源 QIODevice 已不可读");
         return CURL_READFUNC_ABORT;
     }
 
@@ -2644,12 +2669,12 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
         return 0;
     }
 
-    if (d->uploadBodySizeBytes < 0) {
+    if (d->requestBodySizeBytes < 0) {
         const qint64 n = device->read(ptr, static_cast<qint64>(totalSize));
         if (n < 0) {
-            d->hasUploadErrorOverride     = true;
-            d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 读取失败: %1")
+            d->hasRequestBodyErrorOverride     = true;
+            d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+            d->requestBodyErrorOverrideMessage = QStringLiteral("request body source: 读取失败: %1")
                                                 .arg(device->errorString());
             return CURL_READFUNC_ABORT;
         }
@@ -2658,17 +2683,25 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
                 return 0; // unknown size：EOF
             }
 
-            // P2-2：source not ready → pause sending，等待 readyRead 恢复
+            if (d->executionMode == ExecutionMode::Sync) {
+                d->hasRequestBodyErrorOverride = true;
+                d->requestBodyErrorOverrideCode = NetworkError::InvalidRequest;
+                d->requestBodyErrorOverrideMessage
+                    = QStringLiteral("request body source: Sync raw-body 不支持 source-not-ready 恢复");
+                return CURL_READFUNC_ABORT;
+            }
+
+            // Async raw-body：source not ready → pause sending，等待 readyRead 恢复
             d->internalPauseMask |= CURLPAUSE_SEND;
             d->appliedPauseMask |= CURLPAUSE_SEND;
             d->setUploadSendPaused(true);
             return CURL_READFUNC_PAUSE;
         }
-        d->uploadBytesRead += n;
+        d->requestBodyBytesRead += n;
         return static_cast<size_t>(n);
     }
 
-    const qint64 remaining = d->uploadBodySizeBytes - d->uploadBytesRead;
+    const qint64 remaining = d->requestBodySizeBytes - d->requestBodyBytesRead;
     if (remaining <= 0) {
         return 0;
     }
@@ -2676,30 +2709,38 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
     const qint64 want = qMin(static_cast<qint64>(totalSize), remaining);
     const qint64 n    = device->read(ptr, want);
     if (n < 0) {
-        d->hasUploadErrorOverride     = true;
-        d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-        d->uploadErrorOverrideMessage = QStringLiteral("uploadDevice: 读取失败: %1")
+        d->hasRequestBodyErrorOverride     = true;
+        d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+        d->requestBodyErrorOverrideMessage = QStringLiteral("request body source: 读取失败: %1")
                                             .arg(device->errorString());
         return CURL_READFUNC_ABORT;
     }
 
     if (n == 0 && remaining > 0) {
         if (device->atEnd()) {
-            d->hasUploadErrorOverride  = true;
-            d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage
-                = QStringLiteral("uploadDevice: 数据提前结束（期望剩余 %1 bytes）").arg(remaining);
+            d->hasRequestBodyErrorOverride  = true;
+            d->requestBodyErrorOverrideCode = NetworkError::InvalidRequest;
+            d->requestBodyErrorOverrideMessage
+                = QStringLiteral("request body source: 数据提前结束（期望剩余 %1 bytes）").arg(remaining);
             return CURL_READFUNC_ABORT;
         }
 
-        // P2-2：source not ready → pause sending，等待 readyRead 恢复
+        if (d->executionMode == ExecutionMode::Sync) {
+            d->hasRequestBodyErrorOverride = true;
+            d->requestBodyErrorOverrideCode = NetworkError::InvalidRequest;
+            d->requestBodyErrorOverrideMessage
+                = QStringLiteral("request body source: Sync raw-body 不支持 source-not-ready 恢复");
+            return CURL_READFUNC_ABORT;
+        }
+
+        // Async raw-body：source not ready → pause sending，等待 readyRead 恢复
         d->internalPauseMask |= CURLPAUSE_SEND;
         d->appliedPauseMask |= CURLPAUSE_SEND;
         d->setUploadSendPaused(true);
         return CURL_READFUNC_PAUSE;
     }
 
-    d->uploadBytesRead += n;
+    d->requestBodyBytesRead += n;
     return static_cast<size_t>(n);
 }
 
@@ -2714,12 +2755,12 @@ int QCNetworkReplyPrivate::curlSeekCallback(void *userdata, curl_off_t offset, i
         return CURL_SEEKFUNC_FAIL;
     }
 
-    if (QIODevice *device = d->uploadDevice.data()) {
-        if (!d->uploadDeviceSeekable) {
-            d->hasUploadErrorOverride     = true;
-            d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage = QStringLiteral(
-                "uploadDevice: 无法重发 body：源 QIODevice 不支持 seek（重定向/重试/认证协商）");
+    if (QIODevice *device = d->requestBodyDevice.data()) {
+        if (!d->requestBodySeekable) {
+            d->hasRequestBodyErrorOverride     = true;
+            d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+            d->requestBodyErrorOverrideMessage = QStringLiteral(
+                "request body source: 无法重发 body：源 QIODevice 不支持 seek（重定向/重试/认证协商）");
             return CURL_SEEKFUNC_CANTSEEK;
         }
 
@@ -2727,42 +2768,42 @@ int QCNetworkReplyPrivate::curlSeekCallback(void *userdata, curl_off_t offset, i
         const qint64 off = static_cast<qint64>(offset);
         switch (origin) {
             case SEEK_SET:
-                targetPos = d->uploadDeviceBasePos + off;
+                targetPos = d->requestBodyBasePos + off;
                 break;
             case SEEK_CUR:
                 targetPos = device->pos() + off;
                 break;
             case SEEK_END:
-                if (d->uploadBodySizeBytes < 0) {
-                    d->hasUploadErrorOverride     = true;
-                    d->uploadErrorOverrideCode    = NetworkError::InvalidRequest;
-                    d->uploadErrorOverrideMessage = QStringLiteral(
-                        "uploadDevice: unknown size 不支持 SEEK_END（无法重发 body）");
+                if (d->requestBodySizeBytes < 0) {
+                    d->hasRequestBodyErrorOverride     = true;
+                    d->requestBodyErrorOverrideCode    = NetworkError::InvalidRequest;
+                    d->requestBodyErrorOverrideMessage = QStringLiteral(
+                        "request body source: unknown size 不支持 SEEK_END（无法重发 body）");
                     return CURL_SEEKFUNC_FAIL;
                 }
-                targetPos = d->uploadDeviceBasePos + d->uploadBodySizeBytes + off;
+                targetPos = d->requestBodyBasePos + d->requestBodySizeBytes + off;
                 break;
             default:
                 return CURL_SEEKFUNC_FAIL;
         }
 
-        if (targetPos < d->uploadDeviceBasePos) {
+        if (targetPos < d->requestBodyBasePos) {
             return CURL_SEEKFUNC_FAIL;
         }
-        if (d->uploadBodySizeBytes >= 0
-            && targetPos > (d->uploadDeviceBasePos + d->uploadBodySizeBytes)) {
+        if (d->requestBodySizeBytes >= 0
+            && targetPos > (d->requestBodyBasePos + d->requestBodySizeBytes)) {
             return CURL_SEEKFUNC_FAIL;
         }
 
         if (!device->seek(targetPos)) {
-            d->hasUploadErrorOverride  = true;
-            d->uploadErrorOverrideCode = NetworkError::InvalidRequest;
-            d->uploadErrorOverrideMessage
-                = QStringLiteral("uploadDevice: 无法重发 body：seek(%1) 失败").arg(targetPos);
+            d->hasRequestBodyErrorOverride  = true;
+            d->requestBodyErrorOverrideCode = NetworkError::InvalidRequest;
+            d->requestBodyErrorOverrideMessage
+                = QStringLiteral("request body source: 无法重发 body：seek(%1) 失败").arg(targetPos);
             return CURL_SEEKFUNC_FAIL;
         }
 
-        d->uploadBytesRead = targetPos - d->uploadDeviceBasePos;
+        d->requestBodyBytesRead = targetPos - d->requestBodyBasePos;
         return CURL_SEEKFUNC_OK;
     }
 
@@ -2937,10 +2978,16 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
                                const QCNetworkRequest &request,
                                HttpMethod method,
                                ExecutionMode mode,
+                               const Internal::RequestBody &requestBodySource,
                                const QByteArray &requestBody,
                                QObject *parent)
     : QObject(parent)
-    , d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
+    , d_ptr(new QCNetworkReplyPrivate(this,
+                                      request,
+                                      method,
+                                      mode,
+                                      requestBodySource,
+                                      requestBody))
 {
     Q_D(QCNetworkReply);
 
@@ -2963,10 +3010,16 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
                                const QCNetworkRequest &request,
                                HttpMethod method,
                                ExecutionMode mode,
+                               const Internal::RequestBody &requestBodySource,
                                const QByteArray &requestBody,
                                QObject *parent)
     : QObject(parent)
-    , d_ptr(new QCNetworkReplyPrivate(this, request, method, mode, requestBody))
+    , d_ptr(new QCNetworkReplyPrivate(this,
+                                      request,
+                                      method,
+                                      mode,
+                                      requestBodySource,
+                                      requestBody))
 {
     Q_D(QCNetworkReply);
 
@@ -2981,6 +3034,22 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
         d->setState(ReplyState::Error);
     }
 }
+
+QCNetworkReply::QCNetworkReply(TestOnlyKey,
+                               const QCNetworkRequest &request,
+                               HttpMethod method,
+                               ExecutionMode mode,
+                               const QByteArray &requestBody,
+                               QObject *parent)
+    : QCNetworkReply(TestOnlyKey{},
+                     request,
+                     method,
+                     mode,
+                     requestBody.isEmpty() ? Internal::makeEmptyRequestBody()
+                                           : Internal::makeInlineRequestBody(requestBody),
+                     requestBody,
+                     parent)
+{}
 #endif
 
 QCNetworkReply::~QCNetworkReply()
@@ -3345,27 +3414,27 @@ void QCNetworkReply::execute()
     // 流式上传（M2）：重试前回滚上传源到起始位置
     // ==================
 
-    d->hasUploadErrorOverride  = false;
-    d->uploadErrorOverrideCode = NetworkError::NoError;
-    d->uploadErrorOverrideMessage.clear();
+    d->hasRequestBodyErrorOverride  = false;
+    d->requestBodyErrorOverrideCode = NetworkError::NoError;
+    d->requestBodyErrorOverrideMessage.clear();
 
-    if (d->uploadDevice && d->attemptCount > 0) {
-        if (!d->uploadDeviceSeekable) {
+    if (d->requestBodyDevice && d->attemptCount > 0) {
+        if (!d->requestBodySeekable) {
             d->setError(NetworkError::InvalidRequest,
                         QStringLiteral(
-                            "uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
+                            "request body source: non-seekable body 不支持自动重试（需要重发 body）"));
             d->setState(ReplyState::Error);
             return;
         }
 
-        if (!d->uploadDevice->seek(d->uploadDeviceBasePos)) {
+        if (!d->requestBodyDevice->seek(d->requestBodyBasePos)) {
             d->setError(NetworkError::InvalidRequest,
-                        QStringLiteral("uploadDevice: 重试需要重发 body：seek(%1) 失败")
-                            .arg(d->uploadDeviceBasePos));
+                        QStringLiteral("request body source: 重试需要重发 body：seek(%1) 失败")
+                            .arg(d->requestBodyBasePos));
             d->setState(ReplyState::Error);
             return;
         }
-        d->uploadBytesRead = 0;
+        d->requestBodyBytesRead = 0;
     }
 
     d->setState(ReplyState::Running);
@@ -3386,28 +3455,28 @@ void QCNetworkReply::execute()
 
         // 重试循环（attemptCount 从 0 开始，表示首次尝试）
         while (true) {
-            d->hasUploadErrorOverride  = false;
-            d->uploadErrorOverrideCode = NetworkError::NoError;
-            d->uploadErrorOverrideMessage.clear();
+            d->hasRequestBodyErrorOverride  = false;
+            d->requestBodyErrorOverrideCode = NetworkError::NoError;
+            d->requestBodyErrorOverrideMessage.clear();
 
-            if (d->uploadDevice && d->attemptCount > 0) {
-                if (!d->uploadDeviceSeekable) {
+            if (d->requestBodyDevice && d->attemptCount > 0) {
+                if (!d->requestBodySeekable) {
                     d->setError(
                         NetworkError::InvalidRequest,
                         QStringLiteral(
-                            "uploadDevice: non-seekable body 不支持自动重试（需要重发 body）"));
+                            "request body source: non-seekable body 不支持自动重试（需要重发 body）"));
                     d->setState(ReplyState::Error);
                     return;
                 }
 
-                if (!d->uploadDevice->seek(d->uploadDeviceBasePos)) {
+                if (!d->requestBodyDevice->seek(d->requestBodyBasePos)) {
                     d->setError(NetworkError::InvalidRequest,
-                                QStringLiteral("uploadDevice: 重试需要重发 body：seek(%1) 失败")
-                                    .arg(d->uploadDeviceBasePos));
+                                QStringLiteral("request body source: 重试需要重发 body：seek(%1) 失败")
+                                    .arg(d->requestBodyBasePos));
                     d->setState(ReplyState::Error);
                     return;
                 }
-                d->uploadBytesRead = 0;
+                d->requestBodyBytesRead = 0;
             }
 
             // 执行请求（阻塞调用）
@@ -3668,26 +3737,38 @@ QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
 {
     Q_D(const QCNetworkReply);
 
-    // 安全检查：错误状态或未完成状态下 headers 可能未初始化
-    if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
+    if (!d || d->state == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaders: Invalid state"
                    << (d ? static_cast<int>(d->state) : -1);
-        return QList<RawHeaderPair>(); // 返回空列表而非崩溃
+        return QList<RawHeaderPair>();
     }
 
-    QList<RawHeaderPair> list;
-    for (auto it = d->headerMap.cbegin(); it != d->headerMap.cend(); ++it) {
-        list.append(qMakePair(it.key().toUtf8(), it.value().toUtf8()));
+    return d->finalHeaderList;
+}
+
+QByteArray QCNetworkReply::rawHeader(const QByteArray &name) const
+{
+    Q_D(const QCNetworkReply);
+    if (!d || d->state == ReplyState::Idle) {
+        return {};
     }
-    return list;
+    return d->finalHeaderMap.value(name.trimmed().toLower());
+}
+
+bool QCNetworkReply::hasRawHeader(const QByteArray &name) const
+{
+    Q_D(const QCNetworkReply);
+    if (!d || d->state == ReplyState::Idle) {
+        return false;
+    }
+    return d->finalHeaderMap.contains(name.trimmed().toLower());
 }
 
 QByteArray QCNetworkReply::rawHeaderData() const
 {
     Q_D(const QCNetworkReply);
 
-    // 安全检查
-    if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
+    if (!d || d->state == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaderData: Invalid state";
         return QByteArray();
     }
@@ -3878,27 +3959,46 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
         return false;
     }
 
-    auto meta = cache->metadata(d->request.url());
-
-    // 检查缓存有效性
-    if (!ignoreExpiry && !meta.isValid()) {
+    const auto mode = ignoreExpiry ? QCNetworkCacheReadMode::AllowStale
+                                   : QCNetworkCacheReadMode::FreshOnly;
+    const auto cached = cache->lookup(d->request.url(), mode);
+    if (!cached.hit()) {
         return false;
     }
 
-    QByteArray data = cache->data(d->request.url());
-    if (data.isEmpty()) {
-        return false;
-    }
+    const auto &meta = cached.metadata;
+    const QByteArray data = cached.body;
 
     // 模拟网络请求行为
     d->bodyBuffer.append(data);
-    d->setState(ReplyState::Finished);
+    d->headerData = QByteArrayLiteral("HTTP/1.1 200 OK\r\n");
+    for (auto it = meta.headers.cbegin(); it != meta.headers.cend(); ++it) {
+        d->headerData.append(it.key());
+        d->headerData.append(": ");
+        d->headerData.append(it.value());
+        d->headerData.append("\r\n");
+    }
+    d->headerData.append("\r\n");
+    d->parseHeaders();
     d->errorCode = NetworkError::NoError;
 
-    // 异步发射信号（与网络请求一致）
-    QTimer::singleShot(0, this, [this]() {
-        emit readyRead();
-        emit finished();
+    const bool hasBody = !data.isEmpty();
+    QPointer<QCNetworkReply> safeThis(this);
+    QTimer::singleShot(0, this, [safeThis, hasBody]() {
+        if (!safeThis) {
+            return;
+        }
+
+        auto *d = safeThis->d_func();
+        if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
+            || d->state == ReplyState::Finished) {
+            return;
+        }
+
+        if (hasBody) {
+            emit safeThis->readyRead();
+        }
+        d->setState(ReplyState::Finished);
     });
 
     return true;

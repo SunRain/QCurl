@@ -9,9 +9,7 @@
 #include "QCNetworkTimeoutConfig.h"
 
 #include <QDebug>
-#include <QIODevice>
 #include <QMap>
-#include <QPointer>
 #include <QSharedData>
 #include <QUrl>
 
@@ -120,10 +118,6 @@ public:
         , maxUploadBytesPerSec(std::nullopt)
         , backpressureLimitBytes(0)
         , backpressureResumeBytes(0)
-        , uploadDevice(nullptr)
-        , uploadFilePath(std::nullopt)
-        , uploadBodySizeBytes(std::nullopt)
-        , allowChunkedUploadForPost(false)
         , expect100ContinueTimeout(std::nullopt)
         , ipResolve(std::nullopt)
         , happyEyeballsTimeout(std::nullopt)
@@ -177,12 +171,6 @@ public:
     // ========== 下载 backpressure（P2） ==========
     qint64 backpressureLimitBytes;
     qint64 backpressureResumeBytes;
-
-    // ========== 流式上传（M2） ==========
-    QPointer<QIODevice> uploadDevice;
-    std::optional<QString> uploadFilePath;
-    std::optional<qint64> uploadBodySizeBytes;
-    bool allowChunkedUploadForPost;
 
     // ========== Expect: 100-continue（P1） ==========
     std::optional<std::chrono::milliseconds> expect100ContinueTimeout;
@@ -622,85 +610,6 @@ QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
 qint64 QCNetworkRequest::backpressureResumeBytes() const noexcept
 {
     return d.data()->backpressureResumeBytes;
-}
-
-QCNetworkRequest &QCNetworkRequest::setUploadDevice(QIODevice *device,
-                                                    std::optional<qint64> sizeBytes)
-{
-    if (!device) {
-        return clearUploadBody();
-    }
-
-    if (!device->isReadable()) {
-        qWarning() << "QCNetworkRequest: uploadDevice must be readable (ignored)";
-        return clearUploadBody();
-    }
-
-    d.data()->uploadDevice = device;
-    d.data()->uploadFilePath.reset();
-
-    if (sizeBytes.has_value() && sizeBytes.value() < 0) {
-        qWarning() << "QCNetworkRequest: upload sizeBytes must be >= 0, got" << sizeBytes.value()
-                   << "(ignored)";
-        d.data()->uploadBodySizeBytes.reset();
-    } else {
-        d.data()->uploadBodySizeBytes = sizeBytes;
-    }
-    return *this;
-}
-
-QIODevice *QCNetworkRequest::uploadDevice() const
-{
-    return d.data()->uploadDevice.data();
-}
-
-QCNetworkRequest &QCNetworkRequest::setUploadFile(const QString &filePath,
-                                                  std::optional<qint64> sizeBytes)
-{
-    if (filePath.trimmed().isEmpty()) {
-        return clearUploadBody();
-    }
-
-    d.data()->uploadDevice   = nullptr;
-    d.data()->uploadFilePath = filePath;
-
-    if (sizeBytes.has_value() && sizeBytes.value() < 0) {
-        qWarning() << "QCNetworkRequest: upload sizeBytes must be >= 0, got" << sizeBytes.value()
-                   << "(ignored)";
-        d.data()->uploadBodySizeBytes.reset();
-    } else {
-        d.data()->uploadBodySizeBytes = sizeBytes;
-    }
-    return *this;
-}
-
-std::optional<QString> QCNetworkRequest::uploadFilePath() const
-{
-    return d.data()->uploadFilePath;
-}
-
-std::optional<qint64> QCNetworkRequest::uploadBodySizeBytes() const
-{
-    return d.data()->uploadBodySizeBytes;
-}
-
-QCNetworkRequest &QCNetworkRequest::setAllowChunkedUploadForPost(bool enabled)
-{
-    d.data()->allowChunkedUploadForPost = enabled;
-    return *this;
-}
-
-bool QCNetworkRequest::allowChunkedUploadForPost() const
-{
-    return d.data()->allowChunkedUploadForPost;
-}
-
-QCNetworkRequest &QCNetworkRequest::clearUploadBody()
-{
-    d.data()->uploadDevice = nullptr;
-    d.data()->uploadFilePath.reset();
-    d.data()->uploadBodySizeBytes.reset();
-    return *this;
 }
 
 QCNetworkRequest &QCNetworkRequest::setExpect100ContinueTimeout(std::chrono::milliseconds timeout)

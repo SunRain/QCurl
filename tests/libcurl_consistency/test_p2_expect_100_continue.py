@@ -321,7 +321,7 @@ def test_p2_expect_100_continue_417_retry_inline_body(env, lc_observe_http):
 
     说明：
     - 原用例对齐上游 test357，走 seekable upload（READFUNCTION/SEEKFUNCTION）
-    - 本用例补齐 inline bytes 路径，避免“只测 uploadDevice 导致的覆盖空洞”
+    - 本用例补齐 inline bytes 路径，避免“只测 raw-body device 路径导致的覆盖空洞”
     """
     qt_path = _qt_test_binary_or_skip()
     collect_logs = should_collect_service_logs()

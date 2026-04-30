@@ -192,6 +192,7 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
                                        request,
                                        HttpMethod::Get,
                                        ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
     QVERIFY(replyPrivate.configureCurlOptions());
@@ -210,6 +211,7 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
                                          invalidReq,
                                          HttpMethod::Get,
                                          ExecutionMode::Sync,
+                                         Internal::makeEmptyRequestBody(),
                                          QByteArray());
 
     QVERIFY(invalidPrivate.configureCurlOptions());
@@ -238,6 +240,7 @@ void TestQCNetworkProxy::testSslConfigApplied()
                                        request,
                                        HttpMethod::Get,
                                        ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
     QVERIFY(replyPrivate.configureCurlOptions());
@@ -253,6 +256,7 @@ void TestQCNetworkProxy::testSslConfigApplied()
                                          defaultSslRequest,
                                          HttpMethod::Get,
                                          ExecutionMode::Sync,
+                                         Internal::makeEmptyRequestBody(),
                                          QByteArray());
 
     QVERIFY(defaultPrivate.configureCurlOptions());
@@ -397,6 +401,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
                                        request,
                                        HttpMethod::Get,
                                        ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
 #if !defined(CURLPROXY_HTTPS)
@@ -449,6 +454,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
                                        request,
                                        HttpMethod::Get,
                                        ExecutionMode::Sync,
+                                       Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
 #if !defined(CURLPROXY_HTTPS)

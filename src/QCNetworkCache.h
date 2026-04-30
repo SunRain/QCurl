@@ -41,6 +41,37 @@ struct QCURL_EXPORT QCNetworkCacheMetadata
     }
 };
 
+/// Controls whether cache lookup accepts only fresh entries or also stale ones.
+enum class QCNetworkCacheReadMode
+{
+    FreshOnly,
+    AllowStale,
+};
+
+/// Describes the result of a canonical cache lookup.
+enum class QCNetworkCacheLookupStatus
+{
+    Miss,
+    FreshHit,
+    StaleHit,
+};
+
+/**
+ * @brief Result returned by QCNetworkCache::lookup().
+ */
+struct QCURL_EXPORT QCNetworkCacheLookupResult
+{
+    QCNetworkCacheLookupStatus status = QCNetworkCacheLookupStatus::Miss;
+    QCNetworkCacheMetadata metadata;
+    QByteArray body;
+
+    /// Returns true when the lookup found a cache entry.
+    [[nodiscard]] bool hit() const
+    {
+        return status != QCNetworkCacheLookupStatus::Miss;
+    }
+};
+
 /**
  * @brief HTTP 缓存抽象基类
  *
@@ -67,18 +98,13 @@ public:
     ~QCNetworkCache() override = default;
 
     /**
-     * @brief 从缓存中读取数据
-     * @param url 请求 URL
-     * @return 缓存的响应数据，如果不存在返回空 QByteArray
+     * @brief Canonical cache read API.
+     * @param url Request URL.
+     * @param mode FreshOnly rejects expired entries; AllowStale returns existing stale entries.
+     * @return Lookup status, metadata, and body in one result.
      */
-    [[nodiscard]] virtual QByteArray data(const QUrl &url) = 0;
-
-    /**
-     * @brief 从缓存中读取元数据
-     * @param url 请求 URL
-     * @return 缓存的元数据，如果不存在返回默认构造的对象
-     */
-    [[nodiscard]] virtual QCNetworkCacheMetadata metadata(const QUrl &url) = 0;
+    [[nodiscard]] virtual QCNetworkCacheLookupResult lookup(const QUrl &url,
+                                                            QCNetworkCacheReadMode mode) = 0;
 
     /**
      * @brief 插入数据到缓存

@@ -123,39 +123,27 @@ int main(int argc, char *argv[])
         qDebug() << "";
     }
 
-    // ========== 示例 5: 流式字段检测 ==========
-    qDebug() << "示例 5: 流式字段检测";
+    // ========== 示例 5: 文件快照语义 ==========
+    qDebug() << "示例 5: 文件快照语义";
     {
         QCMultipartFormData formData1;
         formData1.addTextField("name", "test");
         formData1.addFileField("file", "test.txt", QByteArray("data"), "text/plain");
 
-        qDebug() << "formData1 包含流式字段:" << (formData1.hasStreamFields() ? "是" : "否");
-
-        // 创建一个带流式字段的表单
-        QString tempFilePath = "/tmp/qcurl_stream_test.txt";
+        QString tempFilePath = "/tmp/qcurl_snapshot_test.txt";
         QFile tempFile(tempFilePath);
         if (tempFile.open(QIODevice::WriteOnly)) {
-            tempFile.write("流式字段测试数据");
+            tempFile.write("文件快照测试数据");
             tempFile.close();
         }
 
-        QFile *streamFile = new QFile(tempFilePath);
-        if (streamFile->open(QIODevice::ReadOnly)) {
-            QCMultipartFormData formData2;
-            formData2.addTextField("name", "stream-test");
-            formData2.addFileFieldStream("bigfile",
-                                         streamFile,
-                                         "large.bin",
-                                         "application/octet-stream");
+        QCMultipartFormData formData2;
+        formData2.addTextField("name", "snapshot-test");
+        formData2.addFileField("bigfile", tempFilePath, "application/octet-stream");
+        QFile::remove(tempFilePath);
 
-            qDebug() << "formData2 包含流式字段:" << (formData2.hasStreamFields() ? "是" : "否");
-            qDebug() << "注意：流式字段不会包含在 toByteArray() 返回的数据中";
-
-            streamFile->close();
-        }
-
-        delete streamFile;
+        QByteArray encoded = formData2.toByteArray();
+        qDebug() << "删除原文件后，编码结果仍包含快照内容:" << encoded.contains("文件快照测试数据");
         QFile::remove(tempFilePath);
     }
 

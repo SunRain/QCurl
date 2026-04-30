@@ -5,6 +5,8 @@
 
 #include "QCMultipartFormData.h"
 
+#include "private/QCMultipartHeaderEncoding_p.h"
+
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
@@ -79,33 +81,9 @@ void QCMultipartFormData::addFileField(const QString &fieldName,
     field.fileData   = fileData;
     field.mimeType   = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
     field.isFile     = true;
-    field.fileStream = nullptr;
 
     m_fields.append(field);
     m_dirty = true;
-}
-
-bool QCMultipartFormData::addFileFieldStream(const QString &fieldName,
-                                             QIODevice *device,
-                                             const QString &fileName,
-                                             const QString &mimeType)
-{
-    if (!device || !device->isReadable()) {
-        qWarning() << "QCMultipartFormData: Device is null or not readable";
-        return false;
-    }
-
-    Field field;
-    field.name       = fieldName;
-    field.fileName   = fileName;
-    field.mimeType   = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
-    field.isFile     = true;
-    field.fileStream = device;
-
-    m_fields.append(field);
-    m_dirty = true;
-
-    return true;
 }
 
 // ========== 公共方法：编码和获取 ==========
@@ -121,33 +99,6 @@ QByteArray QCMultipartFormData::toByteArray() const
     // 编码所有字段
     for (const Field &field : m_fields) {
         if (field.isFile) {
-            // ✅ 修复：处理流式字段
-            if (field.fileStream != nullptr) {
-                // 流式字段：从 QIODevice 读取数据
-                if (field.fileStream->isOpen() && field.fileStream->isReadable()) {
-                    // 保存当前位置
-                    qint64 originalPos = field.fileStream->pos();
-
-                    // 重置到开头并读取所有数据
-                    field.fileStream->seek(0);
-                    QByteArray streamData = field.fileStream->readAll();
-
-                    // 恢复原始位置
-                    field.fileStream->seek(originalPos);
-
-                    // 创建临时字段用于编码
-                    Field tempField      = field;
-                    tempField.fileData   = streamData;
-                    tempField.fileStream = nullptr;
-
-                    result.append(encodeFileField(tempField));
-                } else {
-                    qWarning() << "QCMultipartFormData: Stream is not open or not readable, "
-                                  "skipping field:"
-                               << field.name;
-                }
-                continue;
-            }
             result.append(encodeFileField(field));
         } else {
             result.append(encodeTextField(field));
@@ -204,40 +155,10 @@ bool QCMultipartFormData::setBoundary(const QString &boundary)
 
 qint64 QCMultipartFormData::size() const
 {
-    qint64 totalSize = 0;
-
-    for (const Field &field : m_fields) {
-        if (field.isFile) {
-            if (field.fileStream != nullptr) {
-                // 流式字段：计算头部 + 文件大小 + 尾部
-                totalSize += encodeFileField(field).size(); // 头部
-                totalSize += field.fileStream->size();      // 文件内容
-                totalSize += 2;                             // "\r\n"
-            } else {
-                totalSize += encodeFileField(field).size();
-            }
-        } else {
-            totalSize += encodeTextField(field).size();
-        }
-    }
-
-    // 结束 boundary
-    totalSize += m_boundary.toUtf8().size() + 6; // "--boundary--\r\n"
-
-    return totalSize;
+    return toByteArray().size();
 }
 
 // ========== 公共方法：查询和清理 ==========
-
-bool QCMultipartFormData::hasStreamFields() const
-{
-    for (const Field &field : m_fields) {
-        if (field.isFile && field.fileStream != nullptr) {
-            return true;
-        }
-    }
-    return false;
-}
 
 int QCMultipartFormData::fieldCount() const
 {
@@ -286,7 +207,8 @@ QByteArray QCMultipartFormData::encodeTextField(const Field &field) const
     result.append("--" + m_boundary.toUtf8() + "\r\n");
 
     // Content-Disposition 头
-    result.append("Content-Disposition: form-data; name=\"" + field.name.toUtf8() + "\"\r\n");
+    result.append("Content-Disposition: form-data; name=\""
+                  + Internal::encodeMultipartHeaderQuotedString(field.name) + "\"\r\n");
 
     // 空行
     result.append("\r\n");
@@ -308,19 +230,22 @@ QByteArray QCMultipartFormData::encodeFileField(const Field &field) const
     result.append("--" + m_boundary.toUtf8() + "\r\n");
 
     // Content-Disposition 头
-    result.append("Content-Disposition: form-data; name=\"" + field.name.toUtf8() + "\"");
-    result.append("; filename=\"" + field.fileName.toUtf8() + "\"\r\n");
+    result.append("Content-Disposition: form-data; name=\""
+                  + Internal::encodeMultipartHeaderQuotedString(field.name) + "\"");
+    result.append("; filename=\"" + Internal::encodeMultipartHeaderQuotedString(field.fileName)
+                  + "\"\r\n");
 
     // Content-Type 头
-    result.append("Content-Type: " + field.mimeType.toUtf8() + "\r\n");
+    result.append(
+        "Content-Type: "
+        + Internal::sanitizeMultipartHeaderValue(field.mimeType,
+                                                 QByteArrayLiteral("application/octet-stream"))
+        + "\r\n");
 
     // 空行
     result.append("\r\n");
 
-    // 文件数据（仅对内存文件）
-    if (field.fileStream == nullptr) {
-        result.append(field.fileData);
-    }
+    result.append(field.fileData);
 
     // 换行
     result.append("\r\n");

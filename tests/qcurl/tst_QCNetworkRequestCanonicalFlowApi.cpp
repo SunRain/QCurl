@@ -404,13 +404,14 @@ void TestQCNetworkRequestCanonicalFlowApi::testUploadFileMissingPathFailsAsInval
             .arg(QUuid::createUuid().toString(QUuid::Id128)));
     QVERIFY(!QFileInfo::exists(missingPath));
 
-    auto *reply = m_manager->uploadFile(QUrl(QStringLiteral("http://example.com/upload")),
-                                        missingPath);
+    auto *reply = m_manager->postMultipartFile(QUrl(QStringLiteral("http://example.com/upload")),
+                                               QStringLiteral("file"),
+                                               missingPath);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
-    QVERIFY(reply->errorString().contains(QStringLiteral("uploadFile")));
+    QVERIFY(reply->errorString().contains(QStringLiteral("postMultipartFile")));
     QCOMPARE(m_mock.takeCapturedRequests().size(), 0);
 
     reply->deleteLater();

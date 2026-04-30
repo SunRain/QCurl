@@ -15,11 +15,66 @@
 #include "QCNetworkCachePolicy.h"
 #include "QCNetworkDiskCache.h"
 #include "QCNetworkMemoryCache.h"
+#include "QCNetworkAccessManager.h"
 
+#include <QDir>
+#include <QFile>
 #include <QTemporaryDir>
+#include <QPointer>
 #include <QtTest/QtTest>
 
 using namespace QCurl;
+
+namespace {
+
+QCNetworkCacheMetadata metadataFor(const QUrl &url, int expiresInSeconds)
+{
+    QCNetworkCacheMetadata meta;
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(expiresInSeconds);
+    return meta;
+}
+
+QString uniqueCacheDir(QTemporaryDir &tempDir, const QString &name)
+{
+    const QString path = tempDir.filePath(name);
+    QDir dir;
+    dir.mkpath(path);
+    return path;
+}
+
+class LookupOnlyCache final : public QCNetworkCache
+{
+public:
+    QCNetworkCacheLookupResult lookup(const QUrl &url, QCNetworkCacheReadMode mode) override
+    {
+        Q_UNUSED(url);
+        Q_UNUSED(mode);
+        return {};
+    }
+
+    void insert(const QUrl &url,
+                const QByteArray &data,
+                const QCNetworkCacheMetadata &meta) override
+    {
+        Q_UNUSED(url);
+        Q_UNUSED(data);
+        Q_UNUSED(meta);
+    }
+
+    bool remove(const QUrl &url) override
+    {
+        Q_UNUSED(url);
+        return false;
+    }
+
+    void clear() override {}
+    [[nodiscard]] qint64 cacheSize() const override { return 0; }
+    [[nodiscard]] qint64 maxCacheSize() const override { return 0; }
+    void setMaxCacheSize(qint64 size) override { Q_UNUSED(size); }
+};
+
+} // namespace
 
 class TestQCNetworkCache : public QObject
 {
@@ -35,6 +90,9 @@ private slots:
     void testMemoryCacheClear();
     void testMemoryCacheSizeLimit();
     void testMemoryCacheExpiration();
+    void testMemoryCacheLookupZeroByteEntry();
+    void testMemoryCacheLookupHonorsReadModeForExpiredEntry();
+    void testMemoryCacheLookupDistinguishesExpiredZeroByteHit();
 
     // ========== 磁盘缓存测试 ==========
     void testDiskCacheInsertAndRetrieve();
@@ -42,6 +100,12 @@ private slots:
     void testDiskCacheRemove();
     void testDiskCacheClear();
     void testDiskCacheSizeLimit();
+    void testDiskCacheLookupZeroByteEntry();
+    void testDiskCacheLookupHonorsReadModeForExpiredEntry();
+    void testDiskCacheLookupDistinguishesExpiredZeroByteHit();
+    void testDiskCacheLookupMissesWhenDataFileMissing();
+    void testSetCachePathReplacesOnlyAutoCreatedCache();
+    void testCustomCacheSubclassCanImplementLookupOnly();
 
     // ========== HTTP 缓存头解析测试 ==========
     void testCacheControlMaxAge();
@@ -76,8 +140,9 @@ void TestQCNetworkCache::testMemoryCacheInsertAndRetrieve()
 
     cache.insert(url, data, meta);
 
-    QByteArray retrieved = cache.data(url);
-    QCOMPARE(retrieved, data);
+    const auto retrieved = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(retrieved.status, QCNetworkCacheLookupStatus::FreshHit);
+    QCOMPARE(retrieved.body, data);
 }
 
 void TestQCNetworkCache::testMemoryCacheRemove()
@@ -91,10 +156,11 @@ void TestQCNetworkCache::testMemoryCacheRemove()
     meta.url = url;
 
     cache.insert(url, data, meta);
-    QVERIFY(!cache.data(url).isEmpty());
+    QVERIFY(cache.lookup(url, QCNetworkCacheReadMode::FreshOnly).hit());
 
     cache.remove(url);
-    QVERIFY(cache.data(url).isEmpty());
+    QCOMPARE(cache.lookup(url, QCNetworkCacheReadMode::FreshOnly).status,
+             QCNetworkCacheLookupStatus::Miss);
 }
 
 void TestQCNetworkCache::testMemoryCacheClear()
@@ -121,7 +187,8 @@ void TestQCNetworkCache::testMemoryCacheSizeLimit()
     cache.insert(QUrl("https://example.com/large"), largeData, meta);
 
     // 数据太大，不应该被缓存
-    QVERIFY(cache.data(QUrl("https://example.com/large")).isEmpty());
+    QCOMPARE(cache.lookup(QUrl("https://example.com/large"), QCNetworkCacheReadMode::FreshOnly).status,
+             QCNetworkCacheLookupStatus::Miss);
 }
 
 void TestQCNetworkCache::testMemoryCacheExpiration()
@@ -138,7 +205,58 @@ void TestQCNetworkCache::testMemoryCacheExpiration()
     cache.insert(url, data, meta);
 
     // 过期的数据应该被自动移除
-    QVERIFY(cache.data(url).isEmpty());
+    QCOMPARE(cache.lookup(url, QCNetworkCacheReadMode::FreshOnly).status,
+             QCNetworkCacheLookupStatus::Miss);
+}
+
+void TestQCNetworkCache::testMemoryCacheLookupZeroByteEntry()
+{
+    QCNetworkMemoryCache cache;
+
+    const QUrl url(QStringLiteral("https://example.com/zero-memory"));
+    QCNetworkCacheMetadata meta;
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(60);
+
+    cache.insert(url, QByteArray(), meta);
+
+    const auto result = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::FreshHit);
+    QVERIFY(result.body.isEmpty());
+    QCOMPARE(result.metadata.url, url);
+}
+
+void TestQCNetworkCache::testMemoryCacheLookupHonorsReadModeForExpiredEntry()
+{
+    QCNetworkMemoryCache cache;
+
+    const QUrl url(QStringLiteral("https://example.com/expired-memory-lookup"));
+    const QByteArray body("expired memory body");
+    cache.insert(url, body, metadataFor(url, -60));
+
+    const auto stale = cache.lookup(url, QCNetworkCacheReadMode::AllowStale);
+    QCOMPARE(stale.status, QCNetworkCacheLookupStatus::StaleHit);
+    QCOMPARE(stale.metadata.url, url);
+    QCOMPARE(stale.body, body);
+    QVERIFY(stale.hit());
+
+    const auto fresh = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(fresh.status, QCNetworkCacheLookupStatus::Miss);
+    QVERIFY(!fresh.hit());
+}
+
+void TestQCNetworkCache::testMemoryCacheLookupDistinguishesExpiredZeroByteHit()
+{
+    QCNetworkMemoryCache cache;
+
+    const QUrl url(QStringLiteral("https://example.com/expired-memory-zero"));
+    cache.insert(url, QByteArray(), metadataFor(url, -60));
+
+    const auto result = cache.lookup(url, QCNetworkCacheReadMode::AllowStale);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::StaleHit);
+    QCOMPARE(result.metadata.url, url);
+    QVERIFY(result.body.isEmpty());
+    QVERIFY(result.hit());
 }
 
 // ============================================================================
@@ -159,8 +277,9 @@ void TestQCNetworkCache::testDiskCacheInsertAndRetrieve()
 
     cache.insert(url, data, meta);
 
-    QByteArray retrieved = cache.data(url);
-    QCOMPARE(retrieved, data);
+    const auto retrieved = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(retrieved.status, QCNetworkCacheLookupStatus::FreshHit);
+    QCOMPARE(retrieved.body, data);
 }
 
 void TestQCNetworkCache::testDiskCachePersistence()
@@ -182,8 +301,9 @@ void TestQCNetworkCache::testDiskCachePersistence()
         QCNetworkDiskCache cache;
         cache.setCacheDirectory(m_tempDir.path());
 
-        QByteArray retrieved = cache.data(url);
-        QCOMPARE(retrieved, data);
+        const auto retrieved = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+        QCOMPARE(retrieved.status, QCNetworkCacheLookupStatus::FreshHit);
+        QCOMPARE(retrieved.body, data);
     }
 }
 
@@ -199,10 +319,11 @@ void TestQCNetworkCache::testDiskCacheRemove()
     meta.url = url;
 
     cache.insert(url, data, meta);
-    QVERIFY(!cache.data(url).isEmpty());
+    QVERIFY(cache.lookup(url, QCNetworkCacheReadMode::FreshOnly).hit());
 
     cache.remove(url);
-    QVERIFY(cache.data(url).isEmpty());
+    QCOMPARE(cache.lookup(url, QCNetworkCacheReadMode::FreshOnly).status,
+             QCNetworkCacheLookupStatus::Miss);
 }
 
 void TestQCNetworkCache::testDiskCacheClear()
@@ -231,7 +352,119 @@ void TestQCNetworkCache::testDiskCacheSizeLimit()
     cache.insert(QUrl("https://example.com/large"), largeData, meta);
 
     // 数据太大，不应该被缓存
-    QVERIFY(cache.data(QUrl("https://example.com/large")).isEmpty());
+    QCOMPARE(cache.lookup(QUrl("https://example.com/large"), QCNetworkCacheReadMode::FreshOnly).status,
+             QCNetworkCacheLookupStatus::Miss);
+}
+
+void TestQCNetworkCache::testDiskCacheLookupZeroByteEntry()
+{
+    QCNetworkDiskCache cache;
+    cache.setCacheDirectory(m_tempDir.path());
+
+    const QUrl url(QStringLiteral("https://example.com/zero-disk"));
+    QCNetworkCacheMetadata meta;
+    meta.url            = url;
+    meta.expirationDate = QDateTime::currentDateTime().addSecs(60);
+
+    cache.insert(url, QByteArray(), meta);
+
+    const auto result = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::FreshHit);
+    QVERIFY(result.body.isEmpty());
+    QCOMPARE(result.metadata.url, url);
+}
+
+void TestQCNetworkCache::testDiskCacheLookupHonorsReadModeForExpiredEntry()
+{
+    QCNetworkDiskCache cache;
+    cache.setCacheDirectory(uniqueCacheDir(m_tempDir, QStringLiteral("disk-lookup-expired")));
+
+    const QUrl url(QStringLiteral("https://example.com/expired-disk-lookup"));
+    const QByteArray body("expired disk body");
+    cache.insert(url, body, metadataFor(url, -60));
+
+    const auto stale = cache.lookup(url, QCNetworkCacheReadMode::AllowStale);
+    QCOMPARE(stale.status, QCNetworkCacheLookupStatus::StaleHit);
+    QCOMPARE(stale.metadata.url, url);
+    QCOMPARE(stale.body, body);
+    QVERIFY(stale.hit());
+
+    const auto fresh = cache.lookup(url, QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(fresh.status, QCNetworkCacheLookupStatus::Miss);
+    QVERIFY(!fresh.hit());
+}
+
+void TestQCNetworkCache::testDiskCacheLookupDistinguishesExpiredZeroByteHit()
+{
+    QCNetworkDiskCache cache;
+    cache.setCacheDirectory(uniqueCacheDir(m_tempDir, QStringLiteral("disk-lookup-zero")));
+
+    const QUrl url(QStringLiteral("https://example.com/expired-disk-zero"));
+    cache.insert(url, QByteArray(), metadataFor(url, -60));
+
+    const auto result = cache.lookup(url, QCNetworkCacheReadMode::AllowStale);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::StaleHit);
+    QCOMPARE(result.metadata.url, url);
+    QVERIFY(result.body.isEmpty());
+    QVERIFY(result.hit());
+}
+
+void TestQCNetworkCache::testDiskCacheLookupMissesWhenDataFileMissing()
+{
+    const QString cacheDir = uniqueCacheDir(m_tempDir, QStringLiteral("disk-lookup-missing-data"));
+    QCNetworkDiskCache cache;
+    cache.setCacheDirectory(cacheDir);
+
+    const QUrl url(QStringLiteral("https://example.com/expired-disk-missing-data"));
+    cache.insert(url, QByteArrayLiteral("metadata without body"), metadataFor(url, -60));
+
+    const auto dataFiles = QDir(cacheDir).entryList(QStringList{QStringLiteral("*.data")},
+                                                   QDir::Files);
+    QCOMPARE(dataFiles.size(), 1);
+    QVERIFY(QFile::remove(QDir(cacheDir).filePath(dataFiles.first())));
+
+    const auto result = cache.lookup(url, QCNetworkCacheReadMode::AllowStale);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::Miss);
+    QVERIFY(!result.hit());
+}
+
+void TestQCNetworkCache::testSetCachePathReplacesOnlyAutoCreatedCache()
+{
+    QCNetworkAccessManager manager;
+
+    const QString cacheDir1 = m_tempDir.filePath(QStringLiteral("auto-cache-1"));
+    const QString cacheDir2 = m_tempDir.filePath(QStringLiteral("auto-cache-2"));
+    manager.setCachePath(cacheDir1, 1024 * 1024);
+
+    auto *firstAutoCache = qobject_cast<QCNetworkDiskCache *>(manager.cache());
+    QVERIFY(firstAutoCache != nullptr);
+    QPointer<QObject> firstDestroyed(firstAutoCache);
+
+    manager.setCachePath(cacheDir2, 1024 * 1024);
+    auto *secondAutoCache = qobject_cast<QCNetworkDiskCache *>(manager.cache());
+    QVERIFY(secondAutoCache != nullptr);
+    QVERIFY(secondAutoCache != firstAutoCache);
+
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(firstDestroyed.isNull());
+
+    auto *externalCache = new QCNetworkMemoryCache(&manager);
+    QPointer<QObject> externalGuard(externalCache);
+    manager.setCache(externalCache);
+    QCOMPARE(manager.cache(), externalCache);
+
+    manager.setCachePath(m_tempDir.filePath(QStringLiteral("auto-cache-3")), 1024 * 1024);
+    QCOMPARE(manager.cache()->parent(), &manager);
+    QVERIFY(!externalGuard.isNull());
+}
+
+void TestQCNetworkCache::testCustomCacheSubclassCanImplementLookupOnly()
+{
+    LookupOnlyCache cache;
+
+    const auto result = cache.lookup(QUrl(QStringLiteral("https://example.com/custom-cache")),
+                                     QCNetworkCacheReadMode::FreshOnly);
+    QCOMPARE(result.status, QCNetworkCacheLookupStatus::Miss);
 }
 
 // ============================================================================

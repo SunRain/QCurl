@@ -1,0 +1,65 @@
+##
+## 本地域名邮箱 Docker Compose 配置
+## 域名: mail.local （可自定义）
+## 用途: 开发/测试环境的本地邮件系统
+##
+
+services:
+  # ─── Postfix + Dovecot 邮件服务器 ───
+  mailserver:
+    image: docker.io/mailserver/docker-mailserver:latest
+    container_name: mailserver
+    hostname: mail.local
+    domainname: mail.local
+    ports:
+      - "25:25"       # SMTP（本地投递）
+      - "587:587"     # SMTP Submission（客户端发信，STARTTLS）
+      - "465:465"     # SMTPS（隐式 TLS）
+      - "993:993"     # IMAPS（收信）
+      - "143:143"     # IMAP（明文，仅本地）
+      - "995:995"     # POP3S
+      - "110:110"     # POP3（明文，仅本地）
+    volumes:
+      - maildata:/var/mail
+      - mailstate:/var/mail-state
+      - maillogs:/var/log/mail
+      - ./config/:/tmp/docker-mailserver/
+    environment:
+      # 禁用外部 DNS 检查（本地环境）
+      - ENABLE_SPAMASSASSIN=0
+      - ENABLE_CLAMAV=0
+      - ENABLE_FAIL2BAN=0
+      - ENABLE_POSTGREY=0
+      # TLS 配置：本地环境用自签证书
+      - SSL_TYPE=self-signed
+      # 允许明文连接（仅限本地开发）
+      - TLS_LEVEL=may
+      - PERMIT_DOCKER=connected-networks
+      # SMTP 认证
+      - ENABLE_SASLAUTHD=0
+      - POSTMASTER_ADDRESS=admin@mail.local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q ':587'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── 可选：Web 管理界面 ───
+  roundcube:
+    image: roundcube/roundcubemail:latest
+    container_name: roundcube
+    ports:
+      - "8080:80"
+    environment:
+      - ROUNDCUBEMAIL_DEFAULT_HOST=mailserver
+      - ROUNDCUBEMAIL_SMTP_SERVER=mailserver
+      - ROUNDCUBEMAIL_SMTP_PORT=587
+    depends_on:
+      - mailserver
+    restart: unless-stopped
+
+volumes:
+  maildata:
+  mailstate:
+  maillogs:

@@ -48,6 +48,28 @@ constexpr const char kObservabilityRetryCountProperty[] = "_qcurl_observe_retry_
 
 } // namespace
 
+QCNetworkMiddleware::~QCNetworkMiddleware()
+{
+    const auto managers = m_registeredManagers.values();
+    for (auto *manager : managers) {
+        if (manager) {
+            manager->removeMiddleware(this);
+        }
+    }
+}
+
+void QCNetworkMiddleware::registerManager(QCNetworkAccessManager *manager)
+{
+    if (manager) {
+        m_registeredManagers.insert(manager);
+    }
+}
+
+void QCNetworkMiddleware::unregisterManager(QCNetworkAccessManager *manager)
+{
+    m_registeredManagers.remove(manager);
+}
+
 // ==================
 // QCLoggingMiddleware Implementation
 // ==================

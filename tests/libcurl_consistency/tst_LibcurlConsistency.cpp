@@ -38,6 +38,7 @@
 #include "QCNetworkTimeoutConfig.h"
 #include "QCWebSocket.h"
 #include "QCWebSocketCompressionConfig.h"
+#include "private/QCRequestPipeline_p.h"
 
 #include <QBuffer>
 #include <QByteArray>
@@ -1073,12 +1074,14 @@ void TestLibcurlConsistency::testCase()
             QFAIL("unexpected stream-body case id");
         }
 
-        req.setUploadDevice(device.data(), std::optional<qint64>(static_cast<qint64>(uploadSize)));
+        const auto bodySource = QCurl::Internal::makeDeviceRequestBody(
+            device.data(), static_cast<qint64>(uploadSize), false);
 
         QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
                              req,
                              method,
                              ExecutionMode::Sync,
+                             bodySource,
                              QByteArray(),
                              &manager);
         reply.execute();
@@ -1122,13 +1125,14 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        req.setAllowChunkedUploadForPost(true);
-        req.setUploadDevice(device.data(), std::nullopt);
+        const auto bodySource
+            = QCurl::Internal::makeDeviceRequestBody(device.data(), std::nullopt, true);
 
         QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
                              req,
                              HttpMethod::Post,
                              ExecutionMode::Sync,
+                             bodySource,
                              QByteArray(),
                              &manager);
         reply.execute();
@@ -1570,12 +1574,11 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        req.setUploadDevice(&device, static_cast<qint64>(uploadSize));
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
             req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
         }
-        QCNetworkReply *reply = manager.sendPut(req, QByteArray());
+        QCNetworkReply *reply = manager.sendPut(req, &device, static_cast<qint64>(uploadSize));
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -2426,9 +2429,8 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        req.setUploadDevice(&device, static_cast<qint64>(uploadSize));
 
-        auto *reply = manager.sendPut(req, QByteArray());
+        auto *reply = manager.sendPut(req, &device, static_cast<qint64>(uploadSize));
         QVERIFY(reply);
 
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);

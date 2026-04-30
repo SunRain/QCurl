@@ -24,6 +24,7 @@ class TestQCNetworkHttpErrorMappingOffline final : public QObject
 
 private slots:
     void testHttpErrorMappingFromMockStatus();
+    void testHeadersRemainReadableAfterErrorFinalHeaderBlockArrives();
 };
 
 void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
@@ -48,6 +49,51 @@ void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
     runCase(401);
     runCase(404);
     runCase(503);
+}
+
+void TestQCNetworkHttpErrorMappingOffline::testHeadersRemainReadableAfterErrorFinalHeaderBlockArrives()
+{
+    QCNetworkAccessManager manager;
+    QCNetworkMockHandler mock;
+    manager.setMockHandler(&mock);
+
+    const int statusCode = 404;
+    const QUrl url(QStringLiteral("https://example.com/offline/error_headers"));
+    const QByteArray rawHeaderData = QByteArrayLiteral(
+        "HTTP/1.1 100 Continue\r\n"
+        "X-Ignore: warmup\r\n"
+        "\r\n"
+        "HTTP/1.1 404 Not Found\r\n"
+        "Content-Type: application/problem+json\r\n"
+        "Retry-After: 120\r\n"
+        "\r\n");
+
+    mock.mockResponse(HttpMethod::Get,
+                      url,
+                      QByteArrayLiteral("{\"error\":true}"),
+                      statusCode,
+                      QMap<QByteArray, QByteArray>(),
+                      rawHeaderData);
+
+    QCNetworkRequest request(url);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
+    QVERIFY(reply);
+
+    QCOMPARE(reply->state(), ReplyState::Error);
+    QCOMPARE(reply->error(), fromHttpCode(statusCode));
+    QCOMPARE(reply->httpStatusCode(), statusCode);
+    QCOMPARE(reply->rawHeaderData(), rawHeaderData);
+    QVERIFY(reply->hasRawHeader(QByteArrayLiteral("Content-Type")));
+    QVERIFY(reply->hasRawHeader(QByteArrayLiteral("Retry-After")));
+    QVERIFY(!reply->hasRawHeader(QByteArrayLiteral("X-Ignore")));
+    QCOMPARE(reply->rawHeader(QByteArrayLiteral("Content-Type")),
+             QByteArrayLiteral("application/problem+json"));
+    QCOMPARE(reply->rawHeader(QByteArrayLiteral("Retry-After")), QByteArrayLiteral("120"));
+
+    const QList<RawHeaderPair> headers = reply->rawHeaders();
+    QCOMPARE(headers.size(), 2);
+    QCOMPARE(headers.at(0).first, QByteArrayLiteral("Content-Type"));
+    QCOMPARE(headers.at(1).first, QByteArrayLiteral("Retry-After"));
 }
 
 QTEST_MAIN(TestQCNetworkHttpErrorMappingOffline)

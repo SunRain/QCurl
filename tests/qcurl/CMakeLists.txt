@@ -175,6 +175,12 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkFileTransfer.cpp
 ) # 文件传输 API 测试
 add_qcurl_test_with_preflight(
+    tst_QCNetworkFileResumableOffline
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkFileResumableOffline.cpp
+) # downloadFileResumable 离线门禁：416 成功语义 + start 校验/覆盖重下
+add_qcurl_test_with_preflight(
     tst_QCNetworkIODeviceLifetime
     REQUIRE_LOCAL_PORT
     SOURCES
@@ -186,7 +192,29 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkStreamUpload.cpp
 ) # 流式上传契约/分支覆盖测试
+add_qcurl_test_with_preflight(
+    tst_QCNetworkMultipartUpload
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkMultipartUpload.cpp
+) # postMultipartDevice 合同/回归测试
 add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # 缓存机制测试
+add_library(qcurl_cache_extras_header_self_compile OBJECT
+    cache_extras_first_include_QCNetworkCache.cpp
+    cache_extras_first_include_QCNetworkCachePolicy.cpp
+    cache_extras_first_include_QCNetworkDiskCache.cpp
+    cache_extras_first_include_QCNetworkMemoryCache.cpp
+)
+target_link_libraries(qcurl_cache_extras_header_self_compile
+    PRIVATE
+        Qt6::Core
+        QCurl
+)
+target_include_directories(qcurl_cache_extras_header_self_compile
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+)
 add_qcurl_test_with_preflight(
     tst_QCNetworkCacheIntegration
     REQUIRE_HTTPBIN

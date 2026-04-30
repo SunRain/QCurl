@@ -32,6 +32,7 @@ English | 简体中文 | 原文
 - 明确 UTF-16 语义时使用 `QStringView`
 - 明确 UTF-8 协议时使用 `QUtf8StringView`
 - 明确 Latin1 协议时使用 `QLatin1StringView`
+- 对同一语义：你必须只选择一种 view 类型作为 canonical Public API 入口；禁止把上述 view 类型堆叠为同名重载。需要区分编码时，必须用不同函数名表达（如 `setNameUtf8(...)` / `setNameLatin1(...)`）。
 - 在 Qt 6 中，`QLatin1String` 与 `QLatin1StringView` 是同一类型；旧名称主要为兼容性保留，新代码优先使用 `QLatin1StringView`
 - 所有 view 参数必须按值传递
 - 绝对不要使用 `const QAnyStringView&`、`const QStringView&`、`const QByteArrayView&`
@@ -48,6 +49,7 @@ English | 简体中文 | 原文
 你必须严格保护 QML / Meta-Object 边界：
 - `signals`、`slots`、`Q_INVOKABLE`、`Q_PROPERTY` 相关函数和信号，不得使用 view 作为参数或返回值
 - 在这些边界上优先使用 owning 类型，例如 `QString`、`QByteArray`、`QVariant`、`QUrl`
+- 在该边界，核心约束是“类型必须 owning 且可安全拷贝/转换”；不强制规定 C++ 层必须按值或必须 `const&`，但你必须禁止在该边界暴露任何 view/借用型类型。
 - 若既要 QML 稳定边界又要 C++ 高性能入口，必须提供独立的非 meta-object C++ 方法
 - 优先使用不同函数名，例如 `setName()` 与 `setNameView()`
 
@@ -85,6 +87,11 @@ English | 简体中文 | 原文
 - 不要为了“现代化”而无证据地把已发布的 `const QString&` public API 改成 sink 风格或 view 风格
 - 若建议修改 public 签名，必须同时说明收益、影响范围、迁移方案和兼容性代价
 - 默认优先保持 public API 稳定
+
+实现侧规则（仅用于实现 code review；不改变 public API 参数签名规则）：
+- `QSharedDataPointer<T>`：你通常不应手写 `detach()`；对共享数据的非 const 访问会在需要时触发写时分离。
+- 只读场景：你应优先走 const 访问路径（能把函数做成 `const` 就做成 `const`），避免在非 const 访问路径里引入不必要的分离开销。
+- `QExplicitlySharedDataPointer<T>`：当你要修改共享数据且期望“写时分离”时，你必须先显式 `detach()` 再写入。
 
 以下内容只能作为增强项，不得默认上升为阻断性问题：
 - 对纯解析/比较函数，按项目风格考虑 `noexcept`

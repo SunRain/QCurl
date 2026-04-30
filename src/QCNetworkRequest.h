@@ -18,9 +18,7 @@
 #include <chrono>
 #include <optional>
 
-// 前向声明新配置类
 class QDebug;
-class QIODevice;
 namespace QCurl {
 class QCNetworkHttpAuthConfigData;
 class QCNetworkRequestPrivate;
@@ -396,57 +394,6 @@ public:
      */
     [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
 
-    // ========== 流式上传（M2） ==========
-
-    /**
-     * @brief 设置流式上传的请求体来源（QIODevice）
-     *
-     * 约束（M2 起生效）：
-     * - 仅支持 PUT/POST 的流式 body，其它方法延后
-     * - 所有权：device 由调用方管理，QCurl 不会 close/delete
-     * - 生命周期：device 必须在请求完成前保持有效且可读；中途销毁/不可读将以可诊断错误结束
-     *
-     * @param device 源设备（可为 nullptr，表示清除上传源）
-     * @param sizeBytes 可选的请求体长度（bytes）。若为空则由实现决定是否使用 chunked/unknown size
-     */
-    QCNetworkRequest &setUploadDevice(QIODevice *device,
-                                      std::optional<qint64> sizeBytes = std::nullopt);
-    [[nodiscard]] QIODevice *uploadDevice() const;
-
-    /**
-     * @brief 设置流式上传的请求体来源（本地文件路径）
-     *
-     * 说明：由 QCurl 在请求执行时打开文件并读取。
-     */
-    QCNetworkRequest &setUploadFile(const QString &filePath,
-                                    std::optional<qint64> sizeBytes = std::nullopt);
-    [[nodiscard]] std::optional<QString> uploadFilePath() const;
-
-    /**
-     * @brief 获取上传请求体长度（bytes）
-     *
-     * 对于 uploadDevice/uploadFile 均适用。未设置时返回 std::nullopt。
-     */
-    [[nodiscard]] std::optional<qint64> uploadBodySizeBytes() const;
-
-    /**
-     * @brief 允许 POST 在 sizeBytes 未知时使用 chunked（HTTP/1.1）
-     *
-     * 默认关闭（保持 unknown size fast-fail，避免 silent behavior change）。
-     *
-     * 约束：
-     * - 仅对 POST + uploadDevice/uploadFile 且 sizeBytes 未指定且无法推导时生效
-     * - 仅支持 HTTP/1.1（Http1_1）；其它版本将以可诊断错误失败
-     * - PUT 仍要求 sizeBytes（不启用 chunked）
-     */
-    QCNetworkRequest &setAllowChunkedUploadForPost(bool enabled = true);
-    [[nodiscard]] bool allowChunkedUploadForPost() const;
-
-    /**
-     * @brief 清除流式上传源配置
-     */
-    QCNetworkRequest &clearUploadBody();
-
     // ========== Expect: 100-continue（P1） ==========
 
     /**
@@ -454,7 +401,7 @@ public:
      *
      * 说明：
      * - 默认未设置（不改变 libcurl 默认行为）。
-     * - 仅在 PUT/POST 且存在 body（`QByteArray` 或 `uploadDevice/uploadFile`）时允许启用该配置。
+     * - 仅在 PUT/POST 且存在 body 时允许启用该配置。
      *
      * @param timeout 等待超时（timeout>=0 有效；timeout<0 视为无效输入并禁用）
      */

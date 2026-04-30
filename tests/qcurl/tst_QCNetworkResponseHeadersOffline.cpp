@@ -23,6 +23,7 @@ class TestQCNetworkResponseHeadersOffline final : public QObject
 
 private slots:
     void testHeaderUnfoldFromRawHeaderData();
+    void testFinalHeaderBlockOnlyExposesLastResponseHeaders();
 };
 
 void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
@@ -66,6 +67,55 @@ void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
 
     QCOMPARE(xTestValue, QByteArrayLiteral("a b c"));
     QCOMPARE(yValue, QByteArrayLiteral("v"));
+}
+
+void TestQCNetworkResponseHeadersOffline::testFinalHeaderBlockOnlyExposesLastResponseHeaders()
+{
+    QCNetworkAccessManager manager;
+    QCNetworkMockHandler mock;
+    manager.setMockHandler(&mock);
+
+    const QUrl url(QStringLiteral("https://example.com/offline/final_headers"));
+    const QByteArray rawHeaderData = QByteArrayLiteral(
+        "HTTP/1.1 100 Continue\r\n"
+        "X-Interim: warmup\r\n"
+        "\r\n"
+        "HTTP/1.1 302 Found\r\n"
+        "Location: https://example.com/next\r\n"
+        "X-Redirect: hop\r\n"
+        "\r\n"
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "X-Final: done\r\n"
+        "\r\n");
+
+    mock.mockResponse(HttpMethod::Get,
+                      url,
+                      QByteArrayLiteral("{\"ok\":true}"),
+                      200,
+                      QMap<QByteArray, QByteArray>(),
+                      rawHeaderData);
+
+    QCNetworkRequest request(url);
+    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
+    QVERIFY(reply);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    QCOMPARE(reply->rawHeaderData(), rawHeaderData);
+    QCOMPARE(reply->httpStatusCode(), 200);
+    QCOMPARE(reply->rawHeader(QByteArrayLiteral("Content-Type")),
+             QByteArrayLiteral("application/json"));
+    QCOMPARE(reply->rawHeader(QByteArrayLiteral("X-Final")), QByteArrayLiteral("done"));
+    QVERIFY(reply->hasRawHeader(QByteArrayLiteral("Content-Type")));
+    QVERIFY(!reply->hasRawHeader(QByteArrayLiteral("X-Interim")));
+    QVERIFY(!reply->hasRawHeader(QByteArrayLiteral("Location")));
+
+    const QList<RawHeaderPair> headers = reply->rawHeaders();
+    QCOMPARE(headers.size(), 2);
+    QCOMPARE(headers.at(0).first, QByteArrayLiteral("Content-Type"));
+    QCOMPARE(headers.at(0).second, QByteArrayLiteral("application/json"));
+    QCOMPARE(headers.at(1).first, QByteArrayLiteral("X-Final"));
+    QCOMPARE(headers.at(1).second, QByteArrayLiteral("done"));
 }
 
 QTEST_MAIN(TestQCNetworkResponseHeadersOffline)

@@ -17,12 +17,18 @@
 #include <QUrl>
 
 #include <functional>
+#include <optional>
 
 class QTimer;
 class QSocketNotifier;
 class QJsonObject;
+class QIODevice;
 
 namespace QCurl {
+
+namespace Internal {
+struct RequestBody;
+}
 
 class QCNetworkRequest;
 class QCNetworkReply;
@@ -191,6 +197,25 @@ public:
     QCNetworkReply *sendPost(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
+     * @brief 发送 POST 请求（异步，借用 QIODevice 作为 raw body）
+     *
+     * `device` 由调用方持有，manager/reply 不接管所有权；调用方必须保证它在 reply
+     * 结束前保持存活且打开为可读。该重载必须从 manager 所在线程调用，且 `device->thread()`
+     * 必须与 manager/reply 线程一致；异步请求还要求该线程有 Qt event loop。
+     *
+     * 读取从调用时设备的当前 `pos()` 开始。未传 `sizeBytes` 时，seekable device 会按
+     * `size() - pos()` 推导剩余长度；sequential 或未知长度 POST 仅在 HTTP/1.1 下按
+     * chunked raw-body 合同发送。若重定向、重试或认证协商需要重发 body，源设备必须支持
+     * seek 回起点，否则请求会失败。
+     *
+     * Async raw-body 遇到 `read() == 0 && !atEnd()` 可等待 `readyRead()` 恢复；Sync
+     * raw-body 遇到同样状态会 fail-fast。
+     */
+    QCNetworkReply *sendPost(const QCNetworkRequest &request,
+                             QIODevice *device,
+                             std::optional<qint64> sizeBytes = std::nullopt);
+
+    /**
      * @brief 发送 PUT 请求（异步）
      * @param request 请求配置
      * @param data 请求体数据
@@ -198,6 +223,18 @@ public:
      * @note 默认会立即启动；若已启用请求调度器，则按最终 request.priority() 排队后自动启动
      */
     QCNetworkReply *sendPut(const QCNetworkRequest &request, const QByteArray &data);
+
+    /**
+     * @brief 发送 PUT 请求（异步，借用 QIODevice 作为 raw body）
+     *
+     * 所有权、线程、event loop、当前 `pos()`、seek/replay 与 async/sync
+     * source-not-ready 语义同 `sendPost(..., QIODevice *, sizeBytes)`。PUT 必须具有已知
+     * 长度：传入非负 `sizeBytes`，或使用可 seek 设备让实现从 `size() - pos()` 推导；未知长度
+     * PUT 会 fail-fast。
+     */
+    QCNetworkReply *sendPut(const QCNetworkRequest &request,
+                            QIODevice *device,
+                            std::optional<qint64> sizeBytes = std::nullopt);
 
     /**
      * @brief 发送 DELETE 请求（异步）
@@ -241,6 +278,35 @@ public:
      * @warning 会阻塞当前线程直到请求完成，不要在 UI 线程中调用
      */
     QCNetworkReply *sendPostSync(const QCNetworkRequest &request, const QByteArray &data);
+
+    /**
+     * @brief 发送 POST 请求（同步，借用 QIODevice 作为 raw body）
+     *
+     * 合同同异步 raw-body POST，但调用会阻塞直到完成。Sync raw-body 不支持
+     * source-not-ready 恢复：`read() == 0 && !atEnd()` 会作为无效请求失败。
+     */
+    QCNetworkReply *sendPostSync(const QCNetworkRequest &request,
+                                 QIODevice *device,
+                                 std::optional<qint64> sizeBytes = std::nullopt);
+
+    /**
+     * @brief 发送 PUT 请求（同步，阻塞）
+     * @param request 请求配置
+     * @param data 请求体数据
+     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
+     * @warning 会阻塞当前线程直到请求完成，不要在 UI 线程中调用
+     */
+    QCNetworkReply *sendPutSync(const QCNetworkRequest &request, const QByteArray &data);
+
+    /**
+     * @brief 发送 PUT 请求（同步，借用 QIODevice 作为 raw body）
+     *
+     * 合同同异步 raw-body PUT，但调用会阻塞直到完成；未知长度 PUT 与 source-not-ready
+     * 状态都会 fail-fast。
+     */
+    QCNetworkReply *sendPutSync(const QCNetworkRequest &request,
+                                QIODevice *device,
+                                std::optional<qint64> sizeBytes = std::nullopt);
 
     // ==================
     // 日志系统、中间件、取消令牌
@@ -307,17 +373,6 @@ public:
      * @return 网络响应对象
      */
     QCNetworkReply *postJson(const QUrl &url, const QJsonObject &json);
-
-    /**
-     * @brief 上传单个文件
-     * @param url 请求 URL
-     * @param filePath 文件路径
-     * @param fieldName multipart 字段名
-     * @return 网络响应对象
-     */
-    QCNetworkReply *uploadFile(const QUrl &url,
-                               const QString &filePath,
-                               const QString &fieldName);
 
     /**
      * @brief 下载文件到指定路径
@@ -431,22 +486,28 @@ public:
      */
     QCNetworkReply *postMultipart(const QCNetworkRequest &request,
                                   const QCMultipartFormData &formData);
-
-    // ==================
-    // 文件操作便捷 API
-    // ==================
+    QCNetworkReply *postMultipartFile(const QUrl &url,
+                                      const QString &fieldName,
+                                      const QString &filePath,
+                                      const QString &mimeType = QString());
 
     /**
-     * @brief 上传文件（简单版）
+     * @brief POST 单文件 multipart/form-data（借用 QIODevice）
      *
-     * 使用 multipart/form-data 上传单个文件，字段名固定为 `"file"`。
+     * `device` 由调用方持有，manager/reply 不接管所有权；调用方必须保证它在 reply
+     * 结束前保持存活且打开为可读。调用必须发生在 manager 所在线程，且 `device->thread()`
+     * 必须与 manager/reply 线程一致。
      *
-     * @param url 上传 URL
-     * @param filePath 本地文件路径
-     * @return 网络响应对象；若文件无法加入 multipart，reply 会以
-     * `InvalidRequest` 结束
+     * 该入口要求非负 `sizeBytes` 且设备可 seek，不支持 sequential/unknown-size source，也不提供
+     * source-not-ready 恢复。数据从调用时的当前 `pos()` 开始读取；重定向、重试或认证协商需要重发
+     * multipart body 时，设备必须能 seek 回起点。
      */
-    QCNetworkReply *uploadFile(const QUrl &url, const QString &filePath);
+    QCNetworkReply *postMultipartDevice(const QUrl &url,
+                                        const QString &fieldName,
+                                        QIODevice *device,
+                                        const QString &fileName,
+                                        const QString &mimeType,
+                                        std::optional<qint64> sizeBytes = std::nullopt);
 
     // ==================
     // 流式下载/上传 API
@@ -470,30 +531,6 @@ public:
     QCNetworkReply *downloadToDevice(const QUrl &url, QIODevice *device);
 
     /**
-     * @brief 从 QIODevice 上传数据（流式上传）
-     *
-     * 不会将整个文件加载到内存，而是边读取边上传。
-     * 适用于大文件上传。
-     *
-     * @param url 上传 URL
-     * @param fieldName 字段名
-     * @param device 源设备（如 QFile），必须可读
-     * @param fileName 文件名（会出现在请求中）
-     * @param mimeType MIME 类型
-     * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     *
-     * @note 所有权：device 由调用方管理，QCurl 不会关闭或释放该设备
-     * @note 生命周期：device 必须在请求完成前保持有效；中途销毁、不可读或读取失败
-     * 会让 reply 以可诊断错误结束
-     * @note 线程约束：device 必须与对应 reply 处于同一线程
-     */
-    QCNetworkReply *uploadFromDevice(const QUrl &url,
-                                     const QString &fieldName,
-                                     QIODevice *device,
-                                     const QString &fileName,
-                                     const QString &mimeType);
-
-    /**
      * @brief 下载文件（支持断点续传）
      *
      * 目标文件已存在且 `overwrite == false` 时，会尝试从现有大小继续下载。
@@ -502,8 +539,9 @@ public:
      * @param savePath 保存路径
      * @param overwrite 如果文件已存在，是否覆盖（默认 false，即断点续传）
      * @return 网络响应对象，调用者需要调用 deleteLater() 释放
-     * @note 服务器必须支持 HTTP Range 请求（检查响应头 Accept-Ranges: bytes）
-     * @warning 如果服务器不支持 Range 请求，会从头开始下载（覆盖现有文件）
+     * @note 仅在收到 `206` 且 `Content-Range` 起点等于本地文件大小时追加写入；
+     *       `200`、缺失 `Content-Range` 或范围不匹配时会从头下载。
+     * @note 若收到 `416` 且 `Content-Range` 表示完整长度与本地大小一致，视为文件已完整。
      */
     QCNetworkReply *downloadFileResumable(const QUrl &url,
                                           const QString &savePath,
@@ -551,32 +589,49 @@ private:
     QCNetworkReply *dispatchSendRequest(const QCNetworkRequest &request,
                                         HttpMethod method,
                                         bool async,
+                                        const Internal::RequestBody &requestBodySource,
                                         const QByteArray &body,
                                         const char *apiName,
                                         const ReplyFactory &impl);
     QCNetworkReply *dispatchManagedSendRequest(const QCNetworkRequest &request,
                                                HttpMethod method,
                                                bool async,
+                                               const Internal::RequestBody &requestBodySource,
                                                const QByteArray &body,
                                                const char *apiName);
     QCNetworkReply *createReply(const QCNetworkRequest &request,
                                 HttpMethod method,
                                 bool async,
+                                const Internal::RequestBody &requestBodySource,
                                 const QByteArray &body,
                                 QObject *parent);
     QCNetworkReply *createManagedReply(const QCNetworkRequest &request,
                                        HttpMethod method,
                                        bool async,
+                                       const Internal::RequestBody &requestBodySource,
                                        const QByteArray &body,
                                        const QList<QCNetworkMiddleware *> &middlewares);
     QCNetworkReply *createNoEventLoopErrorReply(const QCNetworkRequest &request,
                                                 HttpMethod method,
+                                                const Internal::RequestBody &requestBodySource,
                                                 const QByteArray &body,
                                                 QObject *parent,
                                                 const char *apiName);
+    QCNetworkReply *createInvalidRequestReply(const QCNetworkRequest &request,
+                                              HttpMethod method,
+                                              bool async,
+                                              const QString &message,
+                                              QObject *parent);
+    QCNetworkReply *createManagedErrorReply(const QCNetworkRequest &request,
+                                            HttpMethod method,
+                                            const QString &message,
+                                            const QList<QCNetworkMiddleware *> &middlewares);
     void applyReplyDefaults(QCNetworkReply *reply) const;
     void prepareManagedReply(QCNetworkReply *reply,
                              const QList<QCNetworkMiddleware *> &middlewares) const;
+    void startManagedReply(QCNetworkReply *reply,
+                           const QCNetworkRequest &request,
+                           bool async) const;
 
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;

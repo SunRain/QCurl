@@ -18,31 +18,30 @@ namespace QCurl::Internal {
 
 /// 描述请求体来源的归一化类型。
 enum class RequestBodyKind {
-    Empty,          ///< 无请求体
-    InlineBytes,    ///< 使用内联 QByteArray
-    UploadDevice,   ///< 使用 QIODevice 上传源
-    UploadFilePath, ///< 使用文件路径作为上传源
+    Empty,       ///< 无请求体
+    InlineBytes, ///< 使用内联 QByteArray
+    Device,      ///< 使用 QIODevice 请求体来源
 };
 
 /// 归一化后的请求体描述。
 struct RequestBody
 {
     RequestBodyKind kind = RequestBodyKind::Empty;
-    QByteArray inlineBytes;   ///< InlineBytes 模式下的内联 body
-    QPointer<QIODevice> device; ///< UploadDevice 模式下的设备句柄
-    QString filePath;         ///< UploadFilePath 模式下的文件路径
+    QByteArray inlineBytes;    ///< InlineBytes 模式下的内联 body
+    QPointer<QIODevice> device; ///< Device 模式下的设备句柄
     qint64 sizeBytes      = 0; ///< 已知请求体大小；未知时为负值
-    qint64 basePos        = 0; ///< 上传开始时的设备起始偏移
-    bool seekable         = false; ///< 上传源是否支持 seek
-    bool allowChunkedPost = false; ///< POST 上传源是否允许 chunked 传输
+    qint64 basePos        = 0; ///< 通过线程检查后采样的请求体读取起始偏移
+    bool seekable         = false; ///< 通过线程检查后采样的请求体来源 seek 能力
+    bool allowChunkedPost = false; ///< POST 请求体来源是否允许 chunked 传输
+    bool inferDeviceSize  = true; ///< 是否允许从 seekable device 推导剩余长度
 
     /// 返回当前 body 是否使用内联字节。
     [[nodiscard]] bool hasInlineBytes() const noexcept { return kind == RequestBodyKind::InlineBytes; }
 
-    /// 返回当前 body 是否依赖外部上传源。
-    [[nodiscard]] bool hasUploadSource() const noexcept
+    /// 返回当前 body 是否依赖外部请求体来源。
+    [[nodiscard]] bool hasBodySource() const noexcept
     {
-        return kind == RequestBodyKind::UploadDevice || kind == RequestBodyKind::UploadFilePath;
+        return kind == RequestBodyKind::Device;
     }
 
     /// 返回当前 body 是否具有可用的长度信息。
@@ -60,9 +59,9 @@ struct NormalizedRequest
 
 /// curl 侧最终使用的数据传输模式。
 enum class CurlTransferMode {
-    None,         ///< 无请求体或无需额外传输配置
-    InlineBytes,  ///< 直接使用内联内存块
-    UploadSource, ///< 使用设备或文件流式上传
+    None,              ///< 无请求体或无需额外传输配置
+    InlineBytes,       ///< 直接使用内联内存块
+    RequestBodySource, ///< 使用设备流式发送请求体
 };
 
 /// 编译后用于驱动 curl_easy_setopt 的请求计划。
@@ -84,23 +83,35 @@ struct CurlPlan
         return transferMode == CurlTransferMode::InlineBytes;
     }
 
-    /// 返回是否使用设备或文件作为传输源。
-    [[nodiscard]] bool usesUploadSource() const noexcept
+    /// 返回是否使用设备作为请求体传输源。
+    [[nodiscard]] bool usesRequestBodySource() const noexcept
     {
-        return transferMode == CurlTransferMode::UploadSource;
+        return transferMode == CurlTransferMode::RequestBodySource;
     }
 };
 
 /**
  * @brief 归一化请求体来源和执行模式
  *
- * 把 request 中可能的 uploadDevice / uploadFilePath / inlineBody
+ * 把运行期的 device/inline-body 请求体来源
  * 收敛为统一的 RequestBody 描述。
  */
 NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
                                    HttpMethod method,
                                    ExecutionMode mode,
-                                   const QByteArray &inlineBody);
+                                   const RequestBody &body);
+
+/// 构造空请求体描述。
+[[nodiscard]] RequestBody makeEmptyRequestBody();
+
+/// 构造内联字节请求体描述。
+[[nodiscard]] RequestBody makeInlineRequestBody(const QByteArray &inlineBody);
+
+/// 构造外部 QIODevice 请求体描述。
+[[nodiscard]] RequestBody makeDeviceRequestBody(QIODevice *device,
+                                                std::optional<qint64> sizeBytes,
+                                                bool allowChunkedPost,
+                                                bool inferDeviceSize = true);
 
 /**
  * @brief 根据归一化结果编译 curl 侧请求计划

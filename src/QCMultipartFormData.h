@@ -14,9 +14,7 @@
 #include "QCGlobal.h"
 
 #include <QByteArray>
-#include <QIODevice>
-#include <QMap>
-#include <QSharedPointer>
+#include <QList>
 #include <QString>
 
 namespace QCurl {
@@ -108,33 +106,6 @@ public:
                       const QByteArray &fileData,
                       const QString &mimeType);
 
-    /**
-     * @brief 添加文件字段（从 QIODevice 流）
-     *
-     * 用于大文件上传，避免一次性加载到内存。
-     *
-     * @param fieldName 字段名称
-     * @param device IO 设备（如 QFile）
-     * @param fileName 文件名
-     * @param mimeType MIME 类型
-     *
-     * @return 如果设备可读返回 true，否则返回 false
-     *
-     * @note device 必须在请求完成前保持有效
-     *
-     * @par 示例：
-     * @code
-     * QFile *largeFile = new QFile("/path/to/video.mp4");
-     * if (largeFile->open(QIODevice::ReadOnly)) {
-     *     formData.addFileFieldStream("video", largeFile, "video.mp4", "video/mp4");
-     * }
-     * @endcode
-     */
-    bool addFileFieldStream(const QString &fieldName,
-                            QIODevice *device,
-                            const QString &fileName,
-                            const QString &mimeType);
-
     // ========== 编码和获取 ==========
 
     /**
@@ -142,7 +113,7 @@ public:
      *
      * @return 编码后的请求体（包含所有字段和文件）
      *
-     * @note 对于流式字段，不会包含在返回的字节数组中
+     * @note 该类只保存 owning parts，返回值始终是完整编码结果
      */
     QByteArray toByteArray() const;
 
@@ -193,13 +164,6 @@ public:
     // ========== 查询和清理 ==========
 
     /**
-     * @brief 检查是否包含流式字段
-     *
-     * @return 如果包含流式字段返回 true
-     */
-    bool hasStreamFields() const;
-
-    /**
      * @brief 获取字段数量
      *
      * @return 字段总数（文本字段 + 文件字段）
@@ -221,12 +185,10 @@ private:
         QString fileName;      ///< 文件名（文件字段）
         QString mimeType;      ///< MIME 类型
         QByteArray fileData;   ///< 文件数据（内存文件）
-        QIODevice *fileStream; ///< 文件流（流式文件）
         bool isFile;           ///< 是否为文件字段
 
         Field()
-            : fileStream(nullptr)
-            , isFile(false)
+            : isFile(false)
         {}
     };
 

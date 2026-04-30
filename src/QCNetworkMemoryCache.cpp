@@ -25,34 +25,30 @@ QString QCNetworkMemoryCache::cacheKey(const QUrl &url) const
     return url.toString();
 }
 
-QByteArray QCNetworkMemoryCache::data(const QUrl &url)
+QCNetworkCacheLookupResult QCNetworkMemoryCache::lookup(const QUrl &url,
+                                                        QCNetworkCacheReadMode mode)
 {
     QMutexLocker locker(&m_mutex);
 
-    CacheEntry *entry = m_cache.object(cacheKey(url));
+    const QString key = cacheKey(url);
+    CacheEntry *entry = m_cache.object(key);
     if (!entry) {
-        return QByteArray();
+        return {};
     }
 
-    // 检查是否过期
-    if (!entry->metadata.isValid()) {
-        m_cache.remove(cacheKey(url));
-        return QByteArray();
+    const bool fresh = entry->metadata.isValid();
+    if (!fresh && mode == QCNetworkCacheReadMode::FreshOnly) {
+        m_currentSize -= entry->size();
+        m_cache.remove(key);
+        return {};
     }
 
-    return entry->data;
-}
-
-QCNetworkCacheMetadata QCNetworkMemoryCache::metadata(const QUrl &url)
-{
-    QMutexLocker locker(&m_mutex);
-
-    CacheEntry *entry = m_cache.object(cacheKey(url));
-    if (!entry) {
-        return QCNetworkCacheMetadata();
-    }
-
-    return entry->metadata;
+    QCNetworkCacheLookupResult result;
+    result.status = fresh ? QCNetworkCacheLookupStatus::FreshHit
+                          : QCNetworkCacheLookupStatus::StaleHit;
+    result.metadata = entry->metadata;
+    result.body     = entry->data;
+    return result;
 }
 
 void QCNetworkMemoryCache::insert(const QUrl &url,
@@ -90,7 +86,8 @@ void QCNetworkMemoryCache::insert(const QUrl &url,
     entry->metadata.creationDate = QDateTime::currentDateTime();
 
     // 插入缓存（QCache 会自动处理 LRU 淘汰）
-    if (m_cache.insert(key, entry.get(), dataSize)) {
+    const int cost = dataSize > 0 ? static_cast<int>(dataSize) : 1;
+    if (m_cache.insert(key, entry.get(), cost)) {
         m_currentSize += dataSize;
         static_cast<void>(entry.release());
     }

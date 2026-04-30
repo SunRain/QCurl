@@ -57,7 +57,7 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 `run_gate.py` 还会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`：
 
 - planner 按 manifest 决定是否纳入 feature-dependent 文件，而不是让 pytest 在运行时读取 `src/*.h` 再 `skip`
-- 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、`uploadDevice` replay、unknown-size chunked POST、`TLS pinned public key`
+- 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、raw-body replay、unknown-size chunked POST、`TLS pinned public key`
 - `TLS pinned public key` 用例只消费固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`
 
 ## 4. 产物与证据路径

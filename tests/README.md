@@ -80,7 +80,7 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex capability
 
 - ctest：终端输出（含每个 QtTest 的 `Totals:` 行；无 `SKIP:`）。
 - `libcurl_consistency`（可选 gate）：`build/libcurl_consistency/reports/gate_<suite>.json`、`build/libcurl_consistency/reports/junit_<suite>.xml`，以及 `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
-  - `run_gate.py` 会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`，再由 planner 决定是否纳入 `Accept-Encoding`、`uploadDevice` replay、unknown-size chunked POST、`TLS pinned public key` 等 feature-dependent 文件。
+- `run_gate.py` 会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`，再由 planner 决定是否纳入 `Accept-Encoding`、raw-body replay、unknown-size chunked POST、`TLS pinned public key` 等 feature-dependent 文件。
   - `TLS pinned public key` match/mismatch 用例只读取仓库内固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`。
 
 ### “基本无问题”验收门禁（强制归档）
@@ -260,7 +260,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ### tst_QCNetworkFileTransfer
 
-- 覆盖 `downloadToDevice()` 的流式写入、`uploadFromDevice()` 的回显校验，以及 `downloadFileResumable()` 在“先制造部分下载、再续传”路径上的语义
+- 覆盖 `downloadToDevice()` 的流式写入、`postMultipartDevice()` 的回显校验，以及 `downloadFileResumable()` 在“先制造部分下载、再续传”路径上的语义
 - 依赖本地 httpbin，且 `/bytes`、`/post`、`/range` 端点必须可用
 
 ### tst_Integration

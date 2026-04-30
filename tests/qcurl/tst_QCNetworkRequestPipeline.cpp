@@ -27,7 +27,7 @@ private slots:
 
     void testSendGetAndSchedulerShareDigest();
     void testAsyncAndSyncPostShareDigest();
-    void testDigestReflectsBodyKinds();
+    void testDigestIgnoresRuntimeBodySource();
 
 private:
     QByteArray planDigest(QCNetworkReply *reply) const;
@@ -126,17 +126,15 @@ void TestQCNetworkRequestPipeline::testAsyncAndSyncPostShareDigest()
     syncReply->deleteLater();
 }
 
-void TestQCNetworkRequestPipeline::testDigestReflectsBodyKinds()
+void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()
 {
-    const QUrl inlineUrl("http://example.com/pipeline-inline");
-    const QUrl deviceUrl("http://example.com/pipeline-device");
-    m_mock.mockResponse(HttpMethod::Post, inlineUrl, QByteArray("INLINE"));
-    m_mock.mockResponse(HttpMethod::Post, deviceUrl, QByteArray("DEVICE"));
+    const QUrl url("http://example.com/pipeline-body-source");
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("INLINE"));
+    m_mock.mockResponse(HttpMethod::Post, url, QByteArray("DEVICE"));
 
-    QCNetworkRequest inlineRequest(inlineUrl);
+    QCNetworkRequest inlineRequest(url);
     auto *inlineReply = m_manager->sendPost(inlineRequest, QByteArray("inline-body"));
     const QByteArray inlineDigest = planDigest(inlineReply);
-    QVERIFY(inlineDigest.contains("body_kind=inline"));
     QTRY_VERIFY_WITH_TIMEOUT(inlineReply->isFinished(), 2000);
     QCOMPARE(inlineReply->error(), NetworkError::NoError);
     inlineReply->deleteLater();
@@ -145,12 +143,10 @@ void TestQCNetworkRequestPipeline::testDigestReflectsBodyKinds()
     deviceBuffer.setData(QByteArray("device-body"));
     QVERIFY(deviceBuffer.open(QIODevice::ReadOnly));
 
-    QCNetworkRequest deviceRequest(deviceUrl);
-    deviceRequest.setUploadDevice(&deviceBuffer, deviceBuffer.size());
-    auto *deviceReply = m_manager->sendPost(deviceRequest, QByteArray());
+    QCNetworkRequest deviceRequest(url);
+    auto *deviceReply = m_manager->sendPost(deviceRequest, &deviceBuffer, deviceBuffer.size());
     const QByteArray deviceDigest = planDigest(deviceReply);
-    QVERIFY(deviceDigest.contains("body_kind=device"));
-    QVERIFY(deviceDigest != inlineDigest);
+    QCOMPARE(deviceDigest, inlineDigest);
     QTRY_VERIFY_WITH_TIMEOUT(deviceReply->isFinished(), 2000);
     QCOMPARE(deviceReply->error(), NetworkError::NoError);
     deviceReply->deleteLater();

@@ -5,7 +5,7 @@
  * 测试 QCMultipartFormData 的所有公共 API，包括：
  * - 基础功能（构造、清空、计数）
  * - 文本字段（添加、编码）
- * - 文件字段（内存、路径、流式）
+ * - 文件字段（内存、路径快照）
  * - 编码输出（toByteArray、contentType、boundary）
  * - 边界情况（空表单、特殊字符、大文件）
  */
@@ -35,6 +35,7 @@ private slots:
     void testAddTextField();
     void testAddMultipleTextFields();
     void testTextFieldEncoding();
+    void testHeaderParametersEscapeUnsafeCharacters();
 
     // ========== 文件字段测试 ==========
     void testAddFileFieldFromByteArray();
@@ -44,10 +45,9 @@ private slots:
     void testAddFileFieldInvalidPath();
     void testMimeTypeDetection();
 
-    // ========== 流式字段测试 ==========
-    void testAddFileFieldStream();
-    void testHasStreamFields();
-    void testStreamFieldNotInByteArray();
+    // ========== 文件快照语义测试 ==========
+    void testPathFieldProducesOwningSnapshot();
+    void testSizeMatchesEncodedBodyForFileSnapshotFields();
 
     // ========== 编码输出测试 ==========
     void testToByteArray();
@@ -97,7 +97,6 @@ void TestQCMultipartFormData::testConstructor()
 
     // 验证初始状态
     QCOMPARE(form.fieldCount(), 0);
-    QVERIFY(!form.hasStreamFields());
 }
 
 void TestQCMultipartFormData::testClear()
@@ -184,6 +183,23 @@ void TestQCMultipartFormData::testTextFieldEncoding()
     form.addTextField("empty", "");
     encoded = form.toByteArray();
     QVERIFY(encoded.contains("name=\"empty\""));
+}
+
+void TestQCMultipartFormData::testHeaderParametersEscapeUnsafeCharacters()
+{
+    QCMultipartFormData form;
+    form.addTextField(QStringLiteral("field\"\r\nX-Bad: yes"), QStringLiteral("text"));
+    form.addFileField(QStringLiteral("upload\"\\"),
+                      QStringLiteral("evil\"\r\nX-Bad: yes.txt"),
+                      QByteArrayLiteral("payload"),
+                      QStringLiteral("text/plain\r\nX-Bad: yes"));
+
+    const QByteArray encoded = form.toByteArray();
+    QVERIFY(!encoded.contains("\r\nX-Bad:"));
+    QVERIFY(encoded.contains("name=\"field\\\"  X-Bad: yes\""));
+    QVERIFY(encoded.contains("name=\"upload\\\"\\\\\""));
+    QVERIFY(encoded.contains("filename=\"evil\\\"  X-Bad: yes.txt\""));
+    QVERIFY(encoded.contains("Content-Type: text/plain\r\n"));
 }
 
 // ============================================================================
@@ -298,75 +314,44 @@ void TestQCMultipartFormData::testMimeTypeDetection()
 }
 
 // ============================================================================
-// 流式字段测试
+// 文件快照语义测试
 // ============================================================================
 
-void TestQCMultipartFormData::testAddFileFieldStream()
+void TestQCMultipartFormData::testPathFieldProducesOwningSnapshot()
 {
-    QBuffer buffer;
-    buffer.open(QIODevice::ReadWrite);
-    buffer.write("Stream data");
-    buffer.seek(0);
+    const QString tempPath = m_tempDir + "/snapshot.txt";
+    QFile tempFile(tempPath);
+    QVERIFY(tempFile.open(QIODevice::WriteOnly));
+    tempFile.write("Snapshot content");
+    tempFile.close();
 
     QCMultipartFormData form;
-    QVERIFY(form.addFileFieldStream("stream", &buffer, "stream.bin", "application/octet-stream"));
+    QVERIFY(form.addFileField("snapshot", tempPath, "text/plain"));
+    QFile::remove(tempPath);
 
-    QCOMPARE(form.fieldCount(), 1);
-    QVERIFY(form.hasStreamFields());
+    const QByteArray encoded = form.toByteArray();
+    QVERIFY(encoded.contains("name=\"snapshot\""));
+    QVERIFY(encoded.contains("filename=\"snapshot.txt\""));
+    QVERIFY(encoded.contains("Snapshot content"));
 }
 
-void TestQCMultipartFormData::testHasStreamFields()
+void TestQCMultipartFormData::testSizeMatchesEncodedBodyForFileSnapshotFields()
 {
-    QCMultipartFormData form;
-
-    // 没有流式字段
-    QVERIFY(!form.hasStreamFields());
-
-    // 添加文本字段
-    form.addTextField("name", "value");
-    QVERIFY(!form.hasStreamFields());
-
-    // 添加内存文件字段
-    form.addFileField("file", "test.txt", QByteArray("data"), "text/plain");
-    QVERIFY(!form.hasStreamFields());
-
-    // 添加流式字段
-    QBuffer buffer;
-    buffer.open(QIODevice::ReadWrite);
-    buffer.write("Stream");
-    buffer.seek(0);
-    form.addFileFieldStream("stream", &buffer, "file.bin", "application/octet-stream");
-
-    QVERIFY(form.hasStreamFields());
-}
-
-void TestQCMultipartFormData::testStreamFieldNotInByteArray()
-{
-    // 流式字段也应参与 toByteArray() 编码，避免与 fieldCount()/hasStreamFields()
-    // 的契约语义脱节。
-
-    QBuffer buffer;
-    buffer.open(QIODevice::ReadWrite);
-    buffer.write("Stream data");
-    buffer.seek(0);
+    const QString tempPath = m_tempDir + "/sized.bin";
+    QFile tempFile(tempPath);
+    QVERIFY(tempFile.open(QIODevice::WriteOnly));
+    tempFile.write(QByteArray(4096, 'x'));
+    tempFile.close();
 
     QCMultipartFormData form;
-    form.addTextField("text", "value");
-    form.addFileFieldStream("stream", &buffer, "stream.bin", "application/octet-stream");
+    QVERIFY(form.addFileField("payload", tempPath, "application/octet-stream"));
 
-    QCOMPARE(form.fieldCount(), 2);
-    QVERIFY(form.hasStreamFields());
+    const qint64 size = form.size();
+    const QByteArray encoded = form.toByteArray();
+    QCOMPARE(size, encoded.size());
+    QVERIFY(encoded.contains("filename=\"sized.bin\""));
 
-    // 编码结果应包含流式字段内容与对应 multipart 元数据。
-    QByteArray encoded = form.toByteArray();
-    QVERIFY(encoded.contains("text"));
-    QVERIFY(encoded.contains("value"));
-    QVERIFY(encoded.contains("Stream data"));
-
-    // 验证 multipart 结构正确
-    QVERIFY(encoded.contains("name=\"stream\""));
-    QVERIFY(encoded.contains("filename=\"stream.bin\""));
-    QVERIFY(encoded.contains("Content-Type: application/octet-stream"));
+    QFile::remove(tempPath);
 }
 
 // ============================================================================

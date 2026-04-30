@@ -176,37 +176,43 @@ QCNetworkCacheMetadata QCNetworkDiskCache::readMetadata(const QString &key) cons
     return meta;
 }
 
-QByteArray QCNetworkDiskCache::data(const QUrl &url)
+QCNetworkCacheLookupResult QCNetworkDiskCache::lookup(const QUrl &url,
+                                                      QCNetworkCacheReadMode mode)
 {
     QMutexLocker locker(&m_mutex);
 
-    QString key                 = cacheKey(url);
+    const QString key = cacheKey(url);
     QCNetworkCacheMetadata meta = readMetadata(key);
-
     if (meta.url.isEmpty()) {
-        return QByteArray();
+        return {};
     }
 
-    // 检查是否过期
-    if (!meta.isValid()) {
-        remove(url);
-        return QByteArray();
+    const QString dataPath = dataFilePath(key);
+    QFileInfo dataInfo(dataPath);
+    if (!dataInfo.exists()) {
+        return {};
     }
 
-    // 读取数据
-    QFile file(dataFilePath(key));
+    const bool fresh = meta.isValid();
+    if (!fresh && mode == QCNetworkCacheReadMode::FreshOnly) {
+        if (QFile::remove(dataPath) && m_currentSize >= 0) {
+            m_currentSize -= dataInfo.size();
+        }
+        QFile::remove(metaFilePath(key));
+        return {};
+    }
+
+    QFile file(dataPath);
     if (!file.open(QIODevice::ReadOnly)) {
-        return QByteArray();
+        return {};
     }
 
-    // 读取数据并返回
-    return file.readAll();
-}
-
-QCNetworkCacheMetadata QCNetworkDiskCache::metadata(const QUrl &url)
-{
-    QMutexLocker locker(&m_mutex);
-    return readMetadata(cacheKey(url));
+    QCNetworkCacheLookupResult result;
+    result.status = fresh ? QCNetworkCacheLookupStatus::FreshHit
+                          : QCNetworkCacheLookupStatus::StaleHit;
+    result.metadata = meta;
+    result.body     = file.readAll();
+    return result;
 }
 
 void QCNetworkDiskCache::insert(const QUrl &url,

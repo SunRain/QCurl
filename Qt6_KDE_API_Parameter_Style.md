@@ -31,6 +31,51 @@ English | 简体中文 | 原文
 
 > 注：并非“禁止所有指针/引用参数”。例如 `QObject*` 观察者指针、父子关系等属于另一类约定（所有权/线程亲和性/何时失效），需要单独写清；但同样不应把“借用语义”的入参跨调用保存。
 
+### 0.1 Public API 参数快速决策树（推荐）
+
+> 目标：用最少规则，把“语义 + 边界 + 兼容性”落到可执行的签名选择上。
+
+**先判定是否跨 Qt Meta-Object / QML 边界（必须）**
+- 若该函数/信号/属性相关接口会经过 `moc`（`signals` / `slots` / `Q_INVOKABLE` / `Q_PROPERTY` 的 READ/WRITE/NOTIFY 等）：
+  - 参数/返回值优先使用 **owning 类型**（如 `QString` / `QByteArray` / `QUrl` / `QVariant` 等）
+  - 避免把 view 类型暴露到该边界；并尽量避免同名重载（见 1.4、5.6）
+  - 说明：这里强调的是“类型必须是 owning 且可安全拷贝/转换”，并不强制规定 C++ 层必须按值或必须 `const&`；但无论如何不要在该边界暴露 view/借用型类型。
+
+**再判定语义：Borrow vs Owning（必须先做）**
+- Borrow：只在本次调用内读取/解析/比较；不保存、不异步、不跨事件循环/线程。
+- Owning：会保存到成员/缓存/队列，或跨调用/跨事件循环/线程/异步或延迟执行使用。
+
+**最后按语义选参数类型（Public C++ API）**
+- Borrow 文本/字节：优先 **单一 view 入口**，并且 **按值传递**
+  - 文本：`foo(QAnyStringView)` / `foo(QStringView)` / `foo(QUtf8StringView)` / `foo(QLatin1StringView)`
+  - 字节：`foo(QByteArrayView)`
+  - 注：上面列举的是互斥候选类型。对“同一语义”的 Public API 只选择其中一个作为 canonical 入口，不要把它们全部做成同名重载；若需要同时支持不同编码，优先用不同函数名表达（如 `setNameUtf8(...)` / `setNameLatin1(...)`，详见 5.3）。
+- Owning 文本/字节（要存/异步）：默认 public API 起点优先 `const QString&` / `const QByteArray&`
+  - 可选提供 `setNameView(QAnyStringView)` 等便捷入口，但必须 **立刻 owning 化**并转发到统一实现点（见第 2 章）
+- pure C++（非 meta-object）且希望“单入口 + 自然 move”：可选 sink 风格 `QString name` + `std::move(name)`（见 2.1；但不要把它描述为 Qt/KDE public setter 的主流默认样式）
+
+### 0.2 非文本参数：按值 vs `const&`（Public API 通用规则）
+
+> 说明：是否隐式共享会影响“拷贝成本模型”，但 **签名首先表达语义**；非文本入参多数情况下仍遵循“足够小就按值、否则用 `const&`”的基本规则。
+
+**规则（必须）**
+- 小型标量/枚举/标志位：按值传递（不要写 `const T&`）
+  - `bool`、整数、`double`、指针/句柄
+  - 小型 `enum`、`QFlags`
+  - 小型 `std::chrono::duration` / `std::chrono::time_point` 等值类型
+- 大值对象/容器/复杂结构：只读入参优先 `const T&`
+  - 例如 `QSet<T>`、`QHash/K/V`、`QMap<K,V>`、`QVector<T>`、`QList<T>`、自定义大型 struct 等
+- view 类型（如 `QAnyStringView/QStringView/QByteArrayView`）：只能按值传递，禁止 `const View&`（见第 1 章）
+
+**示例**
+```cpp
+void setEnabled(bool enabled);                      // by value
+void setMode(Mode mode);                            // enum by value
+void setTimeout(std::chrono::milliseconds timeout); // small chrono by value
+
+void setTags(const QSet<QString> &tags);            // const&
+```
+
 ---
 
 ## 1) View（借用视图）：只读 / 解析入口（推荐按值传递）
@@ -224,6 +269,45 @@ void Foo::enqueuePacket(QByteArrayView packet)
 
 ## 2) Owning：要存 / 要变成成员（以 `QString` owning 为主，可加 view 便捷入口）
 
+### 2.0 Owning 参数：签名选择与实现约束（补充）
+
+**语义回顾**
+- Owning = 你会把入参保存为成员/缓存/队列，或跨调用/跨事件循环/线程/异步或延迟执行使用。
+- 语义是 Owning，并不意味着“参数必须按值或必须 `const&`”；它约束的是 **生命周期与实现落地方式**。
+
+**规则（必须）**
+- Owning 场景：成员类型必须是 owning（如 `QString` / `QByteArray`），不得把 view（`QAnyStringView/QStringView/QByteArrayView`）保存到成员、缓存、队列或延迟执行上下文中。
+- 若 API 跨 Qt Meta-Object/QML 边界：不得使用 view 作为参数/返回值（见 1.4）。
+
+**Public API 推荐签名（默认起点）**
+- 对“要存为成员/缓存”的 Qt 隐式共享值类型（`QString/QByteArray/QImage/...`）：
+  - 默认 public API 起点优先 `const T&`
+  - 原因：与 Qt/KF 既有风格一致、签名直观、兼容性与下游预期更稳定；同时可利用 implicit sharing 使“存入成员”通常为浅拷贝共享（见本章示例）
+
+**可选：提供 view 便捷入口（建议不同方法名）**
+- 当你确实需要统一接收多来源字符串/字节输入时，可额外提供 view 入口作为 convenience：
+  - view 入口必须 **立刻 owning 化**（`toString()` / `toByteArray()`）并转发到 owning 入口或统一实现点
+  - 建议不同名字（如 `setName()` + `setNameView()`），避免同名重载带来的 connect/重载决议二义性（见 1.4、5.6）
+
+**可选：pure C++ Public API 的 sink 风格（按值 + move）**
+- 仅在以下条件同时满足时考虑把 owning 类型按值作为 canonical 入口（见 2.1）：
+  - 纯 C++ 接口（非 `slots` / `Q_INVOKABLE` / QML 边界）
+  - 你明确希望“单入口”天然支持 move，并愿意承担签名风格变化的维护成本
+- 注意：不要把 sink 风格描述成 Qt6/KDE public setter 的主流默认样式；对已发布 API 更不要无证据地为“现代化”改签名（兼容性见第 6 章）。
+
+**最小模板（Owning）**
+```cpp
+void Foo::setName(const QString &name)
+{
+    d->name = name; // Owning：存入成员（通常为浅拷贝共享）
+}
+
+void Foo::setNameView(QAnyStringView name)
+{
+    setName(name.toString()); // convenience：立刻 owning 化并转发
+}
+```
+
 ### 推荐做法（Public C++ API）
 - 对“要存为成员/缓存”的 Qt 隐式共享值类型（`QString/QByteArray/QImage/...`）：
   - 提供 owning 入口：`const QString&`（或对应类型）
@@ -242,6 +326,8 @@ void Foo::enqueuePacket(QByteArrayView packet)
 > 提示：若该类是 `QObject` 且经常作为 `connect(..., &Type::setName)` 的目标，建议把 view 入口改用不同名字（例如 `setNameView(QAnyStringView)`），避免同名重载导致函数指针二义性；否则连接处需要 `qOverload`/`static_cast` 消歧（见 1.4、5.6）。
 
 ### 2.1 可选：Public C++ API 直接使用 owning sink（按值 + move）
+
+> ⚠️ 兼容性提示：不要仅为“现代化/性能猜测”改动**已发布**的 public 函数签名（包括从 `const T&` 改为 sink 或加入新重载）。若确需调整，请同时说明收益、影响范围（源码/ABI/QML）、迁移方案与版本策略（见第 6 章）。
 
 在以下场景可以考虑把 `QString` 按值作为 canonical 入口，以减少重载并天然支持 move（尤其是调用方传临时值时）：
 - 这是纯 C++ Public API（非 `slots`/`Q_INVOKABLE`/QML 边界）。
@@ -425,6 +511,8 @@ connect(sender, &Sender::nameChanged,
 
 ### 5.7 新增重载前的“下游调用面”检查（建议写成编译测试）
 
+> ⚠️ 兼容性提示：新增重载并非“零风险优化”。即使不改已有调用代码，也可能因重载决议变化导致行为改变或二义性报错；对已发布 API 尤其需要把它当作兼容性决策来评估。
+
 新增/调整重载（尤其是从 `const QString&` 迁移到加入 view）前，至少检查这些典型调用是否：
 - 能编译（无二义性）
 - 选择了你期望的 overload（行为不变或可接受）
@@ -462,3 +550,38 @@ connect(sender, &Sender::nameChanged,
 - `QObject` 接口在现代 `connect()` 语法下是否会因重载导致二义性？是否通过改名或 `qOverload` 明确选择？
 - 若函数本身只是纯解析/比较且项目风格允许，是否适合标注 `noexcept`？（增强项，非本文主规则）
 - 若 public API 返回 view，是否已在签名/文档中明确生命周期与失效条件；必要时是否考虑 `[[nodiscard]]`？（增强项，按项目约定）
+
+---
+
+## 附录 A) 隐式共享数据（`QSharedDataPointer` / `QExplicitlySharedDataPointer`）：`detach()` 约定（实现侧）
+
+> 本附录用于减少 code review 中“该不该手写 `detach()`”的争论；它属于实现侧约定，不改变本文关于 public API 参数语义与类型选择的主规则。
+
+### A.1 `QSharedDataPointer`：通常不需要手写 `detach()`
+
+**规则（推荐）**
+- 使用 `QSharedDataPointer<T>` 时，通常不要手写 `d.detach()`。
+- 对共享数据的非 const 访问会触发写时分离；因此类似 `d->field = ...;` 已会在需要时进行分离。
+- 注意：如果只是读取数据，尽量让访问走 const 路径（能把函数做成 `const` 就做成 `const`），避免在非 const 访问路径里“只读也触发 detach”的隐性成本。
+
+**示例**
+```cpp
+// 通常无需：d.detach();
+d->type = value; // 非 const 访问会在需要时触发分离
+```
+
+### A.2 `QExplicitlySharedDataPointer`：需要你显式 `detach()`
+
+**规则（必须）**
+- 使用 `QExplicitlySharedDataPointer<T>` 时，不会自动写时分离。
+- 当你要修改共享数据、但语义期望“写时分离”时，必须先显式 `detach()` 再写入。
+
+**示例**
+```cpp
+d.detach();      // 显式分离
+d->type = value; // 修改只影响当前实例
+```
+
+**参考（Qt 文档）**
+- `QSharedDataPointer`：`https://doc.qt.io/qt-6/qshareddatapointer.html`
+- `QExplicitlySharedDataPointer`：`https://doc.qt.io/qt-6/qexplicitlyshareddatapointer.html`

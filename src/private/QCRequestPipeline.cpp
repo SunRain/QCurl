@@ -2,7 +2,6 @@
 
 #include "QCNetworkTimeoutConfig.h"
 
-#include <QFileInfo>
 #include <QIODevice>
 #include <QStringList>
 
@@ -11,22 +10,6 @@ namespace QCurl::Internal {
 namespace {
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
-QString bodyKindName(RequestBodyKind kind)
-{
-    switch (kind) {
-        case RequestBodyKind::Empty:
-            return QStringLiteral("empty");
-        case RequestBodyKind::InlineBytes:
-            return QStringLiteral("inline");
-        case RequestBodyKind::UploadDevice:
-            return QStringLiteral("device");
-        case RequestBodyKind::UploadFilePath:
-            return QStringLiteral("file");
-    }
-
-    return QStringLiteral("unknown");
-}
-
 QString methodName(HttpMethod method)
 {
     switch (method) {
@@ -46,77 +29,54 @@ QString methodName(HttpMethod method)
 
     return QStringLiteral("UNKNOWN");
 }
-
-QString transferModeName(CurlTransferMode mode)
-{
-    switch (mode) {
-        case CurlTransferMode::None:
-            return QStringLiteral("none");
-        case CurlTransferMode::InlineBytes:
-            return QStringLiteral("inline");
-        case CurlTransferMode::UploadSource:
-            return QStringLiteral("upload");
-    }
-
-    return QStringLiteral("unknown");
-}
 #endif
 
 } // namespace
 
+RequestBody makeEmptyRequestBody()
+{
+    return {};
+}
+
+RequestBody makeInlineRequestBody(const QByteArray &inlineBody)
+{
+    RequestBody body;
+    if (!inlineBody.isEmpty()) {
+        body.kind        = RequestBodyKind::InlineBytes;
+        body.inlineBytes = inlineBody;
+        body.sizeBytes   = inlineBody.size();
+    }
+    return body;
+}
+
+RequestBody makeDeviceRequestBody(QIODevice *device,
+                                  std::optional<qint64> sizeBytes,
+                                  bool allowChunkedPost,
+                                  bool inferDeviceSize)
+{
+    RequestBody body;
+    if (!device) {
+        return body;
+    }
+
+    body.kind             = RequestBodyKind::Device;
+    body.device           = device;
+    body.allowChunkedPost = allowChunkedPost;
+    body.inferDeviceSize  = inferDeviceSize;
+    body.sizeBytes        = sizeBytes.value_or(-1);
+    return body;
+}
+
 NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
                                    HttpMethod method,
                                    ExecutionMode mode,
-                                   const QByteArray &inlineBody)
+                                   const RequestBody &body)
 {
     NormalizedRequest normalized;
     normalized.request       = request;
     normalized.method        = method;
     normalized.executionMode = mode;
-
-    if (QIODevice *device = request.uploadDevice()) {
-        // QIODevice 优先级最高：它携带当前位置、可 seek 性与潜在的流式上传语义。
-        normalized.body.kind             = RequestBodyKind::UploadDevice;
-        normalized.body.device           = device;
-        normalized.body.basePos          = device->pos();
-        normalized.body.seekable         = !device->isSequential();
-        normalized.body.allowChunkedPost = (method == HttpMethod::Post)
-                                           && request.allowChunkedUploadForPost();
-        normalized.body.sizeBytes        = -1;
-        if (const auto sizeOpt = request.uploadBodySizeBytes(); sizeOpt.has_value()) {
-            normalized.body.sizeBytes = sizeOpt.value();
-        } else if (normalized.body.seekable) {
-            const qint64 totalSize = device->size();
-            if (totalSize >= 0 && totalSize >= normalized.body.basePos) {
-                normalized.body.sizeBytes = totalSize - normalized.body.basePos;
-            }
-        }
-        return normalized;
-    }
-
-    if (const auto filePath = request.uploadFilePath(); filePath.has_value()) {
-        // 文件路径模式在执行期再打开文件，这里只归一化路径和可推断的大小。
-        normalized.body.kind             = RequestBodyKind::UploadFilePath;
-        normalized.body.filePath         = filePath.value();
-        normalized.body.allowChunkedPost = (method == HttpMethod::Post)
-                                           && request.allowChunkedUploadForPost();
-        normalized.body.sizeBytes        = -1;
-        if (const auto sizeOpt = request.uploadBodySizeBytes(); sizeOpt.has_value()) {
-            normalized.body.sizeBytes = sizeOpt.value();
-        } else {
-            const QFileInfo info(normalized.body.filePath);
-            if (info.exists()) {
-                normalized.body.sizeBytes = info.size();
-            }
-        }
-        return normalized;
-    }
-
-    if (!inlineBody.isEmpty()) {
-        normalized.body.kind        = RequestBodyKind::InlineBytes;
-        normalized.body.inlineBytes = inlineBody;
-        normalized.body.sizeBytes   = inlineBody.size();
-    }
+    normalized.body          = body;
 
     return normalized;
 }
@@ -125,7 +85,7 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
 {
     CurlPlan plan;
     plan.normalized             = normalized;
-    const bool hasUploadSource = normalized.body.hasUploadSource();
+    const bool hasBodySource = normalized.body.hasBodySource();
     const qint64 inlineBodySize = normalized.body.inlineBytes.size();
 
     switch (normalized.method) {
@@ -137,17 +97,17 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
             break;
         case HttpMethod::Post:
             plan.setPost = true;
-            // POST 允许内联 body 与上传源两条路径；后者会在执行期走 read callback。
-            plan.transferMode = hasUploadSource ? CurlTransferMode::UploadSource
-                                                : CurlTransferMode::InlineBytes;
-            plan.bodySizeBytes = hasUploadSource ? normalized.body.sizeBytes : inlineBodySize;
+            // POST 允许内联 body 与请求体来源两条路径；后者会在执行期走 read callback。
+            plan.transferMode = hasBodySource ? CurlTransferMode::RequestBodySource
+                                              : CurlTransferMode::InlineBytes;
+            plan.bodySizeBytes = hasBodySource ? normalized.body.sizeBytes : inlineBodySize;
             break;
         case HttpMethod::Put:
-            // PUT 只有在外部上传源存在时才打开 CURLOPT_UPLOAD；内联 body 走自定义请求路径。
-            plan.setUpload = hasUploadSource;
+            // PUT 只有在外部请求体来源存在时才打开 CURLOPT_UPLOAD；内联 body 走自定义请求路径。
+            plan.setUpload = hasBodySource;
             plan.customRequest = QByteArrayLiteral("PUT");
-            if (hasUploadSource) {
-                plan.transferMode = CurlTransferMode::UploadSource;
+            if (hasBodySource) {
+                plan.transferMode = CurlTransferMode::RequestBodySource;
                 plan.bodySizeBytes = normalized.body.sizeBytes;
             } else if (normalized.body.hasInlineBytes()) {
                 plan.transferMode = CurlTransferMode::InlineBytes;
@@ -170,7 +130,7 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
             break;
     }
 
-    plan.hasRequestBody = hasUploadSource || inlineBodySize > 0;
+    plan.hasRequestBody = hasBodySource || inlineBodySize > 0;
     return plan;
 }
 
@@ -181,9 +141,6 @@ QByteArray buildCurlPlanDigestForTest(const CurlPlan &plan)
     QStringList parts;
     parts << QStringLiteral("method=%1").arg(methodName(normalized.method));
     parts << QStringLiteral("url=%1").arg(normalized.request.url().toString());
-    parts << QStringLiteral("body_kind=%1").arg(bodyKindName(normalized.body.kind));
-    parts << QStringLiteral("transfer=%1").arg(transferModeName(plan.transferMode));
-    parts << QStringLiteral("body_size=%1").arg(plan.bodySizeBytes);
     parts << QStringLiteral("priority=%1").arg(static_cast<int>(normalized.request.priority()));
     parts << QStringLiteral("follow=%1").arg(normalized.request.followLocation() ? 1 : 0);
 

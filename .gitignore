@@ -155,3 +155,5 @@ helloagents/
 helloagents_backup_*/
 Testing/
 .helloagents/
+# Added by code-review-graph
+.code-review-graph/

@@ -18,6 +18,7 @@ namespace QCurl {
 
 class QCNetworkAsyncReply;
 class QCNetworkCache;
+class QCNetworkDiskCache;
 
 /**
  * @brief QCNetworkAccessManager 私有实现（PIMPL）
@@ -43,7 +44,6 @@ public:
         , writeNotifier(nullptr)
         , errorNotifier(nullptr)
         , logger(nullptr)
-        , middlewares()
         , mockHandler(nullptr)
         , q_ptr(self)
     {}
@@ -75,8 +75,14 @@ public:
     // 高级功能成员
     QCNetworkLogger *logger; ///< 当前注入的日志记录器
     bool debugTraceEnabled = false; ///< 是否启用 debug trace
-    QList<QCNetworkMiddleware *> middlewares; ///< 请求/响应中间件链
+    struct MiddlewareEntry
+    {
+        QCNetworkMiddleware *middleware = nullptr; ///< 调用方持有，中间件析构时会注销
+    };
+
+    QList<MiddlewareEntry> middlewares; ///< 按注册顺序保存的中间件链
     QCNetworkMockHandler *mockHandler; ///< 可选的 mock 处理器
+    QCNetworkDiskCache *autoCreatedCache = nullptr; ///< setCachePath 自动创建的 cache
 
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 
