@@ -13,7 +13,13 @@ QCurl 的 install surface 只有两个来源：
 
 - `QCPimpl.h` 已从默认安装面移除；`tests/public_api/run_public_api_checks.py scan` 会阻止 install headers 回流 `#include <QCPimpl.h>` 与 `QCURL_DECLARE_*` helper macro。
 - `QCNetworkLogger.h` 进入默认稳定安装面，因为 `QCNetworkAccessManager::setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()` 对外依赖该 Core contract。
-- `QCNetworkDefaultLogger.h` 与 `QCNetworkCancelToken.h` 继续保留在 `QCURL_INSTALL_HEADERS_EXTRAS`，不进入默认 consumer/package contract。
+- `QCNetworkCachePolicy.h` 进入默认稳定安装面，因为 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()` 对外依赖该 Core type header。
+- `QCNetworkDefaultLogger.h` 与 `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入默认稳定安装面。
+- `QCNetworkCache.h`、`QCNetworkMemoryCache.h`、`QCNetworkDiskCache.h` 作为 P2 Cache lookup Core 能力进入默认稳定安装面，公开读取路径限定为 `lookup(url, ReadMode)`。
+- `QCMultipartFormData.h` 作为 P2 Multipart builder 进入默认稳定安装面，内部字段和编码缓存已下沉到 shared-data 实现。
+- `QCNetworkMiddleware.h` 作为 P3 Middleware base 进入默认稳定安装面；内置 middleware 实现细节不得混入 base contract。
+- `QCNetworkMockHandler.h` 作为 P3 Core Test Support 进入默认安装面；它用于测试支持和请求捕获，不作为生产运行时 Core 能力表述。
+- `QCNetworkConnectionPoolConfig.h` 与 `QCNetworkConnectionPoolManager.h` 作为 P3 ConnectionPool 管理面进入默认稳定安装面，config/statistics 使用 accessor / shared-data API。
 - `QCNetworkHttpMethod.h` 现在是独立的 public type header，`HttpMethod` 不再由 `QCNetworkReply.h` 承载。
 - `QCNetworkHttpVersion.h` 只暴露 `QCNetworkHttpVersion` 枚举；libcurl 常量映射函数 `detail::toCurlHttpVersion(...)` 仅存在于 internal header `src/private/QCNetworkHttpVersion_p.h`。
 - `QCNetworkConnectionPoolManager.h` 对外只保留配置、统计和资源控制 contract；reply 与连接池之间的内部协作统一收口到 `src/QCNetworkConnectionPoolManager_p.h`。
@@ -80,6 +86,15 @@ QCurl 的 install surface 只有两个来源：
 | `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 fail-closed）；`schedulerOnOwnerThread()` 跨线程回 owner thread（需 event dispatcher，`BlockingQueuedConnection` 有阻塞风险） | 通过新增 API 扩展能力；现有线程 contract 与失败语义保持兼容 |
 | `QCNetworkAccessManager.h`（share/hsts 配置） | `ShareHandleConfig` / `HstsAltSvcCacheConfig` 当前按 **冻结布局** 管理；manager 的 cookie/scheduler/cache/share/hsts 状态已下沉到 `QCNetworkAccessManagerPrivate`，不再占用导出类布局 | 仅通过新增 manager API 扩展行为；不在现有 struct 上做字段增删/重排。若未来需扩展字段，升级为新的 ABI 友好值类型（implicit-sharing + accessor）后再开放 |
 | `QCNetworkRequest.h`（lane/priority 入口） | 保持 lane + priority 公开行为合同稳定，调度细节留在 scheduler 实现层 | 允许新增便捷 API，但不破坏既有 lane/priority 语义 |
+| `QCNetworkCachePolicy.h` | 独立轻量 enum type header；作为 `QCNetworkRequest` 的 Core 配置类型进入默认安装面 | 可新增策略枚举值，但不得把 concrete cache 实现类型或读取 API 混入该头 |
+| `QCNetworkCache.h` | `QCNetworkCacheMetadata` / `QCNetworkCacheLookupResult` 使用 implicit-sharing 值类型 + accessor API；canonical read API 为 `lookup(url, ReadMode)` | 可在 Data 内扩展字段；不得恢复 public fields、`contains()` / `data()` / `metadata()` 旧读路径或新增 layout allowlist |
+| `QCNetworkMemoryCache.h` / `QCNetworkDiskCache.h` | QObject cache 实现使用 private data；缓存容器、锁、路径和文件系统细节留在 `.cpp` | 仅通过 accessor / virtual API 扩展行为；不得在 public header 暴露 `QCache`、`QMutex`、`QDir` 等实现依赖 |
+| `QCMultipartFormData.h` | builder 使用 implicit-sharing 值类型；字段列表、boundary 缓存和 MIME/file helper 留在 `.cpp` | 可新增 builder API；不得恢复 nested public field layout 或把文件系统 / MIME 依赖暴露到 public header |
+| `QCNetworkDefaultLogger.h` | 继承 `QCNetworkLogger`，自身使用 private data；文件输出、内存缓存和 mutex 留在 `.cpp` | 可新增 setter/accessor；不得把文件轮转状态或锁对象暴露为 public fields |
+| `QCNetworkCancelToken.h` | QObject service + private data；只暴露 reply-level attach/cancel/timeout 合同 | 仅通过 reply-level API 扩展取消语义；不得新增 request-level cancel shortcut |
+| `QCNetworkMiddleware.h` | base class 使用 private data 管理注册 manager；公开面只保留 virtual hook 与 manager 注册合同 | 可新增 hook 或 helper；不得把内置 middleware 的状态、容器或锁暴露到 base header |
+| `QCNetworkMockHandler.h` | Core Test Support；`QCNetworkCapturedRequest` 使用 implicit-sharing 值类型 + accessor API；handler runtime state 使用 private data | 可新增测试支持 API；不得恢复 `MockData` / `CapturedRequest` nested public field layout；不得把生产运行时能力写入 Core 文档 |
+| `QCNetworkConnectionPoolConfig.h` / `QCNetworkConnectionPoolManager.h` | config/statistics 使用 implicit-sharing 值类型 + accessor API；manager 使用 private data；内部 curl handle 协作位于 `_p.h` | 可在 Data 内新增字段并增加 accessor；不得恢复 public fields、`QMutex`、`QHash` 或内部 helper 到 public header |
 
 ## 3. 不属于安装面的 internal/private 头
 
@@ -130,6 +145,14 @@ QCurl 的 install surface 只有两个来源：
 - 正向 consumer：独立工程只能通过 staging prefix 执行 `find_package(QCurl CONFIG REQUIRED)`，随后 include public headers 并链接 `QCurl::QCurl` 成功。
 - scheduler 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkRequestScheduler.h>`、`manager.scheduler()` / `schedulerOnOwnerThread()`、以及 `Config/LaneConfig` accessor API（禁止 direct field 依赖）。
 - logger 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkLogger.h>`、`NetworkLogEntry` accessor API、以及 `manager.setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()`。
+- cache policy 作为 Core type header 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCachePolicy.h>` 以及 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()`。
+- Cache lookup 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCache.h>`、`<QCNetworkMemoryCache.h>`、`<QCNetworkDiskCache.h>`、`QCNetworkCacheMetadata` accessor API、`lookup(url, QCNetworkCacheReadMode::FreshOnly)` 和 `QCNetworkCacheLookupResult` accessor API。
+- Multipart builder 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCMultipartFormData.h>`、`setBoundary()`、`addTextField()`、`addFileField()`、`contentType()`、`size()`、`toByteArray()` 和 `fieldCount()`。
+- default logger 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkDefaultLogger.h>`、`enableConsoleOutput(false)`、`setMinLogLevel()`、`entries()` 和 `manager.setLogger(&defaultLogger)`。
+- cancel token 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCancelToken.h>`、`attach(QCNetworkReply *)`、`attachMultiple(QList<QCNetworkReply *>)`、`setAutoTimeout()`、`cancel()` 和 `isCancelled()`。
+- Middleware base 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkMiddleware.h>`、继承 base class、`manager.addMiddleware()`、`middlewares()` 和 `removeMiddleware()`。
+- MockHandler 作为 Core Test Support 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkMockHandler.h>`、`QCNetworkCapturedRequest` accessor API、`recordRequest()`、`takeCapturedRequests()`、`mockResponse()` 和 manager mock handler 绑定。
+- ConnectionPool 管理面作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkConnectionPoolConfig.h>`、`<QCNetworkConnectionPoolManager.h>`、config accessor API、manager `setConfig()` / `config()` 和 statistics accessor API。
 - 反向断言：独立 consumer 尝试 `#include <QCNetworkReply_p.h>` 或 `#include <QCNetworkConnectionPoolManager_p.h>` 必须编译失败。
 - consumer smoke 不允许回落到源码树 include path。
 

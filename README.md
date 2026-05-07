@@ -1,6 +1,6 @@
-# QCurl 🚀
+# QCurl
 
-> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供高性能、类型安全的 HTTP/WebSocket 客户端 API
+> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供高性能、类型安全的 HTTP Core API 与可选 Extras / Preview 能力。
 
 [![Qt6](https://img.shields.io/badge/Qt-6.2+-41CD52?logo=qt)](https://www.qt.io/)
 [![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
@@ -10,59 +10,65 @@
 
 ---
 
+## 发布状态与 RC 边界
+
+`QCurl 3.0.0-rc.1` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。
+
+| 层级 | 发布含义 | 当前范围 |
+| --- | --- | --- |
+| **Core** | 默认安装，作为 `3.0.0-rc.1` 稳定候选维护 API / ABI | `QCNetworkAccessManager`、`QCNetworkRequest`、`QCNetworkReply`、TLS / proxy / timeout / retry 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core Test Support** | 默认安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest` |
+| **Preview** | 功能可用或有测试资产，但合同、安装面、consumer gate 或运行语义仍需稳定化 | WebSocket、Diagnostics 中依赖外部命令/权限或不稳定 `details` schema 的能力 |
+
+除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为可选发行面。完整边界见 `docs/arch/public-header-boundary.md` 与 `docs/arch/rc-maturity-review.md`。
+
 ## 为什么选择 QCurl？
 
-| 🏗️ **现代化架构**        | 🌐 **协议完整**              | ⚡ **高性能**    | 🏢 **企业就绪** |
-|:--------------------:|:------------------------:|:------------:|:-----------:|
-| CMake + RAII + C++17 | HTTP/1.1/2/3 + WebSocket | 连接池提升 60-80% | 日志/中间件/诊断   |
+| **现代化架构** | **Core HTTP** | **可选扩展** | **Qt 友好** |
+|:-------------:|:-------------:|:------------:|:-----------:|
+| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | Preview 能力 | QObject 线程归属与事件循环合同 |
 
 ---
 
-## ✨ 核心特性
+## 功能分层
 
-### 🏗️ 现代化架构
+### Core
 
 - **CMake 构建系统** - 跨平台支持，自动依赖检测
 - **统一 Reply 架构** - 1 个类替代 6 个子类，代码量减少 30%
 - **RAII 资源管理** - `QCCurlHandleManager` 自动管理 curl 句柄，零内存泄漏
 - **C++17 特性** - `std::optional`、`std::chrono`、`[[nodiscard]]`、`enum class`
-
-### 🌐 完整协议支持
-
-- **HTTP/1.1、HTTP/2、HTTP/3 (QUIC)** - 三层自动降级策略
-- **WebSocket** - 完整客户端实现，支持压缩（RFC 7692）、自动重连、连接池
+- **HTTP/1.1、HTTP/2、HTTP/3 capability** - HTTP/3 取决于运行时 libcurl / QUIC backend
 - **SSL/TLS** - 可配置证书验证、客户端证书、CA 路径
 - **代理支持** - HTTP、HTTPS、SOCKS4/4A、SOCKS5
-
-### ⚡ 性能优化
-
-| 特性            | 性能提升              | 说明                      |
-| ------------- | ----------------- | ----------------------- |
-| HTTP 连接池      | **60-80%**        | 零配置自动启用，避免重复 TCP/TLS 握手 |
-| HTTP/2 多路复用   | **延迟 -73%**       | 单连接处理多请求，HPACK 头部压缩     |
-| WebSocket 连接池 | **2000ms → 10ms** | 连接复用，避免重复握手             |
-| 事件驱动接收        | **延迟 -98%**       | 替代轮询，CPU 占用降低 60%       |
-
-### 🏢 企业级能力
-
-- **统一日志系统** - `QCNetworkLogger` 支持多级别日志、自定义处理器
-- **中间件系统** - `QCNetworkMiddleware` 请求/响应拦截、认证注入、监控埋点
-- **取消令牌** - `QCNetworkCancelToken` 批量请求管理、超时控制
-- **网络诊断** - DNS 解析、Ping 测试、Traceroute、SSL 证书检查
-- **Mock 工具** - `QCNetworkMockHandler` 单元测试必备
-
-### 📁 文件操作
-
-- **流式下载/上传** - `downloadToDevice()`、manager-level `sendPost()/sendPut()` raw-body device overload 与 `postMultipartDevice()` 支持大文件
-- **断点续传** - HTTP Range 请求自动恢复下载
-- **Multipart/form-data** - RFC 7578 兼容，自动 MIME 类型推断
-
-### 🎯 开发体验
-
 - **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::send*()` 一套入口覆盖配置与发送
 - **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置
 - **请求重试** - 指数退避算法，自动处理临时性错误
 - **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
+- **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
+- **Cache lookup API** - `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 提供 `lookup(url, ReadMode)`，返回 `Miss / FreshHit / StaleHit`
+- **Multipart/form-data builder** - `QCMultipartFormData` 与 `postMultipart*()` 覆盖文件上传场景
+- **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
+- **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
+- **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
+- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面
+- **MockHandler Core Test Support** - `QCNetworkMockHandler` 与 `QCNetworkCapturedRequest` 提供测试支持和请求捕获
+- **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
+- **流式下载/上传** - `downloadToDevice()` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
+- **断点续传** - `downloadFileResumable()` 基于 HTTP Range 请求恢复下载
+
+### 可选 Extras
+
+当前没有独立的稳定 Extras 层。后续若恢复或新增 Extras，必须建立独立 install manifest、public-api gate 和 installed consumer smoke，不能混入 Core 验收。
+
+### Preview
+
+- **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，但不属于默认 Core install surface
+- **Diagnostics 扩展诊断** - DNS、连接、HTTP、SSL 探测有 deterministic local gate；`ping/traceroute` 与 `details` schema 仍不作为稳定合同
+
+### 性能基准说明
+
+性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。进入 RC 前，未绑定证据的数字不应作为稳定发布承诺。
 
 ---
 
@@ -90,6 +96,8 @@ sudo cmake --install build
 
 发布合同提示：
 
+- `3.0.0-rc.1` 只承诺 Core install surface。
+- Preview 需要发行包显式包含 `QCURL_INSTALL_HEADERS_EXTRAS`。
 - 当前 lane-aware scheduler 的 breaking ABI 变更以 `QCurl 3.0.0 / SOVERSION 3` 发布。
 - 若你从旧版 scheduler signals 迁移，请同步更新二进制依赖和 `connect(&QCNetworkRequestScheduler::signal, ...)` 的函数签名。
 
@@ -118,11 +126,10 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 });
 ```
 
-#### 2. WebSocket 连接
+#### 2. WebSocket 连接（Preview）
 
-> 说明：从这里开始的 WebSocket / Multipart 示例使用 `QCURL_INSTALL_HEADERS_EXTRAS`
-> 中的扩展头。默认稳定安装面仍然只有 `QCURL_INSTALL_HEADERS + QCurlConfig.h`；
-> 只有当你的发行包显式包含 Extras 时，这些头文件才应被视为 consumer contract。
+> 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
+> 它可以作为 Preview 功能使用，但不属于 `3.0.0-rc.1` 的 Core 稳定承诺。
 
 ```cpp
 #include <QCWebSocket.h>
@@ -144,7 +151,9 @@ connect(socket, &QCurl::QCWebSocket::textMessageReceived, [](const QString &msg)
 socket->open();
 ```
 
-#### 3. 文件上传（Multipart）
+#### 3. 文件上传（Core Multipart）
+
+`QCMultipartFormData.h` 属于 Core install surface，默认 installed consumer 可以直接使用该 builder。
 
 ```cpp
 #include <QCMultipartFormData.h>
