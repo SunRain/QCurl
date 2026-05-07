@@ -145,10 +145,10 @@ void TestQCNetworkCacheIntegration::verifyCacheHitSignalContract(
     m_manager->setCache(m_cache);
 
     QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(expiresInSeconds);
-    meta.headers.insert(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain"));
-    meta.size = cachedData.size();
+    meta.setUrl(url);
+    meta.setExpirationDate(QDateTime::currentDateTime().addSecs(expiresInSeconds));
+    meta.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain"));
+    meta.setSize(cachedData.size());
     m_cache->insert(url, cachedData, meta);
 
     QCNetworkRequest request(url);
@@ -227,7 +227,7 @@ void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     const auto cached = m_cache->lookup(request.url(), QCNetworkCacheReadMode::FreshOnly);
-    QCOMPARE(cached.status, QCNetworkCacheLookupStatus::Miss);
+    QCOMPARE(cached.status(), QCNetworkCacheLookupStatus::Miss);
 
     reply->deleteLater();
 }
@@ -367,8 +367,8 @@ void TestQCNetworkCacheIntegration::testOnlyCacheHitWithZeroByteBodyAndNoHeaders
 
     const QUrl url(m_httpbinBaseUrl + "/status/204?test=onlycache-zero-no-headers");
     QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(3600);
+    meta.setUrl(url);
+    meta.setExpirationDate(QDateTime::currentDateTime().addSecs(3600));
     m_cache->insert(url, QByteArray(), meta);
 
     QCNetworkRequest request(url);
@@ -414,19 +414,19 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
 
     QByteArray testData = "{\"cached\": true}";
     QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.creationDate   = QDateTime::currentDateTime();
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(3600); // 未过期（1小时后）
-    meta.size           = testData.size();
+    meta.setUrl(url);
+    meta.setCreationDate(QDateTime::currentDateTime());
+    meta.setExpirationDate(QDateTime::currentDateTime().addSecs(3600)); // 未过期（1小时后）
+    meta.setSize(testData.size());
 
-    meta.headers["Content-Type"]   = "application/json";
-    meta.headers["Content-Length"] = QByteArray::number(testData.size());
+    meta.setHeader("Content-Type", "application/json");
+    meta.setHeader("Content-Length", QByteArray::number(testData.size()));
 
     m_cache->insert(url, testData, meta);
 
     const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
     QVERIFY2(cached.hit(), "Cache insert failed");
-    QCOMPARE(cached.body, testData);
+    QCOMPARE(cached.body(), testData);
 
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
@@ -492,7 +492,7 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
 
     const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
     QVERIFY(cached.hit());
-    QCOMPARE(cached.body, networkData.value());
+    QCOMPARE(cached.body(), networkData.value());
 
     auto *reply2 = m_manager->sendGet(request);
     QVERIFY(waitForFinished(reply2, 100));
@@ -516,8 +516,8 @@ void TestQCNetworkCacheIntegration::testCacheExpiration()
 
     QByteArray expiredData = "{\"expired\": true}";
     QCNetworkCacheMetadata meta;
-    meta.url            = url;
-    meta.expirationDate = QDateTime::currentDateTime().addSecs(-1); // 已过期
+    meta.setUrl(url);
+    meta.setExpirationDate(QDateTime::currentDateTime().addSecs(-1)); // 已过期
     m_cache->insert(url, expiredData, meta);
 
     QCNetworkRequest request(url);
@@ -551,7 +551,7 @@ void TestQCNetworkCacheIntegration::testNoCacheHeader()
     reply->deleteLater();
 
     const auto cached = m_cache->lookup(url, QCNetworkCacheReadMode::FreshOnly);
-    QCOMPARE(cached.status, QCNetworkCacheLookupStatus::Miss);
+    QCOMPARE(cached.status(), QCNetworkCacheLookupStatus::Miss);
 }
 
 void TestQCNetworkCacheIntegration::testConcurrentRequests()

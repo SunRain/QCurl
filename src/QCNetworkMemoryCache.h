@@ -8,10 +8,11 @@
 
 #include "QCNetworkCache.h"
 
-#include <QCache>
-#include <QMutex>
+#include <QScopedPointer>
 
 namespace QCurl {
+
+class QCNetworkMemoryCachePrivate;
 
 /**
  * @brief 内存缓存实现
@@ -43,7 +44,9 @@ public:
      */
     ~QCNetworkMemoryCache() override;
 
-    /// Reads metadata and body through the canonical lookup API.
+    Q_DISABLE_COPY_MOVE(QCNetworkMemoryCache)
+
+    /// 通过标准 lookup API 同时读取元数据和响应体。
     [[nodiscard]] QCNetworkCacheLookupResult lookup(const QUrl &url,
                                                     QCNetworkCacheReadMode mode) override;
 
@@ -68,20 +71,7 @@ public:
     void setMaxCacheSize(qint64 size) override;
 
 private:
-    struct CacheEntry
-    {
-        QByteArray data;
-        QCNetworkCacheMetadata metadata;
-        /// 返回当前条目占用的数据字节数。
-        qint64 size() const { return data.size(); }
-    };
-
-    mutable QMutex m_mutex;
-    QCache<QString, CacheEntry> m_cache;
-    qint64 m_maxSize;
-    qint64 m_currentSize;
-
-    QString cacheKey(const QUrl &url) const;
+    QScopedPointer<QCNetworkMemoryCachePrivate> d_ptr;
 };
 
 } // namespace QCurl

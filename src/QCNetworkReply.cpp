@@ -2260,9 +2260,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
                     if (QCNetworkCache::isCacheable(headers)) {
                         // 准备元数据
                         QCNetworkCacheMetadata meta;
-                        meta.url            = request.url();
-                        meta.headers        = headers;
-                        meta.expirationDate = QCNetworkCache::parseExpirationDate(headers);
+                        meta.setUrl(request.url());
+                        meta.setHeaders(headers);
+                        meta.setExpirationDate(QCNetworkCache::parseExpirationDate(headers));
 
                         // 获取响应数据（不移除缓冲区数据）
                         QByteArray responseData = bodyBuffer.read(bodyBuffer.byteAmount());
@@ -3966,13 +3966,14 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
         return false;
     }
 
-    const auto &meta = cached.metadata;
-    const QByteArray data = cached.body;
+    const auto meta = cached.metadata();
+    const QByteArray data = cached.body();
 
     // 模拟网络请求行为
     d->bodyBuffer.append(data);
     d->headerData = QByteArrayLiteral("HTTP/1.1 200 OK\r\n");
-    for (auto it = meta.headers.cbegin(); it != meta.headers.cend(); ++it) {
+    const auto headers = meta.headers();
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         d->headerData.append(it.key());
         d->headerData.append(": ");
         d->headerData.append(it.value());

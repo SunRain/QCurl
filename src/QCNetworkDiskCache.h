@@ -8,10 +8,11 @@
 
 #include "QCNetworkCache.h"
 
-#include <QDir>
-#include <QMutex>
+#include <QScopedPointer>
 
 namespace QCurl {
+
+class QCNetworkDiskCachePrivate;
 
 /**
  * @brief 磁盘缓存实现
@@ -51,6 +52,8 @@ public:
      */
     ~QCNetworkDiskCache() override;
 
+    Q_DISABLE_COPY_MOVE(QCNetworkDiskCache)
+
     /**
      * @brief 设置缓存目录
      * @param path 缓存目录路径
@@ -76,21 +79,7 @@ public:
     void setMaxCacheSize(qint64 size) override;
 
 private:
-    mutable QMutex m_mutex;
-    QString m_cacheDir;
-    qint64 m_maxSize;
-    mutable qint64 m_currentSize;
-
-    QString cacheKey(const QUrl &url) const;
-    QString dataFilePath(const QString &key) const;
-    QString metaFilePath(const QString &key) const;
-
-    bool writeMetadata(const QString &key, const QCNetworkCacheMetadata &meta);
-    QCNetworkCacheMetadata readMetadata(const QString &key) const;
-
-    void ensureCacheDirectory();
-    void updateCacheSize() const;
-    void evictIfNeeded(qint64 newDataSize);
+    QScopedPointer<QCNetworkDiskCachePrivate> d_ptr;
 };
 
 } // namespace QCurl

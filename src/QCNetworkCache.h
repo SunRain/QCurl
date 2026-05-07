@@ -12,64 +12,101 @@
 #include <QDateTime>
 #include <QMap>
 #include <QObject>
+#include <QSharedDataPointer>
 #include <QUrl>
 
 namespace QCurl {
 
-/**
- * @brief HTTP 缓存元数据
- *
- * 存储缓存条目的元信息，包括 URL、响应头、过期时间等。
- *
- */
-struct QCURL_EXPORT QCNetworkCacheMetadata
+class QCNetworkCacheMetadataData;
+class QCNetworkCacheLookupResultData;
+
+/// HTTP 缓存条目的元数据，采用隐式共享以保持值传递成本可控。
+class QCURL_EXPORT QCNetworkCacheMetadata
 {
-    QUrl url;                             ///< 请求 URL
-    QMap<QByteArray, QByteArray> headers; ///< HTTP 响应头
-    QDateTime expirationDate;             ///< 缓存过期时间
-    QDateTime lastModified;               ///< 最后修改时间
-    QDateTime creationDate;               ///< 缓存创建时间
-    qint64 size = 0;                      ///< 数据大小（字节）
+public:
+    QCNetworkCacheMetadata();
+    QCNetworkCacheMetadata(const QCNetworkCacheMetadata &other);
+    QCNetworkCacheMetadata(QCNetworkCacheMetadata &&other) noexcept;
+    ~QCNetworkCacheMetadata();
+
+    QCNetworkCacheMetadata &operator=(const QCNetworkCacheMetadata &other);
+    QCNetworkCacheMetadata &operator=(QCNetworkCacheMetadata &&other) noexcept;
+
+    [[nodiscard]] QUrl url() const;
+    void setUrl(const QUrl &url);
+
+    [[nodiscard]] QMap<QByteArray, QByteArray> headers() const;
+    void setHeaders(const QMap<QByteArray, QByteArray> &headers);
+    void setHeader(const QByteArray &name, const QByteArray &value);
+
+    [[nodiscard]] QDateTime expirationDate() const;
+    void setExpirationDate(const QDateTime &expirationDate);
+
+    [[nodiscard]] QDateTime lastModified() const;
+    void setLastModified(const QDateTime &lastModified);
+
+    [[nodiscard]] QDateTime creationDate() const;
+    void setCreationDate(const QDateTime &creationDate);
+
+    [[nodiscard]] qint64 size() const;
+    void setSize(qint64 size);
 
     /**
-     * @brief 检查缓存是否有效（未过期）
-     * @return true 如果缓存仍然有效
+     * @brief 检查缓存是否仍在有效期内。
+     * @return 未设置过期时间或当前时间早于过期时间时返回 true。
      */
-    [[nodiscard]] bool isValid() const
-    {
-        return expirationDate.isNull() || QDateTime::currentDateTime() < expirationDate;
-    }
+    [[nodiscard]] bool isValid() const;
+
+private:
+    QSharedDataPointer<QCNetworkCacheMetadataData> d;
 };
 
-/// Controls whether cache lookup accepts only fresh entries or also stale ones.
+/// 控制缓存读取是否允许返回已过期条目。
 enum class QCNetworkCacheReadMode
 {
+    /// 只接受未过期条目，过期条目按未命中处理。
     FreshOnly,
+    /// 允许返回已存在的过期条目，由调用方决定后续处理。
     AllowStale,
 };
 
-/// Describes the result of a canonical cache lookup.
+/// 描述标准缓存查询结果。
 enum class QCNetworkCacheLookupStatus
 {
+    /// 未找到可返回的缓存条目。
     Miss,
+    /// 找到未过期条目。
     FreshHit,
+    /// 找到已过期条目，仅在 AllowStale 模式下返回。
     StaleHit,
 };
 
-/**
- * @brief Result returned by QCNetworkCache::lookup().
- */
-struct QCURL_EXPORT QCNetworkCacheLookupResult
+/// QCNetworkCache::lookup() 的返回值，status 用于区分未命中和空响应命中。
+class QCURL_EXPORT QCNetworkCacheLookupResult
 {
-    QCNetworkCacheLookupStatus status = QCNetworkCacheLookupStatus::Miss;
-    QCNetworkCacheMetadata metadata;
-    QByteArray body;
+public:
+    QCNetworkCacheLookupResult();
+    QCNetworkCacheLookupResult(const QCNetworkCacheLookupResult &other);
+    QCNetworkCacheLookupResult(QCNetworkCacheLookupResult &&other) noexcept;
+    ~QCNetworkCacheLookupResult();
 
-    /// Returns true when the lookup found a cache entry.
-    [[nodiscard]] bool hit() const
-    {
-        return status != QCNetworkCacheLookupStatus::Miss;
-    }
+    QCNetworkCacheLookupResult &operator=(const QCNetworkCacheLookupResult &other);
+    QCNetworkCacheLookupResult &operator=(QCNetworkCacheLookupResult &&other) noexcept;
+
+    [[nodiscard]] QCNetworkCacheLookupStatus status() const;
+    void setStatus(QCNetworkCacheLookupStatus status);
+
+    [[nodiscard]] QCNetworkCacheMetadata metadata() const;
+    void setMetadata(const QCNetworkCacheMetadata &metadata);
+
+    [[nodiscard]] QByteArray body() const;
+    void setBody(const QByteArray &body);
+
+    /// 查询命中缓存时返回 true；空响应体仍可视为命中。
+    [[nodiscard]] bool hit() const;
+
+private:
+    QSharedDataPointer<QCNetworkCacheLookupResultData> d;
 };
 
 /**
@@ -98,10 +135,10 @@ public:
     ~QCNetworkCache() override = default;
 
     /**
-     * @brief Canonical cache read API.
-     * @param url Request URL.
-     * @param mode FreshOnly rejects expired entries; AllowStale returns existing stale entries.
-     * @return Lookup status, metadata, and body in one result.
+     * @brief 标准缓存读取接口。
+     * @param url 请求 URL。
+     * @param mode 是否允许读取已过期条目。
+     * @return 同时携带命中状态、元数据和响应体。
      */
     [[nodiscard]] virtual QCNetworkCacheLookupResult lookup(const QUrl &url,
                                                             QCNetworkCacheReadMode mode) = 0;
