@@ -10,7 +10,7 @@
 #include "QCNetworkHttpVersion.h"
 #include "private/QCNetworkLogRedaction_p.h"
 #include "QCNetworkLogger.h"
-#include "QCNetworkMockHandler.h"
+#include "QCNetworkMockHandler_p.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkReply_p.h"
@@ -375,7 +375,7 @@ static std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &hea
 }
 
 [[nodiscard]] AttemptErrorInfo attemptErrorFromMockData(
-    QCNetworkReplyPrivate *d, const QCNetworkMockHandler::MockData &mockData)
+    QCNetworkReplyPrivate *d, const Internal::QCNetworkMockData &mockData)
 {
     if (!d) {
         return {};
@@ -402,7 +402,7 @@ static std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &hea
 }
 
 void applyMockResponseHeaders(QCNetworkReplyPrivate *d,
-                              const QCNetworkMockHandler::MockData &mockData)
+                              const Internal::QCNetworkMockData &mockData)
 {
     if (!d) {
         return;
@@ -530,7 +530,7 @@ struct TestMockChaosReplayState
 {
     QPointer<QCNetworkReply> reply;
     QCNetworkReplyPrivate *d = nullptr;
-    QCNetworkMockHandler::MockData mockData;
+    Internal::QCNetworkMockData mockData;
     QList<QByteArray> chunks;
     TestMockChaosConfig config;
     qint64 totalBytes  = 0;
@@ -3153,29 +3153,29 @@ void QCNetworkReply::execute()
 
         // 请求捕获：用于离线断言 middleware/header 注入、body 形态等
         if (mock->captureEnabled()) {
-            QCNetworkMockHandler::CapturedRequest captured;
-            captured.url             = normalized.request.url();
-            captured.method          = normalized.method;
-            captured.followLocation  = normalized.request.followLocation();
+            QCNetworkCapturedRequest captured;
+            captured.setUrl(normalized.request.url());
+            captured.setMethod(normalized.method);
+            captured.setFollowLocation(normalized.request.followLocation());
             const auto timeoutConfig = normalized.request.timeoutConfig();
             if (timeoutConfig.connectTimeout().has_value()) {
-                captured.connectTimeoutMs = timeoutConfig.connectTimeout()->count();
+                captured.setConnectTimeoutMs(timeoutConfig.connectTimeout()->count());
             }
             if (timeoutConfig.totalTimeout().has_value()) {
-                captured.totalTimeoutMs = timeoutConfig.totalTimeout()->count();
+                captured.setTotalTimeoutMs(timeoutConfig.totalTimeout()->count());
             }
 
             const auto headerNames = normalized.request.rawHeaderList();
             for (const auto &name : headerNames) {
-                captured.headers.append(qMakePair(name, normalized.request.rawHeader(name)));
+                captured.addHeader(name, normalized.request.rawHeader(name));
             }
 
-            captured.bodySize = bodySpec.hasKnownSize()
-                                    ? static_cast<qsizetype>(qMax<qint64>(0, bodySpec.sizeBytes))
-                                    : bodySpec.inlineBytes.size();
+            captured.setBodySize(bodySpec.hasKnownSize()
+                                      ? static_cast<qsizetype>(qMax<qint64>(0, bodySpec.sizeBytes))
+                                      : bodySpec.inlineBytes.size());
             const int previewLimit = mock->captureBodyPreviewLimit();
-            captured.bodyPreview   = previewLimit > 0 ? bodySpec.inlineBytes.left(previewLimit)
-                                                      : QByteArray();
+            captured.setBodyPreview(previewLimit > 0 ? bodySpec.inlineBytes.left(previewLimit)
+                                                      : QByteArray());
             mock->recordRequest(captured);
         }
 
@@ -3210,8 +3210,11 @@ void QCNetworkReply::execute()
             // 同步模式：阻塞执行（支持重试）
             if (d->executionMode == ExecutionMode::Sync) {
                 while (true) {
-                    QCNetworkMockHandler::MockData mockData;
-                    if (!mock->consumeMock(normalized.method, normalized.request.url(), mockData)) {
+                    Internal::QCNetworkMockData mockData;
+                    if (!Internal::QCNetworkMockHandlerAccess::consumeMock(*mock,
+                                                                            normalized.method,
+                                                                            normalized.request.url(),
+                                                                            mockData)) {
                         d->setError(NetworkError::InvalidRequest,
                                     QStringLiteral("MockHandler: no mock matched for %1")
                                         .arg(normalized.request.url().toString()));
@@ -3280,8 +3283,11 @@ void QCNetworkReply::execute()
                         return;
                     }
 
-                    QCNetworkMockHandler::MockData mockData;
-                    if (!mock->consumeMock(normalizedMethod, normalizedUrl, mockData)) {
+                    Internal::QCNetworkMockData mockData;
+                    if (!Internal::QCNetworkMockHandlerAccess::consumeMock(*mock,
+                                                                            normalizedMethod,
+                                                                            normalizedUrl,
+                                                                            mockData)) {
                         d->setError(NetworkError::InvalidRequest,
                                     QStringLiteral("MockHandler: no mock matched for %1")
                                         .arg(normalizedUrl.toString()));

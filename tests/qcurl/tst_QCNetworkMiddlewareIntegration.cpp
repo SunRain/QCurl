@@ -107,7 +107,7 @@ void tst_QCNetworkMiddlewareIntegration::testSendGet_AutoWiredMiddleware()
     QCOMPARE(captured.size(), 1);
 
     QByteArray xTest;
-    for (const auto &h : captured[0].headers) {
+    for (const auto &h : captured[0].headers()) {
         if (h.first == "X-Test") {
             xTest = h.second;
             break;
@@ -163,7 +163,7 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     QCOMPARE(captured.size(), 1);
 
     QByteArray xTest;
-    for (const auto &h : captured[0].headers) {
+    for (const auto &h : captured[0].headers()) {
         if (h.first == "X-Test") {
             xTest = h.second;
             break;
@@ -264,7 +264,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QVERIFY(hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        QVERIFY(hasHeader(captured[0].headers(), "X-XSRF-TOKEN", "token123"));
         reply->deleteLater();
     }
 
@@ -281,7 +281,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QVERIFY(hasHeader(captured[0].headers, "X-XSRF-TOKEN", "manual"));
+        QVERIFY(hasHeader(captured[0].headers(), "X-XSRF-TOKEN", "manual"));
         reply->deleteLater();
     }
 
@@ -297,7 +297,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QVERIFY(!hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        QVERIFY(!hasHeader(captured[0].headers(), "X-XSRF-TOKEN", "token123"));
         reply->deleteLater();
     }
 
@@ -313,7 +313,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QVERIFY(!hasHeader(captured[0].headers, "X-XSRF-TOKEN", "token123"));
+        QVERIFY(!hasHeader(captured[0].headers(), "X-XSRF-TOKEN", "token123"));
         reply->deleteLater();
     }
 }

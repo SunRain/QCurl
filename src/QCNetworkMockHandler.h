@@ -15,8 +15,9 @@
 #include <QByteArray>
 #include <QList>
 #include <QMap>
-#include <QMutex>
 #include <QPair>
+#include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QUrl>
 
 #include <optional>
@@ -24,6 +25,66 @@
 namespace QCurl {
 
 enum class HttpMethod;
+
+namespace Internal {
+struct QCNetworkMockData;
+class QCNetworkMockHandlerAccess;
+} // namespace Internal
+
+class QCNetworkCapturedRequestData;
+class QCNetworkMockHandlerPrivate;
+
+/**
+ * @brief 捕获到的请求快照。
+ *
+ * 这是 Core Test Support 的 accessor-only 值类型，用于离线断言
+ * middleware/header/body 形态，不暴露长期 ABI 敏感的 public fields。
+ */
+class QCURL_EXPORT QCNetworkCapturedRequest
+{
+public:
+    using RawHeaderPair = QPair<QByteArray, QByteArray>;
+
+    QCNetworkCapturedRequest();
+    QCNetworkCapturedRequest(const QCNetworkCapturedRequest &other);
+    QCNetworkCapturedRequest(QCNetworkCapturedRequest &&other) noexcept;
+    ~QCNetworkCapturedRequest();
+
+    QCNetworkCapturedRequest &operator=(const QCNetworkCapturedRequest &other);
+    QCNetworkCapturedRequest &operator=(QCNetworkCapturedRequest &&other) noexcept;
+
+    [[nodiscard]] QUrl url() const;
+    void setUrl(const QUrl &url);
+
+    [[nodiscard]] HttpMethod method() const;
+    void setMethod(HttpMethod method);
+
+    [[nodiscard]] QList<RawHeaderPair> headers() const;
+    void setHeaders(const QList<RawHeaderPair> &headers);
+    void addHeader(const QByteArray &name, const QByteArray &value);
+
+    [[nodiscard]] QByteArray bodyPreview() const;
+    void setBodyPreview(const QByteArray &bodyPreview);
+
+    [[nodiscard]] qsizetype bodySize() const;
+    void setBodySize(qsizetype bodySize);
+
+    [[nodiscard]] bool followLocation() const;
+    void setFollowLocation(bool followLocation);
+
+    /// 空值表示请求未显式配置 connect timeout。
+    [[nodiscard]] std::optional<qint64> connectTimeoutMs() const;
+    void setConnectTimeoutMs(qint64 timeoutMs);
+    void clearConnectTimeoutMs();
+
+    /// 空值表示请求未显式配置 total timeout。
+    [[nodiscard]] std::optional<qint64> totalTimeoutMs() const;
+    void setTotalTimeoutMs(qint64 timeoutMs);
+    void clearTotalTimeoutMs();
+
+private:
+    QSharedDataPointer<QCNetworkCapturedRequestData> d;
+};
 
 /**
  * @brief 网络请求 Mock 处理器
@@ -47,36 +108,14 @@ enum class HttpMethod;
 class QCURL_EXPORT QCNetworkMockHandler
 {
 public:
+    using CapturedRequest = QCNetworkCapturedRequest;
+
     /// 构造 mock 处理器并初始化空的 mock/捕获状态。
     QCNetworkMockHandler();
     /// 销毁 mock 序列与已捕获请求。
     ~QCNetworkMockHandler();
 
-    struct MockData
-    {
-        QByteArray response;
-        int statusCode = 200;
-        QMap<QByteArray, QByteArray> headers;
-        /// 原始响应头块
-        /// 为空则使用 headers
-        std::optional<QByteArray> rawHeaderData;
-        NetworkError error = NetworkError::NoError;
-        bool isError       = false;
-    };
-
-    struct CapturedRequest
-    {
-        using RawHeaderPair = QPair<QByteArray, QByteArray>;
-
-        QUrl url;
-        HttpMethod method;
-        QList<RawHeaderPair> headers;
-        QByteArray bodyPreview;
-        qsizetype bodySize  = 0;
-        bool followLocation = true;
-        std::optional<qint64> connectTimeoutMs;
-        std::optional<qint64> totalTimeoutMs;
-    };
+    Q_DISABLE_COPY_MOVE(QCNetworkMockHandler)
 
     /**
      * @brief 模拟成功响应
@@ -112,7 +151,7 @@ public:
 
     /**
      * @brief 追加模拟成功响应（序列）
-     * @note 每次命中会“弹出队首”；当序列耗尽后复用最后一条。
+     * @note 每次命中会推进序列游标；当序列耗尽后复用最后一条。
      */
     void enqueueResponse(
         HttpMethod method,
@@ -190,15 +229,6 @@ public:
     QByteArray getMockResponse(const QUrl &url, int &statusCode) const;
 
     /**
-     * @brief 消费一次模拟数据（用于执行链路回放）
-     *
-     * 命中规则：
-     * 1) method+url 精确匹配；
-     * 2) 若不存在，则回退到 url-only（旧 API）。
-     */
-    bool consumeMock(HttpMethod method, const QUrl &url, MockData &out);
-
-    /**
      * @brief 获取模拟错误
      * @param url 请求 URL
      * @return 错误类型
@@ -240,25 +270,14 @@ public:
     void clear();
 
 private:
-    struct MockSequence
-    {
-        QList<MockData> items;
-        int cursor = 0;
-    };
+    bool consumeMock(HttpMethod method, const QUrl &url, Internal::QCNetworkMockData &out);
 
     static QString makeKey(const QUrl &url);
     static QString makeKey(HttpMethod method, const QUrl &url);
 
-    static void replaceSequence(MockSequence &seq, const MockData &item);
-    static void appendSequence(MockSequence &seq, const MockData &item);
+    QScopedPointer<QCNetworkMockHandlerPrivate> d_ptr;
 
-    mutable QMutex m_mutex;
-    QMap<QString, MockSequence> m_sequences;
-    int m_globalDelay = 0;
-
-    bool m_captureEnabled              = false;
-    int m_captureBodyPreviewLimitBytes = 4096;
-    QList<CapturedRequest> m_capturedRequests;
+    friend class Internal::QCNetworkMockHandlerAccess;
 };
 
 } // namespace QCurl

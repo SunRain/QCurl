@@ -222,13 +222,13 @@ void TestQCNetworkMockHandler::testRequestCapture()
 
     const auto captured = handler.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured[0].url, url);
-    QCOMPARE(captured[0].method, HttpMethod::Post);
-    QCOMPARE(captured[0].bodySize, 6);
-    QCOMPARE(captured[0].bodyPreview, QByteArray("abc"));
+    QCOMPARE(captured[0].url(), url);
+    QCOMPARE(captured[0].method(), HttpMethod::Post);
+    QCOMPARE(captured[0].bodySize(), 6);
+    QCOMPARE(captured[0].bodyPreview(), QByteArray("abc"));
 
     bool hasXTest = false;
-    for (const auto &h : captured[0].headers) {
+    for (const auto &h : captured[0].headers()) {
         if (h.first == "X-Test" && h.second == "1234") {
             hasXTest = true;
             break;

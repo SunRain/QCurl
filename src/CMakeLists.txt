@@ -45,6 +45,7 @@ set(QCURL_MODERN_SOURCES
     QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.cpp         # v2.15.0: 中间件
     QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
+    QCNetworkCapturedRequest.cpp
     QCNetworkMockHandler.cpp        # v2.16.0: Mock 工具
     QCNetworkDiagnostics.cpp        # v2.19.0: 网络诊断工具
 )
@@ -81,6 +82,7 @@ set(QCURL_MODERN_HEADERS
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
     QCNetworkMockHandler.h          # v2.16.0: Mock 工具
+    QCNetworkMockHandler_p.h        # v2.16.0: Mock 内部 companion（内部）
     QCNetworkDiagnostics.h          # v2.19.0: 网络诊断工具
 )
 
