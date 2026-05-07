@@ -18,6 +18,9 @@
 #include <QSharedDataPointer>
 #include <QString>
 
+// moc 需要完整 reply 类型来生成信号参数元类型代码。
+Q_MOC_INCLUDE("QCNetworkReply.h")
+
 namespace QCurl {
 
 class QCNetworkAccessManager;

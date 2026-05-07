@@ -17,6 +17,9 @@
 #include <QScopedPointer>
 #include <QTimer>
 
+// moc 需要完整 reply 类型来生成信号参数元类型代码。
+Q_MOC_INCLUDE("QCNetworkReply.h")
+
 namespace QCurl {
 
 class QCNetworkReply;
@@ -25,7 +28,7 @@ class QCNetworkCancelTokenPrivate;
 /**
  * @brief 网络请求取消令牌
  *
- * 用于管理和取消多个网络请求，支持以下功能：
+ * 用于管理和取消多个 reply-level 网络请求，支持以下功能：
  * - 一键取消多个请求
  * - 自动超时取消
  * - 批量请求管理
@@ -35,7 +38,7 @@ class QCNetworkCancelTokenPrivate;
  * @code
  * auto token = new QCNetworkCancelToken();
  *
- * // 附加请求到令牌
+ * // 附加 reply 到令牌
  * auto *reply1 = manager->sendGet(request1);
  * auto *reply2 = manager->sendGet(request2);
  * token->attach(reply1);
@@ -62,30 +65,30 @@ public:
     /**
      * @brief 析构函数
      *
-     * 析构时自动取消所有附加的请求
+     * 析构时自动取消所有附加的 reply。
      */
     ~QCNetworkCancelToken() override;
 
     /**
-     * @brief 将请求附加到此令牌
+     * @brief 将 reply 附加到此令牌
      * @param reply 网络响应对象
      */
     void attach(QCNetworkReply *reply);
 
     /**
-     * @brief 将多个请求附加到此令牌
+     * @brief 将多个 reply 附加到此令牌
      * @param replies 网络响应对象列表
      */
     void attachMultiple(const QList<QCNetworkReply *> &replies);
 
     /**
-     * @brief 从令牌中移除请求
+     * @brief 从令牌中移除 reply
      * @param reply 网络响应对象
      */
     void detach(QCNetworkReply *reply);
 
     /**
-     * @brief 取消令牌中的所有请求
+     * @brief 取消令牌中的所有 reply
      */
     void cancel();
 
