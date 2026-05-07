@@ -12,9 +12,8 @@
 #include "QCGlobal.h"
 #include "QCNetworkConnectionPoolConfig.h"
 
-#include <QHash>
-#include <QMutex>
-#include <QString>
+#include <QScopedPointer>
+#include <QSharedDataPointer>
 
 namespace QCurl {
 
@@ -22,92 +21,50 @@ namespace Internal {
 class QCNetworkConnectionPoolManagerInternal;
 }
 
-/**
- * @brief 连接池统计信息
- *
- * 用于追踪连接池的效果和性能。
- */
-struct QCURL_EXPORT QCNetworkConnectionPoolStatistics
+class QCNetworkConnectionPoolManagerPrivate;
+class QCNetworkConnectionPoolStatisticsData;
+
+/// 连接池统计快照，按值返回给调用方读取。
+class QCURL_EXPORT QCNetworkConnectionPoolStatistics
 {
-    /**
-     * @brief 总请求数
-     *
-     * 自应用启动以来的总 HTTP 请求数。
-     */
-    qint64 totalRequests = 0;
+public:
+    QCNetworkConnectionPoolStatistics();
+    QCNetworkConnectionPoolStatistics(const QCNetworkConnectionPoolStatistics &other);
+    QCNetworkConnectionPoolStatistics(QCNetworkConnectionPoolStatistics &&other) noexcept;
+    ~QCNetworkConnectionPoolStatistics();
 
-    /**
-     * @brief 复用的连接数
-     *
-     * 使用了已有连接（而非新建连接）的请求数。
-     */
-    qint64 reusedConnections = 0;
+    QCNetworkConnectionPoolStatistics &operator=(
+        const QCNetworkConnectionPoolStatistics &other);
+    QCNetworkConnectionPoolStatistics &operator=(
+        QCNetworkConnectionPoolStatistics &&other) noexcept;
 
-    /**
-     * @brief 连接复用率（百分比）
-     *
-     * 计算公式：(复用连接数 / 总请求数) * 100
-     *
-     * @note 值越高表示连接池效果越好
-     */
-    double reuseRate = 0.0;
+    /// 自进程启动或上次 resetStatistics() 以来完成的请求数。
+    [[nodiscard]] qint64 totalRequests() const;
+    /// 复用已有连接完成的请求数。
+    [[nodiscard]] qint64 reusedConnections() const;
+    /// 连接复用率，单位为百分比。
+    [[nodiscard]] double reuseRate() const;
+    /// 当前记录为活跃状态的连接数量。
+    [[nodiscard]] int activeConnections() const;
+    /// 按全局连接上限估算的空闲连接数量。
+    [[nodiscard]] int idleConnections() const;
 
-    /**
-     * @brief 活跃连接数（估算）
-     *
-     * 当前正在使用的连接数。
-     */
-    int activeConnections = 0;
+private:
+    explicit QCNetworkConnectionPoolStatistics(qint64 totalRequests,
+                                               qint64 reusedConnections,
+                                               int activeConnections,
+                                               int idleConnections);
 
-    /**
-     * @brief 空闲连接数（估算）
-     *
-     * 连接池中空闲的连接数。
-     */
-    int idleConnections = 0;
+    QSharedDataPointer<QCNetworkConnectionPoolStatisticsData> d;
+
+    friend class QCNetworkConnectionPoolManager;
 };
 
-/**
- * @brief HTTP 连接池管理器（轻量级实现）
- *
- * 基于 libcurl 内置的连接池机制，提供配置管理和统计功能。
- *
- * @par 设计理念
- * libcurl 已经内置了优秀的连接池实现，我们无需重复造轮子。
- * 此管理器负责：
- * - 统一管理连接池配置
- * - 提供连接池统计信息
- *
- * @par 性能提升
- * 通过启用连接复用和合理配置，可获得：
- * - **单主机多请求**: 60-80% 性能提升
- * - **HTTPS 请求**: 70-90% 性能提升（避免重复 SSL 握手）
- * - **高并发场景**: 60-75% 性能提升
- *
- *
- * @code
- * // 全局配置连接池
- * auto *manager = QCNetworkConnectionPoolManager::instance();
- *
- * QCNetworkConnectionPoolConfig config;
- * config.maxConnectionsPerHost = 8;
- * config.maxTotalConnections = 50;
- * manager->setConfig(config);
- *
- * // 连接池自动应用到所有请求
- * QCNetworkAccessManager netManager;
- * auto *reply = netManager.sendGet(request);
- *
- * // 查看统计
- * auto stats = manager->statistics();
- * qDebug() << "总请求数:" << stats.totalRequests;
- * qDebug() << "复用率:" << stats.reuseRate << "%";
- * @endcode
- */
+/// 基于 libcurl 连接缓存提供统一配置和统计的全局管理器。
 class QCURL_EXPORT QCNetworkConnectionPoolManager
 {
 public:
-    // 类型别名，为向后兼容性和便利性
+    /// 兼容旧代码中通过 Manager::Statistics 访问统计类型的写法。
     using Statistics = QCNetworkConnectionPoolStatistics;
 
     /**
@@ -164,8 +121,7 @@ public:
      * 立即关闭连接池中所有空闲的连接，释放资源。
      * 不影响正在使用的连接。
      *
-     * @note 此操作通过重新初始化 curl multi handle 实现
-     * @note 可能影响后续请求的性能（需要重新建立连接）
+     * @note 当前实现依赖 libcurl 空闲超时机制，不强制重建 multi handle。
      */
     void closeIdleConnections();
 
@@ -182,17 +138,11 @@ private:
      */
     ~QCNetworkConnectionPoolManager();
 
-    // 禁止拷贝和赋值
+    // 全局单例只允许通过 instance() 获取。
     QCNetworkConnectionPoolManager(const QCNetworkConnectionPoolManager &)            = delete;
     QCNetworkConnectionPoolManager &operator=(const QCNetworkConnectionPoolManager &) = delete;
 
-    mutable QMutex m_mutex;                 ///< 保护所有成员变量
-    QCNetworkConnectionPoolConfig m_config; ///< 当前配置
-
-    // 统计信息
-    qint64 m_totalRequests;                         ///< 总请求数
-    qint64 m_reusedConnections;                     ///< 复用的连接数
-    QHash<QString, int> m_activeConnectionsPerHost; ///< 每主机活跃连接数
+    QScopedPointer<QCNetworkConnectionPoolManagerPrivate> d_ptr;
 };
 
 } // namespace QCurl

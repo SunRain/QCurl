@@ -14,15 +14,18 @@
 #include "QCGlobal.h"
 
 #include <QByteArray>
-#include <QList>
+#include <QSharedDataPointer>
 #include <QString>
 
 namespace QCurl {
+
+class QCMultipartFormDataData;
 
 /**
  * @brief Multipart/form-data 编码器
  *
  * 用于构建 multipart/form-data 格式的 HTTP 请求体，常用于文件上传。
+ * 该值类型采用隐式共享；修改字段或 boundary 后会使编码缓存失效。
  *
  * @par 使用示例：
  * @code
@@ -45,13 +48,16 @@ public:
      * 自动生成随机 boundary 字符串
      */
     QCMultipartFormData();
+    QCMultipartFormData(const QCMultipartFormData &other);
+    QCMultipartFormData(QCMultipartFormData &&other) noexcept;
 
     /**
      * @brief 析构函数
      */
     ~QCMultipartFormData();
 
-    // ========== 添加字段 ==========
+    QCMultipartFormData &operator=(const QCMultipartFormData &other);
+    QCMultipartFormData &operator=(QCMultipartFormData &&other) noexcept;
 
     /**
      * @brief 添加文本字段
@@ -83,9 +89,9 @@ public:
      * formData.addFileField("document", "/tmp/report.pdf", "application/pdf");
      * @endcode
      */
-    bool addFileField(const QString &fieldName,
-                      const QString &filePath,
-                      const QString &mimeType = QString());
+    [[nodiscard]] bool addFileField(const QString &fieldName,
+                                    const QString &filePath,
+                                    const QString &mimeType = QString());
 
     /**
      * @brief 添加文件字段（从 QByteArray）
@@ -115,7 +121,7 @@ public:
      *
      * @note 该类只保存 owning parts，返回值始终是完整编码结果
      */
-    QByteArray toByteArray() const;
+    [[nodiscard]] QByteArray toByteArray() const;
 
     /**
      * @brief 获取 Content-Type 头的值
@@ -130,14 +136,14 @@ public:
      * request.setHeader("Content-Type", contentType.toUtf8());
      * @endcode
      */
-    QString contentType() const;
+    [[nodiscard]] QString contentType() const;
 
     /**
      * @brief 获取 boundary 字符串
      *
      * @return boundary 字符串（不包含前导 "--"）
      */
-    QString boundary() const;
+    [[nodiscard]] QString boundary() const;
 
     /**
      * @brief 设置 boundary 字符串（用于可复现/可控的 multipart 编码）
@@ -150,7 +156,7 @@ public:
      * - 不允许包含 CR/LF 或空白字符（否则会破坏 Content-Type 头格式）
      * - 长度不超过 70（RFC 2046 建议上限）
      */
-    bool setBoundary(const QString &boundary);
+    [[nodiscard]] bool setBoundary(const QString &boundary);
 
     /**
      * @brief 计算编码后的总大小（字节）
@@ -159,7 +165,7 @@ public:
      *
      * @note 用于设置 Content-Length 头
      */
-    qint64 size() const;
+    [[nodiscard]] qint64 size() const;
 
     // ========== 查询和清理 ==========
 
@@ -168,7 +174,7 @@ public:
      *
      * @return 字段总数（文本字段 + 文件字段）
      */
-    int fieldCount() const;
+    [[nodiscard]] int fieldCount() const;
 
     /**
      * @brief 清空所有字段
@@ -176,50 +182,7 @@ public:
     void clear();
 
 private:
-    // ========== 内部数据结构 ==========
-
-    struct Field
-    {
-        QString name;          ///< 字段名
-        QString value;         ///< 文本值（文本字段）
-        QString fileName;      ///< 文件名（文件字段）
-        QString mimeType;      ///< MIME 类型
-        QByteArray fileData;   ///< 文件数据（内存文件）
-        bool isFile;           ///< 是否为文件字段
-
-        Field()
-            : isFile(false)
-        {}
-    };
-
-    // ========== 私有方法 ==========
-
-    /**
-     * @brief 生成随机 boundary 字符串
-     */
-    QString generateBoundary() const;
-
-    /**
-     * @brief 从文件扩展名推断 MIME 类型
-     */
-    QString guessMimeType(const QString &fileName) const;
-
-    /**
-     * @brief 编码单个文本字段
-     */
-    QByteArray encodeTextField(const Field &field) const;
-
-    /**
-     * @brief 编码单个文件字段（内存文件）
-     */
-    QByteArray encodeFileField(const Field &field) const;
-
-    // ========== 私有成员 ==========
-
-    QString m_boundary;              ///< Boundary 字符串
-    QList<Field> m_fields;           ///< 所有字段列表
-    mutable QByteArray m_cachedData; ///< 缓存的编码数据
-    mutable bool m_dirty;            ///< 是否需要重新编码
+    QSharedDataPointer<QCMultipartFormDataData> d;
 };
 
 } // namespace QCurl

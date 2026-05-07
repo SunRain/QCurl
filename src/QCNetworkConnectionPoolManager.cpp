@@ -9,13 +9,22 @@
 #include <curl/curl.h>
 
 #include <QDebug>
+#include <QHash>
+#include <QMutex>
 #include <QMutexLocker>
 
 namespace QCurl {
 
-// ==================
-// 单例实现
-// ==================
+/// 管理器内部状态；配置和统计计数必须通过 mutex 访问。
+class QCNetworkConnectionPoolManagerPrivate
+{
+public:
+    mutable QMutex mutex;
+    QCNetworkConnectionPoolConfig config;
+    qint64 totalRequests = 0;
+    qint64 reusedConnections = 0;
+    QHash<QString, int> activeConnectionsPerHost;
+};
 
 QCNetworkConnectionPoolManager *QCNetworkConnectionPoolManager::instance()
 {
@@ -23,34 +32,26 @@ QCNetworkConnectionPoolManager *QCNetworkConnectionPoolManager::instance()
     return &instance;
 }
 
-// ==================
-// 构造与析构
-// ==================
-
 QCNetworkConnectionPoolManager::QCNetworkConnectionPoolManager()
-    : m_totalRequests(0)
-    , m_reusedConnections(0)
+    : d_ptr(new QCNetworkConnectionPoolManagerPrivate)
 {
     qDebug() << "QCNetworkConnectionPoolManager: Initialized with default config";
-    qDebug() << "  - maxConnectionsPerHost:" << m_config.maxConnectionsPerHost;
-    qDebug() << "  - maxTotalConnections:" << m_config.maxTotalConnections;
+    qDebug() << "  - maxConnectionsPerHost:" << d_ptr->config.maxConnectionsPerHost();
+    qDebug() << "  - maxTotalConnections:" << d_ptr->config.maxTotalConnections();
     qDebug() << "  - HTTP/2 multiplexing:"
-             << (m_config.enableMultiplexing ? "enabled" : "disabled");
+             << (d_ptr->config.multiplexingEnabled() ? "enabled" : "disabled");
 }
 
 QCNetworkConnectionPoolManager::~QCNetworkConnectionPoolManager()
 {
     qDebug() << "QCNetworkConnectionPoolManager: Destroyed";
-    qDebug() << "  - Total requests:" << m_totalRequests;
-    qDebug() << "  - Reused connections:" << m_reusedConnections;
-    if (m_totalRequests > 0) {
-        qDebug() << "  - Reuse rate:" << (m_reusedConnections * 100.0 / m_totalRequests) << "%";
+    qDebug() << "  - Total requests:" << d_ptr->totalRequests;
+    qDebug() << "  - Reused connections:" << d_ptr->reusedConnections;
+    if (d_ptr->totalRequests > 0) {
+        qDebug() << "  - Reuse rate:"
+                 << (d_ptr->reusedConnections * 100.0 / d_ptr->totalRequests) << "%";
     }
 }
-
-// ==================
-// 配置管理
-// ==================
 
 void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConfig &config)
 {
@@ -62,25 +63,27 @@ void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConf
     bool multiLimitsChanged = false;
 
     {
-        QMutexLocker locker(&m_mutex);
+        QMutexLocker locker(&d_ptr->mutex);
 
-        if (m_config.maxConnectionsPerHost != config.maxConnectionsPerHost
-            || m_config.maxTotalConnections != config.maxTotalConnections
-            || m_config.enableMultiplexing != config.enableMultiplexing) {
+        if (d_ptr->config.maxConnectionsPerHost() != config.maxConnectionsPerHost()
+            || d_ptr->config.maxTotalConnections() != config.maxTotalConnections()
+            || d_ptr->config.multiplexingEnabled() != config.multiplexingEnabled()) {
             qDebug() << "QCNetworkConnectionPoolManager: Config changed";
-            qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
-            qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
+            qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost();
+            qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections();
             qDebug() << "  - HTTP/2 multiplexing:"
-                     << (config.enableMultiplexing ? "enabled" : "disabled");
+                     << (config.multiplexingEnabled() ? "enabled" : "disabled");
         }
 
-        multiLimitsChanged = (m_config.multiMaxTotalConnections != config.multiMaxTotalConnections)
-                             || (m_config.multiMaxHostConnections != config.multiMaxHostConnections)
-                             || (m_config.multiMaxConcurrentStreams
-                                 != config.multiMaxConcurrentStreams)
-                             || (m_config.multiMaxConnects != config.multiMaxConnects);
+        multiLimitsChanged = (d_ptr->config.multiMaxTotalConnections()
+                              != config.multiMaxTotalConnections())
+                             || (d_ptr->config.multiMaxHostConnections()
+                                 != config.multiMaxHostConnections())
+                             || (d_ptr->config.multiMaxConcurrentStreams()
+                                 != config.multiMaxConcurrentStreams())
+                             || (d_ptr->config.multiMaxConnects() != config.multiMaxConnects());
 
-        m_config = config;
+        d_ptr->config = config;
     }
 
     if (multiLimitsChanged) {
@@ -90,13 +93,9 @@ void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConf
 
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const
 {
-    QMutexLocker locker(&m_mutex);
-    return m_config;
+    QMutexLocker locker(&d_ptr->mutex);
+    return d_ptr->config;
 }
-
-// ==================
-// 内部 companion 实现
-// ==================
 
 void Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(void *handle,
                                                                            const QString &host)
@@ -108,100 +107,52 @@ void Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(void 
     auto *curlHandle = static_cast<CURL *>(handle);
     auto *manager    = QCNetworkConnectionPoolManager::instance();
 
-    QMutexLocker locker(&manager->m_mutex);
-    QCNetworkConnectionPoolConfig cfg = manager->m_config; // 复制一份，减少锁持有时间
+    QMutexLocker locker(&manager->d_ptr->mutex);
+    // 复制配置后释放锁，避免 curl_easy_setopt 调用扩大临界区。
+    QCNetworkConnectionPoolConfig cfg = manager->d_ptr->config;
     locker.unlock();
 
-    // ==================
-    // 1. 连接池大小配置
-    // ==================
+    curl_easy_setopt(curlHandle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections());
 
-    // CURLOPT_MAXCONNECTS: 连接池的最大连接数
-    // libcurl 会维护一个连接池，复用空闲连接
-    curl_easy_setopt(curlHandle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections);
-
-    // ==================
-    // 2. 连接复用配置
-    // ==================
-
-    // CURLOPT_FRESH_CONNECT: 强制新连接（0 = 允许复用）
     curl_easy_setopt(curlHandle, CURLOPT_FRESH_CONNECT, 0L);
 
-    // CURLOPT_FORBID_REUSE: 禁止复用（0 = 允许复用）
     curl_easy_setopt(curlHandle, CURLOPT_FORBID_REUSE, 0L);
 
-    // ==================
-    // 3. Keep-Alive 配置
-    // ==================
-
-    // CURLOPT_TCP_KEEPALIVE: 启用 TCP Keep-Alive
     curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPALIVE, 1L);
 
-    // CURLOPT_TCP_KEEPIDLE: Keep-Alive 空闲时间（秒）
-    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPIDLE, static_cast<long>(cfg.maxIdleTime));
+    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPIDLE, static_cast<long>(cfg.maxIdleTime()));
 
-    // CURLOPT_TCP_KEEPINTVL: Keep-Alive 探测间隔（秒）
     curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPINTVL, 30L);
 
-    // ==================
-    // 4. DNS 缓存配置
-    // ==================
-
-    if (cfg.enableDnsCache) {
-        // CURLOPT_DNS_CACHE_TIMEOUT: DNS 缓存超时（秒）
-        // -1 = 永久缓存，0 = 禁用缓存
+    if (cfg.dnsCacheEnabled()) {
         curl_easy_setopt(curlHandle,
                          CURLOPT_DNS_CACHE_TIMEOUT,
-                         static_cast<long>(cfg.dnsCacheTimeout));
+                         static_cast<long>(cfg.dnsCacheTimeout()));
     } else {
         curl_easy_setopt(curlHandle, CURLOPT_DNS_CACHE_TIMEOUT, 0L);
     }
 
-    // ==================
-    // 5. HTTP/2 多路复用配置
-    // ==================
-
-    if (cfg.enableMultiplexing) {
-        // CURLOPT_HTTP_VERSION: 强制使用 HTTP/2
-        // libcurl 会自动协商并启用多路复用
+    if (cfg.multiplexingEnabled()) {
         curl_easy_setopt(curlHandle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     }
 
-    // ==================
-    // 6. HTTP/1.1 管道化配置（可选，默认禁用）
-    // ==================
-
-    if (cfg.enablePipelining) {
-        // CURLOPT_PIPEWAIT: 等待管道化
+    if (cfg.pipeliningEnabled()) {
         curl_easy_setopt(curlHandle, CURLOPT_PIPEWAIT, 1L);
 
         qDebug() << "QCNetworkConnectionPoolManager: HTTP/1.1 pipelining enabled for" << host;
     }
 
-    // ==================
-    // 7. 连接生命周期配置（libcurl 7.80+）
-    // ==================
-
 #if LIBCURL_VERSION_NUM >= 0x075000
-    if (cfg.maxConnectionLifetime > 0) {
-        // CURLOPT_MAXLIFETIME_CONN: 连接最大生命周期（秒）
+    if (cfg.maxConnectionLifetime() > 0) {
         curl_easy_setopt(curlHandle,
                          CURLOPT_MAXLIFETIME_CONN,
-                         static_cast<long>(cfg.maxConnectionLifetime));
+                         static_cast<long>(cfg.maxConnectionLifetime()));
     }
 #endif
 
-    // ==================
-    // 8. 更新主机连接计数（用于统计）
-    // ==================
-
     locker.relock();
-    manager->m_activeConnectionsPerHost[host]++;
+    manager->d_ptr->activeConnectionsPerHost[host]++;
 }
-
-// ==================
-// 统计管理（内部 companion）
-// ==================
 
 void Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(void *handle,
                                                                               bool wasReused)
@@ -222,47 +173,39 @@ void Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(vo
         actuallyReused = (numConnects == 0);
     }
 
-    QMutexLocker locker(&manager->m_mutex);
-    manager->m_totalRequests++;
+    QMutexLocker locker(&manager->d_ptr->mutex);
+    manager->d_ptr->totalRequests++;
 
     if (actuallyReused) {
-        manager->m_reusedConnections++;
+        manager->d_ptr->reusedConnections++;
     }
 }
 
 QCNetworkConnectionPoolStatistics QCNetworkConnectionPoolManager::statistics() const
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker locker(&d_ptr->mutex);
 
-    QCNetworkConnectionPoolStatistics stats;
-    stats.totalRequests     = m_totalRequests;
-    stats.reusedConnections = m_reusedConnections;
-
-    if (m_totalRequests > 0) {
-        stats.reuseRate = (m_reusedConnections * 100.0) / m_totalRequests;
+    int activeConnections = 0;
+    for (int count : d_ptr->activeConnectionsPerHost) {
+        activeConnections += count;
     }
 
-    // 活跃连接数 = 所有主机的活跃连接总和
-    stats.activeConnections = 0;
-    for (int count : m_activeConnectionsPerHost) {
-        stats.activeConnections += count;
-    }
-
-    // 空闲连接数 = 配置的总连接数 - 活跃连接数（估算）
-    stats.idleConnections = qMax(0, m_config.maxTotalConnections - stats.activeConnections);
-
-    return stats;
+    const int idleConnections = qMax(0, d_ptr->config.maxTotalConnections() - activeConnections);
+    return QCNetworkConnectionPoolStatistics(d_ptr->totalRequests,
+                                             d_ptr->reusedConnections,
+                                             activeConnections,
+                                             idleConnections);
 }
 
 void QCNetworkConnectionPoolManager::resetStatistics()
 {
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker locker(&d_ptr->mutex);
 
     qDebug() << "QCNetworkConnectionPoolManager: Resetting statistics";
 
-    m_totalRequests     = 0;
-    m_reusedConnections = 0;
-    m_activeConnectionsPerHost.clear();
+    d_ptr->totalRequests = 0;
+    d_ptr->reusedConnections = 0;
+    d_ptr->activeConnectionsPerHost.clear();
 }
 
 void QCNetworkConnectionPoolManager::closeIdleConnections()
@@ -277,7 +220,7 @@ void QCNetworkConnectionPoolManager::closeIdleConnections()
 
     qWarning() << "QCNetworkConnectionPoolManager::closeIdleConnections: "
                << "Idle connections will be closed automatically after timeout ("
-               << m_config.maxIdleTime << "seconds)";
+               << d_ptr->config.maxIdleTime() << "seconds)";
 }
 
 } // namespace QCurl

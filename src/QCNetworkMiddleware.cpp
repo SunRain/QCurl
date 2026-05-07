@@ -14,6 +14,7 @@
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSet>
 
 namespace QCurl {
 
@@ -48,9 +49,20 @@ constexpr const char kObservabilityRetryCountProperty[] = "_qcurl_observe_retry_
 
 } // namespace
 
+/// 记录借用本中间件的 manager；析构时逐个解除注册关系。
+class QCNetworkMiddlewarePrivate
+{
+public:
+    QSet<QCNetworkAccessManager *> registeredManagers;
+};
+
+QCNetworkMiddleware::QCNetworkMiddleware()
+    : d_ptr(new QCNetworkMiddlewarePrivate)
+{}
+
 QCNetworkMiddleware::~QCNetworkMiddleware()
 {
-    const auto managers = m_registeredManagers.values();
+    const auto managers = d_ptr->registeredManagers.values();
     for (auto *manager : managers) {
         if (manager) {
             manager->removeMiddleware(this);
@@ -61,13 +73,13 @@ QCNetworkMiddleware::~QCNetworkMiddleware()
 void QCNetworkMiddleware::registerManager(QCNetworkAccessManager *manager)
 {
     if (manager) {
-        m_registeredManagers.insert(manager);
+        d_ptr->registeredManagers.insert(manager);
     }
 }
 
 void QCNetworkMiddleware::unregisterManager(QCNetworkAccessManager *manager)
 {
-    m_registeredManagers.remove(manager);
+    d_ptr->registeredManagers.remove(manager);
 }
 
 // ==================

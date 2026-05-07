@@ -69,14 +69,14 @@ void TestConnectionPool::testDefaultConfig()
     auto config       = poolManager->config();
 
     // 验证默认配置值
-    QCOMPARE(config.maxConnectionsPerHost, 6);
-    QCOMPARE(config.maxTotalConnections, 30);
-    QCOMPARE(config.maxIdleTime, 60);
-    QCOMPARE(config.maxConnectionLifetime, 120);
-    QVERIFY(config.enableMultiplexing);
-    QVERIFY(config.enableDnsCache);
-    QCOMPARE(config.dnsCacheTimeout, 60);
-    QVERIFY(!config.enablePipelining);
+    QCOMPARE(config.maxConnectionsPerHost(), 6);
+    QCOMPARE(config.maxTotalConnections(), 30);
+    QCOMPARE(config.maxIdleTime(), 60);
+    QCOMPARE(config.maxConnectionLifetime(), 120);
+    QVERIFY(config.multiplexingEnabled());
+    QVERIFY(config.dnsCacheEnabled());
+    QCOMPARE(config.dnsCacheTimeout(), 60);
+    QVERIFY(!config.pipeliningEnabled());
     QVERIFY(config.isValid());
 
     qDebug() << "Default config test passed";
@@ -88,10 +88,10 @@ void TestConnectionPool::testCustomConfig()
 
     // 创建自定义配置
     QCNetworkConnectionPoolConfig config;
-    config.maxConnectionsPerHost = 10;
-    config.maxTotalConnections   = 50;
-    config.maxIdleTime           = 90;
-    config.enableMultiplexing    = false;
+    config.setMaxConnectionsPerHost(10);
+    config.setMaxTotalConnections(50);
+    config.setMaxIdleTime(90);
+    config.setMultiplexingEnabled(false);
 
     QVERIFY(config.isValid());
 
@@ -100,10 +100,10 @@ void TestConnectionPool::testCustomConfig()
 
     // 验证配置已保存
     auto savedConfig = poolManager->config();
-    QCOMPARE(savedConfig.maxConnectionsPerHost, 10);
-    QCOMPARE(savedConfig.maxTotalConnections, 50);
-    QCOMPARE(savedConfig.maxIdleTime, 90);
-    QVERIFY(!savedConfig.enableMultiplexing);
+    QCOMPARE(savedConfig.maxConnectionsPerHost(), 10);
+    QCOMPARE(savedConfig.maxTotalConnections(), 50);
+    QCOMPARE(savedConfig.maxIdleTime(), 90);
+    QVERIFY(!savedConfig.multiplexingEnabled());
 
     // 恢复默认配置
     poolManager->setConfig(QCNetworkConnectionPoolConfig());
@@ -118,20 +118,20 @@ void TestConnectionPool::testConfigPresets()
     // 测试保守配置
     auto conservative = QCNetworkConnectionPoolConfig::conservative();
     QVERIFY(conservative.isValid());
-    QCOMPARE(conservative.maxConnectionsPerHost, 2); // 保守配置使用较小值
-    QCOMPARE(conservative.maxTotalConnections, 10);
+    QCOMPARE(conservative.maxConnectionsPerHost(), 2); // 保守配置使用较小值
+    QCOMPARE(conservative.maxTotalConnections(), 10);
 
     // 测试激进配置
     auto aggressive = QCNetworkConnectionPoolConfig::aggressive();
     QVERIFY(aggressive.isValid());
-    QCOMPARE(aggressive.maxConnectionsPerHost, 10);
-    QCOMPARE(aggressive.maxTotalConnections, 100); // 激进配置使用更大值
+    QCOMPARE(aggressive.maxConnectionsPerHost(), 10);
+    QCOMPARE(aggressive.maxTotalConnections(), 100); // 激进配置使用更大值
 
     // 测试 HTTP/2 优化配置
     auto http2 = QCNetworkConnectionPoolConfig::http2Optimized();
     QVERIFY(http2.isValid());
-    QVERIFY(http2.enableMultiplexing);
-    QCOMPARE(http2.maxConnectionsPerHost, 2); // HTTP/2 需要更少连接
+    QVERIFY(http2.multiplexingEnabled());
+    QCOMPARE(http2.maxConnectionsPerHost(), 2); // HTTP/2 需要更少连接
 
     qDebug() << "Config presets test passed";
 }
@@ -141,19 +141,19 @@ void TestConnectionPool::testInvalidConfig()
     QCNetworkConnectionPoolConfig config;
 
     // 测试无效值
-    config.maxConnectionsPerHost = 0; // 无效
+    config.setMaxConnectionsPerHost(0); // 无效
     QVERIFY(!config.isValid());
 
-    config.maxConnectionsPerHost = 6;
-    config.maxTotalConnections   = -1; // 无效
+    config.setMaxConnectionsPerHost(6);
+    config.setMaxTotalConnections(-1); // 无效
     QVERIFY(!config.isValid());
 
-    config.maxTotalConnections = 30;
-    config.maxIdleTime         = -10; // 无效
+    config.setMaxTotalConnections(30);
+    config.setMaxIdleTime(-10); // 无效
     QVERIFY(!config.isValid());
 
     // 恢复有效配置
-    config.maxIdleTime = 60;
+    config.setMaxIdleTime(60);
     QVERIFY(config.isValid());
 
     qDebug() << "Invalid config test passed";
@@ -169,10 +169,10 @@ void TestConnectionPool::testStatistics()
     poolManager->resetStatistics();
 
     auto stats = poolManager->statistics();
-    QCOMPARE(stats.totalRequests, 0);
-    QCOMPARE(stats.reusedConnections, 0);
-    QCOMPARE(stats.reuseRate, 0.0);
-    QCOMPARE(stats.activeConnections, 0);
+    QCOMPARE(stats.totalRequests(), 0);
+    QCOMPARE(stats.reusedConnections(), 0);
+    QCOMPARE(stats.reuseRate(), 0.0);
+    QCOMPARE(stats.activeConnections(), 0);
 
     qDebug() << "Statistics test passed";
 }
@@ -184,8 +184,8 @@ void TestConnectionPool::testStatisticsReset()
     // 重置并验证
     poolManager->resetStatistics();
     auto stats = poolManager->statistics();
-    QCOMPARE(stats.totalRequests, 0);
-    QCOMPARE(stats.reusedConnections, 0);
+    QCOMPARE(stats.totalRequests(), 0);
+    QCOMPARE(stats.reusedConnections(), 0);
 
     qDebug() << "Statistics reset test passed";
 }
@@ -253,14 +253,14 @@ void TestConnectionPool::testConnectionReuse()
     auto stats = poolManager->statistics();
 
     qDebug() << "Connection reuse test results:";
-    qDebug() << "  Total requests:" << stats.totalRequests;
-    qDebug() << "  Reused connections:" << stats.reusedConnections;
-    qDebug() << "  Reuse rate:" << stats.reuseRate << "%";
-    qDebug() << "  Active connections:" << stats.activeConnections;
-    qDebug() << "  Idle connections:" << stats.idleConnections;
+    qDebug() << "  Total requests:" << stats.totalRequests();
+    qDebug() << "  Reused connections:" << stats.reusedConnections();
+    qDebug() << "  Reuse rate:" << stats.reuseRate() << "%";
+    qDebug() << "  Active connections:" << stats.activeConnections();
+    qDebug() << "  Idle connections:" << stats.idleConnections();
 
     // 验证统计：受网络环境影响，允许部分请求失败；统计应至少覆盖“成功完成”的请求数
-    QCOMPARE(stats.totalRequests, qint64(successCount));
+    QCOMPARE(stats.totalRequests(), qint64(successCount));
 
     // 若成功请求不足 2 个，则无法给出“连接复用发生”的有效证据
     QVERIFY2(successCount >= 2, "Need at least 2 successful requests to assert connection reuse");
@@ -268,13 +268,13 @@ void TestConnectionPool::testConnectionReuse()
     // 第一个请求创建连接，后续请求应该复用
     // 至少应该有 2-3 个请求复用了连接（保守估计）
     // 注意：实际复用率可能受网络环境影响
-    if (stats.reusedConnections < 2) {
+    if (stats.reusedConnections() < 2) {
         qWarning() << "Low connection reuse rate detected, but test continues";
         qWarning() << "This may be due to network conditions or server behavior";
     }
 
     // 复用率应该 > 0%（至少有一些复用）
-    QVERIFY2(stats.reusedConnections >= 1, "Expected some connection reuse");
+    QVERIFY2(stats.reusedConnections() >= 1, "Expected some connection reuse");
 
     qDebug() << "Connection reuse test passed";
 }

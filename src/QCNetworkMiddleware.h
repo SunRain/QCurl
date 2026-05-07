@@ -12,7 +12,7 @@
 #include "QCGlobal.h"
 #include "QCNetworkRetryPolicy.h"
 
-#include <QSet>
+#include <QScopedPointer>
 #include <QString>
 
 #include <memory>
@@ -20,6 +20,7 @@
 namespace QCurl {
 
 class QCNetworkAccessManager;
+class QCNetworkMiddlewarePrivate;
 class QCNetworkRequest;
 class QCNetworkReply;
 
@@ -47,8 +48,12 @@ class QCNetworkReply;
 class QCURL_EXPORT QCNetworkMiddleware
 {
 public:
+    /// 构造中间件基类。
+    QCNetworkMiddleware();
     /// 通过多态接口释放中间件对象。
     virtual ~QCNetworkMiddleware();
+
+    Q_DISABLE_COPY_MOVE(QCNetworkMiddleware)
 
     /**
      * @brief 请求发送前拦截
@@ -85,7 +90,7 @@ private:
     void registerManager(QCNetworkAccessManager *manager);
     void unregisterManager(QCNetworkAccessManager *manager);
 
-    QSet<QCNetworkAccessManager *> m_registeredManagers;
+    QScopedPointer<QCNetworkMiddlewarePrivate> d_ptr;
 
     friend class QCNetworkAccessManager;
 };

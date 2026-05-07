@@ -3,7 +3,7 @@
 
 /**
  * @file
- * @brief 声明默认日志实现（Extras）。
+ * @brief 声明默认日志实现。
  */
 
 #ifndef QCNETWORKDEFAULTLOGGER_H
@@ -24,7 +24,8 @@ class QCNetworkDefaultLoggerPrivate;
 /**
  * @brief 默认网络日志实现。
  *
- * 该类型属于 Extras helper，不属于 Core 默认安装面。
+ * 该类型是 `QCNetworkLogger` 的默认 Core helper 实现。调用方负责保证 logger
+ * 对象生命周期覆盖 manager 使用期。
  */
 class QCURL_EXPORT QCNetworkDefaultLogger : public QCNetworkLogger
 {

@@ -37,9 +37,11 @@ set(QCURL_MODERN_SOURCES
     QCNetworkCache.cpp              # v2.12.0: 缓存基类
     QCNetworkMemoryCache.cpp        # v2.12.0: 内存缓存
     QCNetworkDiskCache.cpp          # v2.12.0: 磁盘缓存
+    QCNetworkConnectionPoolConfig.cpp
+    QCNetworkConnectionPoolStatistics.cpp
     QCNetworkConnectionPoolManager.cpp  # v2.14.0: 连接池管理器
     QCNetworkLogger.cpp             # v2.15.0: 日志系统
-    QCNetworkDefaultLogger.cpp      # v2.15.0: 默认日志实现（Extras）
+    QCNetworkDefaultLogger.cpp      # v2.15.0: 默认日志实现
     QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.cpp         # v2.15.0: 中间件
     QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
@@ -74,7 +76,7 @@ set(QCURL_MODERN_HEADERS
     QCNetworkConnectionPoolManager.h # v2.14.0: 连接池管理器
     QCNetworkConnectionPoolManager_p.h # v2.14.0: 连接池内部 companion（内部）
     QCNetworkLogger.h               # v2.15.0: 日志系统
-    QCNetworkDefaultLogger.h        # v2.15.0: 默认日志实现（Extras）
+    QCNetworkDefaultLogger.h        # v2.15.0: 默认日志实现
     private/QCNetworkLogRedaction_p.h # v2.20.0: 日志脱敏工具（内部）
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
@@ -112,6 +114,11 @@ set(QCURL_ALL_HEADERS ${QCURL_LEGACY_HEADERS} ${QCURL_MODERN_HEADERS})
 # 默认稳定安装面（public package SSOT）只包含 Core contract：
 # - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入默认安装前缀
 # - `QCNetworkLogger.h` 因 `QCNetworkAccessManager` 的对外接口依赖而进入 Core
+# - `QCNetworkCachePolicy.h` 因 `QCNetworkRequest` 的对外接口依赖而进入 Core
+# - `QCNetworkDefaultLogger.h` / `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入默认安装面
+# - Cache concrete headers 完成 accessor/pimpl 重塑后作为 P2 Core 能力进入默认安装面
+# - `QCMultipartFormData.h` 完成 shared-data 重塑后作为 P2 Core builder 进入默认安装面
+# - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入默认安装面
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
     QCNetworkAccessManager.h
@@ -126,24 +133,24 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h
     QCNetworkRequestScheduler.h
+    QCNetworkCachePolicy.h
+    QCNetworkCache.h
+    QCNetworkMemoryCache.h
+    QCNetworkDiskCache.h
+    QCMultipartFormData.h
     QCNetworkLogger.h
+    QCNetworkDefaultLogger.h
+    QCNetworkCancelToken.h
+    QCNetworkConnectionPoolConfig.h
+    QCNetworkConnectionPoolManager.h
+    QCNetworkMiddleware.h
+    QCNetworkMockHandler.h
 )
 
 # 非默认 Extras：
 # - 用于源码树示例、可选发行包或后续独立 package
 # - 不参与默认 install surface / public-api / consumer smoke 合同
 set(QCURL_INSTALL_HEADERS_EXTRAS
-    QCMultipartFormData.h
-    QCNetworkCachePolicy.h
-    QCNetworkCache.h
-    QCNetworkMemoryCache.h
-    QCNetworkDiskCache.h
-    QCNetworkConnectionPoolConfig.h
-    QCNetworkConnectionPoolManager.h
-    QCNetworkDefaultLogger.h
-    QCNetworkMiddleware.h
-    QCNetworkCancelToken.h
-    QCNetworkMockHandler.h
     QCNetworkDiagnostics.h
 )
 

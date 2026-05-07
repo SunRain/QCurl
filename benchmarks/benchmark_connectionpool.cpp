@@ -106,9 +106,9 @@ void BenchmarkConnectionPool::runRequests(int count, const QString &testName)
     qDebug() << "  Total data:" << totalBytes << "bytes";
     qDebug() << "  Throughput:" << (elapsed > 0 ? (totalBytes * 1000 / elapsed) : 0) << "bytes/s";
     qDebug() << "  Connection stats:";
-    qDebug() << "    - Total requests:" << stats.totalRequests;
-    qDebug() << "    - Active connections:" << stats.activeConnections;
-    qDebug() << "    - Idle connections:" << stats.idleConnections;
+    qDebug() << "    - Total requests:" << stats.totalRequests();
+    qDebug() << "    - Active connections:" << stats.activeConnections();
+    qDebug() << "    - Idle connections:" << stats.idleConnections();
 }
 
 void BenchmarkConnectionPool::benchmarkDefaultConfig()
@@ -119,9 +119,9 @@ void BenchmarkConnectionPool::benchmarkDefaultConfig()
 
     auto config = poolManager->config();
     qDebug() << "Config:";
-    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
-    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
-    qDebug() << "  - HTTP/2 multiplexing:" << (config.enableMultiplexing ? "enabled" : "disabled");
+    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost();
+    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections();
+    qDebug() << "  - HTTP/2 multiplexing:" << (config.multiplexingEnabled() ? "enabled" : "disabled");
     
     QBENCHMARK {
         runRequests(5, "Default Config");
@@ -136,9 +136,9 @@ void BenchmarkConnectionPool::benchmarkConservativeConfig()
 
     auto config = poolManager->config();
     qDebug() << "Config:";
-    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
-    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
-    qDebug() << "  - HTTP/2 multiplexing:" << (config.enableMultiplexing ? "enabled" : "disabled");
+    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost();
+    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections();
+    qDebug() << "  - HTTP/2 multiplexing:" << (config.multiplexingEnabled() ? "enabled" : "disabled");
     
     QBENCHMARK {
         runRequests(5, "Conservative Config");
@@ -153,9 +153,9 @@ void BenchmarkConnectionPool::benchmarkAggressiveConfig()
 
     auto config = poolManager->config();
     qDebug() << "Config:";
-    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost;
-    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections;
-    qDebug() << "  - HTTP/2 multiplexing:" << (config.enableMultiplexing ? "enabled" : "disabled");
+    qDebug() << "  - maxConnectionsPerHost:" << config.maxConnectionsPerHost();
+    qDebug() << "  - maxTotalConnections:" << config.maxTotalConnections();
+    qDebug() << "  - HTTP/2 multiplexing:" << (config.multiplexingEnabled() ? "enabled" : "disabled");
     
     QBENCHMARK {
         runRequests(5, "Aggressive Config");
