@@ -152,11 +152,11 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendPostRawBody()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().method, HttpMethod::Post);
-    QCOMPARE(captured.first().bodySize, body.size());
-    QCOMPARE(captured.first().bodyPreview, body);
+    QCOMPARE(captured.first().method(), HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize(), body.size());
+    QCOMPARE(captured.first().bodyPreview(), body);
 
-    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    const auto contentType = findHeaderValue(captured.first().headers(), QByteArrayLiteral("content-type"));
     QVERIFY(contentType.has_value());
     QCOMPARE(*contentType, QByteArray("application/octet-stream"));
 
@@ -184,11 +184,11 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendPostJsonBody()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().method, HttpMethod::Post);
-    QCOMPARE(captured.first().bodySize, expectedBody.size());
-    QCOMPARE(captured.first().bodyPreview, expectedBody);
+    QCOMPARE(captured.first().method(), HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize(), expectedBody.size());
+    QCOMPARE(captured.first().bodyPreview(), expectedBody);
 
-    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    const auto contentType = findHeaderValue(captured.first().headers(), QByteArrayLiteral("content-type"));
     QVERIFY(contentType.has_value());
     QCOMPARE(*contentType, QByteArray("application/json"));
 
@@ -263,10 +263,10 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendDeleteWithBody()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 2);
-    QCOMPARE(captured[0].method, HttpMethod::Delete);
-    QCOMPARE(captured[0].bodyPreview, body);
-    QCOMPARE(captured[1].method, HttpMethod::Delete);
-    QCOMPARE(captured[1].bodyPreview, body);
+    QCOMPARE(captured[0].method(), HttpMethod::Delete);
+    QCOMPARE(captured[0].bodyPreview(), body);
+    QCOMPARE(captured[1].method(), HttpMethod::Delete);
+    QCOMPARE(captured[1].bodyPreview(), body);
 
     reply1->deleteLater();
     reply2->deleteLater();

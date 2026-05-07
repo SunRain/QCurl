@@ -94,10 +94,10 @@ void TestQCNetworkRequestCanonicalApi::testSendGet_preservesHeaderWhenAddingQuer
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, expectedUrl);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
+    QCOMPARE(captured.first().url(), expectedUrl);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
 
-    const auto userAgent = findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent"));
+    const auto userAgent = findHeaderValue(captured.first().headers(), QByteArrayLiteral("user-agent"));
     QVERIFY(userAgent.has_value());
     QCOMPARE(*userAgent, QByteArray("TestAgent"));
 
@@ -131,16 +131,16 @@ void TestQCNetworkRequestCanonicalApi::testSendPost_sendsJsonBodyAndContentType(
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Post);
-    QCOMPARE(captured.first().bodySize, expectedBody.size());
-    QCOMPARE(captured.first().bodyPreview, expectedBody);
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize(), expectedBody.size());
+    QCOMPARE(captured.first().bodyPreview(), expectedBody);
 
-    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    const auto contentType = findHeaderValue(captured.first().headers(), QByteArrayLiteral("content-type"));
     QVERIFY(contentType.has_value());
     QCOMPARE(*contentType, QByteArray("application/json"));
 
-    const auto userAgent = findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent"));
+    const auto userAgent = findHeaderValue(captured.first().headers(), QByteArrayLiteral("user-agent"));
     QVERIFY(userAgent.has_value());
     QCOMPARE(*userAgent, QByteArray("QCurl-Test/2.9.0"));
 
@@ -164,12 +164,12 @@ void TestQCNetworkRequestCanonicalApi::testSendPut_preservesBodyWithExplicitCont
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Put);
-    QCOMPARE(captured.first().bodySize, body.size());
-    QCOMPARE(captured.first().bodyPreview, body);
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Put);
+    QCOMPARE(captured.first().bodySize(), body.size());
+    QCOMPARE(captured.first().bodyPreview(), body);
 
-    const auto contentType = findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type"));
+    const auto contentType = findHeaderValue(captured.first().headers(), QByteArrayLiteral("content-type"));
     QVERIFY(contentType.has_value());
     QCOMPARE(*contentType, QByteArray("application/octet-stream"));
 
@@ -194,9 +194,9 @@ void TestQCNetworkRequestCanonicalApi::testSendHead_sendsHeadWithoutBody()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Head);
-    QCOMPARE(captured.first().bodySize, 0);
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Head);
+    QCOMPARE(captured.first().bodySize(), 0);
 
     reply->deleteLater();
 }

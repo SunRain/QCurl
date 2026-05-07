@@ -4,8 +4,8 @@ if(NOT DEFINED QCURL_INSTALL_HEADERS OR QCURL_INSTALL_HEADERS STREQUAL "")
     message(FATAL_ERROR "tests/public_api requires QCURL_INSTALL_HEADERS from src/CMakeLists.txt")
 endif()
 
-# 该套件只审计默认稳定安装面（QCURL_INSTALL_HEADERS + QCurlConfig.h）。
-# QCURL_INSTALL_HEADERS_EXTRAS 属于非默认 Extras，不能混入 manifest。
+# 该套件审计默认稳定安装面（QCURL_INSTALL_HEADERS + QCurlConfig.h）。
+# QCURL_INSTALL_HEADERS_EXTRAS 只包含尚未 promotion 的非默认 Extras，不能混入 manifest。
 if(DEFINED QCURL_INSTALL_HEADERS_EXTRAS)
     foreach(extra_header IN LISTS QCURL_INSTALL_HEADERS_EXTRAS)
         list(FIND QCURL_INSTALL_HEADERS "${extra_header}" _qcurl_public_api_extra_index)

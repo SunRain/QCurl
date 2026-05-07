@@ -2993,10 +2993,10 @@ void TestLibcurlConsistency::testCase()
         // 显式配置 multi limits（M3），用于覆盖 curl_multi_setopt + 线程切换路径。
         auto *poolManager                 = QCNetworkConnectionPoolManager::instance();
         QCNetworkConnectionPoolConfig cfg = poolManager->config();
-        cfg.multiMaxTotalConnections      = 2;
-        cfg.multiMaxHostConnections       = 1;
-        cfg.multiMaxConcurrentStreams     = 1;
-        cfg.multiMaxConnects              = 16;
+        cfg.setMultiMaxTotalConnections(2);
+        cfg.setMultiMaxHostConnections(1);
+        cfg.setMultiMaxConcurrentStreams(1);
+        cfg.setMultiMaxConnects(16);
         QVERIFY(cfg.isValid());
         poolManager->setConfig(cfg);
         poolManager->resetStatistics();
@@ -3056,14 +3056,14 @@ void TestLibcurlConsistency::testCase()
             QCOMPARE(errors[i], NetworkError::NoError);
         }
         const auto stats = poolManager->statistics();
-        QCOMPARE(stats.totalRequests, static_cast<qint64>(count));
-        const qint64 uniqueConnections = stats.totalRequests > 0
-                                             ? qMax<qint64>(1, stats.totalRequests - stats.reusedConnections)
+        QCOMPARE(stats.totalRequests(), static_cast<qint64>(count));
+        const qint64 uniqueConnections = stats.totalRequests() > 0
+                                             ? qMax<qint64>(1, stats.totalRequests() - stats.reusedConnections())
                                              : 0;
         if (!connectionSummaryPath.isEmpty()) {
             QJsonObject summary;
-            summary.insert(QStringLiteral("request_count"), stats.totalRequests);
-            summary.insert(QStringLiteral("reused_connections"), stats.reusedConnections);
+            summary.insert(QStringLiteral("request_count"), stats.totalRequests());
+            summary.insert(QStringLiteral("reused_connections"), stats.reusedConnections());
             summary.insert(QStringLiteral("unique_connections"), uniqueConnections);
             QVERIFY(writeJsonObjectToFile(connectionSummaryPath, summary));
         }

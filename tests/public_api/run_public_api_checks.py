@@ -783,17 +783,6 @@ def validate_logger_core_contract_fixture(source_dir: Path) -> None:
             + ", ".join(missing)
         )
 
-    forbidden_snippets = [
-        "#include <QCNetworkDefaultLogger.h>",
-        "#include <QCNetworkCancelToken.h>",
-    ]
-    present = [snippet for snippet in forbidden_snippets if snippet in source]
-    if present:
-        raise RuntimeError(
-            "consumer smoke fixture must stay on Core headers only; found: "
-            + ", ".join(present)
-        )
-
     field_names = ["level", "category", "message", "timestampUtc"]
     violations: list[str] = []
     for field_name in field_names:
@@ -807,11 +796,309 @@ def validate_logger_core_contract_fixture(source_dir: Path) -> None:
         )
 
 
+def validate_default_logger_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps DefaultLogger Core helper coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkDefaultLogger.h>",
+        "QCurl::QCNetworkDefaultLogger defaultLogger",
+        "defaultLogger.enableConsoleOutput(false)",
+        "defaultLogger.setMinLogLevel(QCurl::NetworkLogLevel::Warning)",
+        "manager.setLogger(&defaultLogger)",
+        "defaultLogger.entries()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required DefaultLogger contract coverage: "
+            + ", ".join(missing)
+        )
+
+
+def validate_cancel_token_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps CancelToken reply-level coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkCancelToken.h>",
+        "QCurl::QCNetworkCancelToken cancelToken",
+        "QCurl::QCNetworkReply *replyToCancel",
+        "QList<QCurl::QCNetworkReply *> repliesToCancel",
+        "cancelToken.attach(replyToCancel)",
+        "cancelToken.attachMultiple(repliesToCancel)",
+        "cancelToken.setAutoTimeout(0)",
+        "cancelToken.cancel()",
+        "cancelToken.isCancelled()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required CancelToken contract coverage: "
+            + ", ".join(missing)
+        )
+
+
+def validate_cache_policy_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps CachePolicy Core type coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkCachePolicy.h>",
+        "request.setCachePolicy(QCurl::QCNetworkCachePolicy::OnlyNetwork)",
+        "request.cachePolicy()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required CachePolicy contract coverage: "
+            + ", ".join(missing)
+        )
+
+
+def validate_cache_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps concrete Cache Core coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkCache.h>",
+        "#include <QCNetworkMemoryCache.h>",
+        "#include <QCNetworkDiskCache.h>",
+        "QCurl::QCNetworkMemoryCache memoryCache",
+        "QCurl::QCNetworkCache *cacheInterface",
+        "QCurl::QCNetworkCacheMetadata cacheMetadata",
+        "cacheMetadata.setUrl(request.url())",
+        "cacheMetadata.setHeader(QByteArrayLiteral(\"Content-Type\")",
+        "cacheInterface->insert(request.url(), cacheBody, cacheMetadata)",
+        "cacheInterface->lookup(request.url()",
+        "cacheLookup.status()",
+        "cacheLookup.metadata().url()",
+        "cacheLookup.body()",
+        "QCurl::QCNetworkDiskCache *diskCacheTypeProbe",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required Cache contract coverage: "
+            + ", ".join(missing)
+        )
+
+    forbidden_snippets = [
+        ".status =",
+        ".metadata =",
+        ".body =",
+        ".url =",
+        ".headers =",
+        ".expirationDate =",
+        ".creationDate =",
+        ".lastModified =",
+    ]
+    present = [snippet for snippet in forbidden_snippets if snippet in source]
+    if present:
+        raise RuntimeError(
+            "consumer smoke fixture must use Cache accessor API only; found: "
+            + ", ".join(present)
+        )
+
+
+def validate_multipart_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps Multipart Core builder coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCMultipartFormData.h>",
+        "QCurl::QCMultipartFormData formData",
+        "if (!formData.setBoundary(QStringLiteral(\"----QCurlConsumerSmokeBoundary\")))",
+        "formData.addTextField(QStringLiteral(\"name\")",
+        "formData.addFileField(QStringLiteral(\"file\")",
+        "formData.contentType()",
+        "formData.size()",
+        "formData.toByteArray()",
+        "formData.fieldCount()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required Multipart contract coverage: "
+            + ", ".join(missing)
+        )
+
+
+def validate_connection_pool_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps ConnectionPool accessor-only Core coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkConnectionPoolConfig.h>",
+        "#include <QCNetworkConnectionPoolManager.h>",
+        "QCurl::QCNetworkConnectionPoolConfig poolConfig",
+        "poolConfig.setMaxConnectionsPerHost(4)",
+        "poolConfig.setMaxTotalConnections(12)",
+        "poolConfig.setMaxIdleTime(45)",
+        "poolConfig.setMaxConnectionLifetime(90)",
+        "poolConfig.setMultiplexingEnabled(true)",
+        "poolConfig.setDnsCacheEnabled(true)",
+        "poolConfig.setDnsCacheTimeout(30)",
+        "poolConfig.setMultiMaxTotalConnections(6)",
+        "poolConfig.setMultiMaxHostConnections(2)",
+        "poolConfig.setMultiMaxConcurrentStreams(8)",
+        "poolConfig.setMultiMaxConnects(16)",
+        "poolConfig.maxConnectionsPerHost()",
+        "poolConfig.maxTotalConnections()",
+        "poolConfig.multiMaxTotalConnections()",
+        "QCurl::QCNetworkConnectionPoolManager::instance()",
+        "poolManager->setConfig(poolConfig)",
+        "poolManager->config()",
+        "poolManager->statistics()",
+        "poolStats.totalRequests()",
+        "poolStats.reusedConnections()",
+        "poolStats.reuseRate()",
+        "poolStats.activeConnections()",
+        "poolStats.idleConnections()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required ConnectionPool contract coverage: "
+            + ", ".join(missing)
+        )
+
+    forbidden_snippets = [
+        ".maxConnectionsPerHost =",
+        ".maxTotalConnections =",
+        ".maxIdleTime =",
+        ".maxConnectionLifetime =",
+        ".enablePipelining =",
+        ".enableMultiplexing =",
+        ".enableDnsCache =",
+        ".dnsCacheTimeout =",
+        ".enableConnectionWarming =",
+        ".multiMaxTotalConnections =",
+        ".multiMaxHostConnections =",
+        ".multiMaxConcurrentStreams =",
+        ".multiMaxConnects =",
+        ".totalRequests =",
+        ".reusedConnections =",
+        ".reuseRate =",
+        ".activeConnections =",
+        ".idleConnections =",
+    ]
+    present = [snippet for snippet in forbidden_snippets if snippet in source]
+    if present:
+        raise RuntimeError(
+            "consumer smoke fixture must use ConnectionPool accessor API only; found: "
+            + ", ".join(present)
+        )
+
+
+def validate_middleware_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps Middleware Core base coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkMiddleware.h>",
+        "class ConsumerSmokeMiddleware : public QCurl::QCNetworkMiddleware",
+        "manager.addMiddleware(&middleware)",
+        "manager.middlewares()",
+        "manager.removeMiddleware(&middleware)",
+        "middleware.name()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required Middleware contract coverage: "
+            + ", ".join(missing)
+        )
+
+
+def validate_mock_handler_core_test_support_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke keeps MockHandler Core Test Support coverage."""
+    fixture = source_dir / "main.cpp"
+    if not fixture.is_file():
+        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
+
+    source = fixture.read_text(encoding="utf-8")
+    required_snippets = [
+        "#include <QCNetworkMockHandler.h>",
+        "QCurl::QCNetworkMockHandler mockHandler",
+        "QCurl::QCNetworkCapturedRequest capturedRequest",
+        "capturedRequest.setUrl(request.url())",
+        "capturedRequest.setMethod(QCurl::HttpMethod::Post)",
+        "capturedRequest.addHeader(",
+        "capturedRequest.setBodySize(",
+        "capturedRequest.setBodyPreview(",
+        "mockHandler.recordRequest(capturedRequest)",
+        "mockHandler.takeCapturedRequests()",
+        "capturedRequests.first().url()",
+        "capturedRequests.first().method()",
+        "capturedRequests.first().headers()",
+        "capturedRequests.first().bodySize()",
+        "capturedRequests.first().bodyPreview()",
+        "mockHandler.mockResponse(",
+        "mockHandler.hasMock(",
+        "mockHandler.getMockResponse(",
+        "manager.setMockHandler(&mockHandler)",
+        "manager.mockHandler()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer smoke fixture is missing required MockHandler contract coverage: "
+            + ", ".join(missing)
+        )
+
+    forbidden_snippets = [
+        ".url =",
+        ".method =",
+        ".headers =",
+        ".bodyPreview =",
+        ".bodySize =",
+        ".followLocation =",
+        ".connectTimeoutMs =",
+        ".totalTimeoutMs =",
+    ]
+    present = [snippet for snippet in forbidden_snippets if snippet in source]
+    if present:
+        raise RuntimeError(
+            "consumer smoke fixture must use CapturedRequest accessor API only; found: "
+            + ", ".join(present)
+        )
+
+
 def consumer_smoke(args: argparse.Namespace) -> int:
     """Verify positive and negative staged consumer builds."""
     try:
         validate_scheduler_core_contract_fixture(args.positive_source_dir)
         validate_logger_core_contract_fixture(args.positive_source_dir)
+        validate_cache_policy_core_contract_fixture(args.positive_source_dir)
+        validate_cache_core_contract_fixture(args.positive_source_dir)
+        validate_multipart_core_contract_fixture(args.positive_source_dir)
+        validate_default_logger_core_contract_fixture(args.positive_source_dir)
+        validate_cancel_token_core_contract_fixture(args.positive_source_dir)
+        validate_connection_pool_core_contract_fixture(args.positive_source_dir)
+        validate_middleware_core_contract_fixture(args.positive_source_dir)
+        validate_mock_handler_core_test_support_fixture(args.positive_source_dir)
     except RuntimeError as exc:
         return fail(f"consumer smoke fixture check failed: {exc}")
 

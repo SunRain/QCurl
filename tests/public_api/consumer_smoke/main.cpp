@@ -1,6 +1,17 @@
 #include <QCNetworkAccessManager.h>
+#include <QCNetworkCache.h>
+#include <QCNetworkCachePolicy.h>
+#include <QCNetworkCancelToken.h>
+#include <QCNetworkConnectionPoolConfig.h>
+#include <QCNetworkConnectionPoolManager.h>
+#include <QCNetworkDiskCache.h>
+#include <QCNetworkDefaultLogger.h>
 #include <QCNetworkHttpMethod.h>
 #include <QCNetworkLogger.h>
+#include <QCNetworkMemoryCache.h>
+#include <QCNetworkMiddleware.h>
+#include <QCNetworkMockHandler.h>
+#include <QCMultipartFormData.h>
 #include <QCNetworkProxyConfig.h>
 #include <QCNetworkRequest.h>
 #include <QCNetworkRetryPolicy.h>
@@ -24,6 +35,13 @@ public:
         ++count;
         lastEntry = entry;
     }
+};
+
+/// 验证 QCNetworkMiddleware 可由安装头声明并实例化的 smoke 类型。
+class ConsumerSmokeMiddleware : public QCurl::QCNetworkMiddleware
+{
+public:
+    QString name() const override { return QStringLiteral("ConsumerSmokeMiddleware"); }
 };
 
 int main(int argc, char **argv)
@@ -110,6 +128,46 @@ int main(int argc, char **argv)
         return 7;
     }
 
+    request.setCachePolicy(QCurl::QCNetworkCachePolicy::OnlyNetwork);
+    if (request.cachePolicy() != QCurl::QCNetworkCachePolicy::OnlyNetwork) {
+        return 8;
+    }
+
+    QCurl::QCNetworkMemoryCache memoryCache;
+    QCurl::QCNetworkCache *cacheInterface = &memoryCache;
+    QCurl::QCNetworkCacheMetadata cacheMetadata;
+    cacheMetadata.setUrl(request.url());
+    cacheMetadata.setExpirationDate(QDateTime::currentDateTimeUtc().addSecs(60));
+    cacheMetadata.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain"));
+    const QByteArray cacheBody = QByteArrayLiteral("consumer-smoke-cache");
+    cacheInterface->insert(request.url(), cacheBody, cacheMetadata);
+
+    const auto cacheLookup = cacheInterface->lookup(request.url(),
+                                                    QCurl::QCNetworkCacheReadMode::FreshOnly);
+    if (cacheLookup.status() != QCurl::QCNetworkCacheLookupStatus::FreshHit
+        || cacheLookup.metadata().url() != request.url() || cacheLookup.body() != cacheBody) {
+        return 9;
+    }
+
+    QCurl::QCNetworkDiskCache *diskCacheTypeProbe = nullptr;
+    Q_UNUSED(diskCacheTypeProbe);
+
+    QCurl::QCMultipartFormData formData;
+    if (!formData.setBoundary(QStringLiteral("----QCurlConsumerSmokeBoundary"))) {
+        return 10;
+    }
+    formData.addTextField(QStringLiteral("name"), QStringLiteral("core"));
+    formData.addFileField(QStringLiteral("file"),
+                          QStringLiteral("payload.txt"),
+                          QByteArrayLiteral("payload"),
+                          QStringLiteral("text/plain"));
+    if (formData.fieldCount() != 2
+        || !formData.contentType().contains(QStringLiteral("----QCurlConsumerSmokeBoundary"))
+        || formData.size() <= 0
+        || !formData.toByteArray().contains(QByteArrayLiteral("payload"))) {
+        return 10;
+    }
+
     QCurl::QCNetworkHttpAuthConfig authConfig;
     authConfig.setUserName(QStringLiteral("demo"));
     authConfig.setPassword(QStringLiteral("secret"));
@@ -117,7 +175,7 @@ int main(int argc, char **argv)
     request.setHttpAuth(authConfig);
     if (!request.httpAuth().has_value()
         || request.httpAuth()->method() != QCurl::QCNetworkHttpAuthMethod::AnySafe) {
-        return 8;
+        return 11;
     }
 
     request.clearHttpAuth();
@@ -125,7 +183,7 @@ int main(int argc, char **argv)
     request.setProxyConfig(proxyConfig);
     if (request.httpAuth().has_value() || proxyConfig.tlsConfig().has_value()
         || !request.proxyConfig().has_value() || request.proxyConfig()->tlsConfig().has_value()) {
-        return 9;
+        return 12;
     }
 
     const int cancelledPending = ownerThreadScheduler->cancelLaneRequests(
@@ -137,12 +195,12 @@ int main(int argc, char **argv)
     ConsumerSmokeLogger logger;
     manager.setLogger(&logger);
     if (manager.logger() != &logger) {
-        return 10;
+        return 13;
     }
 
     manager.setDebugTraceEnabled(true);
     if (!manager.debugTraceEnabled()) {
-        return 11;
+        return 14;
     }
 
     const QDateTime timestampUtc = QDateTime::currentDateTimeUtc();
@@ -157,17 +215,130 @@ int main(int argc, char **argv)
         || entry.message() != QStringLiteral("manager logger contract")
         || entry.timestampUtc().offsetFromUtc() != 0
         || entry.timestampUtc().toMSecsSinceEpoch() != timestampUtc.toMSecsSinceEpoch()) {
-        return 12;
+        return 15;
     }
 
     logger.log(entry);
     if (logger.count != 1 || logger.lastEntry.category() != QStringLiteral("ConsumerSmoke")
         || logger.lastEntry.message() != QStringLiteral("manager logger contract")) {
-        return 13;
+        return 16;
     }
+
+    QCurl::QCNetworkDefaultLogger defaultLogger;
+    defaultLogger.enableConsoleOutput(false);
+    defaultLogger.setMinLogLevel(QCurl::NetworkLogLevel::Warning);
+    defaultLogger.clear();
+    manager.setLogger(&defaultLogger);
+    if (manager.logger() != &defaultLogger
+        || defaultLogger.minLogLevel() != QCurl::NetworkLogLevel::Warning) {
+        return 17;
+    }
+
+    defaultLogger.log(entry);
+    if (defaultLogger.entries().size() != 1) {
+        return 18;
+    }
+
+    QCurl::QCNetworkCancelToken cancelToken;
+    QCurl::QCNetworkReply *replyToCancel = nullptr;
+    QList<QCurl::QCNetworkReply *> repliesToCancel;
+    cancelToken.attach(replyToCancel);
+    cancelToken.attachMultiple(repliesToCancel);
+    cancelToken.setAutoTimeout(0);
+    if (cancelToken.attachedCount() != 0 || cancelToken.isCancelled()) {
+        return 19;
+    }
+
+    cancelToken.cancel();
+    if (!cancelToken.isCancelled()) {
+        return 20;
+    }
+
+    QCurl::QCNetworkConnectionPoolConfig poolConfig;
+    poolConfig.setMaxConnectionsPerHost(4);
+    poolConfig.setMaxTotalConnections(12);
+    poolConfig.setMaxIdleTime(45);
+    poolConfig.setMaxConnectionLifetime(90);
+    poolConfig.setMultiplexingEnabled(true);
+    poolConfig.setDnsCacheEnabled(true);
+    poolConfig.setDnsCacheTimeout(30);
+    poolConfig.setMultiMaxTotalConnections(6);
+    poolConfig.setMultiMaxHostConnections(2);
+    poolConfig.setMultiMaxConcurrentStreams(8);
+    poolConfig.setMultiMaxConnects(16);
+    if (!poolConfig.isValid() || poolConfig.maxConnectionsPerHost() != 4
+        || poolConfig.maxTotalConnections() != 12 || poolConfig.maxIdleTime() != 45
+        || poolConfig.maxConnectionLifetime() != 90 || !poolConfig.multiplexingEnabled()
+        || !poolConfig.dnsCacheEnabled() || poolConfig.dnsCacheTimeout() != 30
+        || poolConfig.multiMaxTotalConnections().value_or(-1) != 6
+        || poolConfig.multiMaxHostConnections().value_or(-1) != 2
+        || poolConfig.multiMaxConcurrentStreams().value_or(-1) != 8
+        || poolConfig.multiMaxConnects().value_or(-1) != 16) {
+        return 21;
+    }
+
+    auto *poolManager = QCurl::QCNetworkConnectionPoolManager::instance();
+    poolManager->setConfig(poolConfig);
+    const auto savedPoolConfig = poolManager->config();
+    if (savedPoolConfig.maxConnectionsPerHost() != 4
+        || savedPoolConfig.maxTotalConnections() != 12) {
+        return 22;
+    }
+
+    const auto poolStats = poolManager->statistics();
+    if (poolStats.totalRequests() < 0 || poolStats.reusedConnections() < 0
+        || poolStats.reuseRate() < 0.0 || poolStats.activeConnections() < 0
+        || poolStats.idleConnections() < 0) {
+        return 23;
+    }
+    poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig());
+
+    ConsumerSmokeMiddleware middleware;
+    manager.addMiddleware(&middleware);
+    if (manager.middlewares().size() != 1 || manager.middlewares().first() != &middleware
+        || middleware.name() != QStringLiteral("ConsumerSmokeMiddleware")) {
+        return 24;
+    }
+    manager.removeMiddleware(&middleware);
+    if (!manager.middlewares().isEmpty()) {
+        return 25;
+    }
+
+    QCurl::QCNetworkMockHandler mockHandler;
+    mockHandler.setCaptureEnabled(true);
+    mockHandler.setCaptureBodyPreviewLimit(5);
+    QCurl::QCNetworkCapturedRequest capturedRequest;
+    capturedRequest.setUrl(request.url());
+    capturedRequest.setMethod(QCurl::HttpMethod::Post);
+    capturedRequest.addHeader(QByteArrayLiteral("X-Test"), QByteArrayLiteral("mock"));
+    capturedRequest.setBodySize(7);
+    capturedRequest.setBodyPreview(QByteArrayLiteral("payload").left(5));
+    mockHandler.recordRequest(capturedRequest);
+
+    const auto capturedRequests = mockHandler.takeCapturedRequests();
+    if (capturedRequests.size() != 1 || capturedRequests.first().url() != request.url()
+        || capturedRequests.first().method() != QCurl::HttpMethod::Post
+        || capturedRequests.first().headers().size() != 1
+        || capturedRequests.first().bodySize() != 7
+        || capturedRequests.first().bodyPreview() != QByteArrayLiteral("paylo")) {
+        return 26;
+    }
+
+    mockHandler.mockResponse(request.url(), QByteArrayLiteral("mock-body"), 201);
+    int mockStatus = 0;
+    if (!mockHandler.hasMock(request.url())
+        || mockHandler.getMockResponse(request.url(), mockStatus) != QByteArrayLiteral("mock-body")
+        || mockStatus != 201) {
+        return 27;
+    }
+    manager.setMockHandler(&mockHandler);
+    if (manager.mockHandler() != &mockHandler) {
+        return 28;
+    }
+    manager.setMockHandler(nullptr);
 
     manager.setLogger(nullptr);
     manager.setDebugTraceEnabled(false);
 
-    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 14;
+    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 29;
 }

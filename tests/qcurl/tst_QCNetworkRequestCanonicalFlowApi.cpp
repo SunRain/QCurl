@@ -127,8 +127,8 @@ void TestQCNetworkRequestCanonicalFlowApi::testRequestHandoff()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
 
     reply->deleteLater();
 }
@@ -168,11 +168,11 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithHeader()
     // Assert - 通过 MockHandler 请求捕获做离线可观测断言
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
-    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent")).value(),
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
+    QCOMPARE(findHeaderValue(captured.first().headers(), QByteArrayLiteral("user-agent")).value(),
              QByteArray("TestAgent"));
-    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("accept")).value(),
+    QCOMPARE(findHeaderValue(captured.first().headers(), QByteArrayLiteral("accept")).value(),
              QByteArray("text/html"));
 
     reply->deleteLater();
@@ -197,10 +197,10 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithTimeout()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
-    QVERIFY(captured.first().totalTimeoutMs.has_value());
-    QCOMPARE(*captured.first().totalTimeoutMs, qint64(3000));
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
+    QVERIFY(captured.first().totalTimeoutMs().has_value());
+    QCOMPARE(*captured.first().totalTimeoutMs(), qint64(3000));
 
     reply->deleteLater();
 }
@@ -223,8 +223,8 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithQueryParams()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, expectedUrl);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
+    QCOMPARE(captured.first().url(), expectedUrl);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
 
     reply->deleteLater();
 }
@@ -251,8 +251,8 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
 
         const auto captured = m_mock.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QCOMPARE(captured.first().url, url1);
-        QVERIFY(captured.first().followLocation);
+        QCOMPARE(captured.first().url(), url1);
+        QVERIFY(captured.first().followLocation());
 
         reply->deleteLater();
     }
@@ -269,8 +269,8 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
 
         const auto captured = m_mock.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QCOMPARE(captured.first().url, url2);
-        QVERIFY(captured.first().followLocation);
+        QCOMPARE(captured.first().url(), url2);
+        QVERIFY(captured.first().followLocation());
 
         reply->deleteLater();
     }
@@ -287,8 +287,8 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
 
         const auto captured = m_mock.takeCapturedRequests();
         QCOMPARE(captured.size(), 1);
-        QCOMPARE(captured.first().url, url3);
-        QVERIFY(!captured.first().followLocation);
+        QCOMPARE(captured.first().url(), url3);
+        QVERIFY(!captured.first().followLocation());
 
         reply->deleteLater();
     }
@@ -315,9 +315,9 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendGet()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Get);
-    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("user-agent")).value(),
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Get);
+    QCOMPARE(findHeaderValue(captured.first().headers(), QByteArrayLiteral("user-agent")).value(),
              QByteArray("QCurl Test"));
 
     // Cleanup
@@ -347,11 +347,11 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendPost()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
-    QCOMPARE(captured.first().url, url);
-    QCOMPARE(captured.first().method, HttpMethod::Post);
-    QCOMPARE(captured.first().bodySize, postData.size());
-    QCOMPARE(captured.first().bodyPreview, postData);
-    QCOMPARE(findHeaderValue(captured.first().headers, QByteArrayLiteral("content-type")).value(),
+    QCOMPARE(captured.first().url(), url);
+    QCOMPARE(captured.first().method(), HttpMethod::Post);
+    QCOMPARE(captured.first().bodySize(), postData.size());
+    QCOMPARE(captured.first().bodyPreview(), postData);
+    QCOMPARE(findHeaderValue(captured.first().headers(), QByteArrayLiteral("content-type")).value(),
              QByteArray("application/x-www-form-urlencoded"));
 
     // Cleanup
@@ -387,14 +387,14 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendDeleteWithBody()
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 2);
-    QCOMPARE(captured.at(0).method, HttpMethod::Delete);
-    QCOMPARE(captured.at(0).url, url1);
-    QCOMPARE(captured.at(0).bodySize, body.size());
-    QCOMPARE(captured.at(0).bodyPreview, body);
-    QCOMPARE(captured.at(1).method, HttpMethod::Delete);
-    QCOMPARE(captured.at(1).url, url2);
-    QCOMPARE(captured.at(1).bodySize, body.size());
-    QCOMPARE(captured.at(1).bodyPreview, body);
+    QCOMPARE(captured.at(0).method(), HttpMethod::Delete);
+    QCOMPARE(captured.at(0).url(), url1);
+    QCOMPARE(captured.at(0).bodySize(), body.size());
+    QCOMPARE(captured.at(0).bodyPreview(), body);
+    QCOMPARE(captured.at(1).method(), HttpMethod::Delete);
+    QCOMPARE(captured.at(1).url(), url2);
+    QCOMPARE(captured.at(1).bodySize(), body.size());
+    QCOMPARE(captured.at(1).bodyPreview(), body);
 }
 
 void TestQCNetworkRequestCanonicalFlowApi::testUploadFileMissingPathFailsAsInvalidRequest()
