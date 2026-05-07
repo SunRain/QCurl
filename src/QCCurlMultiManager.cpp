@@ -1110,11 +1110,12 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
         return;
     }
 
-    const std::optional<long> newMaxTotal    = config.multiMaxTotalConnections;
-    const std::optional<long> newMaxHost     = config.multiMaxHostConnections;
-    const std::optional<long> newMaxStreams  = config.multiMaxConcurrentStreams;
-    const std::optional<long> newMaxConnects = config.multiMaxConnects;
+    const std::optional<long> newMaxTotal    = config.multiMaxTotalConnections();
+    const std::optional<long> newMaxHost     = config.multiMaxHostConnections();
+    const std::optional<long> newMaxStreams  = config.multiMaxConcurrentStreams();
+    const std::optional<long> newMaxConnects = config.multiMaxConnects();
 
+    // 空 optional 表示清除对应 multi 限制；libcurl 没有单项 unset API。
     const bool clearRequested = (!newMaxTotal.has_value() && m_multiMaxTotalConnections.has_value())
                                 || (!newMaxHost.has_value() && m_multiMaxHostConnections.has_value())
                                 || (!newMaxStreams.has_value()
