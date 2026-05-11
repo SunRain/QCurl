@@ -16,22 +16,13 @@ from tests.libcurl_consistency.pytest_support.artifacts import build_request_sem
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
 def _append_req_id(url: str, req_id: str) -> str:
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}id={req_id}"
-
-
-def _qt_test_binary_or_skip() -> Path:
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
-    return qt_path
-
 
 def _env_int(name: str, default: int) -> int:
     raw = (os.environ.get(name) or "").strip()
@@ -218,7 +209,7 @@ def _run_expect100_417_retry_once(
 
 
 def test_p2_expect_100_continue_417_retry(env, lc_observe_http):
-    qt_path = _qt_test_binary_or_skip()
+    qt_path = require_qcurl_qttest()
     collect_logs = should_collect_service_logs()
     suite = "p2_expect"
     proto = "http/1.1"
@@ -265,11 +256,11 @@ def test_p2_expect_100_continue_417_retry_repeat_inprocess(env, lc_observe_http)
 
     默认关闭：需要设置 QCURL_LC_EXPECT100_REPEAT>=2 才会执行。
     """
-    qt_path = _qt_test_binary_or_skip()
+    qt_path = require_qcurl_qttest()
 
     repeat = _env_int("QCURL_LC_EXPECT100_REPEAT", 1)
     if repeat <= 1:
-        pytest.skip("QCURL_LC_EXPECT100_REPEAT<=1（设置为 N>=2 以启用进程内重复跑）")
+        pytest.fail("QCURL_LC_EXPECT100_REPEAT must be >= 2 for the default gate repeat-inprocess case")
 
     collect_logs = should_collect_service_logs()
     suite = "p2_expect"
@@ -323,7 +314,7 @@ def test_p2_expect_100_continue_417_retry_inline_body(env, lc_observe_http):
     - 原用例对齐上游 test357，走 seekable upload（READFUNCTION/SEEKFUNCTION）
     - 本用例补齐 inline bytes 路径，避免“只测 raw-body device 路径导致的覆盖空洞”
     """
-    qt_path = _qt_test_binary_or_skip()
+    qt_path = require_qcurl_qttest()
     collect_logs = should_collect_service_logs()
     suite = "p2_expect"
     proto = "http/1.1"

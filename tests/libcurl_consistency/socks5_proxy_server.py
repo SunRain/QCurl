@@ -4,6 +4,7 @@
 最小 SOCKS5 代理 stub（用于 libcurl_consistency 的 LC-39）：
 - 仅实现 SOCKS5 无认证握手（method=0x00）
 - 对任何 CONNECT 请求固定返回 REP=0x01（general failure）
+- 可通过 --mode success 启用单连接转发，用于 SOCKS 成功路径一致性
 - 观测输出：JSONL（peer/dst/cmd/rep），用于确认客户端确实走了 SOCKS5 代理路径
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import select
 import socket
 import threading
 from dataclasses import asdict, dataclass
@@ -41,6 +43,7 @@ def _recv_exact(conn: socket.socket, n: int) -> Optional[bytes]:
 class Socks5LogEntry:
     ts: str
     peer: str
+    version: int
     cmd: int
     atyp: int
     dst: str
@@ -49,10 +52,11 @@ class Socks5LogEntry:
 
 
 class Socks5StubServer:
-    def __init__(self, host: str, port: int, log_file: Path):
+    def __init__(self, host: str, port: int, log_file: Path, mode: str):
         self._host = host
         self._port = port
         self._log_file = log_file
+        self._mode = mode
         self._sock: Optional[socket.socket] = None
         self._stop = threading.Event()
 
@@ -142,10 +146,19 @@ class Socks5StubServer:
                 return
             dst_port = int.from_bytes(port_raw, byteorder="big", signed=False)
 
-            rep = 0x01  # general failure
+            upstream: Optional[socket.socket] = None
+            rep = 0x01
+            if self._mode == "success" and cmd == 0x01:
+                try:
+                    upstream = socket.create_connection((dst, dst_port), timeout=10.0)
+                    rep = 0x00
+                except OSError:
+                    upstream = None
+                    rep = 0x05
             self._append_log(Socks5LogEntry(
                 ts=_utc_ts(),
                 peer=peer,
+                version=5,
                 cmd=int(cmd),
                 atyp=int(atyp),
                 dst=dst,
@@ -156,11 +169,35 @@ class Socks5StubServer:
             # SOCKS5 reply: VER, REP, RSV, ATYP, BND.ADDR, BND.PORT
             resp = b"\x05" + bytes([rep, 0x00, 0x01]) + b"\x00\x00\x00\x00" + b"\x00\x00"
             conn.sendall(resp)
+            if rep != 0x00 or upstream is None:
+                return
+            self._relay(conn, upstream)
         except Exception as exc:
             log.debug("conn error: %s", exc)
         finally:
             try:
                 conn.close()
+            except OSError:
+                pass
+
+    def _relay(self, client: socket.socket, upstream: socket.socket) -> None:
+        sockets = [client, upstream]
+        try:
+            for s in sockets:
+                s.settimeout(None)
+            while not self._stop.is_set():
+                readable, _, _ = select.select(sockets, [], [], 0.5)
+                if not readable:
+                    continue
+                for src in readable:
+                    data = src.recv(64 * 1024)
+                    if not data:
+                        return
+                    dst = upstream if src is client else client
+                    dst.sendall(data)
+        finally:
+            try:
+                upstream.close()
             except OSError:
                 pass
 
@@ -170,11 +207,12 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="listen host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, required=True, help="listen port")
     parser.add_argument("--log-file", type=str, required=True, help="JSONL log output path")
+    parser.add_argument("--mode", choices=["failure", "success"], default="failure")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    server = Socks5StubServer(args.host, int(args.port), Path(args.log_file))
+    server = Socks5StubServer(args.host, int(args.port), Path(args.log_file), args.mode)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -186,4 +224,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

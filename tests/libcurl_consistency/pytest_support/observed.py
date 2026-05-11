@@ -64,7 +64,12 @@ class ObserveHttpObserved:
     url: str  # path(+query) with correlation id stripped
     status: int
     headers: Dict[str, str]
+    headers_raw_lines: List[str]
+    headers_raw_len: int
+    headers_raw_sha256: str
     response_headers: Dict[str, str]
+    body_len: int = 0
+    body_sha256: str = ""
 
 
 def _strip_query_id(url: str) -> str:
@@ -492,7 +497,12 @@ def observe_http_observed_for_id(observe_log: Path, req_id: str) -> ObserveHttpO
         url=_strip_query_id(str(e.get("path") or "")),
         status=int(e.get("status") or "0"),
         headers=headers,
+        headers_raw_lines=[str(v) for v in (e.get("headers_raw_lines") or [])],
+        headers_raw_len=int(e.get("headers_raw_len") or 0),
+        headers_raw_sha256=str(e.get("headers_raw_sha256") or ""),
         response_headers=resp_headers,
+        body_len=int(e.get("body_len") or 0),
+        body_sha256=str(e.get("body_sha256") or ""),
     )
 
 def observe_http_observed_list_for_id(observe_log: Path,
@@ -528,6 +538,11 @@ def observe_http_observed_list_for_id(observe_log: Path,
             url=_strip_query_id(str(e.get("path") or "")),
             status=int(e.get("status") or "0"),
             headers=headers,
+            headers_raw_lines=[str(v) for v in (e.get("headers_raw_lines") or [])],
+            headers_raw_len=int(e.get("headers_raw_len") or 0),
+            headers_raw_sha256=str(e.get("headers_raw_sha256") or ""),
             response_headers=resp_headers,
+            body_len=int(e.get("body_len") or 0),
+            body_sha256=str(e.get("body_sha256") or ""),
         ))
     return out

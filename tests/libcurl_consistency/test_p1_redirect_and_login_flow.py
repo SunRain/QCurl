@@ -16,7 +16,7 @@ from tests.libcurl_consistency.pytest_support.artifacts import build_request_sem
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
@@ -88,10 +88,7 @@ def _cookie_names_from_summary(summary: str) -> set[str]:
 
 @pytest.mark.parametrize("follow", [False, True])
 def test_p1_redirect_followlocation(follow: bool, env, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -223,10 +220,7 @@ def test_p1_redirect_post_301_to_get(env, lc_observe_http):
     - 断言服务端观测到的请求序列为 POST -> GET（顺序敏感）
     - 最终响应体字节一致
     """
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -363,10 +357,7 @@ def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
     - /a/step：必须发送 Cookie（Path 匹配），再跳转到 /b/final
     - /b/final：必须不发送 Cookie（Path 不匹配），最终 200
     """
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -500,10 +491,7 @@ def test_p1_cookie_path_match_redirect_chain(env, lc_observe_http, tmp_path):
 
 
 def test_p1_login_cookie_state_flow(env, lc_observe_http, tmp_path):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

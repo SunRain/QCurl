@@ -587,6 +587,60 @@ def lc_socks5_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
             if proc:
                 proc.terminate()
 
+@pytest.fixture(scope="function")
+def lc_socks5_success_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
+    """
+    启动可转发的 SOCKS5 proxy。
+    默认 failure stub 保持不变，成功路径必须显式使用本 fixture。
+    """
+    run_dir = Path(env.gen_dir) / f"lc_socks5_success_proxy_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "socks5_proxy_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "socks5_success_requests.jsonl"
+
+    proc = None
+    socks_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, socks_port
+            log_file.write_text("", encoding="utf-8")
+            socks_port = int(ports["socks"])
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(socks_port),
+                "--log-file",
+                str(log_file),
+                "--mode",
+                "success",
+            ]
+            log.info("start socks5 success proxy: %s", args)
+            proc = subprocess.Popen(
+                args=args,
+                cwd=str(run_dir),
+                stderr=cerr,
+                stdout=cerr,
+            )
+            if _check_tcp_alive(socks_port, Env.SERVER_TIMEOUT):
+                return True
+            log.error("socks5 success proxy failed to start")
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"socks": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("socks5 success proxy did not start")
+        try:
+            yield {
+                "port": socks_port,
+                "log_file": str(log_file),
+            }
+        finally:
+            if proc:
+                proc.terminate()
+
 
 @pytest.fixture(scope="function")
 def lc_observe_http(env: Env) -> Generator[Dict[str, object], None, None]:

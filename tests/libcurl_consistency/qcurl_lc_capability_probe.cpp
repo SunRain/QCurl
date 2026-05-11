@@ -1,6 +1,8 @@
 #include "CurlFeatureProbe.h"
 
 #include <QCNetworkAccessManager.h>
+#include <QCNetworkHttpVersion.h>
+#include <QCNetworkProxyConfig.h>
 #include <QCNetworkReply.h>
 #include <QCNetworkRequest.h>
 #include <QCNetworkSslConfig.h>
@@ -52,6 +54,19 @@ QJsonObject buildManifest()
     QCurl::QCNetworkRequest request;
     request.setAutoDecompressionEnabled(true);
     request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
+    request.setRawHeader(QByteArrayLiteral("X-QCurl-Probe"), QByteArrayLiteral("1"));
+    request.setHttpVersion(QCurl::QCNetworkHttpVersion::Http3);
+    const bool rawRequestHeaderApi =
+        request.rawHeader(QByteArrayLiteral("X-QCurl-Probe")) == QByteArrayLiteral("1");
+    const bool http3Api = request.httpVersion() == QCurl::QCNetworkHttpVersion::Http3;
+
+    QCurl::QCNetworkProxyConfig socks5;
+    socks5.setType(QCurl::QCNetworkProxyConfig::ProxyType::Socks5Hostname);
+    socks5.setHostName(QStringLiteral("127.0.0.1"));
+    socks5.setPort(1);
+    const bool socks5HostnameApi =
+        socks5.type() == QCurl::QCNetworkProxyConfig::ProxyType::Socks5Hostname
+        && socks5.isValid();
 
     static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
         const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>)>(
@@ -66,6 +81,8 @@ QJsonObject buildManifest()
     const bool rawBodyDeviceApi = true;
     const bool unknownSizePostApi = true;
     const bool singleFileMultipartDeviceApi = true;
+    const bool downloadFileResumableApi = true;
+    const bool runtimeHasHttp3 = (probe.runtimeFeatures() & CURL_VERSION_HTTP3) != 0;
     const bool pinnedApi = (ssl.pinnedPublicKey()
                             == QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
     const bool acceptEncodingApi = request.autoDecompressionEnabled()
@@ -77,6 +94,10 @@ QJsonObject buildManifest()
     qcurl.insert(QStringLiteral("unknownSizeRawBodyPostApi"), unknownSizePostApi);
     qcurl.insert(QStringLiteral("singleFileMultipartDeviceApi"), singleFileMultipartDeviceApi);
     qcurl.insert(QStringLiteral("pinnedPublicKeyApi"), pinnedApi);
+    qcurl.insert(QStringLiteral("rawRequestHeaderApi"), rawRequestHeaderApi);
+    qcurl.insert(QStringLiteral("socks5HostnameApi"), socks5HostnameApi);
+    qcurl.insert(QStringLiteral("http3Api"), http3Api);
+    qcurl.insert(QStringLiteral("downloadFileResumableApi"), downloadFileResumableApi);
 
     QJsonObject libcurl;
     libcurl.insert(QStringLiteral("compiledVersionNum"), probe.compiledVersionNum());
@@ -121,6 +142,58 @@ QJsonObject buildManifest()
              (pinnedApi && supportsPinnedPublicKey())
                  ? QStringLiteral("CURLOPT_PINNEDPUBLICKEY available at runtime")
                  : QStringLiteral("CURLOPT_PINNEDPUBLICKEY unavailable at runtime")},
+        });
+    tests.insert(
+        QStringLiteral("test_p1_request_headers.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), rawRequestHeaderApi},
+            {QStringLiteral("reason"),
+             rawRequestHeaderApi ? QStringLiteral("QCNetworkRequest raw header API available")
+                                 : QStringLiteral("QCNetworkRequest raw header API unavailable")},
+        });
+    tests.insert(
+        QStringLiteral("test_p1_socks_success.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), socks5HostnameApi},
+            {QStringLiteral("reason"),
+             socks5HostnameApi
+                 ? QStringLiteral("SOCKS5/SOCKS5Hostname proxy APIs available")
+                 : QStringLiteral("SOCKS5/SOCKS5Hostname proxy APIs unavailable")},
+        });
+    tests.insert(
+        QStringLiteral("test_p1_redirect_302_303_308.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), rawBodyDeviceApi},
+            {QStringLiteral("reason"),
+             rawBodyDeviceApi
+                 ? QStringLiteral("seekable/non-seekable raw-body API available")
+                 : QStringLiteral("seekable/non-seekable raw-body API unavailable")},
+        });
+    tests.insert(
+        QStringLiteral("test_p2_range_boundaries.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), downloadFileResumableApi},
+            {QStringLiteral("reason"),
+             downloadFileResumableApi
+                 ? QStringLiteral("downloadFileResumable public API available")
+                 : QStringLiteral("downloadFileResumable public API unavailable")},
+        });
+    tests.insert(
+        QStringLiteral("test_ext_http3_version_policy.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), http3Api},
+            {QStringLiteral("reason"),
+             http3Api ? QStringLiteral("HTTP/3 request policy API available")
+                      : QStringLiteral("HTTP/3 request policy API unavailable")},
+        });
+    tests.insert(
+        QStringLiteral("test_ext_http3_success_h3.py"),
+        QJsonObject{
+            {QStringLiteral("enabled"), http3Api && runtimeHasHttp3},
+            {QStringLiteral("reason"),
+             (http3Api && runtimeHasHttp3)
+                 ? QStringLiteral("HTTP/3 API and runtime support available")
+                 : QStringLiteral("HTTP/3 runtime unavailable; default with-ext gate excludes H3 success file")},
         });
 
     QJsonObject root;

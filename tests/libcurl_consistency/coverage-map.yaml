@@ -1,0 +1,122 @@
+schema_version: 1
+id: qcurl-libcurl-observability-coverage-map-v1
+description: QCurl to libcurl observable contract coverage map.
+
+evidence_types:
+  contract: Required observable equality or failure semantics.
+  regression: Historical edge case guard.
+  smoke: Coarse health check that must not be described as a strong contract.
+  diagnostic: Optional detail for investigation.
+
+contracts:
+  download_upload_p0:
+    evidence_type: contract
+    suite: p0
+    cases:
+      - id: download_serial_resume
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifacts: [request, response, body_len, body_sha256]
+      - id: upload_put
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifacts: [request, response, body_len, body_sha256]
+      - id: upload_post_reuse
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifacts: [requests, responses, body_len, body_sha256]
+
+  websocket_p0:
+    evidence_type: contract
+    suite: p0
+    cases:
+      - id: ws_pingpong_small
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifacts: [baseline_ws_events, qcurl_ws_events, body_len, body_sha256]
+      - id: ws_data_small
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifacts: [baseline_ws_events, qcurl_ws_events, body_len, body_sha256]
+
+  raw_response_headers:
+    evidence_type: contract
+    suite: p0
+    cases:
+      - id: raw_response_headers
+        pytest: tests/libcurl_consistency/test_p1_resp_headers.py
+        artifacts: [response.headers_raw_lines, response.headers_raw_sha256]
+        note: Included in p0 planning to prevent raw header evidence drift.
+
+  p1_request_and_redirect_surface:
+    evidence_type: contract
+    suite: p1
+    cases:
+      - id: request_headers_raw
+        pytest: tests/libcurl_consistency/test_p1_request_headers.py
+        artifacts: [request.headers_raw_lines, request.headers_raw_sha256, request.headers_semantic]
+      - id: socks5_success
+        pytest: tests/libcurl_consistency/test_p1_socks_success.py
+        artifacts: [socks.atyp, socks.dst, socks.rep, response]
+      - id: redirect_302_303_308_method_body
+        pytest: tests/libcurl_consistency/test_p1_redirect_302_303_308.py
+        artifacts: [requests, responses, body_sha256]
+      - id: cookiejar_1903
+        pytest: tests/libcurl_consistency/test_p1_cookiejar_1903.py
+        artifacts: [cookiejar.records, cookiejar.sha256]
+      - id: multipart_formdata
+        pytest: tests/libcurl_consistency/test_p1_multipart_formdata.py
+        artifacts: [multipart.parts]
+
+  p2_error_tls_flow_control:
+    evidence_type: contract
+    suite: p2
+    cases:
+      - id: expect_100_continue
+        pytest: tests/libcurl_consistency/test_p2_expect_100_continue.py
+        artifacts: [observed.error, derived.error, request.headers_raw_lines]
+      - id: protocol_restrictions
+        pytest: tests/libcurl_consistency/test_p2_protocol_restrictions.py
+        artifacts: [protocol, observed.error, derived.error]
+      - id: tls_verify
+        pytest: tests/libcurl_consistency/test_p2_tls_verify.py
+        artifacts: [observed.error, derived.error]
+      - id: tls_pinned_public_key
+        pytest: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py
+        artifacts: [observed.error, derived.error]
+      - id: pause_resume_strict
+        pytest: tests/libcurl_consistency/test_p2_pause_resume_strict.py
+        artifacts: [pause_resume_strict.events]
+      - id: backpressure_contract
+        pytest: tests/libcurl_consistency/test_p2_backpressure_contract.py
+        artifacts: [backpressure_contract]
+      - id: upload_pause_resume
+        pytest: tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py
+        artifacts: [upload_pause_resume]
+      - id: range_boundaries
+        pytest: tests/libcurl_consistency/test_p2_range_boundaries.py
+        artifacts: [request.headers_raw_lines, response.status, observed.error]
+
+  ext_opt_in:
+    evidence_type: contract
+    suite: ext
+    opt_in: true
+    cases:
+      - id: http3_version_policy
+        pytest: tests/libcurl_consistency/test_ext_http3_version_policy.py
+        artifacts: [protocol, observed.error, derived.error]
+      - id: http3_success_h3
+        pytest: tests/libcurl_consistency/test_ext_http3_success_h3.py
+        artifacts: [protocol.observed, response.status]
+      - id: websocket_frame_types
+        pytest: tests/libcurl_consistency/test_ext_ws_suite.py
+        artifacts: [ws_events]
+      - id: speed_limit_smoke
+        pytest: tests/libcurl_consistency/test_ext_speed_limit_smoke.py
+        evidence_type: smoke
+
+gate_policy:
+  supported_entry: tests/libcurl_consistency/run_gate.py
+  bare_pytest: diagnostic_only
+  failure_promotions:
+    - skipped_tests
+    - no_tests_executed
+    - junit_parse_error
+    - artifacts_schema
+    - redaction
+    - http3_required

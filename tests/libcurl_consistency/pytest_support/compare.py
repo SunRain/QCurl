@@ -191,6 +191,19 @@ def _cmp_list_dict(lhs_list: List[Dict], rhs_list: List[Dict], fields: List[str]
     return diffs
 
 
+def _cmp_optional_fields(lhs: Dict, rhs: Dict, fields: List[str], prefix: str) -> List[str]:
+    diffs: List[str] = []
+    for f in fields:
+        lhs_has = f in lhs
+        rhs_has = f in rhs
+        if lhs_has != rhs_has:
+            diffs.append(f"{prefix}.{f} missing in one side")
+            continue
+        if lhs_has and rhs_has and lhs.get(f) != rhs.get(f):
+            diffs.append(f"{prefix}.{f} mismatch: {lhs.get(f)} != {rhs.get(f)}")
+    return diffs
+
+
 def _extract_error_namespaces(payload: Dict) -> Tuple[Dict, Dict]:
     """
     提取 error 的 observed/derived 命名空间。
@@ -243,6 +256,12 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
             diffs.append("request missing in one side")
         else:
             diffs.extend(_cmp_dict(b_req, q_req, ["method", "url", "headers", "body_len", "body_sha256"]))
+            diffs.extend(_cmp_optional_fields(
+                b_req,
+                q_req,
+                ["headers_raw_len", "headers_raw_sha256", "headers_raw_lines", "headers_semantic"],
+                "request",
+            ))
 
     # 响应摘要（或下载文件摘要）
     b_resps = base.get("responses")
@@ -266,14 +285,12 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
         diffs.extend(_cmp_dict(b_resp, q_resp, ["status", "http_version", "headers", "body_len", "body_sha256"]))
 
         # 可选：原始响应头观测（LC-26）
-        for opt in ("headers_raw_len", "headers_raw_sha256", "headers_raw_lines"):
-            b_has = opt in b_resp
-            q_has = opt in q_resp
-            if b_has != q_has:
-                diffs.append(f"response.{opt} missing in one side")
-                continue
-            if b_has and q_has and b_resp.get(opt) != q_resp.get(opt):
-                diffs.append(f"response.{opt} mismatch: {b_resp.get(opt)} != {q_resp.get(opt)}")
+        diffs.extend(_cmp_optional_fields(
+            b_resp,
+            q_resp,
+            ["headers_raw_len", "headers_raw_sha256", "headers_raw_lines"],
+            "response",
+        ))
 
     # 可选：cookie jar 输出一致性（P1）
     b_cookiejar = base.get("cookiejar")
@@ -310,6 +327,22 @@ def compare_artifacts(baseline_path: Path, qcurl_path: Path) -> Tuple[bool, List
                     continue
                 if b_has and (b_der_err.get(f) != q_der_err.get(f)):
                     diffs.append(f"derived.error.{f} mismatch: {b_der_err.get(f)} != {q_der_err.get(f)}")
+
+    b_socks = base.get("socks")
+    q_socks = qc.get("socks")
+    if b_socks is not None or q_socks is not None:
+        if not isinstance(b_socks, dict) or not isinstance(q_socks, dict):
+            diffs.append("socks missing in one side")
+        else:
+            diffs.extend(_cmp_dict(b_socks, q_socks, ["version", "cmd", "atyp", "dst", "dst_port", "rep"]))
+
+    b_protocol = base.get("protocol")
+    q_protocol = qc.get("protocol")
+    if b_protocol is not None or q_protocol is not None:
+        if not isinstance(b_protocol, dict) or not isinstance(q_protocol, dict):
+            diffs.append("protocol missing in one side")
+        else:
+            diffs.extend(_cmp_dict(b_protocol, q_protocol, ["requested", "observed"]))
 
     # 可选：进度摘要一致性（LC-30）
     b_prog = base.get("progress_summary")

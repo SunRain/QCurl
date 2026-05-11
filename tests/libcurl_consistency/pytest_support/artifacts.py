@@ -92,17 +92,26 @@ def normalize_headers(headers: Dict[str, str]) -> Dict[str, str]:
 def build_request_semantic(method: str,
                            url: str,
                            headers: Optional[Dict[str, str]] = None,
-                           body: Optional[bytes] = None) -> Dict[str, Any]:
+                           body: Optional[bytes] = None,
+                           raw_lines: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     headers_norm = normalize_headers(headers or {})
     body_len = len(body) if body else 0
     body_hash = sha256_bytes(body) if body else ""
-    return {
+    out: Dict[str, Any] = {
         "method": method.upper(),
         "url": url,
         "headers": headers_norm,
         "body_len": body_len,
         "body_sha256": body_hash,
     }
+    if raw_lines is not None:
+        lines = [str(line) for line in raw_lines]
+        blob = "\n".join(lines).encode("utf-8")
+        out["headers_raw_lines"] = lines
+        out["headers_raw_len"] = int(len(blob))
+        out["headers_raw_sha256"] = sha256_bytes(blob)
+        out["headers_semantic"] = headers_norm
+    return out
 
 
 def build_response_summary(status: int,

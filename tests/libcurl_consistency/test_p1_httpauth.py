@@ -16,7 +16,7 @@ import pytest
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import observe_http_observed_list_for_id
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, sha256_bytes, write_json
 
@@ -100,10 +100,7 @@ def _assert_expected_response_body(*, response_payload: dict, expected_body: byt
 
 
 def test_p1_httpauth_any_basic(env, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -245,10 +242,7 @@ def test_p1_httpauth_any_basic(env, lc_observe_http):
 
 
 def test_p1_httpauth_any_basic_wrong_pass(env, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -410,10 +404,7 @@ def test_p1_httpauth_any_basic_wrong_pass(env, lc_observe_http):
 
 
 def test_p1_httpauth_anysafe_digest(env, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -555,10 +546,7 @@ def test_p1_httpauth_anysafe_digest(env, lc_observe_http):
 
 
 def test_p1_httpauth_anysafe_digest_wrong_pass(env, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -721,10 +709,7 @@ def test_p1_httpauth_anysafe_digest_wrong_pass(env, lc_observe_http):
 
 @pytest.mark.parametrize("unrestricted", [False, True])
 def test_p1_unrestricted_auth_redirect(unrestricted: bool, env, lc_observe_http_pair):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     a = lc_observe_http_pair["a"]

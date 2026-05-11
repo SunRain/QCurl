@@ -24,7 +24,7 @@ def _manifest_path() -> Path:
 def load_capability_manifest() -> dict:
     path = _manifest_path()
     if not path.exists():
-        pytest.skip(f"capability manifest missing: {path}")
+        pytest.fail(f"capability manifest missing: {path}")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # pragma: no cover - defensive guard

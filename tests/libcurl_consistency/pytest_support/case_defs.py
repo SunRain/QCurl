@@ -287,6 +287,64 @@ P1_PROXY_CASES = {
     },
 }
 
+P1_OBSERVABLE_FOLLOWUP_CASES = {
+    "request_headers_raw": {
+        "suite": "p1_request_headers",
+        "case": "lc_request_headers_raw_http_1.1",
+        "client": "cli_lc_http",
+        "capability_gates": ["observe_http"],
+        "observation_points": [
+            "server_observed_headers",
+            "redacted_authorization_scheme",
+        ],
+    },
+    "socks5_success": {
+        "suite": "p1_socks_success",
+        "case": "lc_socks5_success_http_1.1",
+        "client": "cli_lc_http",
+        "capability_gates": ["socks5_success_proxy", "observe_http"],
+        "observation_points": ["socks_log", "origin_request", "response_body"],
+    },
+    "socks5_hostname_success": {
+        "suite": "p1_socks_success",
+        "case": "lc_socks5h_success_http_1.1",
+        "client": "cli_lc_http",
+        "capability_gates": ["socks5_success_proxy", "observe_http"],
+        "observation_points": ["socks_log_atyp_0x03", "origin_request", "response_body"],
+    },
+    "redirect_302_303_308_method_body": {
+        "suite": "p1_redirect_302_303_308",
+        "case": "lc_redirect_302_303_308_method_body_http_1.1",
+        "client": "cli_lc_http",
+        "capability_gates": ["observe_http"],
+        "observation_points": ["redirect_chain", "method_sequence", "body_hash_sequence"],
+    },
+}
+
+EXT_OBSERVABLE_FOLLOWUP_CASES = {
+    "http3_version_policy": {
+        "suite": "ext_http3_version_policy",
+        "case": "lc_ext_http3_version_policy",
+        "client": "cli_lc_http",
+        "capability_gates": ["ext_suite", "http3_api", "observe_http"],
+        "observation_points": ["fallback_protocol_version", "http3_only_error_namespace"],
+    },
+    "http3_success_h3": {
+        "suite": "ext_http3_version_policy",
+        "case": "lc_http3_success_h3",
+        "client": "cli_lc_http",
+        "capability_gates": ["ext_suite", "http3"],
+        "observation_points": ["protocol_version"],
+    },
+    "range_boundaries": {
+        "suite": "p2_range_boundaries",
+        "case": "lc_range_boundaries_http_1.1",
+        "client": "cli_lc_http",
+        "capability_gates": ["observe_http", "downloadFileResumable"],
+        "observation_points": ["range_header", "content_range", "file_size", "error_namespace"],
+    },
+}
+
 # 可选扩展：默认不跑（由 pytest driver 控制），避免引入与数据无关的波动点（LC-11）
 EXT_CASES = {
     # 并发下载压力（仅用于 h2/h3 的 multiplexing/调度路径观测）

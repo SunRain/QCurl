@@ -18,7 +18,7 @@ from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.case_defs import P1_CASES
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id, nghttpx_observed_for_id
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
@@ -39,10 +39,7 @@ def _postfields_binary_payload() -> bytes:
 def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
     case = P1_CASES[case_id]
     collect_logs = should_collect_service_logs()
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     http_protos = ["http/1.1", "h2"]
     if env.have_h3():
@@ -101,7 +98,7 @@ def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
                     download_count=case.get("baseline_download_count"),
                 )
             except FileNotFoundError as exc:
-                pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
+                raise AssertionError(f"gate preflight should have failed before pytest started: {exc}") from exc
 
             if proto == "h3":
                 access_log = Path(lc_logs["nghttpx_access_log"])

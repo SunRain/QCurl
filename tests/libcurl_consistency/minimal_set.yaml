@@ -320,6 +320,42 @@ cases:
     minimality_reason:
       - SOCKS 代理与 HTTP 代理选项/错误码完全不同，最易出现映射错误
 
+  - id: lc_socks5_success_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success"
+    capability_gates:
+      - socks5_success_proxy
+      - http_observe_server
+    dimensions:
+      - socks5_proxy
+      - proxy_success
+      - http_version:http_1_1
+    observation_points:
+      - SOCKS log 观测 version/cmd/ATYP/dst/rep
+      - origin server 观测 method/url/status/body hash
+      - SOCKS5 IP 目标使用 ATYP=0x01
+    minimality_reason:
+      - failure stub 只能证明错误映射，success path 才能证明代理转发语义与 origin 请求一致
+
+  - id: lc_socks5_hostname_success_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks5h_success"
+    capability_gates:
+      - socks5_success_proxy
+      - http_observe_server
+    dimensions:
+      - socks5_hostname_proxy
+      - proxy_success
+      - remote_dns_semantics
+      - http_version:http_1_1
+    observation_points:
+      - SOCKS log 观测 ATYP=0x03 与域名目标
+      - origin server 观测 method/url/status/body hash
+    minimality_reason:
+      - Socks5Hostname 与 Socks5 的关键差异是目标名交给代理解析，必须单独观测 ATYP=0x03
+
   # ---------------------------------------------------------------------------
   # 本仓库自建：HTTP 错误重试序列（501 → 两次请求）
   # ---------------------------------------------------------------------------
@@ -389,6 +425,28 @@ cases:
       - "http_observe_server.py 可运行（允许端口绑定）"
     stability_notes:
       - "仅覆盖 http/1.1（观测服务端为 h1）；不引入外网 DNS 依赖"
+
+  # ---------------------------------------------------------------------------
+  # 本仓库自建：raw request header 可观测一致性
+  # ---------------------------------------------------------------------------
+  - id: lc_request_headers_raw_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_request_headers.py::test_p1_request_headers_raw_http_1_1"
+    capability_gates:
+      - http_observe_server
+      - raw_request_header_api
+    dimensions:
+      - request_headers_raw
+      - duplicate_header_contract
+      - sensitive_header_redaction
+      - http_version:http_1_1
+    observation_points:
+      - 服务端观测普通自定义头、同名覆盖与大小写差异 key 的当前契约表现
+      - artifacts 只保留允许字段或 redacted 值
+      - gate redaction scan 不允许 Authorization/Cookie 明文落盘
+    minimality_reason:
+      - raw header 是调用方直接表达的 HTTP 契约，必须证明封装层不会丢失或泄露敏感值
 
   # ---------------------------------------------------------------------------
   # 错误/超时/取消语义（可观测终态）
@@ -596,6 +654,90 @@ cases:
       - seekable 可重发并成功；non-seekable 明确失败（无 silent fallback）
     minimality_reason:
       - 401 challenge 是业务常见的“隐式重发 body”触发点（协商认证最相关）
+
+  - id: lc_redirect_302_303_308_method_body_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body_http_1_1"
+    selection:
+      parameters:
+        status:
+          required: [302, 303, 308]
+        body_kind:
+          required: ["bytes", "seekable", "non_seekable"]
+    capability_gates:
+      - http_observe_server
+      - raw_body_device_api
+    dimensions:
+      - redirect_chain
+      - method_rewrite
+      - request_body_replay
+      - seekable_vs_nonseekable
+      - http_version:http_1_1
+    observation_points:
+      - 每跳 status/method/path/body hash 序列一致
+      - 302/303 的 method rewrite 与 308 的 method/body 保持语义一致
+      - non-seekable body 的失败终态一致
+    minimality_reason:
+      - 302/303/308 覆盖 method rewrite 与 body replay 的三类高风险 redirect 分支
+
+  # ---------------------------------------------------------------------------
+  # 本仓库自建：ext-only HTTP/3 request policy 与 Range 边界
+  # ---------------------------------------------------------------------------
+  - id: lc_ext_http3_fallback_and_only_failure_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_ext_http3_version_policy.py::test_ext_http3_fallback_and_only_failure_http_1_1"
+    capability_gates:
+      - http_observe_server
+      - http3_request_policy_api
+      - ext_suite
+    dimensions:
+      - http3_fallback_to_http_1_1
+      - http3_only_failure
+      - error_namespace
+    observation_points:
+      - "ext-only：仅由 run_gate.py --suite all --with-ext 规划执行，不属于 --suite p2"
+      - "QCNetworkHttpVersion::Http3 对 HTTP/1.1 服务端的 fallback 协议结果一致"
+      - "QCNetworkHttpVersion::Http3Only 的失败 error namespace 一致"
+    minimality_reason:
+      - fallback 与 only-failure 是 public API 行为差异，不依赖真实 H3 服务端即可稳定观测
+
+  - id: lc_ext_http3_success_h3
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_ext_http3_success_h3.py::test_ext_http3_success_h3"
+    capability_gates:
+      - http3_runtime
+      - nghttpx_h3
+      - ext_suite
+    dimensions:
+      - http3_success
+      - http_version:h3
+    observation_points:
+      - nghttpx access log 观测 baseline 与 QCurl 均使用 h3
+      - status/body hash/protocol version 一致
+    minimality_reason:
+      - 真实 H3 success 需要独立能力门控，不能与 HTTP/1.1 fallback/only-failure 混为一个文件级排除项
+
+  - id: lc_range_boundaries_http_1_1
+    source:
+      type: pytest
+      nodeid: "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries_http_1_1"
+    capability_gates:
+      - http_observe_server
+      - download_file_resumable_api
+    dimensions:
+      - range_header_open_ended
+      - resume_file_semantics
+      - content_range_validation
+      - http_version:http_1_1
+    observation_points:
+      - "Range: bytes=N- 请求头一致"
+      - "416 matching Content-Range: bytes */total 识别为已完成"
+      - "Content-Range.start mismatch 归一化为失败"
+    minimality_reason:
+      - "Range 边界必须走文件续传 public API，不能用 setRange(start,end) 替代 bytes=N- 语义"
 
 excluded:
   # ---------------------------------------------------------------------------

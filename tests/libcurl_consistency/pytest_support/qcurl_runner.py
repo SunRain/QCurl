@@ -23,6 +23,17 @@ from .artifacts import (
     write_json,
 )
 
+
+def require_qcurl_qttest() -> Path:
+    raw = (os.environ.get("QCURL_QTTEST") or "").strip()
+    if not raw:
+        raise RuntimeError("QCURL_QTTEST missing from gate environment")
+    path = Path(raw).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Qt Test binary not found: {path}")
+    return path
+
+
 def _collect_download_files(run_dir: Path, count: int) -> List[Path]:
     return [run_dir / f"download_{i}.data" for i in range(count)]
 

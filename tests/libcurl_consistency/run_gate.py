@@ -10,18 +10,36 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
-import re
 import shlex
 import subprocess
 import sys
 import time
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tests.libcurl_consistency.pytest_support.gate_evidence import add_python_lock_summary
+from tests.libcurl_consistency.pytest_support.gate_evidence import write_nghttpx_version_snapshot
+from tests.libcurl_consistency.pytest_support.gate_evidence import write_python_env_snapshot
+from tests.libcurl_consistency.pytest_support.gate_planner import plan_pytest_files
+from tests.libcurl_consistency.pytest_support.gate_planner import pytest_files
+from tests.libcurl_consistency.pytest_support.gate_preflight import apply_http3_preflight_to_manifest
+from tests.libcurl_consistency.pytest_support.gate_preflight import first_existing_path
+from tests.libcurl_consistency.pytest_support.gate_preflight import forbid_local_httpbin
+from tests.libcurl_consistency.pytest_support.gate_preflight import preflight_required_inputs
+from tests.libcurl_consistency.pytest_support.gate_report import artifacts_dir
+from tests.libcurl_consistency.pytest_support.gate_report import create_initial_report
+from tests.libcurl_consistency.pytest_support.gate_report import parse_junit_counts
+from tests.libcurl_consistency.pytest_support.gate_report import policy_violations_from_report
+from tests.libcurl_consistency.pytest_support.gate_report import postflight_artifacts_schema_check
+from tests.libcurl_consistency.pytest_support.gate_report import postflight_redaction_scan
+from tests.libcurl_consistency.pytest_support.gate_report import redact_text
+from tests.libcurl_consistency.pytest_support.gate_report import redaction_scan_roots
 
 
 _FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS = (
@@ -69,368 +87,40 @@ def _run(
 
 
 def _parse_junit_counts(junit_xml: Path) -> Dict[str, object]:
-    """
-    取证式 Gate：将“跳过=通过”的风险显式化。
-    - 解析 pytest 生成的 JUnit XML，抽取 tests/failures/errors/skipped 计数。
-    - 解析失败/文件缺失时返回 parse_error，供上层转为门禁失败（避免“无执行也绿”）。
-    """
-    if not junit_xml.exists():
-        return {
-            "exists": False,
-            "tests": 0,
-            "failures": 0,
-            "errors": 0,
-            "skipped": 0,
-            "parse_error": f"junit xml not found: {junit_xml}",
-        }
-    try:
-        root = ET.parse(junit_xml).getroot()
-    except Exception as exc:
-        return {
-            "exists": True,
-            "tests": 0,
-            "failures": 0,
-            "errors": 0,
-            "skipped": 0,
-            "parse_error": f"failed to parse junit xml: {exc}",
-        }
-
-    suites = []
-    if root.tag == "testsuites":
-        suites = list(root.findall("testsuite"))
-    elif root.tag == "testsuite":
-        suites = [root]
-    else:
-        suites = list(root.findall(".//testsuite"))
-
-    def _attr_int(node: ET.Element, key: str) -> int:
-        raw = (node.attrib.get(key) or "").strip()
-        try:
-            return int(raw) if raw else 0
-        except ValueError:
-            return 0
-
-    totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
-    for s in suites:
-        for k in totals:
-            totals[k] += _attr_int(s, k)
-
-    return {"exists": True, **totals}
+    return parse_junit_counts(junit_xml)
 
 
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 def _redact_text(text: str) -> str:
-    """
-    Gate 报告中禁止落盘敏感信息（最小脱敏）：
-    - Authorization / Proxy-Authorization：仅保留 scheme（Basic/Digest/Bearer...）
-    - Cookie / Set-Cookie：替换为固定占位（避免明文）
-    """
-    if not text:
-        return ""
-
-    patterns: list[tuple[re.Pattern[str], str]] = [
-        # Header lines
-        (re.compile(r"(?im)^(\s*authorization:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
-        (re.compile(r"(?im)^(\s*proxy-authorization:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
-        (re.compile(r"(?im)^(\s*cookie:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
-        (re.compile(r"(?im)^(\s*set-cookie:\s*)([^\r\n]+)$"), r"\1<REDACTED>"),
-        # JSON-ish fragments
-        (re.compile(r"(?i)(\"authorization\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
-        (re.compile(r"(?i)(\"proxy-authorization\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
-        (re.compile(r"(?i)(\"cookie\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
-        (re.compile(r"(?i)(\"set-cookie\"\s*:\s*\")([^\"]+)(\")"), r"\1<REDACTED>\3"),
-    ]
-    out = text
-    for rx, repl in patterns:
-        out = rx.sub(repl, out)
-    return out
+    return redact_text(text)
 
 def _redaction_scan_roots(cfg: GateConfig) -> List[Path]:
-    roots: List[Path] = []
-    artifacts_dir = cfg.repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
-    if artifacts_dir.exists():
-        roots.append(artifacts_dir)
-    reports_dir = cfg.json_report.parent
-    if reports_dir.exists():
-        roots.append(reports_dir)
-    return roots
+    return redaction_scan_roots(cfg.repo_root, cfg.json_report.parent)
 
 def _artifacts_dir(cfg: GateConfig) -> Path:
-    return cfg.repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
+    return artifacts_dir(cfg.repo_root)
 
 def _postflight_artifacts_schema_check(cfg: GateConfig, *, since_ts: float) -> Dict[str, object]:
-    """
-    artifacts schema/version 门禁：
-    - baseline/qcurl artifacts 必须声明 schema（版本）
-    - schema 不识别/缺失视为 Gate 失败（避免“字段漂移”导致误判）
+    return postflight_artifacts_schema_check(
+        repo_root=cfg.repo_root,
+        artifacts_dir=_artifacts_dir(cfg),
+        since_ts=since_ts,
+        expected_schema=_EXPECTED_ARTIFACTS_SCHEMA,
+    )
 
-    说明：
-    - 仅检查本次运行产生/更新的 artifacts（mtime >= since_ts-1s），避免历史残留造成误报。
-    - 未知字段允许存在（向前兼容）；仅校验版本与 required 字段的存在性/类型。
-    """
-
-    root = _artifacts_dir(cfg)
-    if not root.exists():
-        return {
-            "schema_expected": _EXPECTED_ARTIFACTS_SCHEMA,
-            "since_ts": float(since_ts),
-            "scanned_files": 0,
-            "violations": [],
-            "note": "artifacts dir not found",
-        }
-
-    targets: List[Path] = []
-    for name in ("baseline.json", "qcurl.json"):
-        for p in root.rglob(name):
-            if not p.is_file():
-                continue
-            try:
-                if float(p.stat().st_mtime) < (float(since_ts) - 1.0):
-                    continue
-            except OSError:
-                continue
-            targets.append(p)
-
-    def rel(path: Path) -> str:
-        try:
-            return str(path.relative_to(cfg.repo_root))
-        except Exception:
-            return str(path)
-
-    required_request_fields = ("method", "url", "headers", "body_len", "body_sha256")
-    required_response_fields = ("status", "http_version", "headers", "body_len", "body_sha256")
-
-    violations: List[Dict[str, object]] = []
-
-    def add_violation(path: Path, reason: str) -> None:
-        violations.append({"file": rel(path), "reason": reason})
-
-    for p in sorted(targets):
-        try:
-            payload = json.loads(p.read_text(encoding="utf-8", errors="replace"))
-        except Exception as exc:
-            add_violation(p, f"invalid json: {exc}")
-            continue
-
-        schema = payload.get("schema")
-        if schema != _EXPECTED_ARTIFACTS_SCHEMA:
-            add_violation(p, f"schema mismatch: {schema!r} != {_EXPECTED_ARTIFACTS_SCHEMA!r}")
-            continue
-
-        runner = payload.get("runner")
-        if not isinstance(runner, str) or not runner:
-            add_violation(p, "runner missing or invalid")
-
-        req = payload.get("request")
-        if not isinstance(req, dict):
-            add_violation(p, "request missing or invalid")
-        else:
-            for k in required_request_fields:
-                if k not in req:
-                    add_violation(p, f"request.{k} missing")
-            if "headers" in req and not isinstance(req.get("headers"), dict):
-                add_violation(p, "request.headers not a dict")
-
-        resp = payload.get("response")
-        if not isinstance(resp, dict):
-            add_violation(p, "response missing or invalid")
-        else:
-            for k in required_response_fields:
-                if k not in resp:
-                    add_violation(p, f"response.{k} missing")
-            if "headers" in resp and not isinstance(resp.get("headers"), dict):
-                add_violation(p, "response.headers not a dict")
-
-    return {
-        "schema_expected": _EXPECTED_ARTIFACTS_SCHEMA,
-        "since_ts": float(since_ts),
-        "scanned_files": len(targets),
-        "violations": violations,
-    }
 
 def _postflight_redaction_scan(cfg: GateConfig, *, since_ts: float) -> Dict[str, object]:
-    """
-    脱敏扫描门禁（更强落地）：
-    - 扫描 Gate 会落盘/会随 CI 上传的文本产物（artifacts + reports）
-    - 发现敏感头明文则直接 fail（避免“空指令”）
-    """
-
-    rules: list[dict[str, object]] = [
-        {
-            "id": "auth_basic_unredacted",
-            "desc": "Authorization: Basic 明文（应仅保留 scheme 或摘要）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"basic\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*basic\s+"),
-            ],
-        },
-        {
-            "id": "auth_bearer_unredacted",
-            "desc": "Authorization: Bearer 明文（token 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"bearer\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*bearer\s+"),
-            ],
-        },
-        {
-            "id": "auth_digest_unredacted",
-            "desc": "Authorization: Digest 明文（参数不应落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"digest\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*digest\s+"),
-            ],
-        },
-        {
-            "id": "proxy_auth_basic_unredacted",
-            "desc": "Proxy-Authorization: Basic 明文（应仅保留 scheme 或摘要）",
-            "patterns": [
-                re.compile(br"(?i)\"proxy-authorization\"\s*:\s*\"basic\s+"),
-                re.compile(br"(?im)^\s*proxy-authorization:\s*basic\s+"),
-            ],
-        },
-        {
-            "id": "cookie_header_unredacted",
-            "desc": "Cookie 请求头明文（value 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"cookie\"\s*:\s*\"[^\r\n\"]*="),
-                re.compile(br"(?im)^\s*cookie:\s*[^\r\n]*="),
-            ],
-        },
-        {
-            "id": "set_cookie_unredacted",
-            "desc": "Set-Cookie 响应头明文（value 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"set-cookie\"\s*:\s*\"[^\r\n\"]*="),
-                re.compile(br"(?im)^\s*set-cookie:\s*[^\r\n]*="),
-            ],
-        },
-    ]
-
-    scan_roots = _redaction_scan_roots(cfg)
-    scan_files: List[Path] = []
-
-    def should_scan_file(path: Path) -> bool:
-        # 仅扫文本类产物，避免把下载文件/二进制当作“敏感命中”。
-        if path.name in ("stderr", "stdout"):
-            return True
-        ext = path.suffix.lower()
-        return ext in (".json", ".jsonl", ".xml", ".txt", ".log")
-
-    for root in scan_roots:
-        for p in root.rglob("*"):
-            if not p.is_file():
-                continue
-            try:
-                if float(p.stat().st_mtime) < (float(since_ts) - 1.0):
-                    continue
-            except OSError:
-                continue
-            if should_scan_file(p):
-                scan_files.append(p)
-
-    violations: List[Dict[str, object]] = []
-    max_hits = 200
-
-    def rel(path: Path) -> str:
-        try:
-            return str(path.relative_to(cfg.repo_root))
-        except Exception:
-            return str(path)
-
-    for p in sorted(scan_files):
-        try:
-            data = p.read_bytes()
-        except OSError:
-            continue
-        for line_no, line in enumerate(data.splitlines(), 1):
-            for rule in rules:
-                for rx in rule["patterns"]:  # type: ignore[index]
-                    if rx.search(line):  # type: ignore[union-attr]
-                        violations.append({
-                            "rule": str(rule["id"]),
-                            "file": rel(p),
-                            "line": int(line_no),
-                        })
-                        if len(violations) >= max_hits:
-                            break
-                if len(violations) >= max_hits:
-                    break
-            if len(violations) >= max_hits:
-                break
-        if len(violations) >= max_hits:
-            break
-
-    return {
-        "scan_roots": [str(p) for p in scan_roots],
-        "since_ts": float(since_ts),
-        "scanned_files": len(scan_files),
-        "rules": [{"id": r["id"], "desc": r["desc"]} for r in rules],
-        "violations": violations,
-    }
+    return postflight_redaction_scan(cfg.repo_root, _redaction_scan_roots(cfg), since_ts=since_ts)
 
 
 def _preflight_forbid_local_httpbin(cfg: GateConfig) -> List[Dict[str, object]]:
-    """
-    一致性 Gate 的前置约束：禁止引入本地 httpbin（localhost:8935）作为依赖。
-
-    说明：
-    - 一致性测试以 `curl/tests/http/testenv` 与本仓库 `http_observe_server.py` 为唯一服务端依赖；
-    - 本地 httpbin 仅用于 `tests/qcurl/` 下的 QCurl 单侧集成测试，不得进入一致性 Gate（避免 Docker/端口成为门禁前置条件）。
-
-    实现：
-    - 仅扫描“一致性套件可能执行的代码文件”（.py/.cpp/.h/.hpp...），避免文档出现端口号导致误报。
-    - 发现禁用端点则直接 fail，便于在 CI/本地第一时间阻断误引入。
-    """
-
-    code_suffixes = {".py", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
-    skip_files = {Path(__file__).resolve()}
-    scan_targets: List[Path] = [
-        cfg.repo_root / "tests" / "libcurl_consistency",
-        cfg.repo_root / "tests" / "libcurl_consistency" / "tst_LibcurlConsistency.cpp",
-    ]
-
-    violations: List[Dict[str, object]] = []
-
-    def scan_file(path: Path) -> None:
-        try:
-            if path.resolve() in skip_files:
-                return
-        except OSError:
-            return
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return
-
-        hits: Dict[str, List[int]] = {}
-        for line_no, line in enumerate(text.splitlines(), 1):
-            for needle in _FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS:
-                if needle in line:
-                    hits.setdefault(needle, []).append(line_no)
-        if not hits:
-            return
-        violations.append({
-            "file": str(path.relative_to(cfg.repo_root)),
-            "hits": hits,
-        })
-
-    for target in scan_targets:
-        if target.is_file():
-            if target.suffix in code_suffixes:
-                scan_file(target)
-            continue
-        if not target.exists():
-            continue
-        for path in target.rglob("*"):
-            if not path.is_file():
-                continue
-            if path.suffix not in code_suffixes:
-                continue
-            scan_file(path)
-
-    return violations
+    return forbid_local_httpbin(
+        cfg,
+        forbidden_endpoints=_FORBIDDEN_LOCAL_HTTPBIN_ENDPOINTS,
+        current_file=Path(__file__),
+    )
 
 
 def _default_reports_dir(qcurl_build_dir: Path) -> Path:
@@ -524,7 +214,7 @@ def _generate_capability_manifest(cfg: GateConfig) -> None:
 
 
 def _load_capability_manifest(cfg: GateConfig) -> Dict[str, object]:
-    if not cfg.capability_manifest.exists():
+    if cfg.build or not cfg.capability_manifest.exists():
         _generate_capability_manifest(cfg)
     try:
         return json.loads(cfg.capability_manifest.read_text(encoding="utf-8"))
@@ -532,82 +222,26 @@ def _load_capability_manifest(cfg: GateConfig) -> Dict[str, object]:
         raise RuntimeError(f"failed to read capability manifest: {exc}") from exc
 
 
+def _first_existing_path(candidates: List[Path]) -> Optional[Path]:
+    return first_existing_path(candidates)
+
+
 def _pytest_files(cfg: GateConfig) -> List[str]:
-    base = [
-        "tests/libcurl_consistency/test_p0_consistency.py",
-        "tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py",
-    ]
-    # P0 gate 补充：raw response headers（顺序/重复头）一致性。
-    # - 该用例本质上属于 P1 维度，但作为“证据链”对外解释时经常被问及；
-    # - 因此将其纳入 p0 gate，避免“p0 通过但并未对齐 raw headers”的误读。
-    if cfg.suite == "p0":
-        base.append("tests/libcurl_consistency/test_p1_resp_headers.py")
-    if cfg.suite in ("p1", "all"):
-        base.extend([
-            "tests/libcurl_consistency/test_p1_proxy.py",
-            "tests/libcurl_consistency/test_p1_redirect_and_login_flow.py",
-            "tests/libcurl_consistency/test_p1_redirect_policy.py",
-            "tests/libcurl_consistency/test_p1_httpauth.py",
-            "tests/libcurl_consistency/test_p1_accept_encoding.py",
-            "tests/libcurl_consistency/test_p1_resolve_connect_to.py",
-            "tests/libcurl_consistency/test_p1_upload_seek_constraints.py",
-            "tests/libcurl_consistency/test_p1_empty_body.py",
-            "tests/libcurl_consistency/test_p1_resp_headers.py",
-            "tests/libcurl_consistency/test_p1_progress.py",
-            "tests/libcurl_consistency/test_p1_http_methods.py",
-            "tests/libcurl_consistency/test_p1_multipart_formdata.py",
-            "tests/libcurl_consistency/test_p1_timeouts.py",
-            "tests/libcurl_consistency/test_p1_cancel.py",
-            "tests/libcurl_consistency/test_p1_postfields_binary.py",
-            "tests/libcurl_consistency/test_p1_cookiejar_1903.py",
-        ])
-    if cfg.suite in ("p2", "all"):
-        base.extend([
-            "tests/libcurl_consistency/test_p2_tls_verify.py",
-            "tests/libcurl_consistency/test_p2_tls_pinned_public_key.py",
-            "tests/libcurl_consistency/test_p2_cookie_request_header.py",
-            "tests/libcurl_consistency/test_p2_protocol_restrictions.py",
-            "tests/libcurl_consistency/test_p2_fixed_http_errors.py",
-            "tests/libcurl_consistency/test_p2_error_paths.py",
-            "tests/libcurl_consistency/test_p2_socks5_proxy_fail.py",
-            "tests/libcurl_consistency/test_p2_expect_100_continue.py",
-            "tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py",
-            "tests/libcurl_consistency/test_p2_pause_resume.py",
-            "tests/libcurl_consistency/test_p2_pause_resume_strict.py",
-            "tests/libcurl_consistency/test_p2_backpressure_contract.py",
-            "tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py",
-            "tests/libcurl_consistency/test_p2_share_handle.py",
-        ])
-    if cfg.with_ext:
-        base.extend([
-            "tests/libcurl_consistency/test_ext_suite.py",
-            "tests/libcurl_consistency/test_ext_ws_suite.py",
-            "tests/libcurl_consistency/test_ext_tls_policy_and_cache.py",
-            "tests/libcurl_consistency/test_ext_speed_limit_smoke.py",
-            "tests/libcurl_consistency/test_p2_connection_limits.py",
-        ])
-    return base
+    return pytest_files(cfg)
 
 
 def _plan_pytest_files(cfg: GateConfig,
                        capability_manifest: Dict[str, object]) -> tuple[List[str], Dict[str, str]]:
-    planned: List[str] = []
-    exclusions: Dict[str, str] = {}
-    tests = capability_manifest.get("tests") if isinstance(capability_manifest, dict) else {}
-    tests_map = tests if isinstance(tests, dict) else {}
+    return plan_pytest_files(cfg, capability_manifest)
 
-    for path in _pytest_files(cfg):
-        rule = tests_map.get(Path(path).name)
-        enabled = True
-        reason = ""
-        if isinstance(rule, dict):
-            enabled = bool(rule.get("enabled", True))
-            reason = str(rule.get("reason") or "")
-        if enabled:
-            planned.append(path)
-        else:
-            exclusions[path] = reason or "disabled by capability manifest"
-    return planned, exclusions
+
+def _preflight_required_inputs(
+    cfg: GateConfig,
+    gate_env: Dict[str, str],
+    planned_pytest_files: List[str],
+    report: Dict[str, object],
+) -> None:
+    preflight_required_inputs(cfg, gate_env, planned_pytest_files, report)
 
 
 def _gate_env(cfg: GateConfig) -> Dict[str, str]:
@@ -625,6 +259,24 @@ def _gate_env(cfg: GateConfig) -> Dict[str, str]:
     if cfg.with_ext:
         env["QCURL_LC_EXT"] = "1"
     return env
+
+
+def _apply_http3_preflight_to_manifest(
+    cfg: GateConfig,
+    gate_env: Dict[str, str],
+    capability_manifest: Dict[str, object],
+    report: Dict[str, object],
+    *,
+    require_http3_enabled: bool,
+) -> Dict[str, object]:
+    return apply_http3_preflight_to_manifest(
+        cfg,
+        gate_env,
+        capability_manifest,
+        report,
+        require_http3_enabled=require_http3_enabled,
+        run_command=_run,
+    )
 
 
 def main(argv: List[str]) -> int:
@@ -646,54 +298,14 @@ def main(argv: List[str]) -> int:
     require_http3_raw = (os.environ.get("QCURL_REQUIRE_HTTP3") or "").strip()
     require_http3_enabled = require_http3_raw.lower() in ("1", "true", "yes", "on")
     gate_env = _gate_env(cfg)
-    report: Dict[str, object] = {
-        "suite": cfg.suite,
-        "with_ext": cfg.with_ext,
-        "build": cfg.build,
-        "repo_root": str(cfg.repo_root),
-        "qcurl_build_dir": str(cfg.qcurl_build_dir),
-        "curl_build_dir": str(cfg.curl_build_dir),
-        "capability_manifest_path": str(cfg.capability_manifest),
-        "junit_xml": str(cfg.junit_xml),
-        "json_report": str(cfg.json_report),
-        "qt_timeout_s": cfg.qt_timeout_s,
-        "commands": [],
-        "pytest_files": [],
-        "env": {
-            "QCURL_QTTEST": str(gate_env.get("QCURL_QTTEST") or ""),
-            "QCURL_LC_COLLECT_LOGS": str(gate_env.get("QCURL_LC_COLLECT_LOGS") or "0"),
-            "QCURL_LC_QTTEST_TIMEOUT": str(gate_env.get("QCURL_LC_QTTEST_TIMEOUT") or cfg.qt_timeout_s),
-            "QCURL_LC_EXT": "1" if str(gate_env.get("QCURL_LC_EXT") or "0") == "1" else "0",
-            "QCURL_LC_EXPECT100_REPEAT": str(gate_env.get("QCURL_LC_EXPECT100_REPEAT") or ""),
-            "QCURL_LC_CAPABILITY_MANIFEST": str(gate_env.get("QCURL_LC_CAPABILITY_MANIFEST") or ""),
-            "QCURL_REQUIRE_HTTP3": require_http3_raw if require_http3_raw else "0",
-            "CURL_BUILD_DIR": str(gate_env.get("CURL_BUILD_DIR") or ""),
-            "CURL": str(gate_env.get("CURL") or ""),
-            "CURLINFO": str(gate_env.get("CURLINFO") or ""),
-        },
-        "warnings": [],
-        "preflight_http3_required": {
-            "enabled": require_http3_enabled,
-            "have_h3_server": None,
-            "have_h3_curl": None,
-            "violations": [],
-        },
-    }
+    report = create_initial_report(
+        cfg,
+        gate_env,
+        require_http3_raw=require_http3_raw,
+        require_http3_enabled=require_http3_enabled,
+    )
 
-    # 供应链/复跑证据：记录 Python 锁文件摘要（安装口径 + sha256），避免“同命令不同依赖输入”不可追溯。
-    lock_path = cfg.repo_root / "tests" / "libcurl_consistency" / "requirements.lock.txt"
-    report["python_deps_lock"] = {
-        "path": str(lock_path),
-        "exists": lock_path.exists(),
-        "install_mode": "python3 -m pip install -r tests/libcurl_consistency/requirements.lock.txt",
-    }
-    try:
-        if lock_path.exists():
-            raw = lock_path.read_bytes()
-            report["python_deps_lock"]["sha256"] = hashlib.sha256(raw).hexdigest()
-            report["python_deps_lock"]["lines"] = len(raw.splitlines())
-    except Exception as exc:
-        report["warnings"].append(f"failed to read requirements.lock.txt for sha256: {exc}")
+    add_python_lock_summary(report, cfg.repo_root)
 
     try:
         violations = _preflight_forbid_local_httpbin(cfg)
@@ -715,96 +327,23 @@ def main(argv: List[str]) -> int:
             _build_targets(cfg)
 
         capability_manifest = _load_capability_manifest(cfg)
+        capability_manifest = _apply_http3_preflight_to_manifest(
+            cfg,
+            gate_env,
+            capability_manifest,
+            report,
+            require_http3_enabled=require_http3_enabled,
+        )
         planned_pytest_files, planner_exclusions = _plan_pytest_files(cfg, capability_manifest)
         report["capability_manifest"] = capability_manifest
         report["planner_exclusions"] = planner_exclusions
         report["pytest_files"] = planned_pytest_files
         if not planned_pytest_files:
             raise RuntimeError("capability planner excluded every pytest file; gate would have no executable cases")
+        _preflight_required_inputs(cfg, gate_env, planned_pytest_files, report)
 
-        # 供应链/复跑证据：记录 Python 环境（版本 + pip freeze）并落盘到报告目录，便于审计复核。
-        try:
-            reports_dir = cfg.json_report.parent
-            py_ver = _run(["python3", "--version"], cwd=cfg.repo_root, env=gate_env, capture=True)
-            pip_freeze = _run(["python3", "-m", "pip", "freeze"], cwd=cfg.repo_root, env=gate_env, capture=True)
-            env_text = []
-            env_text.append("# python environment snapshot (for reproducibility/audit)\n")
-            env_text.append(f"python3 --version: {(py_ver.stdout or py_ver.stderr or '').strip()}\n")
-            env_text.append("\n# pip freeze\n")
-            env_text.append(_redact_text((pip_freeze.stdout or "").strip()))
-            env_text.append("\n")
-            env_path = reports_dir / f"pip_freeze_{cfg.suite}.txt"
-            env_path.write_text("".join(env_text), encoding="utf-8")
-            report["pip_freeze_artifact"] = str(env_path)
-        except Exception as exc:
-            report["warnings"].append(f"failed to write pip_freeze artifact: {exc}")
-
-        # 供应链/复跑证据：记录 nghttpx-h3 版本（若存在），便于跨时间复核。
-        try:
-            reports_dir = cfg.json_report.parent
-            nghttpx_h3_bin = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
-            if nghttpx_h3_bin.exists():
-                ng_ver = _run([str(nghttpx_h3_bin), "--version"], cwd=cfg.repo_root, env=gate_env, capture=True)
-                out = (ng_ver.stdout or "") + "\n" + (ng_ver.stderr or "")
-                text = []
-                text.append("# nghttpx-h3 version snapshot (for reproducibility/audit)\n\n")
-                text.append(f"command: {nghttpx_h3_bin} --version\n")
-                text.append(f"returncode: {ng_ver.returncode}\n\n")
-                text.append(out.strip() + "\n" if out.strip() else "<no output>\n")
-                ng_path = reports_dir / f"nghttpx_version_{cfg.suite}.txt"
-                ng_path.write_text(_redact_text("".join(text)), encoding="utf-8")
-                report["nghttpx_version_artifact"] = str(ng_path)
-        except Exception as exc:
-            report["warnings"].append(f"failed to write nghttpx version artifact: {exc}")
-
-        # 可追溯：记录 HTTP/3/WebSockets 覆盖是否可能缺失（不阻断，避免假失败）
-        nghttpx_h3 = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
-        have_h3_server = nghttpx_h3.exists()
-        (report["preflight_http3_required"] or {})["have_h3_server"] = have_h3_server
-        if require_http3_enabled and not have_h3_server:
-            (report["preflight_http3_required"] or {})["violations"].append("missing_h3_server")
-
-        if not have_h3_server:
-            report["warnings"].append(
-                "nghttpx-h3 not found; env.have_h3_server() will be False and h3 variants will be skipped. "
-                "If you need HTTP/3 coverage, build target qcurl_nghttpx_h3 (may require deps/network or a local archive)."
-            )
-
-        curl_bin = cfg.curl_build_dir / "src" / "curl"
-        if not curl_bin.exists():
-            (report["preflight_http3_required"] or {})["have_h3_curl"] = False
-            if require_http3_enabled:
-                (report["preflight_http3_required"] or {})["violations"].append("missing_curl_bin")
-            report["warnings"].append(
-                "bundled curl binary not found; cannot probe HTTP/3/WebSockets support (did you build qcurl_lc_deps?)"
-            )
-        else:
-            rc = _run([str(curl_bin), "-V"], cwd=cfg.repo_root, env=gate_env, capture=True)
-            out = (rc.stdout or "") + "\n" + (rc.stderr or "")
-            if out.strip():
-                sys.stderr.write(out.rstrip() + "\n")
-            if rc.returncode != 0:
-                (report["preflight_http3_required"] or {})["have_h3_curl"] = None
-                if require_http3_enabled:
-                    (report["preflight_http3_required"] or {})["violations"].append("curl_probe_failed")
-                report["warnings"].append(f"failed to probe `curl -V` (rc={rc.returncode})")
-            else:
-                features_line = next((line for line in out.splitlines() if line.startswith("Features:")), "")
-                h3_supported = any(tok.upper() == "HTTP3" for tok in features_line.replace("Features:", "").split())
-                (report["preflight_http3_required"] or {})["have_h3_curl"] = bool(h3_supported)
-                if require_http3_enabled and not h3_supported:
-                    (report["preflight_http3_required"] or {})["violations"].append("missing_curl_http3")
-                if not h3_supported:
-                    report["warnings"].append(
-                        "bundled curl does not report HTTP3 in `curl -V`; env.have_h3_curl() will be False and h3 variants will be skipped."
-                    )
-                protocols_line = next((line for line in out.splitlines() if line.startswith("Protocols:")), "")
-                protocols = protocols_line.replace("Protocols:", "").split()
-                ws_supported = ("ws" in protocols) or ("wss" in protocols)
-                if not ws_supported:
-                    report["warnings"].append(
-                        "bundled curl does not report ws/wss in `curl -V`; WS cases may be skipped or fail."
-                    )
+        write_python_env_snapshot(cfg, gate_env, report, run_command=_run)
+        write_nghttpx_version_snapshot(cfg, gate_env, report, run_command=_run)
 
         pytest_cmd = [
             "pytest",
@@ -837,22 +376,7 @@ def main(argv: List[str]) -> int:
         report["postflight_artifacts_schema_check"] = _postflight_artifacts_schema_check(cfg, since_ts=started)
         report["postflight_redaction_scan"] = _postflight_redaction_scan(cfg, since_ts=started)
         gate_rc = int(report.get("pytest_returncode", 2))
-        policy_violations = []
-        junit_counts = report.get("junit_counts") or {}
-        if isinstance(junit_counts, dict):
-            if junit_counts.get("parse_error"):
-                policy_violations.append("junit_parse_error")
-            if int(junit_counts.get("tests") or 0) <= 0:
-                policy_violations.append("no_tests_executed")
-            if int(junit_counts.get("skipped") or 0) > 0:
-                policy_violations.append("skipped_tests")
-        if (report.get("postflight_artifacts_schema_check") or {}).get("violations"):
-            policy_violations.append("artifacts_schema")
-        if (report.get("postflight_redaction_scan") or {}).get("violations"):
-            policy_violations.append("redaction")
-        preflight_http3 = report.get("preflight_http3_required") or {}
-        if isinstance(preflight_http3, dict) and preflight_http3.get("enabled") and preflight_http3.get("violations"):
-            policy_violations.append("http3_required")
+        policy_violations = policy_violations_from_report(report)
         report["policy_violations"] = policy_violations
         if policy_violations:
             gate_rc = 3

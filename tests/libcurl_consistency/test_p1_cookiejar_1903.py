@@ -18,7 +18,7 @@ from tests.libcurl_consistency.pytest_support.artifacts import build_request_sem
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
 from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id, observe_http_observed_for_id
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
@@ -84,10 +84,7 @@ def _cookiejar_payload(records: List[str]) -> Dict[str, object]:
 
 
 def test_p1_cookiejar_1903(env, lc_logs, tmp_path):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
     collect_logs = should_collect_service_logs()
 
     proto = "http/1.1"
@@ -131,7 +128,7 @@ def test_p1_cookiejar_1903(env, lc_logs, tmp_path):
                 response_meta=resp_meta,
             )
         except FileNotFoundError as exc:
-            pytest.skip(f"当前环境未构建 libtests，跳过该用例: {exc}")
+            raise AssertionError(f"gate preflight should have failed before pytest started: {exc}") from exc
 
         access_log = Path(lc_logs["httpd_access_log"])
         obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
@@ -211,10 +208,7 @@ def test_p1_cookiejar_1920(env, lc_logs, lc_observe_http, tmp_path):
     基线：lib1920（COOKIEFILE+COOKIEJAR -> perform -> easy_reset -> set COOKIEJAR -> cleanup）
     QCurl：cookiejar_1920（单次请求 + cookie flush；不要求模拟 easy_reset，仅要求可观测落盘一致）
     """
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     port = int(lc_observe_http["port"])
     observe_log = Path(str(lc_observe_http["log_file"]))

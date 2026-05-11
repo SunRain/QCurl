@@ -25,7 +25,7 @@ from tests.libcurl_consistency.pytest_support.observed import (
     observe_http_observed_list_for_id,
     parse_observe_http_log,
 )
-from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
+from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
 
@@ -46,10 +46,7 @@ def _append_req_id(url: str, req_id: str) -> str:
 
 
 def test_p2_protocols_block_http_http_1_1(env, lc_logs, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
@@ -128,10 +125,7 @@ def test_p2_protocols_block_http_http_1_1(env, lc_logs, lc_observe_http):
 
 
 def test_p2_redir_protocols_block_http_http_1_1(env, lc_logs, lc_observe_http):
-    qt_bin = os.environ.get("QCURL_QTTEST")
-    qt_path = Path(qt_bin).resolve() if qt_bin else None
-    if not qt_path or not qt_path.exists():
-        pytest.skip("当前环境未提供 QCURL_QTTEST 可执行文件，跳过该用例")
+    qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])

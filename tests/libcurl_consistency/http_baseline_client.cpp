@@ -28,6 +28,7 @@ struct Args
     std::string headerOutFile = "response_headers_0.data";
     std::string progressOutFile;
     std::optional<std::string> acceptEncoding; // "gzip,br" | ""(all)
+    std::vector<std::string> headers;
     std::string user;
     std::string pass;
     std::string httpAuth; // basic | any | anysafe
@@ -522,6 +523,10 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.acceptEncoding = std::string();
             continue;
         }
+        if (arg == "--header" && i + 1 < argc) {
+            out.headers.push_back(argv[++i]);
+            continue;
+        }
         if (arg == "--secure") {
             out.verifyPeer = true;
             out.verifyHost = true;
@@ -559,7 +564,7 @@ int printUsage()
         << "  [--cookiefile <path>] [--cookiejar <path>]\n"
         << "  [--follow] [--max-redirs <n>]\n"
         << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
-        << "  [--accept-encoding <csv|all>] [--accept-encoding-all]\n"
+        << "  [--accept-encoding <csv|all>] [--accept-encoding-all] [--header <Name: Value>]\n"
         << "  [--secure] [--cainfo <path>] [--pinned-public-key <sha256//...|path>]\n"
         << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>] [--expect100-timeout-ms <ms>]\n"
         << "  [--low-speed-time <s>] [--low-speed-limit <bytes_per_sec>]\n"
@@ -905,6 +910,21 @@ int main(int argc, char **argv)
             std::cerr << "curl_slist_append failed\n";
             return 5;
         }
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+    for (const std::string &header : args.headers) {
+        headers = curl_slist_append(headers, header.c_str());
+        if (!headers) {
+            if (mime) {
+                curl_mime_free(mime);
+            }
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            std::cerr << "curl_slist_append(--header) failed\n";
+            return 5;
+        }
+    }
+    if (headers) {
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
 
