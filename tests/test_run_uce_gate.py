@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scripts.run_uce_gate import build_tier_plan
@@ -11,6 +12,9 @@ from scripts.run_uce_gate import main
 from scripts.run_uce_gate import _run_bp_contract
 from scripts.run_uce_gate import timeline_required_providers
 from scripts.run_uce_gate import validate_required_artifacts
+from scripts.uce_gate.evidence import prepare_evidence_layout
+from scripts.uce_gate.evidence import resolve_evidence_layout
+from scripts.uce_gate.evidence import write_policy_report
 from scripts.uce.manifest import add_artifact
 
 
@@ -53,6 +57,49 @@ def test_validate_required_artifacts_finds_missing_relative_paths(tmp_path: Path
     missing = validate_required_artifacts(manifest, tmp_path)
 
     assert missing == ["missing"]
+
+
+def test_evidence_layout_resolves_relative_root_and_prepares_dirs(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    build_dir = repo_root / "build"
+    repo_root.mkdir()
+    build_dir.mkdir()
+
+    layout = resolve_evidence_layout(
+        repo_root,
+        build_dir,
+        run_id="run-layout",
+        evidence_root_arg="relative-evidence",
+    )
+    prepare_evidence_layout(layout)
+
+    assert layout.evidence_root == repo_root / "relative-evidence"
+    assert layout.evidence_dir == repo_root / "relative-evidence" / "run-layout"
+    assert layout.manifest_path == layout.evidence_dir / "manifest.json"
+    assert layout.policy_report_path == layout.evidence_dir / "policy_violations.json"
+    assert layout.tar_path == layout.evidence_root / "run-layout.tar.gz"
+    assert layout.logs_dir.is_dir()
+    assert layout.meta_dir.is_dir()
+    assert layout.reports_dir.is_dir()
+    assert layout.netproof_dir.is_dir()
+    assert layout.lc_dir.is_dir()
+
+
+def test_write_policy_report_preserves_schema(tmp_path: Path) -> None:
+    report_path = tmp_path / "policy_violations.json"
+
+    write_policy_report(
+        report_path,
+        tier="nightly",
+        policy_violations=["gate_offline_failed"],
+        missing_required_artifacts=["manifest"],
+    )
+
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["tier"] == "nightly"
+    assert payload["policy_violations"] == ["gate_offline_failed"]
+    assert payload["missing_required_artifacts"] == ["manifest"]
+    assert payload["generated_at_utc"].endswith("Z")
 
 
 def test_timeline_required_providers_follow_tier() -> None:
