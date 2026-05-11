@@ -330,17 +330,19 @@ set_tests_properties(tst_QCNetworkHttp3 PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkReply PROPERTIES LABELS "env;httpbin;local_port")
 set_tests_properties(tst_QCNetworkRetry PROPERTIES LABELS "env;httpbin")
 set_tests_properties(tst_QCNetworkHttp2 PROPERTIES LABELS "capability;http2;local_port")
-set_tests_properties(tst_QCNetworkProxy PROPERTIES LABELS "capability;proxy")
+set_tests_properties(tst_QCNetworkProxy PROPERTIES LABELS "capability;proxy;local_port")
 set_tests_properties(tst_QCNetworkFileTransfer PROPERTIES LABELS "env;httpbin;local_port")
+set_tests_properties(tst_QCNetworkFileResumableOffline PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkIODeviceLifetime PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkStreamUpload PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCNetworkMultipartUpload PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkCacheIntegration PROPERTIES LABELS "env;httpbin")
 set_tests_properties(tst_QCNetworkConnectionPool PROPERTIES LABELS "env;httpbin;connection_pool")
 set_tests_properties(tst_QCNetworkNetworkPath PROPERTIES LABELS "capability;network_path")
 set_tests_properties(tst_QCNetworkShareHandle PROPERTIES LABELS "env;local_port;python")
 set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES LABELS "external_network;diagnostics")
 set_tests_properties(tst_QCNetworkDiagnosticsLocal PROPERTIES LABELS "env;local_port;diagnostics")
-set_tests_properties(tst_Integration PROPERTIES LABELS "env;httpbin")
+set_tests_properties(tst_Integration PROPERTIES LABELS "env;httpbin;local_port;node")
 set_tests_properties(tst_LargeFileDownload PROPERTIES LABELS "external_heavy")
 
 # -----------------------------------------------------------------------------
@@ -360,8 +362,8 @@ set_tests_properties(tst_LargeFileDownload PROPERTIES
 
 # WebSocket（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
-    set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "env;local_port;websocket")
-    set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "env;local_port;websocket")
+    set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "env;local_port;node;websocket")
+    set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "env;local_port;node;websocket")
     set_tests_properties(tst_QCWebSocketCompression PROPERTIES LABELS "offline;websocket")
 endif()
 

@@ -853,7 +853,8 @@ void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
     QCOMPARE(reply->state(), ReplyState::Cancelled);
     QCOMPARE(reply->error(), NetworkError::OperationCancelled);
 
-    // 等待 queued removeReply 生效 + 确保不会继续读取 device
+    // 等待 queued removeReply 生效，并断言短窗口内不会继续读取 device。
+    // 这里不是完成条件等待；真正终态仍由 waitForFinished() 断言。
     QTest::qWait(200);
     QCOMPARE(buffer->readCalls(), readsBefore);
     QCOMPARE(buffer->bytesReadTotal(), bytesBefore);

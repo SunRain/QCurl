@@ -178,7 +178,8 @@ void TestQCNetworkIODeviceLifetime::testDownloadToDeviceDeviceDestroyedDuringTra
     QVERIFY2(reply->errorString().contains(QStringLiteral("QIODevice")),
              "errorString should mention QIODevice for diagnosability");
 
-    // 额外回归：完成后不应继续产生可观测数据事件（尽量避免 flaky，仅做短窗口断言）
+    // 额外回归：完成后不应继续产生可观测数据事件。这里保留短窗口断言，
+    // 因为目标是确认 queued delete 后没有新增事件，而不是等待另一个完成条件。
     const int readyReadAfterFinished = readyReadCount;
     const int progressAfterFinished  = progressCount;
     QTest::qWait(200);

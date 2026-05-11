@@ -39,6 +39,17 @@ set_tests_properties(qcurl_skip_contract_guard PROPERTIES
 )
 
 add_test(
+    NAME qcurl_label_matrix_guard
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/scripts/check_qcurl_label_matrix.py"
+            --cmake
+            "${CMAKE_SOURCE_DIR}/tests/qcurl/CMakeLists.txt"
+)
+set_tests_properties(qcurl_label_matrix_guard PROPERTIES
+    LABELS "offline;source_guard"
+)
+
+add_test(
     NAME qcurl_release_contract_guard
     COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/scripts/check_release_contract.py"

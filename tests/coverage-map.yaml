@@ -1,0 +1,116 @@
+schema_version: 1
+id: qcurl-test-coverage-map-v1
+description: QCurl test evidence map. Each entry points to the supported gate entry and evidence type.
+
+evidence_types:
+  contract: Failing this entry means the covered contract is not satisfied.
+  regression: Historical bug or boundary guard that should block the related gate.
+  smoke: Coarse health check; it does not replace contract evidence.
+  diagnostic: Optional investigation aid.
+
+surfaces:
+  qcurl_core_request_reply:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkRequest
+        labels: [offline]
+      - ctest: tst_QCNetworkReply
+        labels: [env, httpbin, local_port]
+      - ctest: tst_QCNetworkResponseHeadersOffline
+        labels: [offline]
+      - ctest: tst_QCNetworkHttpErrorMappingOffline
+        labels: [offline]
+
+  qcurl_file_and_stream_transfer:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkFileTransfer
+        labels: [env, httpbin, local_port]
+      - ctest: tst_QCNetworkFileResumableOffline
+        labels: [env, local_port]
+      - ctest: tst_QCNetworkStreamUpload
+        labels: [env, local_port]
+      - ctest: tst_QCNetworkMultipartUpload
+        labels: [env, local_port]
+
+  qcurl_scheduler_and_priority:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkScheduler
+        labels: [offline]
+      - ctest: tst_QCNetworkRequestCanonicalApi
+        labels: [offline]
+
+  qcurl_cache:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkCache
+        labels: [offline]
+      - ctest: tst_QCNetworkCacheIntegration
+        labels: [env, httpbin]
+      - target: qcurl_cache_extras_header_self_compile
+        labels: [public-api]
+
+  qcurl_connection_pool:
+    evidence_type: mixed
+    notes:
+      - tst_QCNetworkConnectionPool contains smoke and contract assertions; future work should split strong reuse evidence from server-policy smoke.
+    entries:
+      - ctest: tst_QCNetworkConnectionPool
+        labels: [env, httpbin, connection_pool]
+      - pytest: tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py
+        gate: tests/libcurl_consistency/run_gate.py --suite p0 --build
+
+  qcurl_middleware_and_mocking:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkMiddleware
+        labels: [offline]
+      - ctest: tst_QCNetworkMiddlewareIntegration
+        labels: [offline]
+      - ctest: tst_QCNetworkMockHandler
+        labels: [offline]
+
+  qcurl_logger:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCNetworkLogger
+        labels: [offline]
+      - public_api_consumer: tests/public_api/consumer_smoke/main.cpp
+        labels: [public-api-slow]
+
+  qcurl_websocket:
+    evidence_type: contract
+    entries:
+      - ctest: tst_QCWebSocket
+        labels: [env, local_port, node, websocket]
+      - ctest: tst_QCWebSocketPool
+        labels: [env, local_port, node, websocket]
+      - pytest: tests/libcurl_consistency/test_p0_consistency.py
+        gate: tests/libcurl_consistency/run_gate.py --suite p0 --build
+
+  public_api_install_surface:
+    evidence_type: contract
+    entries:
+      - ctest_label: public-api
+        command: ctest --test-dir build -L '^public-api$' --output-on-failure
+      - ctest_label: public-api-slow
+        command: ctest --test-dir build -L '^public-api-slow$' --output-on-failure
+      - script: tests/public_api/run_public_api_checks.py
+        checks: [header_scan, install_headers, export_contract, consumer_smoke, private_include_negative]
+
+  libcurl_observability:
+    evidence_type: contract
+    entries:
+      - map: tests/libcurl_consistency/coverage-map.yaml
+      - gate: tests/libcurl_consistency/run_gate.py --suite p0 --build
+      - gate: tests/libcurl_consistency/run_gate.py --suite p1 --build
+      - gate: tests/libcurl_consistency/run_gate.py --suite p2 --build
+      - gate: QCURL_LC_EXT=1 tests/libcurl_consistency/run_gate.py --suite all --with-ext --build
+
+  uce:
+    evidence_type: contract
+    entries:
+      - script: scripts/run_uce_gate.py
+        tiers: [pr, nightly, soak]
+        artifacts: [manifest.json, policy_violations.json, tar.gz]

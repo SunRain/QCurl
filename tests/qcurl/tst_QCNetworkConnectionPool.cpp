@@ -32,6 +32,9 @@ private slots:
     // 配置测试
     void testDefaultConfig();
     void testCustomConfig();
+    void testConfigMultiLimitAccessors();
+    void testConfigRejectsInvalidMultiLimits();
+    void testConfigSharedDataDetachesOnWrite();
     void testConfigPresets();
     void testInvalidConfig();
 
@@ -109,6 +112,87 @@ void TestConnectionPool::testCustomConfig()
     poolManager->setConfig(QCNetworkConnectionPoolConfig());
 
     qDebug() << "Custom config test passed";
+}
+
+void TestConnectionPool::testConfigMultiLimitAccessors()
+{
+    QCNetworkConnectionPoolConfig config;
+    QVERIFY(!config.multiMaxTotalConnections().has_value());
+    QVERIFY(!config.multiMaxHostConnections().has_value());
+    QVERIFY(!config.multiMaxConcurrentStreams().has_value());
+    QVERIFY(!config.multiMaxConnects().has_value());
+
+    config.setMultiMaxTotalConnections(8);
+    config.setMultiMaxHostConnections(3);
+    config.setMultiMaxConcurrentStreams(16);
+    config.setMultiMaxConnects(24);
+
+    QCOMPARE(config.multiMaxTotalConnections().value(), 8L);
+    QCOMPARE(config.multiMaxHostConnections().value(), 3L);
+    QCOMPARE(config.multiMaxConcurrentStreams().value(), 16L);
+    QCOMPARE(config.multiMaxConnects().value(), 24L);
+    QVERIFY(config.isValid());
+
+    config.clearMultiMaxTotalConnections();
+    config.clearMultiMaxHostConnections();
+    config.clearMultiMaxConcurrentStreams();
+    config.clearMultiMaxConnects();
+
+    QVERIFY(!config.multiMaxTotalConnections().has_value());
+    QVERIFY(!config.multiMaxHostConnections().has_value());
+    QVERIFY(!config.multiMaxConcurrentStreams().has_value());
+    QVERIFY(!config.multiMaxConnects().has_value());
+    QVERIFY(config.isValid());
+}
+
+void TestConnectionPool::testConfigRejectsInvalidMultiLimits()
+{
+    QCNetworkConnectionPoolConfig config;
+    QVERIFY(config.isValid());
+
+    config.setMultiMaxTotalConnections(-1);
+    QVERIFY(!config.isValid());
+    config.clearMultiMaxTotalConnections();
+    QVERIFY(config.isValid());
+
+    config.setMultiMaxHostConnections(-1);
+    QVERIFY(!config.isValid());
+    config.clearMultiMaxHostConnections();
+    QVERIFY(config.isValid());
+
+    config.setMultiMaxConcurrentStreams(-1);
+    QVERIFY(!config.isValid());
+    config.clearMultiMaxConcurrentStreams();
+    QVERIFY(config.isValid());
+
+    config.setMultiMaxConnects(-1);
+    QVERIFY(!config.isValid());
+    config.clearMultiMaxConnects();
+    QVERIFY(config.isValid());
+}
+
+void TestConnectionPool::testConfigSharedDataDetachesOnWrite()
+{
+    QCNetworkConnectionPoolConfig original;
+    original.setMaxConnectionsPerHost(4);
+    original.setMaxTotalConnections(12);
+    original.setMultiMaxTotalConnections(10);
+    original.setMultiMaxHostConnections(5);
+
+    QCNetworkConnectionPoolConfig copy = original;
+    copy.setMaxConnectionsPerHost(2);
+    copy.clearMultiMaxTotalConnections();
+    copy.setMultiMaxHostConnections(3);
+
+    QCOMPARE(original.maxConnectionsPerHost(), 4);
+    QCOMPARE(original.maxTotalConnections(), 12);
+    QCOMPARE(original.multiMaxTotalConnections().value(), 10L);
+    QCOMPARE(original.multiMaxHostConnections().value(), 5L);
+
+    QCOMPARE(copy.maxConnectionsPerHost(), 2);
+    QCOMPARE(copy.maxTotalConnections(), 12);
+    QVERIFY(!copy.multiMaxTotalConnections().has_value());
+    QCOMPARE(copy.multiMaxHostConnections().value(), 3L);
 }
 
 void TestConnectionPool::testConfigPresets()
@@ -191,7 +275,7 @@ void TestConnectionPool::testStatisticsReset()
 }
 
 // ============================================================================
-// 连接复用测试（需要网络）
+// 连接复用 smoke（需要 httpbin）
 // ============================================================================
 
 void TestConnectionPool::testConnectionReuse()
@@ -221,6 +305,9 @@ void TestConnectionPool::testConnectionReuse()
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
     poolManager->resetStatistics();
 
+    // 该用例验证 manager 统计路径能观测到复用信号。强合同的连接边界证据由
+    // tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py 提供，那里使用
+    // 本地 observe server 的 peer_port/connection sequence，避免依赖 httpbin server 策略。
     // 向同一主机发送多个请求
     QUrl url(httpbinBaseUrl + "/get");
     const int requestCount = 5;

@@ -39,6 +39,8 @@ private slots:
     void testSequenceConsumption();
     void testGlobalDelayApplied();
     void testRequestCapture();
+    void testCapturedRequestAccessorsAndTimeoutClearing();
+    void testCapturedRequestSharedDataDetachesOnWrite();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -237,6 +239,83 @@ void TestQCNetworkMockHandler::testRequestCapture()
     QVERIFY(hasXTest);
 
     reply->deleteLater();
+}
+
+void TestQCNetworkMockHandler::testCapturedRequestAccessorsAndTimeoutClearing()
+{
+    QCNetworkCapturedRequest request;
+    const QUrl url(QStringLiteral("http://example.com/mock/value"));
+    QVERIFY(request.followLocation());
+    QVERIFY(!request.connectTimeoutMs().has_value());
+    QVERIFY(!request.totalTimeoutMs().has_value());
+
+    request.setUrl(url);
+    request.setMethod(HttpMethod::Put);
+    request.addHeader(QByteArrayLiteral("X-One"), QByteArrayLiteral("1"));
+    request.addHeader(QByteArrayLiteral("X-Two"), QByteArrayLiteral("2"));
+    request.setBodyPreview(QByteArrayLiteral("abcdef"));
+    request.setBodySize(12);
+    request.setFollowLocation(false);
+    request.setConnectTimeoutMs(250);
+    request.setTotalTimeoutMs(1000);
+
+    QCOMPARE(request.url(), url);
+    QCOMPARE(request.method(), HttpMethod::Put);
+    QCOMPARE(request.headers().size(), 2);
+    QCOMPARE(request.bodyPreview(), QByteArrayLiteral("abcdef"));
+    QCOMPARE(request.bodySize(), qsizetype(12));
+    QVERIFY(!request.followLocation());
+    QVERIFY(request.connectTimeoutMs().has_value());
+    QCOMPARE(request.connectTimeoutMs().value(), qint64(250));
+    QVERIFY(request.totalTimeoutMs().has_value());
+    QCOMPARE(request.totalTimeoutMs().value(), qint64(1000));
+
+    request.clearConnectTimeoutMs();
+    request.clearTotalTimeoutMs();
+    QVERIFY(!request.connectTimeoutMs().has_value());
+    QVERIFY(!request.totalTimeoutMs().has_value());
+}
+
+void TestQCNetworkMockHandler::testCapturedRequestSharedDataDetachesOnWrite()
+{
+    QCNetworkCapturedRequest original;
+    const QUrl url(QStringLiteral("http://example.com/mock/value"));
+    original.setUrl(url);
+    original.setMethod(HttpMethod::Put);
+    original.addHeader(QByteArrayLiteral("X-One"), QByteArrayLiteral("1"));
+    original.addHeader(QByteArrayLiteral("X-Two"), QByteArrayLiteral("2"));
+    original.setBodyPreview(QByteArrayLiteral("abcdef"));
+    original.setBodySize(12);
+    original.setFollowLocation(false);
+    original.setConnectTimeoutMs(250);
+    original.setTotalTimeoutMs(1000);
+
+    QCNetworkCapturedRequest copy = original;
+    copy.setUrl(QUrl(QStringLiteral("http://example.com/mock/copy")));
+    copy.addHeader(QByteArrayLiteral("X-Copy"), QByteArrayLiteral("yes"));
+    copy.setBodyPreview(QByteArrayLiteral("z"));
+    copy.setBodySize(1);
+    copy.setFollowLocation(true);
+    copy.clearConnectTimeoutMs();
+    copy.setTotalTimeoutMs(2000);
+
+    QCOMPARE(original.url(), url);
+    QCOMPARE(original.headers().size(), 2);
+    QCOMPARE(original.bodyPreview(), QByteArrayLiteral("abcdef"));
+    QCOMPARE(original.bodySize(), qsizetype(12));
+    QVERIFY(!original.followLocation());
+    QCOMPARE(original.connectTimeoutMs().value(), qint64(250));
+    QCOMPARE(original.totalTimeoutMs().value(), qint64(1000));
+
+    QCOMPARE(copy.headers().size(), 3);
+    QCOMPARE(copy.bodyPreview(), QByteArrayLiteral("z"));
+    QCOMPARE(copy.bodySize(), qsizetype(1));
+    QVERIFY(copy.followLocation());
+    QVERIFY(!copy.connectTimeoutMs().has_value());
+    QCOMPARE(copy.totalTimeoutMs().value(), qint64(2000));
+
+    copy.clearTotalTimeoutMs();
+    QVERIFY(!copy.totalTimeoutMs().has_value());
 }
 
 QTEST_MAIN(TestQCNetworkMockHandler)
