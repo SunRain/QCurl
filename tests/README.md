@@ -10,6 +10,22 @@
 - `tests/qcurl/`：QCurl 本身的 QtTest（C++）与本地测试依赖（httpbin/node server/testdata/node_modules）。
 - `tests/libcurl_consistency/`：QCurl ↔ libcurl 一致性测试（pytest + baseline clients + gate）。
 - `tests/public_api/`：public/install surface guardrails（逐头 self-compile、规则扫描、staging install、导出合同校验、isolated consumer smoke）。
+- `tests/coverage-map.yaml`：测试证据映射，按 QCurl surface 指向 gate 入口、证据类型和代表用例。
+
+## 证据类型
+
+测试说明和报告必须区分以下类型：
+
+- `contract`：强合同。失败表示被覆盖的产品或安装面合同不成立。
+- `regression`：历史缺陷或边界回归。失败应阻断对应 gate。
+- `smoke`：粗粒度健康检查。它不能替代强合同证据。
+- `diagnostic`：定位辅助。默认不作为发布合同证明。
+
+维护者需要判断“某个 API 或行为由哪些测试证明”时，先查
+`tests/coverage-map.yaml`，再进入对应 CTest、pytest 或 public API gate。
+
+当前测试证据整改的审查结论为：未发现阻塞级代码回归；存在提交前需修正的非阻塞遗漏与表述偏差。
+大文件治理按文件类别跟踪：第一批 gate runner 已低于 400 行，剩余治理对象仍是大型 QtTest / pytest fixture 文件。
 
 ## Public API 安装面门禁
 
@@ -41,7 +57,7 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 本仓库的门禁原则是 **“未执行=无证据=必须失败”**，因此：
 
 - **默认：QSKIP 在 ctest 证据门禁下视为失败（skip=fail）**：`tests/qcurl/CMakeLists.txt` 为（几乎）所有 QtTest 目标设置了 `FAIL_REGULAR_EXPRESSION "SKIP *:"`，避免“ctest 全绿≠已覆盖”的误读。
-  - `env` / `capability` / `local_port` / `httpbin` / `websocket` 相关 QtTest 现在通过 `tests/qcurl/run_qttest_with_preflight.py` 先做 suite 级前置检查；缺少 `QCURL_HTTPBIN_URL`、本地端口能力、`node` 或受控 `ws` 依赖时，会在进入 QtTest 之前 fail-closed，而不是把“环境未准备好”留给测试体内的 `QSKIP`。
+  - `env` / `capability` / `local_port` / `node` / `httpbin` / `python` / `websocket` 相关 QtTest 现在通过 `tests/qcurl/run_qttest_with_preflight.py` 先做 suite 级前置检查；缺少 `QCURL_HTTPBIN_URL`、本地端口能力、`node` 或受控 `ws` 依赖时，会在进入 QtTest 之前 fail-closed，而不是把“环境未准备好”留给测试体内的 `QSKIP`。
   - **唯一例外：显式 opt-in 的 `external_*` 集合允许 QSKIP**，当前仅包含：
 
     | 测试目标 | LABELS | 允许 QSKIP 的原因 |
@@ -49,7 +65,8 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
     | `tst_QCNetworkDiagnostics` | `external_network;diagnostics` | 公网探测默认关闭，避免受限网络/代理环境制造假失败 |
     | `tst_LargeFileDownload` | `external_heavy` | 第三方 HTTPS + 大体量 smoke 默认不纳入 deterministic gate |
 
-  - `env` / `capability` / `local_port` / `httpbin` / `websocket` 这些集合**不再**放宽 skip contract；一旦选中执行，就必须真实跑完并提供无 skip 证据。
+- `env` / `capability` / `local_port` / `httpbin` / `websocket` 这些集合**不再**放宽 skip contract；一旦选中执行，就必须真实跑完并提供无 skip 证据。
+- `scripts/check_qcurl_label_matrix.py` 会静态校验 `add_qcurl_test_with_preflight(...)` 与 `LABELS` 的一致性，至少覆盖 `httpbin` / `local_port` / `node` / `python` / `websocket` / `http2` 这些前置维度；`tests/CMakeLists.txt` 里的 `qcurl_label_matrix_guard` 会把这条检查接入 `ctest`。
 - **是否运行某类用例，唯一入口是 ctest 的 LABELS 分组**：不要依赖 `QSKIP` 去“规避失败”，而应通过 `-L/--label-regex` 选择要跑的证据集合。
 - **QtTest 取证入口必须使用 `scripts/ctest_strict.py`**：裸 `ctest` 适合列清单或本地诊断，但它不会额外执行“skip=fail”复核，因此不能单独作为通过证据。
 
@@ -64,6 +81,8 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex env
 
 # 取证式门禁：跑 capability/local_port 等非默认能力组（仍然 skip=fail）
 python3 scripts/ctest_strict.py --build-dir build --label-regex capability
+python3 scripts/ctest_strict.py --build-dir build --label-regex local_port
+python3 scripts/ctest_strict.py --build-dir build --label-regex node
 ```
 
 ### gate / smoke / external 分层矩阵
@@ -75,6 +94,8 @@ python3 scripts/ctest_strict.py --build-dir build --label-regex capability
 | external | `external_network` / `external_heavy` | 显式 opt-in，允许 QSKIP | 外网探测或第三方大体量 smoke，不纳入默认 deterministic gate |
 
 - `tests/CMakeLists.txt` 中的 `qcurl_skip_contract_guard` 会静态扫描 `tests/qcurl/CMakeLists.txt`，阻止未来对非 `external_*` 目标关闭 `FAIL_REGULAR_EXPRESSION`。
+- `tests/CMakeLists.txt` 中的 `qcurl_label_matrix_guard` 会静态扫描 `tests/qcurl/CMakeLists.txt`，阻止 future preflight target 漏掉 `local_port` / `node` 等真实前置维度。
+- `tests/test_coverage_maps.py` 会校验 `tests/coverage-map.yaml` 与 CMake 注册的 LABELS 对齐，也会校验 libcurl consistency coverage map 与 gate policy code 对齐。
 
 期望工件（Evidence Artifacts）：
 
@@ -99,7 +120,7 @@ python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-r
 
 ## 测试列表与查看入口
 
-测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。  
+测试清单与数量会随版本演进；**不要维护静态“测试数量/总计”表格**。
 测试项的唯一准确来源是 `ctest`（由 `tests/qcurl/CMakeLists.txt` 注册并标注 LABELS）。
 
 推荐查看方式：
@@ -111,6 +132,8 @@ ctest --test-dir build -N
 # 仅列出某类证据集合（LABELS）
 ctest --test-dir build -N -L offline
 ctest --test-dir build -N -L env
+ctest --test-dir build -N -L local_port
+ctest --test-dir build -N -L node
 ```
 
 ### external_network（默认关闭公网探测）
@@ -161,7 +184,7 @@ QCURL_RUN_EXTERNAL_HEAVY=1 \
 
 ### 1.（可选）准备 env 测试环境（依赖 httpbin 的用例需要）
 
-依赖 httpbin 的测试通过环境变量 `QCURL_HTTPBIN_URL` 获取 base URL（**不再硬编码端口**）。  
+依赖 httpbin 的测试通过环境变量 `QCURL_HTTPBIN_URL` 获取 base URL（**不再硬编码端口**）。
 推荐使用仓库内置脚本启动固定版本的 httpbin 并生成 env 文件：
 
 ```bash
@@ -270,7 +293,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 #### 外部 HTTPS 大文件下载（非门禁）
 
-`tst_Integration` 仅依赖本地 httpbin，不再包含外部大文件下载用例。  
+`tst_Integration` 仅依赖本地 httpbin，不再包含外部大文件下载用例。
 外部 HTTPS + 大体量传输回归已迁移至 `tst_LargeFileDownload`（LABELS=external_heavy）。
 
 ---

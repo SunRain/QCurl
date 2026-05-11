@@ -7,6 +7,7 @@
 - 自动 gate：`qcurl_public_api_scan` 会扫描并比对 `public_api_layout_allowlist.txt`。
 - 人工复核：每次相关重构完成后，先验证代码，再从 allowlist 移除已修复项。
 - 回归策略：新增暴露点（不在 allowlist）直接失败；已修复但仍留在 allowlist 的 stale 条目同样直接失败，必须先清理再提交。
+- `public_api_layout_allowlist.txt` 是临时基线，不是稳定 API 承诺。新增条目必须写明对应 public header 与迁移任务，不能作为长期放行手段。
 
 ## 当前重点分类
 

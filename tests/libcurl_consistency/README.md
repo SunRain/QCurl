@@ -21,6 +21,9 @@
 - multipart boundary 之类实现生成物
 - 只存在于某个版本或某次运行中的临时诊断文本
 
+覆盖映射文件：`tests/libcurl_consistency/coverage-map.yaml`。它按 observable
+contract 记录 suite、pytest 文件、artifact 字段和证据类型；新增专题时必须同步更新。
+
 ## 2. 测试分层
 
 | 套件 | 目的 | 典型内容 | 入口 |
@@ -28,12 +31,13 @@
 | `p0` | 最小门禁 | 下载/上传/基础 WS 的主断言 | `run_gate.py --suite p0` |
 | `p1` | 常用语义补齐 | cookie、redirect、multipart、timeouts、methods | `run_gate.py --suite p1` |
 | `p2` | 错误/流控/协议约束 | TLS、cancel、pause/resume、backpressure、protocol restrictions | `run_gate.py --suite p2` |
-| `ext` | 扩展覆盖 | h2/h3 multi、WS 低层、额外 TLS/cache 场景 | `QCURL_LC_EXT=1` + `--with-ext` |
+| `ext` | 扩展覆盖 | h2/h3 multi、HTTP/3 policy、WS 低层、额外 TLS/cache 场景 | `QCURL_LC_EXT=1` + `--with-ext` |
 
 说明：
 
 - `p0/p1/p2` 属于 fail-closed gate 分层；一旦选中执行，就必须由 `run_gate.py` 负责 `skipped/no_tests/schema/redaction` 复核。
 - `ext` 是显式 opt-in 的扩展覆盖层，默认不替代主 gate，也不放宽 `run_gate.py` 的 strict policy。
+- smoke 用例只能证明粗粒度健康状态；不能在 README、tasks 或 gate 报告里写成强合同证明。
 
 ## 3. 统一运行入口
 
@@ -51,13 +55,15 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 ```
 
 `run_gate.py` 是唯一受支持的取证入口：它会把 `skipped_tests`、`no_tests_executed`、
-`junit_parse_error`、schema/redaction 违规统一提升为 gate 失败。直接跑裸 `pytest`
+`junit_parse_error`、`artifacts_schema`、`redaction` 违规统一提升为 gate 失败。直接跑裸 `pytest`
 可以用于本地诊断，但不能单独作为通过证据，也不应手工拼装 artifacts。
 
-`run_gate.py` 还会先生成/读取 `build/libcurl_consistency/reports/capabilities.json`：
+`run_gate.py` 会在 `--build` 模式下刷新
+`build/libcurl_consistency/reports/capabilities.json`：
 
 - planner 按 manifest 决定是否纳入 feature-dependent 文件，而不是让 pytest 在运行时读取 `src/*.h` 再 `skip`
-- 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、raw-body replay、unknown-size chunked POST、`TLS pinned public key`
+- default gate 会在进入 pytest 之前检查 `capabilities.json`、`QCURL_QTTEST` 和 `curl/tests/libtest/libtests`；缺任一前置时直接以 gate preflight 失败结束，不再把这类问题留给 test body 的 `pytest.skip(...)`
+- 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、raw-body replay、unknown-size chunked POST、`TLS pinned public key`、raw request header、SOCKS success、302/303/308 redirect、Range boundary、ext-only HTTP/3 policy
 - `TLS pinned public key` 用例只消费固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`
 
 ## 4. 产物与证据路径
@@ -100,7 +106,7 @@ QCURL_LC_COLLECT_LOGS=1
 
 ### 5.2 HTTP/3
 
-HTTP/3 覆盖依赖 h3-capable `nghttpx`。相关构建方式见：
+HTTP/3 覆盖位于 ext-only 分层，依赖 `QCURL_LC_EXT=1` 和 `--with-ext`。真实 H3 success 还依赖 h3-capable `nghttpx`。相关构建方式见：
 
 - `tests/libcurl_consistency/nghttpx_from_source/README.md`
 
@@ -109,6 +115,8 @@ HTTP/3 覆盖依赖 h3-capable `nghttpx`。相关构建方式见：
 ```bash
 QCURL_REQUIRE_HTTP3=1
 ```
+
+`run_gate.py --suite p2 --build` 不包含 HTTP/3 policy。`test_ext_http3_version_policy.py` 只由 `run_gate.py --suite all --with-ext` 规划执行。
 
 ## 6. 重点 contract
 
@@ -128,6 +136,14 @@ QCURL_REQUIRE_HTTP3=1
 
 - 这些场景的 contract 以专题 pytest + Qt 执行器结果为准
 - 若实现变更影响这些语义，必须同步更新专题用例和对比器，而不是只改文档
+
+### 6.4 可观测 follow-up coverage
+
+- raw request header：`test_p1_request_headers.py` 覆盖普通自定义头、同名覆盖、大小写差异 key 与敏感头 redaction；request artifact 写入脱敏 raw lines / digest 并参与 compare。
+- SOCKS success：`test_p1_socks_success.py` 覆盖 `Socks5` IP 目标与 `Socks5Hostname` 域名目标，代理日志记录 `ATYP` / `dst` / `rep`。
+- 302 / 303 / 308 redirect：`test_p1_redirect_302_303_308.py` 覆盖 method/body 序列与 seekable / non-seekable 终态。
+- Range boundary：`test_p2_range_boundaries.py` 通过 `downloadFileResumable()` 覆盖 `Range: bytes=N-`、416 matching complete、`Content-Range.start` mismatch。
+- ext-only HTTP/3 policy：`test_ext_http3_version_policy.py` 覆盖 HTTP/1.1 fallback 与 `Http3Only` failure；`test_ext_http3_success_h3.py` 在 H3 可用时覆盖真实 H3 success。两者只由 `--with-ext` 规划执行，不属于 `--suite p2`。
 
 ## 7. 扩展规则
 
