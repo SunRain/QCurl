@@ -197,9 +197,9 @@ QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(
     }
 
     const auto config = manager->shareHandleConfig();
-    out.dnsCache      = config.shareDnsCache;
-    out.cookies       = config.shareCookies;
-    out.sslSession    = config.shareSslSession;
+    out.dnsCache      = config.shareDnsCache();
+    out.cookies       = config.shareCookies();
+    out.sslSession    = config.shareSslSession();
     return out;
 }
 

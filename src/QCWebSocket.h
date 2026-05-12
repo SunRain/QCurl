@@ -394,18 +394,7 @@ Q_SIGNALS:
     void errorOccurred(const QString &errorString);
 
     /**
-     * @brief SSL 错误信号
-     *
-     * @param errors SSL 错误列表
-     *
-     * 当建立 WSS 连接时发生 SSL 错误时发射此信号。
-     */
-    void sslErrors(const QStringList &errors);
-
-    /**
      * @brief SSL 错误详细信号
-     *
-     * 提供逐条 SSL 错误详情，比 sslErrors() 更适合诊断输出。
      *
      * @param errors SSL 错误详情列表（每个错误一行描述）
      */

@@ -84,7 +84,7 @@ QCurl 的 install surface 只有两个来源：
 |------------|----------|--------------------|
 | `QCNetworkRequestScheduler.h` | `Config/Statistics/LaneConfig` 使用 implicit-sharing 值类型 + accessor API；special members out-of-line；线程/signals contract 固化 | 仅在 `Data` 新增字段 + 对外新增 accessor；禁止回退到 public fields |
 | `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 fail-closed）；`schedulerOnOwnerThread()` 跨线程回 owner thread（需 event dispatcher，`BlockingQueuedConnection` 有阻塞风险） | 通过新增 API 扩展能力；现有线程 contract 与失败语义保持兼容 |
-| `QCNetworkAccessManager.h`（share/hsts 配置） | `ShareHandleConfig` / `HstsAltSvcCacheConfig` 当前按 **冻结布局** 管理；manager 的 cookie/scheduler/cache/share/hsts 状态已下沉到 `QCNetworkAccessManagerPrivate`，不再占用导出类布局 | 仅通过新增 manager API 扩展行为；不在现有 struct 上做字段增删/重排。若未来需扩展字段，升级为新的 ABI 友好值类型（implicit-sharing + accessor）后再开放 |
+| `QCNetworkAccessManager.h`（share/hsts 配置） | `ShareHandleConfig` / `HstsAltSvcCacheConfig` 使用 implicit-sharing 值类型 + accessor API；manager 的 cookie/scheduler/cache/share/hsts 状态已下沉到 `QCNetworkAccessManagerPrivate`，不再占用导出类布局 | 可在 `Data` 内扩展字段并新增 accessor；不得恢复 public fields 或新增 layout allowlist |
 | `QCNetworkRequest.h`（lane/priority 入口） | 保持 lane + priority 公开行为合同稳定，调度细节留在 scheduler 实现层 | 允许新增便捷 API，但不破坏既有 lane/priority 语义 |
 | `QCNetworkCachePolicy.h` | 独立轻量 enum type header；作为 `QCNetworkRequest` 的 Core 配置类型进入默认安装面 | 可新增策略枚举值，但不得把 concrete cache 实现类型或读取 API 混入该头 |
 | `QCNetworkCache.h` | `QCNetworkCacheMetadata` / `QCNetworkCacheLookupResult` 使用 implicit-sharing 值类型 + accessor API；canonical read API 为 `lookup(url, ReadMode)` | 可在 Data 内扩展字段；不得恢复 public fields、`contains()` / `data()` / `metadata()` 旧读路径或新增 layout allowlist |

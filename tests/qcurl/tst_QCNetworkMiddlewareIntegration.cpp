@@ -239,7 +239,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     };
 
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     m_manager->setShareHandleConfig(shareCfg);
 
     QNetworkCookie xsrf("XSRF-TOKEN", "token123");

@@ -470,12 +470,12 @@ void TestLibcurlConsistency::testCase()
                 const QString t = raw.trimmed();
                 if (t == QStringLiteral("dns") || t == QStringLiteral("dns_cache")
                     || t == QStringLiteral("dns-cache")) {
-                    shareCfg.shareDnsCache = true;
+                    shareCfg.setShareDnsCache(true);
                 } else if (t == QStringLiteral("cookie") || t == QStringLiteral("cookies")) {
-                    shareCfg.shareCookies = true;
+                    shareCfg.setShareCookies(true);
                 } else if (t == QStringLiteral("ssl") || t == QStringLiteral("ssl_session")
                            || t == QStringLiteral("ssl-session")) {
-                    shareCfg.shareSslSession = true;
+                    shareCfg.setShareSslSession(true);
                 } else {
                     QFAIL(qPrintable(
                         QStringLiteral("QCURL_LC_SHARE_HANDLE 解析失败：未知 token=%1").arg(t)));
@@ -487,8 +487,8 @@ void TestLibcurlConsistency::testCase()
 
     if (!hstsPath.isEmpty() || !altSvcPath.isEmpty()) {
         QCNetworkAccessManager::HstsAltSvcCacheConfig cacheCfg;
-        cacheCfg.hstsFilePath   = hstsPath;
-        cacheCfg.altSvcFilePath = altSvcPath;
+        cacheCfg.setHstsFilePath(hstsPath);
+        cacheCfg.setAltSvcFilePath(altSvcPath);
         manager.setHstsAltSvcCacheConfig(cacheCfg);
     }
 
@@ -509,11 +509,11 @@ void TestLibcurlConsistency::testCase()
         auto *reply = manager.sendGetSync(req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
-        const auto dataOpt = reply->readBody();
+        const auto dataOpt = reply->readAll();
         QVERIFY(dataOpt.has_value());
         QVERIFY(!dataOpt->isEmpty());
 
-        const auto secondBodyOpt = reply->readBody();
+        const auto secondBodyOpt = reply->readAll();
         QVERIFY(secondBodyOpt.has_value());
         QVERIFY(secondBodyOpt->isEmpty());
 

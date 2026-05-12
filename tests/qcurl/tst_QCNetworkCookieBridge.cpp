@@ -39,7 +39,7 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
 {
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
     QNetworkCookie sid("sid", "abc");
@@ -72,7 +72,7 @@ void TestQCNetworkCookieBridge::testExportFilter_HostAndPathIsolation()
 {
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
     QNetworkCookie hostOnly("hostonly", "1");
@@ -107,7 +107,7 @@ void TestQCNetworkCookieBridge::testClearAllCookies()
 {
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
     QNetworkCookie sid("sid", "abc");

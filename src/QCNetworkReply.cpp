@@ -3382,8 +3382,8 @@ void QCNetworkReply::execute()
 
     if (handle && manager) {
         const auto cacheCfg     = manager->hstsAltSvcCacheConfig();
-        d->hstsCachePathBytes   = cacheCfg.hstsFilePath.toUtf8();
-        d->altSvcCachePathBytes = cacheCfg.altSvcFilePath.toUtf8();
+        d->hstsCachePathBytes   = cacheCfg.hstsFilePath().toUtf8();
+        d->altSvcCachePathBytes = cacheCfg.altSvcFilePath().toUtf8();
 
         if (!d->hstsCachePathBytes.isEmpty()) {
 #if LIBCURL_VERSION_NUM >= 0x074a00 /* 7.74.0 */
@@ -3723,20 +3723,6 @@ std::optional<QByteArray> QCNetworkReply::readAll()
             Qt::QueuedConnection);
     }
     return out;
-}
-
-std::optional<QByteArray> QCNetworkReply::readBody()
-{
-    Q_D(QCNetworkReply);
-
-    // 安全检查：错误状态或未完成状态不应读取 body
-    if (!d || d->state == ReplyState::Error || d->state == ReplyState::Idle) {
-        qWarning() << "QCNetworkReply::readBody: Invalid state"
-                   << (d ? static_cast<int>(d->state) : -1);
-        return std::nullopt;
-    }
-
-    return readAll(); // 别名方法
 }
 
 QList<RawHeaderPair> QCNetworkReply::rawHeaders() const

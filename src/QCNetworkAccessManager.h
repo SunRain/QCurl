@@ -14,6 +14,7 @@
 #include <QNetworkCookie>
 #include <QObject>
 #include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QUrl>
 
 #include <functional>
@@ -39,6 +40,8 @@ class QCNetworkCache;
 class QCNetworkLogger;
 class QCNetworkMiddleware;
 class QCNetworkMockHandler;
+class ShareHandleConfigData;
+class HstsAltSvcCacheConfigData;
 class QCURL_EXPORT QCNetworkAccessManager : public QObject
 {
     Q_OBJECT
@@ -116,29 +119,55 @@ public:
      */
     bool clearAllCookies(QString *error = nullptr);
 
-    struct ShareHandleConfig
+    class QCURL_EXPORT ShareHandleConfig
     {
-        bool shareDnsCache   = false; ///< 是否共享 DNS cache
-        bool shareCookies    = false; ///< 是否共享 cookies
-        bool shareSslSession = false; ///< 是否共享 SSL session
+    public:
+        ShareHandleConfig();
+        ShareHandleConfig(const ShareHandleConfig &other);
+        ShareHandleConfig(ShareHandleConfig &&other) noexcept;
+        ~ShareHandleConfig();
+
+        ShareHandleConfig &operator=(const ShareHandleConfig &other);
+        ShareHandleConfig &operator=(ShareHandleConfig &&other) noexcept;
+
+        [[nodiscard]] bool shareDnsCache() const noexcept;
+        void setShareDnsCache(bool enabled);
+
+        [[nodiscard]] bool shareCookies() const noexcept;
+        void setShareCookies(bool enabled);
+
+        [[nodiscard]] bool shareSslSession() const noexcept;
+        void setShareSslSession(bool enabled);
 
         /// 返回是否至少启用了一个 share 维度。
-        [[nodiscard]] bool enabled() const noexcept
-        {
-            return shareDnsCache || shareCookies || shareSslSession;
-        }
+        [[nodiscard]] bool enabled() const noexcept;
+
+    private:
+        QSharedDataPointer<ShareHandleConfigData> d;
     };
 
-    struct HstsAltSvcCacheConfig
+    class QCURL_EXPORT HstsAltSvcCacheConfig
     {
-        QString hstsFilePath;   ///< HSTS cache 文件路径
-        QString altSvcFilePath; ///< Alt-Svc cache 文件路径
+    public:
+        HstsAltSvcCacheConfig();
+        HstsAltSvcCacheConfig(const HstsAltSvcCacheConfig &other);
+        HstsAltSvcCacheConfig(HstsAltSvcCacheConfig &&other) noexcept;
+        ~HstsAltSvcCacheConfig();
+
+        HstsAltSvcCacheConfig &operator=(const HstsAltSvcCacheConfig &other);
+        HstsAltSvcCacheConfig &operator=(HstsAltSvcCacheConfig &&other) noexcept;
+
+        [[nodiscard]] QString hstsFilePath() const;
+        void setHstsFilePath(const QString &path);
+
+        [[nodiscard]] QString altSvcFilePath() const;
+        void setAltSvcFilePath(const QString &path);
 
         /// 返回是否配置了任一持久化 cache 文件。
-        [[nodiscard]] bool enabled() const noexcept
-        {
-            return !hstsFilePath.isEmpty() || !altSvcFilePath.isEmpty();
-        }
+        [[nodiscard]] bool enabled() const noexcept;
+
+    private:
+        QSharedDataPointer<HstsAltSvcCacheConfigData> d;
     };
 
     /**

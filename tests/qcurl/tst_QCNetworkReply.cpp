@@ -7,7 +7,7 @@
  * - 同步请求（GET/POST）
  * - 异步请求（GET/POST/HEAD）
  * - 状态转换（Idle→Running→Finished/Error）
- * - 数据访问（readAll/readBody/rawHeaders）
+ * - 数据访问（readAll/rawHeaders）
  * - 错误处理（无效URL、超时、网络错误）
  * - 信号发射（finished/error/progress）
  */
@@ -89,9 +89,9 @@ private slots:
 
     // ========== 数据访问测试 ==========
     void testReadAll();
-    void testReadBody();
+    void testReadAllSyncBody();
     void testReadAllDrainsFinishedBuffer();
-    void testReadBodyEmptyBodyRepeatable();
+    void testReadAllEmptyBodyRepeatable();
     void testRawHeaders();
     void testBytesAvailable();
 
@@ -490,7 +490,7 @@ void TestQCNetworkReply::testSyncHeadRequest()
     QCOMPARE(reply.error(), NetworkError::NoError);
 
     // HEAD 请求应该没有 body
-    auto data = reply.readBody();
+    auto data = reply.readAll();
     QVERIFY(!data.has_value() || data->isEmpty());
 
     // 但应该有 headers
@@ -779,7 +779,7 @@ void TestQCNetworkReply::testAsyncHeadRequest()
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     // HEAD 不应有 body
-    auto data = reply->readBody();
+    auto data = reply->readAll();
     QVERIFY(!data.has_value() || data->isEmpty());
 
     // 应该有 headers
@@ -2045,14 +2045,14 @@ void TestQCNetworkReply::testReadAll()
     reply->deleteLater();
 }
 
-void TestQCNetworkReply::testReadBody()
+void TestQCNetworkReply::testReadAllSyncBody()
 {
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     auto *reply = m_manager->sendGetSync(request);
 
-    auto body = reply->readBody();
+    auto body = reply->readAll();
     QVERIFY(body.has_value());
     QVERIFY(body->size() > 0);
 
@@ -2081,14 +2081,14 @@ void TestQCNetworkReply::testReadAllDrainsFinishedBuffer()
     QVERIFY(secondDrain.has_value());
     QVERIFY(secondDrain->isEmpty());
 
-    const auto bodyAliasDrain = reply->readBody();
+    const auto bodyAliasDrain = reply->readAll();
     QVERIFY(bodyAliasDrain.has_value());
     QVERIFY(bodyAliasDrain->isEmpty());
 
     reply->deleteLater();
 }
 
-void TestQCNetworkReply::testReadBodyEmptyBodyRepeatable()
+void TestQCNetworkReply::testReadAllEmptyBodyRepeatable()
 {
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
@@ -2099,11 +2099,11 @@ void TestQCNetworkReply::testReadBodyEmptyBodyRepeatable()
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->bytesAvailable(), 0);
 
-    const auto firstBody = reply->readBody();
+    const auto firstBody = reply->readAll();
     QVERIFY(firstBody.has_value());
     QVERIFY(firstBody->isEmpty());
 
-    const auto secondBody = reply->readBody();
+    const auto secondBody = reply->readAll();
     QVERIFY(secondBody.has_value());
     QVERIFY(secondBody->isEmpty());
 

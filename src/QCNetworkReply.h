@@ -197,12 +197,6 @@ public:
      */
     [[nodiscard]] std::optional<QByteArray> readAll();
 
-    /**
-     * @brief 读取响应体（readAll 别名）
-     *
-     * @return 同 readAll；Error/Idle 状态返回 std::nullopt
-     */
-    [[nodiscard]] std::optional<QByteArray> readBody();
     /// 返回解析后的原始 header 键值对。
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
     /// 返回最终响应头 block 中指定 header 的值；未命中返回空数组。

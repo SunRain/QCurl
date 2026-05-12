@@ -355,7 +355,7 @@ void QCWebSocket::open()
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
 
         // 应用 SSL/TLS 配置（仅对 wss:// 协议）
-        if (d->url.scheme() == "wss") {
+        if (d->url.scheme() == QStringLiteral("wss")) {
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, d->sslConfig.verifyPeer() ? 1L : 0L);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, d->sslConfig.verifyHost() ? 2L : 0L);
 
@@ -429,9 +429,7 @@ void QCWebSocket::open()
                     sslErrorList << QStringLiteral("SSL 验证结果码: %1").arg(sslVerifyResult);
                 }
 
-                // 发射详细 SSL 错误信号
                 emit sslErrorsDetailed(sslErrorList);
-                emit sslErrors(sslErrorList); // 兼容旧信号
             }
 
             // 连接失败映射到 CloseCode

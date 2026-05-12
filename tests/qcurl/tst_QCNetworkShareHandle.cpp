@@ -193,7 +193,7 @@ void TestQCNetworkShareHandle::testCookieShareWithinManager()
 {
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
@@ -220,7 +220,7 @@ void TestQCNetworkShareHandle::testCookieShareIsolationAcrossManagers()
 {
     QCNetworkAccessManager managerA;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     managerA.setShareHandleConfig(shareCfg);
 
     QCNetworkAccessManager managerB;
@@ -253,7 +253,7 @@ void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 {
     QCNetworkAccessManager manager;
     QCNetworkAccessManager::ShareHandleConfig shareCfg;
-    shareCfg.shareCookies = true;
+    shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));

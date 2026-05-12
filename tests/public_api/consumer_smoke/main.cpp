@@ -178,12 +178,35 @@ int main(int argc, char **argv)
         return 11;
     }
 
+    QCurl::QCNetworkAccessManager::ShareHandleConfig shareConfig;
+    shareConfig.setShareDnsCache(true);
+    shareConfig.setShareCookies(true);
+    shareConfig.setShareSslSession(true);
+    manager.setShareHandleConfig(shareConfig);
+    const auto savedShareConfig = manager.shareHandleConfig();
+    if (!savedShareConfig.enabled() || !savedShareConfig.shareDnsCache()
+        || !savedShareConfig.shareCookies() || !savedShareConfig.shareSslSession()) {
+        return 12;
+    }
+
+    QCurl::QCNetworkAccessManager::HstsAltSvcCacheConfig cacheConfig;
+    cacheConfig.setHstsFilePath(QStringLiteral("/tmp/qcurl-consumer-hsts.txt"));
+    cacheConfig.setAltSvcFilePath(QStringLiteral("/tmp/qcurl-consumer-altsvc.txt"));
+    manager.setHstsAltSvcCacheConfig(cacheConfig);
+    const auto savedCacheConfig = manager.hstsAltSvcCacheConfig();
+    if (!savedCacheConfig.enabled()
+        || savedCacheConfig.hstsFilePath() != QStringLiteral("/tmp/qcurl-consumer-hsts.txt")
+        || savedCacheConfig.altSvcFilePath()
+               != QStringLiteral("/tmp/qcurl-consumer-altsvc.txt")) {
+        return 13;
+    }
+
     request.clearHttpAuth();
     proxyConfig.clearTlsConfig();
     request.setProxyConfig(proxyConfig);
     if (request.httpAuth().has_value() || proxyConfig.tlsConfig().has_value()
         || !request.proxyConfig().has_value() || request.proxyConfig()->tlsConfig().has_value()) {
-        return 12;
+        return 14;
     }
 
     const int cancelledPending = ownerThreadScheduler->cancelLaneRequests(
@@ -195,12 +218,12 @@ int main(int argc, char **argv)
     ConsumerSmokeLogger logger;
     manager.setLogger(&logger);
     if (manager.logger() != &logger) {
-        return 13;
+        return 15;
     }
 
     manager.setDebugTraceEnabled(true);
     if (!manager.debugTraceEnabled()) {
-        return 14;
+        return 16;
     }
 
     const QDateTime timestampUtc = QDateTime::currentDateTimeUtc();
@@ -215,13 +238,13 @@ int main(int argc, char **argv)
         || entry.message() != QStringLiteral("manager logger contract")
         || entry.timestampUtc().offsetFromUtc() != 0
         || entry.timestampUtc().toMSecsSinceEpoch() != timestampUtc.toMSecsSinceEpoch()) {
-        return 15;
+        return 17;
     }
 
     logger.log(entry);
     if (logger.count != 1 || logger.lastEntry.category() != QStringLiteral("ConsumerSmoke")
         || logger.lastEntry.message() != QStringLiteral("manager logger contract")) {
-        return 16;
+        return 18;
     }
 
     QCurl::QCNetworkDefaultLogger defaultLogger;
@@ -231,12 +254,12 @@ int main(int argc, char **argv)
     manager.setLogger(&defaultLogger);
     if (manager.logger() != &defaultLogger
         || defaultLogger.minLogLevel() != QCurl::NetworkLogLevel::Warning) {
-        return 17;
+        return 19;
     }
 
     defaultLogger.log(entry);
     if (defaultLogger.entries().size() != 1) {
-        return 18;
+        return 20;
     }
 
     QCurl::QCNetworkCancelToken cancelToken;
@@ -246,12 +269,12 @@ int main(int argc, char **argv)
     cancelToken.attachMultiple(repliesToCancel);
     cancelToken.setAutoTimeout(0);
     if (cancelToken.attachedCount() != 0 || cancelToken.isCancelled()) {
-        return 19;
+        return 21;
     }
 
     cancelToken.cancel();
     if (!cancelToken.isCancelled()) {
-        return 20;
+        return 22;
     }
 
     QCurl::QCNetworkConnectionPoolConfig poolConfig;
@@ -274,7 +297,7 @@ int main(int argc, char **argv)
         || poolConfig.multiMaxHostConnections().value_or(-1) != 2
         || poolConfig.multiMaxConcurrentStreams().value_or(-1) != 8
         || poolConfig.multiMaxConnects().value_or(-1) != 16) {
-        return 21;
+        return 23;
     }
 
     auto *poolManager = QCurl::QCNetworkConnectionPoolManager::instance();
@@ -282,14 +305,14 @@ int main(int argc, char **argv)
     const auto savedPoolConfig = poolManager->config();
     if (savedPoolConfig.maxConnectionsPerHost() != 4
         || savedPoolConfig.maxTotalConnections() != 12) {
-        return 22;
+        return 24;
     }
 
     const auto poolStats = poolManager->statistics();
     if (poolStats.totalRequests() < 0 || poolStats.reusedConnections() < 0
         || poolStats.reuseRate() < 0.0 || poolStats.activeConnections() < 0
         || poolStats.idleConnections() < 0) {
-        return 23;
+        return 25;
     }
     poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig());
 

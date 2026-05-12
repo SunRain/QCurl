@@ -141,24 +141,17 @@ Core 头中存在若干从 Stable Extras 候选提升而来的入口方法。进
 - `src/QCWebSocket.cpp:754` 尝试启用事件驱动接收。
 - `src/QCWebSocket.cpp:783` polling fallback 每 50ms 轮询。
 
-### 3.2 公开 config struct
+### 3.2 share/hsts 配置值类型
 
-原表述偏强：“`ShareHandleConfig` / `HstsAltSvcCacheConfig` 是 RC blocker”。
+复核结论：
 
-修正后：
+> `ShareHandleConfig` / `HstsAltSvcCacheConfig` 已完成 ABI 友好化处理，可进入 Core stable 合同。
 
-> 它们是 ABI 风险，但不是绝对 RC blocker。
+原因：
 
-可接受条件：
-
-- 若 3.x 周期承诺不增删字段、不重排字段，可以带着风险进入 Core RC。
-- 若后续仍计划扩展字段，应在 RC 前改为 shared-data / accessor-only 值类型。
-
-证据：
-
-- `src/QCNetworkAccessManager.h:119` 暴露 `ShareHandleConfig`。
-- `src/QCNetworkAccessManager.h:132` 暴露 `HstsAltSvcCacheConfig`。
-- `tests/public_api/public_api_layout_allowlist.txt:8` 临时放行这两个 nested struct 的 ABI/layout 暴露。
+- 两个配置类型现在使用 `QSharedDataPointer` 管理私有 `Data`。
+- 对外只暴露 accessor API，不再公开配置字段布局。
+- `tests/public_api/public_api_layout_allowlist.txt` 不再放行这两个类型。
 
 ### 3.3 DefaultLogger / CancelToken
 
@@ -218,14 +211,14 @@ README 之前强调“企业级能力”和“完整协议支持”，包括 Mid
 
 Core 已经采用较多 ABI 友好策略：值类型大多使用 `QSharedDataPointer`，QObject / runtime service 使用 d-pointer，public header boundary 有自动扫描与 consumer smoke。
 
-剩余主要风险是 `QCNetworkAccessManager::ShareHandleConfig` 和 `QCNetworkAccessManager::HstsAltSvcCacheConfig`。它们目前是公开 struct。KDE C++ 库实践中，公开数据成员会限制后续二进制兼容演进。
+`QCNetworkAccessManager::ShareHandleConfig` 和 `QCNetworkAccessManager::HstsAltSvcCacheConfig` 已从公开字段布局迁移为 accessor-only shared-data 值类型。后续新增配置字段时，应只扩展 `Data` 并新增 accessor。
 
 若未来扩大 Preview 稳定范围，还需要额外处理 `DiagResult` 中 `QVariantMap details` 的 schema 承诺。
 
 建议：
 
-- RC 前改成 accessor-only shared-data 值类型。
-- 或明确写入 3.x ABI 冻结规则：字段布局不再变化。
+- 继续通过 public API scan 阻止字段布局和 layout allowlist 回流。
+- 新增 share/hsts 配置项时同步 consumer smoke。
 
 ### 4.3 WebSocket 成熟度风险
 
@@ -359,7 +352,7 @@ QCurl Core 大体符合该方向，但两个公开 config struct 仍需明确冻
 
 [x] 给每个默认安装头增加 Core / Core Test Support 状态标签，Preview 头继续留在非默认 Extras。
 
-[ ] 决定 `ShareHandleConfig` / `HstsAltSvcCacheConfig` 的处理方式：迁移为 ABI 友好值类型，或写入 3.x 布局冻结承诺。
+[x] `ShareHandleConfig` / `HstsAltSvcCacheConfig` 已迁移为 ABI 友好值类型。
 
 [ ] 调整或标注 `downloadFile()` 的文件写入错误语义。
 

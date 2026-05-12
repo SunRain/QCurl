@@ -160,7 +160,7 @@ private:
                 &WebSocketDemo::onBinaryMessageReceived);
         connect(m_socket, &QCWebSocket::pongReceived, this, &WebSocketDemo::onPongReceived);
         connect(m_socket, &QCWebSocket::errorOccurred, this, &WebSocketDemo::onErrorOccurred);
-        connect(m_socket, &QCWebSocket::sslErrors, this, &WebSocketDemo::onSslErrors);
+        connect(m_socket, &QCWebSocket::sslErrorsDetailed, this, &WebSocketDemo::onSslErrors);
     }
 
     void setupInputTimer()

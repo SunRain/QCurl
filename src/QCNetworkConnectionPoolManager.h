@@ -64,9 +64,6 @@ private:
 class QCURL_EXPORT QCNetworkConnectionPoolManager
 {
 public:
-    /// 兼容旧代码中通过 Manager::Statistics 访问统计类型的写法。
-    using Statistics = QCNetworkConnectionPoolStatistics;
-
     /**
      * @brief 获取全局单例
      *
