@@ -928,7 +928,7 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
     QCNetworkMockHandler handler;
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/pause"));
     const QByteArray payload("abcdefghijklmnopqrstuvwxyz");
-    handler.mockResponse(url, payload, 200);
+    handler.mockResponse(HttpMethod::Get, url, payload, 200);
     m_manager->setMockHandler(&handler);
     const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
 
@@ -1084,7 +1084,7 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
     QCNetworkMockHandler handler;
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/cancel"));
     const QByteArray payload("cancel-me-before-finish");
-    handler.mockResponse(url, payload, 200);
+    handler.mockResponse(HttpMethod::Get, url, payload, 200);
     m_manager->setMockHandler(&handler);
     const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
 
@@ -1184,7 +1184,7 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
     QCNetworkMockHandler handler;
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/delete-later"));
     const QByteArray payload("delete-later-before-finish-payload");
-    handler.mockResponse(url, payload, 200);
+    handler.mockResponse(HttpMethod::Get, url, payload, 200);
     m_manager->setMockHandler(&handler);
     const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
 

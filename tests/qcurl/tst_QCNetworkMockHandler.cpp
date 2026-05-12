@@ -80,20 +80,20 @@ void TestQCNetworkMockHandler::testMockResponse()
     int statusCode      = 200;
 
     // Act
-    m_mockHandler.mockResponse(url, mockData, statusCode);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, mockData, statusCode);
 
     // Assert
-    QVERIFY(m_mockHandler.hasMock(url));
+    QVERIFY(m_mockHandler.hasMock(HttpMethod::Get, url));
 
     int retrievedStatus      = 0;
-    QByteArray retrievedData = m_mockHandler.getMockResponse(url, retrievedStatus);
+    QByteArray retrievedData = m_mockHandler.getMockResponse(HttpMethod::Get, url, retrievedStatus);
 
     QCOMPARE(retrievedData, mockData);
     QCOMPARE(retrievedStatus, statusCode);
 
     // Test clearing
     m_mockHandler.clear();
-    QVERIFY(!m_mockHandler.hasMock(url));
+    QVERIFY(!m_mockHandler.hasMock(HttpMethod::Get, url));
 }
 
 /**
@@ -106,18 +106,18 @@ void TestQCNetworkMockHandler::testMockError()
     NetworkError error = NetworkError::ConnectionRefused;
 
     // Act
-    m_mockHandler.mockError(url, error);
+    m_mockHandler.mockError(HttpMethod::Get, url, error);
 
     // Assert
-    QVERIFY(m_mockHandler.hasMock(url));
+    QVERIFY(m_mockHandler.hasMock(HttpMethod::Get, url));
 
-    NetworkError retrievedError = m_mockHandler.getMockError(url);
+    NetworkError retrievedError = m_mockHandler.getMockError(HttpMethod::Get, url);
     QCOMPARE(retrievedError, error);
 
     // Test with different error
     m_mockHandler.clear();
-    m_mockHandler.mockError(url, error);
-    QVERIFY(m_mockHandler.hasMock(url));
+    m_mockHandler.mockError(HttpMethod::Get, url, error);
+    QVERIFY(m_mockHandler.hasMock(HttpMethod::Get, url));
 }
 
 /**
@@ -130,7 +130,7 @@ void TestQCNetworkMockHandler::testMockHandlerIntegration()
     const QUrl mockUrl("http://example.com/mock/test");
     const QByteArray mockResponse = "Mock Response Data";
 
-    handler.mockResponse(mockUrl, mockResponse, 200);
+    handler.mockResponse(HttpMethod::Get, mockUrl, mockResponse, 200);
     m_manager->setMockHandler(&handler);
 
     // Act
@@ -145,9 +145,9 @@ void TestQCNetworkMockHandler::testMockHandlerIntegration()
 
     reply->deleteLater();
 
-    // method+url 优先于 url-only（兼容旧 API）
+    // method+url 是唯一匹配合同，不同方法互不回退。
     handler.clear();
-    handler.mockResponse(mockUrl, QByteArray("any"), 200);
+    handler.mockResponse(HttpMethod::Get, mockUrl, QByteArray("any"), 200);
     handler.mockResponse(HttpMethod::Post, mockUrl, QByteArray("post"), 200);
 
     QCNetworkRequest postReq(mockUrl);
@@ -192,7 +192,7 @@ void TestQCNetworkMockHandler::testGlobalDelayApplied()
     QCNetworkMockHandler handler;
     const QUrl url("http://example.com/mock/delay");
     handler.setGlobalDelay(50);
-    handler.mockResponse(url, QByteArray("ok"), 200);
+    handler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     m_manager->setMockHandler(&handler);
 
@@ -214,7 +214,7 @@ void TestQCNetworkMockHandler::testRequestCapture()
     handler.setCaptureBodyPreviewLimit(3);
 
     const QUrl url("http://example.com/mock/capture");
-    handler.mockResponse(url, QByteArray("ok"), 200);
+    handler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
     m_manager->setMockHandler(&handler);
 
     QCNetworkRequest request(url);

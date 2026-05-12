@@ -22,27 +22,6 @@ QCNetworkMockHandler::QCNetworkMockHandler()
 
 QCNetworkMockHandler::~QCNetworkMockHandler() = default;
 
-void QCNetworkMockHandler::mockResponse(const QUrl &url, const QByteArray &response, int statusCode)
-{
-    QMutexLocker locker(&d_ptr->mutex);
-    // 兼容旧 API：url-only 作为“Any method”
-    Internal::QCNetworkMockData data;
-    data.response   = response;
-    data.statusCode = statusCode;
-    data.isError    = false;
-    replaceSequence(d_ptr->sequences[makeKey(url)], data);
-}
-
-void QCNetworkMockHandler::mockError(const QUrl &url, NetworkError error)
-{
-    QMutexLocker locker(&d_ptr->mutex);
-    // 兼容旧 API：url-only 作为“Any method”
-    Internal::QCNetworkMockData data;
-    data.error   = error;
-    data.isError = true;
-    replaceSequence(d_ptr->sequences[makeKey(url)], data);
-}
-
 void QCNetworkMockHandler::mockResponse(HttpMethod method,
                                         const QUrl &url,
                                         const QByteArray &response,
@@ -145,38 +124,20 @@ int QCNetworkMockHandler::globalDelay() const
     return d_ptr->globalDelay;
 }
 
-bool QCNetworkMockHandler::hasMock(const QUrl &url) const
-{
-    QMutexLocker locker(&d_ptr->mutex);
-    const QString anyKey = makeKey(url);
-    if (d_ptr->sequences.contains(anyKey)) {
-        return true;
-    }
-
-    const QString suffix = QStringLiteral("|") + url.toString();
-    for (auto it = d_ptr->sequences.cbegin(); it != d_ptr->sequences.cend(); ++it) {
-        if (it.key().endsWith(suffix)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool QCNetworkMockHandler::hasMock(HttpMethod method, const QUrl &url) const
 {
     QMutexLocker locker(&d_ptr->mutex);
-    if (d_ptr->sequences.contains(makeKey(method, url))) {
-        return true;
-    }
-    return d_ptr->sequences.contains(makeKey(url));
+    return d_ptr->sequences.contains(makeKey(method, url));
 }
 
-QByteArray QCNetworkMockHandler::getMockResponse(const QUrl &url, int &statusCode) const
+QByteArray QCNetworkMockHandler::getMockResponse(HttpMethod method,
+                                                 const QUrl &url,
+                                                 int &statusCode) const
 {
     QMutexLocker locker(&d_ptr->mutex);
-    const QString anyKey = makeKey(url);
-    if (d_ptr->sequences.contains(anyKey)) {
-        const auto &seq = d_ptr->sequences.value(anyKey);
+    const QString key = makeKey(method, url);
+    if (d_ptr->sequences.contains(key)) {
+        const auto &seq = d_ptr->sequences.value(key);
         if (!seq.items.isEmpty()) {
             const auto &data = seq.items.first();
             statusCode       = data.statusCode;
@@ -184,28 +145,16 @@ QByteArray QCNetworkMockHandler::getMockResponse(const QUrl &url, int &statusCod
         }
     }
 
-    const QString suffix = QStringLiteral("|") + url.toString();
-    for (auto it = d_ptr->sequences.cbegin(); it != d_ptr->sequences.cend(); ++it) {
-        if (!it.key().endsWith(suffix)) {
-            continue;
-        }
-        const auto &seq = it.value();
-        if (!seq.items.isEmpty()) {
-            const auto &data = seq.items.first();
-            statusCode       = data.statusCode;
-            return data.response;
-        }
-    }
     statusCode = 0;
     return QByteArray();
 }
 
-NetworkError QCNetworkMockHandler::getMockError(const QUrl &url) const
+NetworkError QCNetworkMockHandler::getMockError(HttpMethod method, const QUrl &url) const
 {
     QMutexLocker locker(&d_ptr->mutex);
-    const QString anyKey = makeKey(url);
-    if (d_ptr->sequences.contains(anyKey)) {
-        const auto &seq = d_ptr->sequences.value(anyKey);
+    const QString key = makeKey(method, url);
+    if (d_ptr->sequences.contains(key)) {
+        const auto &seq = d_ptr->sequences.value(key);
         if (!seq.items.isEmpty()) {
             const auto &data = seq.items.first();
             if (data.isError) {
@@ -216,12 +165,12 @@ NetworkError QCNetworkMockHandler::getMockError(const QUrl &url) const
     return NetworkError::NoError;
 }
 
-bool QCNetworkMockHandler::isErrorMock(const QUrl &url) const
+bool QCNetworkMockHandler::isErrorMock(HttpMethod method, const QUrl &url) const
 {
     QMutexLocker locker(&d_ptr->mutex);
-    const QString anyKey = makeKey(url);
-    if (d_ptr->sequences.contains(anyKey)) {
-        const auto &seq = d_ptr->sequences.value(anyKey);
+    const QString key = makeKey(method, url);
+    if (d_ptr->sequences.contains(key)) {
+        const auto &seq = d_ptr->sequences.value(key);
         if (!seq.items.isEmpty()) {
             return seq.items.first().isError;
         }
@@ -235,12 +184,8 @@ bool QCNetworkMockHandler::consumeMock(HttpMethod method,
 {
     QMutexLocker locker(&d_ptr->mutex);
     const QString methodKey = makeKey(method, url);
-    const QString anyKey    = makeKey(url);
 
     auto it = d_ptr->sequences.find(methodKey);
-    if (it == d_ptr->sequences.end()) {
-        it = d_ptr->sequences.find(anyKey);
-    }
     if (it == d_ptr->sequences.end()) {
         return false;
     }
@@ -318,11 +263,6 @@ void QCNetworkMockHandler::clear()
     QMutexLocker locker(&d_ptr->mutex);
     d_ptr->sequences.clear();
     d_ptr->capturedRequests.clear();
-}
-
-QString QCNetworkMockHandler::makeKey(const QUrl &url)
-{
-    return QStringLiteral("-1|") + url.toString();
 }
 
 QString QCNetworkMockHandler::makeKey(HttpMethod method, const QUrl &url)

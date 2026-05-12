@@ -65,10 +65,10 @@ void TestQCNetworkCancelToken::init()
     m_mock.setGlobalDelay(0);
 
     // 离线门禁：该套件不应触发真实网络。为 test case 中使用的 URL 配置 mock 回放。
-    m_mock.mockResponse(QUrl("http://example.com"), QByteArray("OK"));
-    m_mock.mockResponse(QUrl("http://example.com/1"), QByteArray("OK"));
-    m_mock.mockResponse(QUrl("http://example.com/2"), QByteArray("OK"));
-    m_mock.mockResponse(QUrl("http://example.com/3"), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com"), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/1"), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/2"), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/3"), QByteArray("OK"));
     m_manager->setMockHandler(&m_mock);
 }
 

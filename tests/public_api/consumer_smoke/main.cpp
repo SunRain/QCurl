@@ -320,11 +320,11 @@ int main(int argc, char **argv)
     manager.addMiddleware(&middleware);
     if (manager.middlewares().size() != 1 || manager.middlewares().first() != &middleware
         || middleware.name() != QStringLiteral("ConsumerSmokeMiddleware")) {
-        return 24;
+        return 26;
     }
     manager.removeMiddleware(&middleware);
     if (!manager.middlewares().isEmpty()) {
-        return 25;
+        return 27;
     }
 
     QCurl::QCNetworkMockHandler mockHandler;
@@ -344,24 +344,24 @@ int main(int argc, char **argv)
         || capturedRequests.first().headers().size() != 1
         || capturedRequests.first().bodySize() != 7
         || capturedRequests.first().bodyPreview() != QByteArrayLiteral("paylo")) {
-        return 26;
+        return 28;
     }
 
-    mockHandler.mockResponse(request.url(), QByteArrayLiteral("mock-body"), 201);
+    mockHandler.mockResponse(QCurl::HttpMethod::Get, request.url(), QByteArrayLiteral("mock-body"), 201);
     int mockStatus = 0;
-    if (!mockHandler.hasMock(request.url())
-        || mockHandler.getMockResponse(request.url(), mockStatus) != QByteArrayLiteral("mock-body")
+    if (!mockHandler.hasMock(QCurl::HttpMethod::Get, request.url())
+        || mockHandler.getMockResponse(QCurl::HttpMethod::Get, request.url(), mockStatus) != QByteArrayLiteral("mock-body")
         || mockStatus != 201) {
-        return 27;
+        return 29;
     }
     manager.setMockHandler(&mockHandler);
     if (manager.mockHandler() != &mockHandler) {
-        return 28;
+        return 30;
     }
     manager.setMockHandler(nullptr);
 
     manager.setLogger(nullptr);
     manager.setDebugTraceEnabled(false);
 
-    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 29;
+    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 31;
 }

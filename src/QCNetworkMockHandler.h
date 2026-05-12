@@ -95,8 +95,8 @@ private:
  * @example
  * @code
  * auto *mock = new QCNetworkMockHandler();
- * mock->mockResponse(url, QByteArray("success response"));
- * mock->mockError(url, NetworkError::ConnectionRefused);
+ * mock->mockResponse(HttpMethod::Get, url, QByteArray("success response"));
+ * mock->mockError(HttpMethod::Get, url, NetworkError::ConnectionRefused);
  * mock->setGlobalDelay(100); // 100ms delay
  *
  * manager->setMockHandler(mock);
@@ -118,16 +118,7 @@ public:
     Q_DISABLE_COPY_MOVE(QCNetworkMockHandler)
 
     /**
-     * @brief 模拟成功响应
-     * @param url 请求 URL
-     * @param response 响应数据
-     * @param statusCode HTTP 状态码（默认 200）
-     */
-    void mockResponse(const QUrl &url, const QByteArray &response, int statusCode = 200);
-
-    /**
      * @brief 模拟成功响应（指定 HTTP method）
-     * @note 优先匹配 method+url；若未配置 method+url，则回退到 url-only（兼容旧 API）。
      */
     void mockResponse(HttpMethod method,
                       const QUrl &url,
@@ -173,13 +164,6 @@ public:
                          const QByteArray &rawHeaderData);
 
     /**
-     * @brief 模拟错误响应
-     * @param url 请求 URL
-     * @param error 错误类型
-     */
-    void mockError(const QUrl &url, NetworkError error);
-
-    /**
      * @brief 模拟错误响应（指定 HTTP method）
      * @note error 用于模拟 libcurl 层网络错误；HTTP 错误推荐用 statusCode>=400 的 mockResponse。
      */
@@ -209,14 +193,7 @@ public:
     int globalDelay() const;
 
     /**
-     * @brief 检查是否有模拟响应
-     * @param url 请求 URL
-     * @return 如果有模拟则返回 true
-     */
-    bool hasMock(const QUrl &url) const;
-
-    /**
-     * @brief 检查指定 method+url 是否有模拟（含回退到 url-only）
+     * @brief 检查指定 method+url 是否有模拟。
      */
     bool hasMock(HttpMethod method, const QUrl &url) const;
 
@@ -226,21 +203,21 @@ public:
      * @param statusCode 输出状态码
      * @return 响应数据
      */
-    QByteArray getMockResponse(const QUrl &url, int &statusCode) const;
+    QByteArray getMockResponse(HttpMethod method, const QUrl &url, int &statusCode) const;
 
     /**
      * @brief 获取模拟错误
      * @param url 请求 URL
      * @return 错误类型
      */
-    NetworkError getMockError(const QUrl &url) const;
+    NetworkError getMockError(HttpMethod method, const QUrl &url) const;
 
     /**
      * @brief 检查是否为错误模拟
      * @param url 请求 URL
      * @return 如果是错误模拟返回 true
      */
-    bool isErrorMock(const QUrl &url) const;
+    bool isErrorMock(HttpMethod method, const QUrl &url) const;
 
     // ==================
     // 请求捕获（用于离线断言：middleware/header 注入、body 形态等）
@@ -272,7 +249,6 @@ public:
 private:
     bool consumeMock(HttpMethod method, const QUrl &url, Internal::QCNetworkMockData &out);
 
-    static QString makeKey(const QUrl &url);
     static QString makeKey(HttpMethod method, const QUrl &url);
 
     QScopedPointer<QCNetworkMockHandlerPrivate> d_ptr;

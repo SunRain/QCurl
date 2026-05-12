@@ -96,7 +96,7 @@ void tst_QCNetworkMiddlewareIntegration::testSendGet_AutoWiredMiddleware()
     m_manager->addMiddleware(&mw2);
 
     const QUrl url("http://example.com/mw/sendget");
-    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -150,7 +150,7 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     m_manager->enableRequestScheduler(true);
 
     const QUrl url("http://example.com/mw/scheduleget");
-    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -256,7 +256,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.clear();
     m_mockHandler.clearCapturedRequests();
     const QUrl url1("https://example.com/id/api/csrf");
-    m_mockHandler.mockResponse(url1, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url1, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url1);
         auto *reply = m_manager->sendGet(request);
@@ -272,7 +272,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.clear();
     m_mockHandler.clearCapturedRequests();
     const QUrl url2("https://example.com/id/api/csrf_explicit");
-    m_mockHandler.mockResponse(url2, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url2, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url2);
         request.setRawHeader("X-XSRF-TOKEN", "manual");
@@ -289,7 +289,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.clear();
     m_mockHandler.clearCapturedRequests();
     const QUrl url3("https://example.com/other/path");
-    m_mockHandler.mockResponse(url3, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url3, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url3);
         auto *reply = m_manager->sendGet(request);
@@ -305,7 +305,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.clear();
     m_mockHandler.clearCapturedRequests();
     const QUrl url4("https://other.example/id/api/csrf");
-    m_mockHandler.mockResponse(url4, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url4, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url4);
         auto *reply = m_manager->sendGet(request);
@@ -343,7 +343,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedQObjectMiddlewareNotInvoke
 
     m_mockHandler.setGlobalDelay(50);
     const QUrl url("http://example.com/mw/destroyed-response");
-    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -384,7 +384,7 @@ void tst_QCNetworkMiddlewareIntegration::testRemovedRawMiddlewareNotInvokedOnRes
 
     m_mockHandler.setGlobalDelay(50);
     const QUrl url("http://example.com/mw/removed-response");
-    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -424,7 +424,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedRawMiddlewareNotInvokedOnR
 
     m_mockHandler.setGlobalDelay(50);
     const QUrl url("http://example.com/mw/destroyed-raw-response");
-    m_mockHandler.mockResponse(url, QByteArray("ok"), 200);
+    m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
