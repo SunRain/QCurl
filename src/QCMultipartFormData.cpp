@@ -166,7 +166,7 @@ void QCMultipartFormData::addFileField(const QString &fieldName,
     field.name       = fieldName;
     field.fileName   = fileName;
     field.fileData   = fileData;
-    field.mimeType   = mimeType.isEmpty() ? "application/octet-stream" : mimeType;
+    field.mimeType   = mimeType.isEmpty() ? QStringLiteral("application/octet-stream") : mimeType;
     field.isFile     = true;
 
     d->fields.append(field);
@@ -217,11 +217,11 @@ bool QCMultipartFormData::setBoundary(const QString &boundary)
         qWarning() << "QCMultipartFormData: boundary too long:" << boundary.size();
         return false;
     }
-    if (boundary.contains('\r') || boundary.contains('\n')) {
+    if (boundary.contains(QLatin1Char('\r')) || boundary.contains(QLatin1Char('\n'))) {
         qWarning() << "QCMultipartFormData: boundary contains CR/LF";
         return false;
     }
-    if (boundary.contains(' ') || boundary.contains('\t')) {
+    if (boundary.contains(QLatin1Char(' ')) || boundary.contains(QLatin1Char('\t'))) {
         qWarning() << "QCMultipartFormData: boundary contains whitespace";
         return false;
     }

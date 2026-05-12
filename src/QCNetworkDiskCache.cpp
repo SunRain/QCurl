@@ -173,7 +173,8 @@ QCNetworkDiskCache::QCNetworkDiskCache(QObject *parent)
     , d_ptr(new QCNetworkDiskCachePrivate)
 {
     // 使用平台默认缓存目录，避免调用方必须先配置路径。
-    d_ptr->cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/QCurl";
+    d_ptr->cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+                      + QStringLiteral("/QCurl");
     d_ptr->ensureCacheDirectory();
 }
 

@@ -103,15 +103,15 @@ QString logLevelToString(NetworkLogLevel level)
 {
     switch (level) {
         case NetworkLogLevel::Debug:
-            return "DEBUG";
+            return QStringLiteral("DEBUG");
         case NetworkLogLevel::Info:
-            return "INFO";
+            return QStringLiteral("INFO");
         case NetworkLogLevel::Warning:
-            return "WARN";
+            return QStringLiteral("WARN");
         case NetworkLogLevel::Error:
-            return "ERROR";
+            return QStringLiteral("ERROR");
     }
-    return "UNKNOWN";
+    return QStringLiteral("UNKNOWN");
 }
 
 } // namespace QCurl

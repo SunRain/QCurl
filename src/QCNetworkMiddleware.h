@@ -84,7 +84,7 @@ public:
      * @brief 中间件名称
      * @return 中间件的标识名称
      */
-    virtual QString name() const { return "QCNetworkMiddleware"; }
+    virtual QString name() const { return QStringLiteral("QCNetworkMiddleware"); }
 
 private:
     void registerManager(QCNetworkAccessManager *manager);
@@ -109,7 +109,7 @@ public:
     /// 在接收完成后记录响应摘要。
     void onResponseReceived(QCNetworkReply *reply) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCLoggingMiddleware"; }
+    QString name() const override { return QStringLiteral("QCLoggingMiddleware"); }
 };
 
 /**
@@ -130,7 +130,7 @@ public:
     /// 在响应后统一处理错误和 HTTP 失败。
     void onResponseReceived(QCNetworkReply *reply) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCErrorHandlingMiddleware"; }
+    QString name() const override { return QStringLiteral("QCErrorHandlingMiddleware"); }
 
 private:
     std::function<void(const QString &)> m_errorCallback;
@@ -153,7 +153,7 @@ public:
     /// 在发送前把签名信息写入请求。
     void onRequestPreSend(QCNetworkRequest &request) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCSigningMiddleware"; }
+    QString name() const override { return QStringLiteral("QCSigningMiddleware"); }
 
 private:
     QString m_signingKey;
@@ -179,7 +179,7 @@ public:
     /// 在请求未显式配置时注入默认重试策略。
     void onRequestPreSend(QCNetworkRequest &request) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCUnifiedRetryPolicyMiddleware"; }
+    QString name() const override { return QStringLiteral("QCUnifiedRetryPolicyMiddleware"); }
 
 private:
     QCNetworkRetryPolicy m_defaultPolicy;
@@ -199,7 +199,7 @@ public:
     /// 在响应完成后输出脱敏摘要。
     void onResponseReceived(QCNetworkReply *reply) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCRedactingLoggingMiddleware"; }
+    QString name() const override { return QStringLiteral("QCRedactingLoggingMiddleware"); }
 };
 
 /**
@@ -215,7 +215,7 @@ public:
     /// 在响应完成后输出关键观测指标。
     void onResponseReceived(QCNetworkReply *reply) override;
     /// 返回中间件标识名。
-    QString name() const override { return "QCObservabilityMiddleware"; }
+    QString name() const override { return QStringLiteral("QCObservabilityMiddleware"); }
 };
 
 } // namespace QCurl

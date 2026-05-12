@@ -1,14 +1,13 @@
 # QCurl 库源文件配置
 
-# 当前保留的旧文件（v2.0 重构后剩余）
-set(QCURL_LEGACY_SOURCES
+set(QCURL_CORE_SOURCES
     CurlGlobalConstructor.cpp
     QCNetworkAccessManager.cpp
     QCNetworkRequest.cpp
     QCUtility.cpp
 )
 
-set(QCURL_LEGACY_HEADERS
+set(QCURL_CORE_HEADERS
     private/CurlGlobalConstructor_p.h
     QCNetworkAccessManager.h
     QCNetworkAccessManager_p.h
@@ -17,8 +16,7 @@ set(QCURL_LEGACY_HEADERS
     qbytedata_p.h
 )
 
-# 新的现代化实现（正在添加中）
-set(QCURL_MODERN_SOURCES
+set(QCURL_FEATURE_SOURCES
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
     private/QCRequestPipeline.cpp
@@ -50,7 +48,7 @@ set(QCURL_MODERN_SOURCES
     QCNetworkDiagnostics.cpp        # v2.19.0: 网络诊断工具
 )
 
-set(QCURL_MODERN_HEADERS
+set(QCURL_FEATURE_HEADERS
     QCGlobal.h
     QCCurlHandleManager.h
     CurlFeatureProbe.h
@@ -90,19 +88,19 @@ set(QCURL_MODERN_HEADERS
 # WebSocket 支持（v2.3.0）+ 重连机制（v2.4.0）
 # ============================================================================
 if(QCURL_WEBSOCKET_SUPPORT)
-    list(APPEND QCURL_MODERN_SOURCES
+    list(APPEND QCURL_FEATURE_SOURCES
         QCWebSocket.cpp
         QCWebSocketReconnectPolicy.cpp
         QCWebSocketPool.cpp                 # v2.5.0: WebSocket 连接池
         QCWebSocketCompressionConfig.cpp    # v2.18.0: WebSocket 压缩配置
     )
-    list(APPEND QCURL_MODERN_HEADERS
+    list(APPEND QCURL_FEATURE_HEADERS
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h                   # v2.5.0: WebSocket 连接池
         QCWebSocketCompressionConfig.h      # v2.18.0: WebSocket 压缩配置
     )
-    list(APPEND QCURL_MODERN_HEADERS
+    list(APPEND QCURL_FEATURE_HEADERS
         QCWebSocket_p.h
     )
     message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + v2.4.0 重连 + v2.5.0 连接池 + v2.18.0 压缩）")
@@ -111,8 +109,8 @@ else()
 endif()
 
 # 合并所有源文件和头文件
-set(QCURL_ALL_SOURCES ${QCURL_LEGACY_SOURCES} ${QCURL_MODERN_SOURCES})
-set(QCURL_ALL_HEADERS ${QCURL_LEGACY_HEADERS} ${QCURL_MODERN_HEADERS})
+set(QCURL_ALL_SOURCES ${QCURL_CORE_SOURCES} ${QCURL_FEATURE_SOURCES})
+set(QCURL_ALL_HEADERS ${QCURL_CORE_HEADERS} ${QCURL_FEATURE_HEADERS})
 # 默认稳定安装面（public package SSOT）只包含 Core contract：
 # - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入默认安装前缀
 # - `QCNetworkLogger.h` 因 `QCNetworkAccessManager` 的对外接口依赖而进入 Core
@@ -208,18 +206,16 @@ target_include_directories(QCurl
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/src>  # 用于 QCurlConfig.h
         $<INSTALL_INTERFACE:include/qcurl>
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/private  # 用于 SingletonPointer.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/private
 )
 
 # 编译定义
 target_compile_definitions(QCurl
     PRIVATE
         QCURL_BUILDING_LIBRARY
-        # 暂时禁用严格的 Qt 字符串转换检查，以便旧代码能够编译
-        # TODO: 在后续阶段逐步修复并重新启用这些定义
-        # QT_NO_CAST_FROM_ASCII
-        # QT_NO_CAST_TO_ASCII
-        # QT_NO_URL_CAST_FROM_STRING
+        QT_NO_CAST_FROM_ASCII
+        QT_NO_CAST_TO_ASCII
+        QT_NO_URL_CAST_FROM_STRING
 )
 
 # 测试专用：为单元测试提供可控的 capability 分支覆盖（不影响默认构建）

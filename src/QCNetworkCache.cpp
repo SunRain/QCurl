@@ -176,10 +176,10 @@ QDateTime QCNetworkCache::parseExpirationDate(const QMap<QByteArray, QByteArray>
 
         // 解析 max-age=秒数
         QString ccStr          = QString::fromLatin1(cacheControl);
-        QStringList directives = ccStr.split(',', Qt::SkipEmptyParts);
+        QStringList directives = ccStr.split(QLatin1Char(','), Qt::SkipEmptyParts);
         for (const QString &directive : directives) {
             QString trimmed = directive.trimmed();
-            if (trimmed.startsWith("max-age=", Qt::CaseInsensitive)) {
+            if (trimmed.startsWith(QStringLiteral("max-age="), Qt::CaseInsensitive)) {
                 bool ok    = false;
                 int maxAge = trimmed.mid(8).toInt(&ok);
                 if (ok && maxAge > 0) {
@@ -217,7 +217,8 @@ bool QCNetworkCache::isCacheable(const QMap<QByteArray, QByteArray> &headers)
         }
 
         QString ccStr = QString::fromLatin1(cacheControl).toLower();
-        if (ccStr.contains("no-store") || ccStr.contains("no-cache")) {
+        if (ccStr.contains(QStringLiteral("no-store"))
+            || ccStr.contains(QStringLiteral("no-cache"))) {
             return false;
         }
     }
@@ -229,7 +230,7 @@ bool QCNetworkCache::isCacheable(const QMap<QByteArray, QByteArray> &headers)
             pragma = headers.value("Pragma");
         }
 
-        if (QString::fromLatin1(pragma).toLower().contains("no-cache")) {
+        if (QString::fromLatin1(pragma).toLower().contains(QStringLiteral("no-cache"))) {
             return false;
         }
     }

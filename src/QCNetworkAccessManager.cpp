@@ -1213,11 +1213,11 @@ QCNetworkReply *QCNetworkAccessManager::postForm(const QUrl &url,
     // URL编码表单数据
     QStringList pairs;
     for (auto it = formData.constBegin(); it != formData.constEnd(); ++it) {
-        QString key   = QUrl::toPercentEncoding(it.key());
-        QString value = QUrl::toPercentEncoding(it.value());
+        QString key   = QString::fromLatin1(QUrl::toPercentEncoding(it.key()));
+        QString value = QString::fromLatin1(QUrl::toPercentEncoding(it.value()));
         pairs.append(QStringLiteral("%1=%2").arg(key, value));
     }
-    QByteArray encodedData = pairs.join("&").toUtf8();
+    QByteArray encodedData = pairs.join(QChar::fromLatin1('&')).toUtf8();
 
     // 创建请求并设置 Content-Type
     QCNetworkRequest request(url);

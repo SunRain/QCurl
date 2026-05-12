@@ -1321,7 +1321,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         }
         QByteArray headerValue = request.rawHeader(headerName);
         // 格式化为 "Name: Value" 格式
-        QString headerLine = QString::fromUtf8(headerName) + ": " + QString::fromUtf8(headerValue);
+        QString headerLine = QString::fromUtf8(headerName) + QStringLiteral(": ")
+                             + QString::fromUtf8(headerValue);
         curlManager.appendHeader(headerLine);
     }
 
@@ -1921,7 +1922,7 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
 
         bool caPathSet = false;
         for (int i = 0; systemCaPaths[i] != nullptr; ++i) {
-            QFileInfo fi(systemCaPaths[i]);
+            QFileInfo fi(QLatin1StringView(systemCaPaths[i]));
             if (fi.exists() && fi.isReadable()) {
                 curl_easy_setopt(handle, CURLOPT_CAINFO, systemCaPaths[i]);
                 caPathSet = true;
@@ -3112,7 +3113,8 @@ void QCNetworkReply::execute()
                 if (!loadFromCache(true)) {
                     // 使用 QPointer 防止在异步执行期间对象被删除
                     QPointer<QCNetworkReply> safeThis(this);
-                    d->setError(NetworkError::InvalidRequest, "Cache miss with OnlyCache policy");
+                    d->setError(NetworkError::InvalidRequest,
+                                QStringLiteral("Cache miss with OnlyCache policy"));
                     // 异步发射信号，避免信号在用户连接之前发射
                     QTimer::singleShot(0, this, [safeThis]() {
                         if (safeThis) {

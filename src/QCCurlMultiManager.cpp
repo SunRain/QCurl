@@ -38,7 +38,7 @@ bool domainMatchesHost(const QString &cookieDomain, const QString &host)
     if (normalized.startsWith(QStringLiteral("#HttpOnly_"))) {
         normalized = normalized.mid(QStringLiteral("#HttpOnly_").size());
     }
-    const bool includeSubdomains = normalized.startsWith('.');
+    const bool includeSubdomains = normalized.startsWith(QLatin1Char('.'));
     if (includeSubdomains) {
         normalized = normalized.mid(1);
     }
@@ -64,7 +64,7 @@ bool domainMatchesHost(const QString &cookieDomain, const QString &host)
     }
 
     const int idx = host.size() - normalized.size() - 1;
-    return idx >= 0 && host.at(idx) == QChar('.');
+    return idx >= 0 && host.at(idx) == QLatin1Char('.');
 }
 
 bool pathMatchesUrl(const QString &cookiePath, const QString &urlPath)
@@ -79,11 +79,11 @@ bool pathMatchesUrl(const QString &cookiePath, const QString &urlPath)
         return true;
     }
 
-    if (p.endsWith('/')) {
+    if (p.endsWith(QLatin1Char('/'))) {
         return true;
     }
 
-    return u.at(p.size()) == QChar('/');
+    return u.at(p.size()) == QLatin1Char('/');
 }
 
 std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
@@ -116,11 +116,11 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
     QNetworkCookie cookie(nameBytes, valueBytes);
     QString domain = QString::fromUtf8(domainBytes);
     if (includeSubdomains) {
-        if (!domain.startsWith('.')) {
-            domain.prepend('.');
+        if (!domain.startsWith(QLatin1Char('.'))) {
+            domain.prepend(QLatin1Char('.'));
         }
     } else {
-        if (domain.startsWith('.')) {
+        if (domain.startsWith(QLatin1Char('.'))) {
             domain.remove(0, 1);
         }
     }

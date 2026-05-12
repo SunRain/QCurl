@@ -44,11 +44,11 @@ QVariantMap diagResultToVariantMap(const DiagResult &result)
 QString DiagResult::toString() const
 {
     QString result;
-    result += success ? "✅ " : "❌ ";
-    result += summary + "\n";
+    result += success ? QStringLiteral("✅ ") : QStringLiteral("❌ ");
+    result += summary + QStringLiteral("\n");
 
     if (!details.isEmpty()) {
-        result += "详细信息:\n";
+        result += QStringLiteral("详细信息:\n");
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
             result += QStringLiteral("  %1: %2\n").arg(it.key(), it.value().toString());
         }
@@ -102,8 +102,8 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
             result.success              = false;
             result.summary              = QStringLiteral("DNS 解析超时: %1").arg(hostname);
             result.errorString          = QStringLiteral("Timeout");
-            result.details["hostname"]  = hostname;
-            result.details["timeoutMs"] = timeout;
+            result.details[QStringLiteral("hostname")]  = hostname;
+            result.details[QStringLiteral("timeoutMs")] = timeout;
             return result;
         }
     } else {
@@ -132,10 +132,10 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
 
     result.success                    = true;
     result.summary                    = QStringLiteral("DNS 解析成功: %1").arg(hostname);
-    result.details["hostname"]        = hostname;
-    result.details["ipv4"]            = ipv4List;
-    result.details["ipv6"]            = ipv6List;
-    result.details["resolveDuration"] = result.durationMs;
+    result.details[QStringLiteral("hostname")]        = hostname;
+    result.details[QStringLiteral("ipv4")]            = ipv4List;
+    result.details[QStringLiteral("ipv6")]            = ipv6List;
+    result.details[QStringLiteral("resolveDuration")] = result.durationMs;
 
     return result;
 }
@@ -173,8 +173,8 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
             result.success              = false;
             result.summary              = QStringLiteral("反向 DNS 解析超时: %1").arg(ip);
             result.errorString          = QStringLiteral("Timeout");
-            result.details["ip"]        = ip;
-            result.details["timeoutMs"] = timeout;
+            result.details[QStringLiteral("ip")]        = ip;
+            result.details[QStringLiteral("timeoutMs")] = timeout;
             return result;
         }
     } else {
@@ -184,7 +184,7 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
     }
 
     result.durationMs    = timer.elapsed();
-    result.details["ip"] = ip;
+    result.details[QStringLiteral("ip")] = ip;
 
     if (info.error() != QHostInfo::NoError || info.hostName().isEmpty()) {
         result.success     = false;
@@ -195,8 +195,8 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
 
     result.success = true;
     result.summary = QStringLiteral("反向 DNS 解析成功: %1 -> %2").arg(ip, info.hostName());
-    result.details["hostname"]        = info.hostName();
-    result.details["resolveDuration"] = result.durationMs;
+    result.details[QStringLiteral("hostname")]        = info.hostName();
+    result.details[QStringLiteral("resolveDuration")] = result.durationMs;
 
     return result;
 }
@@ -234,20 +234,20 @@ DiagResult QCNetworkDiagnostics::testConnection(const QString &host, int port, i
     loop.exec();
 
     result.durationMs      = timer.elapsed();
-    result.details["host"] = host;
-    result.details["port"] = port;
+    result.details[QStringLiteral("host")] = host;
+    result.details[QStringLiteral("port")] = port;
 
     if (socket.state() == QAbstractSocket::ConnectedState) {
         result.success                    = true;
         result.summary                    = QStringLiteral("连接成功: %1:%2").arg(host).arg(port);
-        result.details["connected"]       = true;
-        result.details["connectDuration"] = result.durationMs;
-        result.details["resolvedIP"]      = socket.peerAddress().toString();
+        result.details[QStringLiteral("connected")]       = true;
+        result.details[QStringLiteral("connectDuration")] = result.durationMs;
+        result.details[QStringLiteral("resolvedIP")]      = socket.peerAddress().toString();
         socket.close();
     } else {
         result.success              = false;
         result.summary              = QStringLiteral("连接失败: %1:%2").arg(host).arg(port);
-        result.details["connected"] = false;
+        result.details[QStringLiteral("connected")] = false;
         result.errorString          = socket.errorString();
     }
 
@@ -295,24 +295,25 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
     timeoutTimer.stop();
 
     result.durationMs      = timer.elapsed();
-    result.details["host"] = host;
-    result.details["port"] = port;
+    result.details[QStringLiteral("host")] = host;
+    result.details[QStringLiteral("port")] = port;
 
     if (socket.isEncrypted()) {
         QSslCertificate cert = socket.peerCertificate();
 
         result.success              = true;
         result.summary              = QStringLiteral("SSL 证书有效: %1").arg(host);
-        result.details["issuer"]    = cert.issuerDisplayName();
-        result.details["subject"]   = cert.subjectDisplayName();
-        result.details["notBefore"] = cert.effectiveDate();
-        result.details["notAfter"]  = cert.expiryDate();
+        result.details[QStringLiteral("issuer")]    = cert.issuerDisplayName();
+        result.details[QStringLiteral("subject")]   = cert.subjectDisplayName();
+        result.details[QStringLiteral("notBefore")] = cert.effectiveDate();
+        result.details[QStringLiteral("notAfter")]  = cert.expiryDate();
 
         int daysValid                = QDateTime::currentDateTime().daysTo(cert.expiryDate());
-        result.details["daysValid"]  = daysValid;
-        result.details["tlsVersion"] = socket.sessionProtocol() == QSsl::TlsV1_3 ? "TLSv1.3"
-                                                                                 : "TLSv1.2";
-        result.details["verified"]   = socket.sslHandshakeErrors().isEmpty();
+        result.details[QStringLiteral("daysValid")]  = daysValid;
+        result.details[QStringLiteral("tlsVersion")]
+            = socket.sessionProtocol() == QSsl::TlsV1_3 ? QStringLiteral("TLSv1.3")
+                                                        : QStringLiteral("TLSv1.2");
+        result.details[QStringLiteral("verified")]   = socket.sslHandshakeErrors().isEmpty();
 
         socket.close();
     } else if (timedOut) {
@@ -320,8 +321,8 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
         result.success              = false;
         result.summary              = QStringLiteral("SSL 握手超时: %1").arg(host);
         result.errorString          = QStringLiteral("Timeout");
-        result.details["timedOut"]  = true;
-        result.details["timeoutMs"] = timeout;
+        result.details[QStringLiteral("timedOut")]  = true;
+        result.details[QStringLiteral("timeoutMs")] = timeout;
     } else {
         result.success     = false;
         result.summary     = QStringLiteral("SSL 握手失败: %1").arg(host);
@@ -335,7 +336,7 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
             for (const QSslError &err : allErrors) {
                 errors << err.errorString();
             }
-            result.details["sslErrors"] = errors;
+            result.details[QStringLiteral("sslErrors")] = errors;
         }
     }
 
@@ -366,18 +367,18 @@ DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
     loop.exec();
 
     result.durationMs        = timer.elapsed();
-    result.details["url"]    = url.toString();
-    result.details["totalTime"] = result.durationMs;
-    result.details["finalURL"]  = reply->url().toString();
-    result.details["networkError"] = static_cast<int>(reply->error());
+    result.details[QStringLiteral("url")]    = url.toString();
+    result.details[QStringLiteral("totalTime")] = result.durationMs;
+    result.details[QStringLiteral("finalURL")]  = reply->url().toString();
+    result.details[QStringLiteral("networkError")] = static_cast<int>(reply->error());
 
     const QVariant statusCodeAttr = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
     if (statusCodeAttr.isValid()) {
-        result.details["statusCode"] = statusCodeAttr.toInt();
+        result.details[QStringLiteral("statusCode")] = statusCodeAttr.toInt();
     }
     const QVariant statusTextAttr = reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute);
     if (statusTextAttr.isValid()) {
-        result.details["statusText"] = statusTextAttr.toString();
+        result.details[QStringLiteral("statusText")] = statusTextAttr.toString();
     }
 
     if (reply->error() == QNetworkReply::NoError) {
@@ -387,7 +388,7 @@ DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
         result.success     = false;
         result.summary     = QStringLiteral("HTTP 探测失败: %1").arg(url.toString());
         result.errorString = reply->errorString();
-        result.details["errorString"] = result.errorString;
+        result.details[QStringLiteral("errorString")] = result.errorString;
     }
 
     reply->deleteLater();
@@ -407,43 +408,43 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
     timer.start();
 
     QString host = url.host();
-    int port     = url.port(url.scheme() == "https" ? 443 : 80);
-    bool isHttps = url.scheme() == "https";
+    int port     = url.port(url.scheme() == QStringLiteral("https") ? 443 : 80);
+    bool isHttps = url.scheme() == QStringLiteral("https");
 
     bool hasSslWarning = false;
 
     // 1. DNS 解析
     DiagResult dnsResult  = resolveDNS(host);
-    result.details["dns"] = QVariant::fromValue(diagResultToVariantMap(dnsResult));
+    result.details[QStringLiteral("dns")] = QVariant::fromValue(diagResultToVariantMap(dnsResult));
 
     if (!dnsResult.success) {
         result.success               = false;
-        result.summary               = "诊断失败: DNS 解析失败";
+        result.summary               = QStringLiteral("诊断失败: DNS 解析失败");
         result.errorString           = dnsResult.errorString;
         result.durationMs            = timer.elapsed();
-        result.details["failedStep"] = "dns";
-        result.details["overallHealth"] = "error";
+        result.details[QStringLiteral("failedStep")] = QStringLiteral("dns");
+        result.details[QStringLiteral("overallHealth")] = QStringLiteral("error");
         return result;
     }
 
     // 2. 连接测试
     DiagResult connResult        = testConnection(host, port);
-    result.details["connection"] = QVariant::fromValue(diagResultToVariantMap(connResult));
+    result.details[QStringLiteral("connection")] = QVariant::fromValue(diagResultToVariantMap(connResult));
 
     if (!connResult.success) {
         result.success               = false;
-        result.summary               = "诊断失败: 连接测试失败";
+        result.summary               = QStringLiteral("诊断失败: 连接测试失败");
         result.errorString           = connResult.errorString;
         result.durationMs            = timer.elapsed();
-        result.details["failedStep"] = "connection";
-        result.details["overallHealth"] = "error";
+        result.details[QStringLiteral("failedStep")] = QStringLiteral("connection");
+        result.details[QStringLiteral("overallHealth")] = QStringLiteral("error");
         return result;
     }
 
     // 3. SSL 检查（HTTPS）
     if (isHttps) {
         DiagResult sslResult  = checkSSL(host, port);
-        result.details["ssl"] = QVariant::fromValue(diagResultToVariantMap(sslResult));
+        result.details[QStringLiteral("ssl")] = QVariant::fromValue(diagResultToVariantMap(sslResult));
 
         if (!sslResult.success) {
             hasSslWarning = true;
@@ -452,7 +453,7 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
 
     // 4. HTTP 探测
     DiagResult httpResult  = probeHTTP(url);
-    result.details["http"] = QVariant::fromValue(diagResultToVariantMap(httpResult));
+    result.details[QStringLiteral("http")] = QVariant::fromValue(diagResultToVariantMap(httpResult));
 
     result.durationMs = timer.elapsed();
 
@@ -463,13 +464,15 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
                                                     .arg(url.toString())
                                               : QStringLiteral("综合诊断完成: %1")
                                                     .arg(url.toString());
-        result.details["overallHealth"] = hasSslWarning ? "warning" : "excellent";
+        result.details[QStringLiteral("overallHealth")] = hasSslWarning
+                                                              ? QStringLiteral("warning")
+                                                              : QStringLiteral("excellent");
     } else {
         result.success                  = false;
-        result.summary                  = "诊断失败: HTTP 探测失败";
+        result.summary                  = QStringLiteral("诊断失败: HTTP 探测失败");
         result.errorString              = httpResult.errorString;
-        result.details["failedStep"]    = "http";
-        result.details["overallHealth"] = "error";
+        result.details[QStringLiteral("failedStep")]    = QStringLiteral("http");
+        result.details[QStringLiteral("overallHealth")] = QStringLiteral("error");
     }
 
     return result;
@@ -498,22 +501,22 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     }
 
     QString resolvedIP           = hostInfo.addresses().first().toString();
-    result.details["host"]       = host;
-    result.details["resolvedIP"] = resolvedIP;
+    result.details[QStringLiteral("host")]       = host;
+    result.details[QStringLiteral("resolvedIP")] = resolvedIP;
 
     // 2. 构建 ping 命令（跨平台）
     QString pingCmd;
     QStringList pingArgs;
 
 #ifdef Q_OS_WIN
-    pingCmd = "ping";
-    pingArgs << "-n" << QString::number(count)   // 次数
-             << "-w" << QString::number(timeout) // 超时（毫秒）
+    pingCmd = QStringLiteral("ping");
+    pingArgs << QStringLiteral("-n") << QString::number(count)   // 次数
+             << QStringLiteral("-w") << QString::number(timeout) // 超时（毫秒）
              << resolvedIP;
 #else // Linux/macOS
-    pingCmd = "ping";
-    pingArgs << "-c" << QString::number(count)                    // 次数
-             << "-W" << QString::number(timeout / 1000.0, 'f', 1) // 超时（秒）
+    pingCmd = QStringLiteral("ping");
+    pingArgs << QStringLiteral("-c") << QString::number(count)                    // 次数
+             << QStringLiteral("-W") << QString::number(timeout / 1000.0, 'f', 1) // 超时（秒）
              << resolvedIP;
 #endif
 
@@ -524,7 +527,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     if (!process.waitForFinished(timeout * count + 5000)) {
         result.success     = false;
         result.summary     = QStringLiteral("Ping 超时: %1").arg(host);
-        result.errorString = "进程执行超时";
+        result.errorString = QStringLiteral("进程执行超时");
         result.durationMs  = timer.elapsed();
         process.kill();
         return result;
@@ -541,7 +544,8 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
 #ifdef Q_OS_WIN
     // Windows ping 输出格式解析
     // 示例: "来自 8.8.8.8 的回复: 字节=32 时间=14ms TTL=117"
-    QRegularExpression timeRegex("时间[=<]([0-9]+)ms", QRegularExpression::CaseInsensitiveOption);
+    QRegularExpression timeRegex(QStringLiteral("时间[=<]([0-9]+)ms"),
+                                 QRegularExpression::CaseInsensitiveOption);
     QRegularExpressionMatchIterator it = timeRegex.globalMatch(output);
     while (it.hasNext()) {
         QRegularExpressionMatch match = it.next();
@@ -552,7 +556,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
 #else
     // Linux/macOS ping 输出格式解析
     // 示例: "64 bytes from 8.8.8.8: icmp_seq=1 ttl=117 time=14.2 ms"
-    QRegularExpression timeRegex("time=([0-9.]+)\\s*ms");
+    QRegularExpression timeRegex(QStringLiteral("time=([0-9.]+)\\s*ms"));
     QRegularExpressionMatchIterator it = timeRegex.globalMatch(output);
     while (it.hasNext()) {
         QRegularExpressionMatch match = it.next();
@@ -565,20 +569,20 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     int packetsLost = packetsSent - packetsReceived;
     double lossRate = (packetsLost * 100.0) / packetsSent;
 
-    result.details["packetsSent"]     = packetsSent;
-    result.details["packetsReceived"] = packetsReceived;
-    result.details["packetsLost"]     = packetsLost;
-    result.details["lossRate"]        = lossRate;
+    result.details[QStringLiteral("packetsSent")]     = packetsSent;
+    result.details[QStringLiteral("packetsReceived")] = packetsReceived;
+    result.details[QStringLiteral("packetsLost")]     = packetsLost;
+    result.details[QStringLiteral("lossRate")]        = lossRate;
 
     if (!rttList.isEmpty()) {
         qint64 minRTT = *std::min_element(rttList.begin(), rttList.end());
         qint64 maxRTT = *std::max_element(rttList.begin(), rttList.end());
         qint64 avgRTT = std::accumulate(rttList.begin(), rttList.end(), 0LL) / rttList.size();
 
-        result.details["minRTT"]  = minRTT;
-        result.details["maxRTT"]  = maxRTT;
-        result.details["avgRTT"]  = avgRTT;
-        result.details["rttList"] = QVariant::fromValue(rttList);
+        result.details[QStringLiteral("minRTT")]  = minRTT;
+        result.details[QStringLiteral("maxRTT")]  = maxRTT;
+        result.details[QStringLiteral("avgRTT")]  = avgRTT;
+        result.details[QStringLiteral("rttList")] = QVariant::fromValue(rttList);
 
         result.success = true;
         result.summary = QStringLiteral("Ping 成功: %1 (%2), 平均 %3ms, 丢包率 %4%")
@@ -588,7 +592,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     } else {
         result.success     = false;
         result.summary     = QStringLiteral("Ping 失败: %1, 100% 丢包").arg(host);
-        result.errorString = "所有 ICMP 包均丢失";
+        result.errorString = QStringLiteral("所有 ICMP 包均丢失");
     }
 
     return result;
@@ -617,22 +621,22 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     }
 
     QString resolvedIP           = hostInfo.addresses().first().toString();
-    result.details["host"]       = host;
-    result.details["resolvedIP"] = resolvedIP;
+    result.details[QStringLiteral("host")]       = host;
+    result.details[QStringLiteral("resolvedIP")] = resolvedIP;
 
     // 2. 构建 traceroute 命令
     QString traceCmd;
     QStringList traceArgs;
 
 #ifdef Q_OS_WIN
-    traceCmd = "tracert";
-    traceArgs << "-h" << QString::number(maxHops) // 最大跳数
-              << "-w" << QString::number(timeout) // 超时（毫秒）
+    traceCmd = QStringLiteral("tracert");
+    traceArgs << QStringLiteral("-h") << QString::number(maxHops) // 最大跳数
+              << QStringLiteral("-w") << QString::number(timeout) // 超时（毫秒）
               << resolvedIP;
 #else // Linux/macOS
-    traceCmd = "traceroute";
-    traceArgs << "-m" << QString::number(maxHops)                  // 最大跳数
-              << "-w" << QString::number(timeout / 1000.0, 'f', 1) // 超时（秒）
+    traceCmd = QStringLiteral("traceroute");
+    traceArgs << QStringLiteral("-m") << QString::number(maxHops)                  // 最大跳数
+              << QStringLiteral("-w") << QString::number(timeout / 1000.0, 'f', 1) // 超时（秒）
               << resolvedIP;
 #endif
 
@@ -643,7 +647,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     if (!process.waitForFinished(timeout * maxHops + 10000)) {
         result.success     = false;
         result.summary     = QStringLiteral("Traceroute 超时: %1").arg(host);
-        result.errorString = "进程执行超时";
+        result.errorString = QStringLiteral("进程执行超时");
         result.durationMs  = timer.elapsed();
         process.kill();
         return result;
@@ -659,22 +663,23 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
 #ifdef Q_OS_WIN
     // Windows tracert 输出格式解析
     // 示例: "  1    14 ms    13 ms    14 ms  192.168.1.1"
-    QRegularExpression hopRegex("^\\s*(\\d+)\\s+((?:<1 ms|[*]|\\d+ ms)\\s+){3}\\s*([\\d.]+|\\*)");
-    QStringList lines = output.split('\n');
+    QRegularExpression hopRegex(
+        QStringLiteral("^\\s*(\\d+)\\s+((?:<1 ms|[*]|\\d+ ms)\\s+){3}\\s*([\\d.]+|\\*)"));
+    QStringList lines = output.split(QLatin1Char('\n'));
 
     for (const QString &line : lines) {
         QRegularExpressionMatch match = hopRegex.match(line);
         if (match.hasMatch()) {
             QVariantMap hop;
-            hop["hopNumber"] = match.captured(1).toInt();
+            hop[QStringLiteral("hopNumber")] = match.captured(1).toInt();
             QString ipStr    = match.captured(3);
 
-            if (ipStr == "*") {
-                hop["ip"]      = "timeout";
-                hop["timeout"] = true;
+            if (ipStr == QStringLiteral("*")) {
+                hop[QStringLiteral("ip")]      = QStringLiteral("timeout");
+                hop[QStringLiteral("timeout")] = true;
             } else {
-                hop["ip"]      = ipStr;
-                hop["timeout"] = false;
+                hop[QStringLiteral("ip")]      = ipStr;
+                hop[QStringLiteral("timeout")] = false;
 
                 // 检查是否到达目标
                 if (ipStr == resolvedIP) {
@@ -688,20 +693,21 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
 #else
     // Linux/macOS traceroute 输出格式解析
     // 示例: " 1  192.168.1.1 (192.168.1.1)  1.234 ms  1.123 ms  1.345 ms"
-    QRegularExpression hopRegex("^\\s*(\\d+)\\s+(?:([\\w.-]+)\\s+)?\\(([\\d.]+)\\)");
-    QStringList lines = output.split('\n');
+    QRegularExpression hopRegex(
+        QStringLiteral("^\\s*(\\d+)\\s+(?:([\\w.-]+)\\s+)?\\(([\\d.]+)\\)"));
+    QStringList lines = output.split(QLatin1Char('\n'));
 
     for (const QString &line : lines) {
         QRegularExpressionMatch match = hopRegex.match(line);
         if (match.hasMatch()) {
             QVariantMap hop;
-            hop["hopNumber"] = match.captured(1).toInt();
-            hop["hostname"]  = match.captured(2);
-            hop["ip"]        = match.captured(3);
-            hop["timeout"]   = false;
+            hop[QStringLiteral("hopNumber")] = match.captured(1).toInt();
+            hop[QStringLiteral("hostname")]  = match.captured(2);
+            hop[QStringLiteral("ip")]        = match.captured(3);
+            hop[QStringLiteral("timeout")]   = false;
 
             // 解析 RTT
-            QRegularExpression rttRegex("([0-9.]+)\\s*ms");
+            QRegularExpression rttRegex(QStringLiteral("([0-9.]+)\\s*ms"));
             QRegularExpressionMatchIterator it = rttRegex.globalMatch(line);
             QList<qint64> rtts;
             while (it.hasNext()) {
@@ -710,10 +716,10 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
             }
 
             if (rtts.size() >= 3) {
-                hop["rtt1"]   = rtts[0];
-                hop["rtt2"]   = rtts[1];
-                hop["rtt3"]   = rtts[2];
-                hop["avgRTT"] = (rtts[0] + rtts[1] + rtts[2]) / 3;
+                hop[QStringLiteral("rtt1")]   = rtts[0];
+                hop[QStringLiteral("rtt2")]   = rtts[1];
+                hop[QStringLiteral("rtt3")]   = rtts[2];
+                hop[QStringLiteral("avgRTT")] = (rtts[0] + rtts[1] + rtts[2]) / 3;
             }
 
             // 检查是否到达目标
@@ -726,9 +732,9 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     }
 #endif
 
-    result.details["hops"]               = QVariant::fromValue(hops);
-    result.details["totalHops"]          = hops.size();
-    result.details["reachedDestination"] = reachedDestination;
+    result.details[QStringLiteral("hops")]               = QVariant::fromValue(hops);
+    result.details[QStringLiteral("totalHops")]          = hops.size();
+    result.details[QStringLiteral("reachedDestination")] = reachedDestination;
 
     if (!hops.isEmpty()) {
         result.success = true;
@@ -738,7 +744,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     } else {
         result.success     = false;
         result.summary     = QStringLiteral("Traceroute 失败: %1").arg(host);
-        result.errorString = "无法解析路由信息";
+        result.errorString = QStringLiteral("无法解析路由信息");
     }
 
     return result;

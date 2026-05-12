@@ -457,7 +457,7 @@ void QCWebSocketPool::sendKeepAlive()
                 // 发送空 Ping 消息（使用 sendTextMessage 代替，因为 sendPing 不在 API 中）
                 // libcurl WebSocket API 会自动处理 Ping/Pong 帧
                 // 这里发送一个空的文本消息作为心跳检测
-                conn.socket->sendTextMessage("");
+                conn.socket->sendTextMessage(QString());
             }
         }
     }
