@@ -5,6 +5,7 @@
 ## 导航
 
 - public/install 边界：`docs/arch/public-header-boundary.md`
+- first Stable hard-break 最终结论：`docs/arch/first-stable-hard-break-final-review.md`
 - RC 成熟度审查与复核：`docs/arch/rc-maturity-review.md`
 - internal request pipeline：`docs/arch/request-normalization-pipeline.md`
 - 传输暂停/恢复设计：`docs/arch/transport-pause-resume.md`
