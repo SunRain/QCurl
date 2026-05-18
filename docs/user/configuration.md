@@ -16,7 +16,7 @@
 - 认证：`setHttpAuth(...)`
 - 上传：
   - raw body：`QCNetworkAccessManager::sendPost(..., QIODevice *, sizeBytes)` / `sendPut(..., QIODevice *, sizeBytes)`
-  - 单文件 multipart：`QCNetworkAccessManager::postMultipartDevice(...)` / `postMultipartFile(...)`
+  - 单文件 multipart：`QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` + `sendPost(..., QIODevice *, sizeBytes)`
 
 上传入口的关键合同：
 
@@ -25,7 +25,7 @@
 - raw-body 从调用时的当前 `pos()` 开始读；需要重定向、重试或认证协商重发 body 时，设备必须能 seek 回起点。
 - POST 未知长度只支持 HTTP/1.1 chunked raw-body；PUT 必须有已知长度或可从 seekable device 推导。
 - async raw-body 可以通过 `readyRead()` 从 source-not-ready 恢复；sync raw-body 遇到 `read() == 0 && !atEnd()` 会失败。
-- `postMultipartDevice()` 要求已知长度、可 seek、同线程、借用生命周期；不支持 unknown-size/sequential source。
+- `QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` 在构造阶段只校验 source device、长度和 seek 能力；返回空值表示构造失败并通过 `error` 给出原因。发送阶段仍要求 source device、wrapper device、manager/reply 在同一线程，并拒绝 unknown-size/sequential source。
 
 ### 值语义与 `operator==`
 

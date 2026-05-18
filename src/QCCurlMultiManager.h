@@ -120,9 +120,9 @@ public:
      *
      * @param filterUrl 可选过滤 URL，用于按 host/path 收敛结果
      * @param error 可选错误输出
-     * @return 当前 share context 可见的 cookies 列表
+     * @return 空值表示失败；空列表表示成功但无匹配 cookies
      */
-    [[nodiscard]] QList<QNetworkCookie> exportCookiesForManager(
+    [[nodiscard]] std::optional<QList<QNetworkCookie>> exportCookiesForManager(
         const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error);
 
     /**

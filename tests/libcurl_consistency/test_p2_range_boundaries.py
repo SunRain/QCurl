@@ -1,5 +1,5 @@
 """
-P2: Range boundary cross proof through downloadFileResumable().
+P2: Range boundary cross proof through QCNetworkResumableDownloadJob.
 """
 
 from __future__ import annotations

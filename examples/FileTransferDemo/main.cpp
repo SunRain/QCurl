@@ -1,5 +1,8 @@
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDownloadToDeviceJob.h"
 #include "QCNetworkError.h"
+#include "QCNetworkMultipartBody.h"
+#include "QCNetworkResumableDownloadJob.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
@@ -51,25 +54,29 @@ private:
         QUrl url(baseUrl() + "/stream-bytes/65536?seed=42&chunk_size=4096");
         qDebug() << "[1/3] 开始流式下载:" << url.toString();
 
-        auto *reply = m_manager.downloadToDevice(url, file);
-        connect(reply, &QCNetworkReply::downloadProgress, this, [](qint64 received, qint64 total) {
+        auto *job = new QCNetworkDownloadToDeviceJob(&m_manager, url, file, this);
+        connect(job, &QCNetworkTransferJob::progress, this, [](qint64 received, qint64 total) {
             if (total > 0) {
                 qDebug() << "  -> 下载进度" << received << "/" << total;
             }
         });
 
-        connect(reply, &QCNetworkReply::finished, this, [this, reply, file]() {
+        connect(job, &QCNetworkTransferJob::finished, this, [this, file, job]() {
             file->close();
-            if (reply->error() == NetworkError::NoError) {
+            if (job->error() == NetworkError::NoError) {
                 qDebug() << "  ✓ 流式下载完成，文件位于" << m_streamFilePath;
                 runStreamingUpload();
             } else {
-                qWarning() << "  ✗ 流式下载失败:" << reply->errorString();
+                qWarning() << "  ✗ 流式下载失败:" << job->errorString();
                 finishDemo(1);
             }
-            reply->deleteLater();
+            if (auto *reply = job->reply()) {
+                reply->deleteLater();
+            }
+            job->deleteLater();
             file->deleteLater();
         });
+        job->start();
     }
 
     void runStreamingUpload()
@@ -83,12 +90,31 @@ private:
         QUrl url(baseUrl() + "/post");
         qDebug() << "[2/3] 从文件流式上传:" << url.toString();
 
-        auto *reply = m_manager.postMultipartDevice(url,
-                                                    QStringLiteral("file"),
-                                                    file,
-                                                    QFileInfo(*file).fileName(),
-                                                    QStringLiteral("application/octet-stream"),
-                                                    file->size());
+        QString bodyError;
+        auto body = QCNetworkMultipartBody::fromSingleFileDevice(
+            file,
+            QStringLiteral("file"),
+            QFileInfo(*file).fileName(),
+            QStringLiteral("application/octet-stream"),
+            file->size(),
+            &bodyError);
+        if (!body.has_value()) {
+            qWarning() << "无法创建 multipart body:" << bodyError;
+            file->deleteLater();
+            return finishDemo(1);
+        }
+
+        QCNetworkRequest request(url);
+        request.setRawHeader(QByteArrayLiteral("Content-Type"), body->contentType());
+        QString takeError;
+        auto *bodyDevice = body->takeDevice(nullptr, &takeError);
+        if (!bodyDevice) {
+            qWarning() << "无法取得 multipart 流式设备:" << takeError;
+            file->deleteLater();
+            return finishDemo(1);
+        }
+        auto *reply = m_manager.sendPost(request, bodyDevice, body->sizeBytes());
+        bodyDevice->setParent(reply);
 
         connect(reply, &QCNetworkReply::uploadProgress, this, [](qint64 sent, qint64 total) {
             if (total > 0) {
@@ -128,27 +154,42 @@ private:
     {
         const int totalBytes = 131072;
         QUrl url(baseUrl() + QStringLiteral("/range/%1").arg(totalBytes));
-        auto *reply = m_manager.downloadFileResumable(url, m_resumableFilePath);
+        auto *job = new QCNetworkResumableDownloadJob(&m_manager,
+                                                      url,
+                                                      m_resumableFilePath,
+                                                      false,
+                                                      this);
 
         if (!resume) {
-            connect(reply,
-                    &QCNetworkReply::downloadProgress,
+            connect(job,
+                    &QCNetworkTransferJob::progress,
                     this,
-                    [this, reply, totalBytes](qint64 received, qint64 total) {
+                    [this, job, totalBytes](qint64 received, qint64 total) {
                         Q_UNUSED(total);
                         if (!m_cancelledOnce && received >= totalBytes / 3) {
                             m_cancelledOnce = true;
                             qDebug() << "  -> 模拟网络中断，主动取消";
-                            reply->cancel();
+                            if (auto *reply = job->reply()) {
+                                reply->cancel();
+                            }
                         }
                     });
         }
 
-        connect(reply, &QCNetworkReply::finished, this, [this, reply, resume, totalBytes]() {
+        connect(job, &QCNetworkTransferJob::finished, this, [this, resume, totalBytes, job]() {
+            auto *reply = job->reply();
             QFileInfo info(m_resumableFilePath);
+            if (!reply) {
+                qWarning() << "  ✗ 断点续传启动失败:" << job->errorString();
+                job->deleteLater();
+                finishDemo(1);
+                return;
+            }
+
             if (!resume && reply->error() != NetworkError::NoError) {
                 qDebug() << "  -> 首次下载被取消，已写入" << info.size() << "字节";
                 reply->deleteLater();
+                job->deleteLater();
                 startResumableAttempt(true);
                 return;
             }
@@ -162,7 +203,10 @@ private:
                 finishDemo(1);
             }
             reply->deleteLater();
+            job->deleteLater();
         });
+
+        job->start();
     }
 
     void finishDemo(int exitCode = 0)

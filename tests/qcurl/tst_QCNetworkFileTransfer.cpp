@@ -4,7 +4,10 @@
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDownloadToDeviceJob.h"
 #include "QCNetworkError.h"
+#include "QCNetworkMultipartBody.h"
+#include "QCNetworkResumableDownloadJob.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "test_httpbin_env.h"
@@ -216,6 +219,10 @@ private:
     // 下载/上传类用例在慢环境下使用更宽松的默认等待窗口。
     bool waitForFinished(QCNetworkReply *reply, int timeout = 40000);
     QJsonObject parseJson(const QByteArray &data) const;
+    QCNetworkReply *sendMultipartDevice(const QUrl &url,
+                                        QIODevice *device,
+                                        const QString &fileName,
+                                        qint64 sizeBytes);
 };
 
 void TestQCNetworkFileTransfer::initTestCase()
@@ -255,6 +262,35 @@ QJsonObject TestQCNetworkFileTransfer::parseJson(const QByteArray &data) const
     return doc.object();
 }
 
+QCNetworkReply *TestQCNetworkFileTransfer::sendMultipartDevice(const QUrl &url,
+                                                               QIODevice *device,
+                                                               const QString &fileName,
+                                                               qint64 sizeBytes)
+{
+    QString error;
+    auto body = QCNetworkMultipartBody::fromSingleFileDevice(
+        device,
+        QStringLiteral("file"),
+        fileName,
+        QStringLiteral("application/octet-stream"),
+        sizeBytes,
+        &error);
+    if (!body.has_value()) {
+        return nullptr;
+    }
+
+    QCNetworkRequest request(url);
+    request.setRawHeader(QByteArrayLiteral("Content-Type"), body->contentType());
+
+    auto *bodyDevice = body->takeDevice(nullptr, &error);
+    if (!bodyDevice) {
+        return nullptr;
+    }
+    auto *reply = m_manager->sendPost(request, bodyDevice, body->sizeBytes());
+    bodyDevice->setParent(reply);
+    return reply;
+}
+
 void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
 {
     QBuffer buffer;
@@ -263,8 +299,16 @@ void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
     const int expectedBytes = 4096;
     QUrl url(m_httpbinBaseUrl + QStringLiteral("/bytes/%1?seed=42").arg(expectedBytes));
 
-    auto *reply = m_manager->downloadToDevice(url, &buffer);
-    QVERIFY(waitForFinished(reply));
+    auto *job = new QCNetworkDownloadToDeviceJob(m_manager, url, &buffer, this);
+    QSignalSpy jobFinishedSpy(job, &QCNetworkTransferJob::finished);
+    QCOMPARE(job->reply(), nullptr);
+    job->start();
+    QTRY_VERIFY_WITH_TIMEOUT(job->reply() != nullptr, 1000);
+    auto *reply = job->reply();
+    QVERIFY(reply);
+    QVERIFY(jobFinishedSpy.wait(40000));
+    QVERIFY(job->isFinished());
+    QCOMPARE(job->error(), NetworkError::NoError);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     QCOMPARE(static_cast<int>(buffer.size()), expectedBytes);
@@ -273,6 +317,7 @@ void TestQCNetworkFileTransfer::testDownloadToDeviceWritesExpectedBytes()
     QCOMPARE(downloaded.size(), expectedBytes);
 
     reply->deleteLater();
+    job->deleteLater();
 }
 
 void TestQCNetworkFileTransfer::testPostMultipartDeviceSendsPayload()
@@ -286,12 +331,7 @@ void TestQCNetworkFileTransfer::testPostMultipartDeviceSendsPayload()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QUrl url(m_httpbinBaseUrl + "/post");
-    auto *reply = m_manager->postMultipartDevice(url,
-                                                 QStringLiteral("file"),
-                                                 &buffer,
-                                                 QStringLiteral("payload.bin"),
-                                                 QStringLiteral("application/octet-stream"),
-                                                 payload.size());
+    auto *reply = sendMultipartDevice(url, &buffer, QStringLiteral("payload.bin"), payload.size());
 
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -331,12 +371,7 @@ void TestQCNetworkFileTransfer::testPostMultipartDeviceReplyOwnsStreamingBody()
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
     QUrl url(m_httpbinBaseUrl + "/post");
-    auto *reply = m_manager->postMultipartDevice(url,
-                                                 QStringLiteral("file"),
-                                                 &buffer,
-                                                 QStringLiteral("payload.bin"),
-                                                 QStringLiteral("application/octet-stream"),
-                                                 payload.size());
+    auto *reply = sendMultipartDevice(url, &buffer, QStringLiteral("payload.bin"), payload.size());
 
     QVERIFY(reply != nullptr);
     const auto children = reply->children();
@@ -369,13 +404,19 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
 
     const QUrl url = server.url(QStringLiteral("/range.bin"));
 
-    auto *firstAttempt = m_manager->downloadFileResumable(url, savePath);
-    QVERIFY(firstAttempt);
+    auto *firstJob = new QCNetworkResumableDownloadJob(m_manager, url, savePath, false, this);
+    QCOMPARE(firstJob->reply(), nullptr);
+    firstJob->start();
+    QTRY_VERIFY_WITH_TIMEOUT(firstJob->reply() != nullptr, 1000);
+    auto *firstAttempt = firstJob->reply();
 
     // 该测试依赖服务端主动断连制造部分下载，以验证 resumable 续传语义。
     QVERIFY(waitForFinished(firstAttempt, 10000));
     QVERIFY(firstAttempt->error() != NetworkError::NoError);
+    QVERIFY(firstJob->isFinished());
+    QVERIFY(firstJob->error() != NetworkError::NoError);
     firstAttempt->deleteLater();
+    firstJob->deleteLater();
 
     QFile partial(savePath);
     QVERIFY(partial.exists());
@@ -383,10 +424,16 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableContinuesFromPartialFil
     QVERIFY(partialSize > 0);
     QVERIFY(partialSize < totalBytes);
 
-    auto *resumeReply = m_manager->downloadFileResumable(url, savePath);
+    auto *resumeJob = new QCNetworkResumableDownloadJob(m_manager, url, savePath, false, this);
+    resumeJob->start();
+    QTRY_VERIFY_WITH_TIMEOUT(resumeJob->reply() != nullptr, 1000);
+    auto *resumeReply = resumeJob->reply();
     QVERIFY(waitForFinished(resumeReply, 10000));
+    QVERIFY(resumeJob->isFinished());
+    QCOMPARE(resumeJob->error(), NetworkError::NoError);
     QCOMPARE(resumeReply->error(), NetworkError::NoError);
     resumeReply->deleteLater();
+    resumeJob->deleteLater();
 
     QFile finalFile(savePath);
     QVERIFY(finalFile.open(QIODevice::ReadOnly));
@@ -413,10 +460,16 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingConten
 
     const QUrl url = server.url(QStringLiteral("/range.bin"));
 
-    auto *reply = m_manager->downloadFileResumable(url, savePath);
+    auto *job = new QCNetworkResumableDownloadJob(m_manager, url, savePath, false, this);
+    QCOMPARE(job->reply(), nullptr);
+    job->start();
+    QTRY_VERIFY_WITH_TIMEOUT(job->reply() != nullptr, 1000);
+    auto *reply = job->reply();
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 10000));
 
+    QVERIFY(job->isFinished());
+    QCOMPARE(job->error(), NetworkError::NoError);
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->httpStatusCode(), 416);
     QCOMPARE(reply->rawHeader(QByteArrayLiteral("Content-Range")),
@@ -429,6 +482,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingConten
     QCOMPARE(finalData, server.expectedPayload());
 
     reply->deleteLater();
+    job->deleteLater();
 }
 
 void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingContentRangeAsAlreadyCompleteWithoutErrorSignal()
@@ -448,17 +502,23 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableTreats416MatchingConten
     complete.close();
 
     const QUrl url = server.url(QStringLiteral("/range.bin"));
-    auto *reply = m_manager->downloadFileResumable(url, savePath);
-    QVERIFY(reply);
+    auto *job = new QCNetworkResumableDownloadJob(m_manager, url, savePath, false, this);
+    QCOMPARE(job->reply(), nullptr);
+    job->start();
+    QTRY_VERIFY_WITH_TIMEOUT(job->reply() != nullptr, 1000);
+    auto *reply = job->reply();
 
     QSignalSpy errorSpy(reply,
                         static_cast<void (QCNetworkReply::*)(NetworkError)>(
                             &QCNetworkReply::error));
     QVERIFY(waitForFinished(reply, 10000));
     QCOMPARE(errorSpy.count(), 0);
+    QVERIFY(job->isFinished());
+    QCOMPARE(job->error(), NetworkError::NoError);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
     reply->deleteLater();
+    job->deleteLater();
 }
 
 void TestQCNetworkFileTransfer::testDownloadFileResumableFailsWhenContentRangeStartDoesNotMatch()
@@ -480,9 +540,14 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableFailsWhenContentRangeSt
     partial.close();
 
     const QUrl url = server.url(QStringLiteral("/range.bin"));
-    auto *reply = m_manager->downloadFileResumable(url, savePath);
-    QVERIFY(reply);
+    auto *job = new QCNetworkResumableDownloadJob(m_manager, url, savePath, false, this);
+    QCOMPARE(job->reply(), nullptr);
+    job->start();
+    QTRY_VERIFY_WITH_TIMEOUT(job->reply() != nullptr, 1000);
+    auto *reply = job->reply();
     QVERIFY(waitForFinished(reply, 10000));
+    QVERIFY(job->isFinished());
+    QCOMPARE(job->error(), NetworkError::InvalidRequest);
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     QVERIFY(reply->errorString().contains(QStringLiteral("Content-Range.start")));
 
@@ -492,6 +557,7 @@ void TestQCNetworkFileTransfer::testDownloadFileResumableFailsWhenContentRangeSt
     QCOMPARE(finalData, stalePrefix);
 
     reply->deleteLater();
+    job->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkFileTransfer)

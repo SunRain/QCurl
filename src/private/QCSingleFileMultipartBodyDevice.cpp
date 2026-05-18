@@ -2,6 +2,8 @@
 
 #include "private/QCMultipartHeaderEncoding_p.h"
 
+#include <QThread>
+
 #include <cstring>
 
 namespace QCurl::Internal {
@@ -22,6 +24,7 @@ QCSingleFileMultipartBodyDevice::QCSingleFileMultipartBodyDevice(const QString &
           + sanitizeMultipartHeaderValue(mimeType, QByteArrayLiteral("application/octet-stream"))
           + "\r\n\r\n")
     , m_suffix(QStringLiteral("\r\n--%1--\r\n").arg(boundary).toUtf8())
+    , m_sourceThread(sourceDevice ? sourceDevice->thread() : nullptr)
     , m_sourceBasePos(sourceDevice ? sourceDevice->pos() : 0)
     , m_sourceSizeBytes(sourceSizeBytes)
 {
@@ -47,6 +50,12 @@ qint64 QCSingleFileMultipartBodyDevice::readData(char *data, qint64 maxlen)
     }
     if (!m_sourceDevice || maxlen < 0) {
         setErrorString(QStringLiteral("multipart source device is unavailable"));
+        return -1;
+    }
+    if (QThread::currentThread() != thread()
+        || m_sourceDevice->thread() != m_sourceThread
+        || m_sourceDevice->thread() != thread()) {
+        setErrorString(QStringLiteral("multipart source device thread affinity changed"));
         return -1;
     }
 
@@ -116,6 +125,12 @@ qint64 QCSingleFileMultipartBodyDevice::writeData(const char *, qint64)
 bool QCSingleFileMultipartBodyDevice::seek(qint64 pos)
 {
     if (!m_sourceDevice || pos < 0 || pos > size()) {
+        return false;
+    }
+    if (QThread::currentThread() != thread()
+        || m_sourceDevice->thread() != m_sourceThread
+        || m_sourceDevice->thread() != thread()) {
+        setErrorString(QStringLiteral("multipart source device thread affinity changed"));
         return false;
     }
 

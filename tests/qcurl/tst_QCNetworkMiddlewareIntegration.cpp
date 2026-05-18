@@ -210,8 +210,12 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
                 }
             }
 
-            const QList<QNetworkCookie> cookies = m_manager->exportCookies(url);
-            for (const QNetworkCookie &c : cookies) {
+            const auto cookies = m_manager->exportCookies(url);
+            if (!cookies.has_value()) {
+                return;
+            }
+
+            for (const QNetworkCookie &c : cookies.value()) {
                 if (c.name() == QByteArray("XSRF-TOKEN")) {
                     request.setRawHeader("X-XSRF-TOKEN", c.value());
                     break;

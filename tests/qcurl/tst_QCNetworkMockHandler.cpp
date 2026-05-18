@@ -214,7 +214,7 @@ void TestQCNetworkMockHandler::testRequestCapture()
     handler.setCaptureBodyPreviewLimit(3);
 
     const QUrl url("http://example.com/mock/capture");
-    handler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
+    handler.mockResponse(HttpMethod::Post, url, QByteArray("ok"), 200);
     m_manager->setMockHandler(&handler);
 
     QCNetworkRequest request(url);

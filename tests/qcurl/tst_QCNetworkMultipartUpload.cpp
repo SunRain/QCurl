@@ -1,9 +1,12 @@
 /** @file tst_QCNetworkMultipartUpload.cpp
- *  @brief `postMultipartDevice()` 合同回归测试。 */
+ *  @brief Multipart streaming body contract regression tests. */
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
+#include "QCMultipartFormData.h"
+#include "QCNetworkMultipartBody.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
 #define protected public
 #include "private/QCSingleFileMultipartBodyDevice.h"
 #undef protected
@@ -12,6 +15,7 @@
 #include <QHostAddress>
 #include <QPointer>
 #include <QSignalSpy>
+#include <QThread>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QtTest/QtTest>
@@ -259,6 +263,48 @@ static bool waitForFinished(QCNetworkReply *reply, int timeoutMs = 20000)
     return spy.wait(timeoutMs);
 }
 
+static QCNetworkReply *sendMultipartDevice(QCNetworkAccessManager &manager,
+                                           const QUrl &url,
+                                           const QString &fieldName,
+                                           QIODevice *device,
+                                           const QString &fileName,
+                                           const QString &mimeType,
+                                           std::optional<qint64> sizeBytes)
+{
+    QCNetworkRequest request(url);
+    if (!sizeBytes.has_value()) {
+        auto *reply = manager.sendPost(request, QByteArray());
+        reply->abortWithError(
+            NetworkError::InvalidRequest,
+            QStringLiteral("QCNetworkMultipartBody: 单文件 multipart 要求已知长度且设备可 seek"));
+        return reply;
+    }
+
+    QString error;
+    auto body = QCNetworkMultipartBody::fromSingleFileDevice(device,
+                                                            fieldName,
+                                                            fileName,
+                                                            mimeType,
+                                                            sizeBytes,
+                                                            &error);
+    if (!body.has_value()) {
+        auto *reply = manager.sendPost(request, QByteArray());
+        reply->abortWithError(NetworkError::InvalidRequest, error);
+        return reply;
+    }
+
+    request.setRawHeader(QByteArrayLiteral("Content-Type"), body->contentType());
+    auto *bodyDevice = body->takeDevice(nullptr, &error);
+    if (!bodyDevice) {
+        auto *reply = manager.sendPost(request, QByteArray());
+        reply->abortWithError(NetworkError::InvalidRequest, error);
+        return reply;
+    }
+    auto *reply = manager.sendPost(request, bodyDevice, body->sizeBytes());
+    bodyDevice->setParent(reply);
+    return reply;
+}
+
 } // namespace
 
 class TestQCNetworkMultipartUpload : public QObject
@@ -268,6 +314,12 @@ class TestQCNetworkMultipartUpload : public QObject
 private slots:
     void testMultipartDeviceSequentialFailsFast();
     void testMultipartDeviceUnknownSizeFailsFast();
+    void testMultipartBodyRejectsNullDevice();
+    void testMultipartBodyRejectsUnreadableDevice();
+    void testMultipartBodyRejectsNegativeSize();
+    void testMultipartBodyTakeDeviceRejectsCrossThreadParent();
+    void testMultipartBodyTakeDeviceReportsNonStreamingBody();
+    void testMultipartBodyTakeDeviceReportsDuplicateTake();
     void testMultipartDeviceStartsReadingFromCurrentPosition();
     void testMultipartBodyDeviceDoesNotPrebufferWholeSource();
     void testMultipartBodyDeviceFailsWhenSourceEndsEarly();
@@ -280,12 +332,13 @@ void TestQCNetworkMultipartUpload::testMultipartDeviceSequentialFailsFast()
     SequentialUploadDevice device(QByteArray(4096, 's'));
     QVERIFY(device.open(QIODevice::ReadOnly));
 
-    auto *reply = manager.postMultipartDevice(QUrl(QStringLiteral("http://127.0.0.1:1/upload")),
-                                              QStringLiteral("file"),
-                                              &device,
-                                              QStringLiteral("seq.bin"),
-                                              QStringLiteral("application/octet-stream"),
-                                              4096);
+    auto *reply = sendMultipartDevice(manager,
+                                      QUrl(QStringLiteral("http://127.0.0.1:1/upload")),
+                                      QStringLiteral("file"),
+                                      &device,
+                                      QStringLiteral("seq.bin"),
+                                      QStringLiteral("application/octet-stream"),
+                                      4096);
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply));
 
@@ -303,12 +356,13 @@ void TestQCNetworkMultipartUpload::testMultipartDeviceUnknownSizeFailsFast()
     QBuffer buffer(&payload);
     QVERIFY(buffer.open(QIODevice::ReadOnly));
 
-    auto *reply = manager.postMultipartDevice(QUrl(QStringLiteral("http://127.0.0.1:1/upload")),
-                                              QStringLiteral("file"),
-                                              &buffer,
-                                              QStringLiteral("unknown.bin"),
-                                              QStringLiteral("application/octet-stream"),
-                                              std::nullopt);
+    auto *reply = sendMultipartDevice(manager,
+                                      QUrl(QStringLiteral("http://127.0.0.1:1/upload")),
+                                      QStringLiteral("file"),
+                                      &buffer,
+                                      QStringLiteral("unknown.bin"),
+                                      QStringLiteral("application/octet-stream"),
+                                      std::nullopt);
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply));
 
@@ -316,6 +370,122 @@ void TestQCNetworkMultipartUpload::testMultipartDeviceUnknownSizeFailsFast()
     QVERIFY(reply->errorString().contains(QStringLiteral("已知长度且设备可 seek")));
 
     reply->deleteLater();
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyRejectsNullDevice()
+{
+    QString error;
+    const auto body = QCNetworkMultipartBody::fromSingleFileDevice(nullptr,
+                                                                   QStringLiteral("file"),
+                                                                   QStringLiteral("payload.bin"),
+                                                                   QStringLiteral("text/plain"),
+                                                                   qint64(7),
+                                                                   &error);
+
+    QVERIFY(!body.has_value());
+    QVERIFY(error.contains(QStringLiteral("QIODevice 为空")));
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyRejectsUnreadableDevice()
+{
+    QByteArray payload("payload");
+    QBuffer buffer(&payload);
+
+    QString error;
+    const auto body = QCNetworkMultipartBody::fromSingleFileDevice(&buffer,
+                                                                   QStringLiteral("file"),
+                                                                   QStringLiteral("payload.bin"),
+                                                                   QStringLiteral("text/plain"),
+                                                                   payload.size(),
+                                                                   &error);
+
+    QVERIFY(!body.has_value());
+    QVERIFY(error.contains(QStringLiteral("不可读")));
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyRejectsNegativeSize()
+{
+    QByteArray payload("payload");
+    QBuffer buffer(&payload);
+    QVERIFY(buffer.open(QIODevice::ReadOnly));
+
+    QString error;
+    const auto body = QCNetworkMultipartBody::fromSingleFileDevice(&buffer,
+                                                                   QStringLiteral("file"),
+                                                                   QStringLiteral("payload.bin"),
+                                                                   QStringLiteral("text/plain"),
+                                                                   qint64(-1),
+                                                                   &error);
+
+    QVERIFY(!body.has_value());
+    QVERIFY(error.contains(QStringLiteral("不能为负数")));
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyTakeDeviceRejectsCrossThreadParent()
+{
+    QByteArray payload("payload");
+    QBuffer buffer(&payload);
+    QVERIFY(buffer.open(QIODevice::ReadOnly));
+
+    QString error;
+    auto body = QCNetworkMultipartBody::fromSingleFileDevice(&buffer,
+                                                            QStringLiteral("file"),
+                                                            QStringLiteral("payload.bin"),
+                                                            QStringLiteral("text/plain"),
+                                                            payload.size(),
+                                                            &error);
+    QVERIFY2(body.has_value(), qPrintable(error));
+
+    QThread parentThread;
+    parentThread.start();
+    QObject parent;
+    parent.moveToThread(&parentThread);
+
+    QCOMPARE(body->takeDevice(&parent), nullptr);
+
+    auto *device = body->takeDevice(this);
+    QVERIFY(device != nullptr);
+    QCOMPARE(device->parent(), this);
+
+    QMetaObject::invokeMethod(&parent,
+                              [&parent]() { parent.moveToThread(QThread::currentThread()); },
+                              Qt::BlockingQueuedConnection);
+    parentThread.quit();
+    QVERIFY(parentThread.wait(1000));
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyTakeDeviceReportsNonStreamingBody()
+{
+    QCMultipartFormData formData;
+    formData.addTextField(QStringLiteral("name"), QStringLiteral("value"));
+    auto body = QCNetworkMultipartBody::fromFormData(formData);
+
+    QString error;
+    QCOMPARE(body.takeDevice(this, &error), nullptr);
+    QVERIFY(error.contains(QStringLiteral("非流式")));
+}
+
+void TestQCNetworkMultipartUpload::testMultipartBodyTakeDeviceReportsDuplicateTake()
+{
+    QByteArray payload("payload");
+    QBuffer buffer(&payload);
+    QVERIFY(buffer.open(QIODevice::ReadOnly));
+
+    QString error;
+    auto body = QCNetworkMultipartBody::fromSingleFileDevice(&buffer,
+                                                            QStringLiteral("file"),
+                                                            QStringLiteral("payload.bin"),
+                                                            QStringLiteral("text/plain"),
+                                                            payload.size(),
+                                                            &error);
+    QVERIFY2(body.has_value(), qPrintable(error));
+
+    auto *device = body->takeDevice(this, &error);
+    QVERIFY2(device != nullptr, qPrintable(error));
+    error.clear();
+
+    QCOMPARE(body->takeDevice(this, &error), nullptr);
+    QVERIFY(error.contains(QStringLiteral("已转移")));
 }
 
 void TestQCNetworkMultipartUpload::testMultipartDeviceStartsReadingFromCurrentPosition()
@@ -335,12 +505,13 @@ void TestQCNetworkMultipartUpload::testMultipartDeviceStartsReadingFromCurrentPo
 
     const qint64 remainingBytes = payload.size() - skippedPrefix.size();
 
-    auto *reply = manager.postMultipartDevice(server.url(QStringLiteral("/upload")),
-                                              QStringLiteral("file"),
-                                              &buffer,
-                                              QStringLiteral("tail.bin"),
-                                              QStringLiteral("application/octet-stream"),
-                                              remainingBytes);
+    auto *reply = sendMultipartDevice(manager,
+                                      server.url(QStringLiteral("/upload")),
+                                      QStringLiteral("file"),
+                                      &buffer,
+                                      QStringLiteral("tail.bin"),
+                                      QStringLiteral("application/octet-stream"),
+                                      remainingBytes);
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply));
 

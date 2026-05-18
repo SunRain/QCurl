@@ -1,12 +1,18 @@
 /**
  * @file tst_QCNetworkFileResumableOffline.cpp
- * @brief downloadFileResumable 离线门禁
+ * @brief QCNetworkResumableDownloadJob 离线门禁
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkCache.h"
+#include "QCNetworkMiddleware.h"
+#include "QCNetworkMockHandler.h"
+#include "QCNetworkRequestScheduler.h"
+#include "QCNetworkResumableDownloadJob.h"
 #include "QCNetworkReply.h"
 
 #include <QFile>
+#include <QEventLoop>
 #include <QHostAddress>
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -158,6 +164,101 @@ static bool waitForFinished(QCNetworkReply *reply, int timeoutMs = 10000)
     return finishedSpy.wait(timeoutMs);
 }
 
+void processQueuedEvents()
+{
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+}
+
+class CountingMiddleware final : public QCNetworkMiddleware
+{
+public:
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
+        Q_UNUSED(request);
+        ++requestPreSendCount;
+    }
+
+    void onReplyCreated(QCNetworkReply *reply) override
+    {
+        Q_UNUSED(reply);
+        ++replyCreatedCount;
+    }
+
+    void onResponseReceived(QCNetworkReply *reply) override
+    {
+        Q_UNUSED(reply);
+        ++responseReceivedCount;
+    }
+
+    int requestPreSendCount = 0;
+    int replyCreatedCount = 0;
+    int responseReceivedCount = 0;
+};
+
+class CountingCache final : public QCNetworkCache
+{
+public:
+    QCNetworkCacheLookupResult lookup(const QUrl &url, QCNetworkCacheReadMode mode) override
+    {
+        Q_UNUSED(url);
+        Q_UNUSED(mode);
+        ++lookupCount;
+        return {};
+    }
+
+    void insert(const QUrl &url, const QByteArray &data, const QCNetworkCacheMetadata &meta) override
+    {
+        Q_UNUSED(url);
+        Q_UNUSED(data);
+        Q_UNUSED(meta);
+        ++insertCount;
+    }
+
+    bool remove(const QUrl &url) override
+    {
+        Q_UNUSED(url);
+        return false;
+    }
+
+    void clear() override {}
+    qint64 cacheSize() const override { return 0; }
+    qint64 maxCacheSize() const override { return 0; }
+    void setMaxCacheSize(qint64 size) override { Q_UNUSED(size); }
+
+    int lookupCount = 0;
+    int insertCount = 0;
+};
+
+struct ResumableSideEffectHarness
+{
+    QCNetworkAccessManager manager;
+    CountingMiddleware middleware;
+    CountingCache cache;
+    QCNetworkRequestScheduler *scheduler = nullptr;
+    QSignalSpy queuedSpy;
+    QSignalSpy startedSpy;
+
+    ResumableSideEffectHarness()
+        : scheduler(manager.scheduler())
+        , queuedSpy(scheduler, &QCNetworkRequestScheduler::requestQueued)
+        , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
+    {
+        manager.addMiddleware(&middleware);
+        manager.setCache(&cache);
+    }
+
+    void verifyNoSideEffects() const
+    {
+        QCOMPARE(middleware.requestPreSendCount, 0);
+        QCOMPARE(middleware.replyCreatedCount, 0);
+        QCOMPARE(middleware.responseReceivedCount, 0);
+        QCOMPARE(cache.lookupCount, 0);
+        QCOMPARE(cache.insertCount, 0);
+        QCOMPARE(queuedSpy.count(), 0);
+        QCOMPARE(startedSpy.count(), 0);
+    }
+};
+
 } // namespace
 
 class TestQCNetworkFileResumableOffline : public QObject
@@ -165,9 +266,161 @@ class TestQCNetworkFileResumableOffline : public QObject
     Q_OBJECT
 
 private slots:
+    void testConstructorDoesNotStartRequestOrReadTargetState();
+    void testStartCreatesReplyAndRunsManagedPipeline();
+    void testManagerThreadMismatchFailsBeforeReplyCreation();
+    void testNoEventDispatcherFailsSynchronously();
     void testTreats416MatchingContentRangeAsAlreadyCompleteWithoutErrorSignal();
     void testFailsWhenContentRangeStartDoesNotMatch();
+    void testDestroyedReplyBeforeJobFinishedFailsJobOnce();
+    void testDestroyedReplyAfterJobFinishedClearsWeakReferenceWithoutSecondTerminalSignal();
 };
+
+void TestQCNetworkFileResumableOffline::testConstructorDoesNotStartRequestOrReadTargetState()
+{
+    ResumableSideEffectHarness harness;
+    harness.manager.enableRequestScheduler(true);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString savePath = dir.filePath(QStringLiteral("partial.bin"));
+    QFile partial(savePath);
+    QVERIFY(partial.open(QIODevice::WriteOnly));
+    partial.write(QByteArray(4096, 'p'));
+    partial.close();
+
+    QCNetworkResumableDownloadJob job(&harness.manager,
+                                      QUrl(QStringLiteral("http://127.0.0.1:1/range.bin")),
+                                      savePath);
+
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(job.existingSize(), qint64(0));
+    QVERIFY(!job.isFinished());
+    harness.verifyNoSideEffects();
+
+    processQueuedEvents();
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(job.existingSize(), qint64(0));
+    QVERIFY(!job.isFinished());
+    harness.verifyNoSideEffects();
+}
+
+void TestQCNetworkFileResumableOffline::testStartCreatesReplyAndRunsManagedPipeline()
+{
+    ResumableSideEffectHarness harness;
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const qint64 totalBytes = 32 * 1024;
+    ResumableRangeServer server(totalBytes);
+    QVERIFY2(server.start(), "Cannot bind local port for resumable offline test server");
+
+    const QString savePath = dir.filePath(QStringLiteral("resumable.bin"));
+    const QByteArray prefix = server.expectedPayload().left(2048);
+    QFile partial(savePath);
+    QVERIFY(partial.open(QIODevice::WriteOnly));
+    partial.write(prefix);
+    partial.close();
+
+    QCNetworkResumableDownloadJob job(&harness.manager,
+                                      server.url(QStringLiteral("/range.bin")),
+                                      savePath);
+    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+
+    job.start();
+    job.start();
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(finishedSpy.count(), 0);
+
+    QTRY_VERIFY_WITH_TIMEOUT(job.reply() != nullptr, 1000);
+    QCOMPARE(job.existingSize(), static_cast<qint64>(prefix.size()));
+    QVERIFY(waitForFinished(job.reply()));
+    QVERIFY(job.isFinished());
+    QCOMPARE(job.error(), NetworkError::NoError);
+    QCOMPARE(harness.middleware.requestPreSendCount, 1);
+    QCOMPARE(harness.middleware.replyCreatedCount, 1);
+    QCOMPARE(harness.middleware.responseReceivedCount, 1);
+
+    QFile finalFile(savePath);
+    QVERIFY(finalFile.open(QIODevice::ReadOnly));
+    QCOMPARE(finalFile.readAll(), server.expectedPayload());
+
+    job.reply()->deleteLater();
+}
+
+void TestQCNetworkFileResumableOffline::testManagerThreadMismatchFailsBeforeReplyCreation()
+{
+    QThread workerThread;
+    workerThread.start();
+
+    auto *manager = new QCNetworkAccessManager;
+    CountingMiddleware middleware;
+    manager->addMiddleware(&middleware);
+    manager->moveToThread(&workerThread);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QCNetworkResumableDownloadJob job(manager,
+                                      QUrl(QStringLiteral("http://127.0.0.1:1/range.bin")),
+                                      dir.filePath(QStringLiteral("target.bin")));
+    QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
+    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+
+    job.start();
+
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(failedSpy.count(), 0);
+    QCOMPARE(finishedSpy.count(), 0);
+
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 1000);
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(job.error(), NetworkError::InvalidRequest);
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(middleware.requestPreSendCount, 0);
+    QCOMPARE(middleware.replyCreatedCount, 0);
+    QCOMPARE(middleware.responseReceivedCount, 0);
+
+    manager->deleteLater();
+    workerThread.quit();
+    QVERIFY(workerThread.wait(1000));
+}
+
+void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously()
+{
+    ResumableSideEffectHarness harness;
+    harness.manager.enableRequestScheduler(true);
+
+    QThread noLoopThread;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString savePath = dir.filePath(QStringLiteral("target.bin"));
+    QFile partial(savePath);
+    QVERIFY(partial.open(QIODevice::WriteOnly));
+    partial.write(QByteArray(4096, 'p'));
+    partial.close();
+
+    QCNetworkResumableDownloadJob job(&harness.manager,
+                                      QUrl(QStringLiteral("http://127.0.0.1:1/no-event-loop.bin")),
+                                      savePath);
+    job.moveToThread(&noLoopThread);
+
+    QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
+    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+
+    job.start();
+
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(job.error(), NetworkError::InvalidRequest);
+    QVERIFY(job.errorString().contains(QStringLiteral("事件循环")));
+    QCOMPARE(job.reply(), nullptr);
+    QCOMPARE(job.existingSize(), qint64(0));
+    harness.verifyNoSideEffects();
+}
 
 void TestQCNetworkFileResumableOffline::
     testTreats416MatchingContentRangeAsAlreadyCompleteWithoutErrorSignal()
@@ -187,13 +440,21 @@ void TestQCNetworkFileResumableOffline::
     complete.write(server.expectedPayload());
     complete.close();
 
-    auto *reply = manager.downloadFileResumable(server.url(QStringLiteral("/range.bin")), savePath);
+    QCNetworkResumableDownloadJob job(&manager,
+                                      server.url(QStringLiteral("/range.bin")),
+                                      savePath);
+    QCOMPARE(job.reply(), nullptr);
+    job.start();
+    QTRY_VERIFY_WITH_TIMEOUT(job.reply() != nullptr, 1000);
+    auto *reply = job.reply();
     QVERIFY(reply);
 
     QSignalSpy errorSpy(reply,
                         static_cast<void (QCNetworkReply::*)(NetworkError)>(
                             &QCNetworkReply::error));
     QVERIFY(waitForFinished(reply));
+    QVERIFY(job.isFinished());
+    QCOMPARE(job.error(), NetworkError::NoError);
     QCOMPARE(errorSpy.count(), 0);
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->httpStatusCode(), 416);
@@ -222,9 +483,17 @@ void TestQCNetworkFileResumableOffline::testFailsWhenContentRangeStartDoesNotMat
     partial.write(stalePrefix);
     partial.close();
 
-    auto *reply = manager.downloadFileResumable(server.url(QStringLiteral("/range.bin")), savePath);
+    QCNetworkResumableDownloadJob job(&manager,
+                                      server.url(QStringLiteral("/range.bin")),
+                                      savePath);
+    QCOMPARE(job.reply(), nullptr);
+    job.start();
+    QTRY_VERIFY_WITH_TIMEOUT(job.reply() != nullptr, 1000);
+    auto *reply = job.reply();
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply));
+    QVERIFY(job.isFinished());
+    QCOMPARE(job.error(), NetworkError::InvalidRequest);
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     QVERIFY(reply->errorString().contains(QStringLiteral("Content-Range.start")));
 
@@ -234,6 +503,71 @@ void TestQCNetworkFileResumableOffline::testFailsWhenContentRangeStartDoesNotMat
     QCOMPARE(finalData, stalePrefix);
 
     reply->deleteLater();
+}
+
+void TestQCNetworkFileResumableOffline::testDestroyedReplyBeforeJobFinishedFailsJobOnce()
+{
+    QCNetworkAccessManager manager;
+    QCNetworkMockHandler mock;
+    mock.setGlobalDelay(60000);
+    const QUrl url(QStringLiteral("http://resumable.test/destroy-before-finished"));
+    mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("late-body"));
+    manager.setMockHandler(&mock);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QCNetworkResumableDownloadJob job(&manager,
+                                      url,
+                                      dir.filePath(QStringLiteral("target.bin")));
+    QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
+    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+
+    job.start();
+    QTRY_VERIFY_WITH_TIMEOUT(job.reply() != nullptr, 1000);
+    job.reply()->deleteLater();
+
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 1000);
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(job.error(), NetworkError::OperationCancelled);
+    QVERIFY(job.errorString().contains(QStringLiteral("reply")));
+    QCOMPARE(job.reply(), nullptr);
+
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(failedSpy.count(), 1);
+}
+
+void TestQCNetworkFileResumableOffline::
+    testDestroyedReplyAfterJobFinishedClearsWeakReferenceWithoutSecondTerminalSignal()
+{
+    QCNetworkAccessManager manager;
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const qint64 totalBytes = 16 * 1024;
+    ResumableRangeServer server(totalBytes);
+    QVERIFY2(server.start(), "Cannot bind local port for resumable offline test server");
+
+    const QString savePath = dir.filePath(QStringLiteral("complete.bin"));
+    QCNetworkResumableDownloadJob job(&manager,
+                                      server.url(QStringLiteral("/range.bin")),
+                                      savePath);
+    QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
+    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+
+    job.start();
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 2000);
+    QCOMPARE(failedSpy.count(), 0);
+    QCOMPARE(job.error(), NetworkError::NoError);
+    QVERIFY(job.reply() != nullptr);
+
+    job.reply()->deleteLater();
+    QTRY_COMPARE_WITH_TIMEOUT(job.reply(), nullptr, 1000);
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(failedSpy.count(), 0);
+    QCOMPARE(job.error(), NetworkError::NoError);
 }
 
 QTEST_MAIN(TestQCNetworkFileResumableOffline)

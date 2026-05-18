@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from tests.public_api import run_public_api_checks as public_api
+from tests.public_api import layout_scan
 
 
 def test_strip_comments_and_strings_ignores_forbidden_tokens_in_text() -> None:
@@ -32,7 +33,7 @@ public:
 };
 """
 
-    exported = public_api.collect_exported_types(public_api.strip_comments_and_strings(header))
+    exported = layout_scan.collect_exported_types(public_api.strip_comments_and_strings(header))
 
     assert len(exported) == 1
     assert exported[0].name == "Exported"
@@ -51,11 +52,56 @@ struct QCURL_EXPORT Value {
 """
     )
 
-    findings = public_api.collect_layout_findings(header, stripped, source)
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
     keys = {item.key for item in findings}
 
     assert "public-fields:QCNetworkExample.h:Value" in keys
     assert "struct-layout:nested:QCNetworkExample.h:Value::Nested" in keys
+
+
+def test_collect_layout_findings_flags_direct_private_layout_fields() -> None:
+    header = "QCNetworkExample.h"
+    source = ""
+    stripped = public_api.strip_comments_and_strings(
+        """
+class QCURL_EXPORT Job : public QObject {
+public:
+    ~Job() override;
+
+private:
+    QPointer<QObject> manager;
+    bool started = false;
+};
+"""
+    )
+
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
+    keys = {item.key for item in findings}
+
+    assert "private-layout:direct-fields:QCNetworkExample.h:Job" in keys
+
+
+def test_collect_layout_findings_allows_private_incomplete_holder() -> None:
+    header = "QCNetworkExample.h"
+    source = "Job::~Job() = default;"
+    stripped = public_api.strip_comments_and_strings(
+        """
+class JobPrivate;
+class QCURL_EXPORT Job : public QObject {
+public:
+    ~Job() override;
+
+private:
+    Q_DECLARE_PRIVATE(Job)
+    QScopedPointer<JobPrivate> d_ptr;
+};
+"""
+    )
+
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
+    keys = {item.key for item in findings}
+
+    assert "private-layout:direct-fields:QCNetworkExample.h:Job" not in keys
 
 
 def test_scan_headers_fails_stale_allowlist(tmp_path, capsys) -> None:
@@ -80,6 +126,23 @@ def test_scan_headers_fails_stale_allowlist(tmp_path, capsys) -> None:
 
     assert rc == 1
     assert "layout allowlist has stale entries" in capsys.readouterr().err
+
+
+def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "QCNetworkMultipartBody.h").write_text(
+        "static QCNetworkMultipartBody fromSingleFileDevice(QThread *ownerThread);\n"
+        "QIODevice *releaseDevice();\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path))
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "old fromSingleFileDevice ownerThread" in err
+    assert "releaseDevice" in err
 
 
 def test_consumer_contract_fixture_requires_core_snippets(tmp_path) -> None:

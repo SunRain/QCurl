@@ -6,18 +6,18 @@
 #include <QDebug>
 #include <QTimer>
 #include <QEventLoop>
-#include <vector>
-#include <algorithm>
-#include <cmath>
-#include <memory>
 
 #include "../src/QCNetworkAccessManager.h"
+#include "../src/QCNetworkHttpMethod.h"
+#include "../src/QCNetworkMockHandler.h"
 #include "../src/QCNetworkRequest.h"
 #include "../src/QCNetworkReply.h"
 #include "../src/QCNetworkRequestScheduler.h"
 #include "../src/QCNetworkRequestPriority.h"
+#include "benchmark_scheduler_helpers.h"
 
 using namespace QCurl;
+using namespace SchedulerBenchmarkHelpers;
 
 /**
  * @brief 性能基准测试：调度器 vs 无调度器
@@ -34,25 +34,18 @@ class SchedulerBenchmark : public QObject
     Q_OBJECT
 
 public:
-    struct BenchmarkResult {
-        QString testName;
-        int totalRequests = 0;
-        int successRequests = 0;
-        int failedRequests = 0;
-        qint64 totalTimeMs = 0;
-        double avgLatencyMs = 0.0;
-        double p50LatencyMs = 0.0;
-        double p95LatencyMs = 0.0;
-        double p99LatencyMs = 0.0;
-        double throughput = 0.0;  // 请求/秒
-        std::vector<qint64> latencies;  // 所有请求的延迟（毫秒）
-    };
-
     explicit SchedulerBenchmark(QObject *parent = nullptr)
         : QObject(parent)
         , manager(new QCNetworkAccessManager(this))
         , scheduler(QCNetworkRequestScheduler::instance())
     {
+        manager->setMockHandler(&mockHandler);
+    }
+
+    ~SchedulerBenchmark() override
+    {
+        delete manager;
+        manager = nullptr;
     }
 
     void run()
@@ -88,7 +81,7 @@ private slots:
             auto withSchedulerResult = runBenchmark("有调度器", 10, true);
             results.push_back(withSchedulerResult);
 
-            printComparison(results[0], results[1]);
+            SchedulerBenchmarkHelpers::printComparison(results[0], results[1]);
         });
     }
 
@@ -111,87 +104,33 @@ private slots:
             auto withSchedulerResult = runConcurrentBenchmark("有调度器（并发）", 50, true);
             results.push_back(withSchedulerResult);
 
-            printComparison(results[2], results[3]);
+            SchedulerBenchmarkHelpers::printComparison(results[2], results[3]);
         });
     }
 
     void benchmark3_PriorityScheduling()
     {
         manager->enableRequestScheduler(true);
-        
-        QCNetworkRequestScheduler::Config config;
-        config.setMaxConcurrentRequests(3);  // 限制并发，突显优先级效果
-        config.setMaxRequestsPerHost(2);
-        scheduler->setConfig(config);
+        mockHandler.clear();
+        configurePriorityScheduler();
 
-        // 使用堆上的共享指针来存储结果
-        auto lowPriorityResult = std::make_shared<BenchmarkResult>();
-        lowPriorityResult->testName = "低优先级请求";
-        auto highPriorityResult = std::make_shared<BenchmarkResult>();
-        highPriorityResult->testName = "高优先级请求";
+        PriorityBenchmarkContext context(20);
+        context.totalTimer.start();
+        const QMetaObject::Connection startedConnection = trackPriorityStarts(context);
 
-        auto completedCount = std::make_shared<int>(0);
-        int totalCount = 20;
+        enqueuePriorityRequests(context,
+                                QStringLiteral("low"),
+                                QStringLiteral("bulk"),
+                                QCNetworkRequestPriority::Low,
+                                &context.lowPriorityResult);
+        enqueuePriorityRequests(context,
+                                QStringLiteral("high"),
+                                QStringLiteral("interactive"),
+                                QCNetworkRequestPriority::High,
+                                &context.highPriorityResult);
 
-        // 创建 10 个低优先级请求
-        for (int i = 0; i < 10; ++i) {
-            QCNetworkRequest request(QUrl("http://invalid-low-priority.local/test"));
-            request.setPriority(QCNetworkRequestPriority::Low);
-
-            QElapsedTimer *timer = new QElapsedTimer();
-            timer->start();
-
-            auto *reply = manager->sendGet(request);
-            connect(reply, &QCNetworkReply::finished, this, [this, reply, timer, lowPriorityResult, highPriorityResult, completedCount, totalCount]() {
-                qint64 latency = timer->elapsed();
-                lowPriorityResult->latencies.push_back(latency);
-                lowPriorityResult->totalRequests++;
-                
-                if (reply->error() == NetworkError::NoError) {
-                    lowPriorityResult->successRequests++;
-                } else {
-                    lowPriorityResult->failedRequests++;
-                }
-
-                (*completedCount)++;
-                if (*completedCount == totalCount) {
-                    finalizePriorityBenchmark(*lowPriorityResult, *highPriorityResult);
-                }
-
-                delete timer;
-                reply->deleteLater();
-            });
-        }
-
-        // 创建 10 个高优先级请求
-        for (int i = 0; i < 10; ++i) {
-            QCNetworkRequest request(QUrl("http://invalid-high-priority.local/test"));
-            request.setPriority(QCNetworkRequestPriority::High);
-
-            QElapsedTimer *timer = new QElapsedTimer();
-            timer->start();
-
-            auto *reply = manager->sendGet(request);
-            connect(reply, &QCNetworkReply::finished, this, [this, reply, timer, highPriorityResult, lowPriorityResult, completedCount, totalCount]() {
-                qint64 latency = timer->elapsed();
-                highPriorityResult->latencies.push_back(latency);
-                highPriorityResult->totalRequests++;
-                
-                if (reply->error() == NetworkError::NoError) {
-                    highPriorityResult->successRequests++;
-                } else {
-                    highPriorityResult->failedRequests++;
-                }
-
-                (*completedCount)++;
-                if (*completedCount == totalCount) {
-                    finalizePriorityBenchmark(*lowPriorityResult, *highPriorityResult);
-                }
-
-                delete timer;
-                reply->deleteLater();
-            });
-        }
+        context.loop.exec();
+        disconnect(startedConnection);
     }
 
     void benchmark4_HighLoad()
@@ -206,37 +145,93 @@ private slots:
         auto result = runConcurrentBenchmark("高负载测试", 100, true);
         results.push_back(result);
 
-        printResult(result);
+        SchedulerBenchmarkHelpers::printResult(result);
     }
 
     void printSummary()
     {
-        qInfo() << "测试组数:" << results.size();
-
-        if (results.size() >= 2) {
-            // 测试 1 对比
-            if (results[0].avgLatencyMs > 0 && results[1].avgLatencyMs > 0) {
-                double improvement = (results[0].avgLatencyMs - results[1].avgLatencyMs) / results[0].avgLatencyMs * 100;
-                qInfo() << QString("基本延迟：调度器%1 %2%")
-                           .arg(improvement > 0 ? "降低" : "增加")
-                           .arg(qAbs(improvement), 0, 'f', 1);
-            }
-
-            // 测试 2 对比
-            if (results.size() >= 4 && results[2].throughput > 0 && results[3].throughput > 0) {
-                double improvement = (results[3].throughput - results[2].throughput) / results[2].throughput * 100;
-                qInfo() << QString("并发吞吐量：调度器%1 %2%")
-                           .arg(improvement > 0 ? "提升" : "降低")
-                           .arg(qAbs(improvement), 0, 'f', 1);
-            }
-        }
-
+        SchedulerBenchmarkHelpers::printSchedulerSummary(results);
         QCoreApplication::quit();
     }
 
 private:
+    void configurePriorityScheduler()
+    {
+        QCNetworkRequestScheduler::Config config;
+        config.setMaxConcurrentRequests(3);
+        config.setMaxRequestsPerHost(2);
+        scheduler->setConfig(config);
+    }
+
+    void prepareMockResponse(const QUrl &url, int delayMs = 1)
+    {
+        mockHandler.setGlobalDelay(delayMs);
+        mockHandler.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("ok"), 200);
+    }
+
+    QMetaObject::Connection trackPriorityStarts(PriorityBenchmarkContext &context)
+    {
+        return connect(scheduler,
+                       &QCNetworkRequestScheduler::requestStarted,
+                       this,
+                       [&context](QCNetworkReply *reply, const QString &, const QString &) {
+                           if (context.priorities.contains(reply)) {
+                               context.startOrder.push_back(context.priorities.value(reply));
+                           }
+                       });
+    }
+
+    void enqueuePriorityRequests(PriorityBenchmarkContext &context,
+                                 const QString &scope,
+                                 const QString &lane,
+                                 QCNetworkRequestPriority priority,
+                                BenchmarkResult *result)
+    {
+        for (int i = 0; i < 10; ++i) {
+            const QUrl url = SchedulerBenchmarkHelpers::mockUrl(scope, i);
+            prepareMockResponse(url, 2);
+
+            QCNetworkRequest request(url);
+            request.setPriority(priority);
+            request.setLane(lane);
+
+            QElapsedTimer timer;
+            timer.start();
+            auto *reply = manager->sendGet(request);
+            context.timers.insert(reply, timer);
+            context.priorities.insert(reply, priority);
+            connect(reply, &QCNetworkReply::finished, this, [this, reply, &context, result]() {
+                recordPriorityReply(context, reply, *result);
+            });
+        }
+    }
+
+    void recordPriorityReply(PriorityBenchmarkContext &context,
+                             QCNetworkReply *reply,
+                             BenchmarkResult &result)
+    {
+        const QElapsedTimer timer = context.timers.take(reply);
+        result.latencies.push_back(timer.elapsed());
+        result.totalRequests++;
+
+        if (reply->error() == NetworkError::NoError && reply->httpStatusCode() == 200) {
+            result.successRequests++;
+        } else {
+            result.failedRequests++;
+        }
+        context.finishOrder.push_back(context.priorities.value(reply));
+
+        context.completedCount++;
+        if (context.completedCount == context.totalCount) {
+            finalizePriorityBenchmark(context);
+        }
+
+        reply->deleteLater();
+    }
+
     BenchmarkResult runBenchmark(const QString &name, int count, bool useScheduler)
     {
+        mockHandler.clear();
         BenchmarkResult result;
         result.testName = name;
         result.totalRequests = count;
@@ -248,10 +243,12 @@ private:
         int completedCount = 0;
 
         for (int i = 0; i < count; ++i) {
-            QCNetworkRequest request(QUrl(QString("http://invalid-test-%1.local/test").arg(i)));
-            
-            QElapsedTimer *timer = new QElapsedTimer();
-            timer->start();
+            const QUrl url = SchedulerBenchmarkHelpers::mockUrl(QStringLiteral("basic"), i);
+            prepareMockResponse(url);
+            QCNetworkRequest request(url);
+
+            QElapsedTimer timer;
+            timer.start();
 
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
@@ -262,10 +259,10 @@ private:
             }
 
             connect(reply, &QCNetworkReply::finished, this, [&, reply, timer]() {
-                qint64 latency = timer->elapsed();
+                qint64 latency = timer.elapsed();
                 result.latencies.push_back(latency);
                 
-                if (reply->error() == NetworkError::NoError) {
+                if (reply->error() == NetworkError::NoError && reply->httpStatusCode() == 200) {
                     result.successRequests++;
                 } else {
                     result.failedRequests++;
@@ -276,7 +273,6 @@ private:
                     loop.quit();
                 }
 
-                delete timer;
                 reply->deleteLater();
             });
         }
@@ -284,13 +280,14 @@ private:
         loop.exec();
 
         result.totalTimeMs = totalTimer.elapsed();
-        calculateStatistics(result);
+        SchedulerBenchmarkHelpers::calculateStatistics(result);
 
         return result;
     }
 
     BenchmarkResult runConcurrentBenchmark(const QString &name, int count, bool useScheduler)
     {
+        mockHandler.clear();
         BenchmarkResult result;
         result.testName = name;
         result.totalRequests = count;
@@ -303,10 +300,12 @@ private:
 
         // 并发创建所有请求
         for (int i = 0; i < count; ++i) {
-            QCNetworkRequest request(QUrl(QString("http://invalid-concurrent-%1.local/test").arg(i)));
-            
-            QElapsedTimer *timer = new QElapsedTimer();
-            timer->start();
+            const QUrl url = SchedulerBenchmarkHelpers::mockUrl(QStringLiteral("concurrent"), i);
+            prepareMockResponse(url);
+            QCNetworkRequest request(url);
+
+            QElapsedTimer timer;
+            timer.start();
 
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
@@ -317,10 +316,10 @@ private:
             }
 
             connect(reply, &QCNetworkReply::finished, this, [&, reply, timer]() {
-                qint64 latency = timer->elapsed();
+                qint64 latency = timer.elapsed();
                 result.latencies.push_back(latency);
                 
-                if (reply->error() == NetworkError::NoError) {
+                if (reply->error() == NetworkError::NoError && reply->httpStatusCode() == 200) {
                     result.successRequests++;
                 } else {
                     result.failedRequests++;
@@ -331,7 +330,6 @@ private:
                     loop.quit();
                 }
 
-                delete timer;
                 reply->deleteLater();
             });
         }
@@ -339,94 +337,41 @@ private:
         loop.exec();
 
         result.totalTimeMs = totalTimer.elapsed();
-        calculateStatistics(result);
+        SchedulerBenchmarkHelpers::calculateStatistics(result);
 
         return result;
     }
 
-    void calculateStatistics(BenchmarkResult &result)
+    void finalizePriorityBenchmark(PriorityBenchmarkContext &context)
     {
-        if (result.latencies.empty()) {
+        if (context.finalized) {
             return;
         }
+        context.finalized = true;
 
-        // 排序
-        std::sort(result.latencies.begin(), result.latencies.end());
+        context.lowPriorityResult.totalTimeMs = context.totalTimer.elapsed();
+        context.highPriorityResult.totalTimeMs = context.lowPriorityResult.totalTimeMs;
+        SchedulerBenchmarkHelpers::calculateStatistics(context.lowPriorityResult);
+        SchedulerBenchmarkHelpers::calculateStatistics(context.highPriorityResult);
 
-        // 计算平均延迟
-        qint64 sum = 0;
-        for (auto latency : result.latencies) {
-            sum += latency;
-        }
-        result.avgLatencyMs = static_cast<double>(sum) / result.latencies.size();
-
-        // 计算百分位数
-        size_t p50Index = result.latencies.size() * 50 / 100;
-        size_t p95Index = result.latencies.size() * 95 / 100;
-        size_t p99Index = result.latencies.size() * 99 / 100;
-
-        result.p50LatencyMs = result.latencies[p50Index];
-        result.p95LatencyMs = result.latencies[p95Index];
-        result.p99LatencyMs = result.latencies[p99Index];
-
-        // 计算吞吐量（请求/秒）
-        if (result.totalTimeMs > 0) {
-            result.throughput = static_cast<double>(result.totalRequests) / result.totalTimeMs * 1000.0;
-        }
-    }
-
-    void finalizePriorityBenchmark(BenchmarkResult &lowResult, BenchmarkResult &highResult)
-    {
-        calculateStatistics(lowResult);
-        calculateStatistics(highResult);
-
-        results.push_back(lowResult);
-        results.push_back(highResult);
+        results.push_back(context.lowPriorityResult);
+        results.push_back(context.highPriorityResult);
 
         qInfo() << QString("优先级延迟：low=%1 ms, high=%2 ms")
-                       .arg(lowResult.avgLatencyMs, 0, 'f', 2)
-                       .arg(highResult.avgLatencyMs, 0, 'f', 2);
-    }
-
-    void printResult(const BenchmarkResult &result)
-    {
-        qInfo() << "\n" << result.testName << "结果：";
-        qInfo() << QString("  总请求数: %1").arg(result.totalRequests);
-        qInfo() << QString("  成功: %1 | 失败: %2").arg(result.successRequests).arg(result.failedRequests);
-        qInfo() << QString("  总耗时: %1 ms").arg(result.totalTimeMs);
-        qInfo() << QString("  平均延迟: %1 ms").arg(result.avgLatencyMs, 0, 'f', 2);
-        qInfo() << QString("  P50 延迟: %1 ms").arg(result.p50LatencyMs);
-        qInfo() << QString("  P95 延迟: %1 ms").arg(result.p95LatencyMs);
-        qInfo() << QString("  P99 延迟: %1 ms").arg(result.p99LatencyMs);
-        qInfo() << QString("  吞吐量: %1 req/s").arg(result.throughput, 0, 'f', 2);
-    }
-
-    void printComparison(const BenchmarkResult &baseline, const BenchmarkResult &test)
-    {
-        qInfo() << "\n性能对比：";
-        printResult(baseline);
-        printResult(test);
-
-        qInfo() << "\n对比分析：";
-
-        // 延迟对比
-        if (baseline.avgLatencyMs > 0) {
-            double latencyDiff = ((test.avgLatencyMs - baseline.avgLatencyMs) / baseline.avgLatencyMs) * 100;
-            qInfo() << QString("  延迟变化: %1%2%")
-                       .arg(latencyDiff > 0 ? "+" : "")
-                       .arg(latencyDiff, 0, 'f', 1);
-        }
-
-        // 吞吐量对比
-        if (baseline.throughput > 0) {
-            double throughputDiff = ((test.throughput - baseline.throughput) / baseline.throughput) * 100;
-            qInfo() << QString("  吞吐量变化: %1%2%")
-                       .arg(throughputDiff > 0 ? "+" : "")
-                       .arg(throughputDiff, 0, 'f', 1);
-        }
+                       .arg(context.lowPriorityResult.avgLatencyMs, 0, 'f', 2)
+                       .arg(context.highPriorityResult.avgLatencyMs, 0, 'f', 2);
+        qInfo() << QString("优先级统计：low=%1/%2 high=%3/%4 starts=%5 finishes=%6")
+                       .arg(context.lowPriorityResult.successRequests)
+                       .arg(context.lowPriorityResult.totalRequests)
+                       .arg(context.highPriorityResult.successRequests)
+                       .arg(context.highPriorityResult.totalRequests)
+                       .arg(static_cast<int>(context.startOrder.size()))
+                       .arg(static_cast<int>(context.finishOrder.size()));
+        context.loop.quit();
     }
 
     QCNetworkAccessManager *manager;
+    QCNetworkMockHandler mockHandler;
     QCNetworkRequestScheduler *scheduler;
     std::vector<BenchmarkResult> results;
 };

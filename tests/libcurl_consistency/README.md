@@ -142,7 +142,7 @@ QCURL_REQUIRE_HTTP3=1
 - raw request header：`test_p1_request_headers.py` 覆盖普通自定义头、同名覆盖、大小写差异 key 与敏感头 redaction；request artifact 写入脱敏 raw lines / digest 并参与 compare。
 - SOCKS success：`test_p1_socks_success.py` 覆盖 `Socks5` IP 目标与 `Socks5Hostname` 域名目标，代理日志记录 `ATYP` / `dst` / `rep`。
 - 302 / 303 / 308 redirect：`test_p1_redirect_302_303_308.py` 覆盖 method/body 序列与 seekable / non-seekable 终态。
-- Range boundary：`test_p2_range_boundaries.py` 通过 `downloadFileResumable()` 覆盖 `Range: bytes=N-`、416 matching complete、`Content-Range.start` mismatch。
+- Range boundary：`test_p2_range_boundaries.py` 通过 `QCNetworkResumableDownloadJob` 覆盖 `Range: bytes=N-`、416 matching complete、`Content-Range.start` mismatch。
 - ext-only HTTP/3 policy：`test_ext_http3_version_policy.py` 覆盖 HTTP/1.1 fallback 与 `Http3Only` failure；`test_ext_http3_success_h3.py` 在 H3 可用时覆盖真实 H3 success。两者只由 `--with-ext` 规划执行，不属于 `--suite p2`。
 
 ## 7. 扩展规则

@@ -229,7 +229,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
     QString error;
     const auto cookies = manager->exportCookies(QUrl(QStringLiteral("http://example.local")),
                                                 &error);
-    QVERIFY(cookies.isEmpty());
+    QVERIFY(!cookies.has_value());
     QVERIFY(!error.isEmpty());
 
     error.clear();

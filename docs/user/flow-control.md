@@ -53,7 +53,7 @@ manager-level raw-body 流式上传（如 `QCNetworkAccessManager::sendPost(...,
 - 该语义只属于 async manager-level raw-body device 合同。
 - raw-body device overload 必须从 manager 所在线程调用，且 source `QIODevice` 与 manager/reply 在同一线程。
 - Sync raw-body 不承诺 `source-not-ready` 恢复；遇到 `read() == 0 && !atEnd()` 会显式失败。
-- `postMultipartDevice()` 要求已知长度且设备可 seek，不属于 unknown-size live producer 入口。
+- `QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` 构造成功只表示 wrapper 已准备好；发送阶段仍要求 source device、wrapper device 与 reply/manager 同线程。它要求已知长度且设备可 seek，不属于 unknown-size live producer 入口。
 
 推荐使用以下只读诊断面做排障与一致性验证：
 

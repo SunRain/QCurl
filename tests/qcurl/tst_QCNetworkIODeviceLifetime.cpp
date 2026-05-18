@@ -4,10 +4,14 @@
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDownloadToDeviceJob.h"
 #include "QCNetworkError.h"
 #include "QCNetworkReply.h"
 
 #include <QBuffer>
+#include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QHostAddress>
 #include <QPointer>
 #include <QSharedPointer>
@@ -116,6 +120,16 @@ private:
     QTcpServer m_server;
 };
 
+bool waitForJobReply(QCNetworkDownloadToDeviceJob &job, int timeoutMs)
+{
+    QElapsedTimer timer;
+    timer.start();
+    while (!job.reply() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+    return job.reply() != nullptr;
+}
+
 } // namespace
 
 class TestQCNetworkIODeviceLifetime : public QObject
@@ -142,7 +156,10 @@ void TestQCNetworkIODeviceLifetime::testDownloadToDeviceDeviceDestroyedDuringTra
     QVERIFY(buffer->open(QIODevice::ReadWrite));
     QPointer<QBuffer> safeBuffer(buffer);
 
-    QCNetworkReply *reply = manager.downloadToDevice(server.url(), buffer);
+    QCNetworkDownloadToDeviceJob job(&manager, server.url(), buffer);
+    job.start();
+    QVERIFY(waitForJobReply(job, 1000));
+    QCNetworkReply *reply = job.reply();
     QVERIFY(reply);
 
     QSignalSpy errorSpy(reply,
@@ -170,6 +187,8 @@ void TestQCNetworkIODeviceLifetime::testDownloadToDeviceDeviceDestroyedDuringTra
 
     QVERIFY(finishedSpy.wait(20000));
 
+    QVERIFY(job.isFinished());
+    QCOMPARE(job.error(), NetworkError::InvalidRequest);
     QCOMPARE(cancelledSpy.count(), 0);
     QCOMPARE(errorSpy.count(), 1);
     QCOMPARE(finishedSpy.count(), 1);

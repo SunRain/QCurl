@@ -104,7 +104,7 @@ private slots:
     void testDiskCacheLookupHonorsReadModeForExpiredEntry();
     void testDiskCacheLookupDistinguishesExpiredZeroByteHit();
     void testDiskCacheLookupMissesWhenDataFileMissing();
-    void testSetCachePathReplacesOnlyAutoCreatedCache();
+    void testManagerUsesExplicitDiskCacheInjection();
     void testCustomCacheSubclassCanImplementLookupOnly();
 
     // ========== HTTP 缓存头解析测试 ==========
@@ -428,34 +428,24 @@ void TestQCNetworkCache::testDiskCacheLookupMissesWhenDataFileMissing()
     QVERIFY(!result.hit());
 }
 
-void TestQCNetworkCache::testSetCachePathReplacesOnlyAutoCreatedCache()
+void TestQCNetworkCache::testManagerUsesExplicitDiskCacheInjection()
 {
     QCNetworkAccessManager manager;
 
-    const QString cacheDir1 = m_tempDir.filePath(QStringLiteral("auto-cache-1"));
-    const QString cacheDir2 = m_tempDir.filePath(QStringLiteral("auto-cache-2"));
-    manager.setCachePath(cacheDir1, 1024 * 1024);
+    auto *diskCache = new QCNetworkDiskCache(&manager);
+    diskCache->setCacheDirectory(uniqueCacheDir(m_tempDir, QStringLiteral("explicit-disk")));
+    diskCache->setMaxCacheSize(1024 * 1024);
 
-    auto *firstAutoCache = qobject_cast<QCNetworkDiskCache *>(manager.cache());
-    QVERIFY(firstAutoCache != nullptr);
-    QPointer<QObject> firstDestroyed(firstAutoCache);
+    manager.setCache(diskCache);
+    QCOMPARE(manager.cache(), diskCache);
+    QCOMPARE(diskCache->maxCacheSize(), qint64(1024 * 1024));
 
-    manager.setCachePath(cacheDir2, 1024 * 1024);
-    auto *secondAutoCache = qobject_cast<QCNetworkDiskCache *>(manager.cache());
-    QVERIFY(secondAutoCache != nullptr);
-    QVERIFY(secondAutoCache != firstAutoCache);
+    auto *memoryCache = new QCNetworkMemoryCache(&manager);
+    QPointer<QObject> diskGuard(diskCache);
+    manager.setCache(memoryCache);
 
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    QVERIFY(firstDestroyed.isNull());
-
-    auto *externalCache = new QCNetworkMemoryCache(&manager);
-    QPointer<QObject> externalGuard(externalCache);
-    manager.setCache(externalCache);
-    QCOMPARE(manager.cache(), externalCache);
-
-    manager.setCachePath(m_tempDir.filePath(QStringLiteral("auto-cache-3")), 1024 * 1024);
-    QCOMPARE(manager.cache()->parent(), &manager);
-    QVERIFY(!externalGuard.isNull());
+    QCOMPARE(manager.cache(), memoryCache);
+    QVERIFY(!diskGuard.isNull());
 }
 
 void TestQCNetworkCache::testCustomCacheSubclassCanImplementLookupOnly()

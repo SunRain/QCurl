@@ -22,6 +22,7 @@
 
 namespace QCurl {
 class QCNetworkReply;
+class QCNetworkAccessManagerPrivate;
 class QCNetworkRequest;
 
 namespace Internal {
@@ -32,7 +33,7 @@ struct RequestBody;
 // 前向声明
 // ==================
 
-class QCNetworkReplyPrivate; ///< 私有实现类（定义在 QCNetworkReply_p.h）
+class QCNetworkReplyPrivate; ///< 私有实现类。
 
 // ==================
 // 枚举定义
@@ -350,6 +351,7 @@ private:
     class FactoryKey
     {
         friend class QCNetworkAccessManager;
+        friend class QCNetworkAccessManagerPrivate;
 
         FactoryKey() = default;
     };
@@ -377,6 +379,8 @@ private:
     // ==================
     // 私有实现（Pimpl 模式）
     // ==================
+
+    friend class QCNetworkAccessManagerPrivate;
 
     Q_DECLARE_PRIVATE(QCNetworkReply)
     QScopedPointer<QCNetworkReplyPrivate> d_ptr;

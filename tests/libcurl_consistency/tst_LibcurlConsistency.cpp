@@ -16,7 +16,7 @@
  * - QCURL_LC_EXPECT100_TIMEOUT_MS: Expect: 100-continue 等待超时（ms；可选；用于 p2_expect_100_continue / p2_expect_100_continue_inline_body）
  * - QCURL_LC_ABORT_OFFSET: 中断点（Range 续传用，默认 0）
  * - QCURL_LC_FILE_SIZE: 资源总长度（Range 续传用，默认 0）
- * - QCURL_LC_RESUME_PATH: downloadFileResumable() 目标文件路径（Range 边界用）
+ * - QCURL_LC_RESUME_PATH: QCNetworkResumableDownloadJob 目标文件路径（Range 边界用）
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
  * - QCURL_LC_REFERER: 显式 Referer（M1）
  * - QCURL_LC_SHARE_HANDLE: multi share handle（测试注入；默认不设置=关闭；off|dns,cookie,ssl_session）
@@ -34,6 +34,7 @@
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkResumableDownloadJob.h"
 #include "QCNetworkRetryPolicy.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
@@ -3186,13 +3187,18 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(!targetUrl.isEmpty());
         QVERIFY(!resumePath.isEmpty());
 
-        QCNetworkReply *reply = manager.downloadFileResumable(QUrl(targetUrl), resumePath, false);
+        QCNetworkResumableDownloadJob job(&manager, QUrl(targetUrl), resumePath, false);
+        job.start();
+        QTRY_VERIFY_WITH_TIMEOUT(job.reply() != nullptr, 1000);
+        QCNetworkReply *reply = job.reply();
         QVERIFY(reply);
         QVERIFY2(waitForReplyFinished(reply, 20000), "timeout waiting for resumable download");
 
         if (caseId == QStringLiteral("p2_range_mismatch_start")) {
+            QCOMPARE(job.error(), NetworkError::InvalidRequest);
             QCOMPARE(reply->error(), NetworkError::InvalidRequest);
         } else {
+            QCOMPARE(job.error(), NetworkError::NoError);
             QCOMPARE(reply->error(), NetworkError::NoError);
         }
 

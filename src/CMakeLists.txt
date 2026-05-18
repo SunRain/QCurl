@@ -3,6 +3,10 @@
 set(QCURL_CORE_SOURCES
     CurlGlobalConstructor.cpp
     QCNetworkAccessManager.cpp
+    QCNetworkAccessManagerConfig.cpp
+    QCNetworkAccessManagerCookies.cpp
+    QCNetworkAccessManagerSend.cpp
+    QCNetworkAccessManagerServices.cpp
     QCNetworkRequest.cpp
     QCUtility.cpp
 )
@@ -21,6 +25,8 @@ set(QCURL_FEATURE_SOURCES
     CurlFeatureProbe.cpp
     private/QCRequestPipeline.cpp
     private/QCSingleFileMultipartBodyDevice.cpp
+    QCNetworkBody.cpp
+    QCNetworkMultipartBody.cpp
     QCNetworkSslConfig.cpp
     QCNetworkProxyConfig.cpp
     QCNetworkTimeoutConfig.cpp
@@ -43,8 +49,12 @@ set(QCURL_FEATURE_SOURCES
     QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
     QCNetworkMiddleware.cpp         # v2.15.0: 中间件
     QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
+    QCNetworkTransferJob.cpp
+    QCNetworkDownloadToDeviceJob.cpp
+    QCNetworkResumableDownloadJob.cpp
     QCNetworkCapturedRequest.cpp
     QCNetworkMockHandler.cpp        # v2.16.0: Mock 工具
+    private/QCNetworkResumableDownloadWriter.cpp
     QCNetworkDiagnostics.cpp        # v2.19.0: 网络诊断工具
 )
 
@@ -54,6 +64,8 @@ set(QCURL_FEATURE_HEADERS
     CurlFeatureProbe.h
     private/QCMultipartHeaderEncoding_p.h
     private/QCSingleFileMultipartBodyDevice.h
+    QCNetworkBody.h
+    QCNetworkMultipartBody.h
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h
@@ -79,8 +91,12 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkLogRedaction_p.h # v2.20.0: 日志脱敏工具（内部）
     QCNetworkMiddleware.h           # v2.15.0: 中间件
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
+    QCNetworkTransferJob.h
+    QCNetworkDownloadToDeviceJob.h
+    QCNetworkResumableDownloadJob.h
     QCNetworkMockHandler.h          # v2.16.0: Mock 工具
     QCNetworkMockHandler_p.h        # v2.16.0: Mock 内部 companion（内部）
+    private/QCNetworkResumableDownloadWriter_p.h
     QCNetworkDiagnostics.h          # v2.19.0: 网络诊断工具
 )
 
@@ -138,6 +154,11 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkMemoryCache.h
     QCNetworkDiskCache.h
     QCMultipartFormData.h
+    QCNetworkBody.h
+    QCNetworkMultipartBody.h
+    QCNetworkTransferJob.h
+    QCNetworkDownloadToDeviceJob.h
+    QCNetworkResumableDownloadJob.h
     QCNetworkLogger.h
     QCNetworkDefaultLogger.h
     QCNetworkCancelToken.h

@@ -24,6 +24,7 @@ Q_MOC_INCLUDE("QCNetworkReply.h")
 namespace QCurl {
 
 class QCNetworkAccessManager;
+class QCNetworkAccessManagerPrivate;
 class QCNetworkReply;
 class QCNetworkRequestSchedulerConfigData;
 class QCNetworkRequestSchedulerStatisticsData;
@@ -372,6 +373,7 @@ signals:
 
 private:
     friend class QCNetworkAccessManager;
+    friend class QCNetworkAccessManagerPrivate;
 
     explicit QCNetworkRequestScheduler(QObject *parent = nullptr);
     ~QCNetworkRequestScheduler() override;

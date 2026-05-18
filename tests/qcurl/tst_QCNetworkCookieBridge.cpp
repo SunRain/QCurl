@@ -52,12 +52,11 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
     QString err;
     QVERIFY(manager.importCookies({sid}, QUrl("https://example.com/"), &err));
 
-    const QList<QNetworkCookie> exported = manager.exportCookies(QUrl(
-                                                                     "https://example.com/foo/bar"),
-                                                                 &err);
-    QVERIFY2(!exported.isEmpty(), qPrintable(err));
+    const auto exported = manager.exportCookies(QUrl("https://example.com/foo/bar"), &err);
+    QVERIFY2(exported.has_value(), qPrintable(err));
+    QVERIFY(!exported->isEmpty());
 
-    for (const QNetworkCookie &c : exported) {
+    for (const QNetworkCookie &c : exported.value()) {
         if (c.name() == QByteArray("sid") && c.value() == QByteArray("abc")) {
             QVERIFY(c.isSecure());
             QVERIFY(c.isHttpOnly());
@@ -65,7 +64,7 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
             break;
         }
     }
-    QVERIFY(hasCookie(exported, "sid", "abc"));
+    QVERIFY(hasCookie(exported.value(), "sid", "abc"));
 }
 
 void TestQCNetworkCookieBridge::testExportFilter_HostAndPathIsolation()
@@ -86,21 +85,21 @@ void TestQCNetworkCookieBridge::testExportFilter_HostAndPathIsolation()
     QString err;
     QVERIFY(manager.importCookies({hostOnly, domainCookie}, QUrl("https://example.com/"), &err));
 
-    const QList<QNetworkCookie> ex1 = manager.exportCookies(QUrl("https://example.com/foo/bar"),
-                                                            &err);
-    QVERIFY(hasCookie(ex1, "hostonly", "1"));
-    QVERIFY(hasCookie(ex1, "domain", "1"));
+    const auto ex1 = manager.exportCookies(QUrl("https://example.com/foo/bar"), &err);
+    QVERIFY2(ex1.has_value(), qPrintable(err));
+    QVERIFY(hasCookie(ex1.value(), "hostonly", "1"));
+    QVERIFY(hasCookie(ex1.value(), "domain", "1"));
 
-    const QList<QNetworkCookie> ex2 = manager.exportCookies(QUrl("https://sub.example.com/foo/bar"),
-                                                            &err);
-    QVERIFY(!hasCookie(ex2, "hostonly", "1"));
-    QVERIFY(hasCookie(ex2, "domain", "1"));
+    const auto ex2 = manager.exportCookies(QUrl("https://sub.example.com/foo/bar"), &err);
+    QVERIFY2(ex2.has_value(), qPrintable(err));
+    QVERIFY(!hasCookie(ex2.value(), "hostonly", "1"));
+    QVERIFY(hasCookie(ex2.value(), "domain", "1"));
 
     // 路径匹配要求边界正确：/foo 不应匹配 /foobar
-    const QList<QNetworkCookie> ex3 = manager.exportCookies(QUrl("https://example.com/foobar"),
-                                                            &err);
-    QVERIFY(!hasCookie(ex3, "hostonly", "1"));
-    QVERIFY(!hasCookie(ex3, "domain", "1"));
+    const auto ex3 = manager.exportCookies(QUrl("https://example.com/foobar"), &err);
+    QVERIFY2(ex3.has_value(), qPrintable(err));
+    QVERIFY(!hasCookie(ex3.value(), "hostonly", "1"));
+    QVERIFY(!hasCookie(ex3.value(), "domain", "1"));
 }
 
 void TestQCNetworkCookieBridge::testClearAllCookies()
@@ -116,10 +115,14 @@ void TestQCNetworkCookieBridge::testClearAllCookies()
 
     QString err;
     QVERIFY(manager.importCookies({sid}, QUrl("https://example.com/"), &err));
-    QVERIFY(!manager.exportCookies(QUrl("https://example.com/"), &err).isEmpty());
+    auto exported = manager.exportCookies(QUrl("https://example.com/"), &err);
+    QVERIFY2(exported.has_value(), qPrintable(err));
+    QVERIFY(!exported->isEmpty());
 
     QVERIFY2(manager.clearAllCookies(&err), qPrintable(err));
-    QVERIFY(manager.exportCookies(QUrl("https://example.com/"), &err).isEmpty());
+    exported = manager.exportCookies(QUrl("https://example.com/"), &err);
+    QVERIFY2(exported.has_value(), qPrintable(err));
+    QVERIFY(exported->isEmpty());
 }
 
 QTEST_MAIN(TestQCNetworkCookieBridge)

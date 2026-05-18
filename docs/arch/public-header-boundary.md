@@ -17,6 +17,8 @@ QCurl 的 install surface 只有两个来源：
 - `QCNetworkDefaultLogger.h` 与 `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入默认稳定安装面。
 - `QCNetworkCache.h`、`QCNetworkMemoryCache.h`、`QCNetworkDiskCache.h` 作为 P2 Cache lookup Core 能力进入默认稳定安装面，公开读取路径限定为 `lookup(url, ReadMode)`。
 - `QCMultipartFormData.h` 作为 P2 Multipart builder 进入默认稳定安装面，内部字段和编码缓存已下沉到 shared-data 实现。
+- `QCNetworkBody.h` 与 `QCNetworkMultipartBody.h` 作为 P2 body helper 进入默认稳定安装面，用于 JSON/form/multipart body 生成；发送仍统一走 `QCNetworkAccessManager::sendPost()`。
+- `QCNetworkTransferJob.h`、`QCNetworkDownloadToDeviceJob.h` 与 `QCNetworkResumableDownloadJob.h` 作为 P2 file-transfer job 进入默认稳定安装面；manager 不暴露文件传输 convenience。
 - `QCNetworkMiddleware.h` 作为 P3 Middleware base 进入默认稳定安装面；内置 middleware 实现细节不得混入 base contract。
 - `QCNetworkMockHandler.h` 作为 P3 Core Test Support 进入默认安装面；它用于测试支持和请求捕获，不作为生产运行时 Core 能力表述。
 - `QCNetworkConnectionPoolConfig.h` 与 `QCNetworkConnectionPoolManager.h` 作为 P3 ConnectionPool 管理面进入默认稳定安装面，config/statistics 使用 accessor / shared-data API。
@@ -89,7 +91,10 @@ QCurl 的 install surface 只有两个来源：
 | `QCNetworkCachePolicy.h` | 独立轻量 enum type header；作为 `QCNetworkRequest` 的 Core 配置类型进入默认安装面 | 可新增策略枚举值，但不得把 concrete cache 实现类型或读取 API 混入该头 |
 | `QCNetworkCache.h` | `QCNetworkCacheMetadata` / `QCNetworkCacheLookupResult` 使用 implicit-sharing 值类型 + accessor API；canonical read API 为 `lookup(url, ReadMode)` | 可在 Data 内扩展字段；不得恢复 public fields、`contains()` / `data()` / `metadata()` 旧读路径或新增 layout allowlist |
 | `QCNetworkMemoryCache.h` / `QCNetworkDiskCache.h` | QObject cache 实现使用 private data；缓存容器、锁、路径和文件系统细节留在 `.cpp` | 仅通过 accessor / virtual API 扩展行为；不得在 public header 暴露 `QCache`、`QMutex`、`QDir` 等实现依赖 |
+| `QCNetworkBody.h` | JSON / form-url-encoded body helper；不依赖 manager，不暴露 public fields | 可新增编码 helper；不得把发送、文件 I/O 或 manager 状态混入该类型 |
 | `QCMultipartFormData.h` | builder 使用 implicit-sharing 值类型；字段列表、boundary 缓存和 MIME/file helper 留在 `.cpp` | 可新增 builder API；不得恢复 nested public field layout 或把文件系统 / MIME 依赖暴露到 public header |
+| `QCNetworkMultipartBody.h` | multipart body helper；owning body 返回 QByteArray，streaming body 持有独占 QIODevice 并通过 `sendPost()` 发送；single-file streaming 构造要求显式 `ownerThread` 且调用线程/source device/reply 后续发送线程一致 | 可新增 multipart body 变体；不得恢复 manager-level multipart convenience |
+| `QCNetworkTransferJob.h` / `QCNetworkDownloadToDeviceJob.h` / `QCNetworkResumableDownloadJob.h` | QObject job + d-pointer；`QCNetworkDownloadToDeviceJob` 与 `QCNetworkResumableDownloadJob` 构造不启动，调用方 connect 后显式 `start()`；底层 reply 只在启动成功后可用 | 可新增 job 状态 accessor；不得绕过 manager 管线或暴露 QFile/QSaveFile 内部状态 |
 | `QCNetworkDefaultLogger.h` | 继承 `QCNetworkLogger`，自身使用 private data；文件输出、内存缓存和 mutex 留在 `.cpp` | 可新增 setter/accessor；不得把文件轮转状态或锁对象暴露为 public fields |
 | `QCNetworkCancelToken.h` | QObject service + private data；只暴露 reply-level attach/cancel/timeout 合同 | 仅通过 reply-level API 扩展取消语义；不得新增 request-level cancel shortcut |
 | `QCNetworkMiddleware.h` | base class 使用 private data 管理注册 manager；公开面只保留 virtual hook 与 manager 注册合同 | 可新增 hook 或 helper；不得把内置 middleware 的状态、容器或锁暴露到 base header |
@@ -147,7 +152,7 @@ QCurl 的 install surface 只有两个来源：
 - logger 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkLogger.h>`、`NetworkLogEntry` accessor API、以及 `manager.setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()`。
 - cache policy 作为 Core type header 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCachePolicy.h>` 以及 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()`。
 - Cache lookup 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCache.h>`、`<QCNetworkMemoryCache.h>`、`<QCNetworkDiskCache.h>`、`QCNetworkCacheMetadata` accessor API、`lookup(url, QCNetworkCacheReadMode::FreshOnly)` 和 `QCNetworkCacheLookupResult` accessor API。
-- Multipart builder 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCMultipartFormData.h>`、`setBoundary()`、`addTextField()`、`addFileField()`、`contentType()`、`size()`、`toByteArray()` 和 `fieldCount()`。
+- Body / Multipart / transfer job 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCNetworkBody.h>`、`<QCMultipartFormData.h>`、`<QCNetworkMultipartBody.h>`、`<QCNetworkDownloadToDeviceJob.h>`、`<QCNetworkResumableDownloadJob.h>`、JSON/form body helper、multipart `fromFormData()`、`contentType()`、`data()`、`size()`、`toByteArray()`、`fieldCount()` 和 job type 可见性。
 - default logger 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkDefaultLogger.h>`、`enableConsoleOutput(false)`、`setMinLogLevel()`、`entries()` 和 `manager.setLogger(&defaultLogger)`。
 - cancel token 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCancelToken.h>`、`attach(QCNetworkReply *)`、`attachMultiple(QList<QCNetworkReply *>)`、`setAutoTimeout()`、`cancel()` 和 `isCancelled()`。
 - Middleware base 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkMiddleware.h>`、继承 base class、`manager.addMiddleware()`、`middlewares()` 和 `removeMiddleware()`。

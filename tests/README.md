@@ -283,7 +283,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 ### tst_QCNetworkFileTransfer
 
-- 覆盖 `downloadToDevice()` 的流式写入、`postMultipartDevice()` 的回显校验，以及 `downloadFileResumable()` 在“先制造部分下载、再续传”路径上的语义
+- 覆盖 `QCNetworkDownloadToDeviceJob` 的流式写入、`QCNetworkMultipartBody` + `sendPost()` 的回显校验，以及 `QCNetworkResumableDownloadJob` 在“先制造部分下载、再续传”路径上的语义
 - 依赖本地 httpbin，且 `/bytes`、`/post`、`/range` 端点必须可用
 
 ### tst_Integration

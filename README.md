@@ -47,15 +47,15 @@
 - **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
 - **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
 - **Cache lookup API** - `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 提供 `lookup(url, ReadMode)`，返回 `Miss / FreshHit / StaleHit`
-- **Multipart/form-data builder** - `QCMultipartFormData` 与 `postMultipart*()` 覆盖文件上传场景
+- **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `sendPost()` 发送
 - **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
 - **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
 - **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面
 - **MockHandler Core Test Support** - `QCNetworkMockHandler` 与 `QCNetworkCapturedRequest` 提供测试支持和请求捕获
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
-- **流式下载/上传** - `downloadToDevice()` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
-- **断点续传** - `downloadFileResumable()` 基于 HTTP Range 请求恢复下载
+- **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
+- **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
 
 ### 可选 Extras
 
@@ -157,16 +157,37 @@ socket->open();
 
 ```cpp
 #include <QCMultipartFormData.h>
+#include <QCNetworkMultipartBody.h>
 
 QCurl::QCMultipartFormData formData;
 formData.addTextField("userId", "12345");
 formData.addFileField("avatar", "/path/to/photo.jpg");
 
 QCurl::QCNetworkRequest uploadRequest(QUrl("https://api.example.com/upload"));
-auto *reply = manager.postMultipart(uploadRequest, formData);
+auto body = QCurl::QCNetworkMultipartBody::fromFormData(formData);
+uploadRequest.setRawHeader("Content-Type", body.contentType());
+auto *reply = manager.sendPost(uploadRequest, body.data());
 ```
 
-#### 4. Lane-aware Scheduler
+#### 4. 内存请求体（JSON / form-urlencoded）
+
+`QCNetworkBody` 会随请求体保存匹配的 `Content-Type`。`sendPost()` / `sendPut()` /
+`sendPatch()` 接收 `QCNetworkBody` 时，若请求尚未显式设置 `Content-Type`，会自动补齐；若已设置，
+则尊重请求里的显式值。
+
+```cpp
+#include <QCNetworkBody.h>
+
+QCurl::QCNetworkRequest formRequest(QUrl("https://api.example.com/form"));
+auto formBody = QCurl::QCNetworkBody::fromFormUrlEncoded(
+    QList<QPair<QString, QString>>{
+        {QStringLiteral("tag"), QStringLiteral("one")},
+        {QStringLiteral("tag"), QStringLiteral("two")},
+    });
+auto *formReply = manager.sendPost(formRequest, formBody);
+```
+
+#### 5. Lane-aware Scheduler
 
 `QCNetworkRequestScheduler.h` 属于 QCurl 的 **Core install surface**（默认安装，按稳定公开 contract 维护）。
 

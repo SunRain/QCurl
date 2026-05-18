@@ -5,24 +5,47 @@
 #include <QCNetworkConnectionPoolConfig.h>
 #include <QCNetworkConnectionPoolManager.h>
 #include <QCNetworkDiskCache.h>
+#include <QCNetworkDownloadToDeviceJob.h>
 #include <QCNetworkDefaultLogger.h>
 #include <QCNetworkHttpMethod.h>
 #include <QCNetworkLogger.h>
 #include <QCNetworkMemoryCache.h>
 #include <QCNetworkMiddleware.h>
 #include <QCNetworkMockHandler.h>
+#include <QCNetworkBody.h>
+#include <QCNetworkMultipartBody.h>
 #include <QCMultipartFormData.h>
 #include <QCNetworkProxyConfig.h>
+#include <QCNetworkResumableDownloadJob.h>
 #include <QCNetworkRequest.h>
+#include <QCNetworkReply.h>
 #include <QCNetworkRetryPolicy.h>
 #include <QCNetworkRequestScheduler.h>
 #include <QCNetworkSslConfig.h>
 #include <QCNetworkTimeoutConfig.h>
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
+#include <QJsonObject>
+#include <QList>
+#include <QPair>
 #include <QUrl>
 
 #include <chrono>
+#include <optional>
+
+static std::optional<QByteArray> findHeaderValue(
+    const QList<QPair<QByteArray, QByteArray>> &headers,
+    const QByteArray &nameLower)
+{
+    for (const auto &header : headers) {
+        if (header.first.trimmed().toLower() == nameLower) {
+            return header.second;
+        }
+    }
+    return std::nullopt;
+}
 
 class ConsumerSmokeLogger : public QCurl::QCNetworkLogger
 {
@@ -165,6 +188,88 @@ int main(int argc, char **argv)
         || !formData.contentType().contains(QStringLiteral("----QCurlConsumerSmokeBoundary"))
         || formData.size() <= 0
         || !formData.toByteArray().contains(QByteArrayLiteral("payload"))) {
+        return 10;
+    }
+    const QCurl::QCNetworkBody jsonBody = QCurl::QCNetworkBody::fromJson(
+        QJsonObject{{QStringLiteral("name"), QStringLiteral("core")}});
+    const QCurl::QCNetworkBody formBody = QCurl::QCNetworkBody::fromFormUrlEncoded(
+        QList<QPair<QString, QString>>{{QStringLiteral("name"), QStringLiteral("core value")},
+                                       {QStringLiteral("name"), QStringLiteral("second value")}});
+    QCurl::QCNetworkRequest bodyRequest(request.url());
+    QCurl::QCNetworkMockHandler bodyMockHandler;
+    bodyMockHandler.setCaptureEnabled(true);
+    bodyMockHandler.setCaptureBodyPreviewLimit(256);
+    bodyMockHandler.mockResponse(QCurl::HttpMethod::Post,
+                                 bodyRequest.url(),
+                                 QByteArrayLiteral("body-ok"));
+    manager.setMockHandler(&bodyMockHandler);
+    auto *bodyReply = manager.sendPost(bodyRequest, formBody);
+    if (bodyReply == nullptr) {
+        return 10;
+    }
+    QElapsedTimer bodyReplyTimer;
+    bodyReplyTimer.start();
+    while (!bodyReply->isFinished() && bodyReplyTimer.elapsed() < 2000) {
+        QCoreApplication::processEvents();
+    }
+    if (!bodyReply->isFinished()) {
+        bodyReply->deleteLater();
+        return 10;
+    }
+    const auto bodyCaptured = bodyMockHandler.takeCapturedRequests();
+    const auto bodyContentType =
+        bodyCaptured.size() == 1
+            ? findHeaderValue(bodyCaptured.first().headers(), QByteArrayLiteral("content-type"))
+            : std::optional<QByteArray>{};
+    const bool bodyOverloadValid =
+        bodyReply->error() == QCurl::NetworkError::NoError && bodyCaptured.size() == 1
+        && bodyCaptured.first().method() == QCurl::HttpMethod::Post
+        && bodyCaptured.first().bodyPreview()
+               == QByteArrayLiteral("name=core%20value&name=second%20value")
+        && bodyContentType.has_value()
+        && bodyContentType.value() == QByteArrayLiteral("application/x-www-form-urlencoded");
+    bodyReply->deleteLater();
+    manager.setMockHandler(nullptr);
+    const auto multipartBody = QCurl::QCNetworkMultipartBody::fromFormData(formData);
+    QByteArray singleFileBytes = QByteArrayLiteral("single-file-payload");
+    QBuffer singleFileDevice(&singleFileBytes);
+    singleFileDevice.open(QIODevice::ReadOnly);
+    QString multipartError;
+    auto singleFileMultipart = QCurl::QCNetworkMultipartBody::fromSingleFileDevice(
+        &singleFileDevice,
+        QStringLiteral("file"),
+        QStringLiteral("payload.bin"),
+        QStringLiteral("application/octet-stream"),
+        singleFileBytes.size(),
+        &multipartError);
+    if (!singleFileMultipart.has_value()) {
+        return 10;
+    }
+    QIODevice *singleFileWrapper = singleFileMultipart->takeDevice(&app, &multipartError);
+    if (singleFileWrapper == nullptr) {
+        return 10;
+    }
+    QBuffer downloadProbeDevice;
+    downloadProbeDevice.open(QIODevice::WriteOnly);
+    QCurl::QCNetworkDownloadToDeviceJob downloadJobTypeProbe(&manager,
+                                                             request,
+                                                             &downloadProbeDevice);
+    downloadJobTypeProbe.start();
+    QCurl::QCNetworkResumableDownloadJob resumableJobTypeProbe(
+        &manager,
+        request,
+        QStringLiteral("/tmp/qcurl-consumer-smoke-resumable.bin"));
+    resumableJobTypeProbe.start();
+    if (jsonBody.contentType() != QByteArrayLiteral("application/json")
+        || !jsonBody.data().contains(QByteArrayLiteral("core"))
+        || formBody.contentType() != QByteArrayLiteral("application/x-www-form-urlencoded")
+        || !formBody.data().contains(QByteArrayLiteral("core%20value"))
+        || !formBody.data().contains(QByteArrayLiteral("name=second%20value"))
+        || !bodyOverloadValid
+        || multipartBody.contentType() != formData.contentType().toUtf8()
+        || multipartBody.data() != formData.toByteArray()
+        || !singleFileMultipart->contentType().contains("multipart/form-data")
+        || !singleFileMultipart->sizeBytes().has_value()) {
         return 10;
     }
 

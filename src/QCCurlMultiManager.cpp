@@ -891,14 +891,14 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
     return true;
 }
 
-QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
+std::optional<QList<QNetworkCookie>> QCCurlMultiManager::exportCookiesForManager(
     const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error)
 {
     if (!manager) {
         if (error) {
             *error = QStringLiteral("manager 为空");
         }
-        return {};
+        return std::nullopt;
     }
 
     const ShareConfig desired = toShareConfig(manager);
@@ -906,7 +906,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
         if (error) {
             *error = QStringLiteral("exportCookies 需要启用 ShareHandleConfig.shareCookies");
         }
-        return {};
+        return std::nullopt;
     }
 
     QMutexLocker locker(&m_mutex);
@@ -915,7 +915,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
         if (error) {
             *error = QStringLiteral("share context 不可用");
         }
-        return {};
+        return std::nullopt;
     }
 
     if (!context->share || (context->applied != desired)) {
@@ -923,14 +923,14 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
             if (error) {
                 *error = QStringLiteral("share handle 正在使用中，无法初始化/切换配置");
             }
-            return {};
+            return std::nullopt;
         }
         QString err;
         if (!applyShareConfigIfIdleLocked(context, desired, &err)) {
             if (error) {
                 *error = err;
             }
-            return {};
+            return std::nullopt;
         }
     }
 
@@ -938,7 +938,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
         if (error) {
             *error = QStringLiteral("share cookie store 未启用");
         }
-        return {};
+        return std::nullopt;
     }
 
     CURL *easy = curl_easy_init();
@@ -946,7 +946,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
         if (error) {
             *error = QStringLiteral("curl_easy_init 失败");
         }
-        return {};
+        return std::nullopt;
     }
 
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
@@ -960,7 +960,7 @@ QList<QNetworkCookie> QCCurlMultiManager::exportCookiesForManager(
             *error = QStringLiteral("读取 cookie 列表失败（%1）")
                          .arg(QString::fromUtf8(curl_easy_strerror(getInfoRc)));
         }
-        return {};
+        return std::nullopt;
     }
 
     QList<QNetworkCookie> out;

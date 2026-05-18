@@ -340,7 +340,7 @@ EXT_OBSERVABLE_FOLLOWUP_CASES = {
         "suite": "p2_range_boundaries",
         "case": "lc_range_boundaries_http_1.1",
         "client": "cli_lc_http",
-        "capability_gates": ["observe_http", "downloadFileResumable"],
+        "capability_gates": ["observe_http", "resumableDownloadJob"],
         "observation_points": ["range_header", "content_range", "file_size", "error_namespace"],
     },
 }

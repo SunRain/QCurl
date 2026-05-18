@@ -90,6 +90,16 @@ set_tests_properties(qcurl_public_api_scan PROPERTIES
 )
 
 add_test(
+    NAME qcurl_public_api_hard_break_guards
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            hard-break-guards
+            --repo-root "${CMAKE_SOURCE_DIR}"
+)
+set_tests_properties(qcurl_public_api_hard_break_guards PROPERTIES
+    LABELS "public-api"
+)
+
+add_test(
     NAME qcurl_public_api_stage_install
     COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
             install

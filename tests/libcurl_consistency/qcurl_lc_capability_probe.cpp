@@ -2,9 +2,11 @@
 
 #include <QCNetworkAccessManager.h>
 #include <QCNetworkHttpVersion.h>
+#include <QCNetworkMultipartBody.h>
 #include <QCNetworkProxyConfig.h>
 #include <QCNetworkReply.h>
 #include <QCNetworkRequest.h>
+#include <QCNetworkResumableDownloadJob.h>
 #include <QCNetworkSslConfig.h>
 
 #include <QBuffer>
@@ -71,17 +73,24 @@ QJsonObject buildManifest()
     static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
         const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>)>(
         &QCurl::QCNetworkAccessManager::sendPost));
-    static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
-        const QUrl &, const QString &, QIODevice *, const QString &, const QString &, std::optional<qint64>)>(
-        &QCurl::QCNetworkAccessManager::postMultipartDevice));
+    QBuffer bodyProbe;
+    bodyProbe.open(QIODevice::ReadOnly);
+    auto multipartProbe = QCurl::QCNetworkMultipartBody::fromSingleFileDevice(
+        &bodyProbe,
+        QStringLiteral("file"),
+        QStringLiteral("probe.bin"),
+        QStringLiteral("application/octet-stream"),
+        qint64(0));
+    QCurl::QCNetworkResumableDownloadJob *resumableJobTypeProbe = nullptr;
+    Q_UNUSED(resumableJobTypeProbe);
 
     QCurl::QCNetworkSslConfig ssl;
     ssl.setPinnedPublicKey(QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
 
     const bool rawBodyDeviceApi = true;
     const bool unknownSizePostApi = true;
-    const bool singleFileMultipartDeviceApi = true;
-    const bool downloadFileResumableApi = true;
+    const bool singleFileMultipartBodyApi = multipartProbe.has_value();
+    const bool resumableDownloadJobApi = true;
     const bool runtimeHasHttp3 = (probe.runtimeFeatures() & CURL_VERSION_HTTP3) != 0;
     const bool pinnedApi = (ssl.pinnedPublicKey()
                             == QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
@@ -92,12 +101,12 @@ QJsonObject buildManifest()
     qcurl.insert(QStringLiteral("acceptEncodingApi"), acceptEncodingApi);
     qcurl.insert(QStringLiteral("rawBodyDeviceApi"), rawBodyDeviceApi);
     qcurl.insert(QStringLiteral("unknownSizeRawBodyPostApi"), unknownSizePostApi);
-    qcurl.insert(QStringLiteral("singleFileMultipartDeviceApi"), singleFileMultipartDeviceApi);
+    qcurl.insert(QStringLiteral("singleFileMultipartBodyApi"), singleFileMultipartBodyApi);
     qcurl.insert(QStringLiteral("pinnedPublicKeyApi"), pinnedApi);
     qcurl.insert(QStringLiteral("rawRequestHeaderApi"), rawRequestHeaderApi);
     qcurl.insert(QStringLiteral("socks5HostnameApi"), socks5HostnameApi);
     qcurl.insert(QStringLiteral("http3Api"), http3Api);
-    qcurl.insert(QStringLiteral("downloadFileResumableApi"), downloadFileResumableApi);
+    qcurl.insert(QStringLiteral("resumableDownloadJobApi"), resumableDownloadJobApi);
 
     QJsonObject libcurl;
     libcurl.insert(QStringLiteral("compiledVersionNum"), probe.compiledVersionNum());
@@ -172,11 +181,11 @@ QJsonObject buildManifest()
     tests.insert(
         QStringLiteral("test_p2_range_boundaries.py"),
         QJsonObject{
-            {QStringLiteral("enabled"), downloadFileResumableApi},
+            {QStringLiteral("enabled"), resumableDownloadJobApi},
             {QStringLiteral("reason"),
-             downloadFileResumableApi
-                 ? QStringLiteral("downloadFileResumable public API available")
-                 : QStringLiteral("downloadFileResumable public API unavailable")},
+             resumableDownloadJobApi
+                 ? QStringLiteral("QCNetworkResumableDownloadJob API available")
+                 : QStringLiteral("QCNetworkResumableDownloadJob API unavailable")},
         });
     tests.insert(
         QStringLiteral("test_ext_http3_version_policy.py"),

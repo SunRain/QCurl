@@ -5,6 +5,7 @@
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCMultipartFormData.h"
 
 #include <QCoreApplication>
 #include <QEvent>
@@ -404,17 +405,9 @@ void TestQCNetworkRequestCanonicalFlowApi::testUploadFileMissingPathFailsAsInval
             .arg(QUuid::createUuid().toString(QUuid::Id128)));
     QVERIFY(!QFileInfo::exists(missingPath));
 
-    auto *reply = m_manager->postMultipartFile(QUrl(QStringLiteral("http://example.com/upload")),
-                                               QStringLiteral("file"),
-                                               missingPath);
-    QVERIFY(reply != nullptr);
-    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
-
-    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
-    QVERIFY(reply->errorString().contains(QStringLiteral("postMultipartFile")));
+    QCMultipartFormData formData;
+    QVERIFY(!formData.addFileField(QStringLiteral("file"), missingPath));
     QCOMPARE(m_mock.takeCapturedRequests().size(), 0);
-
-    reply->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkRequestCanonicalFlowApi)

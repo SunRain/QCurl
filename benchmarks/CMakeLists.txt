@@ -13,7 +13,7 @@ enable_testing()
 
 # 基准测试辅助函数
 function(add_qcurl_benchmark test_name source_file)
-    add_executable(${test_name} ${source_file})
+    add_executable(${test_name} ${source_file} ${ARGN})
     
     target_link_libraries(${test_name}
         PRIVATE
@@ -50,7 +50,7 @@ endif()
 add_qcurl_benchmark(benchmark_http3 benchmark_http3.cpp)
 
 # 调度器基准测试
-add_qcurl_benchmark(benchmark_scheduler benchmark_scheduler.cpp)
+add_qcurl_benchmark(benchmark_scheduler benchmark_scheduler.cpp benchmark_scheduler_helpers.h)
 
 # 连接池基准测试
 add_qcurl_benchmark(benchmark_connectionpool benchmark_connectionpool.cpp)

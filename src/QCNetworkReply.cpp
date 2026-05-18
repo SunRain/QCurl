@@ -3059,6 +3059,7 @@ QCNetworkReply::~QCNetworkReply()
 
     // 如果正在运行，先取消
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
+        setProperty("_qcurl_reply_destroying", true);
         cancel();
     }
 }

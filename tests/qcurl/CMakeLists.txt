@@ -166,6 +166,7 @@ add_qcurl_test_with_preflight(
 ) # 代理配置测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
 add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归
+add_qcurl_test(tst_QCNetworkBody tst_QCNetworkBody.cpp) # request body helper 测试
 add_qcurl_test(tst_QCMultipartFormData tst_QCMultipartFormData.cpp) # Multipart/form-data 测试
 add_qcurl_test_with_preflight(
     tst_QCNetworkFileTransfer
@@ -174,12 +175,13 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkFileTransfer.cpp
 ) # 文件传输 API 测试
+add_qcurl_test(tst_QCNetworkDownloadToDeviceJob tst_QCNetworkDownloadToDeviceJob.cpp) # Download-to-device job 显式 start/fail-fast 合同测试
 add_qcurl_test_with_preflight(
     tst_QCNetworkFileResumableOffline
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkFileResumableOffline.cpp
-) # downloadFileResumable 离线门禁：416 成功语义 + start 校验/覆盖重下
+) # QCNetworkResumableDownloadJob 离线门禁：416 成功语义 + start 校验/覆盖重下
 add_qcurl_test_with_preflight(
     tst_QCNetworkIODeviceLifetime
     REQUIRE_LOCAL_PORT
@@ -197,7 +199,7 @@ add_qcurl_test_with_preflight(
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkMultipartUpload.cpp
-) # postMultipartDevice 合同/回归测试
+) # QCNetworkMultipartBody streaming 合同/回归测试
 add_qcurl_test(tst_QCNetworkCache tst_QCNetworkCache.cpp) # 缓存机制测试
 add_library(qcurl_cache_extras_header_self_compile OBJECT
     cache_extras_first_include_QCNetworkCache.cpp
@@ -313,7 +315,9 @@ set_tests_properties(tst_QCNetworkScheduler PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkRequestCanonicalApi PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkRequestConfigCanonicalApi PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkBody PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCMultipartFormData PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkDownloadToDeviceJob PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCache PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkLogger PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkMiddleware PROPERTIES LABELS "offline")
@@ -384,10 +388,14 @@ set(_qcurl_qttest_targets
     tst_QCNetworkProxy
     tst_QCNetworkRequestCanonicalApi
     tst_QCNetworkRequestConfigCanonicalApi
+    tst_QCNetworkBody
     tst_QCMultipartFormData
     tst_QCNetworkFileTransfer
+    tst_QCNetworkDownloadToDeviceJob
+    tst_QCNetworkFileResumableOffline
     tst_QCNetworkIODeviceLifetime
     tst_QCNetworkStreamUpload
+    tst_QCNetworkMultipartUpload
     tst_QCNetworkCache
     tst_QCNetworkCacheIntegration
     tst_QCNetworkConnectionPool

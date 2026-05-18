@@ -726,7 +726,7 @@ cases:
       nodeid: "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries_http_1_1"
     capability_gates:
       - http_observe_server
-      - download_file_resumable_api
+      - resumable_download_job_api
     dimensions:
       - range_header_open_ended
       - resume_file_semantics
@@ -737,7 +737,7 @@ cases:
       - "416 matching Content-Range: bytes */total 识别为已完成"
       - "Content-Range.start mismatch 归一化为失败"
     minimality_reason:
-      - "Range 边界必须走文件续传 public API，不能用 setRange(start,end) 替代 bytes=N- 语义"
+      - "Range 边界必须走 QCNetworkResumableDownloadJob，不能用 setRange(start,end) 替代 bytes=N- 语义"
 
 excluded:
   # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@
 | raw request header 可观测一致性 | `LC-FU-raw-header` | 已完成 | `test_p1_request_headers.py` 覆盖自定义头、同名覆盖、大小写差异 key 与敏感头 redaction；request artifact 包含脱敏 raw lines / digest 并参与 compare |
 | SOCKS 成功路径 | `LC-FU-socks-success` | 已完成 | `test_p1_socks_success.py` 覆盖 SOCKS5 IP 目标与 Socks5Hostname 域名目标，观测 `ATYP` / `dst` / `rep` |
 | 302 / 303 / 308 redirect | `LC-FU-redirect-302-303-308` | 已完成 | `test_p1_redirect_302_303_308.py` 覆盖 method/body 序列与 seekable / non-seekable 终态 |
-| Range 边界交叉证明 | `LC-FU-range-boundary` | 已完成 | `test_p2_range_boundaries.py` 使用 `downloadFileResumable()` 覆盖 `Range: N-`、416 complete、mismatch start |
+| Range 边界交叉证明 | `LC-FU-range-boundary` | 已完成 | `test_p2_range_boundaries.py` 使用 `QCNetworkResumableDownloadJob` 覆盖 `Range: N-`、416 complete、mismatch start |
 | ext-only HTTP/3 fallback / Http3Only / H3 success | `LC-FU-http3-policy` | 已完成 | `test_ext_http3_version_policy.py` 与 `test_ext_http3_success_h3.py` 只由 `--with-ext` 规划；suite / case id 使用 `ext_http3_version_policy` |
 
 ## 3. 默认 gate 不承诺的内容

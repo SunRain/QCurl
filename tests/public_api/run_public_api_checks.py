@@ -27,19 +27,9 @@ from tests.public_api.consumer_contracts import validate_multipart_core_contract
 from tests.public_api.consumer_contracts import validate_scheduler_core_contract_fixture
 from tests.public_api.layout_scan import GuardrailFinding
 from tests.public_api.layout_scan import collect_cpp_sources
-from tests.public_api.layout_scan import collect_exported_types
 from tests.public_api.layout_scan import collect_layout_findings
-from tests.public_api.layout_scan import collect_nested_public_structs
-from tests.public_api.layout_scan import find_matching_brace
-from tests.public_api.layout_scan import find_member_fragment
-from tests.public_api.layout_scan import has_out_of_line_definition
-from tests.public_api.layout_scan import has_public_method_signature_with_type
-from tests.public_api.layout_scan import has_top_level_exported_signature_with_type
-from tests.public_api.layout_scan import line_number_for_offset
 from tests.public_api.layout_scan import load_allowlist
-from tests.public_api.layout_scan import split_public_statements
 from tests.public_api.layout_scan import strip_comments_and_strings
-from tests.public_api.layout_scan import type_public_field_exists
 
 
 def fail(message: str) -> int:
@@ -140,6 +130,70 @@ def scan_headers(args: argparse.Namespace) -> int:
         return fail("layout allowlist has stale entries: " + ", ".join(stale_allowlist))
 
     print("[public_api] header scan passed")
+    return 0
+
+
+def scan_hard_break_guards(args: argparse.Namespace) -> int:
+    """Scan source/documentation surfaces for APIs removed by hard-break cleanup."""
+
+    deny_rules = [
+        ("old fromSingleFileDevice ownerThread",
+         re.compile(r"fromSingleFileDevice\s*\(\s*QThread\s*\*")),
+        ("old fromSingleFileDevice return",
+         re.compile(r"(?:static\s+)?QCNetworkMultipartBody\s+fromSingleFileDevice\s*\(")),
+        ("old multipart invalid-object predicate",
+         re.compile(r"fromSingleFileDevice.*(?:isValid|errorString)\s*\(")),
+        ("releaseDevice",
+         re.compile(r"\breleaseDevice\s*\(")),
+        ("old QCNetworkAccessManager exportCookies return",
+         re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookies\s*\(")),
+        ("old QCCurlMultiManager exportCookiesForManager return",
+         re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookiesForManager\s*\(")),
+    ]
+
+    include_paths = [
+        "src",
+        "include",
+        "examples",
+        "tests/public_api/consumer_smoke",
+        "docs/user",
+        "docs/arch",
+        "tests/qcurl",
+        "tests/libcurl_consistency",
+    ]
+    excluded_parts = {
+        ".git",
+        "build",
+        "generated",
+        ".helloagents",
+        "__pycache__",
+    }
+
+    violations: list[str] = []
+    for include_path in include_paths:
+        root = args.repo_root / include_path
+        if not root.exists():
+            continue
+        files = root.rglob("*") if root.is_dir() else [root]
+        for path in files:
+            if not path.is_file() or any(part in excluded_parts for part in path.parts):
+                continue
+            try:
+                content = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                for rule_name, pattern in deny_rules:
+                    if pattern.search(line):
+                        violations.append(
+                            f"{path.relative_to(args.repo_root)}:{line_number}: {rule_name}: {line.strip()}"
+                        )
+
+    if violations:
+        print("\n".join(violations), file=sys.stderr)
+        return 1
+
+    print("[public_api] hard-break guard scan passed")
     return 0
 
 
@@ -261,6 +315,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path(__file__).resolve().parent / "public_api_layout_allowlist.txt",
     )
     scan.set_defaults(func=scan_headers)
+
+    hard_break = subparsers.add_parser("hard-break-guards")
+    hard_break.add_argument("--repo-root", type=Path, required=True)
+    hard_break.set_defaults(func=scan_hard_break_guards)
 
     install = subparsers.add_parser("install")
     install.add_argument("--cmake", required=True)
