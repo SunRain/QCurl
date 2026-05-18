@@ -4,6 +4,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCancelToken.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
@@ -69,7 +70,7 @@ void TestQCNetworkCancelToken::init()
     m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/1"), QByteArray("OK"));
     m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/2"), QByteArray("OK"));
     m_mock.mockResponse(HttpMethod::Get, QUrl("http://example.com/3"), QByteArray("OK"));
-    m_manager->setMockHandler(&m_mock);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
 }
 
 void TestQCNetworkCancelToken::cleanup()

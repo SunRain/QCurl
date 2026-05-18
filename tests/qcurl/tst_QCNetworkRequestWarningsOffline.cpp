@@ -9,8 +9,10 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "qcnetwork_sync_test_helper.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>
@@ -29,7 +31,7 @@ void TestQCNetworkRequestWarningsOffline::testAcceptEncodingConflictWarnings()
 {
     QCNetworkAccessManager manager;
     QCNetworkMockHandler mock;
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url(QStringLiteral("https://example.com/offline/warnings_accept_encoding"));
     mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("ok"), 200);
@@ -38,7 +40,7 @@ void TestQCNetworkRequestWarningsOffline::testAcceptEncodingConflictWarnings()
     request.setRawHeader("Accept-Encoding", "gzip");
     request.setAutoDecompressionEnabled(true);
 
-    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 

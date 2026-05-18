@@ -27,8 +27,8 @@
 
 - compile：`tests/public_api/consumer_smoke/main.cpp` 必须保留 `<QCNetworkRequestScheduler.h>` include，并覆盖
   - `manager.scheduler()`
-  - `manager.schedulerOnOwnerThread()`
   - `Config/LaneConfig` accessor API（`set*` + `*()`）
   - `QCNetworkSslConfig` / `QCNetworkProxyConfig::ProxyTlsConfig` / `QCNetworkTimeoutConfig` / `QCNetworkRetryPolicy` / `QCNetworkHttpAuthConfig` 的最小 consumer 调用路径
 - gate：`run_public_api_checks.py consumer-smoke` 会先执行 fixture 审计（缺失 contract 覆盖或出现 direct field 用法直接失败），再执行 staged consumer 构建。
+- owner-thread：Core consumer 只验证 owner-thread `scheduler()`；不再承诺跨线程 owner-thread 阻塞 getter。
 - audit：若 scheduler contract 扩展（新增线程约束、accessor、signals 相关公开承诺），必须同步更新本清单与 consumer_smoke fixture，避免“能编过但未覆盖核心合同”的回归。

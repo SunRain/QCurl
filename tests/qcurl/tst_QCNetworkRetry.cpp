@@ -20,6 +20,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
 #include "test_httpbin_env.h"
+#include "qcnetwork_sync_test_helper.h"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -440,7 +441,7 @@ void TestQCNetworkRetry::testSyncRetry()
     timer.start();
 
     // 使用同步 API
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     qint64 elapsed = timer.elapsed();
 

@@ -21,6 +21,7 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
+#include "QCNetworkTestSupport.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -68,7 +69,7 @@ int main(int argc, char *argv[])
     QCNetworkMockHandler mock;
     mock.clear();
     mock.setGlobalDelay(0);
-    manager.setMockHandler(&mock);
+    TestSupport::setMockHandler(&manager, &mock);
 
     // 3) Middleware：显式注入（库默认行为不变）
     QCNetworkRetryPolicy defaultPolicy;
@@ -146,7 +147,7 @@ int main(int argc, char *argv[])
     }
     replyNoRetry->deleteLater();
 
-    manager.setMockHandler(nullptr);
+    TestSupport::setMockHandler(&manager, nullptr);
     manager.setLogger(nullptr);
 
     qDebug() << "=== 演示完成 ===";

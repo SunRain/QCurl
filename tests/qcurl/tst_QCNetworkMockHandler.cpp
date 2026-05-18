@@ -4,6 +4,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
@@ -62,7 +63,7 @@ void TestQCNetworkMockHandler::init()
 void TestQCNetworkMockHandler::cleanup()
 {
     if (m_manager) {
-        m_manager->setMockHandler(nullptr);
+        QCurl::TestSupport::setMockHandler(*m_manager, nullptr);
         m_manager->deleteLater();
         m_manager = nullptr;
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -131,7 +132,7 @@ void TestQCNetworkMockHandler::testMockHandlerIntegration()
     const QByteArray mockResponse = "Mock Response Data";
 
     handler.mockResponse(HttpMethod::Get, mockUrl, mockResponse, 200);
-    m_manager->setMockHandler(&handler);
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
 
     // Act
     QCNetworkRequest request(mockUrl);
@@ -166,7 +167,7 @@ void TestQCNetworkMockHandler::testSequenceConsumption()
     handler.enqueueResponse(HttpMethod::Get, url, QByteArray("v1"), 200);
     handler.enqueueResponse(HttpMethod::Get, url, QByteArray("v2"), 200);
 
-    m_manager->setMockHandler(&handler);
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
 
     QCNetworkRequest request(url);
 
@@ -194,7 +195,7 @@ void TestQCNetworkMockHandler::testGlobalDelayApplied()
     handler.setGlobalDelay(50);
     handler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
-    m_manager->setMockHandler(&handler);
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
 
     QCNetworkRequest request(url);
     QElapsedTimer timer;
@@ -215,7 +216,7 @@ void TestQCNetworkMockHandler::testRequestCapture()
 
     const QUrl url("http://example.com/mock/capture");
     handler.mockResponse(HttpMethod::Post, url, QByteArray("ok"), 200);
-    m_manager->setMockHandler(&handler);
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
 
     QCNetworkRequest request(url);
     request.setRawHeader("X-Test", "1234");

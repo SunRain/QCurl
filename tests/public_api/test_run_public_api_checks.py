@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from tests.public_api import run_public_api_checks as public_api
+from tests.public_api.consumer_contracts import validate_scheduler_core_contract_fixture
 from tests.public_api import layout_scan
 
 
@@ -145,13 +146,201 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     assert "releaseDevice" in err
 
 
+def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsys) -> None:
+    surface = tmp_path / "surface.json"
+    surface.write_text(
+        """
+{
+  "schemaVersion": 1,
+  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "headers": [
+    {
+      "path": "QCNetworkAccessManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default"
+    },
+    {
+      "path": "QCNetworkMockHandler.h",
+      "layer": "Test Support",
+      "currentInstall": "test-support",
+      "targetInstall": "test-support",
+      "extractionTask": "T8"
+    },
+    {
+      "path": "QCNetworkDiagnostics.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras"
+    }
+  ],
+  "plannedHeaders": [
+    {
+      "path": "QCBlockingNetworkClient.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "none",
+      "targetInstall": "blocking-extras",
+      "extractionTask": "T2"
+    }
+  ],
+  "symbolExtractions": []
+}
+""",
+        encoding="utf-8",
+    )
+    core = tmp_path / "core.txt"
+    core.write_text("QCNetworkAccessManager.h\n", encoding="utf-8")
+    extras = tmp_path / "extras.txt"
+    extras.write_text("QCNetworkMockHandler.h\nQCNetworkDiagnostics.h\n", encoding="utf-8")
+
+    rc = public_api.validate_surface_manifest(
+        Namespace(surface_manifest=surface, core_manifest=core, extras_manifest=extras),
+        fail_func=public_api.fail,
+    )
+
+    assert rc == 0
+    assert "surface manifest passed" in capsys.readouterr().out
+
+
+def test_surface_manifest_accepts_installed_blocking_extras(tmp_path, capsys) -> None:
+    surface = tmp_path / "surface.json"
+    surface.write_text(
+        """
+{
+  "schemaVersion": 1,
+  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "headers": [
+    {
+      "path": "QCNetworkAccessManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default"
+    },
+    {
+      "path": "QCBlockingNetworkClient.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "blocking-extras",
+      "targetInstall": "blocking-extras"
+    }
+  ],
+  "plannedHeaders": [],
+  "symbolExtractions": []
+}
+""",
+        encoding="utf-8",
+    )
+    core = tmp_path / "core.txt"
+    core.write_text("QCNetworkAccessManager.h\n", encoding="utf-8")
+    extras = tmp_path / "extras.txt"
+    extras.write_text("QCBlockingNetworkClient.h\n", encoding="utf-8")
+
+    rc = public_api.validate_surface_manifest(
+        Namespace(surface_manifest=surface, core_manifest=core, extras_manifest=extras),
+        fail_func=public_api.fail,
+    )
+
+    assert rc == 0
+    assert "surface manifest passed" in capsys.readouterr().out
+
+
+def test_surface_manifest_rejects_mismatched_test_support_install(tmp_path, capsys) -> None:
+    surface = tmp_path / "surface.json"
+    surface.write_text(
+        """
+{
+  "schemaVersion": 1,
+  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "headers": [
+    {
+      "path": "QCNetworkAccessManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default"
+    },
+    {
+      "path": "QCNetworkMockHandler.h",
+      "layer": "Test Support",
+      "currentInstall": "core-default",
+      "targetInstall": "test-support",
+      "extractionTask": "T8"
+    },
+    {
+      "path": "QCBlockingNetworkClient.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "blocking-extras",
+      "targetInstall": "blocking-extras"
+    }
+  ],
+  "plannedHeaders": [],
+  "symbolExtractions": []
+}
+""",
+        encoding="utf-8",
+    )
+    core = tmp_path / "core.txt"
+    core.write_text("QCNetworkAccessManager.h\n", encoding="utf-8")
+    extras = tmp_path / "extras.txt"
+    extras.write_text("QCNetworkMockHandler.h\nQCBlockingNetworkClient.h\n", encoding="utf-8")
+
+    rc = public_api.validate_surface_manifest(
+        Namespace(surface_manifest=surface, core_manifest=core, extras_manifest=extras),
+        fail_func=public_api.fail,
+    )
+
+    assert rc == 1
+    assert "QCNetworkMockHandler.h: currentInstall must be test-support" in capsys.readouterr().err
+
+
+def test_surface_manifest_rejects_untracked_core_header(tmp_path, capsys) -> None:
+    surface = tmp_path / "surface.json"
+    surface.write_text(
+        """
+{
+  "schemaVersion": 1,
+  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "headers": [
+    {
+      "path": "QCNetworkAccessManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default"
+    }
+  ],
+  "plannedHeaders": [
+    {
+      "path": "QCBlockingNetworkClient.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "none",
+      "targetInstall": "blocking-extras",
+      "extractionTask": "T2"
+    }
+  ],
+  "symbolExtractions": []
+}
+""",
+        encoding="utf-8",
+    )
+    core = tmp_path / "core.txt"
+    core.write_text("QCNetworkAccessManager.h\nQCNetworkMockHandler.h\n", encoding="utf-8")
+    extras = tmp_path / "extras.txt"
+    extras.write_text("", encoding="utf-8")
+
+    rc = public_api.validate_surface_manifest(
+        Namespace(surface_manifest=surface, core_manifest=core, extras_manifest=extras),
+        fail_func=public_api.fail,
+    )
+
+    assert rc == 1
+    assert "QCNetworkMockHandler.h: missing from surface manifest" in capsys.readouterr().err
+
+
 def test_consumer_contract_fixture_requires_core_snippets(tmp_path) -> None:
     fixture_dir = tmp_path / "consumer"
     fixture_dir.mkdir()
     (fixture_dir / "main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
 
     try:
-        public_api.validate_scheduler_core_contract_fixture(fixture_dir)
+        validate_scheduler_core_contract_fixture(fixture_dir)
     except RuntimeError as exc:
         assert "#include <QCNetworkRequestScheduler.h>" in str(exc)
     else:
@@ -171,6 +360,136 @@ def test_check_export_contract_rejects_bundled_libcurl_leak(tmp_path, capsys) ->
 
     assert rc == 1
     assert "QCurl::libcurl_shared" in capsys.readouterr().err
+
+
+def test_check_blocking_extras_install_requires_opt_in_headers(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    blocking_include = tmp_path / "blocking" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    blocking_include.mkdir(parents=True)
+    (blocking_include / "QCBlockingNetworkClient.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "blocking.txt"
+    manifest.write_text("QCBlockingNetworkClient.h\n", encoding="utf-8")
+
+    rc = public_api.check_blocking_extras_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            blocking_stage_dir=tmp_path / "blocking",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 0
+    assert "blocking extras install contract passed" in capsys.readouterr().out
+
+
+def test_check_blocking_extras_install_rejects_default_leak(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    blocking_include = tmp_path / "blocking" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    blocking_include.mkdir(parents=True)
+    (default_include / "QCBlockingNetworkClient.h").write_text("", encoding="utf-8")
+    (blocking_include / "QCBlockingNetworkClient.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "blocking.txt"
+    manifest.write_text("QCBlockingNetworkClient.h\n", encoding="utf-8")
+
+    rc = public_api.check_blocking_extras_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            blocking_stage_dir=tmp_path / "blocking",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 1
+    assert "leaked into default Core stage" in capsys.readouterr().err
+
+
+def test_check_test_support_install_requires_opt_in_headers(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    test_support_include = tmp_path / "test_support" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    test_support_include.mkdir(parents=True)
+    (test_support_include / "QCNetworkMockHandler.h").write_text("", encoding="utf-8")
+    (test_support_include / "QCNetworkTestSupport.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "test_support.txt"
+    manifest.write_text("QCNetworkMockHandler.h\nQCNetworkTestSupport.h\n", encoding="utf-8")
+
+    rc = public_api.check_test_support_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            test_support_stage_dir=tmp_path / "test_support",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 0
+    assert "test support install contract passed" in capsys.readouterr().out
+
+
+def test_check_test_support_install_rejects_default_leak(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    test_support_include = tmp_path / "test_support" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    test_support_include.mkdir(parents=True)
+    (default_include / "QCNetworkMockHandler.h").write_text("", encoding="utf-8")
+    (test_support_include / "QCNetworkMockHandler.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "test_support.txt"
+    manifest.write_text("QCNetworkMockHandler.h\n", encoding="utf-8")
+
+    rc = public_api.check_test_support_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            test_support_stage_dir=tmp_path / "test_support",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 1
+    assert "leaked into default Core stage" in capsys.readouterr().err
+
+
+def test_check_other_extras_install_requires_opt_in_headers(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    other_extras_include = tmp_path / "other_extras" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    other_extras_include.mkdir(parents=True)
+    (other_extras_include / "QCNetworkDiagnostics.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "other_extras.txt"
+    manifest.write_text("QCNetworkDiagnostics.h\n", encoding="utf-8")
+
+    rc = public_api.check_other_extras_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            other_extras_stage_dir=tmp_path / "other_extras",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 0
+    assert "other extras install contract passed" in capsys.readouterr().out
+
+
+def test_check_other_extras_install_rejects_default_leak(tmp_path, capsys) -> None:
+    default_include = tmp_path / "default" / "include" / "qcurl"
+    other_extras_include = tmp_path / "other_extras" / "include" / "qcurl"
+    default_include.mkdir(parents=True)
+    other_extras_include.mkdir(parents=True)
+    (default_include / "QCNetworkDiagnostics.h").write_text("", encoding="utf-8")
+    (other_extras_include / "QCNetworkDiagnostics.h").write_text("", encoding="utf-8")
+    manifest = tmp_path / "other_extras.txt"
+    manifest.write_text("QCNetworkDiagnostics.h\n", encoding="utf-8")
+
+    rc = public_api.check_other_extras_install(
+        Namespace(
+            default_stage_dir=tmp_path / "default",
+            other_extras_stage_dir=tmp_path / "other_extras",
+            manifest=manifest,
+        )
+    )
+
+    assert rc == 1
+    assert "leaked into default Core stage" in capsys.readouterr().err
 
 
 def test_public_api_script_help_imports_layout_scan_from_repo_root() -> None:

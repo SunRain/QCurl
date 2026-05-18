@@ -1,16 +1,14 @@
 """
-P2：HTTP/1.1 下 unknown size POST 的 chunked 上传一致性。
+P2：HTTP/1.1 下同步 raw body POST 的上传一致性。
 
-比较 `Transfer-Encoding: chunked` 与回显 body 字节。
+当前 first Stable 合同禁止 Blocking Extras 对 unknown-size device 做隐式 rewind；
+本文件改为验证显式 size 的 Blocking Extras raw QIODevice 同步上传。
 """
 
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
-
-import pytest
 
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.capability_manifest import guard_planned_test
@@ -33,14 +31,14 @@ def _normalize_req_headers(headers: dict) -> dict:
     return out
 
 
-def _assert_chunked(headers: dict) -> None:
-    te = str(headers.get("transfer-encoding") or "")
-    assert "chunked" in te.lower(), f"expected transfer-encoding chunked, got: {te!r}"
+def _assert_content_length(headers: dict, upload_size: int) -> None:
+    assert str(headers.get("content-length") or "") == str(upload_size)
+    assert not headers.get("transfer-encoding")
 
 
-def _hes_chunked_payload(headers: dict, proto: str, body_len: int, body_sha: str) -> dict:
+def _hes_sized_payload(headers: dict, proto: str, body_len: int, body_sha: str) -> dict:
     return {
-        "kind": "chunked_upload",
+        "kind": "blocking_extras_sized_upload",
         "http_version": proto,
         "transfer_encoding": str(headers.get("transfer-encoding") or ""),
         "content_length": str(headers.get("content-length") or ""),
@@ -49,21 +47,21 @@ def _hes_chunked_payload(headers: dict, proto: str, body_len: int, body_sha: str
     }
 
 
-def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http):
+def test_p2_blocking_extras_raw_body_post_sized_http_1_1(env, lc_observe_http):
     qt_path = require_qcurl_qttest()
 
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_http["port"])
     observe_log = Path(str(lc_observe_http["log_file"]))
 
-    suite = "p2_chunked_upload"
+    suite = "p2_blocking_extras_raw_upload"
     proto = "http/1.1"
     upload_size = 4096
 
-    case_variant = "lc_stream_body_post_chunked_unknown_size_http_1.1"
-    case_id = "p2_stream_body_post_chunked_unknown_size"
+    case_variant = "lc_blocking_extras_raw_body_post_sized_http_1.1"
+    case_id = "p2_blocking_extras_raw_body_post_sized"
 
-    trace_base = f"lc_{uuid.uuid4().hex[:8]}_post_chunked_unknown"
+    trace_base = f"lc_{uuid.uuid4().hex[:8]}_blocking_post_sized"
     baseline_req_id = f"{trace_base}__baseline"
     qcurl_req_id = f"{trace_base}__qcurl"
 
@@ -83,7 +81,6 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
             "--data-size",
             str(upload_size),
             "--stream-body",
-            "--unknown-size",
             baseline_url,
         ]
         baseline = run_libtest_case(
@@ -98,7 +95,7 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
             allowed_exit_codes={0},
         )
         obs_base = observe_http_observed_list_for_id(observe_log, baseline_req_id, expected_count=1)
-        _assert_chunked(obs_base[0].headers)
+        _assert_content_length(obs_base[0].headers, upload_size)
         baseline["payload"]["requests"] = [{
             "method": obs_base[0].method,
             "url": obs_base[0].url,
@@ -118,7 +115,7 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
         baseline["payload"]["response"]["status"] = obs_base[0].status
         baseline["payload"]["response"]["http_version"] = proto
         baseline["payload"]["response"]["headers"] = dict(obs_base[0].response_headers)
-        baseline["payload"]["hes"] = _hes_chunked_payload(
+        baseline["payload"]["hes"] = _hes_sized_payload(
             _normalize_req_headers(obs_base[0].headers),
             proto,
             int(baseline["payload"]["response"].get("body_len") or 0),
@@ -144,7 +141,7 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
             },
         )
         obs_q = observe_http_observed_list_for_id(observe_log, qcurl_req_id, expected_count=1)
-        _assert_chunked(obs_q[0].headers)
+        _assert_content_length(obs_q[0].headers, upload_size)
         qcurl["payload"]["requests"] = [{
             "method": obs_q[0].method,
             "url": obs_q[0].url,
@@ -164,7 +161,7 @@ def test_p2_stream_body_post_unknown_size_chunked_http_1_1(env, lc_observe_http)
         qcurl["payload"]["response"]["status"] = obs_q[0].status
         qcurl["payload"]["response"]["http_version"] = proto
         qcurl["payload"]["response"]["headers"] = dict(obs_q[0].response_headers)
-        qcurl["payload"]["hes"] = _hes_chunked_payload(
+        qcurl["payload"]["hes"] = _hes_sized_payload(
             _normalize_req_headers(obs_q[0].headers),
             proto,
             int(qcurl["payload"]["response"].get("body_len") or 0),

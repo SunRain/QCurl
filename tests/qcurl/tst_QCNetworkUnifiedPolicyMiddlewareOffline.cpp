@@ -7,6 +7,7 @@
 #include "QCNetworkDefaultLogger.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
@@ -39,7 +40,7 @@ private:
 void TestQCNetworkUnifiedPolicyMiddlewareOffline::init()
 {
     m_manager = new QCNetworkAccessManager(this);
-    m_manager->setMockHandler(&m_mock);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
     m_manager->setLogger(nullptr);
     m_manager->clearMiddlewares();
 
@@ -52,7 +53,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::cleanup()
     if (m_manager) {
         m_manager->clearMiddlewares();
         m_manager->setLogger(nullptr);
-        m_manager->setMockHandler(nullptr);
+        QCurl::TestSupport::setMockHandler(*m_manager, nullptr);
         m_manager->deleteLater();
         m_manager = nullptr;
     }

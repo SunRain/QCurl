@@ -7,9 +7,11 @@
 #define QCNETWORKACCESSMANAGER_H
 
 #include "QCGlobal.h"
+#include "QCCookieAsyncResult.h"
 #include "QCNetworkHttpMethod.h"
 
 #include <QByteArray>
+#include <QFuture>
 #include <QNetworkCookie>
 #include <QObject>
 #include <QScopedPointer>
@@ -32,7 +34,6 @@ class QCNetworkRequestScheduler;
 class QCNetworkCache;
 class QCNetworkLogger;
 class QCNetworkMiddleware;
-class QCNetworkMockHandler;
 class ShareHandleConfigData;
 class HstsAltSvcCacheConfigData;
 
@@ -85,6 +86,17 @@ public:
 
     /// 清空当前 manager 的 cookie store（仅在 shareCookies 开启时可用）。
     bool clearAllCookies(QString *error = nullptr);
+
+    /// 在 manager owner thread 异步导入 cookies，并通过 signal 与 QFuture 返回同一结果。
+    [[nodiscard]] QFuture<QCCookieOperationResult> importCookiesAsync(
+        const QList<QNetworkCookie> &cookies, const QUrl &originUrl = QUrl());
+
+    /// 在 manager owner thread 异步导出 cookies，并通过 signal 与 QFuture 返回同一结果。
+    [[nodiscard]] QFuture<QCCookieExportResult> exportCookiesAsync(
+        const QUrl &filterUrl = QUrl()) const;
+
+    /// 在 manager owner thread 异步清空 cookies，并通过 signal 与 QFuture 返回同一结果。
+    [[nodiscard]] QFuture<QCCookieOperationResult> clearAllCookiesAsync();
 
     /**
      * @brief 选择当前 manager 共享哪些 libcurl share-handle 域。
@@ -157,13 +169,13 @@ public:
     /// 获取当前 HSTS/Alt-Svc cache 配置。
     [[nodiscard]] HstsAltSvcCacheConfig hstsAltSvcCacheConfig() const noexcept;
 
-    /// 发送 HEAD 请求（异步），返回需由调用方按 Qt 生命周期释放的 reply。
+    /// 发送 HEAD 请求（异步），必须在 manager owner thread 调用。
     QCNetworkReply *sendHead(const QCNetworkRequest &request);
 
-    /// 发送 GET 请求（异步）。
+    /// 发送 GET 请求（异步），必须在 manager owner thread 调用。
     QCNetworkReply *sendGet(const QCNetworkRequest &request);
 
-    /// 发送 POST 请求（异步，内存请求体）。
+    /// 发送 POST 请求（异步，内存请求体），必须在 manager owner thread 调用。
     QCNetworkReply *sendPost(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
@@ -193,7 +205,7 @@ public:
                              QIODevice *device,
                              std::optional<qint64> sizeBytes = std::nullopt);
 
-    /// 发送 PUT 请求（异步，内存请求体）。
+    /// 发送 PUT 请求（异步，内存请求体），必须在 manager owner thread 调用。
     QCNetworkReply *sendPut(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
@@ -207,22 +219,21 @@ public:
     /**
      * @brief 发送 PUT 请求（异步，借用 QIODevice 作为 raw body）
      *
-     * 所有权、线程、event loop、当前 `pos()`、seek/replay 与 async/sync
-     * source-not-ready 语义同 `sendPost(..., QIODevice *, sizeBytes)`。PUT 必须具有已知
-     * 长度：传入非负 `sizeBytes`，或使用可 seek 设备让实现从 `size() - pos()` 推导；未知长度
-     * PUT 会 fail-fast。
+     * 所有权、线程、event loop、当前 `pos()`、seek/replay 与 async source-not-ready 语义同
+     * `sendPost(..., QIODevice *, sizeBytes)`。PUT 必须具有已知长度：传入非负 `sizeBytes`，
+     * 或使用可 seek 设备让实现从 `size() - pos()` 推导；未知长度 PUT 会 fail-fast。
      */
     QCNetworkReply *sendPut(const QCNetworkRequest &request,
                             QIODevice *device,
                             std::optional<qint64> sizeBytes = std::nullopt);
 
-    /// 发送 DELETE 请求（异步）。
+    /// 发送 DELETE 请求（异步），必须在 manager owner thread 调用。
     QCNetworkReply *sendDelete(const QCNetworkRequest &request);
 
-    /// 发送 DELETE 请求（异步，可携带请求体）。
+    /// 发送 DELETE 请求（异步，可携带请求体），必须在 manager owner thread 调用。
     QCNetworkReply *sendDelete(const QCNetworkRequest &request, const QByteArray &data);
 
-    /// 发送 PATCH 请求（异步）。
+    /// 发送 PATCH 请求（异步），必须在 manager owner thread 调用。
     QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
@@ -232,35 +243,6 @@ public:
      * request 原值。
      */
     QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QCNetworkBody &body);
-
-    /// 发送 GET 请求（同步，阻塞；不要在 UI 线程调用）。
-    QCNetworkReply *sendGetSync(const QCNetworkRequest &request);
-
-    /// 发送 POST 请求（同步，内存请求体）。
-    QCNetworkReply *sendPostSync(const QCNetworkRequest &request, const QByteArray &data);
-
-    /**
-     * @brief 发送 POST 请求（同步，借用 QIODevice 作为 raw body）
-     *
-     * 合同同异步 raw-body POST，但调用会阻塞直到完成。Sync raw-body 不支持
-     * source-not-ready 恢复：`read() == 0 && !atEnd()` 会作为无效请求失败。
-     */
-    QCNetworkReply *sendPostSync(const QCNetworkRequest &request,
-                                 QIODevice *device,
-                                 std::optional<qint64> sizeBytes = std::nullopt);
-
-    /// 发送 PUT 请求（同步，内存请求体）。
-    QCNetworkReply *sendPutSync(const QCNetworkRequest &request, const QByteArray &data);
-
-    /**
-     * @brief 发送 PUT 请求（同步，借用 QIODevice 作为 raw body）
-     *
-     * 合同同异步 raw-body PUT，但调用会阻塞直到完成；未知长度 PUT 与 source-not-ready
-     * 状态都会 fail-fast。
-     */
-    QCNetworkReply *sendPutSync(const QCNetworkRequest &request,
-                                QIODevice *device,
-                                std::optional<qint64> sizeBytes = std::nullopt);
 
     /// 设置日志记录器（manager 不持有所有权）。
     void setLogger(QCNetworkLogger *logger);
@@ -293,11 +275,6 @@ public:
     /// 获取当前中间件列表。
     QList<QCNetworkMiddleware *> middlewares() const;
 
-    /// 设置 Mock 处理器（manager 不持有所有权）。
-    void setMockHandler(QCNetworkMockHandler *handler);
-
-    /// 获取当前 Mock 处理器。
-    QCNetworkMockHandler *mockHandler() const;
 
     /**
      * @brief 启用/禁用请求调度器
@@ -327,22 +304,6 @@ public:
     QCNetworkRequestScheduler *scheduler() const;
 
     /**
-     * @brief 获取 manager owner thread 实际使用的 scheduler 实例
-     *
-     * 该接口始终返回 manager owner thread 实际使用的 scheduler。
-     * 若 owner thread 已具备 Qt event dispatcher，则：
-     * - owner thread 调用时直接返回本线程实例；
-     * - 非 owner-thread 调用时通过 `Qt::BlockingQueuedConnection`
-     *   向 owner thread 取回 scheduler。
-     *
-     * @warning 该接口在跨线程调用时可能阻塞；避免在持锁状态、析构函数或 UI 热路径中调用。
-     * @note 若 owner thread 缺少 Qt event dispatcher，函数会 fail-closed 返回 `nullptr`
-     * 并给出 warning；该前置条件对 same-thread 与 cross-thread 调用都成立。
-     * @note 跨线程调用时若 marshal 失败，也会返回 `nullptr` 并给出 warning。
-     */
-    QCNetworkRequestScheduler *schedulerOnOwnerThread() const;
-
-    /**
      * @brief 设置缓存实例
      *
      * 设置后，请求会按各自缓存策略使用该实例。
@@ -359,6 +320,11 @@ private:
 
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;
+
+Q_SIGNALS:
+    void cookiesImported(const QCurl::QCCookieOperationResult &result);
+    void cookiesExported(const QCurl::QCCookieExportResult &result);
+    void cookiesCleared(const QCurl::QCCookieOperationResult &result);
 };
 
 } // namespace QCurl

@@ -15,11 +15,13 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
 #include "test_httpbin_env.h"
 #include "test_wait_utils.h"
+#include "qcnetwork_sync_test_helper.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -437,7 +439,7 @@ void TestQCNetworkReply::testSyncGetRequest()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     QVERIFY(reply != nullptr);
     QVERIFY(reply->isFinished());
@@ -458,7 +460,7 @@ void TestQCNetworkReply::testSyncPostRequest()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"test\": \"data\"}";
 
-    auto *reply = m_manager->sendPostSync(request, postData);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request, HttpMethod::Post, postData);
 
     QVERIFY(reply != nullptr);
     QVERIFY(reply->isFinished());
@@ -507,7 +509,7 @@ void TestQCNetworkReply::testSyncInvalidUrl()
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     QVERIFY(reply != nullptr);
     // 同步失败路径以 error() 为主断言，避免依赖内部 finished 状态时序。
@@ -929,8 +931,8 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/pause"));
     const QByteArray payload("abcdefghijklmnopqrstuvwxyz");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
-    m_manager->setMockHandler(&handler);
-    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
+    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     auto runOnce = [&](QList<int> &chunkSizes,
                        QList<qint64> &progressValues,
@@ -1085,8 +1087,8 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/cancel"));
     const QByteArray payload("cancel-me-before-finish");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
-    m_manager->setMockHandler(&handler);
-    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
+    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -1185,8 +1187,8 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/delete-later"));
     const QByteArray payload("delete-later-before-finish-payload");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
-    m_manager->setMockHandler(&handler);
-    const auto resetMock = qScopeGuard([this]() { m_manager->setMockHandler(nullptr); });
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
+    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->sendGet(request);
@@ -1257,7 +1259,7 @@ void TestQCNetworkReply::testSyncPauseResumeNoOp()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->state(), ReplyState::Finished);
 
@@ -2035,7 +2037,7 @@ void TestQCNetworkReply::testReadAll()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     auto data = reply->readAll();
     QVERIFY(data.has_value());
@@ -2050,7 +2052,7 @@ void TestQCNetworkReply::testReadAllSyncBody()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     auto body = reply->readAll();
     QVERIFY(body.has_value());
@@ -2067,7 +2069,7 @@ void TestQCNetworkReply::testReadAllDrainsFinishedBuffer()
     QCNetworkRequest request(
         QUrl(m_httpbinBaseUrl + QStringLiteral("/base64/ZHJhaW4tY29udHJhY3QtYm9keQ==")));
 
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->bytesAvailable(), static_cast<qint64>(body.size()));
@@ -2094,7 +2096,7 @@ void TestQCNetworkReply::testReadAllEmptyBodyRepeatable()
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/204"));
 
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->bytesAvailable(), 0);
@@ -2119,7 +2121,7 @@ void TestQCNetworkReply::testRawHeaders()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     auto headers = reply->rawHeaders();
     QVERIFY(headers.size() > 0);
@@ -2143,7 +2145,7 @@ void TestQCNetworkReply::testBytesAvailable()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     qint64 available = reply->bytesAvailable();
     QVERIFY(available > 0);
@@ -2162,7 +2164,7 @@ void TestQCNetworkReply::testBytesAvailable()
 void TestQCNetworkReply::testInvalidUrl()
 {
     QCNetworkRequest request(QUrl("not-a-valid-url"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(!reply->errorString().isEmpty());
@@ -2177,7 +2179,7 @@ void TestQCNetworkReply::testNetworkError()
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     QVERIFY(reply->error() != NetworkError::NoError);
     QVERIFY(isCurlError(reply->error()));
@@ -2190,7 +2192,7 @@ void TestQCNetworkReply::testHttpError404()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/404"));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     // 注意：libcurl 的 CURLOPT_FAILONERROR 会将 HTTP 错误转为 curl 错误
     // 所以可能返回 CURLE_HTTP_RETURNED_ERROR
@@ -2206,7 +2208,7 @@ void TestQCNetworkReply::testErrorString()
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
-    auto *reply = m_manager->sendGetSync(request);
+    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
 
     QString errStr = reply->errorString();
     QVERIFY(!errStr.isEmpty());

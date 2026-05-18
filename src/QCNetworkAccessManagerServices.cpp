@@ -4,7 +4,6 @@
 #include "QCNetworkCache.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkMiddleware.h"
-#include "QCNetworkMockHandler.h"
 
 namespace QCurl {
 namespace {
@@ -124,18 +123,6 @@ QList<QCNetworkMiddleware *> QCNetworkAccessManager::middlewares() const
         }
     }
     return sanitizeMiddlewares(result);
-}
-
-void QCNetworkAccessManager::setMockHandler(QCNetworkMockHandler *handler)
-{
-    Q_D(QCNetworkAccessManager);
-    d->mockHandler = handler;
-}
-
-QCNetworkMockHandler *QCNetworkAccessManager::mockHandler() const
-{
-    Q_D(const QCNetworkAccessManager);
-    return d->mockHandler;
 }
 
 } // namespace QCurl

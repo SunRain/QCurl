@@ -3,6 +3,7 @@
 
 #include "../src/QCNetworkAccessManager.h"
 #include "../src/QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "../src/QCNetworkReply.h"
 #include "../src/QCNetworkRequest.h"
 #include "../src/QCNetworkRequestPriority.h"
@@ -101,8 +102,7 @@ private slots:
     void testRequestStartedRequiresExecuteDispatch();
     void testCancelAfterStartQueuedDoesNotStart();
     void testCancelFromAboutToStartSlotPreventsExecute();
-    void testSchedulerAccessorThreadContract();
-    void testSchedulerAccessorRejectsOwnerThreadWithoutDispatcher();
+    void testSchedulerAccessorOwnerThreadOnlyContract();
     void testPriorityQueueOrdering();
     void testConcurrentRequestLimit();
     void testPerHostLimit();
@@ -150,7 +150,7 @@ void tst_QCNetworkScheduler::initTestCase()
     m_mock.clear();
     m_mock.setCaptureEnabled(false);
     m_mock.setGlobalDelay(0);
-    m_manager->setMockHandler(&m_mock);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
 
     qRegisterMetaType<QCNetworkReply *>("QCNetworkReply*");
 
@@ -420,11 +420,10 @@ void tst_QCNetworkScheduler::testCancelFromAboutToStartSlotPreventsExecute()
     qDebug() << "Cancel-in-requestAboutToStart slot contract verified";
 }
 
-void tst_QCNetworkScheduler::testSchedulerAccessorThreadContract()
+void tst_QCNetworkScheduler::testSchedulerAccessorOwnerThreadOnlyContract()
 {
-    // 先拿到 manager owner thread 的 scheduler，后续用它对比 worker thread 的 thread-local 实例。
     const quintptr ownerThreadScheduler
-        = reinterpret_cast<quintptr>(m_manager->schedulerOnOwnerThread());
+        = reinterpret_cast<quintptr>(m_manager->scheduler());
     QVERIFY(ownerThreadScheduler != 0);
 
     QThread workerThread;
@@ -446,30 +445,9 @@ void tst_QCNetworkScheduler::testSchedulerAccessorThreadContract()
     QTRY_COMPARE_WITH_TIMEOUT(lookupSpy.count(), 1, 2000);
     const quintptr workerThreadScheduler = lookupSpy.at(0).at(0).value<quintptr>();
     QVERIFY(workerThreadScheduler != 0);
-    // worker thread 上直接 instance() 拿到的是“worker 自己”的 scheduler，而不是 manager 的 owner-thread 实例。
     QVERIFY(workerThreadScheduler != ownerThreadScheduler);
 
-    qDebug() << "Scheduler accessor thread contract verified";
-}
-
-void tst_QCNetworkScheduler::testSchedulerAccessorRejectsOwnerThreadWithoutDispatcher()
-{
-    bool hadDispatcher    = true;
-    quintptr schedulerPtr = 1;
-
-    // 裸 std::thread 默认没有 Qt event dispatcher；schedulerOnOwnerThread() 必须 fail-closed。
-    std::thread worker([&hadDispatcher, &schedulerPtr]() {
-        hadDispatcher = QAbstractEventDispatcher::instance(QThread::currentThread()) != nullptr;
-
-        QCNetworkAccessManager manager;
-        schedulerPtr = reinterpret_cast<quintptr>(manager.schedulerOnOwnerThread());
-    });
-    worker.join();
-
-    QVERIFY(!hadDispatcher);
-    QCOMPARE(schedulerPtr, quintptr(0));
-
-    qDebug() << "Scheduler accessor rejects owner thread without dispatcher";
+    qDebug() << "Scheduler accessor owner-thread-only contract verified";
 }
 
 /**

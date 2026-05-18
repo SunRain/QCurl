@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "QCBlockingNetworkClient.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkReply.h"
@@ -29,8 +30,8 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushButton_clicked()
 {
-    //    tst_async();
-    tst_sync();
+    tst_async();
+    tst_blockingExtras();
 }
 
 void MainWindow::tst_async()
@@ -93,10 +94,8 @@ void MainWindow::tst_async()
     }
 }
 
-void MainWindow::tst_sync()
+void MainWindow::tst_blockingExtras()
 {
-    QString cookie = QString("%1/cookie.txt").arg(QApplication::applicationDirPath());
-    qDebug() << Q_FUNC_INFO << "cookie file " << cookie;
     QStringList list;
 
     list.append("https://passport.baidu.com/v2/api/");
@@ -125,23 +124,27 @@ void MainWindow::tst_sync()
         request.setRawHeader("Accept",
                              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-        qDebug() << Q_FUNC_INFO << "qcnetworkmgr " << mgr;
-        mgr->setCookieFilePath(cookie);
+        QCurl::QCBlockingNetworkClient::Options options;
+        options.setApplicationThreadPolicy(
+            QCurl::QCBlockingNetworkClient::ApplicationThreadPolicy::AllowForCliOrTests);
+        QCurl::QCBlockingNetworkClient client(options);
 
-        // 使用 sendGetSync() 进行同步请求
-        // 注意：这是同步阻塞调用，会冻结 UI！
-        QCurl::QCNetworkReply *reply = mgr->sendGetSync(request);
+        // Blocking Extras 示例：同步阻塞入口已从 Core 移出，返回 value result。
+        // 注意：GUI 应用生产代码应放到 worker thread 中执行，避免冻结 UI。
+        const QCurl::QCBlockingNetworkResult result = client.sendGet(request);
 
         qDebug() << Q_FUNC_INFO << "///////////////////////////////////////////////////////////";
 
-        if (reply->error() == QCurl::NetworkError::NoError) {
-            qDebug() << Q_FUNC_INFO << "---------- no error " << static_cast<int>(reply->error())
-                     << "  " << reply->errorString();
+        if (result.error() == QCurl::NetworkError::NoError) {
+            qDebug() << Q_FUNC_INFO << "---------- no error " << static_cast<int>(result.error())
+                     << "status" << result.statusCode();
+        } else {
+            qDebug() << Q_FUNC_INFO << "---------- error " << static_cast<int>(result.error())
+                     << result.errorMessage();
         }
-        const auto body = reply->readAll();
-        if (body) {
-            qDebug() << Q_FUNC_INFO << "body size" << body->size() << "data" << *body;
+        const QByteArray body = result.body();
+        if (!body.isEmpty()) {
+            qDebug() << Q_FUNC_INFO << "body size" << body.size() << "data" << body;
         }
-        reply->deleteLater();
     }
 }

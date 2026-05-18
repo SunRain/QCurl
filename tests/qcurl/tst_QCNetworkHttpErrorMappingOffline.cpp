@@ -10,8 +10,10 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "qcnetwork_sync_test_helper.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>
@@ -32,13 +34,13 @@ void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
     auto runCase = [](int statusCode) {
         QCNetworkAccessManager manager;
         QCNetworkMockHandler mock;
-        manager.setMockHandler(&mock);
+        QCurl::TestSupport::setMockHandler(manager, &mock);
 
         const QUrl url(QStringLiteral("https://example.com/offline/status/%1").arg(statusCode));
         mock.mockResponse(HttpMethod::Get, url, QByteArray(), statusCode);
 
         QCNetworkRequest request(url);
-        QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
+        QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
         QVERIFY(reply);
 
         QCOMPARE(reply->httpStatusCode(), statusCode);
@@ -55,7 +57,7 @@ void TestQCNetworkHttpErrorMappingOffline::testHeadersRemainReadableAfterErrorFi
 {
     QCNetworkAccessManager manager;
     QCNetworkMockHandler mock;
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const int statusCode = 404;
     const QUrl url(QStringLiteral("https://example.com/offline/error_headers"));
@@ -76,7 +78,7 @@ void TestQCNetworkHttpErrorMappingOffline::testHeadersRemainReadableAfterErrorFi
                       rawHeaderData);
 
     QCNetworkRequest request(url);
-    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
     QVERIFY(reply);
 
     QCOMPARE(reply->state(), ReplyState::Error);

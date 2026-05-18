@@ -11,7 +11,6 @@
 #include <QCNetworkLogger.h>
 #include <QCNetworkMemoryCache.h>
 #include <QCNetworkMiddleware.h>
-#include <QCNetworkMockHandler.h>
 #include <QCNetworkBody.h>
 #include <QCNetworkMultipartBody.h>
 #include <QCMultipartFormData.h>
@@ -26,26 +25,12 @@
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
 #include <QUrl>
 
 #include <chrono>
-#include <optional>
-
-static std::optional<QByteArray> findHeaderValue(
-    const QList<QPair<QByteArray, QByteArray>> &headers,
-    const QByteArray &nameLower)
-{
-    for (const auto &header : headers) {
-        if (header.first.trimmed().toLower() == nameLower) {
-            return header.second;
-        }
-    }
-    return std::nullopt;
-}
 
 class ConsumerSmokeLogger : public QCurl::QCNetworkLogger
 {
@@ -78,10 +63,8 @@ int main(int argc, char **argv)
 
     const auto method = QCurl::HttpMethod::Get;
     auto *ownerThreadScheduler = manager.scheduler();
-    auto *ownerThreadAccessor  = manager.schedulerOnOwnerThread();
 
-    if (method != QCurl::HttpMethod::Get || ownerThreadScheduler == nullptr
-        || ownerThreadAccessor == nullptr || ownerThreadScheduler != ownerThreadAccessor) {
+    if (method != QCurl::HttpMethod::Get || ownerThreadScheduler == nullptr) {
         return 1;
     }
 
@@ -195,41 +178,11 @@ int main(int argc, char **argv)
     const QCurl::QCNetworkBody formBody = QCurl::QCNetworkBody::fromFormUrlEncoded(
         QList<QPair<QString, QString>>{{QStringLiteral("name"), QStringLiteral("core value")},
                                        {QStringLiteral("name"), QStringLiteral("second value")}});
-    QCurl::QCNetworkRequest bodyRequest(request.url());
-    QCurl::QCNetworkMockHandler bodyMockHandler;
-    bodyMockHandler.setCaptureEnabled(true);
-    bodyMockHandler.setCaptureBodyPreviewLimit(256);
-    bodyMockHandler.mockResponse(QCurl::HttpMethod::Post,
-                                 bodyRequest.url(),
-                                 QByteArrayLiteral("body-ok"));
-    manager.setMockHandler(&bodyMockHandler);
-    auto *bodyReply = manager.sendPost(bodyRequest, formBody);
-    if (bodyReply == nullptr) {
-        return 10;
-    }
-    QElapsedTimer bodyReplyTimer;
-    bodyReplyTimer.start();
-    while (!bodyReply->isFinished() && bodyReplyTimer.elapsed() < 2000) {
-        QCoreApplication::processEvents();
-    }
-    if (!bodyReply->isFinished()) {
-        bodyReply->deleteLater();
-        return 10;
-    }
-    const auto bodyCaptured = bodyMockHandler.takeCapturedRequests();
-    const auto bodyContentType =
-        bodyCaptured.size() == 1
-            ? findHeaderValue(bodyCaptured.first().headers(), QByteArrayLiteral("content-type"))
-            : std::optional<QByteArray>{};
-    const bool bodyOverloadValid =
-        bodyReply->error() == QCurl::NetworkError::NoError && bodyCaptured.size() == 1
-        && bodyCaptured.first().method() == QCurl::HttpMethod::Post
-        && bodyCaptured.first().bodyPreview()
-               == QByteArrayLiteral("name=core%20value&name=second%20value")
-        && bodyContentType.has_value()
-        && bodyContentType.value() == QByteArrayLiteral("application/x-www-form-urlencoded");
-    bodyReply->deleteLater();
-    manager.setMockHandler(nullptr);
+    const bool bodyOverloadValid = jsonBody.contentType() == QByteArrayLiteral("application/json")
+        && jsonBody.data().contains(QByteArrayLiteral("core"))
+        && formBody.contentType() == QByteArrayLiteral("application/x-www-form-urlencoded")
+        && formBody.data().contains(QByteArrayLiteral("core%20value"))
+        && formBody.data().contains(QByteArrayLiteral("name=second%20value"));
     const auto multipartBody = QCurl::QCNetworkMultipartBody::fromFormData(formData);
     QByteArray singleFileBytes = QByteArrayLiteral("single-file-payload");
     QBuffer singleFileDevice(&singleFileBytes);
@@ -432,41 +385,8 @@ int main(int argc, char **argv)
         return 27;
     }
 
-    QCurl::QCNetworkMockHandler mockHandler;
-    mockHandler.setCaptureEnabled(true);
-    mockHandler.setCaptureBodyPreviewLimit(5);
-    QCurl::QCNetworkCapturedRequest capturedRequest;
-    capturedRequest.setUrl(request.url());
-    capturedRequest.setMethod(QCurl::HttpMethod::Post);
-    capturedRequest.addHeader(QByteArrayLiteral("X-Test"), QByteArrayLiteral("mock"));
-    capturedRequest.setBodySize(7);
-    capturedRequest.setBodyPreview(QByteArrayLiteral("payload").left(5));
-    mockHandler.recordRequest(capturedRequest);
-
-    const auto capturedRequests = mockHandler.takeCapturedRequests();
-    if (capturedRequests.size() != 1 || capturedRequests.first().url() != request.url()
-        || capturedRequests.first().method() != QCurl::HttpMethod::Post
-        || capturedRequests.first().headers().size() != 1
-        || capturedRequests.first().bodySize() != 7
-        || capturedRequests.first().bodyPreview() != QByteArrayLiteral("paylo")) {
-        return 28;
-    }
-
-    mockHandler.mockResponse(QCurl::HttpMethod::Get, request.url(), QByteArrayLiteral("mock-body"), 201);
-    int mockStatus = 0;
-    if (!mockHandler.hasMock(QCurl::HttpMethod::Get, request.url())
-        || mockHandler.getMockResponse(QCurl::HttpMethod::Get, request.url(), mockStatus) != QByteArrayLiteral("mock-body")
-        || mockStatus != 201) {
-        return 29;
-    }
-    manager.setMockHandler(&mockHandler);
-    if (manager.mockHandler() != &mockHandler) {
-        return 30;
-    }
-    manager.setMockHandler(nullptr);
-
     manager.setLogger(nullptr);
     manager.setDebugTraceEnabled(false);
 
-    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 31;
+    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 28;
 }

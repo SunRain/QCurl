@@ -9,9 +9,7 @@
 #include "private/QCThreading_p.h"
 
 #include <QDebug>
-#include <QElapsedTimer>
 #include <QIODevice>
-#include <QMetaObject>
 #include <QThread>
 
 namespace {
@@ -42,6 +40,14 @@ QCurl::QCNetworkRequest requestWithBodyContentType(const QCurl::QCNetworkRequest
 QString rawBodyOwnerThreadErrorMessage(const char *apiName)
 {
     return QStringLiteral("%1: manager-level raw-body QIODevice overload 必须在 owner 线程调用")
+        .arg(QString::fromUtf8(apiName));
+}
+
+QString sendOwnerThreadErrorMessage(const char *apiName)
+{
+    return QStringLiteral(
+               "%1: Core 异步发送 API 必须在 manager owner 线程调用；跨线程调用请显式排队到 "
+               "owner 线程，或使用 Blocking Extras")
         .arg(QString::fromUtf8(apiName));
 }
 
@@ -86,25 +92,11 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchSendRequest(
     const ReplyFactory &impl)
 {
     if (QThread::currentThread() != q_func()->thread()) {
-        if (!Internal::hasEventDispatcher(q_func()->thread())) {
-            return createNoEventLoopErrorReply(request,
-                                               method,
-                                               requestBodySource,
-                                               body,
-                                               nullptr,
-                                               apiName);
-        }
-
-        QCNetworkReply *result = nullptr;
-        QElapsedTimer timer;
-        timer.start();
-        QMetaObject::invokeMethod(
-            q_func(), [impl, &result]() { result = impl(); }, Qt::BlockingQueuedConnection);
-        if (timer.elapsed() > 1000) {
-            qWarning() << apiName << ": cross-thread blocking call took" << timer.elapsed()
-                       << "ms (potential deadlock risk if owner thread is blocked)";
-        }
-        return result;
+        return createInvalidRequestReply(request,
+                                         method,
+                                         async,
+                                         sendOwnerThreadErrorMessage(apiName),
+                                         nullptr);
     }
 
     if (async && !Internal::hasEventDispatcher(q_func()->thread())) {
@@ -252,84 +244,6 @@ QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
     return sendPatch(requestWithBodyContentType(request, body), body.data());
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendGetSync(const QCNetworkRequest &request)
-{
-    return d_func()->dispatchManagedSendRequest(request,
-                                                HttpMethod::Get,
-                                                false,
-                                                Internal::makeEmptyRequestBody(),
-                                                QByteArray(),
-                                                "QCNetworkAccessManager::sendGetSync");
-}
-
-QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request,
-                                                     const QByteArray &data)
-{
-    return d_func()->dispatchManagedSendRequest(request,
-                                                HttpMethod::Post,
-                                                false,
-                                                Internal::makeInlineRequestBody(data),
-                                                data,
-                                                "QCNetworkAccessManager::sendPostSync");
-}
-
-QCNetworkReply *QCNetworkAccessManager::sendPostSync(const QCNetworkRequest &request,
-                                                     QIODevice *device,
-                                                     std::optional<qint64> sizeBytes)
-{
-    constexpr const char *apiName = "QCNetworkAccessManager::sendPostSync";
-    if (QThread::currentThread() != thread()) {
-        return d_func()->createInvalidRequestReply(request,
-                                                   HttpMethod::Post,
-                                                   false,
-                                                   rawBodyOwnerThreadErrorMessage(apiName),
-                                                   nullptr);
-    }
-
-    return d_func()->dispatchManagedSendRequest(request,
-                                                HttpMethod::Post,
-                                                false,
-                                                Internal::makeDeviceRequestBody(device,
-                                                                                sizeBytes,
-                                                                                true),
-                                                QByteArray(),
-                                                apiName);
-}
-
-QCNetworkReply *QCNetworkAccessManager::sendPutSync(const QCNetworkRequest &request,
-                                                    const QByteArray &data)
-{
-    return d_func()->dispatchManagedSendRequest(request,
-                                                HttpMethod::Put,
-                                                false,
-                                                Internal::makeInlineRequestBody(data),
-                                                data,
-                                                "QCNetworkAccessManager::sendPutSync");
-}
-
-QCNetworkReply *QCNetworkAccessManager::sendPutSync(const QCNetworkRequest &request,
-                                                    QIODevice *device,
-                                                    std::optional<qint64> sizeBytes)
-{
-    constexpr const char *apiName = "QCNetworkAccessManager::sendPutSync";
-    if (QThread::currentThread() != thread()) {
-        return d_func()->createInvalidRequestReply(request,
-                                                   HttpMethod::Put,
-                                                   false,
-                                                   rawBodyOwnerThreadErrorMessage(apiName),
-                                                   nullptr);
-    }
-
-    return d_func()->dispatchManagedSendRequest(request,
-                                                HttpMethod::Put,
-                                                false,
-                                                Internal::makeDeviceRequestBody(device,
-                                                                                sizeBytes,
-                                                                                false),
-                                                QByteArray(),
-                                                apiName);
-}
-
 void QCNetworkAccessManager::enableRequestScheduler(bool enabled)
 {
     Q_D(QCNetworkAccessManager);
@@ -345,8 +259,7 @@ bool QCNetworkAccessManager::isSchedulerEnabled() const
 QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
 {
     if (QThread::currentThread() != thread()) {
-        qWarning() << "QCNetworkAccessManager::scheduler: called from non-owner thread; use "
-                      "schedulerOnOwnerThread() to fetch the manager owner-thread scheduler";
+        qWarning() << "QCNetworkAccessManager::scheduler: called from non-owner thread";
         Q_ASSERT_X(QThread::currentThread() == thread(),
                    "QCNetworkAccessManager::scheduler",
                    "scheduler() must be called on the manager owner thread");
@@ -354,39 +267,6 @@ QCNetworkRequestScheduler *QCNetworkAccessManager::scheduler() const
     }
 
     return QCNetworkRequestScheduler::instance();
-}
-
-QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerOnOwnerThread() const
-{
-    if (!Internal::hasEventDispatcher(thread())) {
-        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: manager owner thread has "
-                      "no Qt event dispatcher; blocking call is rejected";
-        return nullptr;
-    }
-
-    if (QThread::currentThread() == thread()) {
-        return QCNetworkRequestScheduler::instance();
-    }
-
-    auto *mutableThis                 = const_cast<QCNetworkAccessManager *>(this);
-    QCNetworkRequestScheduler *result = nullptr;
-    QElapsedTimer timer;
-    timer.start();
-    const bool invoked = QMetaObject::invokeMethod(
-        mutableThis,
-        [&result]() { result = QCNetworkRequestScheduler::instance(); },
-        Qt::BlockingQueuedConnection);
-    if (!invoked) {
-        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: failed to marshal call "
-                      "back to the manager owner thread";
-        return nullptr;
-    }
-    if (timer.elapsed() > 1000) {
-        qWarning() << "QCNetworkAccessManager::schedulerOnOwnerThread: cross-thread blocking call "
-                      "took"
-                   << timer.elapsed() << "ms (potential deadlock risk if owner thread is blocked)";
-    }
-    return result;
 }
 
 } // namespace QCurl

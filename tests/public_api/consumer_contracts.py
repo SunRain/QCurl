@@ -15,7 +15,6 @@ from tests.public_api.consumer_contract_validators import validate_connection_po
 from tests.public_api.consumer_contract_validators import validate_default_logger_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_logger_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_middleware_core_contract_fixture
-from tests.public_api.consumer_contract_validators import validate_mock_handler_core_test_support_fixture
 from tests.public_api.consumer_contract_validators import validate_multipart_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_scheduler_core_contract_fixture
 
@@ -34,7 +33,6 @@ CONSUMER_FIXTURE_VALIDATORS = (
     validate_cancel_token_core_contract_fixture,
     validate_connection_pool_core_contract_fixture,
     validate_middleware_core_contract_fixture,
-    validate_mock_handler_core_test_support_fixture,
 )
 
 

@@ -45,7 +45,6 @@ def validate_scheduler_core_contract_fixture(source_dir: Path) -> None:
             "#include <QCNetworkSslConfig.h>",
             "#include <QCNetworkTimeoutConfig.h>",
             "manager.scheduler()",
-            "manager.schedulerOnOwnerThread()",
             ".setMaxConcurrentRequests(",
             ".maxConcurrentRequests()",
             ".setWeight(",
@@ -257,9 +256,6 @@ def validate_multipart_core_contract_fixture(source_dir: Path) -> None:
             "formData.fieldCount()",
             "QCurl::QCNetworkBody::fromJson(",
             "QCurl::QCNetworkBody::fromFormUrlEncoded(",
-            "manager.sendPost(bodyRequest, formBody)",
-            "bodyCaptured.first().bodyPreview()",
-            "bodyContentType.value()",
             "QCurl::QCNetworkMultipartBody::fromFormData(formData)",
             "QCurl::QCNetworkMultipartBody::fromSingleFileDevice(",
             "singleFileMultipart.has_value()",
@@ -358,14 +354,15 @@ def validate_middleware_core_contract_fixture(source_dir: Path) -> None:
     )
 
 
-def validate_mock_handler_core_test_support_fixture(source_dir: Path) -> None:
-    """Ensure consumer smoke keeps MockHandler Core Test Support coverage."""
+def validate_mock_handler_test_support_fixture(source_dir: Path) -> None:
+    """Ensure Test Support consumer smoke keeps MockHandler and manager binding coverage."""
 
     source = _fixture_source(source_dir)
     _require_snippets(
         source,
         [
             "#include <QCNetworkMockHandler.h>",
+            "#include <QCNetworkTestSupport.h>",
             "QCurl::QCNetworkMockHandler mockHandler",
             "QCurl::QCNetworkCapturedRequest capturedRequest",
             "capturedRequest.setUrl(request.url())",
@@ -383,8 +380,8 @@ def validate_mock_handler_core_test_support_fixture(source_dir: Path) -> None:
             "mockHandler.mockResponse(",
             "mockHandler.hasMock(",
             "mockHandler.getMockResponse(",
-            "manager.setMockHandler(&mockHandler)",
-            "manager.mockHandler()",
+            "QCurl::TestSupport::setMockHandler(&manager, &mockHandler)",
+            "QCurl::TestSupport::mockHandler(&manager)",
         ],
         "consumer smoke fixture is missing required MockHandler contract coverage",
     )
@@ -406,3 +403,20 @@ def validate_mock_handler_core_test_support_fixture(source_dir: Path) -> None:
             "consumer smoke fixture must use CapturedRequest accessor API only; found: "
             + ", ".join(present)
         )
+
+
+def validate_other_extras_fixture(source_dir: Path) -> None:
+    """Ensure Other Extras consumer smoke keeps opt-in diagnostics coverage."""
+
+    _require_snippets(
+        _fixture_source(source_dir),
+        [
+            "#include <QCNetworkDiagnostics.h>",
+            "QCurl::DiagResult result",
+            "result.success = true",
+            "result.summary = QStringLiteral(\"other-extras\")",
+            "result.details.insert(",
+            "result.toString()",
+        ],
+        "other extras consumer fixture is missing Diagnostics opt-in coverage",
+    )

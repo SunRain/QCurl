@@ -13,23 +13,19 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.public_api.consumer_contracts import configure_and_build
+from tests.public_api.blocking_extras_contracts import check_blocking_extras_install as _check_blocking_extras_install
+from tests.public_api.blocking_extras_contracts import run_blocking_extras_consumer_smoke
+from tests.public_api.test_support_contracts import check_test_support_install as _check_test_support_install
+from tests.public_api.test_support_contracts import run_test_support_consumer_smoke
+from tests.public_api.other_extras_contracts import check_other_extras_install as _check_other_extras_install
+from tests.public_api.other_extras_contracts import run_other_extras_consumer_smoke
 from tests.public_api.consumer_contracts import run_consumer_smoke
-from tests.public_api.consumer_contracts import validate_cache_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_cache_policy_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_cancel_token_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_connection_pool_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_default_logger_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_logger_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_middleware_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_mock_handler_core_test_support_fixture
-from tests.public_api.consumer_contracts import validate_multipart_core_contract_fixture
-from tests.public_api.consumer_contracts import validate_scheduler_core_contract_fixture
 from tests.public_api.layout_scan import GuardrailFinding
 from tests.public_api.layout_scan import collect_cpp_sources
 from tests.public_api.layout_scan import collect_layout_findings
 from tests.public_api.layout_scan import load_allowlist
 from tests.public_api.layout_scan import strip_comments_and_strings
+from tests.public_api.surface_manifest import validate_surface_manifest
 
 
 def fail(message: str) -> int:
@@ -68,7 +64,7 @@ def scan_headers(args: argparse.Namespace) -> int:
         ("Qt private include", re.compile(r'^\s*#\s*include\s*[<"]Qt.*/private/')),
         ("tuple include", re.compile(r'^\s*#\s*include\s*<tuple>')),
         ("qcpimpl helper include", re.compile(r'^\s*#\s*include\s*[<"]QCPimpl\.h[">]')),
-        ("Qt threading include", re.compile(r'^\s*#\s*include\s*<Q(Mutex|ReadWriteLock|WaitCondition|Thread|ThreadPool|Semaphore|Future|Promise|FutureWatcher)\b')),
+        ("Qt threading include", re.compile(r'^\s*#\s*include\s*<Q(Mutex|ReadWriteLock|WaitCondition|Thread|ThreadPool|Semaphore|Promise|FutureWatcher)\b')),
         ("Qt filesystem include", re.compile(r'^\s*#\s*include\s*<Q(File|Dir|FileInfo|SaveFile|TemporaryFile|StandardPaths)\b')),
         ("Qt process include", re.compile(r'^\s*#\s*include\s*<QProcess\b')),
         ("Qt JSON include", re.compile(r'^\s*#\s*include\s*<QJson')),
@@ -204,8 +200,9 @@ def install_stage(args: argparse.Namespace) -> int:
         shutil.rmtree(args.stage_dir)
     args.stage_dir.mkdir(parents=True, exist_ok=True)
 
+    components = args.components or ["Development", "Runtime", "BundledRuntime"]
     try:
-        for component in ("Development", "Runtime", "BundledRuntime"):
+        for component in components:
             command = [
                 args.cmake,
                 "--install",
@@ -294,10 +291,46 @@ def check_export_contract(args: argparse.Namespace) -> int:
     return 0
 
 
+def check_blocking_extras_install(args: argparse.Namespace) -> int:
+    """Verify Blocking Extras headers are opt-in and absent from the default Core stage."""
+
+    return _check_blocking_extras_install(args, fail_func=fail)
+
+
 def consumer_smoke(args: argparse.Namespace) -> int:
     """Verify positive and negative staged consumer builds."""
 
     return run_consumer_smoke(args, run_command=run, fail_func=fail)
+
+
+def blocking_extras_consumer_smoke(args: argparse.Namespace) -> int:
+    """Verify opt-in Blocking Extras consumer builds and default Core negative builds."""
+
+    return run_blocking_extras_consumer_smoke(args, run_command=run, fail_func=fail)
+
+
+def check_test_support_install(args: argparse.Namespace) -> int:
+    """Verify Test Support headers are opt-in and absent from the default Core stage."""
+
+    return _check_test_support_install(args, fail_func=fail)
+
+
+def test_support_consumer_smoke(args: argparse.Namespace) -> int:
+    """Verify opt-in Test Support consumer builds and default Core negative builds."""
+
+    return run_test_support_consumer_smoke(args, run_command=run, fail_func=fail)
+
+
+def check_other_extras_install(args: argparse.Namespace) -> int:
+    """Verify Other Extras headers are opt-in and absent from the default Core stage."""
+
+    return _check_other_extras_install(args, fail_func=fail)
+
+
+def other_extras_consumer_smoke(args: argparse.Namespace) -> int:
+    """Verify opt-in Other Extras consumer builds and default Core negative builds."""
+
+    return run_other_extras_consumer_smoke(args, run_command=run, fail_func=fail)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -320,10 +353,17 @@ def build_parser() -> argparse.ArgumentParser:
     hard_break.add_argument("--repo-root", type=Path, required=True)
     hard_break.set_defaults(func=scan_hard_break_guards)
 
+    surface = subparsers.add_parser("surface-manifest")
+    surface.add_argument("--surface-manifest", type=Path, required=True)
+    surface.add_argument("--core-manifest", type=Path, required=True)
+    surface.add_argument("--extras-manifest", type=Path, required=True)
+    surface.set_defaults(func=lambda args: validate_surface_manifest(args, fail_func=fail))
+
     install = subparsers.add_parser("install")
     install.add_argument("--cmake", required=True)
     install.add_argument("--build-dir", type=Path, required=True)
     install.add_argument("--stage-dir", type=Path, required=True)
+    install.add_argument("--component", action="append", dest="components")
     install.add_argument("--config", default="")
     install.set_defaults(func=install_stage)
 
@@ -344,6 +384,24 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--stage-dir", type=Path, required=True)
     export.set_defaults(func=check_export_contract)
 
+    blocking_install = subparsers.add_parser("check-blocking-extras-install")
+    blocking_install.add_argument("--default-stage-dir", type=Path, required=True)
+    blocking_install.add_argument("--blocking-stage-dir", type=Path, required=True)
+    blocking_install.add_argument("--manifest", type=Path, required=True)
+    blocking_install.set_defaults(func=check_blocking_extras_install)
+
+    test_support_install = subparsers.add_parser("check-test-support-install")
+    test_support_install.add_argument("--default-stage-dir", type=Path, required=True)
+    test_support_install.add_argument("--test-support-stage-dir", type=Path, required=True)
+    test_support_install.add_argument("--manifest", type=Path, required=True)
+    test_support_install.set_defaults(func=check_test_support_install)
+
+    other_extras_install = subparsers.add_parser("check-other-extras-install")
+    other_extras_install.add_argument("--default-stage-dir", type=Path, required=True)
+    other_extras_install.add_argument("--other-extras-stage-dir", type=Path, required=True)
+    other_extras_install.add_argument("--manifest", type=Path, required=True)
+    other_extras_install.set_defaults(func=check_other_extras_install)
+
     smoke = subparsers.add_parser("consumer-smoke")
     smoke.add_argument("--cmake", required=True)
     smoke.add_argument("--stage-dir", type=Path, required=True)
@@ -353,6 +411,39 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--negative-build-dir", type=Path, required=True)
     smoke.add_argument("--config", default="")
     smoke.set_defaults(func=consumer_smoke)
+
+    blocking_smoke = subparsers.add_parser("blocking-extras-consumer-smoke")
+    blocking_smoke.add_argument("--cmake", required=True)
+    blocking_smoke.add_argument("--blocking-stage-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--default-stage-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--positive-source-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--positive-build-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--negative-source-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--negative-build-dir", type=Path, required=True)
+    blocking_smoke.add_argument("--config", default="")
+    blocking_smoke.set_defaults(func=blocking_extras_consumer_smoke)
+
+    test_support_smoke = subparsers.add_parser("test-support-consumer-smoke")
+    test_support_smoke.add_argument("--cmake", required=True)
+    test_support_smoke.add_argument("--test-support-stage-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--default-stage-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--positive-source-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--positive-build-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--negative-source-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--negative-build-dir", type=Path, required=True)
+    test_support_smoke.add_argument("--config", default="")
+    test_support_smoke.set_defaults(func=test_support_consumer_smoke)
+
+    other_extras_smoke = subparsers.add_parser("other-extras-consumer-smoke")
+    other_extras_smoke.add_argument("--cmake", required=True)
+    other_extras_smoke.add_argument("--other-extras-stage-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--default-stage-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--positive-source-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--positive-build-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--negative-source-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--negative-build-dir", type=Path, required=True)
+    other_extras_smoke.add_argument("--config", default="")
+    other_extras_smoke.set_defaults(func=other_extras_consumer_smoke)
 
     return parser
 

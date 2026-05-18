@@ -23,6 +23,7 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_BINARY_DIR}/src
+            ${CMAKE_SOURCE_DIR}/tests/support
     )
     set_target_properties(tst_LibcurlConsistency PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"

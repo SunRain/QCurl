@@ -10,9 +10,11 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "private/QCNetworkHttpVersion_p.h"
+#include "qcnetwork_sync_test_helper.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>
@@ -59,7 +61,7 @@ void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
 {
     QCNetworkAccessManager manager;
     QCNetworkMockHandler mock;
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url("https://example.com/offline/http3_only");
     mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
@@ -67,7 +69,7 @@ void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3Only);
 
-    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {
@@ -84,7 +86,7 @@ void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
 {
     QCNetworkAccessManager manager;
     QCNetworkMockHandler mock;
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url("https://example.com/offline/http3_try");
     mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
@@ -92,7 +94,7 @@ void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -109,7 +111,7 @@ void TestQCNetworkHttp3::testRequireHttp3EnvGate()
 
     QCNetworkAccessManager manager;
     QCNetworkMockHandler mock;
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url("https://example.com/offline/http3_require_env");
     mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
@@ -117,7 +119,7 @@ void TestQCNetworkHttp3::testRequireHttp3EnvGate()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    QScopedPointer<QCNetworkReply> reply(manager.sendGetSync(req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {

@@ -185,97 +185,32 @@ private:
     // 禁止拷贝和移动
     Q_DISABLE_COPY_MOVE(QCCurlMultiManager)
 
-    // ==================
-    // Socket 事件处理
-    // ==================
-
-    /**
-     * @brief 处理 socket 事件
-     *
-     * 调用 curl_multi_socket_action() 处理 socket 活动，
-     * 然后检查是否有请求完成。
-     *
-     * @param socketfd socket 文件描述符
-     * @param eventsBitmask 事件掩码（CURL_CSELECT_IN/OUT/ERR）
-     *
-     * @note 内部方法，由 QSocketNotifier 回调触发
-     */
     void handleSocketAction(curl_socket_t socketfd, int eventsBitmask);
-
-    /**
-     * @brief 检查并处理完成的请求
-     *
-     * 调用 curl_multi_info_read() 获取完成消息，
-     * 并将完成事件点对点投递到 Reply 线程执行（完成回调 SSOT）。
-     *
-     * @note 内部方法，在 handleSocketAction() 后调用
-     */
     void checkMultiInfo();
-
-    /**
-     * @brief 清理 socket 资源
-     *
-     * 删除 QSocketNotifier 并从映射表中移除 socket。
-     *
-     * @param socketfd socket 文件描述符
-     *
-     * @note 内部方法，在 CURL_POLL_REMOVE 时调用
-     */
     void cleanupSocket(curl_socket_t socketfd);
-
-    /**
-     * @brief 管理 socket 的 QSocketNotifier
-     *
-     * 根据 libcurl 的要求创建、启用、禁用或删除 QSocketNotifier。
-     *
-     * @param socketfd socket 文件描述符
-     * @param what libcurl 动作（CURL_POLL_IN/OUT/INOUT/REMOVE/NONE）
-     * @param socketInfo 当前 socket 信息（可能为 nullptr）
-     *
-     * @return int 0 表示成功
-     *
-     * @note 内部方法，由 curlSocketCallback() 调用
-     */
     int manageSocketNotifiers(curl_socket_t socketfd, int what, SocketInfo *socketInfo);
 
-    // ==================
-    // libcurl 静态回调（C 接口）
-    // ==================
-
-    /**
-     * @brief Socket 回调（libcurl 调用）
-     *
-     * libcurl 在 socket 状态变化时调用此函数，通知应用程序
-     * 需要监听或停止监听某个 socket 的 I/O 事件。
-     *
-     * @param easy curl easy handle
-     * @param socketfd socket 文件描述符
-     * @param what 动作（CURL_POLL_IN/OUT/INOUT/REMOVE/NONE）
-     * @param userp 用户数据（QCCurlMultiManager* 指针）
-     * @param socketp socket 私有数据（SocketInfo* 指针）
-     *
-     * @return int 0 表示成功，-1 表示失败
-     */
     static int curlSocketCallback(
         CURL *easy, curl_socket_t socketfd, int what, void *userp, void *socketp);
 
-    /**
-     * @brief 定时器回调（libcurl 调用）
-     *
-     * libcurl 调用此函数设置超时定时器。当定时器触发时，
-     * 应用程序需要调用 curl_multi_socket_action() 处理超时事件。
-     *
-     * @param multi curl multi handle
-     * @param timeout_ms 超时毫秒数（-1 表示停止定时器，0 表示立即触发）
-     * @param userp 用户数据（QCCurlMultiManager* 指针）
-     *
-     * @return int 0 表示成功，-1 表示失败
-     */
     static int curlTimerCallback(CURLM *multi, long timeout_ms, void *userp);
 
-    // ==================
-    // Share handle（M6+，可选）
-    // ==================
+    bool configureMultiCallbacks(const char *context);
+    void disableMultiCallbacks();
+    bool recreateMultiHandleForLimits();
+
+    struct FinishedTransfer
+    {
+        QPointer<QCNetworkReply> reply;
+        CURLcode curlCode = CURLE_OK;
+    };
+
+    [[nodiscard]] std::optional<FinishedTransfer> takeFinishedTransferLocked(CURLMsg *message);
+    void dispatchFinishedTransfer(const FinishedTransfer &transfer);
+
+    [[nodiscard]] SocketInfo *ensureSocketInfo(curl_socket_t socketfd, SocketInfo *socketInfo);
+    void updateReadNotifier(SocketInfo *socketInfo, int what);
+    void updateWriteNotifier(SocketInfo *socketInfo, int what);
 
     struct ShareConfig
     {
@@ -299,8 +234,6 @@ private:
         const QCNetworkAccessManager *scopeKey = nullptr;
         CURLSH *share                          = nullptr;
         ShareConfig applied;
-        // 待应用配置
-        // 为空表示无变更
         std::optional<ShareConfig> pending;
 
         ShareConfig lastInitAttempt;
@@ -335,8 +268,31 @@ private:
                                  bool removeFromMulti,
                                  bool decrementRunningCount,
                                  const char *context);
+    void cleanupActiveHandlesForShutdown(const QList<CURL *> &activeHandles);
+    void disableSocketsForShutdown(const QList<QSharedPointer<SocketInfo>> &sockets);
+    void cleanupShareContextsForShutdown(const QList<QSharedPointer<ShareContext>> &shareContexts);
     void releaseShareForEasyHandleLocked(CURL *easy);
     void maybeFinalizeShareContextLocked(ShareContext *context);
+
+    bool marshalAddReplyIfNeeded(QCNetworkReply *reply);
+    [[nodiscard]] CURL *validatedEasyHandle(QCNetworkReply *reply) const;
+    [[nodiscard]] bool registerActiveReplyLocked(CURL *easy, QCNetworkReply *reply);
+    bool addEasyToMultiLocked(CURL *easy);
+
+    [[nodiscard]] ShareContext *prepareShareForReplyLocked(QCNetworkReply *reply, CURL *easy);
+    void applyShareToEasyLocked(QCNetworkReply *reply, CURL *easy, ShareContext *shareContext);
+    void resetShareOnEasyIfNeeded(CURL *easy);
+    [[nodiscard]] ShareContext *prepareCookieContextLocked(const QCNetworkAccessManager *manager,
+                                                           const ShareConfig &desired,
+                                                           QString *error);
+
+    [[nodiscard]] bool canRecreateMultiHandleLocked();
+    void applyMultiLongOption(CURLMoption option,
+                              const char *optionName,
+                              long value,
+                              std::optional<long> &stateSlot);
+    void clearMultiLimitState();
+    void warnDeferredMultiLimitReset() const;
 
 private:
     // ==================

@@ -14,6 +14,7 @@
 #include "../src/QCNetworkReply.h"
 #include "../src/QCNetworkRequestScheduler.h"
 #include "../src/QCNetworkRequestPriority.h"
+#include "../src/QCNetworkTestSupport.h"
 #include "benchmark_scheduler_helpers.h"
 
 using namespace QCurl;
@@ -39,7 +40,7 @@ public:
         , manager(new QCNetworkAccessManager(this))
         , scheduler(QCNetworkRequestScheduler::instance())
     {
-        manager->setMockHandler(&mockHandler);
+        TestSupport::setMockHandler(manager, &mockHandler);
     }
 
     ~SchedulerBenchmark() override

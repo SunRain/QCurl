@@ -1,6 +1,6 @@
 # QCurl
 
-> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供高性能、类型安全的 HTTP Core API 与可选 Extras / Preview 能力。
+> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供高性能、类型安全的 HTTP Core API 与可选 Extras / 显式 Extras / Preview。
 
 [![Qt6](https://img.shields.io/badge/Qt-6.2+-41CD52?logo=qt)](https://www.qt.io/)
 [![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
@@ -17,16 +17,17 @@
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
 | **Core** | 默认安装，作为 `3.0.0-rc.1` 稳定候选维护 API / ABI | `QCNetworkAccessManager`、`QCNetworkRequest`、`QCNetworkReply`、TLS / proxy / timeout / retry 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
-| **Core Test Support** | 默认安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest` |
-| **Preview** | 功能可用或有测试资产，但合同、安装面、consumer gate 或运行语义仍需稳定化 | WebSocket、Diagnostics 中依赖外部命令/权限或不稳定 `details` schema 的能力 |
+| **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
+| **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
+| **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、WebSocket |
 
-除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为可选发行面。完整边界见 `docs/arch/public-header-boundary.md` 与 `docs/arch/rc-maturity-review.md`。
+除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md` 与 `docs/arch/rc-maturity-review.md`。
 
 ## 为什么选择 QCurl？
 
 | **现代化架构** | **Core HTTP** | **可选扩展** | **Qt 友好** |
 |:-------------:|:-------------:|:------------:|:-----------:|
-| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | Preview 能力 | QObject 线程归属与事件循环合同 |
+| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | 显式 Extras / Preview | QObject 线程归属与事件循环合同 |
 
 ---
 
@@ -52,19 +53,23 @@
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
 - **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
 - **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面
-- **MockHandler Core Test Support** - `QCNetworkMockHandler` 与 `QCNetworkCapturedRequest` 提供测试支持和请求捕获
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
 - **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
 - **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
 
-### 可选 Extras
+### Blocking Extras
 
-当前没有独立的稳定 Extras 层。后续若恢复或新增 Extras，必须建立独立 install manifest、public-api gate 和 installed consumer smoke，不能混入 Core 验收。
+- **同步 value-result client** - `QCBlockingNetworkClient` / `QCBlockingNetworkResult` 通过显式 `BlockingExtrasDevelopment` 安装，不随默认 Core 安装。
+- **Cookie snapshot / delta** - `QCBlockingCookieStore` 提供 Blocking Extras cookie 边界，不访问 live manager cookie store。
 
-### Preview
+### Test Support
 
-- **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，但不属于默认 Core install surface
-- **Diagnostics 扩展诊断** - DNS、连接、HTTP、SSL 探测有 deterministic local gate；`ping/traceroute` 与 `details` schema 仍不作为稳定合同
+- **MockHandler Test Support** - `QCNetworkMockHandler`、`QCNetworkCapturedRequest` 与 `QCNetworkTestSupport` 通过显式 `TestSupportDevelopment` 安装，供测试程序 opt-in 使用。
+
+### Other Extras / Preview
+
+- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装；`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
+- **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，条件进入 Other Extras；当前仍不属于默认 Core install surface。
 
 ### 性能基准说明
 
@@ -97,9 +102,8 @@ sudo cmake --install build
 发布合同提示：
 
 - `3.0.0-rc.1` 只承诺 Core install surface。
-- Preview 需要发行包显式包含 `QCURL_INSTALL_HEADERS_EXTRAS`。
+- Blocking Extras / Test Support / Other Extras 需要发行包显式安装对应 component，不随默认 Core 隐式安装。
 - 当前 lane-aware scheduler 的 breaking ABI 变更以 `QCurl 3.0.0 / SOVERSION 3` 发布。
-- 若你从旧版 scheduler signals 迁移，请同步更新二进制依赖和 `connect(&QCNetworkRequestScheduler::signal, ...)` 的函数签名。
 
 ### 代码示例
 
@@ -189,7 +193,7 @@ auto *formReply = manager.sendPost(formRequest, formBody);
 
 #### 5. Lane-aware Scheduler
 
-`QCNetworkRequestScheduler.h` 属于 QCurl 的 **Core install surface**（默认安装，按稳定公开 contract 维护）。
+`QCNetworkRequestScheduler.h` 属于显式公开的调度能力；默认 Core 不提供透明跨线程阻塞 getter。
 
 ```cpp
 #include <QCNetworkRequestScheduler.h>
@@ -237,12 +241,11 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 
 - `lane` 可以理解成“请求车道”：先按车道分组，再在车道内按优先级排序。
 - `Critical` 现在只影响同一条 lane 内的启动顺序；若需要给控制类请求留保底名额，请使用 lane reservation。
-- 调度器信号现在会携带 `lane + hostKey`；如果你从旧版回调签名迁移，请同步更新 `connect(...)` 的参数列表。
+- 调度器信号携带 `lane + hostKey`，用于按车道和 host 做观测。
 - `cancelLaneRequests()` 语义：`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
-- `manager.scheduler()` 是 owner-thread only：跨线程误用会 warning 并返回 `nullptr`；跨线程取回 owner scheduler 请使用 `schedulerOnOwnerThread()`（详见 `docs/user/lane-scheduler.md`）。
-- 避免在持锁状态、析构函数或 UI/主线程高频热路径里跨线程调用 `schedulerOnOwnerThread()`（`BlockingQueuedConnection` 可能阻塞甚至死锁）；跨线程配置时优先把“配置动作”marshal 到 owner thread 执行（详见 `docs/user/lane-scheduler.md`）。
+- `manager.scheduler()` 是 owner-thread only：跨线程误用会 warning 并返回 `nullptr`；跨线程配置时把“配置动作”显式投递到 manager owner thread 执行。
 
-完整说明、请求时序图、`Control / Transfer / Background` 配置建议和迁移提醒，统一参考：
+完整说明、请求时序图和 `Control / Transfer / Background` 配置建议统一参考：
 
 - `docs/user/lane-scheduler.md`
 

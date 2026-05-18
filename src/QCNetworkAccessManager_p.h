@@ -12,6 +12,7 @@
 #include <QSet>
 #include <QSocketNotifier>
 #include <QTimer>
+#include <QFuture>
 
 #include <curl/curl.h>
 #include <functional>
@@ -47,7 +48,6 @@ public:
         , writeNotifier(nullptr)
         , errorNotifier(nullptr)
         , logger(nullptr)
-        , mockHandler(nullptr)
         , q_ptr(self)
     {}
 
@@ -56,6 +56,20 @@ public:
 
     [[nodiscard]] QCNetworkRequest prepareManagedRequest(
         const QCNetworkRequest &request, const QList<QCNetworkMiddleware *> &middlewares) const;
+    [[nodiscard]] QCCookieOperationResult importCookiesOnOwnerThread(
+        const QList<QNetworkCookie> &cookies,
+        const QUrl &originUrl);
+    [[nodiscard]] QCCookieExportResult exportCookiesOnOwnerThread(
+        const QUrl &filterUrl) const;
+    [[nodiscard]] QCCookieOperationResult clearAllCookiesOnOwnerThread();
+    [[nodiscard]] QFuture<QCCookieOperationResult> runCookieOperationAsync(
+        QCNetworkAccessManager *manager,
+        std::function<QCCookieOperationResult()> command,
+        void (QCNetworkAccessManager::*signal)(
+            const QCCookieOperationResult &));
+    [[nodiscard]] QFuture<QCCookieExportResult> runCookieExportAsync(
+        QCNetworkAccessManager *manager,
+        std::function<QCCookieExportResult()> command);
     [[nodiscard]] QCNetworkReply *createPreparedManagedReply(
         const QCNetworkRequest &request,
         HttpMethod method,
@@ -97,8 +111,6 @@ public:
     };
 
     QList<MiddlewareEntry> middlewares; ///< 按注册顺序保存的中间件链
-    QCNetworkMockHandler *mockHandler;  ///< 可选的 mock 处理器
-
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 
     [[nodiscard]] QCNetworkReply *dispatchSendRequest(const QCNetworkRequest &request,

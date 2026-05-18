@@ -1,5 +1,7 @@
 #include "CurlFeatureProbe.h"
 
+#include <QCBlockingNetworkClient.h>
+#include <QCBlockingNetworkResult.h>
 #include <QCNetworkAccessManager.h>
 #include <QCNetworkHttpVersion.h>
 #include <QCNetworkMultipartBody.h>
@@ -73,6 +75,11 @@ QJsonObject buildManifest()
     static_cast<void>(static_cast<QCurl::QCNetworkReply *(QCurl::QCNetworkAccessManager::*)(
         const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>)>(
         &QCurl::QCNetworkAccessManager::sendPost));
+    static_cast<void>(static_cast<QCurl::QCBlockingNetworkResult (
+        QCurl::QCBlockingNetworkClient::*)(const QCurl::QCNetworkRequest &,
+                                           QIODevice *,
+                                           std::optional<qint64>) const>(
+        &QCurl::QCBlockingNetworkClient::sendPost));
     QBuffer bodyProbe;
     bodyProbe.open(QIODevice::ReadOnly);
     auto multipartProbe = QCurl::QCNetworkMultipartBody::fromSingleFileDevice(
@@ -88,6 +95,7 @@ QJsonObject buildManifest()
     ssl.setPinnedPublicKey(QStringLiteral("sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
 
     const bool rawBodyDeviceApi = true;
+    const bool blockingExtrasRawBodyDeviceApi = true;
     const bool unknownSizePostApi = true;
     const bool singleFileMultipartBodyApi = multipartProbe.has_value();
     const bool resumableDownloadJobApi = true;
@@ -100,6 +108,8 @@ QJsonObject buildManifest()
     QJsonObject qcurl;
     qcurl.insert(QStringLiteral("acceptEncodingApi"), acceptEncodingApi);
     qcurl.insert(QStringLiteral("rawBodyDeviceApi"), rawBodyDeviceApi);
+    qcurl.insert(QStringLiteral("blockingExtrasRawBodyDeviceApi"),
+                 blockingExtrasRawBodyDeviceApi);
     qcurl.insert(QStringLiteral("unknownSizeRawBodyPostApi"), unknownSizePostApi);
     qcurl.insert(QStringLiteral("singleFileMultipartBodyApi"), singleFileMultipartBodyApi);
     qcurl.insert(QStringLiteral("pinnedPublicKeyApi"), pinnedApi);
@@ -122,8 +132,9 @@ QJsonObject buildManifest()
         QJsonObject{
             {QStringLiteral("enabled"), acceptEncodingApi},
             {QStringLiteral("reason"),
-             acceptEncodingApi ? QStringLiteral("QCNetworkRequest accept-encoding APIs available")
-                               : QStringLiteral("QCNetworkRequest accept-encoding APIs unavailable")},
+             acceptEncodingApi
+                 ? QStringLiteral("QCNetworkRequest accept-encoding APIs available")
+                 : QStringLiteral("QCNetworkRequest accept-encoding APIs unavailable")},
         });
     tests.insert(
         QStringLiteral("test_p1_upload_seek_constraints.py"),

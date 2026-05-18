@@ -9,6 +9,12 @@ QCurl 的 install surface 只有两个来源：
 - `src/CMakeLists.txt` 中的 `QCURL_INSTALL_HEADERS`
 - 生成头 `QCurlConfig.h`
 
+机器可读发布面清单位于 `tests/public_api/surface_manifest.json`。它记录每个 public header
+当前属于 Core、Blocking Extras、Other Extras、Test Support 还是 Internal，以及 hard-break
+完成后的目标安装面。`qcurl_public_api_surface_manifest` 会把这份清单同
+`QCURL_INSTALL_HEADERS` / `QCURL_INSTALL_HEADERS_EXTRAS` 生成的 manifest 对齐，防止默认
+Core 安装面新增未分层头文件。
+
 其中：
 
 - `QCPimpl.h` 已从默认安装面移除；`tests/public_api/run_public_api_checks.py scan` 会阻止 install headers 回流 `#include <QCPimpl.h>` 与 `QCURL_DECLARE_*` helper macro。
@@ -20,13 +26,16 @@ QCurl 的 install surface 只有两个来源：
 - `QCNetworkBody.h` 与 `QCNetworkMultipartBody.h` 作为 P2 body helper 进入默认稳定安装面，用于 JSON/form/multipart body 生成；发送仍统一走 `QCNetworkAccessManager::sendPost()`。
 - `QCNetworkTransferJob.h`、`QCNetworkDownloadToDeviceJob.h` 与 `QCNetworkResumableDownloadJob.h` 作为 P2 file-transfer job 进入默认稳定安装面；manager 不暴露文件传输 convenience。
 - `QCNetworkMiddleware.h` 作为 P3 Middleware base 进入默认稳定安装面；内置 middleware 实现细节不得混入 base contract。
-- `QCNetworkMockHandler.h` 作为 P3 Core Test Support 进入默认安装面；它用于测试支持和请求捕获，不作为生产运行时 Core 能力表述。
+- `QCNetworkMockHandler.h` 与 `QCNetworkTestSupport.h` 属于显式 Test Support，只通过 `TestSupportDevelopment` 安装；默认 Core 不安装 mock/capture/test-support 头。
 - `QCNetworkConnectionPoolConfig.h` 与 `QCNetworkConnectionPoolManager.h` 作为 P3 ConnectionPool 管理面进入默认稳定安装面，config/statistics 使用 accessor / shared-data API。
 - `QCNetworkHttpMethod.h` 现在是独立的 public type header，`HttpMethod` 不再由 `QCNetworkReply.h` 承载。
 - `QCNetworkHttpVersion.h` 只暴露 `QCNetworkHttpVersion` 枚举；libcurl 常量映射函数 `detail::toCurlHttpVersion(...)` 仅存在于 internal header `src/private/QCNetworkHttpVersion_p.h`。
 - `QCNetworkConnectionPoolManager.h` 对外只保留配置、统计和资源控制 contract；reply 与连接池之间的内部协作统一收口到 `src/QCNetworkConnectionPoolManager_p.h`。
-- WebSocket 相关头当前只会在 `QCURL_WEBSOCKET_SUPPORT` 打开时进入 `QCURL_INSTALL_HEADERS_EXTRAS`；它们不属于默认稳定安装面。
-- `QCURL_INSTALL_HEADERS_EXTRAS` 明确属于 **非默认 Extras**：源码树 examples / benchmarks 可以使用，但默认 install/export/public-api gate 不为其提供稳定 consumer contract。
+- `QCNetworkDiagnostics.h` 属于显式 Other Extras，只通过 `OtherExtrasDevelopment` 安装；默认 Core 不安装 diagnostics 头。
+- WebSocket 相关头当前只会在 `QCURL_WEBSOCKET_SUPPORT` 打开时进入 `QCURL_INSTALL_HEADERS_EXTRAS` / `QCURL_INSTALL_HEADERS_OTHER_EXTRAS`；它们不属于默认 Core 安装面。
+- `QCURL_INSTALL_HEADERS_EXTRAS` 明确属于 **非默认 Extras**：源码树 examples / benchmarks 可以使用；默认 Core install/export/public-api gate 不为其提供稳定 consumer contract，显式 Extras gate 单独验证 opt-in 安装和 default Core 负向 consumer。
+- `QCNetworkRequestScheduler.h` 仍在默认 Core 安装面，但 T7 已移除 `schedulerOnOwnerThread()`，`scheduler()` owner-thread only；默认 Core 不再承诺透明跨线程阻塞 getter。
+- 旧的 manager-level 同步发送 API 已从 Core 移除；同步 value-result API 归属 Blocking Extras。
 
 任何不在上述清单中的头文件，都不属于对下游的稳定承诺。
 
@@ -57,15 +66,11 @@ QCurl 的 install surface 只有两个来源：
 - 允许在 `Data` 内新增字段（不改变 public class 布局）。
 - 新能力仅通过新增 accessor API 对外暴露，不回退到 public fields。
 
-### 2.3 Scheduler 线程与信号 contract（Core 对外承诺）
+### 2.3 Scheduler 线程与信号 contract（T7 后 Core 收敛合同）
 
 - `QCNetworkAccessManager::scheduler()` 是 **owner-thread only**：
   - 只能在 manager owner thread 调用
   - 跨线程误用会 warning + fail-closed 返回 `nullptr`
-- `QCNetworkAccessManager::schedulerOnOwnerThread()` 用于跨线程取回 owner scheduler：
-  - 前置条件：owner thread 已具备 `QAbstractEventDispatcher`
-  - 跨线程路径使用 `BlockingQueuedConnection`，可能阻塞；在持锁状态、析构路径或 UI 高频热路径调用有死锁风险
-  - 推荐把“配置动作”marshal 到 owner thread 执行，而不是在任意线程同步取指针
 - scheduler 信号签名固定为：
   - `requestQueued(reply, lane, hostKey, priority)`
   - `requestAboutToStart(reply, lane, hostKey)`
@@ -84,8 +89,8 @@ QCurl 的 install surface 只有两个来源：
 
 | Core header | ABI 策略 | 允许的后续演进方式 |
 |------------|----------|--------------------|
-| `QCNetworkRequestScheduler.h` | `Config/Statistics/LaneConfig` 使用 implicit-sharing 值类型 + accessor API；special members out-of-line；线程/signals contract 固化 | 仅在 `Data` 新增字段 + 对外新增 accessor；禁止回退到 public fields |
-| `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 fail-closed）；`schedulerOnOwnerThread()` 跨线程回 owner thread（需 event dispatcher，`BlockingQueuedConnection` 有阻塞风险） | 通过新增 API 扩展能力；现有线程 contract 与失败语义保持兼容 |
+| `QCNetworkRequestScheduler.h` | `Config/Statistics/LaneConfig` 使用 implicit-sharing 值类型 + accessor API；Core 仅保留 owner-thread 配置/查询语义 | 可新增 accessor；不得恢复透明跨线程阻塞 getter或把 internal diagnostics 固化为默认 Core 承诺 |
+| `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 warning + fail-closed 返回 `nullptr`）；Core 不提供 `schedulerOnOwnerThread()` | 不得在生产 Core 默认合同中恢复透明阻塞 owner-thread getter |
 | `QCNetworkAccessManager.h`（share/hsts 配置） | `ShareHandleConfig` / `HstsAltSvcCacheConfig` 使用 implicit-sharing 值类型 + accessor API；manager 的 cookie/scheduler/cache/share/hsts 状态已下沉到 `QCNetworkAccessManagerPrivate`，不再占用导出类布局 | 可在 `Data` 内扩展字段并新增 accessor；不得恢复 public fields 或新增 layout allowlist |
 | `QCNetworkRequest.h`（lane/priority 入口） | 保持 lane + priority 公开行为合同稳定，调度细节留在 scheduler 实现层 | 允许新增便捷 API，但不破坏既有 lane/priority 语义 |
 | `QCNetworkCachePolicy.h` | 独立轻量 enum type header；作为 `QCNetworkRequest` 的 Core 配置类型进入默认安装面 | 可新增策略枚举值，但不得把 concrete cache 实现类型或读取 API 混入该头 |
@@ -98,7 +103,7 @@ QCurl 的 install surface 只有两个来源：
 | `QCNetworkDefaultLogger.h` | 继承 `QCNetworkLogger`，自身使用 private data；文件输出、内存缓存和 mutex 留在 `.cpp` | 可新增 setter/accessor；不得把文件轮转状态或锁对象暴露为 public fields |
 | `QCNetworkCancelToken.h` | QObject service + private data；只暴露 reply-level attach/cancel/timeout 合同 | 仅通过 reply-level API 扩展取消语义；不得新增 request-level cancel shortcut |
 | `QCNetworkMiddleware.h` | base class 使用 private data 管理注册 manager；公开面只保留 virtual hook 与 manager 注册合同 | 可新增 hook 或 helper；不得把内置 middleware 的状态、容器或锁暴露到 base header |
-| `QCNetworkMockHandler.h` | Core Test Support；`QCNetworkCapturedRequest` 使用 implicit-sharing 值类型 + accessor API；handler runtime state 使用 private data | 可新增测试支持 API；不得恢复 `MockData` / `CapturedRequest` nested public field layout；不得把生产运行时能力写入 Core 文档 |
+| `QCNetworkMockHandler.h` / `QCNetworkTestSupport.h` | 显式 Test Support 安装面；`QCNetworkCapturedRequest` 使用 implicit-sharing 值类型 + accessor API；manager 绑定通过 `QCurl::TestSupport` 命名空间表达 | 不得回到默认 Core 安装面；不得恢复 `MockData` / `CapturedRequest` nested public field layout；不得把生产运行时能力写入 Core 文档 |
 | `QCNetworkConnectionPoolConfig.h` / `QCNetworkConnectionPoolManager.h` | config/statistics 使用 implicit-sharing 值类型 + accessor API；manager 使用 private data；内部 curl handle 协作位于 `_p.h` | 可在 Data 内新增字段并增加 accessor；不得恢复 public fields、`QMutex`、`QHash` 或内部 helper 到 public header |
 
 ## 3. 不属于安装面的 internal/private 头
@@ -136,7 +141,7 @@ QCurl 的 install surface 只有两个来源：
 - `cmake --install` 到 staging prefix 后，`<staging>/include/qcurl/` 的头文件集合必须与 `QCURL_INSTALL_HEADERS + QCurlConfig.h` **完全一致**。
 - 不允许多装 internal/private 头，也不允许漏装 manifest 中的 public 头。
 - `QCPimpl.h` 不得再出现在 staging include 目录或默认 manifest 中。
-- `QCURL_INSTALL_HEADERS_EXTRAS` 不进入这套默认 staging contract；若未来需要单独发布 Extras，必须建立独立 manifest 与 consumer gate，而不是混入当前 Core 包。
+- `QCURL_INSTALL_HEADERS_EXTRAS` 不进入默认 staging contract；Blocking Extras、Test Support 与 Other Extras 各自通过独立 manifest、install component、opt-in consumer smoke 和 default Core 负向 consumer gate 验证。
 
 ### 5.2 导出目标
 
@@ -148,7 +153,7 @@ QCurl 的 install surface 只有两个来源：
 ### 5.3 Consumer Smoke
 
 - 正向 consumer：独立工程只能通过 staging prefix 执行 `find_package(QCurl CONFIG REQUIRED)`，随后 include public headers 并链接 `QCurl::QCurl` 成功。
-- scheduler 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkRequestScheduler.h>`、`manager.scheduler()` / `schedulerOnOwnerThread()`、以及 `Config/LaneConfig` accessor API（禁止 direct field 依赖）。
+- 正向 Core consumer fixture 覆盖 `<QCNetworkRequestScheduler.h>`、owner-thread `manager.scheduler()`、以及 `Config/LaneConfig` accessor API（禁止 direct field 依赖）；不得覆盖或恢复 `schedulerOnOwnerThread()`。
 - logger 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkLogger.h>`、`NetworkLogEntry` accessor API、以及 `manager.setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()`。
 - cache policy 作为 Core type header 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCachePolicy.h>` 以及 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()`。
 - Cache lookup 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCache.h>`、`<QCNetworkMemoryCache.h>`、`<QCNetworkDiskCache.h>`、`QCNetworkCacheMetadata` accessor API、`lookup(url, QCNetworkCacheReadMode::FreshOnly)` 和 `QCNetworkCacheLookupResult` accessor API。
@@ -156,7 +161,8 @@ QCurl 的 install surface 只有两个来源：
 - default logger 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkDefaultLogger.h>`、`enableConsoleOutput(false)`、`setMinLogLevel()`、`entries()` 和 `manager.setLogger(&defaultLogger)`。
 - cancel token 作为 Core helper 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCancelToken.h>`、`attach(QCNetworkReply *)`、`attachMultiple(QList<QCNetworkReply *>)`、`setAutoTimeout()`、`cancel()` 和 `isCancelled()`。
 - Middleware base 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkMiddleware.h>`、继承 base class、`manager.addMiddleware()`、`middlewares()` 和 `removeMiddleware()`。
-- MockHandler 作为 Core Test Support 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkMockHandler.h>`、`QCNetworkCapturedRequest` accessor API、`recordRequest()`、`takeCapturedRequests()`、`mockResponse()` 和 manager mock handler 绑定。
+- Test Support opt-in consumer fixture 覆盖 `<QCNetworkMockHandler.h>`、`<QCNetworkTestSupport.h>`、`QCNetworkCapturedRequest` accessor API、`recordRequest()`、`takeCapturedRequests()`、`mockResponse()` 和 `QCurl::TestSupport` manager 绑定；default Core 负向 consumer 必须证明这些头不能隐式 include。
+- Other Extras opt-in consumer fixture 覆盖 `<QCNetworkDiagnostics.h>` 的最小 value/API 可见性；default Core 负向 consumer 必须证明 diagnostics 头不能隐式 include。
 - ConnectionPool 管理面作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkConnectionPoolConfig.h>`、`<QCNetworkConnectionPoolManager.h>`、config accessor API、manager `setConfig()` / `config()` 和 statistics accessor API。
 - 反向断言：独立 consumer 尝试 `#include <QCNetworkReply_p.h>` 或 `#include <QCNetworkConnectionPoolManager_p.h>` 必须编译失败。
 - consumer smoke 不允许回落到源码树 include path。
@@ -171,6 +177,7 @@ public header 边界的最低验收口径如下：
 其中：
 
 - `public-api`：逐头 self-compile + 规则扫描
-- `public-api-slow`：staging install、安装集合校验、导出合同校验、isolated consumer smoke
+- `qcurl_public_api_surface_manifest`：校验机器可读发布面清单与 CMake 生成的 Core / Extras manifest 对齐
+- `public-api-slow`：default Core staging install、安装集合校验、导出合同校验、isolated Core consumer smoke，以及 Blocking Extras / Test Support / Other Extras 的 opt-in install / consumer smoke 与 default Core 负向 consumer
 
 > 说明：CTest 的 label 参数是正则；为了避免 `public-api` 误匹配 `public-api-slow`，本仓库文档统一使用带锚点的写法。

@@ -34,6 +34,7 @@ function(_add_qcurl_test_impl test_name)
         PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_BINARY_DIR}/src
+            ${CMAKE_SOURCE_DIR}/tests/support
     )
 
     if(QT_REQUIRE_HTTPBIN
@@ -110,6 +111,12 @@ add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 target_compile_definitions(tst_CurlFeatureProbe PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test_with_preflight(
+    tst_QCBlockingNetworkClient
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCBlockingNetworkClient.cpp
+)
 
 add_executable(qcurl_http2_capability_probe qcurl_http2_capability_probe.cpp)
 target_link_libraries(qcurl_http2_capability_probe
@@ -140,10 +147,14 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkRetry.cpp
 ) # 重试机制测试
+target_compile_definitions(tst_QCNetworkRetry PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # 离线重试/限流门禁（MockHandler）
 add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp) # 离线门禁：响应头 unfold/原始头观测
+target_compile_definitions(tst_QCNetworkResponseHeadersOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsOffline.cpp) # 离线门禁：请求配置冲突可诊断（warnings）
+target_compile_definitions(tst_QCNetworkRequestWarningsOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkHttpErrorMappingOffline tst_QCNetworkHttpErrorMappingOffline.cpp) # 离线门禁：HTTP 错误映射与终态语义
+target_compile_definitions(tst_QCNetworkHttpErrorMappingOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(
     tst_QCNetworkHttp2
     REQUIRE_HTTP2_SUITE
@@ -248,10 +259,12 @@ add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp) # cookie
 add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp) # 取消令牌测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalFlowApi tst_QCNetworkRequestCanonicalFlowApi.cpp) # canonical API: request handoff/send flow 语义回归
 add_qcurl_test(tst_QCNetworkRequestPipeline tst_QCNetworkRequestPipeline.cpp) # internal D-lite: normalize/compile digest 白盒测试
+target_compile_definitions(tst_QCNetworkRequestPipeline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp) # Mock 工具测试
 
 # HTTP/3 支持测试
 add_qcurl_test(tst_QCNetworkHttp3 tst_QCNetworkHttp3.cpp) # HTTP/3 功能测试
+target_compile_definitions(tst_QCNetworkHttp3 PRIVATE QCURL_ENABLE_TEST_HOOKS)
 
 # 网络诊断工具测试
 add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # 网络诊断功能测试
@@ -307,6 +320,7 @@ add_qcurl_test(tst_LargeFileDownload tst_LargeFileDownload.cpp)
 set_tests_properties(tst_QCNetworkRequest PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkError PROPERTIES LABELS "offline")
 set_tests_properties(tst_CurlFeatureProbe PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCBlockingNetworkClient PROPERTIES LABELS "local_port")
 set_tests_properties(tst_QCNetworkRetryOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkResponseHeadersOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkRequestWarningsOffline PROPERTIES LABELS "offline")

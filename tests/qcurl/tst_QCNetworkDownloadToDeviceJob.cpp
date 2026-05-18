@@ -8,6 +8,7 @@
 #include "QCNetworkError.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestPriority.h"
@@ -110,7 +111,7 @@ struct SideEffectHarness
         , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
     {
         manager.addMiddleware(&middleware);
-        manager.setMockHandler(&mock);
+        QCurl::TestSupport::setMockHandler(manager, &mock);
     }
 
     void verifyNoSideEffectsSeen() const
@@ -338,7 +339,7 @@ void tst_QCNetworkDownloadToDeviceJob::managerThreadMismatchFailsBeforeReplyCrea
     CountingMiddleware middleware;
     QCNetworkMockHandler mock;
     manager->addMiddleware(&middleware);
-    manager->setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(*manager, &mock);
     manager->moveToThread(&workerThread);
 
     const QUrl url = testUrl(QStringLiteral("manager-thread"));
@@ -471,7 +472,7 @@ void tst_QCNetworkDownloadToDeviceJob::alreadyFinishedReplyFromMiddlewareStillFi
     const QUrl url = testUrl(QStringLiteral("already-finished-from-middleware"));
     configureOneShotMock(mock, url, QByteArrayLiteral("should-not-run"));
     manager.addMiddleware(&middleware);
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     QBuffer device;
     QVERIFY(device.open(QIODevice::ReadWrite));

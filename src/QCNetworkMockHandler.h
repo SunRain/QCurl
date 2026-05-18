@@ -99,7 +99,7 @@ private:
  * mock->mockError(HttpMethod::Get, url, NetworkError::ConnectionRefused);
  * mock->setGlobalDelay(100); // 100ms delay
  *
- * manager->setMockHandler(mock);
+ * TestSupport::setMockHandler(&manager, mock);
  *
  * // All requests will use mock responses
  * auto *reply = manager->sendGet(request);

@@ -8,6 +8,7 @@
 #include "test_wait_utils.h"
 
 #include <QAbstractEventDispatcher>
+#include <QFuture>
 #include <QHostAddress>
 #include <QPointer>
 #include <QScopeGuard>
@@ -65,6 +66,23 @@ bool waitForEventDispatcher(QThread *thread, int timeoutMs = 1000)
     return TestWaitUtils::waitUntil(
         [thread]() { return QAbstractEventDispatcher::instance(thread) != nullptr; },
         timeoutMs);
+}
+
+bool hasCookie(const QList<QNetworkCookie> &cookies, const QByteArray &name, const QByteArray &value)
+{
+    for (const QNetworkCookie &cookie : cookies) {
+        if (cookie.name() == name && cookie.value() == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void enableSharedCookies(QCNetworkAccessManager *manager)
+{
+    QCNetworkAccessManager::ShareHandleConfig config;
+    config.setShareCookies(true);
+    manager->setShareHandleConfig(config);
 }
 
 class DelayedHttpServer
@@ -142,7 +160,10 @@ private slots:
     void testCrossThreadSubmitAndCancel();
     void testNoEventLoopFailFast();
     void testCrossThreadCookiesApis();
+    void testCookieSignalAsyncBridge();
+    void testCookieQFutureAsyncBridge();
     void testRunningRequestCountDropsOnFinish();
+    void testCrossThreadSendFailsFast();
 };
 
 void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
@@ -186,30 +207,33 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
 
 void tst_QCNetworkActorThreadModel::testNoEventLoopFailFast()
 {
-    QThread noLoopThread;
+    struct Result
+    {
+        bool hasReply = false;
+        bool finished = false;
+        NetworkError error = NetworkError::Unknown;
+        QString errorString;
+    } result;
 
-    auto *manager = new QCNetworkAccessManager();
-    manager->moveToThread(&noLoopThread);
+    std::thread noLoopThread([&result]() {
+        QCNetworkAccessManager manager;
+        QCNetworkRequest request(QUrl(QStringLiteral("http://mock.local/no-event-loop")));
+        QCNetworkReply *reply = manager.sendGet(request);
+        result.hasReply = reply != nullptr;
+        if (!reply) {
+            return;
+        }
 
-    const QUrl url(QStringLiteral("http://mock.local/no-event-loop"));
-    QCNetworkRequest request(url);
+        result.finished = reply->isFinished();
+        result.error = reply->error();
+        result.errorString = reply->errorString();
+    });
+    noLoopThread.join();
 
-    QCNetworkReply *reply = manager->sendGet(request);
-    QVERIFY(reply != nullptr);
-    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
-    QVERIFY(reply->errorString().contains(QStringLiteral("事件循环")));
-
-    reply->deleteLater();
-
-    // noLoopThread 未启动时，deleteLater 不会执行；通过启动线程处理 deferred delete，再退出线程。
-    QObject::connect(manager,
-                     &QObject::destroyed,
-                     &noLoopThread,
-                     &QThread::quit,
-                     Qt::DirectConnection);
-    noLoopThread.start();
-    manager->deleteLater();
-    QVERIFY(noLoopThread.wait(3000));
+    QVERIFY(result.hasReply);
+    QVERIFY(result.finished);
+    QCOMPARE(result.error, NetworkError::InvalidRequest);
+    QVERIFY(result.errorString.contains(QStringLiteral("事件循环")));
 }
 
 void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
@@ -219,6 +243,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
     QVERIFY(waitForEventDispatcher(&actorThread));
 
     auto *manager = new QCNetworkAccessManager();
+    enableSharedCookies(manager);
     manager->moveToThread(&actorThread);
     const auto cleanup = qScopeGuard([&]() {
         manager->deleteLater();
@@ -227,15 +252,113 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
     });
 
     QString error;
+    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("123"));
+    QVERIFY(!manager->importCookies({sid}, QUrl(QStringLiteral("http://example.local")), &error));
+    QVERIFY(error.contains(QStringLiteral("owner")));
+
+    error.clear();
     const auto cookies = manager->exportCookies(QUrl(QStringLiteral("http://example.local")),
                                                 &error);
     QVERIFY(!cookies.has_value());
-    QVERIFY(!error.isEmpty());
+    QVERIFY(error.contains(QStringLiteral("owner")));
 
     error.clear();
     QVERIFY(!manager->clearAllCookies(&error));
-    QVERIFY(!error.isEmpty());
+    QVERIFY(error.contains(QStringLiteral("owner")));
+}
 
+void tst_QCNetworkActorThreadModel::testCookieSignalAsyncBridge()
+{
+    qRegisterMetaType<QCurl::QCCookieOperationResult>();
+    qRegisterMetaType<QCurl::QCCookieExportResult>();
+
+    QThread actorThread;
+    actorThread.start();
+    QVERIFY(waitForEventDispatcher(&actorThread));
+
+    auto *manager = new QCNetworkAccessManager();
+    enableSharedCookies(manager);
+    manager->moveToThread(&actorThread);
+    const auto cleanup = qScopeGuard([&]() {
+        manager->deleteLater();
+        actorThread.quit();
+        actorThread.wait();
+    });
+
+    QCCookieOperationResult importResult;
+    bool importSignalReceived = false;
+    QObject::connect(manager,
+                     &QCNetworkAccessManager::cookiesImported,
+                     this,
+                     [&](const QCCookieOperationResult &result) {
+                         importResult = result;
+                         importSignalReceived = true;
+                     });
+
+    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("signal"));
+    auto importFuture =
+        manager->importCookiesAsync({sid}, QUrl(QStringLiteral("http://example.local")));
+    QTRY_VERIFY_WITH_TIMEOUT(importSignalReceived, 1500);
+    QVERIFY(importResult.isSuccess());
+    QVERIFY(importResult.error().isEmpty());
+    importFuture.waitForFinished();
+    QVERIFY(importFuture.result().isSuccess());
+
+    QCCookieExportResult exportResult;
+    bool exportSignalReceived = false;
+    QObject::connect(manager,
+                     &QCNetworkAccessManager::cookiesExported,
+                     this,
+                     [&](const QCCookieExportResult &result) {
+                         exportResult = result;
+                         exportSignalReceived = true;
+                     });
+
+    auto exportFuture = manager->exportCookiesAsync(QUrl(QStringLiteral("http://example.local/")));
+    QTRY_VERIFY_WITH_TIMEOUT(exportSignalReceived, 1500);
+    QVERIFY(exportResult.isSuccess());
+    QVERIFY(exportResult.error().isEmpty());
+    QVERIFY(hasCookie(exportResult.cookies(), QByteArrayLiteral("sid"), QByteArrayLiteral("signal")));
+    exportFuture.waitForFinished();
+    QVERIFY(exportFuture.result().isSuccess());
+}
+
+void tst_QCNetworkActorThreadModel::testCookieQFutureAsyncBridge()
+{
+    QThread actorThread;
+    actorThread.start();
+    QVERIFY(waitForEventDispatcher(&actorThread));
+
+    auto *manager = new QCNetworkAccessManager();
+    enableSharedCookies(manager);
+    manager->moveToThread(&actorThread);
+    const auto cleanup = qScopeGuard([&]() {
+        manager->deleteLater();
+        actorThread.quit();
+        actorThread.wait();
+    });
+
+    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("future"));
+    auto importFuture =
+        manager->importCookiesAsync({sid}, QUrl(QStringLiteral("http://example.local")));
+    importFuture.waitForFinished();
+    QVERIFY(importFuture.result().isSuccess());
+
+    auto exportFuture = manager->exportCookiesAsync(QUrl(QStringLiteral("http://example.local/")));
+    exportFuture.waitForFinished();
+    const auto exportResult = exportFuture.result();
+    QVERIFY(exportResult.isSuccess());
+    QVERIFY(exportResult.error().isEmpty());
+    QVERIFY(hasCookie(exportResult.cookies(), QByteArrayLiteral("sid"), QByteArrayLiteral("future")));
+
+    auto clearFuture = manager->clearAllCookiesAsync();
+    clearFuture.waitForFinished();
+    QVERIFY(clearFuture.result().isSuccess());
+
+    auto emptyFuture = manager->exportCookiesAsync(QUrl(QStringLiteral("http://example.local/")));
+    emptyFuture.waitForFinished();
+    QVERIFY(emptyFuture.result().isSuccess());
+    QVERIFY(emptyFuture.result().cookies().isEmpty());
 }
 
 void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
@@ -258,7 +381,7 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
                             .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/finish-count")));
-    QCNetworkReply *reply = manager->sendGet(request);
+    QCNetworkReply *reply = sendGetOnOwnerThread(manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->thread(), &actorThread);
 
@@ -273,6 +396,33 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
 
     reply->deleteLater();
     server.stop();
+}
+
+void tst_QCNetworkActorThreadModel::testCrossThreadSendFailsFast()
+{
+    QThread actorThread;
+    actorThread.start();
+    QVERIFY(waitForEventDispatcher(&actorThread));
+
+    auto *manager = new QCNetworkAccessManager();
+    manager->moveToThread(&actorThread);
+    const auto cleanup = qScopeGuard([&]() {
+        manager->deleteLater();
+        actorThread.quit();
+        actorThread.wait();
+    });
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://example.local/cross-thread")));
+    QCNetworkReply *reply = manager->sendGet(request);
+    QVERIFY(reply != nullptr);
+    QCOMPARE(reply->thread(), QThread::currentThread());
+    QCOMPARE(reply->parent(), nullptr);
+    QVERIFY(reply->isFinished());
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(QStringLiteral("owner")));
+    QVERIFY(reply->errorString().contains(QStringLiteral("Blocking Extras")));
+
+    reply->deleteLater();
 }
 
 QTEST_MAIN(tst_QCNetworkActorThreadModel)

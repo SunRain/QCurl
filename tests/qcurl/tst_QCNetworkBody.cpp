@@ -6,6 +6,7 @@
 #include "QCNetworkBody.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 
@@ -123,7 +124,7 @@ void TestQCNetworkBody::testManagerBodyOverloadsSetContentTypeWhenMissing()
     QCNetworkMockHandler mock;
     mock.setCaptureEnabled(true);
     mock.setCaptureBodyPreviewLimit(256);
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl postUrl(QStringLiteral("http://body.test/post"));
     const QUrl putUrl(QStringLiteral("http://body.test/put"));
@@ -166,7 +167,7 @@ void TestQCNetworkBody::testManagerBodyOverloadsRespectExplicitContentType()
     QCNetworkMockHandler mock;
     mock.setCaptureEnabled(true);
     mock.setCaptureBodyPreviewLimit(256);
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url(QStringLiteral("http://body.test/explicit"));
     mock.mockResponse(HttpMethod::Patch, url, QByteArrayLiteral("ok"));

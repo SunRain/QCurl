@@ -356,19 +356,16 @@ telemetryReq.setLane(QStringLiteral("Background"))
 - 某条 lane 是否被饿住了
 - 某个批量取消操作是否真的取消到了目标请求
 
-### 8.5 `scheduler()` 现在是 owner-thread only；跨线程请显式取 owner scheduler
-
-这一点在 3.x 很关键。
+### 8.5 `scheduler()` 是 owner-thread only；跨线程请投递配置动作
 
 `QCNetworkAccessManager::scheduler()` 只允许在 **manager owner thread** 上调用。
-它返回的是 owner thread 当前使用的 thread-local scheduler，但**不会**在跨线程场景下
-偷偷帮你创建“调用线程自己的 scheduler”。
+它返回 owner thread 当前使用的 thread-local scheduler，不会在跨线程场景下偷偷创建调用线程自己的 scheduler。
 
 因此：
 
-- 你必须在 **manager owner thread** 上获取并配置 scheduler
-- 如果在别的线程里调用 `manager.scheduler()`，现在会 warning + fail-closed 返回 `nullptr`
-- 如果你确实需要从别的线程拿到 owner-thread scheduler，请调用 `manager.schedulerOnOwnerThread()`
+- 必须在 **manager owner thread** 上获取并配置 scheduler。
+- 在别的线程调用 `manager.scheduler()` 会 warning + fail-closed 返回 `nullptr`。
+- Core 不提供透明跨线程阻塞 getter；需要跨线程配置时，把“配置动作”显式投递到 manager owner thread。
 
 推荐做法：
 
@@ -381,36 +378,7 @@ scheduler->setConfig(...);
 scheduler->setLaneConfig(QStringLiteral("Control"), ...);
 ```
 
-跨线程场景请显式使用：
-
-```cpp
-auto *scheduler = manager->schedulerOnOwnerThread();
-if (!scheduler) {
-    return;
-}
-
-scheduler->setLaneConfig(QStringLiteral("Control"), ...);
-```
-
-`schedulerOnOwnerThread()` 的前置条件需要再强调一次：
-
-- 它返回的是 **owner-thread 实际使用的 scheduler**
-- 但前提是 **owner thread 已具备 Qt event dispatcher**
-- 这个前置条件对 **same-thread** 和 **cross-thread** 调用都成立
-
-也就是说，即使你已经在 owner thread 里，如果此时线程还没有安装
-`QAbstractEventDispatcher`，这个接口仍会 fail-closed 返回 `nullptr`。
-
-另外，`schedulerOnOwnerThread()` 在跨线程调用时使用 `BlockingQueuedConnection`，
-因此可能阻塞（甚至存在死锁风险）；若跨线程 marshal 失败，同样会返回 `nullptr`。
-
-⚠️ 使用建议（避免卡 UI / 避免死锁）：
-
-- 避免在**持锁状态**、**析构函数**、以及 UI/主线程的**高频热路径**中调用该接口。
-- 推荐在 **owner thread 初始化阶段**完成 scheduler 的获取与配置；需要跨线程配置时，
-  优先把“配置动作”marshal 到 owner thread 执行，而不是在任意线程同步取回 scheduler 指针。
-
-示例（把配置 marshal 到 owner thread 执行）：
+跨线程配置示例：
 
 ```cpp
 QMetaObject::invokeMethod(
@@ -420,12 +388,16 @@ QMetaObject::invokeMethod(
         if (!scheduler) {
             return;
         }
-
-        scheduler->setConfig(...);
         scheduler->setLaneConfig(QStringLiteral("Control"), ...);
     },
     Qt::QueuedConnection);
 ```
+
+使用建议：
+
+- 避免在持锁状态、析构函数、以及 UI/主线程高频热路径里等待跨线程结果。
+- 在 owner thread 初始化阶段完成 scheduler 的获取与配置。
+- 跨线程场景优先传递配置命令，而不是同步取回 scheduler 指针。
 
 ## 9. 一些实用建议
 
@@ -439,44 +411,19 @@ QMetaObject::invokeMethod(
   - `Control` 是否配置了保底名额
   - 是否把太多不重要的请求也放进了高优先级
 
-## 10. 迁移提醒
+## 10. 使用注意
 
-如果你从 QCurl 2.x / 早期 3.x 代码迁移，需要特别注意下面几件事：
-
-- 调度器信号现在都带 `lane` 和 `hostKey`
-- `hostKey` 的格式固定为 `scheme://host:effectivePort`
-  - `http/https/ws/wss` 会补默认端口
-  - IPv6 会写成 `scheme://[v6]:port`
-  - 未知 scheme 且 URL 没显式端口时，`effectivePort` 固定为 `0`，不会再出现 `:-1`
-- `deferPendingRequest()` / `undeferRequest()` 只表达调度层“先别启动/重新入队”，不表达传输级 pause/resume
-- `QCNetworkAccessManager::scheduler()` 现在是 owner-thread only；跨线程误用会 warning + 返回 `nullptr`
-- 需要跨线程拿到 owner scheduler 时，请改用 `QCNetworkAccessManager::schedulerOnOwnerThread()`
-- `requestAboutToStart` 明确表示“即将调用 `reply->execute()`（最后可拦截点）”
-- `requestStarted` 明确表示“已完成 `reply->execute()` 调用（启动提交点）”
-- 异步 scheduler / reply 依赖 owner thread 的 Qt 事件循环；如果线程退出或事件循环停止，
-  先前排队的 queued invoke 不再保证送达
-
-例如：
-
-```cpp
-QObject::connect(scheduler,
-                 &QCurl::QCNetworkRequestScheduler::requestStarted,
-                 this,
-                 [](QCurl::QCNetworkReply *reply,
-                    const QString &lane,
-                    const QString &hostKey) {
-                     qDebug() << "started:" << reply << lane << hostKey;
-                 });
-
-QObject::connect(scheduler,
-                 &QCurl::QCNetworkRequestScheduler::requestAboutToStart,
-                 this,
-                 [](QCurl::QCNetworkReply *reply,
-                    const QString &lane,
-                    const QString &hostKey) {
-                     qDebug() << "about-to-start:" << reply << lane << hostKey;
-                 });
-```
+- 调度器信号带 `lane` 和 `hostKey`。
+- `hostKey` 的格式固定为 `scheme://host:effectivePort`。
+  - `http/https/ws/wss` 会补默认端口。
+  - IPv6 会写成 `scheme://[v6]:port`。
+  - 未知 scheme 且 URL 没显式端口时，`effectivePort` 固定为 `0`。
+- `deferPendingRequest()` / `undeferRequest()` 只表达调度层“先别启动/重新入队”，不表达传输级 pause/resume。
+- `QCNetworkAccessManager::scheduler()` 是 owner-thread only；跨线程误用会 warning + 返回 `nullptr`。
+- 跨线程配置 scheduler 时，把配置动作投递到 owner thread 执行。
+- `requestAboutToStart` 表示“即将调用 `reply->execute()`（最后可拦截点）”。
+- `requestStarted` 表示“已完成 `reply->execute()` 调用（启动提交点）”。
+- 异步 scheduler / reply 依赖 owner thread 的 Qt 事件循环；如果线程退出或事件循环停止，先前排队的 queued invoke 不再保证送达。
 
 ## 11. 相关文档
 

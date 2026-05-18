@@ -2,17 +2,22 @@
 
 set(QCURL_CORE_SOURCES
     CurlGlobalConstructor.cpp
+    QCBlockingCookieStore.cpp
+    QCCookieAsyncResult.cpp
     QCNetworkAccessManager.cpp
     QCNetworkAccessManagerConfig.cpp
     QCNetworkAccessManagerCookies.cpp
     QCNetworkAccessManagerSend.cpp
     QCNetworkAccessManagerServices.cpp
+    QCNetworkTestSupport.cpp
     QCNetworkRequest.cpp
     QCUtility.cpp
 )
 
 set(QCURL_CORE_HEADERS
     private/CurlGlobalConstructor_p.h
+    QCBlockingCookieStore.h
+    QCCookieAsyncResult.h
     QCNetworkAccessManager.h
     QCNetworkAccessManager_p.h
     QCNetworkRequest.h
@@ -21,9 +26,33 @@ set(QCURL_CORE_HEADERS
 )
 
 set(QCURL_FEATURE_SOURCES
+    QCBlockingNetworkClient.cpp
+    QCBlockingNetworkResult.cpp
+    private/QCBlockingCurlAdapter.cpp
+    private/QCBlockingRequestBody.cpp
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
     private/QCRequestPipeline.cpp
+    private/QCNetworkReplyBodySource.cpp
+    private/QCNetworkReplyCallbacks.cpp
+    private/QCNetworkReplyFlowControl.cpp
+    private/QCNetworkReplyResponse.cpp
+    private/QCNetworkReplyRuntime.cpp
+    private/QCNetworkReplyCurlOptions.cpp
+    private/QCNetworkReplyExecution.cpp
+    private/QCNetworkReplyState.cpp
+    private/QCNetworkReplyControls.cpp
+    private/QCNetworkReplyAccessors.cpp
+    private/QCNetworkRequestSchedulerQueue.cpp
+    private/QCNetworkRequestSchedulerLanePolicy.cpp
+    private/QCNetworkRequestSchedulerDispatch.cpp
+    private/QCNetworkRequestSchedulerPrivate.cpp
+    private/QCNetworkRequestSchedulerValues.cpp
+    private/QCNetworkRequestSchedulerControl.cpp
+    private/QCNetworkRequestSchedulerQueries.cpp
+    private/QCNetworkRequestSchedulerLifecycle.cpp
+    private/QCNetworkRequestSchedulerConfig.cpp
+    private/QCNetworkRequestSchedulerFinalize.cpp
     private/QCSingleFileMultipartBodyDevice.cpp
     QCNetworkBody.cpp
     QCNetworkMultipartBody.cpp
@@ -34,6 +63,12 @@ set(QCURL_FEATURE_SOURCES
     QCNetworkError.cpp
     QCNetworkReply.cpp
     QCCurlMultiManager.cpp
+    private/QCCurlMultiManagerLimits.cpp
+    private/QCCurlMultiManagerEventDriver.cpp
+    private/QCCurlMultiManagerShare.cpp
+    private/QCCurlMultiManagerShareLifecycle.cpp
+    private/QCCurlMultiManagerCookieContext.cpp
+    private/QCCurlMultiManagerCookies.cpp
     QCNetworkRetryPolicy.cpp
     QCNetworkRequestPriorityMetaTypeBootstrap.cpp
     QCNetworkRequestScheduler.cpp   # v2.6.0: 请求优先级调度
@@ -60,9 +95,21 @@ set(QCURL_FEATURE_SOURCES
 
 set(QCURL_FEATURE_HEADERS
     QCGlobal.h
+    QCBlockingNetworkClient.h
+    QCBlockingNetworkResult.h
+    private/QCBlockingCurlAdapter_p.h
+    private/QCBlockingRequestBody_p.h
     QCCurlHandleManager.h
     CurlFeatureProbe.h
     private/QCMultipartHeaderEncoding_p.h
+    private/QCNetworkReplyBodySource_p.h
+    private/QCNetworkReplyCallbacks_p.h
+    private/QCNetworkReplyFlowControl_p.h
+    private/QCNetworkReplyResponse_p.h
+    private/QCNetworkReplyRuntime_p.h
+    private/QCNetworkRequestSchedulerQueue_p.h
+    private/QCNetworkRequestSchedulerDispatch_p.h
+    private/QCNetworkRequestSchedulerPrivate_p.h
     private/QCSingleFileMultipartBodyDevice.h
     QCNetworkBody.h
     QCNetworkMultipartBody.h
@@ -95,6 +142,7 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkDownloadToDeviceJob.h
     QCNetworkResumableDownloadJob.h
     QCNetworkMockHandler.h          # v2.16.0: Mock 工具
+    QCNetworkTestSupport.h          # Test Support 显式 manager 绑定
     QCNetworkMockHandler_p.h        # v2.16.0: Mock 内部 companion（内部）
     private/QCNetworkResumableDownloadWriter_p.h
     QCNetworkDiagnostics.h          # v2.19.0: 网络诊断工具
@@ -137,6 +185,7 @@ set(QCURL_ALL_HEADERS ${QCURL_CORE_HEADERS} ${QCURL_FEATURE_HEADERS})
 # - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入默认安装面
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
+    QCCookieAsyncResult.h
     QCNetworkAccessManager.h
     QCNetworkRequest.h
     QCNetworkSslConfig.h
@@ -165,13 +214,32 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkConnectionPoolConfig.h
     QCNetworkConnectionPoolManager.h
     QCNetworkMiddleware.h
-    QCNetworkMockHandler.h
 )
 
 # 非默认 Extras：
 # - 用于源码树示例、可选发行包或后续独立 package
 # - 不参与默认 install surface / public-api / consumer smoke 合同
 set(QCURL_INSTALL_HEADERS_EXTRAS
+    QCBlockingCookieStore.h
+    QCBlockingNetworkClient.h
+    QCBlockingNetworkResult.h
+    QCNetworkDiagnostics.h
+    QCNetworkMockHandler.h
+    QCNetworkTestSupport.h
+)
+
+set(QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS
+    QCBlockingCookieStore.h
+    QCBlockingNetworkClient.h
+    QCBlockingNetworkResult.h
+)
+
+set(QCURL_INSTALL_HEADERS_TEST_SUPPORT
+    QCNetworkMockHandler.h
+    QCNetworkTestSupport.h
+)
+
+set(QCURL_INSTALL_HEADERS_OTHER_EXTRAS
     QCNetworkDiagnostics.h
 )
 
@@ -182,10 +250,19 @@ if(QCURL_WEBSOCKET_SUPPORT)
         QCWebSocketPool.h
         QCWebSocketCompressionConfig.h
     )
+    list(APPEND QCURL_INSTALL_HEADERS_OTHER_EXTRAS
+        QCWebSocket.h
+        QCWebSocketReconnectPolicy.h
+        QCWebSocketPool.h
+        QCWebSocketCompressionConfig.h
+    )
 endif()
 
 set(QCURL_INSTALL_HEADERS "${QCURL_INSTALL_HEADERS}" PARENT_SCOPE)
 set(QCURL_INSTALL_HEADERS_EXTRAS "${QCURL_INSTALL_HEADERS_EXTRAS}" PARENT_SCOPE)
+set(QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS "${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}" PARENT_SCOPE)
+set(QCURL_INSTALL_HEADERS_TEST_SUPPORT "${QCURL_INSTALL_HEADERS_TEST_SUPPORT}" PARENT_SCOPE)
+set(QCURL_INSTALL_HEADERS_OTHER_EXTRAS "${QCURL_INSTALL_HEADERS_OTHER_EXTRAS}" PARENT_SCOPE)
 set(QCURL_GENERATED_CONFIG_HEADER "${CMAKE_BINARY_DIR}/src/QCurlConfig.h" PARENT_SCOPE)
 
 # 创建 QCurl 共享库
@@ -257,6 +334,18 @@ endif()
 install(FILES ${QCURL_INSTALL_HEADERS}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
         COMPONENT Development)
+
+install(FILES ${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+        COMPONENT BlockingExtrasDevelopment)
+
+install(FILES ${QCURL_INSTALL_HEADERS_TEST_SUPPORT}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+        COMPONENT TestSupportDevelopment)
+
+install(FILES ${QCURL_INSTALL_HEADERS_OTHER_EXTRAS}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+        COMPONENT OtherExtrasDevelopment)
 
 # 安装配置头文件
 install(FILES ${CMAKE_BINARY_DIR}/src/QCurlConfig.h

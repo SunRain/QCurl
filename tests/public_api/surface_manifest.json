@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "layers": [
+    "Core",
+    "Blocking Extras",
+    "Other Extras",
+    "Test Support",
+    "Internal"
+  ],
+  "headers": [
+    {
+      "path": "QCGlobal.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Export macros and shared API constants used by all public QCurl headers."
+    },
+    {
+      "path": "QCNetworkAccessManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Primary asynchronous manager surface; blocking and test-support members are scheduled for extraction."
+    },
+    {
+      "path": "QCCookieAsyncResult.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "extractionTask": "T5",
+      "rationale": "Value-result payload for QCNetworkAccessManager cookie signal and QFuture async bridge."
+    },
+    {
+      "path": "QCNetworkRequest.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Stable request value object used by the async Core path."
+    },
+    {
+      "path": "QCNetworkSslConfig.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core TLS request configuration value object."
+    },
+    {
+      "path": "QCNetworkProxyConfig.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core proxy request configuration value object."
+    },
+    {
+      "path": "QCNetworkTimeoutConfig.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core timeout request configuration value object."
+    },
+    {
+      "path": "QCNetworkHttpMethod.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core HTTP method enum type."
+    },
+    {
+      "path": "QCNetworkHttpVersion.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core HTTP version enum type without libcurl leakage."
+    },
+    {
+      "path": "QCNetworkError.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core observable network error enum and helpers."
+    },
+    {
+      "path": "QCNetworkReply.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Asynchronous QObject reply surface for Core requests."
+    },
+    {
+      "path": "QCNetworkRetryPolicy.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core retry policy value object."
+    },
+    {
+      "path": "QCNetworkRequestPriority.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core request priority enum type used by request configuration."
+    },
+    {
+      "path": "QCNetworkRequestScheduler.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core lane/priority scheduler control surface; T7 removed transparent owner-thread blocking getter and cross-thread stable introspection."
+    },
+    {
+      "path": "QCNetworkCachePolicy.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core cache policy enum type referenced by QCNetworkRequest."
+    },
+    {
+      "path": "QCNetworkCache.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core cache interface and lookup result value types."
+    },
+    {
+      "path": "QCNetworkMemoryCache.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core in-memory cache implementation with private data and public cache interface."
+    },
+    {
+      "path": "QCNetworkDiskCache.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core disk cache implementation with private data and public cache interface."
+    },
+    {
+      "path": "QCMultipartFormData.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core multipart builder value type."
+    },
+    {
+      "path": "QCNetworkBody.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core immutable body helper for async send APIs."
+    },
+    {
+      "path": "QCNetworkMultipartBody.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core multipart body helper for async send APIs."
+    },
+    {
+      "path": "QCNetworkTransferJob.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core transfer job base with connect-before-start semantics."
+    },
+    {
+      "path": "QCNetworkDownloadToDeviceJob.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core download-to-device job wrapper for async transfer."
+    },
+    {
+      "path": "QCNetworkResumableDownloadJob.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core resumable download job wrapper for async transfer."
+    },
+    {
+      "path": "QCNetworkLogger.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core logging interface referenced by QCNetworkAccessManager."
+    },
+    {
+      "path": "QCNetworkDefaultLogger.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core default logger helper with private data."
+    },
+    {
+      "path": "QCNetworkCancelToken.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core reply-level cancellation helper."
+    },
+    {
+      "path": "QCNetworkConnectionPoolConfig.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core connection pool config value type."
+    },
+    {
+      "path": "QCNetworkConnectionPoolManager.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core connection pool management surface with private implementation helpers."
+    },
+    {
+      "path": "QCNetworkMiddleware.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core middleware base contract."
+    },
+    {
+      "path": "QCNetworkMockHandler.h",
+      "layer": "Test Support",
+      "currentInstall": "test-support",
+      "targetInstall": "test-support",
+      "extractionTask": "T8",
+      "rationale": "Mock and request capture APIs are explicit Test Support, not production runtime Core."
+    },
+    {
+      "path": "QCNetworkTestSupport.h",
+      "layer": "Test Support",
+      "currentInstall": "test-support",
+      "targetInstall": "test-support",
+      "extractionTask": "T8",
+      "rationale": "Explicit Test Support manager binding for mock handler injection; default Core does not install it."
+    },
+    {
+      "path": "QCNetworkDiagnostics.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "Diagnostics is an opt-in capability outside default Core."
+    },
+    {
+      "path": "QCWebSocket.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "WebSocket support is conditional and outside default Core."
+    },
+    {
+      "path": "QCWebSocketReconnectPolicy.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "WebSocket reconnect policy belongs to the conditional WebSocket Extras surface."
+    },
+    {
+      "path": "QCWebSocketPool.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "WebSocket pool belongs to the conditional WebSocket Extras surface."
+    },
+    {
+      "path": "QCWebSocketCompressionConfig.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "WebSocket compression config belongs to the conditional WebSocket Extras surface."
+    },
+    {
+      "path": "QCBlockingCookieStore.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "blocking-extras",
+      "targetInstall": "blocking-extras",
+      "extractionTask": "T6",
+      "rationale": "Snapshot and delta value types for Blocking Extras cookie boundary."
+    },
+    {
+      "path": "QCBlockingNetworkClient.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "blocking-extras",
+      "targetInstall": "blocking-extras",
+      "extractionTask": "T2",
+      "rationale": "Value-result synchronous utility entry point CLI, tests and worker-thread callers."
+    },
+    {
+      "path": "QCBlockingNetworkResult.h",
+      "layer": "Blocking Extras",
+      "currentInstall": "blocking-extras",
+      "targetInstall": "blocking-extras",
+      "extractionTask": "T2",
+      "rationale": "Non-QObject result type for Blocking Extras."
+    }
+  ],
+  "plannedHeaders": [],
+  "symbolExtractions": []
+}

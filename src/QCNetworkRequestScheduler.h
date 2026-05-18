@@ -50,8 +50,9 @@ class QCNetworkRequestSchedulerLaneConfigData;
  * - scheduler / `QCNetworkReply` / `QCCurlMultiManager` 必须处于同一 owner thread。
  * - 异步请求要求 owner thread 具备 Qt 事件循环；当 owner thread 事件循环停止或线程退出时，
  *   先前排队的 queued invoke / 信号投递不再保证可达。
- * - 从非 owner thread 调用 scheduler API 时，库会统一 marshal 回 scheduler owner thread：
- *   返回值型接口使用 BlockingQueuedConnection，fire-and-forget 接口使用 QueuedConnection。
+ * - 返回值型查询接口必须在 scheduler owner thread 调用；从非 owner thread 调用会
+ *   fail-closed 返回默认值。
+ * - fire-and-forget 控制接口从非 owner thread 调用时会排队回 scheduler owner thread。
  * - 本类信号始终在 scheduler owner thread 发射，不会漂移到调用线程。
  *
  * @note 所有公共方法都使用互斥锁保护

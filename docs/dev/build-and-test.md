@@ -240,7 +240,7 @@ python3 scripts/run_uce_sanitizers.py --profile tsan \
 - `asan-ubsan-lsan` profile 会单独配置 sanitizer build，并调用 `run_uce_gate.py --tier nightly`
 - `tsan` profile 只运行线程相关子集：`tst_QCNetworkReply`、`tst_QCNetworkScheduler`、`tst_QCNetworkConnectionPool`
 
-## 9. basic-no-problem 归档门禁（legacy acceptance）
+## 9. basic-no-problem 归档门禁（historical acceptance）
 
 当需要生成一套可归档、可复核的最低验收工件时，使用：
 

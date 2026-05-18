@@ -19,6 +19,7 @@
 
 #include "QCCurlHandleManager.h"
 #include "QCNetworkReply.h"
+#include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "qbytedata_p.h"
 
@@ -237,22 +238,14 @@ public:
     // 流式上传（M2）
     // ==================
 
-    QPointer<QIODevice> requestBodyDevice; ///< 请求体设备来源（所有权不在 Reply）
-    qint64 requestBodyBasePos = 0;     ///< 首次执行时记录的起始位置（支持非 0 起点）
-    qint64 requestBodySizeBytes = -1;  ///< 约定：-1 表示未知/未设置
-    qint64 requestBodyBytesRead = 0;   ///< 已从请求体设备读取的字节数（相对 basePos）
-    bool requestBodySeekable = false;  ///< 请求体设备是否可 seek（用于重发 body）
-
-    bool hasRequestBodyErrorOverride          = false;
-    NetworkError requestBodyErrorOverrideCode = NetworkError::NoError;
-    QString requestBodyErrorOverrideMessage;
+    Internal::ReplyBodySourceState requestBodySource; ///< 请求体设备来源与 curl 回调状态
     std::function<std::optional<QString>()> beforeFinishTransition;
 
     // ==================
     // 内部方法
     // ==================
 
-    [[nodiscard]] int desiredPauseMask() const { return userPauseMask | internalPauseMask; }
+    [[nodiscard]] int desiredPauseMask() const;
 
     bool applyPauseMask(int desiredMask);
     void setBackpressureActive(bool active);

@@ -3,10 +3,12 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestPriority.h"
+#include "private/QCRequestPipeline_p.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -26,11 +28,14 @@ private slots:
     void cleanup();
 
     void testSendGetAndSchedulerShareDigest();
-    void testAsyncAndSyncPostShareDigest();
+    void testAsyncAndCompiledPostShareDigest();
     void testDigestIgnoresRuntimeBodySource();
 
 private:
     QByteArray planDigest(QCNetworkReply *reply) const;
+    QByteArray compiledPlanDigest(const QCNetworkRequest &request,
+                                  HttpMethod method,
+                                  const QByteArray &body) const;
 
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkMockHandler m_mock;
@@ -45,7 +50,7 @@ void TestQCNetworkRequestPipeline::init()
     m_mock.clearCapturedRequests();
     m_mock.setCaptureEnabled(true);
     m_mock.setGlobalDelay(0);
-    m_manager->setMockHandler(&m_mock);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
 }
 
 void TestQCNetworkRequestPipeline::cleanup()
@@ -70,6 +75,16 @@ QByteArray TestQCNetworkRequestPipeline::planDigest(QCNetworkReply *reply) const
         return QByteArray();
     }
     return digest;
+}
+
+QByteArray TestQCNetworkRequestPipeline::compiledPlanDigest(const QCNetworkRequest &request,
+                                                           HttpMethod method,
+                                                           const QByteArray &body) const
+{
+    const auto requestBody = body.isEmpty() ? Internal::makeEmptyRequestBody()
+                                            : Internal::makeInlineRequestBody(body);
+    const auto normalized = Internal::normalizeRequest(request, method, ExecutionMode::Sync, requestBody);
+    return Internal::buildCurlPlanDigestForTest(Internal::compileRequest(normalized));
 }
 
 void TestQCNetworkRequestPipeline::testSendGetAndSchedulerShareDigest()
@@ -100,12 +115,11 @@ void TestQCNetworkRequestPipeline::testSendGetAndSchedulerShareDigest()
     scheduledReply->deleteLater();
 }
 
-void TestQCNetworkRequestPipeline::testAsyncAndSyncPostShareDigest()
+void TestQCNetworkRequestPipeline::testAsyncAndCompiledPostShareDigest()
 {
     const QUrl url("http://example.com/pipeline-post");
     const QByteArray body(R"({"hello":"world"})");
     m_mock.enqueueResponse(HttpMethod::Post, url, QByteArray("ASYNC"));
-    m_mock.enqueueResponse(HttpMethod::Post, url, QByteArray("SYNC"));
 
     QCNetworkRequest request(url);
     request.setRawHeader("Content-Type", "application/json")
@@ -118,12 +132,8 @@ void TestQCNetworkRequestPipeline::testAsyncAndSyncPostShareDigest()
     QCOMPARE(asyncReply->error(), NetworkError::NoError);
     asyncReply->deleteLater();
 
-    auto *syncReply = m_manager->sendPostSync(request, body);
-    const QByteArray syncDigest = planDigest(syncReply);
+    const QByteArray syncDigest = compiledPlanDigest(request, HttpMethod::Post, body);
     QCOMPARE(syncDigest, asyncDigest);
-    QVERIFY(syncReply->isFinished());
-    QCOMPARE(syncReply->error(), NetworkError::NoError);
-    syncReply->deleteLater();
 }
 
 void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()

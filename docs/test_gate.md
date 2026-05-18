@@ -10,7 +10,7 @@
   - `nightly`：在 `pr` 基础上补齐 DCI fixed seed、CTBP、HES 扩展、BP（backpressure）与 netproof/strace
   - `soak`：沿用 nightly contract，并放大固定 seed 组与长跑时长
 - `scripts/run_basic_no_problem_gate.py`
-  - 仍保留为 legacy acceptance gate；在 UCE 完整接管 acceptance 归档前继续作为并行入口
+  - 仍保留为 historical acceptance gate；在 UCE 完整接管 acceptance 归档前继续作为并行入口
 - `tests/libcurl_consistency/run_gate.py`
   - 仍保留为专题 provider；UCE 复用其 evidence，不替换其专题 contract
 

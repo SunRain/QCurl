@@ -3,6 +3,7 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCMultipartFormData.h"
@@ -73,7 +74,7 @@ void TestQCNetworkRequestCanonicalFlowApi::init()
     m_mock.clearCapturedRequests();
     m_mock.setCaptureEnabled(true);
     m_mock.setGlobalDelay(0);
-    m_manager->setMockHandler(&m_mock);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
 }
 
 void TestQCNetworkRequestCanonicalFlowApi::cleanup()

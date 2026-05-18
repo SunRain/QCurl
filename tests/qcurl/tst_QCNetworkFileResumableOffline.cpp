@@ -7,6 +7,7 @@
 #include "QCNetworkCache.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkRequestScheduler.h"
 #include "QCNetworkResumableDownloadJob.h"
 #include "QCNetworkReply.h"
@@ -512,7 +513,7 @@ void TestQCNetworkFileResumableOffline::testDestroyedReplyBeforeJobFinishedFails
     mock.setGlobalDelay(60000);
     const QUrl url(QStringLiteral("http://resumable.test/destroy-before-finished"));
     mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("late-body"));
-    manager.setMockHandler(&mock);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
 
     QTemporaryDir dir;
     QVERIFY(dir.isValid());

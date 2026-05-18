@@ -4,6 +4,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
+#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
@@ -44,7 +45,7 @@ void tst_QCNetworkMiddlewareIntegration::init()
     m_mockHandler.clearCapturedRequests();
     m_mockHandler.setCaptureEnabled(true);
     m_mockHandler.setCaptureBodyPreviewLimit(64);
-    m_manager->setMockHandler(&m_mockHandler);
+    QCurl::TestSupport::setMockHandler(*m_manager, &m_mockHandler);
 
     QCNetworkRequestScheduler::instance()->cancelAllRequests();
 }
@@ -55,7 +56,7 @@ void tst_QCNetworkMiddlewareIntegration::cleanup()
 
     if (m_manager) {
         m_manager->clearMiddlewares();
-        m_manager->setMockHandler(nullptr);
+        QCurl::TestSupport::setMockHandler(*m_manager, nullptr);
         m_manager->deleteLater();
         m_manager = nullptr;
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

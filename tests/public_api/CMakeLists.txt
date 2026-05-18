@@ -19,15 +19,56 @@ endif()
 set(QCURL_PUBLIC_API_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(QCURL_PUBLIC_API_SELF_COMPILE_DIR "${QCURL_PUBLIC_API_GENERATED_DIR}/self_compile")
 set(QCURL_PUBLIC_API_MANIFEST "${QCURL_PUBLIC_API_GENERATED_DIR}/public_headers.txt")
+set(QCURL_PUBLIC_API_EXTRAS_MANIFEST "${QCURL_PUBLIC_API_GENERATED_DIR}/extras_headers.txt")
+set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_MANIFEST
+    "${QCURL_PUBLIC_API_GENERATED_DIR}/blocking_extras_headers.txt")
+set(QCURL_PUBLIC_API_TEST_SUPPORT_MANIFEST
+    "${QCURL_PUBLIC_API_GENERATED_DIR}/test_support_headers.txt")
+set(QCURL_PUBLIC_API_OTHER_EXTRAS_MANIFEST
+    "${QCURL_PUBLIC_API_GENERATED_DIR}/other_extras_headers.txt")
+set(QCURL_PUBLIC_API_SURFACE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/surface_manifest.json")
 set(QCURL_PUBLIC_API_STAGE_DIR "${CMAKE_BINARY_DIR}/public_api/stage")
+set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_STAGE_DIR
+    "${CMAKE_BINARY_DIR}/public_api/stage_blocking_extras")
+set(QCURL_PUBLIC_API_TEST_SUPPORT_STAGE_DIR
+    "${CMAKE_BINARY_DIR}/public_api/stage_test_support")
+set(QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR
+    "${CMAKE_BINARY_DIR}/public_api/stage_other_extras")
 set(QCURL_PUBLIC_API_POSITIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/public_api/consumer_positive")
 set(QCURL_PUBLIC_API_NEGATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/public_api/consumer_negative")
+set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_POSITIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_blocking_extras_positive")
+set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_NEGATIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_blocking_extras_negative")
+set(QCURL_PUBLIC_API_TEST_SUPPORT_POSITIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_test_support_positive")
+set(QCURL_PUBLIC_API_TEST_SUPPORT_NEGATIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_test_support_negative")
+set(QCURL_PUBLIC_API_OTHER_EXTRAS_POSITIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_other_extras_positive")
+set(QCURL_PUBLIC_API_OTHER_EXTRAS_NEGATIVE_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_other_extras_negative")
 
 file(MAKE_DIRECTORY "${QCURL_PUBLIC_API_GENERATED_DIR}")
 file(MAKE_DIRECTORY "${QCURL_PUBLIC_API_SELF_COMPILE_DIR}")
 
 string(REPLACE ";" "\n" _qcurl_public_api_header_lines "${QCURL_INSTALL_HEADERS}")
 file(GENERATE OUTPUT "${QCURL_PUBLIC_API_MANIFEST}" CONTENT "${_qcurl_public_api_header_lines}\n")
+string(REPLACE ";" "\n" _qcurl_public_api_extras_header_lines "${QCURL_INSTALL_HEADERS_EXTRAS}")
+file(GENERATE OUTPUT "${QCURL_PUBLIC_API_EXTRAS_MANIFEST}"
+    CONTENT "${_qcurl_public_api_extras_header_lines}\n")
+string(REPLACE ";" "\n" _qcurl_public_api_blocking_extras_header_lines
+    "${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}")
+file(GENERATE OUTPUT "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_MANIFEST}"
+    CONTENT "${_qcurl_public_api_blocking_extras_header_lines}\n")
+string(REPLACE ";" "\n" _qcurl_public_api_test_support_header_lines
+    "${QCURL_INSTALL_HEADERS_TEST_SUPPORT}")
+file(GENERATE OUTPUT "${QCURL_PUBLIC_API_TEST_SUPPORT_MANIFEST}"
+    CONTENT "${_qcurl_public_api_test_support_header_lines}\n")
+string(REPLACE ";" "\n" _qcurl_public_api_other_extras_header_lines
+    "${QCURL_INSTALL_HEADERS_OTHER_EXTRAS}")
+file(GENERATE OUTPUT "${QCURL_PUBLIC_API_OTHER_EXTRAS_MANIFEST}"
+    CONTENT "${_qcurl_public_api_other_extras_header_lines}\n")
 
 set(_qcurl_public_api_self_compile_sources)
 foreach(header IN LISTS QCURL_INSTALL_HEADERS)
@@ -100,6 +141,18 @@ set_tests_properties(qcurl_public_api_hard_break_guards PROPERTIES
 )
 
 add_test(
+    NAME qcurl_public_api_surface_manifest
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            surface-manifest
+            --surface-manifest "${QCURL_PUBLIC_API_SURFACE_MANIFEST}"
+            --core-manifest "${QCURL_PUBLIC_API_MANIFEST}"
+            --extras-manifest "${QCURL_PUBLIC_API_EXTRAS_MANIFEST}"
+)
+set_tests_properties(qcurl_public_api_surface_manifest PROPERTIES
+    LABELS "public-api"
+)
+
+add_test(
     NAME qcurl_public_api_stage_install
     COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
             install
@@ -111,6 +164,60 @@ add_test(
 set_tests_properties(qcurl_public_api_stage_install PROPERTIES
     LABELS "public-api-slow"
     FIXTURES_SETUP qcurl_public_api_stage
+)
+
+add_test(
+    NAME qcurl_public_api_blocking_extras_stage_install
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            install
+            --cmake "${CMAKE_COMMAND}"
+            --build-dir "${CMAKE_BINARY_DIR}"
+            --stage-dir "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_STAGE_DIR}"
+            --component Development
+            --component Runtime
+            --component BundledRuntime
+            --component BlockingExtrasDevelopment
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_blocking_extras_stage_install PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_SETUP qcurl_public_api_blocking_extras_stage
+)
+
+add_test(
+    NAME qcurl_public_api_test_support_stage_install
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            install
+            --cmake "${CMAKE_COMMAND}"
+            --build-dir "${CMAKE_BINARY_DIR}"
+            --stage-dir "${QCURL_PUBLIC_API_TEST_SUPPORT_STAGE_DIR}"
+            --component Development
+            --component Runtime
+            --component BundledRuntime
+            --component TestSupportDevelopment
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_test_support_stage_install PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_SETUP qcurl_public_api_test_support_stage
+)
+
+add_test(
+    NAME qcurl_public_api_other_extras_stage_install
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            install
+            --cmake "${CMAKE_COMMAND}"
+            --build-dir "${CMAKE_BINARY_DIR}"
+            --stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --component Development
+            --component Runtime
+            --component BundledRuntime
+            --component OtherExtrasDevelopment
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_other_extras_stage_install PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_SETUP qcurl_public_api_other_extras_stage
 )
 
 add_test(
@@ -138,6 +245,45 @@ set_tests_properties(qcurl_public_api_export_contract PROPERTIES
 )
 
 add_test(
+    NAME qcurl_public_api_blocking_extras_install_contract
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            check-blocking-extras-install
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --blocking-stage-dir "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_STAGE_DIR}"
+            --manifest "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_MANIFEST}"
+)
+set_tests_properties(qcurl_public_api_blocking_extras_install_contract PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_blocking_extras_stage"
+)
+
+add_test(
+    NAME qcurl_public_api_test_support_install_contract
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            check-test-support-install
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --test-support-stage-dir "${QCURL_PUBLIC_API_TEST_SUPPORT_STAGE_DIR}"
+            --manifest "${QCURL_PUBLIC_API_TEST_SUPPORT_MANIFEST}"
+)
+set_tests_properties(qcurl_public_api_test_support_install_contract PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_test_support_stage"
+)
+
+add_test(
+    NAME qcurl_public_api_other_extras_install_contract
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            check-other-extras-install
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --other-extras-stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --manifest "${QCURL_PUBLIC_API_OTHER_EXTRAS_MANIFEST}"
+)
+set_tests_properties(qcurl_public_api_other_extras_install_contract PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_other_extras_stage"
+)
+
+add_test(
     NAME qcurl_public_api_consumer_smoke
     COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
             consumer-smoke
@@ -152,4 +298,58 @@ add_test(
 set_tests_properties(qcurl_public_api_consumer_smoke PROPERTIES
     LABELS "public-api-slow"
     FIXTURES_REQUIRED qcurl_public_api_stage
+)
+
+add_test(
+    NAME qcurl_public_api_blocking_extras_consumer_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            blocking-extras-consumer-smoke
+            --cmake "${CMAKE_COMMAND}"
+            --blocking-stage-dir "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_STAGE_DIR}"
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --positive-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_blocking_extras_smoke"
+            --positive-build-dir "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_POSITIVE_BUILD_DIR}"
+            --negative-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_blocking_extras_negative"
+            --negative-build-dir "${QCURL_PUBLIC_API_BLOCKING_EXTRAS_NEGATIVE_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_blocking_extras_consumer_smoke PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_blocking_extras_stage"
+)
+
+add_test(
+    NAME qcurl_public_api_test_support_consumer_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            test-support-consumer-smoke
+            --cmake "${CMAKE_COMMAND}"
+            --test-support-stage-dir "${QCURL_PUBLIC_API_TEST_SUPPORT_STAGE_DIR}"
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --positive-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_smoke"
+            --positive-build-dir "${QCURL_PUBLIC_API_TEST_SUPPORT_POSITIVE_BUILD_DIR}"
+            --negative-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_negative"
+            --negative-build-dir "${QCURL_PUBLIC_API_TEST_SUPPORT_NEGATIVE_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_test_support_consumer_smoke PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_test_support_stage"
+)
+
+add_test(
+    NAME qcurl_public_api_other_extras_consumer_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            other-extras-consumer-smoke
+            --cmake "${CMAKE_COMMAND}"
+            --other-extras-stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --default-stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --positive-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_other_extras_smoke"
+            --positive-build-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_POSITIVE_BUILD_DIR}"
+            --negative-source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_other_extras_negative"
+            --negative-build-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_NEGATIVE_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_other_extras_consumer_smoke PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_other_extras_stage"
 )

@@ -29,7 +29,7 @@ private:
 
     void tst_async();
 
-    void tst_sync();
+    void tst_blockingExtras();
 };
 
 #endif // MAINWINDOW_H
