@@ -6,7 +6,9 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkDefaultLogger.h"
 #include "QCNetworkMiddleware.h"
+#include "QCNetworkMiddlewareExtras.h"
 #include "QCNetworkMockHandler.h"
+#include "private/QCNetworkMiddlewareInternal_p.h"
 #include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -16,6 +18,8 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 #include <QtTest/QtTest>
+
+#include <chrono>
 
 using namespace QCurl;
 

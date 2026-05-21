@@ -4,17 +4,20 @@
 #include "QCNetworkMiddleware.h"
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkMiddlewareExtras.h"
 #include "private/QCNetworkLogRedaction_p.h"
+#include "private/QCNetworkMiddlewareInternal_p.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRetryPolicy.h"
 
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+
+#include <functional>
 
 namespace QCurl {
 

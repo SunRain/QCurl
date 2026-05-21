@@ -10,12 +10,9 @@
 #define QCNETWORKMIDDLEWARE_H
 
 #include "QCGlobal.h"
-#include "QCNetworkRetryPolicy.h"
 
 #include <QScopedPointer>
 #include <QString>
-
-#include <memory>
 
 namespace QCurl {
 
@@ -93,129 +90,6 @@ private:
     QScopedPointer<QCNetworkMiddlewarePrivate> d_ptr;
 
     friend class QCNetworkAccessManager;
-};
-
-/**
- * @brief 日志记录中间件
- *
- * 自动记录所有请求和响应的信息。
- *
- */
-class QCURL_EXPORT QCLoggingMiddleware : public QCNetworkMiddleware
-{
-public:
-    /// 在发送前记录请求摘要。
-    void onRequestPreSend(QCNetworkRequest &request) override;
-    /// 在接收完成后记录响应摘要。
-    void onResponseReceived(QCNetworkReply *reply) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCLoggingMiddleware"); }
-};
-
-/**
- * @brief 错误处理中间件
- *
- * 统一处理网络错误和 HTTP 错误。
- *
- */
-class QCURL_EXPORT QCErrorHandlingMiddleware : public QCNetworkMiddleware
-{
-public:
-    /**
-     * @brief 设置错误回调函数
-     * @param callback 错误回调，接收错误消息
-     */
-    void setErrorCallback(std::function<void(const QString &)> callback);
-
-    /// 在响应后统一处理错误和 HTTP 失败。
-    void onResponseReceived(QCNetworkReply *reply) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCErrorHandlingMiddleware"); }
-
-private:
-    std::function<void(const QString &)> m_errorCallback;
-};
-
-/**
- * @brief 请求签名中间件（示例）
- *
- * 为请求自动添加签名信息。
- *
- */
-class QCURL_EXPORT QCSigningMiddleware : public QCNetworkMiddleware
-{
-public:
-    /**
-     * @brief 设置签名密钥
-     */
-    void setSigningKey(const QString &key);
-
-    /// 在发送前把签名信息写入请求。
-    void onRequestPreSend(QCNetworkRequest &request) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCSigningMiddleware"); }
-
-private:
-    QString m_signingKey;
-};
-
-/**
- * @brief 统一重试策略中间件
- *
- * - 仅在 request 未显式设置 retryPolicy 时注入默认策略（显式优先）。
- * - request 显式 setRetryPolicy(noRetry()) 视为“显式禁用”，不会被覆盖。
- */
-class QCURL_EXPORT QCUnifiedRetryPolicyMiddleware : public QCNetworkMiddleware
-{
-public:
-    /// 构造默认重试策略中间件。
-    explicit QCUnifiedRetryPolicyMiddleware(const QCNetworkRetryPolicy &defaultPolicy);
-
-    /// 更新默认重试策略。
-    void setDefaultPolicy(const QCNetworkRetryPolicy &policy);
-    /// 返回当前默认重试策略。
-    [[nodiscard]] QCNetworkRetryPolicy defaultPolicy() const;
-
-    /// 在请求未显式配置时注入默认重试策略。
-    void onRequestPreSend(QCNetworkRequest &request) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCUnifiedRetryPolicyMiddleware"); }
-
-private:
-    QCNetworkRetryPolicy m_defaultPolicy;
-};
-
-/**
- * @brief 脱敏日志中间件（默认安全）
- *
- * - 输出 request/response 摘要（不输出 body 明文）。
- * - URL/query/header 做脱敏处理（仅输出 [REDACTED]）。
- */
-class QCURL_EXPORT QCRedactingLoggingMiddleware : public QCNetworkMiddleware
-{
-public:
-    /// 在 reply 创建后挂接脱敏日志观察点。
-    void onReplyCreated(QCNetworkReply *reply) override;
-    /// 在响应完成后输出脱敏摘要。
-    void onResponseReceived(QCNetworkReply *reply) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCRedactingLoggingMiddleware"); }
-};
-
-/**
- * @brief 观测埋点中间件（MVP）
- *
- * 通过 logger 输出可用于排障与估价的关键指标（离线可断言）。
- */
-class QCURL_EXPORT QCObservabilityMiddleware : public QCNetworkMiddleware
-{
-public:
-    /// 在 reply 创建后绑定观测埋点。
-    void onReplyCreated(QCNetworkReply *reply) override;
-    /// 在响应完成后输出关键观测指标。
-    void onResponseReceived(QCNetworkReply *reply) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCObservabilityMiddleware"); }
 };
 
 } // namespace QCurl

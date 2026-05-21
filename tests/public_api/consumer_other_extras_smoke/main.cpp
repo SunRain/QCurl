@@ -1,4 +1,5 @@
 #include <QCNetworkDiagnostics.h>
+#include <QCNetworkMiddlewareExtras.h>
 
 #include <QString>
 #include <QVariantMap>
@@ -16,6 +17,13 @@ int main()
     if (!printable.contains(QStringLiteral("other-extras"))
         || !result.details.contains(QStringLiteral("scope"))) {
         return 1;
+    }
+
+    QCurl::QCRedactingLoggingMiddleware redactingLog;
+    QCurl::QCObservabilityMiddleware observability;
+    if (redactingLog.name() != QStringLiteral("QCRedactingLoggingMiddleware")
+        || observability.name() != QStringLiteral("QCObservabilityMiddleware")) {
+        return 2;
     }
 
     return 0;

@@ -3,6 +3,7 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMiddleware.h"
+#include "private/QCNetworkMiddlewareInternal_p.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 

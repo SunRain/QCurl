@@ -8,8 +8,8 @@
  * 目标：
  * - 展示上层如何显式启用：setLogger() + addMiddleware()
  * - 默认纯离线：使用 QCNetworkMockHandler 回放，不访问外网
- * - 展示标准 middleware：
- *   - QCUnifiedRetryPolicyMiddleware（默认重试注入，显式优先）
+ * - 展示 public/installable middleware：
+ *   - 示例内 DefaultRetryPolicyMiddleware（默认重试注入，显式优先）
  *   - QCRedactingLoggingMiddleware（脱敏日志，不输出 body 明文）
  *   - QCObservabilityMiddleware（结构化观测事件，脱敏 URL）
  */
@@ -17,6 +17,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkDefaultLogger.h"
 #include "QCNetworkMiddleware.h"
+#include "QCNetworkMiddlewareExtras.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -30,8 +31,30 @@
 #include <QUrl>
 
 #include <chrono>
+#include <utility>
 
 using namespace QCurl;
+
+class DefaultRetryPolicyMiddleware : public QCNetworkMiddleware
+{
+public:
+    explicit DefaultRetryPolicyMiddleware(QCNetworkRetryPolicy defaultPolicy)
+        : m_defaultPolicy(std::move(defaultPolicy))
+    {
+    }
+
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
+        if (!request.isRetryPolicyExplicit()) {
+            request.setRetryPolicy(m_defaultPolicy);
+        }
+    }
+
+    QString name() const override { return QStringLiteral("DefaultRetryPolicyMiddleware"); }
+
+private:
+    QCNetworkRetryPolicy m_defaultPolicy;
+};
 
 static bool waitForFinished(QCNetworkReply *reply, int timeoutMs)
 {
@@ -78,7 +101,7 @@ int main(int argc, char *argv[])
     defaultPolicy.setBackoffMultiplier(1.0);
     defaultPolicy.setMaxDelay(std::chrono::milliseconds(100));
 
-    QCUnifiedRetryPolicyMiddleware retryPolicyMw(defaultPolicy);
+    DefaultRetryPolicyMiddleware retryPolicyMw(defaultPolicy);
     QCRedactingLoggingMiddleware redactingLogMw;
     QCObservabilityMiddleware observabilityMw;
 

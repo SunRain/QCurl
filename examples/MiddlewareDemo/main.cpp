@@ -8,8 +8,8 @@
  * 展示如何使用中间件拦截和处理网络请求/响应。
  *
  * 功能演示:
- * 1. 添加日志中间件
- * 2. 添加错误处理中间件
+ * 1. 添加公开 API 自定义日志中间件
+ * 2. 添加公开 API 自定义错误处理中间件
  * 3. 中间件链式执行
  * 4. 自定义中间件
  * 5. 中间件管理（添加/移除/清空）
@@ -29,6 +29,45 @@
 #include <QUrl>
 
 using namespace QCurl;
+
+/**
+ * @brief 自定义中间件：公开 API 日志
+ */
+class ConsoleLoggingMiddleware : public QCNetworkMiddleware
+{
+public:
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
+        qDebug() << "[ConsoleLog] 请求:" << request.url().toString();
+    }
+
+    void onResponseReceived(QCNetworkReply *reply) override
+    {
+        if (!reply) {
+            return;
+        }
+        qDebug() << "[ConsoleLog] 响应:" << reply->url().toString()
+                 << "error=" << static_cast<int>(reply->error());
+    }
+
+    QString name() const override { return QStringLiteral("ConsoleLoggingMiddleware"); }
+};
+
+/**
+ * @brief 自定义中间件：公开 API 错误提示
+ */
+class ConsoleErrorMiddleware : public QCNetworkMiddleware
+{
+public:
+    void onResponseReceived(QCNetworkReply *reply) override
+    {
+        if (reply && reply->error() != NetworkError::NoError) {
+            qWarning() << "[ConsoleError]" << reply->errorString();
+        }
+    }
+
+    QString name() const override { return QStringLiteral("ConsoleErrorMiddleware"); }
+};
 
 /**
  * @brief 自定义中间件：请求计时
@@ -105,20 +144,20 @@ int main(int argc, char *argv[])
     qDebug() << "=== QCurl Middleware 系统演示 ===\n";
 
     // ========================================================================
-    // 示例 1: 使用内置中间件
+    // 示例 1: 使用公开 API 自定义中间件
     // ========================================================================
 
-    qDebug() << ">>> 示例 1: 使用内置中间件";
+    qDebug() << ">>> 示例 1: 使用公开 API 自定义中间件";
 
-    auto *manager1          = new QCNetworkAccessManager();
-    auto *loggingMiddleware = new QCLoggingMiddleware();
-    auto *errorMiddleware   = new QCErrorHandlingMiddleware();
+    QCNetworkAccessManager manager1;
+    ConsoleLoggingMiddleware loggingMiddleware;
+    ConsoleErrorMiddleware errorMiddleware;
 
-    manager1->addMiddleware(loggingMiddleware);
-    manager1->addMiddleware(errorMiddleware);
+    manager1.addMiddleware(&loggingMiddleware);
+    manager1.addMiddleware(&errorMiddleware);
 
-    qDebug() << "已添加" << manager1->middlewares().size() << "个中间件:";
-    for (auto *mw : manager1->middlewares()) {
+    qDebug() << "已添加" << manager1.middlewares().size() << "个中间件:";
+    for (auto *mw : manager1.middlewares()) {
         qDebug() << "  -" << mw->name();
     }
 
@@ -128,16 +167,16 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 2: 中间件链式执行";
 
-    auto *manager2 = new QCNetworkAccessManager();
-    auto *timing   = new TimingMiddleware();
-    auto *logging  = new QCLoggingMiddleware();
+    QCNetworkAccessManager manager2;
+    TimingMiddleware timing;
+    ConsoleLoggingMiddleware logging;
 
-    manager2->addMiddleware(timing);
-    manager2->addMiddleware(logging);
+    manager2.addMiddleware(&timing);
+    manager2.addMiddleware(&logging);
 
     qDebug() << "中间件执行顺序:";
-    qDebug() << "  1." << timing->name();
-    qDebug() << "  2." << logging->name();
+    qDebug() << "  1." << timing.name();
+    qDebug() << "  2." << logging.name();
 
     // ========================================================================
     // 示例 3: 自定义统计中间件
@@ -145,24 +184,24 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 3: 自定义统计中间件";
 
-    auto *manager3 = new QCNetworkAccessManager();
-    auto *stats    = new StatisticsMiddleware();
+    QCNetworkAccessManager manager3;
+    StatisticsMiddleware stats;
 
-    manager3->addMiddleware(stats);
+    manager3.addMiddleware(&stats);
 
     // 模拟一些请求
     QCNetworkRequest req1(QUrl("http://example.com/1"));
     QCNetworkRequest req2(QUrl("http://example.com/2"));
     QCNetworkRequest req3(QUrl("http://example.com/3"));
 
-    stats->onRequestPreSend(req1);
-    stats->onRequestPreSend(req2);
-    stats->onRequestPreSend(req3);
+    stats.onRequestPreSend(req1);
+    stats.onRequestPreSend(req2);
+    stats.onRequestPreSend(req3);
 
     // 模拟响应（不实际发送请求）
-    qDebug() << "模拟了" << stats->totalRequests << "个请求";
+    qDebug() << "模拟了" << stats.totalRequests << "个请求";
 
-    stats->printStats();
+    stats.printStats();
 
     // ========================================================================
     // 示例 4: 中间件管理
@@ -170,19 +209,19 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 4: 中间件管理";
 
-    auto *manager4 = new QCNetworkAccessManager();
-    auto *m1       = new QCLoggingMiddleware();
-    auto *m2       = new QCErrorHandlingMiddleware();
+    QCNetworkAccessManager manager4;
+    ConsoleLoggingMiddleware m1;
+    ConsoleErrorMiddleware m2;
 
-    manager4->addMiddleware(m1);
-    manager4->addMiddleware(m2);
-    qDebug() << "添加后中间件数量:" << manager4->middlewares().size();
+    manager4.addMiddleware(&m1);
+    manager4.addMiddleware(&m2);
+    qDebug() << "添加后中间件数量:" << manager4.middlewares().size();
 
-    manager4->removeMiddleware(m1);
-    qDebug() << "移除一个后中间件数量:" << manager4->middlewares().size();
+    manager4.removeMiddleware(&m1);
+    qDebug() << "移除一个后中间件数量:" << manager4.middlewares().size();
 
-    manager4->clearMiddlewares();
-    qDebug() << "清空后中间件数量:" << manager4->middlewares().size();
+    manager4.clearMiddlewares();
+    qDebug() << "清空后中间件数量:" << manager4.middlewares().size();
 
     // ========================================================================
     // 示例 5: 真实网络请求 + 中间件拦截
@@ -190,12 +229,12 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 5: 真实网络请求 + 中间件";
 
-    auto *manager5  = new QCNetworkAccessManager();
-    auto *timingMw5 = new TimingMiddleware();
-    auto *statsMw5  = new StatisticsMiddleware();
+    QCNetworkAccessManager manager5;
+    TimingMiddleware timingMw5;
+    StatisticsMiddleware statsMw5;
 
-    manager5->addMiddleware(timingMw5);
-    manager5->addMiddleware(statsMw5);
+    manager5.addMiddleware(&timingMw5);
+    manager5.addMiddleware(&statsMw5);
 
     qDebug() << "已添加计时和统计中间件，发送3个真实请求...";
 
@@ -210,7 +249,7 @@ int main(int argc, char *argv[])
     QList<QCNetworkReply *> activeReplies;
 
     for (const QCNetworkRequest &req : requests) {
-        auto *r = manager5->sendGet(req);
+        auto *r = manager5.sendGet(req);
         activeReplies.append(r);
 
         QObject::connect(r, &QCNetworkReply::finished, r, [r, &pendingRequests, &loop]() {
@@ -234,37 +273,18 @@ int main(int argc, char *argv[])
     }
 
     // 打印统计
-    statsMw5->printStats();
+    statsMw5.printStats();
 
     // 清理 replies
     for (auto *r : activeReplies) {
         r->deleteLater();
     }
 
-    delete manager5;
-    delete timingMw5;
-    delete statsMw5;
-
     // ========================================================================
     // 清理
     // ========================================================================
 
     qDebug() << "\n=== 演示完成 ===";
-
-    delete manager1;
-    delete loggingMiddleware;
-    delete errorMiddleware;
-
-    delete manager2;
-    delete timing;
-    delete logging;
-
-    delete manager3;
-    delete stats;
-
-    delete manager4;
-    delete m1;
-    delete m2;
 
     return 0;
 }

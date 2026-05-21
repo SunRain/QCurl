@@ -2,6 +2,7 @@
 // Other Extras headers must be available only after explicitly installing
 // the OtherExtrasDevelopment component.
 #include <QCNetworkDiagnostics.h>
+#include <QCNetworkMiddlewareExtras.h>
 
 int main()
 {
