@@ -10,7 +10,11 @@ set(QCURL_CORE_SOURCES
     QCNetworkAccessManagerSend.cpp
     QCNetworkAccessManagerServices.cpp
     QCNetworkTestSupport.cpp
+    QCNetworkHttpAuthConfig.cpp
     QCNetworkRequest.cpp
+    QCNetworkRequestTransferAccessors.cpp
+    QCNetworkRedirectConfig.cpp
+    QCNetworkTransferConfig.cpp
     QCUtility.cpp
 )
 
@@ -20,7 +24,9 @@ set(QCURL_CORE_HEADERS
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
     QCNetworkAccessManager_p.h
+    QCNetworkRequestConfig.h
     QCNetworkRequest.h
+    private/QCNetworkRequestPrivate_p.h
     QCUtility.h
     qbytedata_p.h
 )
@@ -29,6 +35,8 @@ set(QCURL_FEATURE_SOURCES
     QCBlockingNetworkClient.cpp
     QCBlockingNetworkResult.cpp
     private/QCBlockingCurlAdapter.cpp
+    private/QCBlockingCurlRequestSetup.cpp
+    private/QCBlockingCurlRequestSetupExtensions.cpp
     private/QCBlockingRequestBody.cpp
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
@@ -98,6 +106,7 @@ set(QCURL_FEATURE_HEADERS
     QCBlockingNetworkClient.h
     QCBlockingNetworkResult.h
     private/QCBlockingCurlAdapter_p.h
+    private/QCBlockingCurlRequestSetup_p.h
     private/QCBlockingRequestBody_p.h
     QCCurlHandleManager.h
     CurlFeatureProbe.h
@@ -137,6 +146,8 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkDefaultLogger.h        # v2.15.0: 默认日志实现
     private/QCNetworkLogRedaction_p.h # v2.20.0: 日志脱敏工具（内部）
     QCNetworkMiddleware.h           # v2.15.0: 中间件
+    QCNetworkMiddlewareExtras.h     # Middleware Extras opt-in surface
+    private/QCNetworkMiddlewareInternal_p.h # 内部策略型 middleware
     QCNetworkCancelToken.h          # v2.15.0: 取消令牌
     QCNetworkTransferJob.h
     QCNetworkDownloadToDeviceJob.h
@@ -187,6 +198,7 @@ set(QCURL_INSTALL_HEADERS
     QCGlobal.h
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
+    QCNetworkRequestConfig.h
     QCNetworkRequest.h
     QCNetworkSslConfig.h
     QCNetworkProxyConfig.h
@@ -241,6 +253,7 @@ set(QCURL_INSTALL_HEADERS_TEST_SUPPORT
 
 set(QCURL_INSTALL_HEADERS_OTHER_EXTRAS
     QCNetworkDiagnostics.h
+    QCNetworkMiddlewareExtras.h
 )
 
 if(QCURL_WEBSOCKET_SUPPORT)
@@ -265,8 +278,12 @@ set(QCURL_INSTALL_HEADERS_TEST_SUPPORT "${QCURL_INSTALL_HEADERS_TEST_SUPPORT}" P
 set(QCURL_INSTALL_HEADERS_OTHER_EXTRAS "${QCURL_INSTALL_HEADERS_OTHER_EXTRAS}" PARENT_SCOPE)
 set(QCURL_GENERATED_CONFIG_HEADER "${CMAKE_BINARY_DIR}/src/QCurlConfig.h" PARENT_SCOPE)
 
-# 创建 QCurl 共享库
-add_library(QCurl SHARED ${QCURL_ALL_SOURCES} ${QCURL_ALL_HEADERS})
+# 创建 QCurl 主库。默认发布 shared；static 需要显式 opt-in，并有独立 gate 证明。
+set(_qcurl_library_type SHARED)
+if(QCURL_BUILD_STATIC)
+    set(_qcurl_library_type STATIC)
+endif()
+add_library(QCurl ${_qcurl_library_type} ${QCURL_ALL_SOURCES} ${QCURL_ALL_HEADERS})
 
 # 添加库别名（用于 CMake 导出）
 add_library(QCurl::QCurl ALIAS QCurl)
@@ -277,6 +294,7 @@ set_target_properties(QCurl PROPERTIES
     SOVERSION 3
     AUTOMOC ON  # 自动处理 Qt MOC
     EXPORT_NAME QCurl
+    POSITION_INDEPENDENT_CODE ON
 )
 
 # 链接依赖
@@ -284,16 +302,24 @@ target_link_libraries(QCurl
     PUBLIC
         Qt6::Core
         Qt6::Network
-    PRIVATE
-        ${ZLIB_LIBRARIES}  # v2.18.0: WebSocket 压缩
 )
+
+if(QCURL_BUILD_STATIC)
+    target_link_libraries(QCurl PUBLIC ZLIB::ZLIB) # v2.18.0: WebSocket 压缩
+else()
+    target_link_libraries(QCurl PRIVATE ZLIB::ZLIB) # v2.18.0: WebSocket 压缩
+endif()
 
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     target_include_directories(QCurl PRIVATE "${CMAKE_SOURCE_DIR}/curl/include")
     target_link_libraries(QCurl PRIVATE "$<BUILD_INTERFACE:$<TARGET_FILE:libcurl_shared>>")
     add_dependencies(QCurl libcurl_shared)
 else()
-    target_link_libraries(QCurl PRIVATE CURL::libcurl)
+    if(QCURL_BUILD_STATIC)
+        target_link_libraries(QCurl PUBLIC CURL::libcurl)
+    else()
+        target_link_libraries(QCurl PRIVATE CURL::libcurl)
+    endif()
 endif()
 
 # 包含目录
@@ -310,7 +336,7 @@ target_include_directories(QCurl
 # 编译定义
 target_compile_definitions(QCurl
     PRIVATE
-        QCURL_BUILDING_LIBRARY
+        $<$<NOT:$<BOOL:${QCURL_BUILD_STATIC}>>:QCURL_BUILDING_LIBRARY>
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
         QT_NO_URL_CAST_FROM_STRING

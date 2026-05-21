@@ -15,7 +15,9 @@
 
 // 导出宏定义（v2.15.0）
 #ifndef QCURL_EXPORT
-#if defined(QCURL_BUILDING_LIBRARY)
+#if defined(QCURL_STATIC_BUILD)
+#define QCURL_EXPORT
+#elif defined(QCURL_BUILDING_LIBRARY)
 #define QCURL_EXPORT Q_DECL_EXPORT
 #else
 #define QCURL_EXPORT Q_DECL_IMPORT
