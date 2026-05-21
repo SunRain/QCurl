@@ -8,7 +8,7 @@ from tests.public_api.component_contracts import check_opt_in_headers
 from tests.public_api.component_contracts import run_opt_in_consumer_smoke
 from tests.public_api.component_contracts import FailFunc
 from tests.public_api.component_contracts import RunCommand
-from tests.public_api.consumer_contract_validators import validate_mock_handler_test_support_fixture
+from tests.public_api.consumer_test_support_contracts import validate_mock_handler_test_support_fixture
 
 
 def check_test_support_install(args: Namespace, *, fail_func: FailFunc) -> int:

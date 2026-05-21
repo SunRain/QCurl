@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,11 +19,16 @@ from tests.public_api.test_support_contracts import run_test_support_consumer_sm
 from tests.public_api.other_extras_contracts import check_other_extras_install as _check_other_extras_install
 from tests.public_api.other_extras_contracts import run_other_extras_consumer_smoke
 from tests.public_api.consumer_contracts import run_consumer_smoke
+from tests.public_api.export_contracts import check_export_contract as _check_export_contract
 from tests.public_api.layout_scan import GuardrailFinding
 from tests.public_api.layout_scan import collect_cpp_sources
 from tests.public_api.layout_scan import collect_layout_findings
 from tests.public_api.layout_scan import load_allowlist
 from tests.public_api.layout_scan import strip_comments_and_strings
+from tests.public_api.stage_contracts import build_target as _build_target
+from tests.public_api.stage_contracts import check_installed_headers as _check_installed_headers
+from tests.public_api.stage_contracts import install_stage as _install_stage
+from tests.public_api.stage_contracts import read_manifest
 from tests.public_api.surface_manifest import validate_surface_manifest
 
 
@@ -46,12 +50,6 @@ def run(command: list[str], *, expect_success: bool = True) -> subprocess.Comple
             f"stderr:\n{proc.stderr}"
         )
     return proc
-
-
-def read_manifest(path: Path) -> list[str]:
-    """Read a one-header-per-line manifest file."""
-
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def scan_headers(args: argparse.Namespace) -> int:
@@ -145,6 +143,10 @@ def scan_hard_break_guards(args: argparse.Namespace) -> int:
          re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookies\s*\(")),
         ("old QCCurlMultiManager exportCookiesForManager return",
          re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookiesForManager\s*\(")),
+        ("QCNetworkRequest virtual destructor",
+         re.compile(r"\bvirtual\s+~\s*QCNetworkRequest\s*\(")),
+        ("Blocking Extras std::function progress callback",
+         re.compile(r"QCBlockingProgressCallback\s*=\s*std::function\b")),
     ]
 
     include_paths = [
@@ -195,100 +197,22 @@ def scan_hard_break_guards(args: argparse.Namespace) -> int:
 
 def install_stage(args: argparse.Namespace) -> int:
     """Install the current build into a clean staging prefix."""
-
-    if args.stage_dir.exists():
-        shutil.rmtree(args.stage_dir)
-    args.stage_dir.mkdir(parents=True, exist_ok=True)
-
-    components = args.components or ["Development", "Runtime", "BundledRuntime"]
-    try:
-        for component in components:
-            command = [
-                args.cmake,
-                "--install",
-                str(args.build_dir),
-                "--prefix",
-                str(args.stage_dir),
-                "--component",
-                component,
-            ]
-            if args.config:
-                command.extend(["--config", args.config])
-            run(command)
-    except RuntimeError as exc:
-        return fail(str(exc))
-
-    print(f"[public_api] staged install at {args.stage_dir}")
-    return 0
+    return _install_stage(args, run_command=run, fail_func=fail)
 
 
 def build_target(args: argparse.Namespace) -> int:
     """Build a single target in the configured build tree."""
-
-    command = [args.cmake, "--build", str(args.build_dir), "--target", args.target]
-    if args.config:
-        command.extend(["--config", args.config])
-
-    try:
-        run(command)
-    except RuntimeError as exc:
-        return fail(str(exc))
-
-    print(f"[public_api] built target {args.target}")
-    return 0
+    return _build_target(args, run_command=run, fail_func=fail)
 
 
 def check_installed_headers(args: argparse.Namespace) -> int:
     """Verify staged public headers exactly match the manifest plus QCurlConfig.h."""
-
-    include_dir = args.stage_dir / "include" / "qcurl"
-    if not include_dir.is_dir():
-        return fail(f"missing include directory: {include_dir}")
-
-    expected = set(read_manifest(args.manifest))
-    expected.add(Path(args.generated_header).name)
-    actual = {path.name for path in include_dir.iterdir() if path.is_file()}
-
-    missing = sorted(expected - actual)
-    extra = sorted(actual - expected)
-    if missing or extra:
-        details = []
-        if missing:
-            details.append(f"missing={missing}")
-        if extra:
-            details.append(f"extra={extra}")
-        return fail("installed header set mismatch: " + ", ".join(details))
-
-    print("[public_api] installed header set matches manifest")
-    return 0
+    return _check_installed_headers(args, fail_func=fail)
 
 
 def check_export_contract(args: argparse.Namespace) -> int:
-    """Verify installed export files do not leak bundled libcurl targets."""
-
-    target_files = sorted(args.stage_dir.rglob("QCurlTargets*.cmake"))
-    if not target_files:
-        return fail(f"no QCurlTargets*.cmake files found under {args.stage_dir}")
-
-    forbidden_patterns = [
-        ("QCurl::libcurl_shared", re.compile(r"\bQCurl::libcurl_shared\b")),
-        ("CURL::libcurl", re.compile(r"\bCURL::libcurl\b")),
-        ("raw libcurl dependency", re.compile(r"IMPORTED_LINK_DEPENDENT_LIBRARIES[^\n]*libcurl", re.IGNORECASE)),
-    ]
-
-    violations: list[str] = []
-    for target_file in target_files:
-        content = target_file.read_text(encoding="utf-8")
-        for rule_name, pattern in forbidden_patterns:
-            if pattern.search(content):
-                violations.append(f"{target_file.name}: {rule_name}")
-
-    if violations:
-        print("\n".join(violations), file=sys.stderr)
-        return 1
-
-    print("[public_api] export contract passed")
-    return 0
+    """Verify installed export files expose only expected dependency targets."""
+    return _check_export_contract(args.stage_dir, fail_func=fail)
 
 
 def check_blocking_extras_install(args: argparse.Namespace) -> int:

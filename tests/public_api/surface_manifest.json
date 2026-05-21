@@ -31,6 +31,13 @@
       "rationale": "Value-result payload for QCNetworkAccessManager cookie signal and QFuture async bridge."
     },
     {
+      "path": "QCNetworkRequestConfig.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Stable request redirect/transfer/auth configuration value types used by QCNetworkRequest."
+    },
+    {
       "path": "QCNetworkRequest.h",
       "layer": "Core",
       "currentInstall": "core-default",
@@ -218,6 +225,14 @@
       "currentInstall": "core-default",
       "targetInstall": "core-default",
       "rationale": "Core middleware base contract."
+    },
+    {
+      "path": "QCNetworkMiddlewareExtras.h",
+      "layer": "Other Extras",
+      "currentInstall": "other-extras",
+      "targetInstall": "other-extras",
+      "extractionTask": "T5",
+      "rationale": "Opt-in reusable Middleware Extras; default Core keeps only QCNetworkMiddleware base contract."
     },
     {
       "path": "QCNetworkMockHandler.h",

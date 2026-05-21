@@ -7,10 +7,10 @@ import re
 
 
 def _fixture_source(source_dir: Path) -> str:
-    fixture = source_dir / "main.cpp"
-    if not fixture.is_file():
-        raise RuntimeError(f"missing consumer smoke fixture source: {fixture}")
-    return fixture.read_text(encoding="utf-8")
+    sources = sorted(source_dir.glob("*.cpp"))
+    if not sources:
+        raise RuntimeError(f"missing consumer smoke fixture source: {source_dir}")
+    return "\n".join(source.read_text(encoding="utf-8") for source in sources)
 
 
 def _require_snippets(source: str, snippets: list[str], message: str) -> None:
@@ -194,6 +194,27 @@ def validate_cache_policy_core_contract_fixture(source_dir: Path) -> None:
     )
 
 
+def validate_request_config_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumer smoke covers request redirect/transfer config families."""
+
+    _require_snippets(
+        _fixture_source(source_dir),
+        [
+            "#include <QCNetworkRequest.h>",
+            "QCurl::QCNetworkRedirectConfig redirectConfig",
+            "redirectConfig.setMaxRedirects(3)",
+            "request.setRedirectConfig(redirectConfig)",
+            "QCurl::QCNetworkTransferConfig transferConfig",
+            "transferConfig.setAcceptedEncodings({QStringLiteral(\"gzip\")})",
+            "transferConfig.setIpResolve(QCurl::QCNetworkIpResolve::Ipv4)",
+            "transferConfig.setAllowedProtocols({QStringLiteral(\"https\")})",
+            "request.setTransferConfig(transferConfig)",
+            "request.allowedProtocols()",
+        ],
+        "consumer smoke fixture is missing request redirect/transfer config coverage",
+    )
+
+
 def validate_cache_core_contract_fixture(source_dir: Path) -> None:
     """Ensure consumer smoke keeps concrete Cache Core coverage."""
 
@@ -351,72 +372,4 @@ def validate_middleware_core_contract_fixture(source_dir: Path) -> None:
             "middleware.name()",
         ],
         "consumer smoke fixture is missing required Middleware contract coverage",
-    )
-
-
-def validate_mock_handler_test_support_fixture(source_dir: Path) -> None:
-    """Ensure Test Support consumer smoke keeps MockHandler and manager binding coverage."""
-
-    source = _fixture_source(source_dir)
-    _require_snippets(
-        source,
-        [
-            "#include <QCNetworkMockHandler.h>",
-            "#include <QCNetworkTestSupport.h>",
-            "QCurl::QCNetworkMockHandler mockHandler",
-            "QCurl::QCNetworkCapturedRequest capturedRequest",
-            "capturedRequest.setUrl(request.url())",
-            "capturedRequest.setMethod(QCurl::HttpMethod::Post)",
-            "capturedRequest.addHeader(",
-            "capturedRequest.setBodySize(",
-            "capturedRequest.setBodyPreview(",
-            "mockHandler.recordRequest(capturedRequest)",
-            "mockHandler.takeCapturedRequests()",
-            "capturedRequests.first().url()",
-            "capturedRequests.first().method()",
-            "capturedRequests.first().headers()",
-            "capturedRequests.first().bodySize()",
-            "capturedRequests.first().bodyPreview()",
-            "mockHandler.mockResponse(",
-            "mockHandler.hasMock(",
-            "mockHandler.getMockResponse(",
-            "QCurl::TestSupport::setMockHandler(&manager, &mockHandler)",
-            "QCurl::TestSupport::mockHandler(&manager)",
-        ],
-        "consumer smoke fixture is missing required MockHandler contract coverage",
-    )
-    present = _find_present_snippets(
-        source,
-        [
-            ".url =",
-            ".method =",
-            ".headers =",
-            ".bodyPreview =",
-            ".bodySize =",
-            ".followLocation =",
-            ".connectTimeoutMs =",
-            ".totalTimeoutMs =",
-        ],
-    )
-    if present:
-        raise RuntimeError(
-            "consumer smoke fixture must use CapturedRequest accessor API only; found: "
-            + ", ".join(present)
-        )
-
-
-def validate_other_extras_fixture(source_dir: Path) -> None:
-    """Ensure Other Extras consumer smoke keeps opt-in diagnostics coverage."""
-
-    _require_snippets(
-        _fixture_source(source_dir),
-        [
-            "#include <QCNetworkDiagnostics.h>",
-            "QCurl::DiagResult result",
-            "result.success = true",
-            "result.summary = QStringLiteral(\"other-extras\")",
-            "result.details.insert(",
-            "result.toString()",
-        ],
-        "other extras consumer fixture is missing Diagnostics opt-in coverage",
     )

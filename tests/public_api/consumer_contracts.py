@@ -16,7 +16,9 @@ from tests.public_api.consumer_contract_validators import validate_default_logge
 from tests.public_api.consumer_contract_validators import validate_logger_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_middleware_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_multipart_core_contract_fixture
+from tests.public_api.consumer_contract_validators import validate_request_config_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_scheduler_core_contract_fixture
+from tests.public_api.consumer_cookie_contracts import validate_cookie_async_result_core_contract_fixture
 
 
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
@@ -27,11 +29,13 @@ CONSUMER_FIXTURE_VALIDATORS = (
     validate_scheduler_core_contract_fixture,
     validate_logger_core_contract_fixture,
     validate_cache_policy_core_contract_fixture,
+    validate_request_config_core_contract_fixture,
     validate_cache_core_contract_fixture,
     validate_multipart_core_contract_fixture,
     validate_default_logger_core_contract_fixture,
     validate_cancel_token_core_contract_fixture,
     validate_connection_pool_core_contract_fixture,
+    validate_cookie_async_result_core_contract_fixture,
     validate_middleware_core_contract_fixture,
 )
 

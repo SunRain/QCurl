@@ -116,6 +116,14 @@ add_qcurl_test_with_preflight(
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCBlockingNetworkClient.cpp
+    qcblocking_upload_echo_server.cpp
+)
+add_qcurl_test_with_preflight(
+    tst_QCBlockingRequestConfig
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCBlockingRequestConfig.cpp
+    qcblocking_upload_echo_server.cpp
 )
 
 add_executable(qcurl_http2_capability_probe qcurl_http2_capability_probe.cpp)
@@ -241,7 +249,11 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkConnectionPool.cpp
 ) # 连接池测试
 add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # 网络路径与 DNS 控制（M4）
-target_compile_definitions(tst_QCNetworkNetworkPath PRIVATE QCURL_ENABLE_TEST_HOOKS)
+target_compile_definitions(tst_QCNetworkNetworkPath PRIVATE
+    QCURL_ENABLE_TEST_HOOKS
+    QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
+)
+target_compile_definitions(QCurl PRIVATE QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API)
 add_qcurl_test_with_preflight(
     tst_QCNetworkShareHandle
     REQUIRE_LOCAL_PORT
@@ -321,6 +333,7 @@ set_tests_properties(tst_QCNetworkRequest PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkError PROPERTIES LABELS "offline")
 set_tests_properties(tst_CurlFeatureProbe PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCBlockingNetworkClient PROPERTIES LABELS "local_port")
+set_tests_properties(tst_QCBlockingRequestConfig PROPERTIES LABELS "local_port")
 set_tests_properties(tst_QCNetworkRetryOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkResponseHeadersOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkRequestWarningsOffline PROPERTIES LABELS "offline")

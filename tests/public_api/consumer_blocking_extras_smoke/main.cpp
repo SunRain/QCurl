@@ -4,9 +4,30 @@
 
 #include <QCoreApplication>
 #include <QBuffer>
+#include <QFile>
 #include <QUrl>
 
 #include <optional>
+
+namespace {
+
+struct ProgressProbe
+{
+    int calls = 0;
+};
+
+bool recordProgress(const QCurl::QCTransferProgress &, void *userData)
+{
+    auto *probe = static_cast<ProgressProbe *>(userData);
+    if (!probe) {
+        return false;
+    }
+
+    ++probe->calls;
+    return true;
+}
+
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -17,8 +38,36 @@ int main(int argc, char **argv)
         QByteArrayLiteral("ok"),
         {{QByteArrayLiteral("content-type"), QByteArrayLiteral("text/plain")}});
     if (!success.isSuccess() || success.statusCode() != 200
-        || success.body() != QByteArrayLiteral("ok") || success.headers().size() != 1) {
+        || success.body() != QByteArrayLiteral("ok") || success.headers().size() != 1
+        || success.rawHeaders().value(QByteArrayLiteral("content-type"))
+            != QByteArrayLiteral("text/plain")
+        || success.rawHeaderList().size() != 1
+        || success.rawHeaderList().constFirst().first != QByteArrayLiteral("content-type")
+        || success.bytesReceived() != 2) {
         return 1;
+    }
+
+    success.setDiagnosticCurlCode(7);
+    if (success.diagnosticCurlCode() != 7) {
+        return 7;
+    }
+
+    QCurl::QCBlockingRequestOptions requestOptions;
+    requestOptions.setMaxInMemoryBodyBytes(4096);
+    if (requestOptions.maxInMemoryBodyBytes() != 4096) {
+        return 8;
+    }
+    ProgressProbe probe;
+    requestOptions.setProgressCallback(recordProgress, &probe);
+    if (requestOptions.progressCallback() == nullptr
+        || requestOptions.progressCallbackUserData() != &probe) {
+        return 12;
+    }
+
+    QCurl::QCTransferProgress progress(10, 100, 4, 16);
+    if (progress.bytesReceived() != 10 || progress.bytesTotal() != 100
+        || progress.bytesSent() != 4 || progress.uploadTotal() != 16) {
+        return 9;
     }
 
     QCurl::QCBlockingNetworkClient::Options options;
@@ -27,7 +76,7 @@ int main(int argc, char **argv)
 
     QCurl::QCBlockingNetworkClient client(options);
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
-    const auto result = client.sendGet(request);
+    const auto result = client.send(request, QCurl::HttpMethod::Get, {}, requestOptions);
 
     QBuffer body;
     body.setData(QByteArrayLiteral("body"));
@@ -42,13 +91,21 @@ int main(int argc, char **argv)
         &QCurl::QCBlockingNetworkClient::sendPut));
     const auto uploadResult = client.sendPost(request, &body, qint64(4));
 
+    QBuffer output;
+    if (!output.open(QIODevice::WriteOnly)) {
+        return 10;
+    }
+    const auto downloadResult = client.downloadToDevice(request, &output, requestOptions);
+
     if (result.isSuccess() || result.error() != QCurl::NetworkError::InvalidRequest
         || result.errorMessage().isEmpty() || result.errorMessage().contains(QStringLiteral("not wired"))) {
         return 2;
     }
-    if (uploadResult.isSuccess() || uploadResult.error() != QCurl::NetworkError::InvalidRequest
-        || uploadResult.errorMessage().isEmpty()) {
+    if (uploadResult.isSuccess() || uploadResult.errorMessage().isEmpty()) {
         return 6;
+    }
+    if (downloadResult.isSuccess() || downloadResult.errorMessage().isEmpty()) {
+        return 11;
     }
 
     client.setOptions(QCurl::QCBlockingNetworkClient::Options{});

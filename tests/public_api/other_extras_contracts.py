@@ -8,7 +8,7 @@ from tests.public_api.component_contracts import check_opt_in_headers
 from tests.public_api.component_contracts import run_opt_in_consumer_smoke
 from tests.public_api.component_contracts import FailFunc
 from tests.public_api.component_contracts import RunCommand
-from tests.public_api.consumer_contract_validators import validate_other_extras_fixture
+from tests.public_api.consumer_other_extras_contracts import validate_other_extras_fixture
 
 
 def check_other_extras_install(args: Namespace, *, fail_func: FailFunc) -> int:
