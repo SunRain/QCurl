@@ -56,7 +56,13 @@ enum class NetworkError {
     // 应用层错误
     OperationCancelled = 42, ///< 操作被用户取消
     InvalidRequest     = 3,  ///< 无效的请求（URL 格式错误等）
-    Unknown            = 99  ///< 未知错误
+    BodyTooLarge          = 200, ///< Blocking Extras 内存响应体超过上限
+    OutputDeviceError     = 201, ///< Blocking Extras 输出设备写入失败
+    InputDeviceError      = 202, ///< Blocking Extras 输入设备读取失败
+    ReplayNotSupported    = 203, ///< Blocking Extras 输入设备不支持重放
+    CallbackError         = 204, ///< Blocking Extras 回调执行失败
+    UnsupportedCapability = 205, ///< 请求显式能力当前运行时不支持
+    Unknown               = 99,  ///< 未知错误
 };
 
 /**

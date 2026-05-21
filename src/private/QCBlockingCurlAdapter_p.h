@@ -6,6 +6,7 @@
 #ifndef QCBLOCKINGCURLADAPTER_P_H
 #define QCBLOCKINGCURLADAPTER_P_H
 
+#include "QCBlockingNetworkClient.h"
 #include "QCBlockingNetworkResult.h"
 #include "QCBlockingCookieStore.h"
 #include "QCNetworkHttpMethod.h"
@@ -14,18 +15,30 @@
 
 #include <QByteArray>
 
+class QIODevice;
+
 namespace QCurl::Internal {
 
 [[nodiscard]] QCBlockingNetworkResult performBlockingRequest(const QCNetworkRequest &request,
                                                              HttpMethod method,
-                                                             const QByteArray &body);
-[[nodiscard]] QCBlockingNetworkResult performBlockingRequest(const QCNetworkRequest &request,
-                                                             HttpMethod method,
-                                                             QCBlockingRequestBody body);
+                                                             const QByteArray &body,
+                                                             const QCBlockingRequestOptions
+                                                                 &options = {});
 [[nodiscard]] QCBlockingNetworkResult performBlockingRequest(const QCNetworkRequest &request,
                                                              HttpMethod method,
                                                              QCBlockingRequestBody body,
-                                                             const QCCookieSnapshot &cookies);
+                                                             const QCBlockingRequestOptions
+                                                                 &options = {});
+[[nodiscard]] QCBlockingNetworkResult performBlockingRequest(const QCNetworkRequest &request,
+                                                             HttpMethod method,
+                                                             QCBlockingRequestBody body,
+                                                             const QCCookieSnapshot &cookies,
+                                                             const QCBlockingRequestOptions
+                                                                 &options = {});
+[[nodiscard]] QCBlockingNetworkResult performBlockingDownloadToDevice(
+    const QCNetworkRequest &request,
+    QIODevice *output,
+    const QCBlockingRequestOptions &options = {});
 
 } // namespace QCurl::Internal
 

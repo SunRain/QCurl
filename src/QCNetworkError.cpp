@@ -58,6 +58,18 @@ QString errorString(NetworkError error)
             return QStringLiteral("操作已取消");
         case NetworkError::InvalidRequest:
             return QStringLiteral("无效的请求");
+        case NetworkError::BodyTooLarge:
+            return QStringLiteral("响应体超过内存上限");
+        case NetworkError::OutputDeviceError:
+            return QStringLiteral("输出设备错误");
+        case NetworkError::InputDeviceError:
+            return QStringLiteral("输入设备错误");
+        case NetworkError::ReplayNotSupported:
+            return QStringLiteral("请求体重放不受支持");
+        case NetworkError::CallbackError:
+            return QStringLiteral("回调执行失败");
+        case NetworkError::UnsupportedCapability:
+            return QStringLiteral("运行时不支持该能力");
         case NetworkError::Unknown:
             return QStringLiteral("未知错误");
         default:
