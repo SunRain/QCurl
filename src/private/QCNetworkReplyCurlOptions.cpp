@@ -324,6 +324,7 @@ namespace {
         setOptionalLongOption(reply, handle, CURLOPT_IPRESOLVE, "CURLOPT_IPRESOLVE", ipResolveValue);
     }
 
+#ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
     if (const auto heOpt = request.happyEyeballsTimeout(); heOpt.has_value()) {
         setOptionalLongOption(reply,
                               handle,
@@ -398,6 +399,7 @@ namespace {
         reply->dohUrlBytes = dohUrlOpt.value().toString().toUtf8();
         setOptionalStringOption(reply, handle, CURLOPT_DOH_URL, "CURLOPT_DOH_URL", reply->dohUrlBytes);
     }
+#endif
 
     // ==================
     // 1.4 协议白名单（M5，安全）

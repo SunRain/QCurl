@@ -1,3 +1,5 @@
+#include "contract_probes.h"
+
 #include <QCNetworkAccessManager.h>
 #include <QCNetworkCache.h>
 #include <QCNetworkCachePolicy.h>
@@ -45,7 +47,6 @@ public:
     }
 };
 
-/// 验证 QCNetworkMiddleware 可由安装头声明并实例化的 smoke 类型。
 class ConsumerSmokeMiddleware : public QCurl::QCNetworkMiddleware
 {
 public:
@@ -137,6 +138,10 @@ int main(int argc, char **argv)
     request.setCachePolicy(QCurl::QCNetworkCachePolicy::OnlyNetwork);
     if (request.cachePolicy() != QCurl::QCNetworkCachePolicy::OnlyNetwork) {
         return 8;
+    }
+    const int requestConfigStatus = runRequestConfigProbe(request);
+    if (requestConfigStatus != 0) {
+        return requestConfigStatus;
     }
 
     QCurl::QCNetworkMemoryCache memoryCache;
@@ -374,6 +379,11 @@ int main(int argc, char **argv)
     }
     poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig());
 
+    const int cookieStatus = runCookieAsyncResultProbe();
+    if (cookieStatus != 0) {
+        return cookieStatus;
+    }
+
     ConsumerSmokeMiddleware middleware;
     manager.addMiddleware(&middleware);
     if (manager.middlewares().size() != 1 || manager.middlewares().first() != &middleware
@@ -387,6 +397,5 @@ int main(int argc, char **argv)
 
     manager.setLogger(nullptr);
     manager.setDebugTraceEnabled(false);
-
     return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 28;
 }

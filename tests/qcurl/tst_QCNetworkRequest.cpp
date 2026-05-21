@@ -12,6 +12,8 @@
 
 #include <QtTest/QtTest>
 
+#include <chrono>
+
 using namespace QCurl;
 
 class TestQCNetworkRequest : public QObject
@@ -43,23 +45,8 @@ private slots:
     void testSetFollowLocation();
     void testFollowLocation();
 
-    // M1：重定向策略
-    void testRedirectPolicyDefaults();
-    void testSetMaxRedirects();
-    void testSetPostRedirectPolicy();
-    void testSetAutoRefererEnabled();
-    void testSetReferer();
-    void testSetAllowUnrestrictedSensitiveHeadersOnRedirect();
-
-    // M1：自动解压
-    void testAutoDecompressionDefaults();
-    void testSetAutoDecompressionEnabled();
-    void testSetAcceptedEncodings();
-
-    // M1：传输限速
-    void testSpeedLimitDefaults();
-    void testSetMaxDownloadBytesPerSec();
-    void testSetMaxUploadBytesPerSec();
+    void testRedirectConfig();
+    void testTransferConfig();
 
     // lane 测试
     void testLaneDefaults();
@@ -176,129 +163,78 @@ void TestQCNetworkRequest::testFollowLocation()
     QVERIFY(request.followLocation()); // 默认为 true
 }
 
-void TestQCNetworkRequest::testRedirectPolicyDefaults()
+void TestQCNetworkRequest::testRedirectConfig()
 {
     QCNetworkRequest request;
-
+    QVERIFY(request.followLocation());
     QVERIFY(!request.maxRedirects().has_value());
     QCOMPARE(request.postRedirectPolicy(), QCNetworkPostRedirectPolicy::Default);
     QVERIFY(!request.autoRefererEnabled());
     QVERIFY(request.referer().isEmpty());
     QVERIFY(!request.allowUnrestrictedSensitiveHeadersOnRedirect());
-}
 
-void TestQCNetworkRequest::testSetMaxRedirects()
-{
-    QCNetworkRequest request;
-    request.setMaxRedirects(5);
-    QVERIFY(request.maxRedirects().has_value());
-    QCOMPARE(request.maxRedirects().value(), 5);
+    QCNetworkRedirectConfig config;
+    config.setFollowLocation(false);
+    config.setMaxRedirects(4);
+    config.setPostRedirectPolicy(QCNetworkPostRedirectPolicy::KeepPost302);
+    config.setAutoRefererEnabled(true);
+    config.setReferer(QStringLiteral("https://example.com/from"));
+    config.setAllowUnrestrictedSensitiveHeadersOnRedirect(true);
+    request.setRedirectConfig(config);
+
+    QCOMPARE(request.followLocation(), false);
+    QCOMPARE(request.maxRedirects().value_or(-1), 4);
+    QCOMPARE(request.postRedirectPolicy(), QCNetworkPostRedirectPolicy::KeepPost302);
+    QVERIFY(request.autoRefererEnabled());
+    QCOMPARE(request.referer(), QStringLiteral("https://example.com/from"));
+    QVERIFY(request.allowUnrestrictedSensitiveHeadersOnRedirect());
 
     request.setMaxRedirects(-1);
     QVERIFY(!request.maxRedirects().has_value());
 }
 
-void TestQCNetworkRequest::testSetPostRedirectPolicy()
-{
-    QCNetworkRequest request;
-    request.setPostRedirectPolicy(QCNetworkPostRedirectPolicy::KeepPostAll);
-    QCOMPARE(request.postRedirectPolicy(), QCNetworkPostRedirectPolicy::KeepPostAll);
-}
-
-void TestQCNetworkRequest::testSetAutoRefererEnabled()
-{
-    QCNetworkRequest request;
-    QVERIFY(!request.autoRefererEnabled());
-
-    request.setAutoRefererEnabled(true);
-    QVERIFY(request.autoRefererEnabled());
-
-    request.setAutoRefererEnabled(false);
-    QVERIFY(!request.autoRefererEnabled());
-}
-
-void TestQCNetworkRequest::testSetReferer()
-{
-    QCNetworkRequest request;
-    request.setReferer(QStringLiteral("https://example.com/"));
-    QCOMPARE(request.referer(), QStringLiteral("https://example.com/"));
-}
-
-void TestQCNetworkRequest::testSetAllowUnrestrictedSensitiveHeadersOnRedirect()
-{
-    QCNetworkRequest request;
-    QVERIFY(!request.allowUnrestrictedSensitiveHeadersOnRedirect());
-
-    request.setAllowUnrestrictedSensitiveHeadersOnRedirect(true);
-    QVERIFY(request.allowUnrestrictedSensitiveHeadersOnRedirect());
-}
-
-void TestQCNetworkRequest::testAutoDecompressionDefaults()
+void TestQCNetworkRequest::testTransferConfig()
 {
     QCNetworkRequest request;
     QVERIFY(!request.autoDecompressionEnabled());
     QVERIFY(request.acceptedEncodings().isEmpty());
-}
+    QVERIFY(!request.maxDownloadBytesPerSec().has_value());
+    QVERIFY(!request.maxUploadBytesPerSec().has_value());
+    QVERIFY(!request.expect100ContinueTimeout().has_value());
 
-void TestQCNetworkRequest::testSetAutoDecompressionEnabled()
-{
-    QCNetworkRequest request;
-    request.setAutoDecompressionEnabled(true);
+    QCNetworkTransferConfig config;
+    config.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
+    config.setMaxDownloadBytesPerSec(4096);
+    config.setMaxUploadBytesPerSec(2048);
+    config.setBackpressureLimitBytes(32 * 1024);
+    config.setBackpressureResumeBytes(8 * 1024);
+    config.setExpect100ContinueTimeout(std::chrono::milliseconds(250));
+    config.setIpResolve(QCNetworkIpResolve::Ipv6);
+    config.setAllowedProtocols({QStringLiteral("http"), QStringLiteral("https")});
+    config.setAllowedRedirectProtocols({QStringLiteral("https")});
+    config.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
+    request.setTransferConfig(config);
+
     QVERIFY(request.autoDecompressionEnabled());
-
-    request.setAutoDecompressionEnabled(false);
-    QVERIFY(!request.autoDecompressionEnabled());
-}
-
-void TestQCNetworkRequest::testSetAcceptedEncodings()
-{
-    QCNetworkRequest request;
-
-    request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
-    QVERIFY(request.autoDecompressionEnabled());
-    QCOMPARE(request.acceptedEncodings(),
-             QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
+    QCOMPARE(request.acceptedEncodings(), QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
+    QCOMPARE(request.maxDownloadBytesPerSec().value_or(-1), 4096);
+    QCOMPARE(request.maxUploadBytesPerSec().value_or(-1), 2048);
+    QCOMPARE(request.backpressureLimitBytes(), qint64(32 * 1024));
+    QCOMPARE(request.backpressureResumeBytes(), qint64(8 * 1024));
+    QCOMPARE(request.expect100ContinueTimeout()->count(), 250);
+    QCOMPARE(request.ipResolve().value(), QCNetworkIpResolve::Ipv6);
+    QCOMPARE(request.allowedProtocols()->size(), 2);
+    QCOMPARE(request.allowedRedirectProtocols()->size(), 1);
+    QCOMPARE(request.unsupportedSecurityOptionPolicy(), QCUnsupportedSecurityOptionPolicy::Warn);
 
     request.setAcceptedEncodings({});
     QVERIFY(!request.autoDecompressionEnabled());
-    QVERIFY(request.acceptedEncodings().isEmpty());
-}
-
-void TestQCNetworkRequest::testSpeedLimitDefaults()
-{
-    QCNetworkRequest request;
-    QVERIFY(!request.maxDownloadBytesPerSec().has_value());
-    QVERIFY(!request.maxUploadBytesPerSec().has_value());
-}
-
-void TestQCNetworkRequest::testSetMaxDownloadBytesPerSec()
-{
-    QCNetworkRequest request;
-
-    request.setMaxDownloadBytesPerSec(1024);
-    QVERIFY(request.maxDownloadBytesPerSec().has_value());
-    QCOMPARE(request.maxDownloadBytesPerSec().value(), 1024);
-
-    request.setMaxDownloadBytesPerSec(0);
-    QVERIFY(!request.maxDownloadBytesPerSec().has_value());
-
     request.setMaxDownloadBytesPerSec(-1);
-    QVERIFY(!request.maxDownloadBytesPerSec().has_value());
-}
-
-void TestQCNetworkRequest::testSetMaxUploadBytesPerSec()
-{
-    QCNetworkRequest request;
-
-    request.setMaxUploadBytesPerSec(2048);
-    QVERIFY(request.maxUploadBytesPerSec().has_value());
-    QCOMPARE(request.maxUploadBytesPerSec().value(), 2048);
-
-    request.setMaxUploadBytesPerSec(0);
-    QVERIFY(!request.maxUploadBytesPerSec().has_value());
-
     request.setMaxUploadBytesPerSec(-1);
+    request.setExpect100ContinueTimeout(std::chrono::milliseconds(-1));
+    QVERIFY(!request.maxDownloadBytesPerSec().has_value());
     QVERIFY(!request.maxUploadBytesPerSec().has_value());
+    QVERIFY(!request.expect100ContinueTimeout().has_value());
 }
 
 void TestQCNetworkRequest::testLaneDefaults()
