@@ -97,6 +97,21 @@ ctest --test-dir build-public-api-system-no-ws -L '^public-api-slow$' --output-o
 
 最近一次本地复验：`2026-04-16` 已按上述命令在 `build-public-api-system-no-ws` 路径执行，`public-api` 与 `public-api-slow` 均通过。
 
+Static library 是显式 opt-in 路径，不能用默认 shared gate 代替。涉及 static target、导出依赖、安装包合同或 release ready 结论时，至少补跑：
+
+```bash
+cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
+  -DQCURL_BUILD_STATIC=ON \
+  -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
+
+cmake --build build-static --target QCurl qcurl_public_api_self_compile -j"$(nproc)"
+ctest --test-dir build-static -L '^public-api$' --output-on-failure
+ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
+```
+
+Static export 允许 `QCurl::QCurl` 通过 public link interface 暴露必要的 `CURL::libcurl` 与 `ZLIB::ZLIB`，但 `QCurlConfig.cmake` 必须同步 `find_dependency(CURL ...)` 和 `find_dependency(ZLIB)`。以上 static gate 通过前，不得声明 static library ready。
+
 ## 3. HTTP/2 本地验证
 
 `tst_QCNetworkHttp2` 默认使用仓库内置 node server，不依赖公网。
@@ -172,6 +187,44 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 4. 按需运行 `tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
 
 该口径只用于本地自检，不等于正式门禁。
+
+## 6.1 RC / Stable release gate
+
+`scripts/run_release_gate.py` 是本仓库的 no-git 发布门禁入口。它不检查工作区历史，也不调用
+`git`；输入只来自当前源码、构建目录、ABI baseline、capability probe 和文档扫描。
+
+```bash
+python3 scripts/run_release_gate.py --tier fast --build-dir build --dry-run
+python3 scripts/run_release_gate.py --tier strict --build-dir build --dry-run
+python3 scripts/run_release_gate.py --tier full --build-dir build --dry-run
+```
+
+分层含义：
+
+- `fast`：`contract.json`、`public-api`、`public-api-slow`，用于快速确认安装面和 consumer contract。
+- `strict`：在 fast 基础上增加 QtTest skip=fail、deprecated curl API、label matrix 和 skip contract。
+- `full`：在 strict 基础上增加完整 CTest、libcurl consistency full gate、ABI diff、capability matrix 和 release metadata scan。只有 full 层可作为 Stable shared library release gate。
+
+## 6.2 ABI baseline / ABI diff gate
+
+Stable shared library 需要真实 ABI baseline，而不是只依赖 public header layout scan。
+本仓库使用 `scripts/qcurl_abi_gate.py` 包装 `abidw` / `abidiff`：
+
+```bash
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.3.0.0 baseline
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.3.0.0 diff
+```
+
+默认 baseline 路径为 `abi/baseline/qcurl-core-v3.abi.xml`，默认 diff 报告路径为
+`build/abi/qcurl-core-v3.abidiff.txt`。缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时，
+gate fail-closed；发布结论必须把它记录为 release blocker。
+
+## 6.3 libcurl capability matrix
+
+`tests/libcurl_consistency/qcurl_lc_capability_probe` 会生成
+`build/libcurl_consistency/reports/capabilities.json`。该文件现在包含 `capabilityMatrix`，
+覆盖 build/runtime libcurl version、HTTP/2、HTTP/3、WebSocket、HSTS、Alt-Svc、proxy/SOCKS、
+TLS pinned public key 和 raw observability，并为缺失能力标注 Fail / Warn / Preview 归属。
 
 ## 7. external_heavy 显式 smoke
 

@@ -16,10 +16,10 @@
 
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装，作为 `3.0.0-rc.1` 稳定候选维护 API / ABI | `QCNetworkAccessManager`、`QCNetworkRequest`、`QCNetworkReply`、TLS / proxy / timeout / retry 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core** | 默认安装，作为 `3.0.0-rc.1` 稳定候选维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
 | **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
 | **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
-| **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、WebSocket |
+| **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
 
 除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md` 与 `docs/arch/rc-maturity-review.md`。
 
@@ -43,7 +43,7 @@
 - **SSL/TLS** - 可配置证书验证、客户端证书、CA 路径
 - **代理支持** - HTTP、HTTPS、SOCKS4/4A、SOCKS5
 - **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::send*()` 一套入口覆盖配置与发送
-- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置
+- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置；`QCNetworkRedirectConfig` 与 `QCNetworkTransferConfig` 聚合重定向和传输配置
 - **请求重试** - 指数退避算法，自动处理临时性错误
 - **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
 - **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
@@ -52,14 +52,18 @@
 - **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
 - **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
-- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面
+- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面；通用具体 middleware 通过 Other Extras opt-in 使用
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
 - **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
 - **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
+- **Cookie async result** - `QCCookieOperationResult` / `QCCookieExportResult` 是 manager cookie async signal 与 `QFuture` 的 Core 值结果
 
 ### Blocking Extras
 
 - **同步 value-result client** - `QCBlockingNetworkClient` / `QCBlockingNetworkResult` 通过显式 `BlockingExtrasDevelopment` 安装，不随默认 Core 安装。
+- **受限内存响应体** - `QCBlockingRequestOptions::maxInMemoryBodyBytes()` 默认限制内存响应体；超过上限返回 `NetworkError::BodyTooLarge`。
+- **大响应下载** - 大响应使用 `QCBlockingNetworkClient::downloadToDevice()` 写入调用方提供的 `QIODevice`，`body()` 保持为空，`bytesReceived()` 记录实际接收字节数。
+- **诊断错误边界** - Blocking Extras 使用 `BodyTooLarge`、`OutputDeviceError`、`InputDeviceError`、`ReplayNotSupported` 等明确错误；curl code 只通过 `diagnosticCurlCode()` 作为辅助诊断，不作为主判断 API。
 - **Cookie snapshot / delta** - `QCBlockingCookieStore` 提供 Blocking Extras cookie 边界，不访问 live manager cookie store。
 
 ### Test Support
@@ -69,6 +73,7 @@
 ### Other Extras / Preview
 
 - **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装；`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
+- **Middleware Extras** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
 - **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，条件进入 Other Extras；当前仍不属于默认 Core install surface。
 
 ### 性能基准说明
@@ -251,15 +256,16 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 
 ---
 
-## ⚡ 性能基准
+## ⚡ 性能回归入口
 
-基于真实网络测试（Google、nghttp2.org、Cloudflare）：
+性能数字只在绑定具体 benchmark 版本、依赖版本、网络环境和日期时才作为发布证据。
+当前 README 不把固定延迟或吞吐数字写成 `3.0.0-rc.1` 稳定承诺。
 
-| 场景     | HTTP/1.1  | HTTP/2            | HTTP/3             |
-| ------ | --------- | ----------------- | ------------------ |
-| 单请求延迟  | 530 ms    | 145 ms (**-73%**) | ~100 ms (**-81%**) |
-| 5 并发请求 | 31,000 ms | ~15,000 ms        | ~10,000 ms         |
-| 连接数    | 5         | 1                 | 1                  |
+性能回归与能力证据以以下入口为准：
+
+- `docs/reference/performance.md`
+- `docs/reference/benchmarks.md`
+- `tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
 
 ---
 
@@ -292,6 +298,17 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 find_package(QCurl CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE QCurl::QCurl)
 ```
+
+默认构建发布 shared library。Static library 需要显式 opt-in：
+
+```bash
+cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release -DQCURL_BUILD_STATIC=ON
+cmake --build build-static --target QCurl qcurl_public_api_self_compile
+ctest --test-dir build-static -L '^public-api$' --output-on-failure
+ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
+```
+
+Static 路径通过前只能说明 static opt-in 构建链路可用；在 static export、consumer smoke、pkg-config 和 release gate 证据齐备前，不声明 whole project static library ready。
 
 ### pkg-config
 

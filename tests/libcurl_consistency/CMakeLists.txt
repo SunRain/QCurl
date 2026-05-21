@@ -18,7 +18,10 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
             QCurl
             CURL::libcurl
     )
-    target_compile_definitions(tst_LibcurlConsistency PRIVATE QCURL_ENABLE_TEST_HOOKS)
+    target_compile_definitions(tst_LibcurlConsistency PRIVATE
+        QCURL_ENABLE_TEST_HOOKS
+        QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
+    )
     target_include_directories(tst_LibcurlConsistency
         PRIVATE
             ${CMAKE_SOURCE_DIR}/src

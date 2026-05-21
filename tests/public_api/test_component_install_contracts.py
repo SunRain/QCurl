@@ -45,7 +45,6 @@ def test_check_blocking_extras_install_rejects_default_leak(tmp_path, capsys) ->
 
     assert rc == 1
     assert "leaked into default Core stage" in capsys.readouterr().err
-
 def test_check_test_support_install_requires_opt_in_headers(tmp_path, capsys) -> None:
     default_include = tmp_path / "default" / "include" / "qcurl"
     test_support_include = tmp_path / "test_support" / "include" / "qcurl"
@@ -128,5 +127,3 @@ def test_check_other_extras_install_rejects_default_leak(tmp_path, capsys) -> No
 
     assert rc == 1
     assert "leaked into default Core stage" in capsys.readouterr().err
-
-
