@@ -110,7 +110,7 @@ ctest --test-dir build-static -L '^public-api$' --output-on-failure
 ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
 ```
 
-Static export 允许 `QCurl::QCurl` 通过 public link interface 暴露必要的 `CURL::libcurl` 与 `ZLIB::ZLIB`，但 `QCurlConfig.cmake` 必须同步 `find_dependency(CURL ...)` 和 `find_dependency(ZLIB)`。以上 static gate 通过前，不得声明 static library ready。
+Static export 允许 `QCurl::QCurl` 通过 public link interface 暴露必要的 `CURL::libcurl` 与 `ZLIB::ZLIB`，但 `QCurlConfig.cmake` 必须同步 `find_dependency(CURL ...)` 和 `find_dependency(ZLIB)`。正式打包前仍以 full release gate 的最新 shared/static 结果为准；static gate 通过只证明 Core static library ready，不代表 whole project Stable。
 
 ## 3. HTTP/2 本地验证
 

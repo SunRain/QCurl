@@ -30,7 +30,7 @@
 
 ### 2.2 `pauseTransport/resumeTransport` 的边界
 
-- **仅 `ExecutionMode::Async` 生效**；Sync 模式调用为 `qWarning()` + no-op。
+- 仅 Core 异步 `QCNetworkReply` 生效；非运行态调用保持幂等 no-op。
 - 跨线程调用会自动 marshal 到 reply 线程（异步）。
 - 仅状态机允许的转换生效：
   - `Running → Paused`（pause）

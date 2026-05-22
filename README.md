@@ -10,18 +10,18 @@
 
 ---
 
-## 发布状态与 RC 边界
+## 发布状态与 Core first Stable 边界
 
-`QCurl 3.0.0-rc.1` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。
+`QCurl Core first Stable` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于本次 Core first Stable 发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
 
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装，作为 `3.0.0-rc.1` 稳定候选维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core** | 默认安装，作为 Core first Stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
 | **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
 | **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
 | **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
 
-除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md` 与 `docs/arch/rc-maturity-review.md`。
+除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md`、`docs/arch/rc-maturity-review.md` 与 `docs/arch/rc-stable-readiness-report.md`。
 
 ## 为什么选择 QCurl？
 
@@ -106,7 +106,7 @@ sudo cmake --install build
 
 发布合同提示：
 
-- `3.0.0-rc.1` 只承诺 Core install surface。
+- Core first Stable 只承诺 Core install surface。
 - Blocking Extras / Test Support / Other Extras 需要发行包显式安装对应 component，不随默认 Core 隐式安装。
 - 当前 lane-aware scheduler 的 breaking ABI 变更以 `QCurl 3.0.0 / SOVERSION 3` 发布。
 
@@ -138,7 +138,7 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 #### 2. WebSocket 连接（Preview）
 
 > 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
-> 它可以作为 Preview 功能使用，但不属于 `3.0.0-rc.1` 的 Core 稳定承诺。
+> 它可以作为 Preview 功能使用，但不属于 Core first Stable 承诺。
 
 ```cpp
 #include <QCWebSocket.h>
@@ -308,7 +308,7 @@ ctest --test-dir build-static -L '^public-api$' --output-on-failure
 ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
 ```
 
-Static 路径通过前只能说明 static opt-in 构建链路可用；在 static export、consumer smoke、pkg-config 和 release gate 证据齐备前，不声明 whole project static library ready。
+Static 路径已纳入 full release gate。正式打包前仍以 `scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static` 的最新输出为准；即使 static gate 通过，也只声明 Core static library ready，不声明 whole project static library ready。
 
 ### pkg-config
 

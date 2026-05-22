@@ -265,7 +265,7 @@ QCNetworkReply* sendHead(const QCNetworkRequest &request);
 QCNetworkReply* sendGet(const QCNetworkRequest &request);
 QCNetworkReply* sendPost(const QCNetworkRequest &request, const QByteArray &data);
 QCNetworkReply* sendPut(const QCNetworkRequest &request, const QByteArray &data);
-QCNetworkReply* sendDelete(const QCNetworkRequest &request);
+QCNetworkReply* deleteResource(const QCNetworkRequest &request);
 QCNetworkReply* sendPatch(const QCNetworkRequest &request, const QByteArray &data);
 
 // Multipart 上传

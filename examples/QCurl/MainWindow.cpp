@@ -131,7 +131,7 @@ void MainWindow::tst_blockingExtras()
 
         // Blocking Extras 示例：同步阻塞入口已从 Core 移出，返回 value result。
         // 注意：GUI 应用生产代码应放到 worker thread 中执行，避免冻结 UI。
-        const QCurl::QCBlockingNetworkResult result = client.sendGet(request);
+        const QCurl::QCBlockingNetworkResult result = client.get(request);
 
         qDebug() << Q_FUNC_INFO << "///////////////////////////////////////////////////////////";
 

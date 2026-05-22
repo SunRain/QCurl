@@ -7,8 +7,8 @@
 ### 1.1 `QCNetworkReply` 传输级 pause/resume
 
 - 公开入口：`QCNetworkReply::pauseTransport(PauseMode)` / `resumeTransport()`
-- 支持范围：仅 `ExecutionMode::Async`
-- `Sync` 模式：`qWarning()` + no-op
+- 支持范围：Core 异步 `QCNetworkReply` 传输路径
+- Blocking Extras 同步 value-result 路径不暴露 reply 级 pause/resume 合同
 - 生效状态：
   - 仅 `Running -> Paused`
   - 仅 `Paused -> Running`
@@ -54,7 +54,6 @@
 
 ## 3. 当前已覆盖的关键场景
 
-- Sync 模式 pause/resume 的 no-op 合同
 - Async 模式跨线程 pause/resume
 - 下载方向 backpressure 激活与自动恢复
 - 流式上传方向 pause/resume

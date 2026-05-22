@@ -21,8 +21,8 @@ QCurl 需要同时区分两类语义：
 
 ### 3.1 支持范围
 
-- 只支持 `ExecutionMode::Async`
-- `Sync` 模式调用 `pauseTransport()` / `resumeTransport()` 必须给出警告并保持 no-op
+- 只支持 Core 异步 `QCNetworkReply`
+- 非运行态调用 `pauseTransport()` / `resumeTransport()` 保持 no-op
 
 ### 3.2 状态机
 

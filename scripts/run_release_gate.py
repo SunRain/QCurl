@@ -27,6 +27,7 @@ def _repo_root() -> Path:
 
 def _build_steps(args: argparse.Namespace) -> list[GateStep]:
     build_dir = args.build_dir
+    static_build_dir = args.static_build_dir
     jobs = str(args.jobs)
     python = args.python
     ctest = args.ctest
@@ -43,16 +44,75 @@ def _build_steps(args: argparse.Namespace) -> list[GateStep]:
 
     steps.extend([
         GateStep(
-            "public_api",
+            "shared_public_api",
             "fast",
             [ctest, "--test-dir", str(build_dir), "-L", "^public-api$", "--output-on-failure"],
-            "run public header self-compile and manifest checks",
+            "run shared public header self-compile and manifest checks",
         ),
         GateStep(
-            "public_api_slow",
+            "shared_public_api_slow",
             "fast",
             [ctest, "--test-dir", str(build_dir), "-L", "^public-api-slow$", "--output-on-failure"],
-            "run staging install/export and consumer smoke checks",
+            "run shared staging install/export/pkg-config and consumer smoke checks",
+        ),
+        GateStep(
+            "static_configure",
+            "full",
+            [
+                cmake,
+                "-S",
+                ".",
+                "-B",
+                str(static_build_dir),
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DBUILD_EXAMPLES=OFF",
+                "-DBUILD_BENCHMARKS=OFF",
+                "-DBUILD_TESTING=ON",
+                "-DQCURL_BUILD_STATIC=ON",
+                "-DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF",
+            ],
+            "configure independent QCURL_BUILD_STATIC=ON build tree",
+        ),
+        GateStep(
+            "static_build",
+            "full",
+            [
+                cmake,
+                "--build",
+                str(static_build_dir),
+                "--target",
+                "QCurl",
+                "qcurl_public_api_self_compile",
+                "-j",
+                jobs,
+            ],
+            "build static QCurl and static public header self-compile target",
+        ),
+        GateStep(
+            "static_public_api",
+            "full",
+            [
+                ctest,
+                "--test-dir",
+                str(static_build_dir),
+                "-L",
+                "^public-api$",
+                "--output-on-failure",
+            ],
+            "run static public-api gate in the independent static build tree",
+        ),
+        GateStep(
+            "static_public_api_slow",
+            "full",
+            [
+                ctest,
+                "--test-dir",
+                str(static_build_dir),
+                "-L",
+                "^public-api-slow$",
+                "--output-on-failure",
+            ],
+            "run static install/export/pkg-config and consumer smoke gate",
         ),
         GateStep(
             "strict_qttest",
@@ -209,6 +269,7 @@ def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
     payload = {
         "tier": args.tier,
         "buildDir": str(args.build_dir),
+        "staticBuildDir": str(args.static_build_dir),
         "steps": [
             {
                 "name": step.name,
@@ -228,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tier", choices=("fast", "strict", "full"), default="fast")
     parser.add_argument("--build-dir", type=Path, default=Path("build"))
+    parser.add_argument("--static-build-dir", type=Path, default=Path("build-static"))
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--cmake", default="cmake")
@@ -248,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = _repo_root()
     if not args.build_dir.is_absolute():
         args.build_dir = (repo_root / args.build_dir).resolve()
+    if not args.static_build_dir.is_absolute():
+        args.static_build_dir = (repo_root / args.static_build_dir).resolve()
 
     if args.scan_metadata:
         return _scan_metadata(repo_root)
