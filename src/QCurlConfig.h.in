@@ -31,7 +31,7 @@
 // Qt 版本检查：要求 Qt 6.0 或更高
 #include <QtGlobal>
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-#error "QCurl v2.0 requires Qt 6.0 or later. Please upgrade your Qt installation."
+#error "QCurl requires Qt 6.0 or later. Please upgrade your Qt installation."
 #endif
 
 // 特性可用性检查宏

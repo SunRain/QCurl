@@ -76,7 +76,19 @@ int main(int argc, char **argv)
 
     QCurl::QCBlockingNetworkClient client(options);
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
-    const auto result = client.send(request, QCurl::HttpMethod::Get, {}, requestOptions);
+    const auto result = client.get(request, requestOptions);
+    const auto deleteResult = client.deleteResource(request, requestOptions);
+    const auto postResult =
+        client.post(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto putResult =
+        client.put(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto patchResult =
+        client.patch(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto customDeleteResult = client.sendCustomRequest(
+        request,
+        QByteArrayLiteral("DELETE"),
+        QByteArrayLiteral("payload"),
+        requestOptions);
 
     QBuffer body;
     body.setData(QByteArrayLiteral("body"));
@@ -84,12 +96,18 @@ int main(int argc, char **argv)
         return 5;
     }
     static_cast<void>(static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-        const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>) const>(
-        &QCurl::QCBlockingNetworkClient::sendPost));
+        const QCurl::QCNetworkRequest &,
+        QIODevice *,
+        std::optional<qint64>,
+        const QCurl::QCBlockingRequestOptions &) const>(
+        &QCurl::QCBlockingNetworkClient::post));
     static_cast<void>(static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-        const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>) const>(
-        &QCurl::QCBlockingNetworkClient::sendPut));
-    const auto uploadResult = client.sendPost(request, &body, qint64(4));
+        const QCurl::QCNetworkRequest &,
+        QIODevice *,
+        std::optional<qint64>,
+        const QCurl::QCBlockingRequestOptions &) const>(
+        &QCurl::QCBlockingNetworkClient::put));
+    const auto uploadResult = client.post(request, &body, qint64(4));
 
     QBuffer output;
     if (!output.open(QIODevice::WriteOnly)) {
@@ -100,6 +118,10 @@ int main(int argc, char **argv)
     if (result.isSuccess() || result.error() != QCurl::NetworkError::InvalidRequest
         || result.errorMessage().isEmpty() || result.errorMessage().contains(QStringLiteral("not wired"))) {
         return 2;
+    }
+    if (deleteResult.isSuccess() || postResult.isSuccess() || putResult.isSuccess()
+        || patchResult.isSuccess() || customDeleteResult.isSuccess()) {
+        return 13;
     }
     if (uploadResult.isSuccess() || uploadResult.errorMessage().isEmpty()) {
         return 6;
@@ -114,7 +136,7 @@ int main(int argc, char **argv)
         return 3;
     }
 
-    const auto rejected = client.sendGet(request);
+    const auto rejected = client.get(request);
     if (rejected.isSuccess()
         || !rejected.errorMessage().contains(QStringLiteral("application-thread opt-in"))) {
         return 4;

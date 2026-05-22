@@ -245,6 +245,17 @@ set_tests_properties(qcurl_public_api_export_contract PROPERTIES
 )
 
 add_test(
+    NAME qcurl_public_api_pkg_config_contract
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            check-pkg-config-contract
+            --stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+)
+set_tests_properties(qcurl_public_api_pkg_config_contract PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_stage
+)
+
+add_test(
     NAME qcurl_public_api_blocking_extras_install_contract
     COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
             check-blocking-extras-install

@@ -140,6 +140,20 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
         "using QCBlockingProgressCallback = std::function<bool()>;\n",
         encoding="utf-8",
     )
+    (src / "QCNetworkReply.h").write_text(
+        "enum class ExecutionMode { Async, Sync };\n"
+        "class QCNetworkReply { public: void setWriteCallback(); };\n"
+        "using DataFunction = int;\n"
+        "using SeekFunction = int;\n"
+        "using ProgressFunction = int;\n",
+        encoding="utf-8",
+    )
+    qcurl_tests = tmp_path / "tests" / "qcurl"
+    qcurl_tests.mkdir(parents=True)
+    (qcurl_tests / "tst_QCNetworkReply.cpp").write_text(
+        "void f() { reply.setWriteCallback(); }\n",
+        encoding="utf-8",
+    )
 
     rc = public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path))
 
@@ -149,6 +163,12 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     assert "releaseDevice" in err
     assert "QCNetworkRequest virtual destructor" in err
     assert "Blocking Extras std::function progress callback" in err
+    assert "removed QCNetworkReply ExecutionMode" in err
+    assert "removed QCNetworkReply DataFunction typedef" in err
+    assert "removed QCNetworkReply SeekFunction typedef" in err
+    assert "removed QCNetworkReply ProgressFunction typedef" in err
+    assert "removed QCNetworkReply callback setter" in err
+    assert "removed QCNetworkReply callback setter call" in err
 
 def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsys) -> None:
     surface = tmp_path / "surface.json"

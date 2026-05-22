@@ -18,8 +18,10 @@ from tests.public_api.test_support_contracts import check_test_support_install a
 from tests.public_api.test_support_contracts import run_test_support_consumer_smoke
 from tests.public_api.other_extras_contracts import check_other_extras_install as _check_other_extras_install
 from tests.public_api.other_extras_contracts import run_other_extras_consumer_smoke
+from tests.public_api.pkg_config_contracts import check_pkg_config_contract as _check_pkg_config_contract
 from tests.public_api.consumer_contracts import run_consumer_smoke
 from tests.public_api.export_contracts import check_export_contract as _check_export_contract
+from tests.public_api.hard_break_guards import scan_hard_break_guards as _scan_hard_break_guards
 from tests.public_api.layout_scan import GuardrailFinding
 from tests.public_api.layout_scan import collect_cpp_sources
 from tests.public_api.layout_scan import collect_layout_findings
@@ -30,6 +32,29 @@ from tests.public_api.stage_contracts import check_installed_headers as _check_i
 from tests.public_api.stage_contracts import install_stage as _install_stage
 from tests.public_api.stage_contracts import read_manifest
 from tests.public_api.surface_manifest import validate_surface_manifest
+
+
+def _add_common_build_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cmake", required=True)
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--config", default="")
+
+
+def _add_public_api_install_args(parser: argparse.ArgumentParser) -> None:
+    _add_common_build_args(parser)
+    parser.add_argument("--stage-dir", type=Path, required=True)
+    parser.add_argument("--component", action="append", dest="components")
+
+
+def _add_opt_in_smoke_args(parser: argparse.ArgumentParser, stage_arg: str) -> None:
+    parser.add_argument("--cmake", required=True)
+    parser.add_argument(stage_arg, type=Path, required=True)
+    parser.add_argument("--default-stage-dir", type=Path, required=True)
+    parser.add_argument("--positive-source-dir", type=Path, required=True)
+    parser.add_argument("--positive-build-dir", type=Path, required=True)
+    parser.add_argument("--negative-source-dir", type=Path, required=True)
+    parser.add_argument("--negative-build-dir", type=Path, required=True)
+    parser.add_argument("--config", default="")
 
 
 def fail(message: str) -> int:
@@ -130,69 +155,7 @@ def scan_headers(args: argparse.Namespace) -> int:
 def scan_hard_break_guards(args: argparse.Namespace) -> int:
     """Scan source/documentation surfaces for APIs removed by hard-break cleanup."""
 
-    deny_rules = [
-        ("old fromSingleFileDevice ownerThread",
-         re.compile(r"fromSingleFileDevice\s*\(\s*QThread\s*\*")),
-        ("old fromSingleFileDevice return",
-         re.compile(r"(?:static\s+)?QCNetworkMultipartBody\s+fromSingleFileDevice\s*\(")),
-        ("old multipart invalid-object predicate",
-         re.compile(r"fromSingleFileDevice.*(?:isValid|errorString)\s*\(")),
-        ("releaseDevice",
-         re.compile(r"\breleaseDevice\s*\(")),
-        ("old QCNetworkAccessManager exportCookies return",
-         re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookies\s*\(")),
-        ("old QCCurlMultiManager exportCookiesForManager return",
-         re.compile(r"QList\s*<\s*QNetworkCookie\s*>\s+exportCookiesForManager\s*\(")),
-        ("QCNetworkRequest virtual destructor",
-         re.compile(r"\bvirtual\s+~\s*QCNetworkRequest\s*\(")),
-        ("Blocking Extras std::function progress callback",
-         re.compile(r"QCBlockingProgressCallback\s*=\s*std::function\b")),
-    ]
-
-    include_paths = [
-        "src",
-        "include",
-        "examples",
-        "tests/public_api/consumer_smoke",
-        "docs/user",
-        "docs/arch",
-        "tests/qcurl",
-        "tests/libcurl_consistency",
-    ]
-    excluded_parts = {
-        ".git",
-        "build",
-        "generated",
-        ".helloagents",
-        "__pycache__",
-    }
-
-    violations: list[str] = []
-    for include_path in include_paths:
-        root = args.repo_root / include_path
-        if not root.exists():
-            continue
-        files = root.rglob("*") if root.is_dir() else [root]
-        for path in files:
-            if not path.is_file() or any(part in excluded_parts for part in path.parts):
-                continue
-            try:
-                content = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            for line_number, line in enumerate(content.splitlines(), start=1):
-                for rule_name, pattern in deny_rules:
-                    if pattern.search(line):
-                        violations.append(
-                            f"{path.relative_to(args.repo_root)}:{line_number}: {rule_name}: {line.strip()}"
-                        )
-
-    if violations:
-        print("\n".join(violations), file=sys.stderr)
-        return 1
-
-    print("[public_api] hard-break guard scan passed")
-    return 0
+    return _scan_hard_break_guards(args.repo_root, fail)
 
 
 def install_stage(args: argparse.Namespace) -> int:
@@ -213,6 +176,12 @@ def check_installed_headers(args: argparse.Namespace) -> int:
 def check_export_contract(args: argparse.Namespace) -> int:
     """Verify installed export files expose only expected dependency targets."""
     return _check_export_contract(args.stage_dir, fail_func=fail)
+
+
+def check_pkg_config_contract(args: argparse.Namespace) -> int:
+    """Verify qcurl.pc shared/static dependency contract."""
+
+    return _check_pkg_config_contract(args.stage_dir, args.pkg_config, fail)
 
 
 def check_blocking_extras_install(args: argparse.Namespace) -> int:
@@ -284,18 +253,12 @@ def build_parser() -> argparse.ArgumentParser:
     surface.set_defaults(func=lambda args: validate_surface_manifest(args, fail_func=fail))
 
     install = subparsers.add_parser("install")
-    install.add_argument("--cmake", required=True)
-    install.add_argument("--build-dir", type=Path, required=True)
-    install.add_argument("--stage-dir", type=Path, required=True)
-    install.add_argument("--component", action="append", dest="components")
-    install.add_argument("--config", default="")
+    _add_public_api_install_args(install)
     install.set_defaults(func=install_stage)
 
     build = subparsers.add_parser("build-target")
-    build.add_argument("--cmake", required=True)
-    build.add_argument("--build-dir", type=Path, required=True)
+    _add_common_build_args(build)
     build.add_argument("--target", required=True)
-    build.add_argument("--config", default="")
     build.set_defaults(func=build_target)
 
     headers = subparsers.add_parser("check-installed-headers")
@@ -307,6 +270,11 @@ def build_parser() -> argparse.ArgumentParser:
     export = subparsers.add_parser("check-export-contract")
     export.add_argument("--stage-dir", type=Path, required=True)
     export.set_defaults(func=check_export_contract)
+
+    pkg_config = subparsers.add_parser("check-pkg-config-contract")
+    pkg_config.add_argument("--stage-dir", type=Path, required=True)
+    pkg_config.add_argument("--pkg-config", default="pkg-config")
+    pkg_config.set_defaults(func=check_pkg_config_contract)
 
     blocking_install = subparsers.add_parser("check-blocking-extras-install")
     blocking_install.add_argument("--default-stage-dir", type=Path, required=True)
@@ -337,36 +305,15 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.set_defaults(func=consumer_smoke)
 
     blocking_smoke = subparsers.add_parser("blocking-extras-consumer-smoke")
-    blocking_smoke.add_argument("--cmake", required=True)
-    blocking_smoke.add_argument("--blocking-stage-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--default-stage-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--positive-source-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--positive-build-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--negative-source-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--negative-build-dir", type=Path, required=True)
-    blocking_smoke.add_argument("--config", default="")
+    _add_opt_in_smoke_args(blocking_smoke, "--blocking-stage-dir")
     blocking_smoke.set_defaults(func=blocking_extras_consumer_smoke)
 
     test_support_smoke = subparsers.add_parser("test-support-consumer-smoke")
-    test_support_smoke.add_argument("--cmake", required=True)
-    test_support_smoke.add_argument("--test-support-stage-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--default-stage-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--positive-source-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--positive-build-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--negative-source-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--negative-build-dir", type=Path, required=True)
-    test_support_smoke.add_argument("--config", default="")
+    _add_opt_in_smoke_args(test_support_smoke, "--test-support-stage-dir")
     test_support_smoke.set_defaults(func=test_support_consumer_smoke)
 
     other_extras_smoke = subparsers.add_parser("other-extras-consumer-smoke")
-    other_extras_smoke.add_argument("--cmake", required=True)
-    other_extras_smoke.add_argument("--other-extras-stage-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--default-stage-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--positive-source-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--positive-build-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--negative-source-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--negative-build-dir", type=Path, required=True)
-    other_extras_smoke.add_argument("--config", default="")
+    _add_opt_in_smoke_args(other_extras_smoke, "--other-extras-stage-dir")
     other_extras_smoke.set_defaults(func=other_extras_consumer_smoke)
 
     return parser
