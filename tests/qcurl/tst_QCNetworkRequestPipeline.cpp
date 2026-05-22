@@ -81,10 +81,13 @@ QByteArray TestQCNetworkRequestPipeline::compiledPlanDigest(const QCNetworkReque
                                                            HttpMethod method,
                                                            const QByteArray &body) const
 {
-    const auto requestBody = body.isEmpty() ? Internal::makeEmptyRequestBody()
-                                            : Internal::makeInlineRequestBody(body);
-    const auto normalized = Internal::normalizeRequest(request, method, ExecutionMode::Sync, requestBody);
-    return Internal::buildCurlPlanDigestForTest(Internal::compileRequest(normalized));
+    const Internal::RequestBody requestBody = body.isEmpty()
+        ? Internal::makeEmptyRequestBody()
+        : Internal::makeInlineRequestBody(body);
+    const Internal::NormalizedRequest normalized =
+        Internal::normalizeRequest(request, method, requestBody);
+    const Internal::CurlPlan plan = Internal::compileRequest(normalized);
+    return Internal::buildCurlPlanDigestForTest(plan);
 }
 
 void TestQCNetworkRequestPipeline::testSendGetAndSchedulerShareDigest()

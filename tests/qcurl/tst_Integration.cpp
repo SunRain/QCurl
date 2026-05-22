@@ -324,7 +324,7 @@ void TestIntegration::testRealHttpPutRequest()
 void TestIntegration::testRealHttpDeleteRequest()
 {
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delete"));
-    auto *reply = m_manager->sendDelete(request);
+    auto *reply = m_manager->deleteResource(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
     QCOMPARE(reply->error(), NetworkError::NoError);

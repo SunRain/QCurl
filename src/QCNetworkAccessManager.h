@@ -11,6 +11,7 @@
 #include "QCNetworkHttpMethod.h"
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QFuture>
 #include <QNetworkCookie>
 #include <QObject>
@@ -227,11 +228,8 @@ public:
                             QIODevice *device,
                             std::optional<qint64> sizeBytes = std::nullopt);
 
-    /// 发送 DELETE 请求（异步），必须在 manager owner thread 调用。
-    QCNetworkReply *sendDelete(const QCNetworkRequest &request);
-
-    /// 发送 DELETE 请求（异步，可携带请求体），必须在 manager owner thread 调用。
-    QCNetworkReply *sendDelete(const QCNetworkRequest &request, const QByteArray &data);
+    /// 发送 DELETE 请求（异步、无请求体），必须在 manager owner thread 调用。
+    QCNetworkReply *deleteResource(const QCNetworkRequest &request);
 
     /// 发送 PATCH 请求（异步），必须在 manager owner thread 调用。
     QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QByteArray &data);
@@ -243,6 +241,24 @@ public:
      * request 原值。
      */
     QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QCNetworkBody &body);
+
+    /**
+     * @brief 发送显式 custom HTTP 请求（异步、无请求体）。
+     *
+     * method 必须是 RFC HTTP token。该入口是非标准 HTTP 语义的窄 escape hatch，
+     * 常规方法应继续使用 method-specific API。
+     */
+    QCNetworkReply *sendCustomRequest(const QCNetworkRequest &request, QByteArrayView method);
+
+    /**
+     * @brief 发送显式 custom HTTP 请求（异步、内联请求体）。
+     *
+     * method 必须是 RFC HTTP token。该入口用于显式表达 DELETE body 等少量非标准组合，
+     * 不暴露 libcurl option、callback 或 replay 语义。
+     */
+    QCNetworkReply *sendCustomRequest(const QCNetworkRequest &request,
+                                      QByteArrayView method,
+                                      const QByteArray &data);
 
     /// 设置日志记录器（manager 不持有所有权）。
     void setLogger(QCNetworkLogger *logger);

@@ -25,6 +25,8 @@ QString methodName(HttpMethod method)
             return QStringLiteral("DELETE");
         case HttpMethod::Patch:
             return QStringLiteral("PATCH");
+        case HttpMethod::Custom:
+            return QStringLiteral("CUSTOM");
     }
 
     return QStringLiteral("UNKNOWN");
@@ -41,11 +43,23 @@ RequestBody makeEmptyRequestBody()
 RequestBody makeInlineRequestBody(const QByteArray &inlineBody)
 {
     RequestBody body;
-    if (!inlineBody.isEmpty()) {
-        body.kind        = RequestBodyKind::InlineBytes;
-        body.inlineBytes = inlineBody;
-        body.sizeBytes   = inlineBody.size();
-    }
+    body.kind        = RequestBodyKind::InlineBytes;
+    body.inlineBytes = inlineBody;
+    body.sizeBytes   = inlineBody.size();
+    return body;
+}
+
+RequestBody makeCustomRequestBody(const QByteArray &method)
+{
+    RequestBody body;
+    body.customMethod = method;
+    return body;
+}
+
+RequestBody makeCustomInlineRequestBody(const QByteArray &method, const QByteArray &inlineBody)
+{
+    RequestBody body = makeInlineRequestBody(inlineBody);
+    body.customMethod = method;
     return body;
 }
 
@@ -69,14 +83,12 @@ RequestBody makeDeviceRequestBody(QIODevice *device,
 
 NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
                                    HttpMethod method,
-                                   ExecutionMode mode,
                                    const RequestBody &body)
 {
     NormalizedRequest normalized;
-    normalized.request       = request;
-    normalized.method        = method;
-    normalized.executionMode = mode;
-    normalized.body          = body;
+    normalized.request = request;
+    normalized.method = method;
+    normalized.body = body;
 
     return normalized;
 }
@@ -128,9 +140,19 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
                 plan.bodySizeBytes = inlineBodySize;
             }
             break;
+        case HttpMethod::Custom:
+            plan.customRequest = normalized.body.customMethod;
+            if (hasBodySource) {
+                plan.transferMode = CurlTransferMode::RequestBodySource;
+                plan.bodySizeBytes = normalized.body.sizeBytes;
+            } else if (normalized.body.hasInlineBytes()) {
+                plan.transferMode = CurlTransferMode::InlineBytes;
+                plan.bodySizeBytes = inlineBodySize;
+            }
+            break;
     }
 
-    plan.hasRequestBody = hasBodySource || inlineBodySize > 0;
+    plan.hasRequestBody = hasBodySource || normalized.body.hasInlineBytes();
     return plan;
 }
 

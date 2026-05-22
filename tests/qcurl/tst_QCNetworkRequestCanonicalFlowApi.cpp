@@ -53,7 +53,9 @@ private slots:
     // 请求发送测试
     void testSendGet();
     void testSendPost();
-    void testSendDeleteWithBody();
+    void testSendCustomDeleteWithBody();
+    void testSendCustomRequestRejectsInvalidMethod_data();
+    void testSendCustomRequestRejectsInvalidMethod();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -361,20 +363,20 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendPost()
 }
 
 /**
- * @brief 测试 sendDelete（携带 body）
+ * @brief 测试 sendCustomRequest 显式 DELETE body
  */
-void TestQCNetworkRequestCanonicalFlowApi::testSendDeleteWithBody()
+void TestQCNetworkRequestCanonicalFlowApi::testSendCustomDeleteWithBody()
 {
     // Arrange
     QUrl url1("http://example.com/delete");
     QUrl url2("http://example.com/delete2");
-    m_mock.mockResponse(HttpMethod::Delete, url1, QByteArray("OK"));
-    m_mock.mockResponse(HttpMethod::Delete, url2, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Custom, url1, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Custom, url2, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
     QByteArray body = "test=data";
     QCNetworkRequest request(url1);
-    auto *reply = m_manager->sendDelete(request, body);
+    auto *reply = m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
 
     // Assert
     QVERIFY(reply != nullptr);
@@ -382,21 +384,52 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendDeleteWithBody()
     reply->deleteLater();
 
     QCNetworkRequest request2(url2);
-    auto *reply2 = m_manager->sendDelete(request2, body);
+    auto *reply2 = m_manager->sendCustomRequest(request2, QByteArrayLiteral("DELETE"), body);
     QVERIFY(reply2 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
     reply2->deleteLater();
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 2);
-    QCOMPARE(captured.at(0).method(), HttpMethod::Delete);
+    QCOMPARE(captured.at(0).method(), HttpMethod::Custom);
+    QCOMPARE(captured.at(0).customMethod(), QByteArrayLiteral("DELETE"));
     QCOMPARE(captured.at(0).url(), url1);
     QCOMPARE(captured.at(0).bodySize(), body.size());
     QCOMPARE(captured.at(0).bodyPreview(), body);
-    QCOMPARE(captured.at(1).method(), HttpMethod::Delete);
+    QCOMPARE(captured.at(1).method(), HttpMethod::Custom);
+    QCOMPARE(captured.at(1).customMethod(), QByteArrayLiteral("DELETE"));
     QCOMPARE(captured.at(1).url(), url2);
     QCOMPARE(captured.at(1).bodySize(), body.size());
     QCOMPARE(captured.at(1).bodyPreview(), body);
+}
+
+
+void TestQCNetworkRequestCanonicalFlowApi::testSendCustomRequestRejectsInvalidMethod_data()
+{
+    QTest::addColumn<QByteArray>("method");
+
+    QTest::newRow("empty") << QByteArray();
+    QTest::newRow("space") << QByteArrayLiteral("DE LETE");
+    QTest::newRow("tab") << QByteArrayLiteral("DE\tLETE");
+    QTest::newRow("crlf") << QByteArray("DELETE\r\nInjected: yes");
+    QTest::newRow("separator") << QByteArrayLiteral("BAD/VERB");
+}
+
+void TestQCNetworkRequestCanonicalFlowApi::testSendCustomRequestRejectsInvalidMethod()
+{
+    QFETCH(QByteArray, method);
+
+    const QUrl url("http://example.com/invalid-custom-method");
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendCustomRequest(request, method, QByteArrayLiteral("body"));
+
+    QVERIFY(reply != nullptr);
+    QVERIFY(reply->isFinished());
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(QStringLiteral("HTTP method token")));
+    QCOMPARE(m_mock.takeCapturedRequests().size(), 0);
+
+    reply->deleteLater();
 }
 
 void TestQCNetworkRequestCanonicalFlowApi::testUploadFileMissingPathFailsAsInvalidRequest()

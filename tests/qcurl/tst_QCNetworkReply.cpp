@@ -279,9 +279,13 @@ QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
         case HttpMethod::Put:
             return m_manager->sendPut(request, body);
         case HttpMethod::Delete:
-            return body.isEmpty() ? m_manager->sendDelete(request) : m_manager->sendDelete(request, body);
+            return body.isEmpty()
+                ? m_manager->deleteResource(request)
+                : m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
         case HttpMethod::Patch:
             return m_manager->sendPatch(request, body);
+        case HttpMethod::Custom:
+            return nullptr;
         default:
             return nullptr;
     }
@@ -681,7 +685,7 @@ void TestQCNetworkReply::testAsyncDeleteWithBody()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(5000));
 
-    auto *reply = m_manager->sendDelete(request, body);
+    auto *reply = m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
     QVERIFY(reply != nullptr);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);

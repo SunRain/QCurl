@@ -51,6 +51,59 @@ QString sendOwnerThreadErrorMessage(const char *apiName)
         .arg(QString::fromUtf8(apiName));
 }
 
+bool isHttpTokenSeparator(char ch)
+{
+    switch (ch) {
+        case '(':
+        case ')':
+        case '<':
+        case '>':
+        case '@':
+        case ',':
+        case ';':
+        case ':':
+        case '\\':
+        case '"':
+        case '/':
+        case '[':
+        case ']':
+        case '?':
+        case '=':
+        case '{':
+        case '}':
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isValidHttpToken(QByteArrayView method)
+{
+    if (method.isEmpty()) {
+        return false;
+    }
+
+    for (char ch : method) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte <= 0x20 || byte >= 0x7f || isHttpTokenSeparator(ch)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QByteArray normalizedHttpMethodToken(QByteArrayView method)
+{
+    return method.toByteArray().toUpper();
+}
+
+QString invalidCustomMethodMessage(QByteArrayView method)
+{
+    return QStringLiteral("QCNetworkAccessManager::sendCustomRequest: HTTP method token 无效：%1")
+        .arg(QString::fromUtf8(method.toByteArray()));
+}
+
 } // namespace
 
 namespace QCurl {
@@ -58,24 +111,21 @@ namespace QCurl {
 QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchManagedSendRequest(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const char *apiName)
 {
     return dispatchSendRequest(request,
                                method,
-                               async,
                                requestBodySource,
                                body,
                                apiName,
-                               [this, request, method, async, requestBodySource, body]() {
+                               [this, request, method, requestBodySource, body]() {
                                    const auto middlewaresSnapshot = q_func()->middlewares();
                                    const QCNetworkRequest modifiedRequest
                                        = prepareManagedRequest(request, middlewaresSnapshot);
                                    return createManagedReply(modifiedRequest,
                                                              method,
-                                                             async,
                                                              requestBodySource,
                                                              body,
                                                              middlewaresSnapshot);
@@ -85,7 +135,6 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchManagedSendRequest(
 QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchSendRequest(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const char *apiName,
@@ -94,12 +143,11 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchSendRequest(
     if (QThread::currentThread() != q_func()->thread()) {
         return createInvalidRequestReply(request,
                                          method,
-                                         async,
                                          sendOwnerThreadErrorMessage(apiName),
                                          nullptr);
     }
 
-    if (async && !Internal::hasEventDispatcher(q_func()->thread())) {
+    if (!Internal::hasEventDispatcher(q_func()->thread())) {
         return createNoEventLoopErrorReply(request,
                                            method,
                                            requestBodySource,
@@ -115,7 +163,6 @@ QCNetworkReply *QCNetworkAccessManager::sendHead(const QCNetworkRequest &request
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Head,
-                                                true,
                                                 Internal::makeEmptyRequestBody(),
                                                 QByteArray(),
                                                 "QCNetworkAccessManager::sendHead");
@@ -125,7 +172,6 @@ QCNetworkReply *QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Get,
-                                                true,
                                                 Internal::makeEmptyRequestBody(),
                                                 QByteArray(),
                                                 "QCNetworkAccessManager::sendGet");
@@ -136,7 +182,6 @@ QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Post,
-                                                true,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
                                                 "QCNetworkAccessManager::sendPost");
@@ -156,14 +201,12 @@ QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
     if (QThread::currentThread() != thread()) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Post,
-                                                   true,
                                                    rawBodyOwnerThreadErrorMessage(apiName),
                                                    nullptr);
     }
 
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Post,
-                                                true,
                                                 Internal::makeDeviceRequestBody(device,
                                                                                 sizeBytes,
                                                                                 true),
@@ -176,7 +219,6 @@ QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Put,
-                                                true,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
                                                 "QCNetworkAccessManager::sendPut");
@@ -196,14 +238,12 @@ QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
     if (QThread::currentThread() != thread()) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Put,
-                                                   true,
                                                    rawBodyOwnerThreadErrorMessage(apiName),
                                                    nullptr);
     }
 
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Put,
-                                                true,
                                                 Internal::makeDeviceRequestBody(device,
                                                                                 sizeBytes,
                                                                                 false),
@@ -211,20 +251,13 @@ QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
                                                 apiName);
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request)
-{
-    return sendDelete(request, QByteArray());
-}
-
-QCNetworkReply *QCNetworkAccessManager::sendDelete(const QCNetworkRequest &request,
-                                                   const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::deleteResource(const QCNetworkRequest &request)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Delete,
-                                                true,
-                                                Internal::makeInlineRequestBody(data),
-                                                data,
-                                                "QCNetworkAccessManager::sendDelete");
+                                                Internal::makeEmptyRequestBody(),
+                                                QByteArray(),
+                                                "QCNetworkAccessManager::deleteResource");
 }
 
 QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request,
@@ -232,7 +265,6 @@ QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Patch,
-                                                true,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
                                                 "QCNetworkAccessManager::sendPatch");
@@ -242,6 +274,45 @@ QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &reques
                                                   const QCNetworkBody &body)
 {
     return sendPatch(requestWithBodyContentType(request, body), body.data());
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest &request,
+                                                          QByteArrayView method)
+{
+    if (!isValidHttpToken(method)) {
+        return d_func()->createInvalidRequestReply(request,
+                                                   HttpMethod::Custom,
+                                                   invalidCustomMethodMessage(method),
+                                                   this);
+    }
+
+    const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
+    return d_func()->dispatchManagedSendRequest(
+        request,
+        HttpMethod::Custom,
+        Internal::makeCustomRequestBody(normalizedMethod),
+        QByteArray(),
+        "QCNetworkAccessManager::sendCustomRequest");
+}
+
+QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest &request,
+                                                          QByteArrayView method,
+                                                          const QByteArray &data)
+{
+    if (!isValidHttpToken(method)) {
+        return d_func()->createInvalidRequestReply(request,
+                                                   HttpMethod::Custom,
+                                                   invalidCustomMethodMessage(method),
+                                                   this);
+    }
+
+    const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
+    return d_func()->dispatchManagedSendRequest(
+        request,
+        HttpMethod::Custom,
+        Internal::makeCustomInlineRequestBody(normalizedMethod, data),
+        data,
+        "QCNetworkAccessManager::sendCustomRequest");
 }
 
 void QCNetworkAccessManager::enableRequestScheduler(bool enabled)

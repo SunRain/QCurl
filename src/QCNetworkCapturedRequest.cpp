@@ -15,6 +15,7 @@ class QCNetworkCapturedRequestData : public QSharedData
 public:
     QUrl url;
     HttpMethod method = HttpMethod::Get;
+    QByteArray customMethod;
     QList<QCNetworkCapturedRequest::RawHeaderPair> headers;
     QByteArray bodyPreview;
     qsizetype bodySize = 0;
@@ -60,6 +61,16 @@ HttpMethod QCNetworkCapturedRequest::method() const
 void QCNetworkCapturedRequest::setMethod(HttpMethod method)
 {
     d->method = method;
+}
+
+QByteArray QCNetworkCapturedRequest::customMethod() const
+{
+    return d->customMethod;
+}
+
+void QCNetworkCapturedRequest::setCustomMethod(const QByteArray &method)
+{
+    d->customMethod = method;
 }
 
 QList<QCNetworkCapturedRequest::RawHeaderPair> QCNetworkCapturedRequest::headers() const

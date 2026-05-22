@@ -64,7 +64,8 @@ private slots:
     void testBuildEmptyUrl();
     void testMethodChaining();
     void testComplexConfig();
-    void testSendDeleteWithBody();
+    void testSendCustomDeleteWithBody();
+    void testSendCustomRequestNoBodyAndUppercaseMethod();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -243,34 +244,58 @@ void TestQCNetworkRequestConfigCanonicalApi::testComplexConfig()
     QVERIFY(request.followLocation());
 }
 
-void TestQCNetworkRequestConfigCanonicalApi::testSendDeleteWithBody()
+void TestQCNetworkRequestConfigCanonicalApi::testSendCustomDeleteWithBody()
 {
     const QByteArray body("test=data");
     const QUrl url1("http://example.com/delete-body-1");
     const QUrl url2("http://example.com/delete-body-2");
-    m_mock.mockResponse(HttpMethod::Delete, url1, QByteArray("OK"));
-    m_mock.mockResponse(HttpMethod::Delete, url2, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Custom, url1, QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Custom, url2, QByteArray("OK"));
     m_mock.clearCapturedRequests();
 
     QCNetworkRequest request1(url1);
-    auto *reply1 = m_manager->sendDelete(request1, body);
+    auto *reply1 = m_manager->sendCustomRequest(request1, QByteArrayLiteral("DELETE"), body);
     QVERIFY(reply1 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply1->isFinished(), 2000);
 
     QCNetworkRequest request2(url2);
-    auto *reply2 = m_manager->sendDelete(request2, body);
+    auto *reply2 = m_manager->sendCustomRequest(request2, QByteArrayLiteral("DELETE"), body);
     QVERIFY(reply2 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply2->isFinished(), 2000);
 
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 2);
-    QCOMPARE(captured[0].method(), HttpMethod::Delete);
+    QCOMPARE(captured[0].method(), HttpMethod::Custom);
+    QCOMPARE(captured[0].customMethod(), QByteArrayLiteral("DELETE"));
     QCOMPARE(captured[0].bodyPreview(), body);
-    QCOMPARE(captured[1].method(), HttpMethod::Delete);
+    QCOMPARE(captured[1].method(), HttpMethod::Custom);
+    QCOMPARE(captured[1].customMethod(), QByteArrayLiteral("DELETE"));
     QCOMPARE(captured[1].bodyPreview(), body);
 
     reply1->deleteLater();
     reply2->deleteLater();
+}
+
+
+void TestQCNetworkRequestConfigCanonicalApi::testSendCustomRequestNoBodyAndUppercaseMethod()
+{
+    const QUrl url("http://example.com/no-body-custom");
+    m_mock.mockResponse(HttpMethod::Custom, url, QByteArray("OK"));
+    m_mock.clearCapturedRequests();
+
+    QCNetworkRequest request(url);
+    auto *reply = m_manager->sendCustomRequest(request, QByteArrayLiteral("propfind"));
+    QVERIFY(reply != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::NoError);
+
+    const auto captured = m_mock.takeCapturedRequests();
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first().method(), HttpMethod::Custom);
+    QCOMPARE(captured.first().customMethod(), QByteArrayLiteral("PROPFIND"));
+    QCOMPARE(captured.first().bodySize(), qsizetype(0));
+
+    reply->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkRequestConfigCanonicalApi)

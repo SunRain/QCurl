@@ -1486,7 +1486,10 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
                                  const QByteArray &body = QByteArray()) {
         QCNetworkRequest req(url);
         req.setPriority(QCNetworkRequestPriority::High);
-        m_mock.mockResponse(method, req.url(), QByteArray("OK"));
+        const HttpMethod mockMethod = method == HttpMethod::Delete && !body.isEmpty()
+            ? HttpMethod::Custom
+            : method;
+        m_mock.mockResponse(mockMethod, req.url(), QByteArray("OK"));
 
         QSignalSpy queuedSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
         QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
@@ -1506,10 +1509,13 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
                 reply = m_manager->sendPut(req, body);
                 break;
             case HttpMethod::Delete:
-                reply = m_manager->sendDelete(req, body);
+                reply = m_manager->sendCustomRequest(req, QByteArrayLiteral("DELETE"), body);
                 break;
             case HttpMethod::Patch:
                 reply = m_manager->sendPatch(req, body);
+                break;
+            case HttpMethod::Custom:
+                reply = nullptr;
                 break;
         }
 

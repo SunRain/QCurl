@@ -38,6 +38,8 @@ QString httpMethodToString(HttpMethod method)
             return QStringLiteral("DELETE");
         case HttpMethod::Patch:
             return QStringLiteral("PATCH");
+        case HttpMethod::Custom:
+            return QStringLiteral("CUSTOM");
     }
     return QStringLiteral("UNKNOWN");
 }

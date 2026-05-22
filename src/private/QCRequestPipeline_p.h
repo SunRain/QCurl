@@ -6,7 +6,7 @@
 #ifndef QCREQUESTPIPELINE_P_H
 #define QCREQUESTPIPELINE_P_H
 
-#include "QCNetworkReply.h"
+#include "QCNetworkHttpMethod.h"
 #include "QCNetworkRequest.h"
 
 #include <QPointer>
@@ -29,6 +29,7 @@ struct RequestBody
     RequestBodyKind kind = RequestBodyKind::Empty;
     QByteArray inlineBytes;    ///< InlineBytes 模式下的内联 body
     QPointer<QIODevice> device; ///< Device 模式下的设备句柄
+    QByteArray customMethod; ///< Custom 方法的已校验 HTTP token
     qint64 sizeBytes      = 0; ///< 已知请求体大小；未知时为负值
     qint64 basePos        = 0; ///< 通过线程检查后采样的请求体读取起始偏移
     bool seekable         = false; ///< 通过线程检查后采样的请求体来源 seek 能力
@@ -48,12 +49,11 @@ struct RequestBody
     [[nodiscard]] bool hasKnownSize() const noexcept { return sizeBytes >= 0; }
 };
 
-/// 归一化后的请求与执行模式快照。
+/// 归一化后的请求快照。
 struct NormalizedRequest
 {
     QCNetworkRequest request;
-    HttpMethod method                = HttpMethod::Get;
-    ExecutionMode executionMode      = ExecutionMode::Async;
+    HttpMethod method = HttpMethod::Get;
     RequestBody body;
 };
 
@@ -91,14 +91,13 @@ struct CurlPlan
 };
 
 /**
- * @brief 归一化请求体来源和执行模式
+ * @brief 归一化请求体来源
  *
  * 把运行期的 device/inline-body 请求体来源
  * 收敛为统一的 RequestBody 描述。
  */
 NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
                                    HttpMethod method,
-                                   ExecutionMode mode,
                                    const RequestBody &body);
 
 /// 构造空请求体描述。
@@ -106,6 +105,13 @@ NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
 
 /// 构造内联字节请求体描述。
 [[nodiscard]] RequestBody makeInlineRequestBody(const QByteArray &inlineBody);
+
+/// 构造 custom request 的空请求体描述。
+[[nodiscard]] RequestBody makeCustomRequestBody(const QByteArray &method);
+
+/// 构造 custom request 的内联字节请求体描述。
+[[nodiscard]] RequestBody makeCustomInlineRequestBody(const QByteArray &method,
+                                                      const QByteArray &inlineBody);
 
 /// 构造外部 QIODevice 请求体描述。
 [[nodiscard]] RequestBody makeDeviceRequestBody(QIODevice *device,

@@ -58,6 +58,8 @@ public:
 
     [[nodiscard]] HttpMethod method() const;
     void setMethod(HttpMethod method);
+    [[nodiscard]] QByteArray customMethod() const;
+    void setCustomMethod(const QByteArray &method);
 
     [[nodiscard]] QList<RawHeaderPair> headers() const;
     void setHeaders(const QList<RawHeaderPair> &headers);
@@ -87,7 +89,7 @@ private:
 };
 
 /**
- * @brief 网络请求 Mock 处理器
+ * @brief 网络请求 Mock 处理器。
  *
  * 用于单元测试，模拟网络响应、错误和延迟。
  *
