@@ -42,7 +42,7 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply,
     if (reply->property(kMiddlewareResponseInvokedProperty).toBool()) {
         return;
     }
-    // finished 可能被同步路径或已完成 reply 触发多次探测，这里用属性做幂等保护。
+    // finished 可能被已完成 reply 触发多次探测，这里用属性做幂等保护。
     reply->setProperty(kMiddlewareResponseInvokedProperty, true);
 
     const QList<QCNetworkMiddleware *> activeMiddlewares = manager->middlewares();
@@ -115,16 +115,13 @@ QCNetworkAccessManager::~QCNetworkAccessManager()
 QCNetworkReply *QCNetworkAccessManagerPrivate::createReply(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     QObject *parent)
 {
-    const auto mode = async ? ExecutionMode::Async : ExecutionMode::Sync;
     auto *reply = new QCNetworkReply(QCNetworkReply::FactoryKey{},
                                      request,
                                      method,
-                                     mode,
                                      requestBodySource,
                                      body,
                                      parent);
@@ -135,26 +132,23 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createReply(
 QCNetworkReply *QCNetworkAccessManagerPrivate::createManagedReply(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const QList<QCNetworkMiddleware *> &middlewares)
 {
-    auto *reply
-        = createPreparedManagedReply(request, method, async, requestBodySource, body, middlewares);
-    startPreparedReply(reply, request, async);
+    auto *reply = createPreparedManagedReply(request, method, requestBodySource, body, middlewares);
+    startPreparedReply(reply, request);
     return reply;
 }
 
 QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
     const QList<QCNetworkMiddleware *> &middlewares)
 {
-    auto *reply = createReply(request, method, async, requestBodySource, body, q_func());
+    auto *reply = createReply(request, method, requestBodySource, body, q_func());
     prepareManagedReply(reply, middlewares);
     return reply;
 }
@@ -167,7 +161,7 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createNoEventLoopErrorReply(
     QObject *parent,
     const char *apiName)
 {
-    auto *reply = createReply(request, method, true, requestBodySource, body, parent);
+    auto *reply = createReply(request, method, requestBodySource, body, parent);
     if (!reply) {
         return nullptr;
     }
@@ -181,12 +175,10 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createNoEventLoopErrorReply(
 QCNetworkReply *QCNetworkAccessManagerPrivate::createInvalidRequestReply(
     const QCNetworkRequest &request,
     HttpMethod method,
-    bool async,
     const QString &message,
     QObject *parent)
 {
-    auto *reply =
-        createReply(request, method, async, Internal::makeEmptyRequestBody(), QByteArray(), parent);
+    auto *reply = createReply(request, method, Internal::makeEmptyRequestBody(), QByteArray(), parent);
     if (!reply) {
         return nullptr;
     }
@@ -216,14 +208,13 @@ void QCNetworkAccessManagerPrivate::prepareManagedReply(
 }
 
 void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
-                                                       const QCNetworkRequest &request,
-                                                       bool async) const
+                                                       const QCNetworkRequest &request) const
 {
     if (!reply) {
         return;
     }
 
-    if (async && schedulerEnabled) {
+    if (schedulerEnabled) {
         // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
         const auto *manager = q_func();
         if (auto *requestScheduler = manager->scheduler()) {

@@ -184,10 +184,6 @@ size_t headerReplyCurlCallback(char *ptr, size_t size, size_t nmemb, QCNetworkRe
         parseReplyHeaders(reply);
     }
 
-    if (reply->executionMode == ExecutionMode::Sync && reply->headerCallback) {
-        reply->headerCallback(ptr, totalSize);
-    }
-
     return totalSize;
 }
 

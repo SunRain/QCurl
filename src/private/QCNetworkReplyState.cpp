@@ -222,10 +222,6 @@ size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nm
 int QCNetworkReplyPrivate::curlSeekCallback(void *userdata, curl_off_t offset, int origin)
 {
     auto *d = static_cast<QCNetworkReplyPrivate *>(userdata);
-    if (d && d->executionMode == ExecutionMode::Sync && !d->requestBodySource.device && d->seekCallback) {
-        return d->seekCallback(static_cast<qint64>(offset), origin);
-    }
-
     return Internal::seekReplyBodySourceCallback(d, offset, origin);
 }
 

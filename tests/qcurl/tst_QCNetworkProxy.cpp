@@ -191,7 +191,6 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
@@ -210,7 +209,6 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
     QCNetworkReplyPrivate invalidPrivate(nullptr,
                                          invalidReq,
                                          HttpMethod::Get,
-                                         ExecutionMode::Sync,
                                          Internal::makeEmptyRequestBody(),
                                          QByteArray());
 
@@ -239,7 +237,6 @@ void TestQCNetworkProxy::testSslConfigApplied()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
@@ -255,7 +252,6 @@ void TestQCNetworkProxy::testSslConfigApplied()
     QCNetworkReplyPrivate defaultPrivate(nullptr,
                                          defaultSslRequest,
                                          HttpMethod::Get,
-                                         ExecutionMode::Sync,
                                          Internal::makeEmptyRequestBody(),
                                          QByteArray());
 
@@ -400,7 +396,6 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
@@ -453,7 +448,6 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 

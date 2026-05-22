@@ -40,7 +40,7 @@ void TestQCNetworkRequestWarningsOffline::testAcceptEncodingConflictWarnings()
     request.setRawHeader("Accept-Encoding", "gzip");
     request.setAutoDecompressionEnabled(true);
 
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, request));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 

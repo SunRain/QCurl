@@ -56,7 +56,7 @@ private slots:
     void testExponentialBackoff(); // 延迟时间验证
     void testCancelDuringRetry();  // 取消重试中的请求
     void testCustomRetryPolicy();  // 自定义策略
-    void testSyncRetry();          // 同步模式重试
+    void testManagedWaitRetry();   // managed reply wait helper 重试
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -427,9 +427,9 @@ void TestQCNetworkRetry::testCustomRetryPolicy()
     reply->deleteLater();
 }
 
-void TestQCNetworkRetry::testSyncRetry()
+void TestQCNetworkRetry::testManagedWaitRetry()
 {
-    // 测试同步模式重试
+    // 测试 managed reply wait helper 覆盖重试延迟。
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
     policy.setMaxRetries(2);
@@ -440,8 +440,8 @@ void TestQCNetworkRetry::testSyncRetry()
     QElapsedTimer timer;
     timer.start();
 
-    // 使用同步 API
-    auto *reply = TestSupport::sendSyncTestReply(*m_manager, request);
+    // 使用 Core 异步 API 并等待 reply 完成。
+    auto *reply = TestSupport::sendWaitedAsyncTestReply(*m_manager, request);
 
     qint64 elapsed = timer.elapsed();
 
@@ -449,7 +449,7 @@ void TestQCNetworkRetry::testSyncRetry()
     QCOMPARE(reply->error(), NetworkError::HttpServiceUnavailable);
 
     // 验证：总时间应包含重试延迟（100 + 150 = 250ms）
-    qDebug() << "Sync retry elapsed:" << elapsed << "ms";
+    qDebug() << "Managed wait retry elapsed:" << elapsed << "ms";
     QVERIFY(elapsed >= 200); // 至少等待了延迟时间
 
     reply->deleteLater();

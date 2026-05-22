@@ -83,7 +83,7 @@ int desiredReplyPauseMask(const QCNetworkReplyPrivate *reply) noexcept
 
 bool applyReplyPauseMask(QCNetworkReplyPrivate *reply, int desiredMask)
 {
-    if (!reply || reply->executionMode == ExecutionMode::Sync) {
+    if (!reply) {
         return false;
     }
     if (!reply->curlManager.handle()) {
@@ -126,10 +126,7 @@ void setReplyBackpressureActive(QCNetworkReplyPrivate *reply, bool active)
 
 void setReplyUploadSendPaused(QCNetworkReplyPrivate *reply, bool paused)
 {
-    if (!reply || reply->executionMode != ExecutionMode::Async) {
-        if (reply) {
-            reply->uploadSendPaused = false;
-        }
+    if (!reply) {
         return;
     }
     if (reply->uploadSendPaused == paused) {
@@ -144,7 +141,7 @@ void setReplyUploadSendPaused(QCNetworkReplyPrivate *reply, bool paused)
 
 void maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply)
 {
-    if (!reply || reply->executionMode != ExecutionMode::Async || reply->backpressureLimitBytes <= 0) {
+    if (!reply || reply->backpressureLimitBytes <= 0) {
         return;
     }
     if ((reply->internalPauseMask & CURLPAUSE_RECV) == 0 || replyIsTerminal(reply)) {
@@ -170,7 +167,7 @@ void maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply)
 
 void resumeReplySendFromRequestBodySourceIfNeeded(QCNetworkReplyPrivate *reply)
 {
-    if (!reply || reply->executionMode != ExecutionMode::Async) {
+    if (!reply) {
         return;
     }
     if ((reply->internalPauseMask & CURLPAUSE_SEND) == 0 || replyIsTerminal(reply)) {
@@ -201,7 +198,7 @@ void resumeReplySendFromRequestBodySourceIfNeeded(QCNetworkReplyPrivate *reply)
 void scheduleReplyBackpressureResumeAfterRead(QCNetworkReply *reply,
                                               QCNetworkReplyPrivate *privateReply)
 {
-    if (!reply || !privateReply || privateReply->executionMode != ExecutionMode::Async) {
+    if (!reply || !privateReply) {
         return;
     }
     if (privateReply->backpressureLimitBytes <= 0
@@ -234,8 +231,7 @@ void clearReplyFlowControlOnTerminalState(QCNetworkReplyPrivate *reply)
 
 void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateReply, PauseMode mode)
 {
-    if (!privateReply || privateReply->executionMode == ExecutionMode::Sync) {
-        qWarning() << "QCNetworkReply::pauseTransport: Sync mode does not support transfer pause/resume";
+    if (!privateReply) {
         return;
     }
     if (privateReply->state != ReplyState::Running) {
@@ -257,8 +253,7 @@ void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateRe
 
 void resumeReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateReply)
 {
-    if (!privateReply || privateReply->executionMode == ExecutionMode::Sync) {
-        qWarning() << "QCNetworkReply::resumeTransport: Sync mode does not support transfer pause/resume";
+    if (!privateReply) {
         return;
     }
     if (privateReply->state != ReplyState::Paused) {

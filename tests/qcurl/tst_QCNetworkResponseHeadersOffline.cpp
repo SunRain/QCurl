@@ -50,7 +50,7 @@ void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
                       rawHeaderData);
 
     QCNetworkRequest request(url);
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, request));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -99,7 +99,7 @@ void TestQCNetworkResponseHeadersOffline::testFinalHeaderBlockOnlyExposesLastRes
                       rawHeaderData);
 
     QCNetworkRequest request(url);
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, request));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 

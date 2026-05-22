@@ -69,7 +69,7 @@ void TestQCNetworkHttp3::testHttp3OnlyRuntimeGating()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3Only);
 
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {
@@ -94,7 +94,7 @@ void TestQCNetworkHttp3::testHttp3DowngradeWhenUnsupported()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, req));
     QVERIFY(reply);
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -119,7 +119,7 @@ void TestQCNetworkHttp3::testRequireHttp3EnvGate()
     QCNetworkRequest req(url);
     req.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, req));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, req));
     QVERIFY(reply);
 
     if (runtimeSupportsHttp3()) {

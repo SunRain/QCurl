@@ -17,7 +17,6 @@
 #include <QStringList>
 #include <QUrl>
 
-#include <functional>
 #include <optional>
 
 namespace QCurl {
@@ -38,14 +37,6 @@ class QCNetworkReplyPrivate; ///< 私有实现类。
 // ==================
 // 枚举定义
 // ==================
-
-/**
- * @brief 执行模式
- */
-enum class ExecutionMode {
-    Async, ///< 异步执行（由 QCCurlMultiManager 驱动）
-    Sync   ///< 同步执行（阻塞调用 curl_easy_perform）
-};
 
 /**
  * @brief 传输级暂停模式（映射 libcurl CURLPAUSE_*）
@@ -74,14 +65,6 @@ enum class ReplyState {
 
 using RawHeaderPair = QPair<QByteArray, QByteArray>;
 
-/// 数据回调函数类型（同步模式）
-using DataFunction = std::function<size_t(char *buffer, size_t size)>;
-/// 定位回调函数类型（同步模式）
-using SeekFunction = std::function<int(qint64 offset, int origin)>;
-/// 进度回调函数类型（同步模式）
-using ProgressFunction
-    = std::function<void(qint64 dltotal, qint64 dlnow, qint64 ultotal, qint64 ulnow)>;
-
 // ==================
 // QCNetworkReply 类
 // ==================
@@ -89,7 +72,7 @@ using ProgressFunction
 /**
  * @brief 表示单个网络请求的执行状态与结果
  *
- * reply 同时覆盖同步和异步执行路径，并暴露 body、header、错误状态与
+ * reply 表达 Qt 风格异步请求路径，暴露 body、header、错误状态与
  * 传输控制入口。实例只能由 `QCNetworkAccessManager` 工厂路径创建。
  */
 class QCURL_EXPORT QCNetworkReply : public QObject
@@ -108,10 +91,9 @@ public:
     // `QCNetworkAccessManager::send*()` so the manager can wire middleware,
     // mock/cache/logger/scheduler, etc.
     //
-    // Some in-repo tests need to construct a reply directly (e.g. sync mode with
-    // custom callbacks before execute). To avoid `#define private public` hacks,
-    // we provide a narrowly-scoped constructor under the existing test hook
-    // build flag.
+    // Some in-repo tests need to construct a reply directly without manager
+    // middleware/scheduler setup. To avoid `#define private public` hacks, we
+    // provide a narrowly-scoped constructor under the existing test hook build flag.
 #ifdef QCURL_ENABLE_TEST_HOOKS
     /// 仅供测试构造路径使用的 capability key。
     struct TestOnlyKey
@@ -123,12 +105,11 @@ public:
     /**
      * @brief 仅供测试直接构造 reply
      *
-     * 该入口绕过 access manager 的工厂封装，供仓内测试搭建同步场景。
+     * 该入口绕过 access manager 的工厂封装，仅供仓内测试搭建异步 reply 场景。
      */
     explicit QCNetworkReply(TestOnlyKey,
                             const QCNetworkRequest &request,
                             HttpMethod method,
-                            ExecutionMode mode,
                             const Internal::RequestBody &requestBodySource,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
@@ -136,7 +117,6 @@ public:
     explicit QCNetworkReply(TestOnlyKey,
                             const QCNetworkRequest &request,
                             HttpMethod method,
-                            ExecutionMode mode,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
 #endif
@@ -281,21 +261,6 @@ public:
     [[nodiscard]] qint64 bytesTotal() const noexcept;
 
     // ==================
-    // 同步模式专用 API
-    // ==================
-
-    /// 设置同步模式下使用的内联请求体。
-    void setRequestBody(const QByteArray &data);
-    /// 设置同步模式写入 body 的数据回调。
-    void setWriteCallback(const DataFunction &func);
-    /// 设置同步模式处理响应头的数据回调。
-    void setHeaderCallback(const DataFunction &func);
-    /// 设置同步模式上传 seek 回调。
-    void setSeekCallback(const SeekFunction &func);
-    /// 设置同步模式进度回调。
-    void setProgressCallback(const ProgressFunction &func);
-
-    // ==================
     // 信号（异步模式）
     // ==================
 
@@ -362,7 +327,6 @@ private:
      * @param key 仅 `QCNetworkAccessManager` 可构造的工厂通行证
      * @param request 网络请求配置
      * @param method HTTP 方法
-     * @param mode 执行模式（异步/同步）
      * @param requestBody 请求体数据（用于 POST/PUT/PATCH）
      * @param parent 父对象
      *
@@ -371,7 +335,6 @@ private:
     explicit QCNetworkReply(FactoryKey key,
                             const QCNetworkRequest &request,
                             HttpMethod method,
-                            ExecutionMode mode,
                             const Internal::RequestBody &requestBodySource,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);

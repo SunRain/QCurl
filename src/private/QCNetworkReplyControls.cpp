@@ -31,9 +31,8 @@ void QCNetworkReply::cancel()
         return;
     }
 
-    // 异步模式：从多句柄管理器移除（Running/Paused 状态）
-    if (d->executionMode == ExecutionMode::Async
-        && (d->state == ReplyState::Running || d->state == ReplyState::Paused)) {
+    // 从多句柄管理器移除（Running/Paused 状态）。
+    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         // ⚠️ cancel 可能在 libcurl 回调栈内触发（例如在 downloadProgress 槽函数中）。
         // 直接调用 curl_multi_remove_handle 会引入重入风险，并可能触发 CURLM_BAD_EASY_HANDLE。
         // 这里延迟到事件循环中移除，避免与 curl_multi_socket_action 重叠。
@@ -48,8 +47,6 @@ void QCNetworkReply::cancel()
             },
             Qt::QueuedConnection);
     }
-    // 同步模式：无法真正取消阻塞的 curl_easy_perform()
-
     // 取消属于可观测错误语义：外部应能稳定区分“用户取消”与“空 body / 尚无数据”等情况
     d->setError(NetworkError::OperationCancelled,
                 QCurl::errorString(NetworkError::OperationCancelled));
@@ -76,8 +73,7 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
         return;
     }
 
-    if (d->executionMode == ExecutionMode::Async
-        && (d->state == ReplyState::Running || d->state == ReplyState::Paused)) {
+    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         auto *multiManager = QCCurlMultiManager::instance();
         QPointer<QCNetworkReply> safeThis(this);
         QMetaObject::invokeMethod(

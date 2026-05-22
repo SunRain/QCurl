@@ -115,7 +115,6 @@ void QCNetworkResumableDownloadJob::doStart()
         = managerPrivate->prepareManagedRequest(downloadRequest, middlewaresSnapshot);
     auto *networkReply = managerPrivate->createPreparedManagedReply(preparedRequest,
                                                                     HttpMethod::Get,
-                                                                    true,
                                                                     Internal::makeEmptyRequestBody(),
                                                                     QByteArray(),
                                                                     middlewaresSnapshot);
@@ -174,7 +173,7 @@ void QCNetworkResumableDownloadJob::doStart()
             Qt::QueuedConnection);
     }
 
-    managerPrivate->startPreparedReply(networkReply, preparedRequest, true);
+    managerPrivate->startPreparedReply(networkReply, preparedRequest);
 }
 
 QCNetworkResumableDownloadJob::~QCNetworkResumableDownloadJob() = default;

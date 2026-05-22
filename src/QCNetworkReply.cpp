@@ -19,15 +19,13 @@ namespace QCurl {
 QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              const QCNetworkRequest &req,
                                              HttpMethod method,
-                                             ExecutionMode mode,
                                              const Internal::RequestBody &requestBodySource,
                                              const QByteArray &body)
     : q_ptr(q)
     , request(req)
     , httpMethod(method)
-    , executionMode(mode)
     , requestBody(body)
-    , normalizedRequest(Internal::normalizeRequest(req, method, mode, requestBodySource))
+    , normalizedRequest(Internal::normalizeRequest(req, method, requestBodySource))
     , curlPlan(Internal::compileRequest(normalizedRequest))
     , multiProcessor(nullptr)
     , state(ReplyState::Idle)
@@ -53,11 +51,10 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
-    // 如果正在运行（异步模式），从多句柄管理器移除
-    // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理
-    // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理
-    if (executionMode == ExecutionMode::Async
-        && (state == ReplyState::Running || state == ReplyState::Paused) && q_ptr) {
+    // 如果正在运行，从多句柄管理器移除。
+    // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理。
+    // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理。
+    if ((state == ReplyState::Running || state == ReplyState::Paused) && q_ptr) {
         if (QThread::currentThread() == q_ptr->thread()) {
             QCCurlMultiManager::instance()->removeReply(q_ptr);
         } else {
@@ -85,7 +82,6 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 QCNetworkReply::QCNetworkReply(FactoryKey,
                                const QCNetworkRequest &request,
                                HttpMethod method,
-                               ExecutionMode mode,
                                const Internal::RequestBody &requestBodySource,
                                const QByteArray &requestBody,
                                QObject *parent)
@@ -93,7 +89,6 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
     , d_ptr(new QCNetworkReplyPrivate(this,
                                       request,
                                       method,
-                                      mode,
                                       requestBodySource,
                                       requestBody))
 {
@@ -117,7 +112,6 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
 QCNetworkReply::QCNetworkReply(TestOnlyKey,
                                const QCNetworkRequest &request,
                                HttpMethod method,
-                               ExecutionMode mode,
                                const Internal::RequestBody &requestBodySource,
                                const QByteArray &requestBody,
                                QObject *parent)
@@ -125,7 +119,6 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
     , d_ptr(new QCNetworkReplyPrivate(this,
                                       request,
                                       method,
-                                      mode,
                                       requestBodySource,
                                       requestBody))
 {
@@ -146,13 +139,11 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
 QCNetworkReply::QCNetworkReply(TestOnlyKey,
                                const QCNetworkRequest &request,
                                HttpMethod method,
-                               ExecutionMode mode,
                                const QByteArray &requestBody,
                                QObject *parent)
     : QCNetworkReply(TestOnlyKey{},
                      request,
                      method,
-                     mode,
                      requestBody.isEmpty() ? Internal::makeEmptyRequestBody()
                                            : Internal::makeInlineRequestBody(requestBody),
                      requestBody,

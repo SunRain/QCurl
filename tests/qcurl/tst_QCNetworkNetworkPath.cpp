@@ -159,7 +159,6 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
     QVERIFY(replyPrivate.configureCurlOptions());
@@ -190,7 +189,6 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QCNetworkReplyPrivate replyPrivate(nullptr,
                                            request,
                                            HttpMethod::Get,
-                                           ExecutionMode::Sync,
                                            Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(!replyPrivate.configureCurlOptions());
@@ -211,7 +209,6 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QCNetworkReplyPrivate replyPrivate(nullptr,
                                            request,
                                            HttpMethod::Get,
-                                           ExecutionMode::Sync,
                                            Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(replyPrivate.configureCurlOptions());
@@ -234,7 +231,6 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QCNetworkReplyPrivate replyPrivate(nullptr,
                                            request,
                                            HttpMethod::Get,
-                                           ExecutionMode::Sync,
                                            Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(!replyPrivate.configureCurlOptions());
@@ -256,7 +252,6 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         QCNetworkReplyPrivate replyPrivate(nullptr,
                                            request,
                                            HttpMethod::Get,
-                                           ExecutionMode::Sync,
                                            Internal::makeEmptyRequestBody(),
                                            QByteArray());
         QVERIFY(replyPrivate.configureCurlOptions());
@@ -286,7 +281,6 @@ void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
                                        HttpMethod::Get,
-                                       ExecutionMode::Sync,
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
     QVERIFY(!replyPrivate.configureCurlOptions());

@@ -30,6 +30,7 @@ namespace QCurl {
 
 namespace {
 
+
 #ifdef QCURL_ENABLE_TEST_HOOKS
 enum class TestMockChaosAction
 {
@@ -339,16 +340,7 @@ void scheduleTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &
 void QCNetworkReply::execute()
 {
     if (QThread::currentThread() != thread()) {
-        Q_D(QCNetworkReply);
-        if (d->executionMode == ExecutionMode::Async) {
-            QMetaObject::invokeMethod(this, [this]() { execute(); }, Qt::QueuedConnection);
-            return;
-        }
-
-        qWarning()
-            << "QCNetworkReply::execute: Sync 模式不支持跨线程调用（需要在 reply 所在线程执行）";
-        abortWithError(NetworkError::InvalidRequest,
-                       QStringLiteral("QCNetworkReply::execute(Sync) 必须在 reply 所在线程调用"));
+        QMetaObject::invokeMethod(this, [this]() { execute(); }, Qt::QueuedConnection);
         return;
     }
 
@@ -427,6 +419,9 @@ void QCNetworkReply::execute()
             QCNetworkCapturedRequest captured;
             captured.setUrl(normalized.request.url());
             captured.setMethod(normalized.method);
+            if (normalized.method == HttpMethod::Custom) {
+                captured.setCustomMethod(normalized.body.customMethod);
+            }
             captured.setFollowLocation(normalized.request.followLocation());
             const auto timeoutConfig = normalized.request.timeoutConfig();
             if (timeoutConfig.connectTimeout().has_value()) {
@@ -477,55 +472,6 @@ void QCNetworkReply::execute()
             // 进入
             // Running（与真实网络保持一致）；完成/错误信号通过延迟触发，避免在连接信号前同步发射
             d->setState(ReplyState::Running);
-
-            // 同步模式：阻塞执行（支持重试）
-            if (d->executionMode == ExecutionMode::Sync) {
-                while (true) {
-                    Internal::QCNetworkMockData mockData;
-                    if (!Internal::QCNetworkMockHandlerAccess::consumeMock(*mock,
-                                                                            normalized.method,
-                                                                            normalized.request.url(),
-                                                                            mockData)) {
-                        d->setError(NetworkError::InvalidRequest,
-                                    QStringLiteral("MockHandler: no mock matched for %1")
-                                        .arg(normalized.request.url().toString()));
-                        d->setState(ReplyState::Error);
-                        return;
-                    }
-
-                    if (responseDelayMs > 0) {
-                        QThread::msleep(static_cast<unsigned long>(responseDelayMs));
-                    }
-
-                    Internal::resetReplyForRetry(d, false);
-
-                    if (!mockData.response.isEmpty()) {
-                        d->bodyBuffer.append(mockData.response);
-                        d->bytesDownloaded = mockData.response.size();
-                    }
-
-                    applyMockResponseHeaders(d, mockData);
-
-                    const auto info = attemptErrorFromMockData(d, mockData);
-                    if (info.error == NetworkError::NoError) {
-                        if (!mockData.response.isEmpty()) {
-                            emit readyRead();
-                        }
-                        d->setState(ReplyState::Finished);
-                        return;
-                    }
-
-                    const auto delay = Internal::advanceReplyRetryIfNeeded(d, info.error);
-                    if (delay.has_value()) {
-                        QThread::msleep(static_cast<unsigned long>(delay.value().count()));
-                        continue;
-                    }
-
-                    d->setError(info.error, info.message);
-                    d->setState(ReplyState::Error);
-                    return;
-                }
-            }
 
             // 异步模式：以定时器回放，支持重试/取消
             QPointer<QCNetworkReply> safeThis(this);
@@ -698,72 +644,9 @@ void QCNetworkReply::execute()
 
     d->setState(ReplyState::Running);
 
-    if (d->executionMode == ExecutionMode::Async) {
-        // 异步模式：注册到多句柄管理器
-        QCCurlMultiManager::instance()->addReply(this);
-        qDebug() << "QCNetworkReply::execute: Started async request for" << d->request.url();
-    } else {
-        // ==================
-        // 同步模式：阻塞执行（支持重试）
-        // ==================
-        if (!handle) {
-            d->setError(NetworkError::InvalidRequest, QStringLiteral("Invalid curl handle"));
-            d->setState(ReplyState::Error);
-            return;
-        }
-
-        // 重试循环（attemptCount 从 0 开始，表示首次尝试）
-        while (true) {
-            Internal::clearReplyBodySourceError(d->requestBodySource);
-
-            QString retryBodySourceError;
-            if (!Internal::rewindReplyBodySourceForRetry(d, &retryBodySourceError)) {
-                d->setError(NetworkError::InvalidRequest, retryBodySourceError);
-                d->setState(ReplyState::Error);
-                return;
-            }
-
-            // 执行请求（阻塞调用）
-            CURLcode result = curl_easy_perform(handle);
-
-            // 检查 HTTP 状态码（即使 CURLcode 成功）
-            long httpCode = 0;
-            curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
-
-            const auto info = Internal::attemptErrorFromCurlAndHttp(d, result, httpCode);
-
-            // 如果没有错误，标记为成功
-            if (info.error == NetworkError::NoError) {
-                qDebug() << "QCNetworkReply::execute: Sync request succeeded for"
-                         << d->request.url() << "after" << d->attemptCount << "retries";
-                d->setState(ReplyState::Finished);
-                return;
-            }
-
-            const auto delay = Internal::advanceReplyRetryIfNeeded(d, info.error);
-            if (delay.has_value()) {
-                qDebug() << "QCNetworkReply::execute: Sync request failed, retrying after"
-                         << delay.value().count() << "ms. Attempt" << d->attemptCount
-                         << "Error:" << info.message;
-
-                // 同步等待（阻塞当前线程）
-                QThread::msleep(static_cast<unsigned long>(delay.value().count()));
-
-                Internal::resetReplyForRetry(d, false);
-
-                // 继续循环重试
-                continue;
-            }
-
-            // 超过最大重试次数或错误不可重试
-            qDebug() << "QCNetworkReply::execute: Sync request failed after" << d->attemptCount
-                     << "attempts. Error:" << info.message;
-
-            d->setError(info.error, info.message);
-            d->setState(ReplyState::Error);
-            return;
-        }
-    }
+    // 异步模式：注册到多句柄管理器
+    QCCurlMultiManager::instance()->addReply(this);
+    qDebug() << "QCNetworkReply::execute: Started async request for" << d->request.url();
 }
 
 

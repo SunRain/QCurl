@@ -49,14 +49,6 @@ size_t abortWithReadError(QCNetworkReplyPrivate *reply, QIODevice *device)
 
 size_t handleSourceNotReady(QCNetworkReplyPrivate *reply)
 {
-    if (reply->executionMode == ExecutionMode::Sync) {
-        setBodySourceError(
-            reply->requestBodySource,
-            NetworkError::InvalidRequest,
-            QStringLiteral("request body source: Sync raw-body 不支持 source-not-ready 恢复"));
-        return CURL_READFUNC_ABORT;
-    }
-
     return pauseBodySourceSend(reply);
 }
 
@@ -72,14 +64,12 @@ bool validateBodySourceThreads(const QCNetworkReplyPrivate *reply,
                                const QIODevice *sourceDevice,
                                QString *errorMessage)
 {
-    if (reply->executionMode == ExecutionMode::Async) {
-        auto *multiManager = QCCurlMultiManager::instance();
-        if (reply->q_ptr && reply->q_ptr->thread() != multiManager->thread()) {
-            return failBodySourcePrepare(
-                errorMessage,
-                QStringLiteral(
-                    "request body source: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
-        }
+    auto *multiManager = QCCurlMultiManager::instance();
+    if (reply->q_ptr && reply->q_ptr->thread() != multiManager->thread()) {
+        return failBodySourcePrepare(
+            errorMessage,
+            QStringLiteral(
+                "request body source: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
     }
 
     if (reply->q_ptr && sourceDevice->thread() != reply->q_ptr->thread()) {

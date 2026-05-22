@@ -135,7 +135,6 @@ void QCNetworkDownloadToDeviceJob::doStart()
         = managerPrivate->prepareManagedRequest(d->request, middlewaresSnapshot);
     auto *networkReply = managerPrivate->createPreparedManagedReply(preparedRequest,
                                                                     HttpMethod::Get,
-                                                                    true,
                                                                     Internal::makeEmptyRequestBody(),
                                                                     QByteArray(),
                                                                     middlewaresSnapshot);
@@ -192,7 +191,7 @@ void QCNetworkDownloadToDeviceJob::doStart()
         finishFromReply(networkReply);
     }
 
-    managerPrivate->startPreparedReply(networkReply, preparedRequest, true);
+    managerPrivate->startPreparedReply(networkReply, preparedRequest);
 }
 
 } // namespace QCurl

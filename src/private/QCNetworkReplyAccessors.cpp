@@ -36,7 +36,7 @@ std::optional<QByteArray> QCNetworkReply::readAll()
         return std::nullopt;
     }
 
-    // 注意：这会清空缓冲区（对异步和同步模式都适用）
+    // 注意：这会清空当前 reply 缓冲区。
     QByteArray out = d->bodyBuffer.readAll();
 
     Internal::scheduleReplyBackpressureResumeAfterRead(this, d);
@@ -172,9 +172,6 @@ bool QCNetworkReply::isBackpressureActive() const noexcept
 bool QCNetworkReply::isUploadSendPaused() const noexcept
 {
     Q_D(const QCNetworkReply);
-    if (d->executionMode != ExecutionMode::Async) {
-        return false;
-    }
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
         || d->state == ReplyState::Finished) {
         return false;
@@ -210,40 +207,6 @@ qint64 QCNetworkReply::bytesTotal() const noexcept
 {
     Q_D(const QCNetworkReply);
     return d->downloadTotal;
-}
-
-// ==================
-// 同步模式专用 API
-// ==================
-
-void QCNetworkReply::setRequestBody(const QByteArray &data)
-{
-    Q_D(QCNetworkReply);
-    d->requestBody = data;
-}
-
-void QCNetworkReply::setWriteCallback(const DataFunction &func)
-{
-    Q_D(QCNetworkReply);
-    d->writeCallback = func;
-}
-
-void QCNetworkReply::setHeaderCallback(const DataFunction &func)
-{
-    Q_D(QCNetworkReply);
-    d->headerCallback = func;
-}
-
-void QCNetworkReply::setSeekCallback(const SeekFunction &func)
-{
-    Q_D(QCNetworkReply);
-    d->seekCallback = func;
-}
-
-void QCNetworkReply::setProgressCallback(const ProgressFunction &func)
-{
-    Q_D(QCNetworkReply);
-    d->progressCallback = func;
 }
 
 // ==================

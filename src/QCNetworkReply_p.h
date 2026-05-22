@@ -57,13 +57,11 @@ public:
      * @param q 公共类指针（q_ptr）
      * @param req 网络请求配置
      * @param method HTTP 方法
-     * @param mode 执行模式（同步/异步）
      * @param body 请求体数据（用于 POST/PUT/PATCH）
      */
     explicit QCNetworkReplyPrivate(QCNetworkReply *q,
                                    const QCNetworkRequest &req,
                                    HttpMethod method,
-                                   ExecutionMode mode,
                                    const Internal::RequestBody &requestBodySource,
                                    const QByteArray &body);
 
@@ -85,10 +83,9 @@ public:
     // 配置信息
     // ==================
 
-    QCNetworkRequest request;    ///< 网络请求配置
-    HttpMethod httpMethod;       ///< HTTP 方法（HEAD/GET/POST等）
-    ExecutionMode executionMode; ///< 执行模式（异步/同步）
-    QByteArray requestBody;      ///< 请求体数据（POST/PUT/PATCH使用）
+    QCNetworkRequest request; ///< 网络请求配置
+    HttpMethod httpMethod;    ///< HTTP 方法（HEAD/GET/POST等）
+    QByteArray requestBody;   ///< 请求体数据（POST/PUT/PATCH使用）
     Internal::NormalizedRequest normalizedRequest;
     Internal::CurlPlan curlPlan;
 
@@ -180,15 +177,6 @@ public:
 
     QByteArray hstsCachePathBytes;   ///< CURLOPT_HSTS 文件路径缓存
     QByteArray altSvcCachePathBytes; ///< CURLOPT_ALTSVC 文件路径缓存
-
-    // ==================
-    // 同步模式回调函数
-    // ==================
-
-    DataFunction writeCallback;        ///< 数据接收回调（同步模式）
-    DataFunction headerCallback;       ///< 响应头接收回调（同步模式）
-    SeekFunction seekCallback;         ///< 数据定位回调（同步模式）
-    ProgressFunction progressCallback; ///< 进度回调（同步模式）
 
     // ==================
     // 代理配置缓存（保持 QByteArray 生命周期）

@@ -40,7 +40,7 @@ void TestQCNetworkHttpErrorMappingOffline::testHttpErrorMappingFromMockStatus()
         mock.mockResponse(HttpMethod::Get, url, QByteArray(), statusCode);
 
         QCNetworkRequest request(url);
-        QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
+        QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, request));
         QVERIFY(reply);
 
         QCOMPARE(reply->httpStatusCode(), statusCode);
@@ -78,7 +78,7 @@ void TestQCNetworkHttpErrorMappingOffline::testHeadersRemainReadableAfterErrorFi
                       rawHeaderData);
 
     QCNetworkRequest request(url);
-    QScopedPointer<QCNetworkReply> reply(TestSupport::sendSyncTestReply(manager, request));
+    QScopedPointer<QCNetworkReply> reply(TestSupport::sendWaitedAsyncTestReply(manager, request));
     QVERIFY(reply);
 
     QCOMPARE(reply->state(), ReplyState::Error);

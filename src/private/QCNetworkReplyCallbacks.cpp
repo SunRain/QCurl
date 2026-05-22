@@ -67,31 +67,10 @@ size_t writeAsyncReplyBody(QCNetworkReplyPrivate *reply, char *ptr, size_t total
     return totalSize;
 }
 
-size_t writeSyncReplyBody(QCNetworkReplyPrivate *reply, char *ptr, size_t totalSize)
-{
-    if (reply->writeCallback) {
-        return reply->writeCallback(ptr, totalSize);
-    }
-
-    appendReplyBody(reply, ptr, totalSize);
-    return totalSize;
-}
-
 void emitAsyncProgress(QCNetworkReplyPrivate *reply)
 {
     emit reply->q_ptr->downloadProgress(reply->bytesDownloaded, reply->downloadTotal);
     emit reply->q_ptr->uploadProgress(reply->bytesUploaded, reply->uploadTotal);
-}
-
-void callSyncProgress(QCNetworkReplyPrivate *reply,
-                      curl_off_t dltotal,
-                      curl_off_t dlnow,
-                      curl_off_t ultotal,
-                      curl_off_t ulnow)
-{
-    if (reply->progressCallback) {
-        reply->progressCallback(dltotal, dlnow, ultotal, ulnow);
-    }
 }
 
 } // namespace
@@ -124,10 +103,7 @@ size_t writeReplyCurlCallback(char *ptr, size_t size, size_t nmemb, QCNetworkRep
         return totalSize;
     }
 
-    if (reply->executionMode == ExecutionMode::Async) {
-        return writeAsyncReplyBody(reply, ptr, totalSize);
-    }
-    return writeSyncReplyBody(reply, ptr, totalSize);
+    return writeAsyncReplyBody(reply, ptr, totalSize);
 }
 
 int progressReplyCurlCallback(QCNetworkReplyPrivate *reply,
@@ -150,11 +126,7 @@ int progressReplyCurlCallback(QCNetworkReplyPrivate *reply,
     reply->uploadTotal = static_cast<qint64>(ultotal);
     reply->bytesUploaded = static_cast<qint64>(ulnow);
 
-    if (reply->executionMode == ExecutionMode::Async) {
-        emitAsyncProgress(reply);
-    } else {
-        callSyncProgress(reply, dltotal, dlnow, ultotal, ulnow);
-    }
+    emitAsyncProgress(reply);
 
     return 0;
 }

@@ -237,7 +237,6 @@ namespace {
 {
     const QCNetworkRequest &request = normalized.request;
     const HttpMethod httpMethod = normalized.method;
-    const ExecutionMode executionMode = normalized.executionMode;
     // ==================
     // 1. 基础配置
     // ==================
@@ -473,7 +472,7 @@ namespace {
         return false;
     }
 
-    if (executionMode == ExecutionMode::Async && reply->requestBodySource.device && reply->q_ptr) {
+    if (reply->requestBodySource.device && reply->q_ptr) {
         QObject::connect(reply->requestBodySource.device, &QIODevice::readyRead, reply->q_ptr, [reply]() {
             reply->resumeSendFromRequestBodySourceIfNeeded();
         });

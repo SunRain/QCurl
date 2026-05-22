@@ -73,13 +73,11 @@ public:
     [[nodiscard]] QCNetworkReply *createPreparedManagedReply(
         const QCNetworkRequest &request,
         HttpMethod method,
-        bool async,
         const Internal::RequestBody &requestBodySource,
         const QByteArray &body,
         const QList<QCNetworkMiddleware *> &middlewares);
     void startPreparedReply(QCNetworkReply *reply,
-                            const QCNetworkRequest &request,
-                            bool async) const;
+                            const QCNetworkRequest &request) const;
 
     QCNetworkAccessManager::CookieFileModeFlag cookieModeFlag; ///< cookie 文件打开模式
     QString cookieFilePath; ///< 共享 cookie 文件路径
@@ -115,7 +113,6 @@ public:
 
     [[nodiscard]] QCNetworkReply *dispatchSendRequest(const QCNetworkRequest &request,
                                                       HttpMethod method,
-                                                      bool async,
                                                       const Internal::RequestBody &requestBodySource,
                                                       const QByteArray &body,
                                                       const char *apiName,
@@ -123,19 +120,16 @@ public:
     [[nodiscard]] QCNetworkReply *dispatchManagedSendRequest(
         const QCNetworkRequest &request,
         HttpMethod method,
-        bool async,
         const Internal::RequestBody &requestBodySource,
         const QByteArray &body,
         const char *apiName);
     [[nodiscard]] QCNetworkReply *createReply(const QCNetworkRequest &request,
                                               HttpMethod method,
-                                              bool async,
                                               const Internal::RequestBody &requestBodySource,
                                               const QByteArray &body,
                                               QObject *parent);
     [[nodiscard]] QCNetworkReply *createManagedReply(const QCNetworkRequest &request,
                                                      HttpMethod method,
-                                                     bool async,
                                                      const Internal::RequestBody &requestBodySource,
                                                      const QByteArray &body,
                                                      const QList<QCNetworkMiddleware *> &middlewares);
@@ -148,7 +142,6 @@ public:
         const char *apiName);
     [[nodiscard]] QCNetworkReply *createInvalidRequestReply(const QCNetworkRequest &request,
                                                             HttpMethod method,
-                                                            bool async,
                                                             const QString &message,
                                                             QObject *parent);
     void applyReplyDefaults(QCNetworkReply *reply) const;
