@@ -42,6 +42,7 @@
 #include "QCNetworkTimeoutConfig.h"
 #include "QCWebSocket.h"
 #include "QCWebSocketCompressionConfig.h"
+#include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "qcnetwork_sync_test_helper.h"
 
@@ -273,6 +274,14 @@ bool writeJsonObjectToFile(const QString &filePath, const QJsonObject &obj)
     return written == data.size();
 }
 
+QCBlockingNetworkClient makeBlockingClient()
+{
+    QCBlockingNetworkClient::Options options;
+    options.setApplicationThreadPolicy(
+        QCBlockingNetworkClient::ApplicationThreadPolicy::AllowForCliOrTests);
+    return QCBlockingNetworkClient(options);
+}
+
 NetworkError httpGetToFile(QCNetworkAccessManager &manager,
                            const QUrl &url,
                            QCNetworkHttpVersion httpVersion,
@@ -280,6 +289,8 @@ NetworkError httpGetToFile(QCNetworkAccessManager &manager,
                            qint64 abortAt,
                            qint64 *outBytesWritten)
 {
+    Q_UNUSED(manager);
+
     QCNetworkRequest req(url);
     req.setSslConfig(QCNetworkSslConfig::insecureConfig());
     req.setHttpVersion(httpVersion);
@@ -289,41 +300,20 @@ NetworkError httpGetToFile(QCNetworkAccessManager &manager,
         return NetworkError::Unknown;
     }
 
-    qint64 written = 0;
-    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         req,
-                         HttpMethod::Get,
-                         ExecutionMode::Sync,
-                         QByteArray(),
-                         &manager);
-    reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
-        if (abortAt > 0 && written >= abortAt) {
-            return 0; // 触发 CURLE_WRITE_ERROR -> 中断
-        }
-        const qint64 want = static_cast<qint64>(size);
-        qint64 canWrite   = want;
-        if (abortAt > 0 && (written + want) > abortAt) {
-            canWrite = abortAt - written;
-        }
-        if (canWrite > 0) {
-            const qint64 w = out.write(buffer, canWrite);
-            if (w != canWrite) {
-                return 0;
-            }
-            written += w;
-        }
-        if (abortAt > 0 && written >= abortAt) {
-            return 0;
-        }
-        return size;
-    });
-    reply.execute();
+    const QCBlockingNetworkClient client = makeBlockingClient();
+    const qint64 abortAfterBytes = abortAt > 0 ? abortAt : -1;
+    const QCBlockingNetworkResult result = Internal::performBlockingDownloadToDevice(
+        req,
+        HttpMethod::Get,
+        Internal::makeBlockingBytesBody(QByteArray()),
+        &out,
+        {},
+        abortAfterBytes);
     out.close();
-
     if (outBytesWritten) {
-        *outBytesWritten = written;
+        *outBytesWritten = out.size();
     }
-    return reply.error();
+    return result.error();
 }
 
 NetworkError httpRangeToFile(QCNetworkAccessManager &manager,
@@ -333,6 +323,8 @@ NetworkError httpRangeToFile(QCNetworkAccessManager &manager,
                              int rangeStart,
                              int rangeEnd)
 {
+    Q_UNUSED(manager);
+
     QCNetworkRequest req(url);
     req.setSslConfig(QCNetworkSslConfig::insecureConfig());
     req.setHttpVersion(httpVersion);
@@ -343,23 +335,10 @@ NetworkError httpRangeToFile(QCNetworkAccessManager &manager,
         return NetworkError::Unknown;
     }
 
-    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         req,
-                         HttpMethod::Get,
-                         ExecutionMode::Sync,
-                         QByteArray(),
-                         &manager);
-    reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
-        const qint64 want = static_cast<qint64>(size);
-        const qint64 w    = out.write(buffer, want);
-        if (w != want) {
-            return 0;
-        }
-        return size;
-    });
-    reply.execute();
+    const QCBlockingNetworkClient client = makeBlockingClient();
+    const QCBlockingNetworkResult result = client.downloadToDevice(req, &out);
     out.close();
-    return reply.error();
+    return result.error();
 }
 
 NetworkError httpMethodToFile(QCNetworkAccessManager &manager,
@@ -369,6 +348,8 @@ NetworkError httpMethodToFile(QCNetworkAccessManager &manager,
                               const QByteArray &body,
                               const QString &filePath)
 {
+    Q_UNUSED(manager);
+
     QCNetworkRequest req(url);
     req.setSslConfig(QCNetworkSslConfig::insecureConfig());
     req.setHttpVersion(httpVersion);
@@ -378,23 +359,13 @@ NetworkError httpMethodToFile(QCNetworkAccessManager &manager,
         return NetworkError::Unknown;
     }
 
-    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         req,
-                         method,
-                         ExecutionMode::Sync,
-                         body,
-                         &manager);
-    reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
-        const qint64 want = static_cast<qint64>(size);
-        const qint64 w    = out.write(buffer, want);
-        if (w != want) {
-            return 0;
-        }
-        return size;
-    });
-    reply.execute();
+    const QCBlockingNetworkResult result = Internal::performBlockingDownloadToDevice(
+        req,
+        method,
+        Internal::makeBlockingBytesBody(body),
+        &out);
     out.close();
-    return reply.error();
+    return result.error();
 }
 
 } // namespace
@@ -510,7 +481,7 @@ void TestLibcurlConsistency::testCase()
             QStringLiteral("%1:%2:127.0.0.1").arg(host).arg(observeHttpPort),
         });
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -545,7 +516,7 @@ void TestLibcurlConsistency::testCase()
             QStringLiteral("%1:%2:127.0.0.1:%3").arg(host).arg(logicalPort).arg(observeHttpPort),
         });
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -568,7 +539,7 @@ void TestLibcurlConsistency::testCase()
         req.setAllowedProtocols(QStringList{QStringLiteral("https")});
         req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), fromCurlCode(CURLE_UNSUPPORTED_PROTOCOL));
         const auto dataOpt = reply->readAll();
@@ -589,7 +560,7 @@ void TestLibcurlConsistency::testCase()
                                ? QCNetworkHttpVersion::Http3Only
                                : QCNetworkHttpVersion::Http3);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         if (caseId == QStringLiteral("ext_http3_only_failure_http_1_1")) {
             QVERIFY(reply->error() != NetworkError::NoError);
@@ -638,7 +609,7 @@ void TestLibcurlConsistency::testCase()
         req.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
         req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), fromCurlCode(CURLE_UNSUPPORTED_PROTOCOL));
         const auto dataOpt = reply->readAll();
@@ -663,7 +634,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(ssl);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -686,7 +657,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(ssl);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::SslHandshakeFailed);
         deleteReplyLater(reply);
@@ -708,7 +679,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(ssl);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -735,7 +706,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(ssl);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
         deleteReplyLater(reply);
@@ -747,7 +718,7 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req{QUrl(targetUrl)};
         req.setHttpVersion(httpVersion);
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::ConnectionRefused);
         const auto dataOpt = reply->readAll();
@@ -764,7 +735,7 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req{QUrl(targetUrl)};
         req.setHttpVersion(httpVersion);
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::InvalidRequest);
         const auto dataOpt = reply->readAll();
@@ -789,7 +760,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setProxyConfig(proxy);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), fromCurlCode(CURLE_PROXY));
         const auto dataOpt = reply->readAll();
@@ -817,7 +788,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setProxyConfig(proxy);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -840,7 +811,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(follow);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -863,7 +834,7 @@ void TestLibcurlConsistency::testCase()
         req.setFollowLocation(true);
         req.setAutoRefererEnabled(true);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -886,7 +857,7 @@ void TestLibcurlConsistency::testCase()
         req.setFollowLocation(true);
         req.setMaxRedirects(1);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::TooManyRedirects);
 
@@ -908,7 +879,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setAcceptedEncodings(QStringList{QStringLiteral("gzip")});
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -931,7 +902,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setReferer(referer);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -968,7 +939,7 @@ void TestLibcurlConsistency::testCase()
         auth.setAllowUnrestrictedAuth(false);
         req.setHttpAuth(auth);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -1018,7 +989,7 @@ void TestLibcurlConsistency::testCase()
         }
         req.setHttpAuth(auth);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         if (expectHttp401) {
             QCOMPARE(reply->error(), NetworkError::HttpUnauthorized);
@@ -1146,17 +1117,9 @@ void TestLibcurlConsistency::testCase()
         if (nonSeekable) {
             SequentialReadDevice device(body);
             QVERIFY(device.open(QIODevice::ReadOnly));
-            const auto bodySource = QCurl::Internal::makeDeviceRequestBody(
-                &device, static_cast<qint64>(body.size()), false);
-            QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                                 req,
-                                 HttpMethod::Post,
-                                 ExecutionMode::Sync,
-                                 bodySource,
-                                 QByteArray(),
-                                 &manager);
-            reply.execute();
-            QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+            const QCBlockingNetworkResult result = makeBlockingClient().post(
+                req, &device, static_cast<qint64>(body.size()));
+            QCOMPARE(result.error(), NetworkError::ReplayNotSupported);
             QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
                                    QByteArray(),
                                    QIODevice::WriteOnly | QIODevice::Truncate));
@@ -1248,34 +1211,30 @@ void TestLibcurlConsistency::testCase()
             QFAIL("unexpected stream-body case id");
         }
 
-        const auto bodySource = QCurl::Internal::makeDeviceRequestBody(
-            device.data(), static_cast<qint64>(uploadSize), false);
-
-        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                             req,
-                             method,
-                             ExecutionMode::Sync,
-                             bodySource,
-                             QByteArray(),
-                             &manager);
-        reply.execute();
+        QCBlockingNetworkResult result;
+        if (method == HttpMethod::Put) {
+            result = makeBlockingClient().put(
+                req, device.data(), static_cast<qint64>(uploadSize));
+        } else {
+            result = makeBlockingClient().post(
+                req, device.data(), static_cast<qint64>(uploadSize));
+        }
 
         if (seekable) {
-            QCOMPARE(reply.error(), NetworkError::NoError);
+            QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
         } else {
-            QCOMPARE(reply.error(), NetworkError::InvalidRequest);
-            QVERIFY2(reply.errorString().contains(QStringLiteral("无法重发 body")),
+            QCOMPARE(result.error(), NetworkError::ReplayNotSupported);
+            QVERIFY2(result.errorMessage().contains(QStringLiteral("replay"))
+                         || result.errorMessage().contains(QStringLiteral("重放")),
                      "expected non-seekable replay to fail with a rewind/seek diagnostic");
             if (isDigestAnySafe) {
-                QCOMPARE(reply.httpStatusCode(), 401);
+                QCOMPARE(result.statusCode(), 401);
             }
         }
 
         QByteArray out;
         if (seekable) {
-            const auto dataOpt = reply.readAll();
-            QVERIFY(dataOpt.has_value());
-            out = dataOpt.value();
+            out = result.body();
         }
 
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
@@ -1305,7 +1264,7 @@ void TestLibcurlConsistency::testCase()
         options.setApplicationThreadPolicy(
             QCBlockingNetworkClient::ApplicationThreadPolicy::AllowForCliOrTests);
         QCBlockingNetworkClient client(options);
-        const QCBlockingNetworkResult result = client.sendPost(req, &device, qint64(uploadSize));
+        const QCBlockingNetworkResult result = client.post(req, &device, qint64(uploadSize));
         QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
         QCOMPARE(result.body(), body);
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
@@ -1328,7 +1287,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -1349,7 +1308,7 @@ void TestLibcurlConsistency::testCase()
                                            requestId));
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -1382,7 +1341,7 @@ void TestLibcurlConsistency::testCase()
         req.setRawHeader(QByteArrayLiteral("X-QCurl-Case"), QByteArrayLiteral("Camel"));
         req.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Basic"));
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -1406,7 +1365,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -1729,7 +1688,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendDelete(req);
+        QCNetworkReply *reply = manager.deleteResource(req);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1901,7 +1860,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setTimeoutConfig(timeout);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::ConnectionTimeout);
 
@@ -1928,7 +1887,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setTimeoutConfig(timeout);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::ConnectionTimeout);
 
@@ -2109,7 +2068,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
 
         QJsonObject meta;
@@ -2696,7 +2655,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -2719,7 +2678,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -2742,7 +2701,7 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QCOMPARE(reply->error(), NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -2931,7 +2890,7 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -2959,7 +2918,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setRetryPolicy(policy);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
         const auto dataOpt = reply->readAll();
@@ -2987,7 +2946,7 @@ void TestLibcurlConsistency::testCase()
         proxy.setPassword(QString());
         req.setProxyConfig(proxy);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
         QCOMPARE(static_cast<int>(reply->error()), 407);
@@ -3024,27 +2983,18 @@ void TestLibcurlConsistency::testCase()
         QFile out(outFile);
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
 
-        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                             req,
-                             HttpMethod::Get,
-                             ExecutionMode::Sync,
-                             QByteArray(),
-                             &manager);
-        reply.setWriteCallback([&](char *buffer, size_t size) -> size_t {
-            const qint64 want = static_cast<qint64>(size);
-            const qint64 w    = out.write(buffer, want);
-            if (w != want) {
-                return 0;
-            }
-            return size;
-        });
-        reply.execute();
+        const QCBlockingNetworkResult result = makeBlockingClient().downloadToDevice(req, &out);
         out.close();
 
-        QCOMPARE(reply.error(), NetworkError::NoError);
+        QCOMPARE(result.error(), NetworkError::NoError);
 
         // 诊断型采集：尽力落盘 CONNECT 阶段 header blocks（缺失/差异不作为门禁失败条件）
-        const QByteArray headerData = reply.rawHeaderData();
+        QByteArray headerData;
+        const auto headers = result.rawHeaderList();
+        for (const auto &header : headers) {
+            headerData += header.first + QByteArrayLiteral(": ") + header.second
+                          + QByteArrayLiteral("\r\n");
+        }
         (void)writeAllToFile(QStringLiteral("response_headers_0.data"),
                              headerData,
                              QIODevice::WriteOnly | QIODevice::Truncate);
@@ -3132,7 +3082,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(false);
 
-        auto *reply = TestSupport::sendSyncTestReply(manager, req);
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         const QStringList warnings = reply->capabilityWarnings();
         QCOMPARE(reply->error(), NetworkError::NoError);
@@ -3559,7 +3509,7 @@ void TestLibcurlConsistency::testCase()
         {
             QCNetworkRequest req(url);
             req.setHttpVersion(httpVersion);
-            auto *reply = TestSupport::sendSyncTestReply(manager, req);
+            auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
             deleteReplyLater(reply);
@@ -3569,7 +3519,7 @@ void TestLibcurlConsistency::testCase()
         {
             QCNetworkRequest req(url);
             req.setHttpVersion(httpVersion);
-            auto *reply = TestSupport::sendSyncTestReply(manager, req);
+            auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
             deleteReplyLater(reply);
@@ -3594,7 +3544,7 @@ void TestLibcurlConsistency::testCase()
         {
             QCNetworkRequest req(url);
             req.setHttpVersion(httpVersion);
-            auto *reply = TestSupport::sendSyncTestReply(manager, req);
+            auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
             QVERIFY(reply);
             QCOMPARE(reply->error(), NetworkError::NoError);
             deleteReplyLater(reply);

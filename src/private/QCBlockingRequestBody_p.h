@@ -8,6 +8,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QtGlobal>
 
 #include <cstddef>
 #include <curl/curl.h>
@@ -28,7 +29,9 @@ struct QCBlockingRequestBody
     QIODevice *device = nullptr;
     qint64 sizeBytes = 0;
     bool explicitSize = false;
+    qint64 basePosition = 0;
     qint64 initialDeviceSize = -1;
+    bool seekable = false;
 };
 
 struct QCBlockingRequestBodyReadState
@@ -47,6 +50,7 @@ struct QCBlockingRequestBodyReadState
 [[nodiscard]] curl_off_t curlBodySize(const QCBlockingRequestBody &body) noexcept;
 
 size_t readBlockingRequestBodyCallback(char *ptr, size_t size, size_t nmemb, void *userdata);
+Q_DECL_HIDDEN int seekBlockingRequestBodyCallback(void *userdata, curl_off_t offset, int origin);
 
 } // namespace QCurl::Internal
 

@@ -22,6 +22,7 @@ namespace Internal {
 struct RequestOptionStorage
 {
     QByteArray url;
+    QByteArray range;
     QByteArray proxyHost;
     QByteArray proxyUser;
     QByteArray proxyPassword;

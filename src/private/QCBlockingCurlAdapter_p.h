@@ -14,6 +14,7 @@
 #include "private/QCBlockingRequestBody_p.h"
 
 #include <QByteArray>
+#include <QByteArrayView>
 
 class QIODevice;
 
@@ -35,10 +36,19 @@ namespace QCurl::Internal {
                                                              const QCCookieSnapshot &cookies,
                                                              const QCBlockingRequestOptions
                                                                  &options = {});
+[[nodiscard]] QCBlockingNetworkResult performBlockingCustomRequest(
+    const QCNetworkRequest &request,
+    QByteArrayView method,
+    QCBlockingRequestBody body,
+    const QCCookieSnapshot &cookies,
+    const QCBlockingRequestOptions &options = {});
 [[nodiscard]] QCBlockingNetworkResult performBlockingDownloadToDevice(
     const QCNetworkRequest &request,
+    HttpMethod method,
+    QCBlockingRequestBody body,
     QIODevice *output,
-    const QCBlockingRequestOptions &options = {});
+    const QCBlockingRequestOptions &options = {},
+    qint64 abortAfterBytes = -1);
 
 } // namespace QCurl::Internal
 

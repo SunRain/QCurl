@@ -28,6 +28,12 @@ UploadEchoServer::~UploadEchoServer()
 
 bool UploadEchoServer::start()
 {
+    return start(1);
+}
+
+bool UploadEchoServer::start(int expectedRequests)
+{
+    m_expectedRequests = expectedRequests;
     m_thread = std::thread([this]() { run(); });
 
     std::unique_lock<std::mutex> lock(m_mutex);
@@ -60,15 +66,24 @@ void UploadEchoServer::run()
         m_port = started ? server.serverPort() : 0;
     }
     m_ready.notify_one();
-    if (!started || !server.waitForNewConnection(30000)) {
+    if (!started) {
         return;
     }
 
-    QTcpSocket *socket = server.nextPendingConnection();
+    for (int i = 0; i < m_expectedRequests; ++i) {
+        if (!server.waitForNewConnection(30000)) {
+            return;
+        }
+
+        handleSocket(server.nextPendingConnection());
+    }
+}
+
+void UploadEchoServer::handleSocket(QTcpSocket *socket)
+{
     if (!socket) {
         return;
     }
-
     const ParsedRequest request = readRequest(socket);
     if (!request.complete) {
         socket->disconnectFromHost();
@@ -144,7 +159,8 @@ UploadEchoServer::ParsedRequest UploadEchoServer::readRequest(QTcpSocket *socket
         }
         if (headerEnd >= 0 && request.contentLength < 0 && request.method != QByteArrayLiteral("POST")
             && request.method != QByteArrayLiteral("PUT")
-            && request.method != QByteArrayLiteral("PATCH")) {
+            && request.method != QByteArrayLiteral("PATCH")
+            && request.method != QByteArrayLiteral("DELETE")) {
             request.complete = true;
             return request;
         }

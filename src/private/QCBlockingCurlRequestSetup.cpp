@@ -220,6 +220,15 @@ bool configureBasicRequestOptions(CURL *handle,
     setLongOption(handle, CURLOPT_HTTP_VERSION, curlHttpVersion(request.httpVersion()));
     setLongOption(handle, CURLOPT_SSL_VERIFYPEER, request.sslConfig().verifyPeer() ? 1L : 0L);
     setLongOption(handle, CURLOPT_SSL_VERIFYHOST, request.sslConfig().verifyHost() ? 2L : 0L);
+    if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
+        storage->range = QStringLiteral("%1-%2")
+                             .arg(request.rangeStart())
+                             .arg(request.rangeEnd())
+                             .toUtf8();
+        if (!setStringOption(handle, CURLOPT_RANGE, storage->range)) {
+            return failOption(storage, "CURLOPT_RANGE");
+        }
+    }
 
     const auto timeout = request.timeoutConfig();
     if (timeout.connectTimeout().has_value()) {

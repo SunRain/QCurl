@@ -42,7 +42,7 @@ public:
     explicit QCNetworkResumableDownloadJob(QCNetworkAccessManager *manager,
                                            const QCNetworkRequest &request,
                                            const QString &savePath,
-                                           bool overwrite  = false,
+                                           bool overwrite = false,
                                            QObject *parent = nullptr);
 
     /**
@@ -56,7 +56,7 @@ public:
     explicit QCNetworkResumableDownloadJob(QCNetworkAccessManager *manager,
                                            const QUrl &url,
                                            const QString &savePath,
-                                           bool overwrite  = false,
+                                           bool overwrite = false,
                                            QObject *parent = nullptr);
 
     /**

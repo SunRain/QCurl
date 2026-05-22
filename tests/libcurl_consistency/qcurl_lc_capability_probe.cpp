@@ -90,8 +90,11 @@ QJsonObject buildManifest()
         &QCurl::QCNetworkAccessManager::sendPost));
     static_cast<void>(
         static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-            const QCurl::QCNetworkRequest &, QIODevice *, std::optional<qint64>) const>(
-            &QCurl::QCBlockingNetworkClient::sendPost));
+            const QCurl::QCNetworkRequest &,
+            QIODevice *,
+            std::optional<qint64>,
+            const QCurl::QCBlockingRequestOptions &) const>(
+            &QCurl::QCBlockingNetworkClient::post));
     QBuffer bodyProbe;
     bodyProbe.open(QIODevice::ReadOnly);
     auto multipartProbe

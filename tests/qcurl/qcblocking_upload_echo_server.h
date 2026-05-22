@@ -43,6 +43,7 @@ public:
     ~UploadEchoServer();
 
     [[nodiscard]] bool start();
+    [[nodiscard]] bool start(int expectedRequests);
     [[nodiscard]] QUrl url(const QString &path) const;
     [[nodiscard]] RequestRecord lastRequest() const;
 
@@ -64,12 +65,14 @@ private:
     static void parseHeaders(ParsedRequest *request, const QByteArray &headerBlock);
     static ParsedRequest readRequest(QTcpSocket *socket);
     static void sendResponse(QTcpSocket *socket, const QByteArray &requestBody, ResponsePlan plan);
+    void handleSocket(QTcpSocket *socket);
 
     mutable std::mutex m_mutex;
     std::condition_variable m_ready;
     std::optional<bool> m_started;
     std::thread m_thread;
     quint16 m_port = 0;
+    int m_expectedRequests = 1;
     QList<RequestRecord> m_requests;
     ResponsePlan m_plan;
 };

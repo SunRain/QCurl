@@ -2,6 +2,7 @@
 
 #include "CurlFeatureProbe.h"
 #include "QCNetworkError.h"
+#include "private/QCBlockingCurlMethodSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
 #include "private/CurlGlobalConstructor_p.h"
 
@@ -22,7 +23,9 @@ struct ResponseSink
     QIODevice *device = nullptr;
     qint64 maxInMemoryBytes = 0;
     qint64 bytesReceived = 0;
+    qint64 abortAfterBytes = -1;
     QString failureMessage;
+    bool cancelledByProgress = false;
 };
 
 struct BlockingProgressState
@@ -81,25 +84,36 @@ size_t writeBodyCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
         return 0;
     }
 
-    if (sink->device) {
-        const qint64 written = sink->device->write(ptr, totalSize);
-        if (written != totalSize) {
+    qint64 bytesToAccept = totalSize;
+    if (sink->abortAfterBytes >= 0) {
+        const qint64 remainingBytes = qMax<qint64>(0, sink->abortAfterBytes - sink->bytesReceived);
+        bytesToAccept = qMin(totalSize, remainingBytes);
+    }
+
+    if (sink->device && bytesToAccept > 0) {
+        const qint64 written = sink->device->write(ptr, bytesToAccept);
+        if (written != bytesToAccept) {
             sink->failureMessage = QStringLiteral("Blocking Extras output device write failed");
             return 0;
         }
-    } else if (sink->body) {
-        if (!canAppendToMemorySink(*sink, totalSize)) {
+    } else if (sink->body && bytesToAccept > 0) {
+        if (!canAppendToMemorySink(*sink, bytesToAccept)) {
             sink->failureMessage = QStringLiteral(
                 "Blocking Extras response body exceeds maxInMemoryBodyBytes");
             return 0;
         }
-        sink->body->append(ptr, static_cast<qsizetype>(totalSize));
-    } else {
+        sink->body->append(ptr, static_cast<qsizetype>(bytesToAccept));
+    } else if (!sink->body && !sink->device) {
         return 0;
     }
 
-    sink->bytesReceived += totalSize;
-    return static_cast<size_t>(totalSize);
+    sink->bytesReceived += bytesToAccept;
+    if (sink->abortAfterBytes >= 0 && sink->bytesReceived >= sink->abortAfterBytes) {
+        sink->cancelledByProgress = true;
+        return 0;
+    }
+
+    return static_cast<size_t>(bytesToAccept);
 }
 
 int progressCallback(void *userdata,
@@ -154,53 +168,6 @@ size_t writeHeaderCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return static_cast<size_t>(totalSize);
 }
 
-void configureUploadMethod(CURL *handle,
-                           const char *methodName,
-                           QCBlockingRequestBodyReadState *readState)
-{
-    curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-    curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, methodName);
-    curl_easy_setopt(handle, CURLOPT_READFUNCTION, readBlockingRequestBodyCallback);
-    curl_easy_setopt(handle, CURLOPT_READDATA, readState);
-    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, curlBodySize(readState->body));
-}
-
-void configureMethod(CURL *handle, HttpMethod method, QCBlockingRequestBodyReadState *readState)
-{
-    switch (method) {
-        case HttpMethod::Head:
-            curl_easy_setopt(handle, CURLOPT_NOBODY, 1L);
-            break;
-        case HttpMethod::Get:
-            curl_easy_setopt(handle, CURLOPT_HTTPGET, 1L);
-            break;
-        case HttpMethod::Post:
-            if (isStreamingBody(readState->body)) {
-                configureUploadMethod(handle, "POST", readState);
-            } else {
-                curl_easy_setopt(handle, CURLOPT_POST, 1L);
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, readState->body.bytes->constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, curlBodySize(readState->body));
-            }
-            break;
-        case HttpMethod::Put:
-            configureUploadMethod(handle, "PUT", readState);
-            break;
-        case HttpMethod::Patch:
-            if (isStreamingBody(readState->body)) {
-                configureUploadMethod(handle, "PATCH", readState);
-            } else {
-                curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PATCH");
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, readState->body.bytes->constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, curlBodySize(readState->body));
-            }
-            break;
-        case HttpMethod::Delete:
-            curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "DELETE");
-            break;
-    }
-}
-
 struct BlockingExecution
 {
     QByteArray responseBody;
@@ -247,10 +214,12 @@ QCBlockingNetworkResult finishBlockingResult(const BlockingExecution &execution)
 
 QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                HttpMethod method,
+                                               const QByteArray &customMethod,
                                                QCBlockingRequestBody body,
                                                const QCCookieSnapshot &cookies,
                                                const QCBlockingRequestOptions &options,
-                                               QIODevice *downloadOutput)
+                                               QIODevice *downloadOutput,
+                                               qint64 abortAfterBytes = -1)
 {
     const auto availability = CurlFeatureProbe::instance().minimumRuntimeAvailability();
     if (!availability.supported) {
@@ -272,7 +241,9 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                               downloadOutput,
                               downloadOutput ? -1 : options.maxInMemoryBodyBytes(),
                               0,
-                              QString()};
+                              abortAfterBytes,
+                              QString(),
+                              false};
     HeaderSink headerSink{&execution.responseHeaders, QString()};
     BlockingProgressState progressState{options.progressCallback(),
                                         options.progressCallbackUserData(),
@@ -317,7 +288,7 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
         curl_easy_setopt(handle, CURLOPT_XFERINFODATA, &progressState);
         curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
     }
-    configureMethod(handle, method, &readState);
+    configureBlockingCurlMethod(handle, method, customMethod, &readState);
 
     execution.code = curl_easy_perform(handle);
     execution.bytesReceived = responseSink.bytesReceived;
@@ -327,6 +298,11 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
         if (!readState.failureMessage.isEmpty()) {
             return QCBlockingNetworkResult::failure(requestBodyError(readState),
                                                    readState.failureMessage,
+                                                   static_cast<int>(execution.httpStatus));
+        }
+        if (responseSink.cancelledByProgress) {
+            return QCBlockingNetworkResult::failure(NetworkError::OperationCancelled,
+                                                   QStringLiteral("Blocking Extras download cancelled after writing requested byte limit"),
                                                    static_cast<int>(execution.httpStatus));
         }
         if (!responseSink.failureMessage.isEmpty()) {
@@ -377,20 +353,47 @@ QCBlockingNetworkResult performBlockingRequest(const QCNetworkRequest &request,
                                                const QCCookieSnapshot &cookies,
                                                const QCBlockingRequestOptions &options)
 {
-    return executeBlockingRequest(request, method, std::move(body), cookies, options, nullptr);
+    return executeBlockingRequest(request,
+                                  method,
+                                  QByteArray(),
+                                  std::move(body),
+                                  cookies,
+                                  options,
+                                  nullptr);
+}
+
+QCBlockingNetworkResult performBlockingCustomRequest(
+    const QCNetworkRequest &request,
+    QByteArrayView method,
+    QCBlockingRequestBody body,
+    const QCCookieSnapshot &cookies,
+    const QCBlockingRequestOptions &options)
+{
+    return executeBlockingRequest(request,
+                                  HttpMethod::Custom,
+                                  method.toByteArray(),
+                                  std::move(body),
+                                  cookies,
+                                  options,
+                                  nullptr);
 }
 
 QCBlockingNetworkResult performBlockingDownloadToDevice(
     const QCNetworkRequest &request,
+    HttpMethod method,
+    QCBlockingRequestBody body,
     QIODevice *output,
-    const QCBlockingRequestOptions &options)
+    const QCBlockingRequestOptions &options,
+    qint64 abortAfterBytes)
 {
     return executeBlockingRequest(request,
-                                  HttpMethod::Get,
-                                  makeBlockingBytesBody(QByteArray()),
+                                  method,
+                                  QByteArray(),
+                                  std::move(body),
                                   QCCookieSnapshot(),
                                   options,
-                                  output);
+                                  output,
+                                  abortAfterBytes);
 }
 
 } // namespace QCurl::Internal

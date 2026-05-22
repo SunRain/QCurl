@@ -12,6 +12,7 @@
 #include "QCNetworkRequest.h"
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QSharedDataPointer>
 #include <QUrl>
 
@@ -86,6 +87,10 @@ public:
     /// 设置阻塞请求进度回调；传入空指针会清除回调和用户指针。
     void setProgressCallback(QCBlockingProgressCallback callback,
                              void *userData = nullptr) noexcept;
+    /// 返回随当前请求发送的 cookie 快照。
+    [[nodiscard]] QCCookieSnapshot cookieSnapshot() const;
+    /// 设置随当前请求发送的 cookie 快照。
+    void setCookieSnapshot(const QCCookieSnapshot &cookies);
 
 private:
     QSharedDataPointer<QCBlockingRequestOptionsData> d;
@@ -137,51 +142,68 @@ public:
     [[nodiscard]] Options options() const;
     void setOptions(const Options &options);
 
-    [[nodiscard]] QCBlockingNetworkResult sendGet(const QCNetworkRequest &request) const;
     [[nodiscard]] QCBlockingNetworkResult get(
         const QCNetworkRequest &request,
         const QCBlockingRequestOptions &requestOptions = {}) const;
     [[nodiscard]] QCBlockingNetworkResult head(
         const QCNetworkRequest &request,
         const QCBlockingRequestOptions &requestOptions = {}) const;
-    [[nodiscard]] QCBlockingNetworkResult send(
+    [[nodiscard]] QCBlockingNetworkResult deleteResource(
         const QCNetworkRequest &request,
-        HttpMethod method,
-        const QByteArray &body = {},
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult post(
+        const QCNetworkRequest &request,
+        const QByteArray &body,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult put(
+        const QCNetworkRequest &request,
+        const QByteArray &body,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult patch(
+        const QCNetworkRequest &request,
+        const QByteArray &body,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult post(
+        const QCNetworkRequest &request,
+        QIODevice *body,
+        std::optional<qint64> sizeBytes = std::nullopt,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult put(
+        const QCNetworkRequest &request,
+        QIODevice *body,
+        std::optional<qint64> sizeBytes = std::nullopt,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult sendCustomRequest(
+        const QCNetworkRequest &request,
+        QByteArrayView method,
+        const QCBlockingRequestOptions &requestOptions = {}) const;
+    [[nodiscard]] QCBlockingNetworkResult sendCustomRequest(
+        const QCNetworkRequest &request,
+        QByteArrayView method,
+        const QByteArray &body,
         const QCBlockingRequestOptions &requestOptions = {}) const;
     [[nodiscard]] QCBlockingNetworkResult downloadToDevice(
         const QCNetworkRequest &request,
         QIODevice *output,
         const QCBlockingRequestOptions &requestOptions = {}) const;
-    [[nodiscard]] QCBlockingNetworkResult sendGet(const QCNetworkRequest &request,
-                                                  const QCCookieSnapshot &cookies) const;
-    [[nodiscard]] QCBlockingNetworkResult sendPost(const QCNetworkRequest &request,
-                                                   const QByteArray &body) const;
-    [[nodiscard]] QCBlockingNetworkResult sendPost(const QCNetworkRequest &request,
-                                                   const QByteArray &body,
-                                                   const QCCookieSnapshot &cookies) const;
-    [[nodiscard]] QCBlockingNetworkResult sendPost(
-        const QCNetworkRequest &request,
-        QIODevice *body,
-        std::optional<qint64> sizeBytes = std::nullopt) const;
-    [[nodiscard]] QCBlockingNetworkResult sendPut(const QCNetworkRequest &request,
-                                                  const QByteArray &body) const;
-    [[nodiscard]] QCBlockingNetworkResult sendPut(
-        const QCNetworkRequest &request,
-        QIODevice *body,
-        std::optional<qint64> sizeBytes = std::nullopt) const;
 
 private:
     [[nodiscard]] QCBlockingNetworkResult perform(const QCNetworkRequest &request,
                                                   HttpMethod method,
                                                   const QByteArray &body,
-                                                  const QCCookieSnapshot &cookies = {},
                                                   const QCBlockingRequestOptions &requestOptions =
                                                       {}) const;
     [[nodiscard]] QCBlockingNetworkResult perform(const QCNetworkRequest &request,
                                                   HttpMethod method,
                                                   QIODevice *body,
-                                                  std::optional<qint64> sizeBytes) const;
+                                                  std::optional<qint64> sizeBytes,
+                                                  const QCBlockingRequestOptions
+                                                      &requestOptions) const;
+    [[nodiscard]] QCBlockingNetworkResult performCustom(const QCNetworkRequest &request,
+                                                        QByteArrayView method,
+                                                        const QByteArray &body,
+                                                        const QCBlockingRequestOptions
+                                                            &requestOptions) const;
     [[nodiscard]] bool applicationThreadRejected() const;
 
     QSharedDataPointer<QCBlockingNetworkClientData> d;

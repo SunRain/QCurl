@@ -33,8 +33,10 @@ set(QCURL_CORE_HEADERS
 
 set(QCURL_FEATURE_SOURCES
     QCBlockingNetworkClient.cpp
+    QCBlockingNetworkClientOptions.cpp
     QCBlockingNetworkResult.cpp
     private/QCBlockingCurlAdapter.cpp
+    private/QCBlockingCurlMethodSetup.cpp
     private/QCBlockingCurlRequestSetup.cpp
     private/QCBlockingCurlRequestSetupExtensions.cpp
     private/QCBlockingRequestBody.cpp
@@ -106,6 +108,7 @@ set(QCURL_FEATURE_HEADERS
     QCBlockingNetworkClient.h
     QCBlockingNetworkResult.h
     private/QCBlockingCurlAdapter_p.h
+    private/QCBlockingCurlMethodSetup_p.h
     private/QCBlockingCurlRequestSetup_p.h
     private/QCBlockingRequestBody_p.h
     QCCurlHandleManager.h

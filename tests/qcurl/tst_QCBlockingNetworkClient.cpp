@@ -94,8 +94,8 @@ class tst_QCBlockingNetworkClient : public QObject
     Q_OBJECT
 
 private slots:
-    void sendPostDeviceWithExplicitSize();
-    void sendPutDeviceWithInferredSeekableSize();
+    void postDeviceWithExplicitSize();
+    void putDeviceWithInferredSeekableSize();
     void appliesCookieSnapshotAndReturnsCookieDelta();
     void rejectsInvalidDevice_data();
     void rejectsInvalidDevice();
@@ -108,9 +108,12 @@ private slots:
     void downloadToDeviceWritesLargeResponse();
     void downloadToDeviceRejectsInvalidOutput_data();
     void downloadToDeviceRejectsInvalidOutput();
+    void customRequestRejectsInvalidMethod_data();
+    void customRequestRejectsInvalidMethod();
+    void customDeleteWithBodySendsExplicitMethod();
 };
 
-void tst_QCBlockingNetworkClient::sendPostDeviceWithExplicitSize()
+void tst_QCBlockingNetworkClient::postDeviceWithExplicitSize()
 {
     UploadEchoServer server;
     QVERIFY(server.start());
@@ -120,7 +123,7 @@ void tst_QCBlockingNetworkClient::sendPostDeviceWithExplicitSize()
     device.setData(payload);
     QVERIFY(device.open(QIODevice::ReadOnly));
 
-    const auto result = makeClient().sendPost(
+    const auto result = makeClient().post(
         makeRequest(server.url(QStringLiteral("/post"))), &device, payload.size());
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
     QCOMPARE(result.statusCode(), 200);
@@ -129,7 +132,7 @@ void tst_QCBlockingNetworkClient::sendPostDeviceWithExplicitSize()
     QCOMPARE(server.lastRequest().body, payload);
 }
 
-void tst_QCBlockingNetworkClient::sendPutDeviceWithInferredSeekableSize()
+void tst_QCBlockingNetworkClient::putDeviceWithInferredSeekableSize()
 {
     UploadEchoServer server;
     QVERIFY(server.start());
@@ -141,8 +144,7 @@ void tst_QCBlockingNetworkClient::sendPutDeviceWithInferredSeekableSize()
     QVERIFY(device.seek(7));
 
     const QByteArray expected = payload.mid(7);
-    const auto result =
-        makeClient().sendPut(makeRequest(server.url(QStringLiteral("/put"))), &device);
+    const auto result = makeClient().put(makeRequest(server.url(QStringLiteral("/put"))), &device);
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
     QCOMPARE(result.statusCode(), 200);
     QCOMPARE(result.body(), expected);
@@ -153,12 +155,16 @@ void tst_QCBlockingNetworkClient::sendPutDeviceWithInferredSeekableSize()
 void tst_QCBlockingNetworkClient::appliesCookieSnapshotAndReturnsCookieDelta()
 {
     UploadEchoServer server;
-    QVERIFY(server.start());
+    QVERIFY(server.start(2));
 
-    const QCCookieSnapshot snapshot({QNetworkCookie(QByteArrayLiteral("session"),
-                                                    QByteArrayLiteral("input"))});
-    const auto result = makeClient().sendPost(
-        makeRequest(server.url(QStringLiteral("/cookies"))), QByteArrayLiteral("body"), snapshot);
+    QCBlockingRequestOptions requestOptions;
+    requestOptions.setCookieSnapshot(
+        QCCookieSnapshot({QNetworkCookie(QByteArrayLiteral("session"),
+                                         QByteArrayLiteral("input"))}));
+
+    const auto result = makeClient().post(makeRequest(server.url(QStringLiteral("/cookies"))),
+                                          QByteArrayLiteral("body"),
+                                          requestOptions);
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
     QCOMPARE(server.lastRequest().cookie, QByteArrayLiteral("session=input"));
     QVERIFY(!result.cookieDelta().isEmpty());
@@ -167,6 +173,11 @@ void tst_QCBlockingNetworkClient::appliesCookieSnapshotAndReturnsCookieDelta()
     QCOMPARE(result.rawHeaders().value(QByteArrayLiteral("Set-Cookie")),
              QByteArrayLiteral("session=updated; Path=/"));
     QCOMPARE(result.bytesReceived(), qint64(4));
+
+    const auto getResult = makeClient().get(makeRequest(server.url(QStringLiteral("/cookies"))),
+                                            requestOptions);
+    QVERIFY2(getResult.isSuccess(), qPrintable(getResult.errorMessage()));
+    QCOMPARE(server.lastRequest().cookie, QByteArrayLiteral("session=input"));
 }
 
 void tst_QCBlockingNetworkClient::rejectsInvalidDevice_data()
@@ -197,7 +208,7 @@ void tst_QCBlockingNetworkClient::rejectsInvalidDevice()
         QVERIFY(device.open(QIODevice::OpenMode(openMode)));
     }
 
-    const auto result = makeClient().sendPost(
+    const auto result = makeClient().post(
         makeRequest(QUrl(QStringLiteral("http://127.0.0.1:1/post"))),
         useNullDevice ? nullptr : &device,
         qint64(4));
@@ -216,7 +227,7 @@ void tst_QCBlockingNetworkClient::rejectsCrossThreadDevice()
     device.moveToThread(&worker);
     worker.start();
 
-    const auto result = makeClient().sendPut(
+    const auto result = makeClient().put(
         makeRequest(QUrl(QStringLiteral("http://127.0.0.1:1/put"))), &device, qint64(4));
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::InputDeviceError);
@@ -233,7 +244,7 @@ void tst_QCBlockingNetworkClient::rejectsSequentialDeviceWithoutExplicitSize()
     SequentialDevice device(QByteArrayLiteral("body"));
     QVERIFY(device.open(QIODevice::ReadOnly));
 
-    const auto result = makeClient().sendPost(
+    const auto result = makeClient().post(
         makeRequest(QUrl(QStringLiteral("http://127.0.0.1:1/post"))), &device);
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::ReplayNotSupported);
@@ -382,6 +393,51 @@ void tst_QCBlockingNetworkClient::downloadToDeviceRejectsInvalidOutput()
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::OutputDeviceError);
     QVERIFY2(result.errorMessage().contains(messageNeedle), qPrintable(result.errorMessage()));
+}
+
+
+void tst_QCBlockingNetworkClient::customRequestRejectsInvalidMethod_data()
+{
+    QTest::addColumn<QByteArray>("method");
+
+    QTest::newRow("empty") << QByteArray();
+    QTest::newRow("space") << QByteArrayLiteral("DE LETE");
+    QTest::newRow("tab") << QByteArrayLiteral("DE\tLETE");
+    QTest::newRow("crlf") << QByteArray("DELETE\r\nInjected: yes");
+    QTest::newRow("separator") << QByteArrayLiteral("BAD/VERB");
+}
+
+void tst_QCBlockingNetworkClient::customRequestRejectsInvalidMethod()
+{
+    QFETCH(QByteArray, method);
+
+    const auto result = makeClient().sendCustomRequest(
+        makeRequest(QUrl(QStringLiteral("http://127.0.0.1:1/custom"))),
+        method,
+        QByteArrayLiteral("payload"));
+
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::InvalidRequest);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("HTTP method token")),
+             qPrintable(result.errorMessage()));
+}
+
+void tst_QCBlockingNetworkClient::customDeleteWithBodySendsExplicitMethod()
+{
+    UploadEchoServer server;
+    QVERIFY(server.start());
+
+    const QByteArray payload = QByteArrayLiteral("custom delete body");
+    const auto result = makeClient().sendCustomRequest(
+        makeRequest(server.url(QStringLiteral("/custom-delete"))),
+        QByteArrayLiteral("delete"),
+        payload);
+
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+    QCOMPARE(result.statusCode(), 200);
+    QCOMPARE(result.body(), payload);
+    QCOMPARE(server.lastRequest().method, QByteArrayLiteral("DELETE"));
+    QCOMPARE(server.lastRequest().body, payload);
 }
 
 QTEST_MAIN(tst_QCBlockingNetworkClient)

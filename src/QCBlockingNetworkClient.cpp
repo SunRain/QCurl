@@ -7,7 +7,6 @@
 #include <QSharedData>
 #include <QThread>
 
-#include <limits>
 #include <optional>
 #include <utility>
 
@@ -83,139 +82,60 @@ bool resolveBlockingDeviceSize(QIODevice *body,
     return true;
 }
 
+bool isHttpTokenSeparator(char ch)
+{
+    switch (ch) {
+        case '(':
+        case ')':
+        case '<':
+        case '>':
+        case '@':
+        case ',':
+        case ';':
+        case ':':
+        case '\\':
+        case '"':
+        case '/':
+        case '[':
+        case ']':
+        case '?':
+        case '=':
+        case '{':
+        case '}':
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isValidHttpToken(QByteArrayView method)
+{
+    if (method.isEmpty()) {
+        return false;
+    }
+
+    for (char ch : method) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte <= 0x20 || byte >= 0x7f || isHttpTokenSeparator(ch)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+QByteArray normalizedHttpMethodToken(QByteArrayView method)
+{
+    return method.toByteArray().toUpper();
+}
+
 } // namespace
-
-class QCBlockingNetworkClientOptionsData : public QSharedData
-{
-public:
-    QCBlockingNetworkClient::ApplicationThreadPolicy applicationThreadPolicy =
-        QCBlockingNetworkClient::ApplicationThreadPolicy::Reject;
-};
-
-class QCBlockingRequestOptionsData : public QSharedData
-{
-public:
-    static constexpr qint64 DefaultMaxInMemoryBodyBytes = 16 * 1024 * 1024;
-
-    qint64 maxInMemoryBodyBytes = DefaultMaxInMemoryBodyBytes;
-    QCBlockingProgressCallback progressCallback = nullptr;
-    void *progressCallbackUserData = nullptr;
-};
 
 class QCBlockingNetworkClientData : public QSharedData
 {
 public:
     QCBlockingNetworkClient::Options options;
 };
-
-QCTransferProgress::QCTransferProgress(qint64 bytesReceived,
-                                       qint64 bytesTotal,
-                                       qint64 bytesSent,
-                                       qint64 uploadTotal)
-    : m_bytesReceived(bytesReceived)
-    , m_bytesTotal(bytesTotal)
-    , m_bytesSent(bytesSent)
-    , m_uploadTotal(uploadTotal)
-{
-}
-
-qint64 QCTransferProgress::bytesReceived() const noexcept
-{
-    return m_bytesReceived;
-}
-
-qint64 QCTransferProgress::bytesTotal() const noexcept
-{
-    return m_bytesTotal;
-}
-
-qint64 QCTransferProgress::bytesSent() const noexcept
-{
-    return m_bytesSent;
-}
-
-qint64 QCTransferProgress::uploadTotal() const noexcept
-{
-    return m_uploadTotal;
-}
-
-QCBlockingRequestOptions::QCBlockingRequestOptions()
-    : d(new QCBlockingRequestOptionsData)
-{
-}
-
-QCBlockingRequestOptions::QCBlockingRequestOptions(const QCBlockingRequestOptions &other) = default;
-
-QCBlockingRequestOptions::QCBlockingRequestOptions(QCBlockingRequestOptions &&other) noexcept =
-    default;
-
-QCBlockingRequestOptions::~QCBlockingRequestOptions() = default;
-
-QCBlockingRequestOptions &QCBlockingRequestOptions::operator=(
-    const QCBlockingRequestOptions &other) = default;
-
-QCBlockingRequestOptions &QCBlockingRequestOptions::operator=(
-    QCBlockingRequestOptions &&other) noexcept = default;
-
-qint64 QCBlockingRequestOptions::maxInMemoryBodyBytes() const noexcept
-{
-    return d->maxInMemoryBodyBytes;
-}
-
-void QCBlockingRequestOptions::setMaxInMemoryBodyBytes(qint64 bytes) noexcept
-{
-    if (bytes < 0) {
-        d->maxInMemoryBodyBytes = std::numeric_limits<qint64>::max();
-        return;
-    }
-    d->maxInMemoryBodyBytes = bytes;
-}
-
-QCBlockingProgressCallback QCBlockingRequestOptions::progressCallback() const noexcept
-{
-    return d->progressCallback;
-}
-
-void *QCBlockingRequestOptions::progressCallbackUserData() const noexcept
-{
-    return d->progressCallbackUserData;
-}
-
-void QCBlockingRequestOptions::setProgressCallback(QCBlockingProgressCallback callback,
-                                                   void *userData) noexcept
-{
-    d->progressCallback = callback;
-    d->progressCallbackUserData = callback ? userData : nullptr;
-}
-
-QCBlockingNetworkClient::Options::Options()
-    : d(new QCBlockingNetworkClientOptionsData)
-{
-}
-
-QCBlockingNetworkClient::Options::Options(const Options &other) = default;
-
-QCBlockingNetworkClient::Options::Options(Options &&other) noexcept = default;
-
-QCBlockingNetworkClient::Options::~Options() = default;
-
-QCBlockingNetworkClient::Options &QCBlockingNetworkClient::Options::operator=(
-    const Options &other) = default;
-
-QCBlockingNetworkClient::Options &QCBlockingNetworkClient::Options::operator=(
-    Options &&other) noexcept = default;
-
-QCBlockingNetworkClient::ApplicationThreadPolicy
-QCBlockingNetworkClient::Options::applicationThreadPolicy() const noexcept
-{
-    return d->applicationThreadPolicy;
-}
-
-void QCBlockingNetworkClient::Options::setApplicationThreadPolicy(
-    ApplicationThreadPolicy policy) noexcept
-{
-    d->applicationThreadPolicy = policy;
-}
 
 QCBlockingNetworkClient::QCBlockingNetworkClient()
     : d(new QCBlockingNetworkClientData)
@@ -250,32 +170,84 @@ void QCBlockingNetworkClient::setOptions(const Options &options)
     d->options = options;
 }
 
-QCBlockingNetworkResult QCBlockingNetworkClient::sendGet(const QCNetworkRequest &request) const
-{
-    return perform(request, HttpMethod::Get, QByteArray());
-}
-
 QCBlockingNetworkResult QCBlockingNetworkClient::get(
     const QCNetworkRequest &request,
     const QCBlockingRequestOptions &requestOptions) const
 {
-    return perform(request, HttpMethod::Get, QByteArray(), QCCookieSnapshot(), requestOptions);
+    return perform(request, HttpMethod::Get, QByteArray(), requestOptions);
 }
 
 QCBlockingNetworkResult QCBlockingNetworkClient::head(
     const QCNetworkRequest &request,
     const QCBlockingRequestOptions &requestOptions) const
 {
-    return perform(request, HttpMethod::Head, QByteArray(), QCCookieSnapshot(), requestOptions);
+    return perform(request, HttpMethod::Head, QByteArray(), requestOptions);
 }
 
-QCBlockingNetworkResult QCBlockingNetworkClient::send(
+QCBlockingNetworkResult QCBlockingNetworkClient::deleteResource(
     const QCNetworkRequest &request,
-    HttpMethod method,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return perform(request, HttpMethod::Delete, QByteArray(), requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::post(
+    const QCNetworkRequest &request,
     const QByteArray &body,
     const QCBlockingRequestOptions &requestOptions) const
 {
-    return perform(request, method, body, QCCookieSnapshot(), requestOptions);
+    return perform(request, HttpMethod::Post, body, requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::put(
+    const QCNetworkRequest &request,
+    const QByteArray &body,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return perform(request, HttpMethod::Put, body, requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::patch(
+    const QCNetworkRequest &request,
+    const QByteArray &body,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return perform(request, HttpMethod::Patch, body, requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::post(
+    const QCNetworkRequest &request,
+    QIODevice *body,
+    std::optional<qint64> sizeBytes,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return perform(request, HttpMethod::Post, body, sizeBytes, requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::put(
+    const QCNetworkRequest &request,
+    QIODevice *body,
+    std::optional<qint64> sizeBytes,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return perform(request, HttpMethod::Put, body, sizeBytes, requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::sendCustomRequest(
+    const QCNetworkRequest &request,
+    QByteArrayView method,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return performCustom(request, method, QByteArray(), requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::sendCustomRequest(
+    const QCNetworkRequest &request,
+    QByteArrayView method,
+    const QByteArray &body,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    return performCustom(request, method, body, requestOptions);
 }
 
 QCBlockingNetworkResult QCBlockingNetworkClient::downloadToDevice(
@@ -303,54 +275,16 @@ QCBlockingNetworkResult QCBlockingNetworkClient::downloadToDevice(
             QStringLiteral("Blocking Extras output device must be open and writable"));
     }
 
-    return Internal::performBlockingDownloadToDevice(request, output, requestOptions);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendGet(const QCNetworkRequest &request,
-                                                         const QCCookieSnapshot &cookies) const
-{
-    return perform(request, HttpMethod::Get, QByteArray(), cookies);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendPost(const QCNetworkRequest &request,
-                                                          const QByteArray &body) const
-{
-    return perform(request, HttpMethod::Post, body);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendPost(const QCNetworkRequest &request,
-                                                          const QByteArray &body,
-                                                          const QCCookieSnapshot &cookies) const
-{
-    return perform(request, HttpMethod::Post, body, cookies);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendPost(
-    const QCNetworkRequest &request,
-    QIODevice *body,
-    std::optional<qint64> sizeBytes) const
-{
-    return perform(request, HttpMethod::Post, body, sizeBytes);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendPut(const QCNetworkRequest &request,
-                                                         const QByteArray &body) const
-{
-    return perform(request, HttpMethod::Put, body);
-}
-
-QCBlockingNetworkResult QCBlockingNetworkClient::sendPut(
-    const QCNetworkRequest &request,
-    QIODevice *body,
-    std::optional<qint64> sizeBytes) const
-{
-    return perform(request, HttpMethod::Put, body, sizeBytes);
+    return Internal::performBlockingDownloadToDevice(request,
+                                                     HttpMethod::Get,
+                                                     Internal::makeBlockingBytesBody(QByteArray()),
+                                                     output,
+                                                     requestOptions);
 }
 
 QCBlockingNetworkResult QCBlockingNetworkClient::perform(const QCNetworkRequest &request,
                                                          HttpMethod method,
                                                          const QByteArray &body,
-                                                         const QCCookieSnapshot &cookies,
                                                          const QCBlockingRequestOptions
                                                              &requestOptions) const
 {
@@ -361,14 +295,19 @@ QCBlockingNetworkResult QCBlockingNetworkClient::perform(const QCNetworkRequest 
     }
 
     return Internal::performBlockingRequest(
-        request, method, Internal::makeBlockingBytesBody(body), cookies, requestOptions);
+        request,
+        method,
+        Internal::makeBlockingBytesBody(body),
+        requestOptions.cookieSnapshot(),
+        requestOptions);
 }
 
 QCBlockingNetworkResult QCBlockingNetworkClient::perform(
     const QCNetworkRequest &request,
     HttpMethod method,
     QIODevice *body,
-    std::optional<qint64> sizeBytes) const
+    std::optional<qint64> sizeBytes,
+    const QCBlockingRequestOptions &requestOptions) const
 {
     if (applicationThreadRejected()) {
         return invalidBlockingRequest(
@@ -386,8 +325,36 @@ QCBlockingNetworkResult QCBlockingNetworkClient::perform(
         return failure;
     }
 
-    return Internal::performBlockingRequest(
-        request, method, Internal::makeBlockingDeviceBody(body, resolvedSize, explicitSize));
+    return Internal::performBlockingRequest(request,
+                                            method,
+                                            Internal::makeBlockingDeviceBody(body,
+                                                                            resolvedSize,
+                                                                            explicitSize),
+                                            requestOptions.cookieSnapshot(),
+                                            requestOptions);
+}
+
+QCBlockingNetworkResult QCBlockingNetworkClient::performCustom(
+    const QCNetworkRequest &request,
+    QByteArrayView method,
+    const QByteArray &body,
+    const QCBlockingRequestOptions &requestOptions) const
+{
+    if (applicationThreadRejected()) {
+        return invalidBlockingRequest(
+            QStringLiteral("Blocking Extras requests require explicit application-thread opt-in"));
+    }
+    if (!isValidHttpToken(method)) {
+        return invalidBlockingRequest(
+            QStringLiteral("Blocking Extras custom HTTP method token is invalid"));
+    }
+
+    return Internal::performBlockingCustomRequest(
+        request,
+        normalizedHttpMethodToken(method),
+        Internal::makeBlockingBytesBody(body),
+        requestOptions.cookieSnapshot(),
+        requestOptions);
 }
 
 bool QCBlockingNetworkClient::applicationThreadRejected() const

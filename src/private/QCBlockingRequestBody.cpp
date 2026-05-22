@@ -8,9 +8,52 @@
 #include <QIODevice>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace QCurl::Internal {
+namespace {
+
+qint64 resolveBytesSeekOffset(const QCBlockingRequestBodyReadState &state,
+                              curl_off_t offset,
+                              int origin)
+{
+    switch (origin) {
+        case SEEK_SET:
+            return static_cast<qint64>(offset);
+        case SEEK_CUR:
+            return state.offset + static_cast<qint64>(offset);
+        case SEEK_END:
+            return state.body.sizeBytes + static_cast<qint64>(offset);
+        default:
+            return -1;
+    }
+}
+
+qint64 resolveDeviceSeekPosition(const QCBlockingRequestBodyReadState &state,
+                                 const QIODevice *device,
+                                 curl_off_t offset,
+                                 int origin)
+{
+    switch (origin) {
+        case SEEK_SET:
+            return state.body.basePosition + static_cast<qint64>(offset);
+        case SEEK_CUR:
+            return device->pos() + static_cast<qint64>(offset);
+        case SEEK_END:
+            return state.body.basePosition + state.body.sizeBytes + static_cast<qint64>(offset);
+        default:
+            return -1;
+    }
+}
+
+bool isDeviceSeekPositionInRange(const QCBlockingRequestBodyReadState &state, qint64 targetPosition)
+{
+    const qint64 endPosition = state.body.basePosition + state.body.sizeBytes;
+    return targetPosition >= state.body.basePosition && targetPosition <= endPosition;
+}
+
+} // namespace
 
 QCBlockingRequestBody makeBlockingBytesBody(const QByteArray &body)
 {
@@ -29,7 +72,9 @@ QCBlockingRequestBody makeBlockingDeviceBody(QIODevice *device, qint64 sizeBytes
     requestBody.device = device;
     requestBody.sizeBytes = sizeBytes;
     requestBody.explicitSize = explicitSize;
+    requestBody.basePosition = device ? device->pos() : 0;
     requestBody.initialDeviceSize = device ? device->size() : -1;
+    requestBody.seekable = device && !device->isSequential();
     return requestBody;
 }
 
@@ -95,6 +140,44 @@ size_t readBlockingRequestBodyCallback(char *ptr, size_t size, size_t nmemb, voi
 
     state->offset += read;
     return static_cast<size_t>(read);
+}
+
+Q_DECL_HIDDEN int seekBlockingRequestBodyCallback(void *userdata, curl_off_t offset, int origin)
+{
+    auto *state = static_cast<QCBlockingRequestBodyReadState *>(userdata);
+    if (!state) {
+        return CURL_SEEKFUNC_FAIL;
+    }
+
+    if (state->body.kind == QCBlockingRequestBody::Kind::Bytes) {
+        const qint64 targetOffset = resolveBytesSeekOffset(*state, offset, origin);
+        if (targetOffset < 0 || targetOffset > state->body.sizeBytes) {
+            return CURL_SEEKFUNC_FAIL;
+        }
+        state->offset = targetOffset;
+        return CURL_SEEKFUNC_OK;
+    }
+
+    QIODevice *device = state->body.device;
+    if (!device || !state->body.seekable) {
+        state->failureMessage =
+            QStringLiteral("Blocking Extras raw body device does not support replay seek");
+        return CURL_SEEKFUNC_CANTSEEK;
+    }
+
+    const qint64 targetPosition = resolveDeviceSeekPosition(*state, device, offset, origin);
+    if (!isDeviceSeekPositionInRange(*state, targetPosition)) {
+        state->failureMessage =
+            QStringLiteral("Blocking Extras raw body replay seek target is out of range");
+        return CURL_SEEKFUNC_FAIL;
+    }
+    if (!device->seek(targetPosition)) {
+        state->failureMessage = QStringLiteral("Blocking Extras raw body replay seek failed");
+        return CURL_SEEKFUNC_FAIL;
+    }
+
+    state->offset = targetPosition - state->body.basePosition;
+    return CURL_SEEKFUNC_OK;
 }
 
 } // namespace QCurl::Internal
