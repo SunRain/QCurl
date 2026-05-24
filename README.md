@@ -42,19 +42,19 @@
 - **HTTP/1.1、HTTP/2、HTTP/3 capability** - HTTP/3 取决于运行时 libcurl / QUIC backend
 - **SSL/TLS** - 可配置证书验证、客户端证书、CA 路径
 - **代理支持** - HTTP、HTTPS、SOCKS4/4A、SOCKS5
-- **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::send*()` 一套入口覆盖配置与发送
+- **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::head()/get()/post()/put()/patch()` 一套入口覆盖配置与发送
 - **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置；`QCNetworkRedirectConfig` 与 `QCNetworkTransferConfig` 聚合重定向和传输配置
 - **请求重试** - 指数退避算法，自动处理临时性错误
 - **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
 - **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
 - **Cache lookup API** - `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 提供 `lookup(url, ReadMode)`，返回 `Miss / FreshHit / StaleHit`
-- **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `sendPost()` 发送
+- **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `post()` 发送
 - **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
 - **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
 - **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面；通用具体 middleware 通过 Other Extras opt-in 使用
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
-- **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `sendPost()/sendPut()` raw-body device overload 支持大文件
+- **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `post()/put()` raw-body device overload 支持大文件
 - **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
 - **Cookie async result** - `QCCookieOperationResult` / `QCCookieExportResult` 是 manager cookie async signal 与 `QFuture` 的 Core 值结果
 
@@ -123,7 +123,7 @@ QCurl::QCNetworkRequest request(QUrl("https://api.example.com/data"));
 request.setRawHeader("Authorization", "Bearer token")
     .setTimeout(std::chrono::seconds(30));
 
-auto *reply = manager.sendGet(request);
+auto *reply = manager.get(request);
 
 connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
     if (reply->error() == QCurl::NetworkError::NoError) {
@@ -175,13 +175,13 @@ formData.addFileField("avatar", "/path/to/photo.jpg");
 QCurl::QCNetworkRequest uploadRequest(QUrl("https://api.example.com/upload"));
 auto body = QCurl::QCNetworkMultipartBody::fromFormData(formData);
 uploadRequest.setRawHeader("Content-Type", body.contentType());
-auto *reply = manager.sendPost(uploadRequest, body.data());
+auto *reply = manager.post(uploadRequest, body.data());
 ```
 
 #### 4. 内存请求体（JSON / form-urlencoded）
 
-`QCNetworkBody` 会随请求体保存匹配的 `Content-Type`。`sendPost()` / `sendPut()` /
-`sendPatch()` 接收 `QCNetworkBody` 时，若请求尚未显式设置 `Content-Type`，会自动补齐；若已设置，
+`QCNetworkBody` 会随请求体保存匹配的 `Content-Type`。`post()` / `put()` /
+`patch()` 接收 `QCNetworkBody` 时，若请求尚未显式设置 `Content-Type`，会自动补齐；若已设置，
 则尊重请求里的显式值。
 
 ```cpp
@@ -193,7 +193,7 @@ auto formBody = QCurl::QCNetworkBody::fromFormUrlEncoded(
         {QStringLiteral("tag"), QStringLiteral("one")},
         {QStringLiteral("tag"), QStringLiteral("two")},
     });
-auto *formReply = manager.sendPost(formRequest, formBody);
+auto *formReply = manager.post(formRequest, formBody);
 ```
 
 #### 5. Lane-aware Scheduler
@@ -302,13 +302,15 @@ target_link_libraries(your_app PRIVATE QCurl::QCurl)
 默认构建发布 shared library。Static library 需要显式 opt-in：
 
 ```bash
-cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release -DQCURL_BUILD_STATIC=ON
+cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release -DQCURL_BUILD_SHARED_LIBS=OFF
 cmake --build build-static --target QCurl qcurl_public_api_self_compile
 ctest --test-dir build-static -L '^public-api$' --output-on-failure
 ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
 ```
 
 Static 路径已纳入 full release gate。正式打包前仍以 `scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static` 的最新输出为准；即使 static gate 通过，也只声明 Core static library ready，不声明 whole project static library ready。
+
+Static consumer 若只使用 `QCNetworkRequestPriority` 等头文件类型，并需要 Qt 元类型按名称可见，应在 `main()` 早期调用一次 `QCurl::initialize()`。shared consumer 通常不需要手动调用；该函数幂等，调用后不会创建网络对象或启动 scheduler。
 
 ### pkg-config
 

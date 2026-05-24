@@ -24,7 +24,7 @@ QCNetworkAccessManager manager;
 QCNetworkRequest request(QUrl("https://example.com"));
 request.setHttpVersion(QCNetworkHttpVersion::Http3);
 
-auto *reply = manager.sendGet(request);
+auto *reply = manager.get(request);
 ```
 
 严格要求 HTTP/3 时，改为：

@@ -49,7 +49,7 @@
 
 **核心特性**:
 - ✅ `QCNetworkDownloadToDeviceJob`：流式下载 64KB 数据到本地文件
-- ✅ `QCNetworkMultipartBody` + `sendPost()`：将下载的文件以 multipart/form-data 方式回传至 httpbin
+- ✅ `QCNetworkMultipartBody` + `post()`：将下载的文件以 multipart/form-data 方式回传至 httpbin
 - ✅ `QCNetworkResumableDownloadJob`：先人为取消，再自动继续下载，展示断点续传
 - ✅ 环境自适应：可通过 `QCURL_HTTPBIN_BASE` 环境变量自定义 httpbin 地址
 

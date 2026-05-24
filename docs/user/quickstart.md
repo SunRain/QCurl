@@ -43,6 +43,31 @@ target_link_libraries(your_app PRIVATE QCurl::QCurl)
 g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
 ```
 
+### Static library 初始化
+
+shared library 被加载时通常会自动注册 QCurl 公共 Qt 元类型；普通 shared 用户无需手动初始化。
+
+static library 没有“库加载”这一步，链接器只会抽取程序实际引用的目标文件。如果你的程序只使用
+`QCNetworkRequestPriority` 这类头文件枚举，但又需要 queued connection、`QSignalSpy`、`QVariant`
+或 `QMetaType::fromName()`，请在 `main()` 早期调用一次：
+
+```cpp
+#include <QCGlobal.h>
+
+#include <QCoreApplication>
+
+int main(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+
+    QCurl::initialize();
+
+    return app.exec();
+}
+```
+
+`QCurl::initialize()` 是幂等的；多次调用不会重复创建网络对象，也不会启动 scheduler。
+
 ## 5. 最小请求示例
 
 示例代码可参考根目录 `README.md` 中的 “代码示例-简单 GET 请求”。
@@ -59,7 +84,7 @@ QCNetworkAccessManager mgr;
 mgr.enableRequestScheduler(true);
 QCNetworkRequest req(QUrl("https://example.com")); // 默认 Normal
 req.setPriority(QCNetworkRequestPriority::High);   // 推荐：High/VeryHigh
-auto *reply = mgr.sendGet(req);
+auto *reply = mgr.get(req);
 ```
 
 `reply` 仍应按 Qt 习惯 `deleteLater()` 释放，或在 `finished` 后由你的上层对象接管销毁。

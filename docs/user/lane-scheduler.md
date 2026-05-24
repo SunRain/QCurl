@@ -129,7 +129,7 @@ sequenceDiagram
     participant Net as QCNetworkReply/网络层
 
     Biz->>Req: setLane("Control") + setPriority(High)
-    Biz->>Mgr: sendGet(req)
+    Biz->>Mgr: get(req)
     Mgr->>Sch: scheduleReply(reply, lane, priority)
 
     Sch->>Sch: 记录 lane、目标地址、优先级

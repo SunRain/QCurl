@@ -46,7 +46,7 @@
 
 ### 2.4 上传发送方向 internal pause 的最小可观测面
 
-manager-level raw-body 流式上传（如 `QCNetworkAccessManager::sendPost(..., QIODevice *, std::nullopt)`）在数据源 `QIODevice` 暂无数据但未 EOF 时，QCurl 可能对发送方向进行内部 pause。
+manager-level raw-body 流式上传（如 `QCNetworkAccessManager::post(..., QIODevice *, std::nullopt)`）在数据源 `QIODevice` 暂无数据但未 EOF 时，QCurl 可能对发送方向进行内部 pause。
 
 补充边界：
 

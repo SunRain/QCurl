@@ -36,7 +36,7 @@
   - Blocking Extras fixture 必须覆盖 `maxInMemoryBodyBytes`、`BodyTooLarge`、`downloadToDevice()`、`bytesReceived()` 与 curl diagnostic code
   - Core consumer fixture 必须覆盖 `QCNetworkRedirectConfig` / `QCNetworkTransferConfig`，证明 Request 配置族在默认安装面可用
   - Other Extras fixture 必须覆盖 `QCNetworkDiagnostics.h` 与 `QCNetworkMiddlewareExtras.h`，并由 default Core 负向 consumer 证明其不能隐式 include
-- `QCURL_BUILD_STATIC=ON` static public-api gate
+- `QCURL_BUILD_SHARED_LIBS=OFF` static public-api gate
   - 需要在独立 `build-static` 目录重跑 `public-api` 与 `public-api-slow`
   - static export 允许必要的 `CURL::libcurl` / `ZLIB::ZLIB` public dependency，但必须由 `QCurlConfig.cmake` 的 `find_dependency()` 补齐
 - 强判据专题

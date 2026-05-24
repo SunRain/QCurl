@@ -26,7 +26,7 @@
 
 ### 项目简介
 
-QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QNetworkAccessManager` 的 API 接口，用于执行 HTTP/WebSocket 网络请求。它封装了 libcurl 的底层细节，提供同步和异步两种网络请求方式，支持 HTTP/1.1、HTTP/2、HTTP/3 和 WebSocket 协议。
+QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QNetworkAccessManager` 的 API 接口，用于执行 HTTP 网络请求。它封装了 libcurl 的底层细节，Core API 采用 Qt 风格异步模型，显式 Blocking Extras 提供同步 value-result 工具；HTTP/1.1、HTTP/2、HTTP/3 属于 Core capability，WebSocket 作为 Other Extras / Preview 随包发布但不承诺 Stable。
 
 ### 核心价值
 
@@ -51,14 +51,14 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 |---------|---------|------|
 | **协议支持** | HTTP/1.1、HTTP/2、HTTP/3、WebSocket | ✅ |
 | **请求方式** | HEAD、GET、POST、PUT、DELETE、PATCH | ✅ |
-| **执行模式** | 同步、异步 | ✅ |
+| **执行模型** | Core 异步；Blocking Extras 显式同步 value-result | ✅ |
 | **SSL/TLS** | 证书验证、客户端证书、自定义 CA | ✅ |
 | **代理** | HTTP、HTTPS、SOCKS4、SOCKS5 | ✅ |
 | **缓存** | 内存缓存、磁盘缓存、策略控制 | ✅ |
-| **连接池** | HTTP 连接复用、WebSocket 连接池 | ✅ |
-| **高级功能** | 重试机制、优先级调度、中间件、日志、取消令牌、网络诊断 | ✅ |
+| **连接池** | HTTP 连接复用；WebSocket 连接池属于 Preview | ✅ |
+| **高级功能** | 重试机制、优先级调度、中间件、日志、取消令牌；Diagnostics 属于 Other Extras / Tools | ✅ |
 | **文件操作** | 流式下载/上传、断点续传、Multipart 表单 | ✅ |
-| **WebSocket** | 文本/二进制消息、压缩、自动重连、Ping/Pong | ✅ |
+| **WebSocket Preview** | 文本/二进制消息、压缩、自动重连、Ping/Pong；不属于 Core Stable | ✅ |
 
 ---
 
@@ -79,18 +79,18 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 │   │  - QCNetworkAccessManager (网络访问管理器)      │   │
 │   │  - QCNetworkRequest (请求配置)                 │   │
 │   │  - QCNetworkReply (统一响应对象)               │   │
-│   │  - QCWebSocket (WebSocket 客户端)              │   │
+│   │  - QCWebSocket (Other Extras / Preview)        │   │
 │   └────────────────────────────────────────────────┘   │
 │   ┌────────────────────────────────────────────────┐   │
 │   │  Canonical Request API                         │   │
 │   │  - QCNetworkRequest（请求配置）                │   │
-│   │  - QCNetworkAccessManager::send*()             │   │
-│   │  - scheduler 启用时 send* 自动走调度策略       │   │
+│   │  - QCNetworkAccessManager::head()/get()/post()/put()/patch()             │   │
+│   │  - scheduler 启用时 `head()/get()/post()/put()/patch()` 自动走调度策略       │   │
 │   └────────────────────────────────────────────────┘   │
 │   ┌────────────────────────────────────────────────┐   │
 │   │  辅助 API                                       │   │
 │   │  - QCMultipartFormData (Multipart 表单)        │   │
-│   │  - QCNetworkDiagnostics (网络诊断)             │   │
+│   │  - QCNetworkDiagnostics (Other Extras / Tools) │   │
 │   └────────────────────────────────────────────────┘   │
 └──────────────────────┬──────────────────────────────────┘
                        │
@@ -155,21 +155,20 @@ QCurl 是一个基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类似 `QN
 
 #### 1. **统一 Reply 架构**
 
-v2.0 重构将原有的 6 个 Reply 子类（`QCNetworkAsyncReply`、`QCNetworkAsyncHttpHeadReply`、`QCNetworkAsyncHttpGetReply`、`QCNetworkAsyncDataPostReply`、`QCNetworkSyncReply`、`CurlEasyHandleInitializtionClass`）整合为单一的 `QCNetworkReply` 类。
+v2.0 重构将原有的多个 Reply 子类（`QCNetworkAsyncReply`、`QCNetworkAsyncHttpHeadReply`、`QCNetworkAsyncHttpGetReply`、`QCNetworkAsyncDataPostReply`、`QCNetworkSyncReply`、`CurlEasyHandleInitializtionClass`）整合为单一的 `QCNetworkReply` 类。
 
 **优势**：
 - 代码量减少 30%
 - 消除继承层次复杂性
-- 使用枚举区分 HTTP 方法和执行模式
+- 使用枚举区分 HTTP 方法；Core public API 保持 async-only
 - 更容易扩展新功能
 
 ```cpp
 // 统一接口
 enum class HttpMethod { Head, Get, Post, Put, Delete, Patch };
-enum class ExecutionMode { Async, Sync };
 
 class QCNetworkReply : public QObject {
-    // 同时支持所有 HTTP 方法和同步/异步模式
+    // Core reply 是 Qt 风格异步对象；同步 value-result 能力位于 Blocking Extras
 };
 ```
 
@@ -215,9 +214,9 @@ class QCNetworkReplyPrivate {
 ```cpp
 class QCNetworkAccessManager : public QObject {
 public:
-    QCNetworkReply* sendGet(const QCNetworkRequest &request);
-    QCNetworkReply* sendPost(const QCNetworkRequest &request, const QByteArray &data);
-    QCNetworkReply* sendPut(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply* get(const QCNetworkRequest &request);
+    QCNetworkReply* post(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply* put(const QCNetworkRequest &request, const QByteArray &data);
     // ...
 };
 ```
@@ -261,12 +260,12 @@ public:
 **主要方法**:
 ```cpp
 // HTTP 方法
-QCNetworkReply* sendHead(const QCNetworkRequest &request);
-QCNetworkReply* sendGet(const QCNetworkRequest &request);
-QCNetworkReply* sendPost(const QCNetworkRequest &request, const QByteArray &data);
-QCNetworkReply* sendPut(const QCNetworkRequest &request, const QByteArray &data);
+QCNetworkReply* head(const QCNetworkRequest &request);
+QCNetworkReply* get(const QCNetworkRequest &request);
+QCNetworkReply* post(const QCNetworkRequest &request, const QByteArray &data);
+QCNetworkReply* put(const QCNetworkRequest &request, const QByteArray &data);
 QCNetworkReply* deleteResource(const QCNetworkRequest &request);
-QCNetworkReply* sendPatch(const QCNetworkRequest &request, const QByteArray &data);
+QCNetworkReply* patch(const QCNetworkRequest &request, const QByteArray &data);
 
 // Multipart 上传
 QCNetworkReply* postMultipart(const QUrl &url, const QCMultipartFormData &formData);
@@ -296,7 +295,7 @@ manager->setCache(new QCNetworkMemoryCache());
 QCNetworkRequest request(QUrl("https://api.example.com/data"));
 request.setRawHeader("Authorization", "Bearer token123");
 
-QCNetworkReply *reply = manager->sendGet(request);
+QCNetworkReply *reply = manager->get(request);
 connect(reply, &QCNetworkReply::finished, [reply]() {
     if (reply->error() == QCurl::NetworkError::NoError) {
         qDebug() << "Response:" << reply->readAll().value();
@@ -417,7 +416,7 @@ void setProgressCallback(const ProgressFunction &func);
 
 ### 2. Canonical Request API
 
-#### `QCNetworkRequest` + `QCNetworkAccessManager::send*()`
+#### `QCNetworkRequest` + `QCNetworkAccessManager::head()/get()/post()/put()/patch()`
 
 **特点**: 当前唯一 public request 入口；同一套对象既负责配置，也负责进入同步/异步发送路径。
 
@@ -429,7 +428,7 @@ request.setRawHeader("Authorization", "Bearer token")
     .setTimeout(std::chrono::seconds(30))
     .setFollowLocation(true);
 
-auto *reply = manager.sendGet(request);
+auto *reply = manager.get(request);
 ```
 
 #### POST JSON
@@ -441,12 +440,12 @@ QCNetworkRequest request(QUrl("https://api.example.com/users"));
 request.setRawHeader("Content-Type", "application/json")
     .setPriority(QCNetworkRequestPriority::High);
 
-auto *reply = manager.sendPost(request, R"({"name":"John","age":30})");
+auto *reply = manager.post(request, R"({"name":"John","age":30})");
 ```
 
 #### 调度器模式
 
-**特点**: 调度器仍是独立配置对象，但发送入口已统一收敛到 `send*()`；启用 scheduler 后由 manager 内部决定是否排队。
+**特点**: 调度器仍是独立配置对象，但发送入口已统一收敛到 `head()/get()/post()/put()/patch()`；启用 scheduler 后由 manager 内部决定是否排队。
 
 ```cpp
 QCNetworkAccessManager manager;
@@ -455,7 +454,7 @@ manager.enableRequestScheduler(true);
 QCNetworkRequest request(QUrl("https://api.example.com/upload"));
 request.setPriority(QCNetworkRequestPriority::VeryHigh);
 
-auto *reply = manager.sendGet(request);
+auto *reply = manager.get(request);
 ```
 
 ### 3. 协议支持
@@ -689,10 +688,10 @@ enum class QCNetworkRequestPriority {
 auto *token = new QCNetworkCancelToken();
 
 // 将令牌关联到多个请求
-QCNetworkReply *reply1 = manager->sendGet(request1);
+QCNetworkReply *reply1 = manager->get(request1);
 reply1->setCancelToken(token);
 
-QCNetworkReply *reply2 = manager->sendGet(request2);
+QCNetworkReply *reply2 = manager->get(request2);
 reply2->setCancelToken(token);
 
 // 一键取消所有关联请求
@@ -878,7 +877,7 @@ QCNetworkReply *reply = manager->postMultipartDevice(
 );
 ```
 
-raw-body `sendPost/sendPut(..., QIODevice *, sizeBytes)` 与 `postMultipartDevice()` 都借用调用方提供的
+raw-body `post/put(..., QIODevice *, sizeBytes)` 与 `postMultipartDevice()` 都借用调用方提供的
 `QIODevice`，manager/reply 不接管所有权。调用方必须保证设备存活到 reply 结束，并在 manager/reply
 同一线程调用；异步 raw-body 还要求该线程有 Qt event loop。raw-body 从当前 `pos()` 读取，重定向、
 重试或认证协商需要重发 body 时要求设备可 seek。POST unknown-size 仅支持 HTTP/1.1 chunked；
@@ -995,15 +994,6 @@ enum class HttpMethod {
     Put,        // PUT 请求
     Delete,     // DELETE 请求
     Patch       // PATCH 请求
-};
-```
-
-#### ExecutionMode
-
-```cpp
-enum class ExecutionMode {
-    Async,      // 异步执行
-    Sync        // 同步执行
 };
 ```
 
@@ -1403,14 +1393,14 @@ connect(reply, &QCNetworkReply::finished, reply, [reply]() {
  * @par 示例
  * @code
  * QCNetworkRequest request(QUrl("https://example.com"));
- * QCNetworkReply *reply = manager->sendGet(request);
+ * QCNetworkReply *reply = manager->get(request);
  * connect(reply, &QCNetworkReply::finished, [reply]() {
  *     qDebug() << reply->readAll().value();
  *     reply->deleteLater();
  * });
  * @endcode
  */
-QCNetworkReply* sendGet(const QCNetworkRequest &request);
+QCNetworkReply* get(const QCNetworkRequest &request);
 ```
 
 ---
@@ -1544,7 +1534,7 @@ QTEST_MAIN(TestQCNetworkRequest)
 void testAsyncRequest() {
     auto *manager = new QCNetworkAccessManager(this);
     QCurl::QCNetworkRequest request(QUrl("http://localhost:8935/get"));
-    QCNetworkReply *reply = manager->sendGet(request);
+    QCNetworkReply *reply = manager->get(request);
 
     // 使用 QSignalSpy 等待信号
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -1685,14 +1675,14 @@ socket->setCompressionConfig(
 ```cpp
 // 错误: 顺序请求 (总时间 = n * 延迟)
 for (const auto &url : urls) {
-    auto *reply = manager->sendGet(QCNetworkRequest(url));
+    auto *reply = manager->get(QCNetworkRequest(url));
     // 等待完成...
 }
 
 // 正确: 并发请求 (总时间 ≈ 延迟)
 QVector<QCNetworkReply*> replies;
 for (const auto &url : urls) {
-    replies.append(manager->sendGet(QCNetworkRequest(url)));
+    replies.append(manager->get(QCNetworkRequest(url)));
 }
 // 异步等待所有完成...
 ```
@@ -1913,8 +1903,8 @@ enum class HttpMethod {
 };
 
 // 2. 在 QCNetworkAccessManager 中添加方法
-QCNetworkReply* sendOptions(const QCNetworkRequest &request) {
-    return createReply(request, HttpMethod::Options, ExecutionMode::Async);
+QCNetworkReply* options(const QCNetworkRequest &request) {
+    return createReply(request, HttpMethod::Options);
 }
 
 // 3. 在 QCNetworkReply 中处理

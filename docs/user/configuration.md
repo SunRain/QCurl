@@ -15,8 +15,8 @@
 - 重试策略：`setRetryPolicy(...)`
 - 认证：`setHttpAuth(...)`
 - 上传：
-  - raw body：`QCNetworkAccessManager::sendPost(..., QIODevice *, sizeBytes)` / `sendPut(..., QIODevice *, sizeBytes)`
-  - 单文件 multipart：`QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` + `sendPost(..., QIODevice *, sizeBytes)`
+  - raw body：`QCNetworkAccessManager::post(..., QIODevice *, sizeBytes)` / `put(..., QIODevice *, sizeBytes)`
+  - 单文件 multipart：`QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` + `post(..., QIODevice *, sizeBytes)`
 
 上传入口的关键合同：
 

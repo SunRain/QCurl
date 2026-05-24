@@ -25,7 +25,7 @@ Core 安装面新增未分层头文件。
 - `QCNetworkDefaultLogger.h` 与 `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入默认稳定安装面。
 - `QCNetworkCache.h`、`QCNetworkMemoryCache.h`、`QCNetworkDiskCache.h` 作为 P2 Cache lookup Core 能力进入默认稳定安装面，公开读取路径限定为 `lookup(url, ReadMode)`。
 - `QCMultipartFormData.h` 作为 P2 Multipart builder 进入默认稳定安装面，内部字段和编码缓存已下沉到 shared-data 实现。
-- `QCNetworkBody.h` 与 `QCNetworkMultipartBody.h` 作为 P2 body helper 进入默认稳定安装面，用于 JSON/form/multipart body 生成；发送仍统一走 `QCNetworkAccessManager::sendPost()`。
+- `QCNetworkBody.h` 与 `QCNetworkMultipartBody.h` 作为 P2 body helper 进入默认稳定安装面，用于 JSON/form/multipart body 生成；发送仍统一走 `QCNetworkAccessManager::post()`。
 - `QCNetworkTransferJob.h`、`QCNetworkDownloadToDeviceJob.h` 与 `QCNetworkResumableDownloadJob.h` 作为 P2 file-transfer job 进入默认稳定安装面；manager 不暴露文件传输 convenience。
 - `QCNetworkMiddleware.h` 作为 P3 Middleware base 进入默认稳定安装面；内置 middleware 实现细节不得混入 base contract。
 - `QCNetworkMiddlewareExtras.h` 属于显式 Other Extras，当前承载稳定通用的 `QCRedactingLoggingMiddleware` / `QCObservabilityMiddleware`；策略型、签名、统一重试和错误处理等强耦合 middleware 留在 internal/private。
@@ -56,7 +56,7 @@ Core 安装面新增未分层头文件。
 本轮只处理第一梯队热点头文件的“安装面 include 成本”，不扩展到第二梯队（例如 `QCNetworkRequest.h`、`QCNetworkAccessManager.h`）与长尾头文件。
 
 - `QCNetworkReply.h`：不再直接 `#include "QCNetworkRequest.h"`，改为前置声明并把完整依赖下沉到 `.cpp`，避免 reply 头成为 request 配置面的传递依赖中枢。
-- `QCNetworkRequestScheduler.h`：公开头仅保留 Config/Statistics 与调度控制 API；reply 创建统一收口到 `QCNetworkAccessManager::send*()`，队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QQueue/QTimer/QDateTime/QMutex` 等重依赖。
+- `QCNetworkRequestScheduler.h`：公开头仅保留 Config/Statistics 与调度控制 API；reply 创建统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QQueue/QTimer/QDateTime/QMutex` 等重依赖。
 - `QCWebSocketPool.h`：公开头仅暴露连接池 contract；池内记录、映射、统计与定时器下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QTimer/QDateTime/QMutex` 等重依赖（仍保留必要的 `QCNetworkSslConfig`/`QObject`/`QUrl` 依赖以表达对外 contract）。
 
 ### 2.2 Scheduler Core ABI 策略（`QCNetworkRequestScheduler`）
@@ -104,7 +104,7 @@ Core 安装面新增未分层头文件。
 | `QCNetworkMemoryCache.h` / `QCNetworkDiskCache.h` | QObject cache 实现使用 private data；缓存容器、锁、路径和文件系统细节留在 `.cpp` | 仅通过 accessor / virtual API 扩展行为；不得在 public header 暴露 `QCache`、`QMutex`、`QDir` 等实现依赖 |
 | `QCNetworkBody.h` | JSON / form-url-encoded body helper；不依赖 manager，不暴露 public fields | 可新增编码 helper；不得把发送、文件 I/O 或 manager 状态混入该类型 |
 | `QCMultipartFormData.h` | builder 使用 implicit-sharing 值类型；字段列表、boundary 缓存和 MIME/file helper 留在 `.cpp` | 可新增 builder API；不得恢复 nested public field layout 或把文件系统 / MIME 依赖暴露到 public header |
-| `QCNetworkMultipartBody.h` | multipart body helper；owning body 返回 QByteArray，streaming body 持有独占 QIODevice 并通过 `sendPost()` 发送；single-file streaming 构造要求显式 `ownerThread` 且调用线程/source device/reply 后续发送线程一致 | 可新增 multipart body 变体；不得恢复 manager-level multipart convenience |
+| `QCNetworkMultipartBody.h` | multipart body helper；owning body 返回 QByteArray，streaming body 持有独占 QIODevice 并通过 `post()` 发送；single-file streaming 构造要求显式 `ownerThread` 且调用线程/source device/reply 后续发送线程一致 | 可新增 multipart body 变体；不得恢复 manager-level multipart convenience |
 | `QCNetworkTransferJob.h` / `QCNetworkDownloadToDeviceJob.h` / `QCNetworkResumableDownloadJob.h` | QObject job + d-pointer；`QCNetworkDownloadToDeviceJob` 与 `QCNetworkResumableDownloadJob` 构造不启动，调用方 connect 后显式 `start()`；底层 reply 只在启动成功后可用 | 可新增 job 状态 accessor；不得绕过 manager 管线或暴露 QFile/QSaveFile 内部状态 |
 | `QCNetworkDefaultLogger.h` | 继承 `QCNetworkLogger`，自身使用 private data；文件输出、内存缓存和 mutex 留在 `.cpp` | 可新增 setter/accessor；不得把文件轮转状态或锁对象暴露为 public fields |
 | `QCNetworkCancelToken.h` | QObject service + private data；只暴露 reply-level attach/cancel/timeout 合同 | 仅通过 reply-level API 扩展取消语义；不得新增 request-level cancel shortcut |
@@ -151,10 +151,10 @@ Core 安装面新增未分层头文件。
 
 ### 5.2 导出目标
 
-- 安装后的 package 只对下游暴露 `QCurl::QCurl`。
+- 安装后的 package 对默认 Core 暴露 `QCurl::QCurl`；Blocking Extras、Test Support 与 Other Extras 通过 `QCurl::BlockingExtras`、`QCurl::TestSupport`、`QCurl::OtherExtras` opt-in target 暴露。
 - `QCurlTargets*.cmake` 不得定义或引用 `QCurl::libcurl_shared`。
 - shared 构建下，`QCurl::QCurl` 的公开接口不得泄漏 `CURL::libcurl` 或 `ZLIB::ZLIB`。
-- static 构建下，`QCurl::QCurl` 可以通过 public link interface 暴露必要的 `CURL::libcurl` 与 `ZLIB::ZLIB`；同时 `QCurlConfig.cmake` 必须提供对应 `find_dependency(CURL ...)` 与 `find_dependency(ZLIB)`。
+- static 构建下，`QCurl::QCurl` 只能通过 public link interface 暴露 Core 必需的 `CURL::libcurl`；`QCurlConfig.cmake` 必须提供 `find_dependency(CURL ...)`，但默认 Core export 不再暴露 `ZLIB::ZLIB`。
 - 当 `QCURL_BUILD_LIBCURL_CONSISTENCY=ON` 时，bundled `libcurl_shared` 只允许作为 staging/runtime 细节存在，不进入 public package/export 合同。
 
 ### 5.3 Consumer Smoke
@@ -188,6 +188,6 @@ public header 边界的最低验收口径如下：
 - `public-api`：逐头 self-compile + 规则扫描
 - `qcurl_public_api_surface_manifest`：校验机器可读发布面清单与 CMake 生成的 Core / Extras manifest 对齐
 - `public-api-slow`：default Core staging install、安装集合校验、导出合同校验、isolated Core consumer smoke，以及 Blocking Extras / Test Support / Other Extras 的 opt-in install / consumer smoke 与 default Core 负向 consumer
-- static opt-in 路径还必须在 `QCURL_BUILD_STATIC=ON` 构建目录中重跑上述 `public-api` 与 `public-api-slow`，验证 static install/export/consumer contract。
+- static opt-in 路径还必须在 `QCURL_BUILD_SHARED_LIBS=OFF` 构建目录中重跑上述 `public-api` 与 `public-api-slow`，验证 static install/export/consumer contract。
 
 > 说明：CTest 的 label 参数是正则；为了避免 `public-api` 误匹配 `public-api-slow`，本仓库文档统一使用带锚点的写法。

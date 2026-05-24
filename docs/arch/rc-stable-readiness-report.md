@@ -21,9 +21,9 @@
 | 事项 | 当前状态 | 证据入口 |
 | --- | --- | --- |
 | Core Reply 同步合同迁出 | `QCNetworkReply` public API 已收敛为 Qt 风格 async-only；旧同步执行枚举、同步 callback typedef 与 setter 已从 Core public header 移除 | `src/QCNetworkReply.h`、`src/QCNetworkReply_p.h`、`src/private/QCNetworkReplyExecution.cpp` |
-| Blocking Extras 同步入口 | 同步 public 能力只保留在 `QCBlockingNetworkClient` / `QCBlockingNetworkResult` value-result API；progress callback 保持 Blocking Extras opt-in | `src/QCBlockingNetworkClient.h`、`src/private/QCBlockingCurlAdapter.cpp`、`tests/qcurl/tst_QCBlockingNetworkClient.cpp` |
-| Core 负向 guard | public-api gate 已新增 hard-break guard，禁止默认 Core 面重新暴露 reply 阻塞执行合同与 callback setter | `tests/public_api/hard_break_guards.py`、`tests/public_api/CMakeLists.txt` |
-| static pkg-config 合同 | `qcurl.pc` 已使用 private dependency 传播 static link 依赖；普通 shared `pkg-config --libs qcurl` 不暴露 libcurl / zlib | `qcurl.pc.in`、`tests/public_api/pkg_config_contracts.py` |
+| Blocking Extras 同步入口 | 同步 public 能力只保留在 `QCBlockingNetworkClient` / `QCBlockingNetworkResult` value-result API；progress callback 保持 Blocking Extras opt-in，并通过 `QCurl::BlockingExtras` target 消费 | `src/QCBlockingNetworkClient.h`、`src/private/QCBlockingCurlAdapter.cpp`、`tests/qcurl/tst_QCBlockingNetworkClient.cpp` |
+| Core 负向 guard | public-api gate 已新增 hard-break guard，禁止默认 Core 面重新暴露 reply 阻塞执行合同、callback setter 与旧 manager `sendHead()` / `sendGet()` / `sendPost()` / `sendPut()` / `sendPatch()` 入口 | `tests/public_api/hard_break_guards.py`、`tests/public_api/CMakeLists.txt` |
+| static pkg-config 合同 | `qcurl.pc` 只描述默认 Core；普通 shared `pkg-config --libs qcurl` 不暴露 libcurl / zlib，static 输出只直接声明 Core 的 libcurl 入口，zlib 不再写入 Core `.pc` | `qcurl.pc.in`、`tests/public_api/pkg_config_contracts.py` |
 | shared/static release gate | `scripts/run_release_gate.py --tier full` 已覆盖 shared public-api、static configure/build/public-api/public-api-slow、ABI diff、capability matrix 与 metadata scan | `scripts/run_release_gate.py` |
 | ABI baseline | Core ABI baseline 已刷新，当前 ABI diff 通过 | `abi/baseline/qcurl-core-v3.abi.xml`、`build/abi/qcurl-core-v3.abidiff.txt` |
 | readiness 口径 | 文档明确 Core shared/static first Stable；WebSocket / Diagnostics / whole project 不进入 Stable 承诺 | 本报告、`README.md`、`docs/arch/rc-maturity-review.md` |
