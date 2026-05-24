@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 import shutil
 import subprocess
+import sys
 
 from tests.public_api.consumer_contract_validators import validate_cache_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_cache_policy_core_contract_fixture
@@ -23,6 +24,13 @@ from tests.public_api.consumer_cookie_contracts import validate_cookie_async_res
 
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
 FailFunc = Callable[[str], int]
+
+
+def _fixture_source(source_dir: Path) -> str:
+    sources = sorted(source_dir.glob("*.cpp"))
+    if not sources:
+        raise RuntimeError(f"missing consumer fixture source: {source_dir}")
+    return "\n".join(source.read_text(encoding="utf-8") for source in sources)
 
 
 CONSUMER_FIXTURE_VALIDATORS = (
@@ -74,6 +82,49 @@ def validate_consumer_fixture(source_dir: Path) -> None:
 
     for validator in CONSUMER_FIXTURE_VALIDATORS:
         validator(source_dir)
+
+
+def validate_metatype_fixture(source_dir: Path) -> None:
+    """Ensure the metatype consumer fixture keeps the static initialization contract."""
+
+    source = _fixture_source(source_dir)
+    required_snippets = [
+        "#include <QCGlobal.h>",
+        "#include <QCNetworkRequestPriority.h>",
+        "QCurl::initialize();",
+        "QMetaType::fromName(\"QCurl::QCNetworkRequestPriority\")",
+        "QMetaType::fromType<QCurl::QCNetworkRequestPriority>()",
+    ]
+    missing = [snippet for snippet in required_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer metatype smoke fixture is missing required static initialization coverage: "
+            + ", ".join(missing)
+        )
+
+
+def run_metatype_consumer_smoke(args: Namespace, *, run_command: RunCommand, fail_func: FailFunc) -> int:
+    """Verify enum-only metatype consumer builds and runs against the staged package."""
+
+    try:
+        validate_metatype_fixture(args.source_dir)
+        configure_and_build(
+            args.source_dir,
+            args.build_dir,
+            args.stage_dir,
+            args.cmake,
+            args.config,
+            run_command,
+        )
+        executable = args.build_dir / "qcurl_public_api_consumer_metatype_smoke"
+        if sys.platform == "win32":
+            executable = executable.with_suffix(".exe")
+        run_command([str(executable)])
+    except RuntimeError as exc:
+        return fail_func(f"consumer metatype smoke failed: {exc}")
+
+    print("[public_api] consumer metatype smoke passed")
+    return 0
 
 
 def _configure_negative_consumer(args: Namespace, run_command: RunCommand, fail_func: FailFunc) -> int | None:

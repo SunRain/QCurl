@@ -85,6 +85,9 @@ Q_ENUM_NS(QCNetworkRequestPriority)
  * 该 helper 只注册单一 canonical name：`QCurl::QCNetworkRequestPriority`。
  * 适用于 queued connection、QSignalSpy、QVariant 与运行时反射场景。
  *
+ * @note static library consumer 通常应调用 `QCurl::initialize()`，不要直接依赖
+ *       archive 自动抽取只含全局构造器的目标文件。
+ *
  * @return 注册后的 Qt 元类型 id
  */
 inline int registerQCNetworkRequestPriorityMetaType()

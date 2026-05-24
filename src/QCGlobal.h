@@ -15,12 +15,22 @@
 
 // 导出宏定义（v2.15.0）
 #ifndef QCURL_EXPORT
-#if defined(QCURL_STATIC_BUILD)
+#if defined(QCURL_STATIC_DEFINE)
 #define QCURL_EXPORT
 #elif defined(QCURL_BUILDING_LIBRARY)
 #define QCURL_EXPORT Q_DECL_EXPORT
 #else
 #define QCURL_EXPORT Q_DECL_IMPORT
+#endif
+#endif
+
+#ifndef QCURL_OTHER_EXTRAS_EXPORT
+#if defined(QCURL_OTHER_EXTRAS_STATIC_DEFINE)
+#define QCURL_OTHER_EXTRAS_EXPORT
+#elif defined(QCURL_BUILDING_OTHER_EXTRAS_LIBRARY)
+#define QCURL_OTHER_EXTRAS_EXPORT Q_DECL_EXPORT
+#else
+#define QCURL_OTHER_EXTRAS_EXPORT Q_DECL_IMPORT
 #endif
 #endif
 
@@ -49,6 +59,15 @@ constexpr const char *libcurlVersion()
 {
     return QCURL_LIBCURL_VERSION;
 }
+
+/**
+ * @brief 初始化 QCurl 的进程级公共运行时注册项。
+ *
+ * 该函数会注册 QCurl 公共 Qt 元类型，供 queued connection、QSignalSpy、QVariant
+ * 和 QMetaType::fromName() 使用。shared library 通常会在库加载时自动完成注册；
+ * static library consumer 若只使用头文件类型，应在 main() 早期显式调用一次。
+ */
+QCURL_EXPORT void initialize();
 
 /**
  * @brief 安全相关能力不可用时的处理策略

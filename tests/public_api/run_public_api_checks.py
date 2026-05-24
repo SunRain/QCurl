@@ -20,6 +20,7 @@ from tests.public_api.other_extras_contracts import check_other_extras_install a
 from tests.public_api.other_extras_contracts import run_other_extras_consumer_smoke
 from tests.public_api.pkg_config_contracts import check_pkg_config_contract as _check_pkg_config_contract
 from tests.public_api.consumer_contracts import run_consumer_smoke
+from tests.public_api.consumer_contracts import run_metatype_consumer_smoke
 from tests.public_api.export_contracts import check_export_contract as _check_export_contract
 from tests.public_api.hard_break_guards import scan_hard_break_guards as _scan_hard_break_guards
 from tests.public_api.layout_scan import GuardrailFinding
@@ -181,7 +182,12 @@ def check_export_contract(args: argparse.Namespace) -> int:
 def check_pkg_config_contract(args: argparse.Namespace) -> int:
     """Verify qcurl.pc shared/static dependency contract."""
 
-    return _check_pkg_config_contract(args.stage_dir, args.pkg_config, fail)
+    return _check_pkg_config_contract(
+        args.stage_dir,
+        args.pkg_config,
+        fail,
+        other_extras_stage_dir=getattr(args, "other_extras_stage_dir", None),
+    )
 
 
 def check_blocking_extras_install(args: argparse.Namespace) -> int:
@@ -194,6 +200,12 @@ def consumer_smoke(args: argparse.Namespace) -> int:
     """Verify positive and negative staged consumer builds."""
 
     return run_consumer_smoke(args, run_command=run, fail_func=fail)
+
+
+def metatype_consumer_smoke(args: argparse.Namespace) -> int:
+    """Verify enum-only metatype consumer builds and runs."""
+
+    return run_metatype_consumer_smoke(args, run_command=run, fail_func=fail)
 
 
 def blocking_extras_consumer_smoke(args: argparse.Namespace) -> int:
@@ -273,6 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     pkg_config = subparsers.add_parser("check-pkg-config-contract")
     pkg_config.add_argument("--stage-dir", type=Path, required=True)
+    pkg_config.add_argument("--other-extras-stage-dir", type=Path)
     pkg_config.add_argument("--pkg-config", default="pkg-config")
     pkg_config.set_defaults(func=check_pkg_config_contract)
 
@@ -303,6 +316,14 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--negative-build-dir", type=Path, required=True)
     smoke.add_argument("--config", default="")
     smoke.set_defaults(func=consumer_smoke)
+
+    metatype_smoke = subparsers.add_parser("metatype-consumer-smoke")
+    metatype_smoke.add_argument("--cmake", required=True)
+    metatype_smoke.add_argument("--stage-dir", type=Path, required=True)
+    metatype_smoke.add_argument("--source-dir", type=Path, required=True)
+    metatype_smoke.add_argument("--build-dir", type=Path, required=True)
+    metatype_smoke.add_argument("--config", default="")
+    metatype_smoke.set_defaults(func=metatype_consumer_smoke)
 
     blocking_smoke = subparsers.add_parser("blocking-extras-consumer-smoke")
     _add_opt_in_smoke_args(blocking_smoke, "--blocking-stage-dir")

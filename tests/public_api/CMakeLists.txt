@@ -36,6 +36,7 @@ set(QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR
     "${CMAKE_BINARY_DIR}/public_api/stage_other_extras")
 set(QCURL_PUBLIC_API_POSITIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/public_api/consumer_positive")
 set(QCURL_PUBLIC_API_NEGATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/public_api/consumer_negative")
+set(QCURL_PUBLIC_API_METATYPE_BUILD_DIR "${CMAKE_BINARY_DIR}/public_api/consumer_metatype")
 set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_POSITIVE_BUILD_DIR
     "${CMAKE_BINARY_DIR}/public_api/consumer_blocking_extras_positive")
 set(QCURL_PUBLIC_API_BLOCKING_EXTRAS_NEGATIVE_BUILD_DIR
@@ -249,10 +250,11 @@ add_test(
     COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
             check-pkg-config-contract
             --stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --other-extras-stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
 )
 set_tests_properties(qcurl_public_api_pkg_config_contract PROPERTIES
     LABELS "public-api-slow"
-    FIXTURES_REQUIRED qcurl_public_api_stage
+    FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_other_extras_stage"
 )
 
 add_test(
@@ -307,6 +309,21 @@ add_test(
             --config "$<CONFIG>"
 )
 set_tests_properties(qcurl_public_api_consumer_smoke PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_stage
+)
+
+add_test(
+    NAME qcurl_public_api_metatype_consumer_smoke
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            metatype-consumer-smoke
+            --cmake "${CMAKE_COMMAND}"
+            --stage-dir "${QCURL_PUBLIC_API_STAGE_DIR}"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_metatype_smoke"
+            --build-dir "${QCURL_PUBLIC_API_METATYPE_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_metatype_consumer_smoke PROPERTIES
     LABELS "public-api-slow"
     FIXTURES_REQUIRED qcurl_public_api_stage
 )
