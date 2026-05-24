@@ -44,7 +44,7 @@
 #include "QCWebSocketCompressionConfig.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCRequestPipeline_p.h"
-#include "qcnetwork_sync_test_helper.h"
+#include "qcnetwork_managed_reply_wait_helper.h"
 
 #include <QBuffer>
 #include <QByteArray>
@@ -1020,7 +1020,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
 
-        QCNetworkReply *reply = manager.sendPost(req, body);
+        QCNetworkReply *reply = manager.post(req, body);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1058,7 +1058,7 @@ void TestLibcurlConsistency::testCase()
         req.setFollowLocation(true);
         req.setPostRedirectPolicy(QCNetworkPostRedirectPolicy::KeepPost301);
 
-        QCNetworkReply *reply = manager.sendPost(req, body);
+        QCNetworkReply *reply = manager.post(req, body);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1131,11 +1131,11 @@ void TestLibcurlConsistency::testCase()
             QBuffer device;
             device.setData(body);
             QVERIFY(device.open(QIODevice::ReadOnly));
-            reply = manager.sendPut(req, &device, static_cast<qint64>(body.size()));
+            reply = manager.put(req, &device, static_cast<qint64>(body.size()));
             QVERIFY(reply);
             QVERIFY2(waitForReplyFinished(reply, 20000), "timeout waiting for 308 PUT redirect");
         } else {
-            reply = manager.sendPost(req, body);
+            reply = manager.post(req, body);
             QVERIFY(reply);
             QVERIFY2(waitForReplyFinished(reply, 20000), "timeout waiting for redirect");
         }
@@ -1504,7 +1504,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(QCNetworkSslConfig::insecureConfig());
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         ProgressSummary dl;
@@ -1561,7 +1561,7 @@ void TestLibcurlConsistency::testCase()
         req.setSslConfig(QCNetworkSslConfig::insecureConfig());
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendPost(req, body);
+        QCNetworkReply *reply = manager.post(req, body);
         QVERIFY(reply);
 
         ProgressSummary dl;
@@ -1616,7 +1616,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendHead(req);
+        QCNetworkReply *reply = manager.head(req);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1653,7 +1653,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendPatch(req, body);
+        QCNetworkReply *reply = manager.patch(req, body);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1731,7 +1731,7 @@ void TestLibcurlConsistency::testCase()
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
             req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
         }
-        QCNetworkReply *reply = manager.sendPut(req, &device, static_cast<qint64>(uploadSize));
+        QCNetworkReply *reply = manager.put(req, &device, static_cast<qint64>(uploadSize));
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1773,7 +1773,7 @@ void TestLibcurlConsistency::testCase()
             req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
         }
 
-        auto *reply = manager.sendPut(req, body);
+        auto *reply = manager.put(req, body);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1823,7 +1823,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setRawHeader(QByteArrayLiteral("Content-Type"), formData.contentType().toUtf8());
 
-        QCNetworkReply *reply = manager.sendPost(req, formData.toByteArray());
+        QCNetworkReply *reply = manager.post(req, formData.toByteArray());
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -1917,7 +1917,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         req.setHttpVersion(httpVersion);
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         QByteArray received;
@@ -2003,7 +2003,7 @@ void TestLibcurlConsistency::testCase()
         req.setMaxDownloadBytesPerSec(maxRecvSpeed);
         req.setMaxUploadBytesPerSec(maxSendSpeed);
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         QByteArray received;
@@ -2094,7 +2094,7 @@ void TestLibcurlConsistency::testCase()
         QFile out(QStringLiteral("download_0.data"));
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         QEventLoop loop;
@@ -2221,7 +2221,7 @@ void TestLibcurlConsistency::testCase()
         QFile out(QStringLiteral("download_0.data"));
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         QElapsedTimer elapsed;
@@ -2406,7 +2406,7 @@ void TestLibcurlConsistency::testCase()
         QFile out(QStringLiteral("download_0.data"));
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
 
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
 
         QJsonArray eventSeq;
@@ -2583,7 +2583,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
 
-        auto *reply = manager.sendPut(req, &device, static_cast<qint64>(uploadSize));
+        auto *reply = manager.put(req, &device, static_cast<qint64>(uploadSize));
         QVERIFY(reply);
 
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -2732,7 +2732,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         loginReq.setFollowLocation(false);
         loginReq.setHttpVersion(httpVersion);
-        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QCNetworkReply *loginReply = manager.get(loginReq);
         QVERIFY(loginReply);
         QVERIFY(waitForFinished(loginReply, 5000));
         QCOMPARE(loginReply->error(), NetworkError::NoError);
@@ -2744,7 +2744,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         homeReq.setFollowLocation(false);
         homeReq.setHttpVersion(httpVersion);
-        QCNetworkReply *homeReply = manager.sendGet(homeReq);
+        QCNetworkReply *homeReply = manager.get(homeReq);
         QVERIFY(homeReply);
         QVERIFY(waitForFinished(homeReply, 5000));
         QVERIFY(homeReply->error() != NetworkError::NoError);
@@ -2779,7 +2779,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         loginReq.setFollowLocation(false);
         loginReq.setHttpVersion(httpVersion);
-        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QCNetworkReply *loginReply = manager.get(loginReq);
         QVERIFY(loginReply);
         QVERIFY(waitForFinished(loginReply, 5000));
         QCOMPARE(loginReply->error(), NetworkError::NoError);
@@ -2791,7 +2791,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         homeReq.setFollowLocation(false);
         homeReq.setHttpVersion(httpVersion);
-        QCNetworkReply *homeReply = manager.sendGet(homeReq);
+        QCNetworkReply *homeReply = manager.get(homeReq);
         QVERIFY(homeReply);
         QVERIFY(waitForFinished(homeReply, 5000));
         QCOMPARE(homeReply->error(), NetworkError::NoError);
@@ -2827,7 +2827,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         loginReq.setFollowLocation(false);
         loginReq.setHttpVersion(httpVersion);
-        QCNetworkReply *loginReply = manager.sendGet(loginReq);
+        QCNetworkReply *loginReply = manager.get(loginReq);
         QVERIFY(loginReply);
         QVERIFY(waitForFinished(loginReply, 5000));
         QCOMPARE(loginReply->error(), NetworkError::NoError);
@@ -2855,7 +2855,7 @@ void TestLibcurlConsistency::testCase()
             req.setFollowLocation(false);
             req.setHttpVersion(httpVersion);
 
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
             replies.append(reply);
             QObject::connect(reply, &QCNetworkReply::finished, this, [&finishedCount, &loop]() {
@@ -3202,7 +3202,7 @@ void TestLibcurlConsistency::testCase()
             }
             req.setHttpVersion(httpVersion);
 
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
             connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
                 const QString outFile                = QStringLiteral("download_%1.data").arg(i);
@@ -3266,7 +3266,7 @@ void TestLibcurlConsistency::testCase()
             req.setSslConfig(QCNetworkSslConfig::insecureConfig());
             req.setHttpVersion(httpVersion);
 
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
             connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
                 const QString outFile                = QStringLiteral("download_%1.data").arg(i);
@@ -3347,7 +3347,7 @@ void TestLibcurlConsistency::testCase()
             req.setSslConfig(QCNetworkSslConfig::insecureConfig());
             req.setHttpVersion(httpVersion);
 
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
             ++inFlight;
             ++startedCount;
@@ -3421,7 +3421,7 @@ void TestLibcurlConsistency::testCase()
             req.setSslConfig(QCNetworkSslConfig::insecureConfig());
             req.setHttpVersion(httpVersion);
 
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
             connect(reply, &QCNetworkReply::finished, this, [&, i, reply]() {
                 const std::optional<QByteArray> data = reply->readAll();
@@ -3779,7 +3779,7 @@ void TestLibcurlConsistency::testCase()
 
         QByteArray last;
         for (int i = 0; i < count; ++i) {
-            QCNetworkReply *reply = manager.sendGet(req);
+            QCNetworkReply *reply = manager.get(req);
             QVERIFY(reply);
 
             QEventLoop loop;

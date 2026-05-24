@@ -177,7 +177,7 @@ void tst_QCNetworkScheduler::cleanupTestCase()
 QCNetworkReply *tst_QCNetworkScheduler::sendScheduledGet(const QCNetworkRequest &request)
 {
     m_manager->enableRequestScheduler(true);
-    return m_manager->sendGet(request);
+    return m_manager->get(request);
 }
 
 QCNetworkReply *tst_QCNetworkScheduler::sendScheduledGet(const QUrl &url,
@@ -1497,22 +1497,22 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
         QCNetworkReply *reply = nullptr;
         switch (method) {
             case HttpMethod::Head:
-                reply = m_manager->sendHead(req);
+                reply = m_manager->head(req);
                 break;
             case HttpMethod::Get:
-                reply = m_manager->sendGet(req);
+                reply = m_manager->get(req);
                 break;
             case HttpMethod::Post:
-                reply = m_manager->sendPost(req, body);
+                reply = m_manager->post(req, body);
                 break;
             case HttpMethod::Put:
-                reply = m_manager->sendPut(req, body);
+                reply = m_manager->put(req, body);
                 break;
             case HttpMethod::Delete:
                 reply = m_manager->sendCustomRequest(req, QByteArrayLiteral("DELETE"), body);
                 break;
             case HttpMethod::Patch:
-                reply = m_manager->sendPatch(req, body);
+                reply = m_manager->patch(req, body);
                 break;
             case HttpMethod::Custom:
                 reply = nullptr;

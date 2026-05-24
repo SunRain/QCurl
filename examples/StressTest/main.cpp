@@ -228,7 +228,7 @@ private:
         QCNetworkRequest request(requestUrl);
         request.setPriority(priority);
 
-        QCNetworkReply *reply = manager->sendGet(request);
+        QCNetworkReply *reply = manager->get(request);
 
         // 连接信号
         connect(reply, &QCNetworkReply::finished, this, [this, index, reply]() {

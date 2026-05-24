@@ -80,7 +80,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDefaultRetryPolicyInjected
     m_manager->addMiddleware(&retryMw);
 
     QCNetworkRequest request(url); // 未显式 setRetryPolicy
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -112,7 +112,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testExplicitNoRetryNotOverridd
     QCNetworkRequest request(url);
     request.setRetryPolicy(QCNetworkRetryPolicy::noRetry()); // 显式禁用，不应被覆盖
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY(finishedSpy.wait(2000));
@@ -142,7 +142,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
     QCNetworkRequest request(url);
     request.setRawHeader("Authorization", QByteArray("Bearer ") + secret);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY(finishedSpy.wait(2000));
 
@@ -187,7 +187,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     QCNetworkRequest request(url);
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY(finishedSpy.wait(2000));
 

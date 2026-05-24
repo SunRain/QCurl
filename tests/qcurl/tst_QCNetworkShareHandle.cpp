@@ -174,14 +174,14 @@ void TestQCNetworkShareHandle::testCookieShareDisabledByDefault()
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
     loginReq.setFollowLocation(false);
-    QCNetworkReply *loginReply = manager.sendGet(loginReq);
+    QCNetworkReply *loginReply = manager.get(loginReq);
     QVERIFY(waitForFinished(loginReply, 5000));
     QCOMPARE(loginReply->error(), NetworkError::NoError);
     loginReply->deleteLater();
 
     QCNetworkRequest homeReq(QUrl(m_baseUrl + QStringLiteral("/home")));
     homeReq.setFollowLocation(false);
-    QCNetworkReply *homeReply = manager.sendGet(homeReq);
+    QCNetworkReply *homeReply = manager.get(homeReq);
     QVERIFY(waitForFinished(homeReply, 5000));
     QVERIFY(homeReply->error() != NetworkError::NoError);
     homeReply->deleteLater();
@@ -198,14 +198,14 @@ void TestQCNetworkShareHandle::testCookieShareWithinManager()
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
     loginReq.setFollowLocation(false);
-    QCNetworkReply *loginReply = manager.sendGet(loginReq);
+    QCNetworkReply *loginReply = manager.get(loginReq);
     QVERIFY(waitForFinished(loginReply, 5000));
     QCOMPARE(loginReply->error(), NetworkError::NoError);
     loginReply->deleteLater();
 
     QCNetworkRequest homeReq(QUrl(m_baseUrl + QStringLiteral("/home")));
     homeReq.setFollowLocation(false);
-    QCNetworkReply *homeReply = manager.sendGet(homeReq);
+    QCNetworkReply *homeReply = manager.get(homeReq);
     QVERIFY(waitForFinished(homeReply, 5000));
     QCOMPARE(homeReply->error(), NetworkError::NoError);
     const auto body = homeReply->readAll();
@@ -228,7 +228,7 @@ void TestQCNetworkShareHandle::testCookieShareIsolationAcrossManagers()
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
     loginReq.setFollowLocation(false);
-    QCNetworkReply *loginReply = managerA.sendGet(loginReq);
+    QCNetworkReply *loginReply = managerA.get(loginReq);
     QVERIFY(waitForFinished(loginReply, 5000));
     QCOMPARE(loginReply->error(), NetworkError::NoError);
     loginReply->deleteLater();
@@ -236,12 +236,12 @@ void TestQCNetworkShareHandle::testCookieShareIsolationAcrossManagers()
     QCNetworkRequest homeReq(QUrl(m_baseUrl + QStringLiteral("/home")));
     homeReq.setFollowLocation(false);
 
-    QCNetworkReply *homeReplyB = managerB.sendGet(homeReq);
+    QCNetworkReply *homeReplyB = managerB.get(homeReq);
     QVERIFY(waitForFinished(homeReplyB, 5000));
     QVERIFY(homeReplyB->error() != NetworkError::NoError);
     homeReplyB->deleteLater();
 
-    QCNetworkReply *homeReplyA = managerA.sendGet(homeReq);
+    QCNetworkReply *homeReplyA = managerA.get(homeReq);
     QVERIFY(waitForFinished(homeReplyA, 5000));
     QCOMPARE(homeReplyA->error(), NetworkError::NoError);
     homeReplyA->deleteLater();
@@ -258,7 +258,7 @@ void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 
     QCNetworkRequest loginReq(QUrl(m_baseUrl + QStringLiteral("/login")));
     loginReq.setFollowLocation(false);
-    QCNetworkReply *loginReply = manager.sendGet(loginReq);
+    QCNetworkReply *loginReply = manager.get(loginReq);
     QVERIFY(waitForFinished(loginReply, 5000));
     QCOMPARE(loginReply->error(), NetworkError::NoError);
     loginReply->deleteLater();
@@ -283,7 +283,7 @@ void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 
         QCNetworkRequest req(url);
         req.setFollowLocation(false);
-        QCNetworkReply *reply = manager.sendGet(req);
+        QCNetworkReply *reply = manager.get(req);
         replies.append(reply);
 
         QObject::connect(reply, &QCNetworkReply::finished, this, [&finishedCount, &loop]() {

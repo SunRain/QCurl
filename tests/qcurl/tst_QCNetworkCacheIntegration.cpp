@@ -128,7 +128,7 @@ bool TestQCNetworkCacheIntegration::isHttpbinAvailable()
     QCNetworkAccessManager testManager;
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
 
-    auto *reply    = testManager.sendGet(request);
+    auto *reply    = testManager.get(request);
     bool available = waitForFinished(reply, 2000) && reply->error() == NetworkError::NoError;
     reply->deleteLater();
 
@@ -154,9 +154,9 @@ void TestQCNetworkCacheIntegration::verifyCacheHitSignalContract(
     QCNetworkRequest request(url);
     request.setCachePolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply);
-    QVERIFY2(!reply->isFinished(), "cache hit must finish asynchronously after sendGet returns");
+    QVERIFY2(!reply->isFinished(), "cache hit must finish asynchronously after get returns");
 
     QVector<QByteArray> events;
     QSignalSpy readySpy(reply, &QCNetworkReply::readyRead);
@@ -202,7 +202,7 @@ void TestQCNetworkCacheIntegration::testNoCacheBehavior()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
 
     // 不设置缓存
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -222,7 +222,7 @@ void TestQCNetworkCacheIntegration::testOnlyNetworkPolicy()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=onlynetwork"));
     request.setCachePolicy(QCNetworkCachePolicy::OnlyNetwork);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -240,7 +240,7 @@ void TestQCNetworkCacheIntegration::testSignalOrder()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy readySpy(reply, &QCNetworkReply::readyRead);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -261,13 +261,13 @@ void TestQCNetworkCacheIntegration::testDataConsistency()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=consistency"));
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
 
-    auto *reply1 = m_manager->sendGet(request);
+    auto *reply1 = m_manager->get(request);
     QVERIFY(waitForFinished(reply1));
     auto data1 = reply1->readAll();
     QVERIFY(data1.has_value());
     reply1->deleteLater();
 
-    auto *reply2 = m_manager->sendGet(request);
+    auto *reply2 = m_manager->get(request);
     QVERIFY(waitForFinished(reply2, 100)); // 缓存命中应该很快
     auto data2 = reply2->readAll();
     QVERIFY(data2.has_value());
@@ -285,7 +285,7 @@ void TestQCNetworkCacheIntegration::testMultipleRequests()
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
     for (int i = 0; i < 3; ++i) {
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QVERIFY(waitForFinished(reply));
         QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -317,7 +317,7 @@ void TestQCNetworkCacheIntegration::testPreferCacheMiss()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=cachemiss"));
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -345,7 +345,7 @@ void TestQCNetworkCacheIntegration::testOnlyCacheMiss()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=onlycachemiss"));
     request.setCachePolicy(QCNetworkCachePolicy::OnlyCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QVERIFY2(waitForFinished(reply, 1000), "OnlyCache miss should trigger error signal");
 
@@ -374,7 +374,7 @@ void TestQCNetworkCacheIntegration::testOnlyCacheHitWithZeroByteBodyAndNoHeaders
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::OnlyCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply, 100));
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->httpStatusCode(), 200);
@@ -431,7 +431,7 @@ void TestQCNetworkCacheIntegration::testAlwaysCache()
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::AlwaysCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply, 200)); // 增加超时时间
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -462,7 +462,7 @@ void TestQCNetworkCacheIntegration::testPreferNetworkSuccess()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get?test=prefernetwork"));
     request.setCachePolicy(QCNetworkCachePolicy::PreferNetwork);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -482,7 +482,7 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -494,7 +494,7 @@ void TestQCNetworkCacheIntegration::testAutoCacheWrite()
     QVERIFY(cached.hit());
     QCOMPARE(cached.body(), networkData.value());
 
-    auto *reply2 = m_manager->sendGet(request);
+    auto *reply2 = m_manager->get(request);
     QVERIFY(waitForFinished(reply2, 100));
 
     auto cacheData = reply2->readAll();
@@ -523,7 +523,7 @@ void TestQCNetworkCacheIntegration::testCacheExpiration()
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -544,7 +544,7 @@ void TestQCNetworkCacheIntegration::testNoCacheHeader()
     QCNetworkRequest request(url);
     request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(waitForFinished(reply));
     QCOMPARE(reply->error(), NetworkError::NoError);
 
@@ -566,7 +566,7 @@ void TestQCNetworkCacheIntegration::testConcurrentRequests()
         QCNetworkRequest request(url);
         request.setCachePolicy(QCNetworkCachePolicy::PreferCache);
 
-        replies.append(m_manager->sendGet(request));
+        replies.append(m_manager->get(request));
     }
 
     for (auto *reply : replies) {

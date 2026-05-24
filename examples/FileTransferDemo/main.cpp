@@ -113,7 +113,7 @@ private:
             file->deleteLater();
             return finishDemo(1);
         }
-        auto *reply = m_manager.sendPost(request, bodyDevice, body->sizeBytes());
+        auto *reply = m_manager.post(request, bodyDevice, body->sizeBytes());
         bodyDevice->setParent(reply);
 
         connect(reply, &QCNetworkReply::uploadProgress, this, [](qint64 sent, qint64 total) {

@@ -189,7 +189,7 @@ private:
         std::cout << "\n发送请求到: " << request.url().toString().toStdString() << std::endl;
         std::cout << "等待响应...\n" << std::endl;
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
 
         connect(reply, &QCNetworkReply::finished, [this, reply]() {
             if (reply->error() == NetworkError::NoError) {

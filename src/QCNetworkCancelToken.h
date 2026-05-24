@@ -39,8 +39,8 @@ class QCNetworkCancelTokenPrivate;
  * auto token = new QCNetworkCancelToken();
  *
  * // 附加 reply 到令牌
- * auto *reply1 = manager->sendGet(request1);
- * auto *reply2 = manager->sendGet(request2);
+ * auto *reply1 = manager->get(request1);
+ * auto *reply2 = manager->get(request2);
  * token->attach(reply1);
  * token->attach(reply2);
  *

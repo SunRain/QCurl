@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
     for (int i = 1; i <= 5; ++i) {
         QUrl url(QString("https://httpbin.org/delay/%1").arg(i));
         QCNetworkRequest req(url);
-        auto *reply = manager->sendGet(req);
+        auto *reply = manager->get(req);
 
         token->attach(reply);
         replies.append(reply);
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
         // 创建3个长时间请求
         for (int i = 1; i <= 3; ++i) {
             QUrl url(QString("https://httpbin.org/delay/%1").arg(i * 2));
-            auto *reply = manager->sendGet(QCNetworkRequest(url));
+            auto *reply = manager->get(QCNetworkRequest(url));
             token2->attach(reply);
             qDebug() << QString("  请求 %1: delay/%2秒").arg(i).arg(i * 2);
         }

@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 
     QCNetworkRequest request1(QUrl("https://httpbin.org/get"));
     request1.setRawHeader("User-Agent", "QCurl/2.16.0").setTimeout(std::chrono::milliseconds(30000));
-    auto *reply1 = manager->sendGet(request1);
+    auto *reply1 = manager->get(request1);
 
     qDebug() << "请求已发送，等待响应...";
 
@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
     request2.setRawHeader("Content-Type", "application/json")
         .setRawHeader("User-Agent", "QCurl/2.16.0")
         .setTimeout(std::chrono::milliseconds(30000));
-    auto *reply2 = manager->sendPost(request2, jsonData);
+    auto *reply2 = manager->post(request2, jsonData);
 
     qDebug() << "发送 JSON POST 请求...";
 
@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
         .setRawHeader("Accept", "application/json")
         .setFollowLocation(true)
         .setTimeout(std::chrono::milliseconds(15000));
-    auto *reply3 = manager->sendGet(request3);
+    auto *reply3 = manager->get(request3);
 
     qDebug() << "发送复杂请求...";
 

@@ -87,7 +87,7 @@ QJsonObject buildManifest()
                           QCurl::QCNetworkAccessManager::*)(const QCurl::QCNetworkRequest &,
                                                             QIODevice *,
                                                             std::optional<qint64>)>(
-        &QCurl::QCNetworkAccessManager::sendPost));
+        &QCurl::QCNetworkAccessManager::post));
     static_cast<void>(
         static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
             const QCurl::QCNetworkRequest &,

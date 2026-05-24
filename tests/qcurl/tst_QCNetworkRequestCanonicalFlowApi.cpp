@@ -124,7 +124,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testRequestHandoff()
     m_mock.clearCapturedRequests();
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(handoffRequest(std::move(request)));
+    auto *reply = m_manager->get(handoffRequest(std::move(request)));
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -165,7 +165,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithHeader()
     QCNetworkRequest request(url);
     request.setRawHeader("User-Agent", "TestAgent").setRawHeader("Accept", "text/html");
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -195,7 +195,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithTimeout()
     QCNetworkRequest request(url);
     request.setTimeout(std::chrono::milliseconds(3000));
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -221,7 +221,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithQueryParams()
     m_mock.clearCapturedRequests();
 
     QCNetworkRequest request(expectedUrl);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -249,7 +249,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
     {
         m_mock.clearCapturedRequests();
         QCNetworkRequest request(url1);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -267,7 +267,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
         QCNetworkRequest request(url2);
         request.setFollowLocation(true);
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -285,7 +285,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
         QCNetworkRequest request(url3);
         request.setFollowLocation(false);
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QVERIFY(reply != nullptr);
         QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -299,7 +299,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testWithFollowLocation()
 }
 
 /**
- * @brief 测试 sendGet
+ * @brief 测试 get
  */
 void TestQCNetworkRequestCanonicalFlowApi::testSendGet()
 {
@@ -311,7 +311,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendGet()
     QCNetworkRequest request(url);
     request.setRawHeader("User-Agent", "QCurl Test").setTimeout(std::chrono::milliseconds(5000));
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     // Assert
     QVERIFY(reply != nullptr);
@@ -329,7 +329,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendGet()
 }
 
 /**
- * @brief 测试 sendPost
+ * @brief 测试 post
  */
 void TestQCNetworkRequestCanonicalFlowApi::testSendPost()
 {
@@ -343,7 +343,7 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendPost()
     request.setRawHeader("Content-Type", "application/x-www-form-urlencoded")
         .setTimeout(std::chrono::milliseconds(5000));
 
-    auto *reply = m_manager->sendPost(request, postData);
+    auto *reply = m_manager->post(request, postData);
 
     // Assert
     QVERIFY(reply != nullptr);

@@ -108,7 +108,7 @@ void TestQCNetworkCancelToken::testAttachReply()
 {
     // 使用 MockHandler 离线回放，避免该套件退化为真实网络依赖。
     QCNetworkRequest request(QUrl("http://example.com"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     m_token->attach(reply);
 
@@ -124,7 +124,7 @@ void TestQCNetworkCancelToken::testAttachReply()
 void TestQCNetworkCancelToken::testDetachReply()
 {
     QCNetworkRequest request(QUrl("http://example.com"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     m_token->attach(reply);
     QCOMPARE(m_token->attachedCount(), 1);
 
@@ -145,9 +145,9 @@ void TestQCNetworkCancelToken::testAttachMultiple()
     QCNetworkRequest request2(QUrl("http://example.com/2"));
     QCNetworkRequest request3(QUrl("http://example.com/3"));
 
-    auto *reply1 = m_manager->sendGet(request1);
-    auto *reply2 = m_manager->sendGet(request2);
-    auto *reply3 = m_manager->sendGet(request3);
+    auto *reply1 = m_manager->get(request1);
+    auto *reply2 = m_manager->get(request2);
+    auto *reply3 = m_manager->get(request3);
 
     QList<QCNetworkReply *> replies = {reply1, reply2, reply3};
 
@@ -187,8 +187,8 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     // 使用 mock 延迟制造“in-flight”窗口，确保 cancel 覆盖 Running 语义
     m_mock.setGlobalDelay(5000);
 
-    auto *reply1 = m_manager->sendGet(request1);
-    auto *reply2 = m_manager->sendGet(request2);
+    auto *reply1 = m_manager->get(request1);
+    auto *reply2 = m_manager->get(request2);
 
     QSignalSpy cancelSpy1(reply1, &QCNetworkReply::cancelled);
     QSignalSpy cancelSpy2(reply2, &QCNetworkReply::cancelled);
@@ -227,8 +227,8 @@ void TestQCNetworkCancelToken::testClearReplies()
     QCNetworkRequest request1(QUrl("http://example.com/1"));
     QCNetworkRequest request2(QUrl("http://example.com/2"));
 
-    auto *reply1 = m_manager->sendGet(request1);
-    auto *reply2 = m_manager->sendGet(request2);
+    auto *reply1 = m_manager->get(request1);
+    auto *reply2 = m_manager->get(request2);
 
     m_token->attach(reply1);
     m_token->attach(reply2);

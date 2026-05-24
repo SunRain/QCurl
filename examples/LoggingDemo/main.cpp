@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
     QCNetworkRequest httpbinReq(QUrl("https://httpbin.org/get"));
     httpbinReq.setRawHeader("User-Agent", "QCurl-LoggingDemo/2.15.0");
 
-    auto *reply = manager5->sendGet(httpbinReq);
+    auto *reply = manager5->get(httpbinReq);
 
     qDebug() << "发送 GET 请求到 httpbin.org...";
 

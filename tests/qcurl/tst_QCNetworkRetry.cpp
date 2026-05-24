@@ -20,7 +20,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
 #include "test_httpbin_env.h"
-#include "qcnetwork_sync_test_helper.h"
+#include "qcnetwork_managed_reply_wait_helper.h"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -82,7 +82,7 @@ void TestQCNetworkRetry::initTestCase()
 
     // 验证 httpbin 服务可用
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
     QVERIFY2(reply->error() == NetworkError::NoError,
@@ -255,7 +255,7 @@ void TestQCNetworkRetry::testNoRetry()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     // 不设置 retryPolicy，使用默认的 noRetry()
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
@@ -272,7 +272,7 @@ void TestQCNetworkRetry::testBasicRetry()
     // 基本重试场景：503 错误重试 3 次
     QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"), 3);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -302,7 +302,7 @@ void TestQCNetworkRetry::testMaxRetriesExceeded()
     QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"),
                                                       2); // 最多重试 2 次
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -319,7 +319,7 @@ void TestQCNetworkRetry::testNonRetryableError()
     // 测试不可重试错误（如 404）不会触发重试
     QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/404"), 3);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 5000));
@@ -344,7 +344,7 @@ void TestQCNetworkRetry::testExponentialBackoff()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
 
@@ -365,7 +365,7 @@ void TestQCNetworkRetry::testCancelDuringRetry()
     // 测试在重试延迟期间取消请求
     QCNetworkRequest request = createRequestWithRetry(QUrl(m_httpbinBaseUrl + "/status/503"), 5);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -415,7 +415,7 @@ void TestQCNetworkRetry::testCustomRetryPolicy()
     policy.setRetryableErrors({NetworkError::HttpInternalServerError});
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));

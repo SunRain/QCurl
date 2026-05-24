@@ -50,7 +50,7 @@ public:
         QCNetworkRequest request1(QUrl("https://http2.golang.org/reqinfo"));
         request1.setHttpVersion(QCNetworkHttpVersion::Http1_1);
 
-        auto *reply1 = manager->sendGet(request1);
+        auto *reply1 = manager->get(request1);
         connect(reply1, &QCNetworkReply::finished, [this, timer1, reply1]() mutable {
             qint64 elapsed1 = timer1.elapsed();
             std::cout << "[HTTP/1.1] 完成，耗时: " << elapsed1 << " ms" << std::endl;
@@ -69,7 +69,7 @@ public:
             QCNetworkRequest request2(QUrl("https://http2.golang.org/reqinfo"));
             request2.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-            auto *reply2 = manager->sendGet(request2);
+            auto *reply2 = manager->get(request2);
             connect(reply2, &QCNetworkReply::finished, [this, timer2, reply2, elapsed1]() mutable {
                 qint64 elapsed2 = timer2.elapsed();
                 std::cout << "[HTTP/2] 完成，耗时: " << elapsed2 << " ms" << std::endl;
@@ -105,7 +105,7 @@ public:
                 QUrl(QString("https://http2.golang.org/reqinfo?req=%1").arg(i + 1)));
             req.setHttpVersion(QCNetworkHttpVersion::Http1_1);
 
-            auto *reply = manager->sendGet(req);
+            auto *reply = manager->get(req);
             connect(reply, &QCNetworkReply::finished, [this, reply, i]() {
                 http11Count++;
                 std::cout << "[HTTP/1.1] 请求 " << (i + 1) << " 完成" << std::endl;
@@ -174,7 +174,7 @@ private:
                 QUrl(QString("https://http2.golang.org/reqinfo?req=%1").arg(i + 1)));
             req.setHttpVersion(QCNetworkHttpVersion::Http2);
 
-            auto *reply = manager->sendGet(req);
+            auto *reply = manager->get(req);
             connect(reply, &QCNetworkReply::finished, [this, reply, i, http11Elapsed]() {
                 http2Count++;
                 std::cout << "[HTTP/2] 请求 " << (i + 1) << " 完成" << std::endl;

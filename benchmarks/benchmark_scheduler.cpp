@@ -198,7 +198,7 @@ private:
 
             QElapsedTimer timer;
             timer.start();
-            auto *reply = manager->sendGet(request);
+            auto *reply = manager->get(request);
             context.timers.insert(reply, timer);
             context.priorities.insert(reply, priority);
             connect(reply, &QCNetworkReply::finished, this, [this, reply, &context, result]() {
@@ -254,9 +254,9 @@ private:
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
                 request.setPriority(QCNetworkRequestPriority::Normal);
-                reply = manager->sendGet(request);
+                reply = manager->get(request);
             } else {
-                reply = manager->sendGet(request);
+                reply = manager->get(request);
             }
 
             connect(reply, &QCNetworkReply::finished, this, [&, reply, timer]() {
@@ -311,9 +311,9 @@ private:
             QCNetworkReply *reply = nullptr;
             if (useScheduler) {
                 request.setPriority(QCNetworkRequestPriority::Normal);
-                reply = manager->sendGet(request);
+                reply = manager->get(request);
             } else {
-                reply = manager->sendGet(request);
+                reply = manager->get(request);
             }
 
             connect(reply, &QCNetworkReply::finished, this, [&, reply, timer]() {

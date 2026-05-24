@@ -456,7 +456,7 @@ void TestQCNetworkStreamUpload::testSeekablePutEchoAndOwnershipPreserved()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(8000));
 
-    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -492,7 +492,7 @@ void TestQCNetworkStreamUpload::testSeekablePostEchoAndOwnershipPreserved()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(8000));
 
-    QCNetworkReply *reply = manager.sendPost(request, &buffer, payload.size());
+    QCNetworkReply *reply = manager.post(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -537,7 +537,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
     QCNetworkAccessManager manager;
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
-    QCNetworkReply *reply = manager.sendPut(request, device, payload.size());
+    QCNetworkReply *reply = manager.put(request, device, payload.size());
     QVERIFY(reply);
 
     const NetworkError error = reply->error();
@@ -582,7 +582,7 @@ void TestQCNetworkStreamUpload::testDeviceOverloadFromNonOwnerThreadFailsBeforeD
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
 
-    QCNetworkReply *reply = manager->sendPut(request, &device, payload.size());
+    QCNetworkReply *reply = manager->put(request, &device, payload.size());
     QVERIFY(reply);
     const NetworkError error = reply->error();
     const QString errorString = reply->errorString();
@@ -622,7 +622,7 @@ void TestQCNetworkStreamUpload::testNonSeekableFollowLocationFailsFast()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(20000));
 
-    QCNetworkReply *reply = manager.sendPut(request, &device, payload.size());
+    QCNetworkReply *reply = manager.put(request, &device, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -648,7 +648,7 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
     request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
-    QCNetworkReply *reply = manager.sendPut(request, &device, payload.size());
+    QCNetworkReply *reply = manager.put(request, &device, payload.size());
     QVERIFY(reply);
 
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
@@ -671,7 +671,7 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(5000));
 
-    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -700,7 +700,7 @@ void TestQCNetworkStreamUpload::testSeekableFollowLocationSeekFailureIsDiagnosab
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, &buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, &buffer, payload.size());
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -731,7 +731,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceCloseDuringTransferFails()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, buffer, payload.size());
     QVERIFY(reply);
 
     bool closed = false;
@@ -770,7 +770,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceDestroyedDuringTransferFails()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, buffer, payload.size());
     QVERIFY(reply);
 
     bool destroyed = false;
@@ -808,7 +808,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceReadFailureFails()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(15000));
 
-    QCNetworkReply *reply = manager.sendPut(request, &device, 4096);
+    QCNetworkReply *reply = manager.put(request, &device, 4096);
     QVERIFY(reply);
     QVERIFY(waitForFinished(reply, 20000));
 
@@ -841,7 +841,7 @@ void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(30000));
 
-    QCNetworkReply *reply = manager.sendPut(request, buffer, payload.size());
+    QCNetworkReply *reply = manager.put(request, buffer, payload.size());
     QVERIFY(reply);
 
     QTRY_VERIFY_WITH_TIMEOUT(buffer->readCalls() > 0, 2000);

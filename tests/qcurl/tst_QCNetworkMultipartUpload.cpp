@@ -273,7 +273,7 @@ static QCNetworkReply *sendMultipartDevice(QCNetworkAccessManager &manager,
 {
     QCNetworkRequest request(url);
     if (!sizeBytes.has_value()) {
-        auto *reply = manager.sendPost(request, QByteArray());
+        auto *reply = manager.post(request, QByteArray());
         reply->abortWithError(
             NetworkError::InvalidRequest,
             QStringLiteral("QCNetworkMultipartBody: 单文件 multipart 要求已知长度且设备可 seek"));
@@ -288,7 +288,7 @@ static QCNetworkReply *sendMultipartDevice(QCNetworkAccessManager &manager,
                                                             sizeBytes,
                                                             &error);
     if (!body.has_value()) {
-        auto *reply = manager.sendPost(request, QByteArray());
+        auto *reply = manager.post(request, QByteArray());
         reply->abortWithError(NetworkError::InvalidRequest, error);
         return reply;
     }
@@ -296,11 +296,11 @@ static QCNetworkReply *sendMultipartDevice(QCNetworkAccessManager &manager,
     request.setRawHeader(QByteArrayLiteral("Content-Type"), body->contentType());
     auto *bodyDevice = body->takeDevice(nullptr, &error);
     if (!bodyDevice) {
-        auto *reply = manager.sendPost(request, QByteArray());
+        auto *reply = manager.post(request, QByteArray());
         reply->abortWithError(NetworkError::InvalidRequest, error);
         return reply;
     }
-    auto *reply = manager.sendPost(request, bodyDevice, body->sizeBytes());
+    auto *reply = manager.post(request, bodyDevice, body->sizeBytes());
     bodyDevice->setParent(reply);
     return reply;
 }

@@ -84,7 +84,7 @@ void TestQCNetworkRequestCanonicalApi::testSendGet_preservesHeaderWhenAddingQuer
     url.setQuery(query);
     request.setUrl(url);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -120,7 +120,7 @@ void TestQCNetworkRequestCanonicalApi::testSendPost_sendsJsonBodyAndContentType(
     request.setRawHeader("User-Agent", "QCurl-Test/2.9.0");
     request.setRawHeader("Content-Type", "application/json");
 
-    auto *reply = m_manager->sendPost(request, expectedBody);
+    auto *reply = m_manager->post(request, expectedBody);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -158,7 +158,7 @@ void TestQCNetworkRequestCanonicalApi::testSendPut_preservesBodyWithExplicitCont
     QCNetworkRequest request(url);
     request.setRawHeader("Content-Type", "application/octet-stream");
 
-    auto *reply = m_manager->sendPut(request, body);
+    auto *reply = m_manager->put(request, body);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -184,7 +184,7 @@ void TestQCNetworkRequestCanonicalApi::testSendHead_sendsHeadWithoutBody()
     m_mock.clearCapturedRequests();
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendHead(request);
+    auto *reply = m_manager->head(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);

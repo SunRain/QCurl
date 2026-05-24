@@ -95,7 +95,7 @@ private slots:
         m_output << "发送 HTTP/3 请求到: " << url.toString() << "\n";
         m_output << "HTTP 版本: Http3（尝试 HTTP/3，失败则降级）\n";
 
-        QCNetworkReply *reply = m_manager->sendGet(request);
+        QCNetworkReply *reply = m_manager->get(request);
 
         connect(reply, &QCNetworkReply::finished, this, [this, reply]() {
             if (reply->error() == NetworkError::NoError) {

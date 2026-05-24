@@ -288,7 +288,7 @@ void TestConnectionPool::testConnectionReuse()
     QCNetworkRequest testRequest(testUrl);
     testRequest.setFollowLocation(true);
 
-    auto *testReply = m_manager->sendGet(testRequest);
+    auto *testReply = m_manager->get(testRequest);
     QSignalSpy testSpy(testReply, &QCNetworkReply::finished);
 
     QVERIFY2(testSpy.wait(10000),
@@ -318,7 +318,7 @@ void TestConnectionPool::testConnectionReuse()
     for (int i = 0; i < requestCount; ++i) {
         QCNetworkRequest request(url);
         request.setFollowLocation(true);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
 
         // 等待完成
         QSignalSpy spy(reply, &QCNetworkReply::finished);

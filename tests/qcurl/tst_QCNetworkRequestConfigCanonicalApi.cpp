@@ -147,7 +147,7 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendPostRawBody()
     QCNetworkRequest request(url);
     request.setRawHeader("Content-Type", "application/octet-stream");
 
-    auto *reply = m_manager->sendPost(request, body);
+    auto *reply = m_manager->post(request, body);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);
@@ -179,7 +179,7 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendPostJsonBody()
     QCNetworkRequest request(url);
     request.setRawHeader("Content-Type", "application/json");
 
-    auto *reply = m_manager->sendPost(request, expectedBody);
+    auto *reply = m_manager->post(request, expectedBody);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     QCOMPARE(reply->error(), NetworkError::NoError);

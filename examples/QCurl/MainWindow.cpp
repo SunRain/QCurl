@@ -54,10 +54,10 @@ void MainWindow::tst_async()
         qDebug() << Q_FUNC_INFO << "qcnetworkmgr " << mgr;
         mgr->setCookieFilePath(cookie);
 
-        // 使用 sendHead() 获取响应头
-        QCurl::QCNetworkReply *reply = mgr->sendHead(request);
-        // 或者使用 sendGet() 获取完整响应：
-        // QCurl::QCNetworkReply *reply = mgr->sendGet(request);
+        // 使用 head() 获取响应头
+        QCurl::QCNetworkReply *reply = mgr->head(request);
+        // 或者使用 get() 获取完整响应：
+        // QCurl::QCNetworkReply *reply = mgr->get(request);
         auto *f = new QFile(QStringLiteral("test.jpg"), reply);
         if (!f->open(QIODevice::WriteOnly)) {
             qWarning() << Q_FUNC_INFO << "open file failed" << f->errorString();

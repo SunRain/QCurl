@@ -283,7 +283,7 @@ QJsonObject TestQCNetworkHttp2::requestJson(const QUrl &url,
         request.setRawHeader(kv.first, kv.second);
     }
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), timeoutMs)) {
         const QString err = reply->errorString();
         reply->cancel();
@@ -416,7 +416,7 @@ void TestQCNetworkHttp2::testHttp2Multiplexing()
         QCNetworkRequest request(url);
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         replies.append(reply);
     }
 
@@ -483,7 +483,7 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
                                  .toUtf8());
     }
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
         const QString err = reply->errorString();
         reply->cancel();
@@ -558,7 +558,7 @@ void TestQCNetworkHttp2::testHttp2ConcurrentStreams()
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         replies.append(reply);
     }
 
@@ -627,7 +627,7 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
             const QString err = reply->errorString();
             reply->cancel();
@@ -675,7 +675,7 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
         request.setHttpVersion(QCNetworkHttpVersion::Http1_1);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
             const QString err = reply->errorString();
             reply->cancel();
@@ -702,7 +702,7 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
         request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
         request.setSslConfig(QCNetworkSslConfig::insecureConfig());
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000)) {
             const QString err = reply->errorString();
             reply->cancel();

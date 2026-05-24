@@ -76,7 +76,7 @@ void TestQCNetworkRetryOffline::testRetry500Then200()
     policy.setMaxDelay(std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -102,7 +102,7 @@ void TestQCNetworkRetryOffline::testRetry501Then200()
     policy.setMaxDelay(std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -127,7 +127,7 @@ void TestQCNetworkRetryOffline::testRetry503Exceeded()
     policy.setMaxDelay(std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -158,7 +158,7 @@ void TestQCNetworkRetryOffline::testRetry429RetryAfterOverride()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -191,7 +191,7 @@ void TestQCNetworkRetryOffline::testRetry429RetryAfterHttpDateOverride()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -221,7 +221,7 @@ void TestQCNetworkRetryOffline::testRetry429FallbackToBackoff()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -246,7 +246,7 @@ void TestQCNetworkRetryOffline::testRetryHttpStatusGetOnlyGating()
     policy.setRetryHttpStatusErrorsForGetOnly(true);
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendPost(request, QByteArray("x"));
+    auto *reply = m_manager->post(request, QByteArray("x"));
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -272,7 +272,7 @@ void TestQCNetworkRetryOffline::testCancelDuringRetryDelay()
     policy.setMaxDelay(std::chrono::milliseconds(500));
     request.setRetryPolicy(policy);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy retrySpy(reply, &QCNetworkReply::retryAttempt);
     QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);

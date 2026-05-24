@@ -126,7 +126,7 @@ private slots:
         // blocker：占用唯一并发槽位
         QCNetworkRequest blocker(QUrl("https://httpbin.org/delay/4"));
         blocker.setPriority(QCNetworkRequestPriority::Normal);
-        auto *blockingReply = manager->sendGet(blocker);
+        auto *blockingReply = manager->get(blocker);
         connect(blockingReply, &QCNetworkReply::finished, this, [blockingReply]() {
             qInfo() << "✓ blocker 请求完成";
             blockingReply->deleteLater();
@@ -136,7 +136,7 @@ private slots:
         QCNetworkRequest request(QUrl("https://httpbin.org/get"));
         request.setPriority(QCNetworkRequestPriority::High);
 
-        auto *reply     = manager->sendGet(request);
+        auto *reply     = manager->get(request);
         pauseResumeDemo = reply;
 
         connect(reply, &QCNetworkReply::finished, this, [reply]() {
@@ -262,7 +262,7 @@ private:
         request.setPriority(priority);
         // 示例默认都走 default lane，便于聚焦优先级/并发合同本身。
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
 
         // 设置属性用于追踪
         reply->setProperty("description", description);

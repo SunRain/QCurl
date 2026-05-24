@@ -159,45 +159,45 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchSendRequest(
     return impl();
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendHead(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::head(const QCNetworkRequest &request)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Head,
                                                 Internal::makeEmptyRequestBody(),
                                                 QByteArray(),
-                                                "QCNetworkAccessManager::sendHead");
+                                                "QCNetworkAccessManager::head");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendGet(const QCNetworkRequest &request)
+QCNetworkReply *QCNetworkAccessManager::get(const QCNetworkRequest &request)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Get,
                                                 Internal::makeEmptyRequestBody(),
                                                 QByteArray(),
-                                                "QCNetworkAccessManager::sendGet");
+                                                "QCNetworkAccessManager::get");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request,
-                                                 const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request,
+                                             const QByteArray &data)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Post,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
-                                                "QCNetworkAccessManager::sendPost");
+                                                "QCNetworkAccessManager::post");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request,
-                                                 const QCNetworkBody &body)
+QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request,
+                                             const QCNetworkBody &body)
 {
-    return sendPost(requestWithBodyContentType(request, body), body.data());
+    return post(requestWithBodyContentType(request, body), body.data());
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request,
-                                                 QIODevice *device,
-                                                 std::optional<qint64> sizeBytes)
+QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request,
+                                             QIODevice *device,
+                                             std::optional<qint64> sizeBytes)
 {
-    constexpr const char *apiName = "QCNetworkAccessManager::sendPost";
+    constexpr const char *apiName = "QCNetworkAccessManager::post";
     if (QThread::currentThread() != thread()) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Post,
@@ -214,27 +214,27 @@ QCNetworkReply *QCNetworkAccessManager::sendPost(const QCNetworkRequest &request
                                                 apiName);
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
-                                                const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::put(const QCNetworkRequest &request,
+                                            const QByteArray &data)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Put,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
-                                                "QCNetworkAccessManager::sendPut");
+                                                "QCNetworkAccessManager::put");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
-                                                const QCNetworkBody &body)
+QCNetworkReply *QCNetworkAccessManager::put(const QCNetworkRequest &request,
+                                            const QCNetworkBody &body)
 {
-    return sendPut(requestWithBodyContentType(request, body), body.data());
+    return put(requestWithBodyContentType(request, body), body.data());
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPut(const QCNetworkRequest &request,
-                                                QIODevice *device,
-                                                std::optional<qint64> sizeBytes)
+QCNetworkReply *QCNetworkAccessManager::put(const QCNetworkRequest &request,
+                                            QIODevice *device,
+                                            std::optional<qint64> sizeBytes)
 {
-    constexpr const char *apiName = "QCNetworkAccessManager::sendPut";
+    constexpr const char *apiName = "QCNetworkAccessManager::put";
     if (QThread::currentThread() != thread()) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Put,
@@ -260,20 +260,20 @@ QCNetworkReply *QCNetworkAccessManager::deleteResource(const QCNetworkRequest &r
                                                 "QCNetworkAccessManager::deleteResource");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request,
-                                                  const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::patch(const QCNetworkRequest &request,
+                                              const QByteArray &data)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Patch,
                                                 Internal::makeInlineRequestBody(data),
                                                 data,
-                                                "QCNetworkAccessManager::sendPatch");
+                                                "QCNetworkAccessManager::patch");
 }
 
-QCNetworkReply *QCNetworkAccessManager::sendPatch(const QCNetworkRequest &request,
-                                                  const QCNetworkBody &body)
+QCNetworkReply *QCNetworkAccessManager::patch(const QCNetworkRequest &request,
+                                              const QCNetworkBody &body)
 {
-    return sendPatch(requestWithBodyContentType(request, body), body.data());
+    return patch(requestWithBodyContentType(request, body), body.data());
 }
 
 QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest &request,

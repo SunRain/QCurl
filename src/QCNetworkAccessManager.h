@@ -171,13 +171,13 @@ public:
     [[nodiscard]] HstsAltSvcCacheConfig hstsAltSvcCacheConfig() const noexcept;
 
     /// 发送 HEAD 请求（异步），必须在 manager owner thread 调用。
-    QCNetworkReply *sendHead(const QCNetworkRequest &request);
+    QCNetworkReply *head(const QCNetworkRequest &request);
 
     /// 发送 GET 请求（异步），必须在 manager owner thread 调用。
-    QCNetworkReply *sendGet(const QCNetworkRequest &request);
+    QCNetworkReply *get(const QCNetworkRequest &request);
 
     /// 发送 POST 请求（异步，内存请求体），必须在 manager owner thread 调用。
-    QCNetworkReply *sendPost(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *post(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 POST 请求（异步，QCNetworkBody）。
@@ -185,7 +185,7 @@ public:
      * 若 request 未显式设置 `Content-Type`，会使用 body.contentType()；已显式设置时保持
      * request 原值。
      */
-    QCNetworkReply *sendPost(const QCNetworkRequest &request, const QCNetworkBody &body);
+    QCNetworkReply *post(const QCNetworkRequest &request, const QCNetworkBody &body);
 
     /**
      * @brief 发送 POST 请求（异步，借用 QIODevice 作为 raw body）
@@ -202,12 +202,12 @@ public:
      * 异步 raw-body 遇到 `read() == 0 && !atEnd()` 可等待 `readyRead()` 恢复；同步
      * raw-body 遇到同样状态会 fail-fast。
      */
-    QCNetworkReply *sendPost(const QCNetworkRequest &request,
-                             QIODevice *device,
-                             std::optional<qint64> sizeBytes = std::nullopt);
+    QCNetworkReply *post(const QCNetworkRequest &request,
+                         QIODevice *device,
+                         std::optional<qint64> sizeBytes = std::nullopt);
 
     /// 发送 PUT 请求（异步，内存请求体），必须在 manager owner thread 调用。
-    QCNetworkReply *sendPut(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *put(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 PUT 请求（异步，QCNetworkBody）。
@@ -215,24 +215,24 @@ public:
      * 若 request 未显式设置 `Content-Type`，会使用 body.contentType()；已显式设置时保持
      * request 原值。
      */
-    QCNetworkReply *sendPut(const QCNetworkRequest &request, const QCNetworkBody &body);
+    QCNetworkReply *put(const QCNetworkRequest &request, const QCNetworkBody &body);
 
     /**
      * @brief 发送 PUT 请求（异步，借用 QIODevice 作为 raw body）
      *
      * 所有权、线程、event loop、当前 `pos()`、seek/replay 与 async source-not-ready 语义同
-     * `sendPost(..., QIODevice *, sizeBytes)`。PUT 必须具有已知长度：传入非负 `sizeBytes`，
+     * `post(..., QIODevice *, sizeBytes)`。PUT 必须具有已知长度：传入非负 `sizeBytes`，
      * 或使用可 seek 设备让实现从 `size() - pos()` 推导；未知长度 PUT 会 fail-fast。
      */
-    QCNetworkReply *sendPut(const QCNetworkRequest &request,
-                            QIODevice *device,
-                            std::optional<qint64> sizeBytes = std::nullopt);
+    QCNetworkReply *put(const QCNetworkRequest &request,
+                        QIODevice *device,
+                        std::optional<qint64> sizeBytes = std::nullopt);
 
     /// 发送 DELETE 请求（异步、无请求体），必须在 manager owner thread 调用。
     QCNetworkReply *deleteResource(const QCNetworkRequest &request);
 
     /// 发送 PATCH 请求（异步），必须在 manager owner thread 调用。
-    QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QByteArray &data);
+    QCNetworkReply *patch(const QCNetworkRequest &request, const QByteArray &data);
 
     /**
      * @brief 发送 PATCH 请求（异步，QCNetworkBody）。
@@ -240,7 +240,7 @@ public:
      * 若 request 未显式设置 `Content-Type`，会使用 body.contentType()；已显式设置时保持
      * request 原值。
      */
-    QCNetworkReply *sendPatch(const QCNetworkRequest &request, const QCNetworkBody &body);
+    QCNetworkReply *patch(const QCNetworkRequest &request, const QCNetworkBody &body);
 
     /**
      * @brief 发送显式 custom HTTP 请求（异步、无请求体）。

@@ -217,13 +217,13 @@ void BatchRequest::startRequest(const QString &id)
 
     switch (info->method) {
         case RequestMethod::GET:
-            reply = m_manager->sendGet(request);
+            reply = m_manager->get(request);
             break;
         case RequestMethod::POST:
-            reply = m_manager->sendPost(request, info->postData);
+            reply = m_manager->post(request, info->postData);
             break;
         case RequestMethod::HEAD:
-            reply = m_manager->sendHead(request);
+            reply = m_manager->head(request);
             break;
     }
 

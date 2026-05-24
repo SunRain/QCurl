@@ -200,15 +200,15 @@ void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
     QCurl::QCNetworkReply *reply = nullptr;
 
     if (method == "GET") {
-        reply = m_manager->sendGet(request);
+        reply = m_manager->get(request);
     } else if (method == "POST") {
-        reply = m_manager->sendPost(request, postData);
+        reply = m_manager->post(request, postData);
     } else if (method == "PUT") {
         // QCurl 可能没有直接的 PUT 方法，使用 POST 模拟
-        reply = m_manager->sendPost(request, postData);
+        reply = m_manager->post(request, postData);
     } else if (method == "DELETE") {
         // QCurl 可能没有直接的 DELETE 方法，使用 HEAD 或自定义
-        reply = m_manager->sendHead(request);
+        reply = m_manager->head(request);
     }
 
     if (!reply) {

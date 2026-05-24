@@ -14,7 +14,7 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "private/QCNetworkHttpVersion_p.h"
-#include "qcnetwork_sync_test_helper.h"
+#include "qcnetwork_managed_reply_wait_helper.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>

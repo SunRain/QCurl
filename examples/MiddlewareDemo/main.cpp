@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
     QList<QCNetworkReply *> activeReplies;
 
     for (const QCNetworkRequest &req : requests) {
-        auto *r = manager5.sendGet(req);
+        auto *r = manager5.get(req);
         activeReplies.append(r);
 
         QObject::connect(r, &QCNetworkReply::finished, r, [r, &pendingRequests, &loop]() {

@@ -119,7 +119,7 @@ void TestLargeFileDownload::testHttpsLargeFileDownload()
     preflightTimeout.setTotalTimeout(std::chrono::seconds(15));
     preflightRequest.setTimeoutConfig(preflightTimeout);
 
-    auto *preflightReply = m_manager->sendHead(preflightRequest);
+    auto *preflightReply = m_manager->head(preflightRequest);
     QVERIFY(preflightReply != nullptr);
 
     QSignalSpy preflightFinishedSpy(preflightReply, &QCNetworkReply::finished);
@@ -149,7 +149,7 @@ void TestLargeFileDownload::testHttpsLargeFileDownload()
     timeout.setTotalTimeout(std::chrono::seconds(120));
     request.setTimeoutConfig(timeout);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY(finishedSpy.wait(150000));
 

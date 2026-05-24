@@ -151,7 +151,7 @@ BenchmarkHttp3::BenchmarkResult BenchmarkHttp3::downloadFile(const QUrl &url, QC
 	QElapsedTimer timer;
 	timer.start();
 
-	QCNetworkReply *reply = m_manager->sendGet(request);
+	QCNetworkReply *reply = m_manager->get(request);
 	QEventLoop loop;
 	connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
 
@@ -221,7 +221,7 @@ qint64 BenchmarkHttp3::measureConnectionSetup(const QUrl &url, QCNetworkHttpVers
 	QElapsedTimer timer;
 	timer.start();
 
-	QCNetworkReply *reply = m_manager->sendHead(request);
+	QCNetworkReply *reply = m_manager->head(request);
 	QEventLoop loop;
 	connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
 

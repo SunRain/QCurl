@@ -503,7 +503,7 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
     timeoutConfig.setTotalTimeout(std::chrono::seconds(3));
     request.setTimeoutConfig(timeoutConfig);
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
 
     // 等待请求完成（应该失败）

@@ -48,7 +48,7 @@ void BenchmarkConnectionPool::initTestCase()
     QCNetworkRequest testRequest(testUrl);
     testRequest.setFollowLocation(true);
     
-    auto *testReply = manager->sendGet(testRequest);
+    auto *testReply = manager->get(testRequest);
     QSignalSpy testSpy(testReply, &QCNetworkReply::finished);
     
     if (!testSpy.wait(10000)) {
@@ -82,7 +82,7 @@ void BenchmarkConnectionPool::runRequests(int count, const QString &testName)
     for (int i = 0; i < count; ++i) {
         QCNetworkRequest request(url);
         request.setFollowLocation(true);
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
         
         QSignalSpy spy(reply, &QCNetworkReply::finished);
         if (spy.wait(30000)) {

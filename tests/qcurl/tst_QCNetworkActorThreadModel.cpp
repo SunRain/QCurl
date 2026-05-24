@@ -41,19 +41,19 @@ int runningRequestsCountOnOwnerThread(QCNetworkAccessManager *manager)
     return invoked ? count : -1;
 }
 
-QCNetworkReply *sendGetOnOwnerThread(QCNetworkAccessManager *manager, const QCNetworkRequest &request)
+QCNetworkReply *getOnOwnerThread(QCNetworkAccessManager *manager, const QCNetworkRequest &request)
 {
     if (!manager) {
         return nullptr;
     }
 
     if (QThread::currentThread() == manager->thread()) {
-        return manager->sendGet(request);
+        return manager->get(request);
     }
 
     QCNetworkReply *reply = nullptr;
     const bool invoked = QMetaObject::invokeMethod(
-        manager, [manager, request, &reply]() { reply = manager->sendGet(request); }, Qt::BlockingQueuedConnection);
+        manager, [manager, request, &reply]() { reply = manager->get(request); }, Qt::BlockingQueuedConnection);
     return invoked ? reply : nullptr;
 }
 
@@ -186,7 +186,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSubmitAndCancel()
                             .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/test")));
-    QCNetworkReply *reply = sendGetOnOwnerThread(manager, request);
+    QCNetworkReply *reply = getOnOwnerThread(manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->thread(), &actorThread);
     QCOMPARE(reply->parent(), manager);
@@ -218,7 +218,7 @@ void tst_QCNetworkActorThreadModel::testNoEventLoopFailFast()
     std::thread noLoopThread([&result]() {
         QCNetworkAccessManager manager;
         QCNetworkRequest request(QUrl(QStringLiteral("http://mock.local/no-event-loop")));
-        QCNetworkReply *reply = manager.sendGet(request);
+        QCNetworkReply *reply = manager.get(request);
         result.hasReply = reply != nullptr;
         if (!reply) {
             return;
@@ -381,7 +381,7 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
                             .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/finish-count")));
-    QCNetworkReply *reply = sendGetOnOwnerThread(manager, request);
+    QCNetworkReply *reply = getOnOwnerThread(manager, request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->thread(), &actorThread);
 
@@ -413,7 +413,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadSendFailsFast()
     });
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://example.local/cross-thread")));
-    QCNetworkReply *reply = manager->sendGet(request);
+    QCNetworkReply *reply = manager->get(request);
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->thread(), QThread::currentThread());
     QCOMPARE(reply->parent(), nullptr);

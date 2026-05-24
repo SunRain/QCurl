@@ -138,9 +138,9 @@ void TestQCNetworkBody::testManagerBodyOverloadsSetContentTypeWhenMissing()
         {QStringLiteral("tag"), QStringLiteral("two")},
     });
 
-    auto *postReply = manager.sendPost(QCNetworkRequest(postUrl), body);
-    auto *putReply = manager.sendPut(QCNetworkRequest(putUrl), body);
-    auto *patchReply = manager.sendPatch(QCNetworkRequest(patchUrl), body);
+    auto *postReply = manager.post(QCNetworkRequest(postUrl), body);
+    auto *putReply = manager.put(QCNetworkRequest(putUrl), body);
+    auto *patchReply = manager.patch(QCNetworkRequest(patchUrl), body);
 
     QTRY_VERIFY_WITH_TIMEOUT(postReply->isFinished(), 2000);
     QTRY_VERIFY_WITH_TIMEOUT(putReply->isFinished(), 2000);
@@ -178,7 +178,7 @@ void TestQCNetworkBody::testManagerBodyOverloadsRespectExplicitContentType()
 
     const QCNetworkBody body = QCNetworkBody::fromJson(
         QJsonObject{{QStringLiteral("name"), QStringLiteral("QCurl")}});
-    auto *reply = manager.sendPatch(request, body);
+    auto *reply = manager.patch(request, body);
 
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 

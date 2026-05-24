@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
     QCNetworkRequest requestRetry(urlRetry);
     requestRetry.setRawHeader("Authorization", QByteArray("Bearer ") + secretToken);
 
-    auto *replyRetry = manager.sendGet(requestRetry);
+    auto *replyRetry = manager.get(requestRetry);
     int retryCount   = 0;
     QObject::connect(replyRetry,
                      &QCNetworkReply::retryAttempt,
@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
     QCNetworkRequest requestNoRetry(urlNoRetry);
     requestNoRetry.setRetryPolicy(QCNetworkRetryPolicy::noRetry()); // 显式禁用重试
 
-    auto *replyNoRetry = manager.sendGet(requestNoRetry);
+    auto *replyNoRetry = manager.get(requestNoRetry);
     int retryCount2    = 0;
     QObject::connect(replyNoRetry,
                      &QCNetworkReply::retryAttempt,

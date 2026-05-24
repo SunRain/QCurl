@@ -104,7 +104,7 @@ private:
  * TestSupport::setMockHandler(&manager, mock);
  *
  * // All requests will use mock responses
- * auto *reply = manager->sendGet(request);
+ * auto *reply = manager->get(request);
  * @endcode
  */
 class QCURL_EXPORT QCNetworkMockHandler

@@ -34,19 +34,19 @@ inline QCNetworkReply *sendWaitedAsyncTestReply(QCNetworkAccessManager &manager,
     QCNetworkReply *reply = nullptr;
     switch (method) {
         case HttpMethod::Head:
-            reply = manager.sendHead(request);
+            reply = manager.head(request);
             break;
         case HttpMethod::Get:
-            reply = manager.sendGet(request);
+            reply = manager.get(request);
             break;
         case HttpMethod::Post:
-            reply = manager.sendPost(request, body);
+            reply = manager.post(request, body);
             break;
         case HttpMethod::Put:
-            reply = manager.sendPut(request, body);
+            reply = manager.put(request, body);
             break;
         case HttpMethod::Patch:
-            reply = manager.sendPatch(request, body);
+            reply = manager.patch(request, body);
             break;
         case HttpMethod::Delete:
             reply = body.isEmpty()

@@ -103,14 +103,14 @@ void TestQCNetworkRequestPipeline::testSendGetAndSchedulerShareDigest()
         .setPriority(QCNetworkRequestPriority::High);
 
     m_manager->enableRequestScheduler(false);
-    auto *directReply = m_manager->sendGet(request);
+    auto *directReply = m_manager->get(request);
     const QByteArray directDigest = planDigest(directReply);
     QTRY_VERIFY_WITH_TIMEOUT(directReply->isFinished(), 2000);
     QCOMPARE(directReply->error(), NetworkError::NoError);
     directReply->deleteLater();
 
     m_manager->enableRequestScheduler(true);
-    auto *scheduledReply = m_manager->sendGet(request);
+    auto *scheduledReply = m_manager->get(request);
     const QByteArray scheduledDigest = planDigest(scheduledReply);
     QCOMPARE(scheduledDigest, directDigest);
     QTRY_VERIFY_WITH_TIMEOUT(scheduledReply->isFinished(), 2000);
@@ -129,7 +129,7 @@ void TestQCNetworkRequestPipeline::testAsyncAndCompiledPostShareDigest()
         .setTimeout(std::chrono::seconds(2))
         .setPriority(QCNetworkRequestPriority::Normal);
 
-    auto *asyncReply = m_manager->sendPost(request, body);
+    auto *asyncReply = m_manager->post(request, body);
     const QByteArray asyncDigest = planDigest(asyncReply);
     QTRY_VERIFY_WITH_TIMEOUT(asyncReply->isFinished(), 2000);
     QCOMPARE(asyncReply->error(), NetworkError::NoError);
@@ -146,7 +146,7 @@ void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()
     m_mock.mockResponse(HttpMethod::Post, url, QByteArray("DEVICE"));
 
     QCNetworkRequest inlineRequest(url);
-    auto *inlineReply = m_manager->sendPost(inlineRequest, QByteArray("inline-body"));
+    auto *inlineReply = m_manager->post(inlineRequest, QByteArray("inline-body"));
     const QByteArray inlineDigest = planDigest(inlineReply);
     QTRY_VERIFY_WITH_TIMEOUT(inlineReply->isFinished(), 2000);
     QCOMPARE(inlineReply->error(), NetworkError::NoError);
@@ -157,7 +157,7 @@ void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()
     QVERIFY(deviceBuffer.open(QIODevice::ReadOnly));
 
     QCNetworkRequest deviceRequest(url);
-    auto *deviceReply = m_manager->sendPost(deviceRequest, &deviceBuffer, deviceBuffer.size());
+    auto *deviceReply = m_manager->post(deviceRequest, &deviceBuffer, deviceBuffer.size());
     const QByteArray deviceDigest = planDigest(deviceReply);
     QCOMPARE(deviceDigest, inlineDigest);
     QTRY_VERIFY_WITH_TIMEOUT(deviceReply->isFinished(), 2000);

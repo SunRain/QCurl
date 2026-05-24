@@ -62,7 +62,7 @@ void demonstrateBasicHttp3Request()
 
     qDebug() << "发送 HTTP/3 请求到: https://cloudflare-quic.com";
 
-    auto *reply = manager.sendGet(request);
+    auto *reply = manager.get(request);
 
     QObject::connect(reply, &QCNetworkReply::finished, [reply]() {
         if (reply->error() == NetworkError::NoError) {
@@ -107,7 +107,7 @@ void demonstrateHttp3Fallback()
     qDebug() << "尝试对不支持 HTTP/3 的服务器使用 HTTP/3";
     qDebug() << "目标: https://httpbin.org/get";
 
-    auto *reply = manager.sendGet(request);
+    auto *reply = manager.get(request);
 
     QObject::connect(reply, &QCNetworkReply::finished, [reply]() {
         if (reply->error() == NetworkError::NoError) {
@@ -143,7 +143,7 @@ void demonstrateHttp3OnlyMode()
     qDebug() << "使用 Http3Only 模式（不允许降级）";
     qDebug() << "目标: https://cloudflare-quic.com";
 
-    auto *reply = manager.sendGet(request);
+    auto *reply = manager.get(request);
 
     QObject::connect(reply, &QCNetworkReply::finished, [reply]() {
         if (reply->error() == NetworkError::NoError) {
@@ -243,7 +243,7 @@ void performanceComparison()
         QElapsedTimer timer;
         timer.start();
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
 
         QObject::connect(reply, &QCNetworkReply::finished, [&, reply, timer]() {
             qint64 elapsed = timer.elapsed();
@@ -288,7 +288,7 @@ void demonstrateVersionNegotiation()
     qDebug() << "使用 HttpAny 模式（让 libcurl 自动选择最优版本）";
     qDebug() << "目标: https://www.google.com";
 
-    auto *reply = manager.sendGet(request);
+    auto *reply = manager.get(request);
 
     QObject::connect(reply, &QCNetworkReply::finished, [reply]() {
         if (reply->error() == NetworkError::NoError) {

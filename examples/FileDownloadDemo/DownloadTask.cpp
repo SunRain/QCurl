@@ -148,7 +148,7 @@ void DownloadTask::startDownloadInternal(qint64 rangeStart)
     }
 
     // 发起请求
-    m_reply = m_manager->sendGet(request);
+    m_reply = m_manager->get(request);
 
     // 连接信号
     connect(m_reply,

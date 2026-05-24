@@ -234,7 +234,7 @@ void TestQCNetworkFileTransfer::initTestCase()
     qDebug() << "httpbin base URL:" << m_httpbinBaseUrl;
 
     QCNetworkRequest healthCheck(QUrl(m_httpbinBaseUrl + "/status/200"));
-    auto *reply = m_manager->sendGet(healthCheck);
+    auto *reply = m_manager->get(healthCheck);
     QVERIFY(waitForFinished(reply, 5000));
     QVERIFY2(reply->error() == NetworkError::NoError,
              qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl, reply->errorString())));
@@ -286,7 +286,7 @@ QCNetworkReply *TestQCNetworkFileTransfer::sendMultipartDevice(const QUrl &url,
     if (!bodyDevice) {
         return nullptr;
     }
-    auto *reply = m_manager->sendPost(request, bodyDevice, body->sizeBytes());
+    auto *reply = m_manager->post(request, bodyDevice, body->sizeBytes());
     bodyDevice->setParent(reply);
     return reply;
 }

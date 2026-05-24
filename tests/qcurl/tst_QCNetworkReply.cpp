@@ -21,7 +21,7 @@
 #include "QCNetworkRequestScheduler.h"
 #include "test_httpbin_env.h"
 #include "test_wait_utils.h"
-#include "qcnetwork_sync_test_helper.h"
+#include "qcnetwork_managed_reply_wait_helper.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -271,19 +271,19 @@ QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
 {
     switch (method) {
         case HttpMethod::Head:
-            return m_manager->sendHead(request);
+            return m_manager->head(request);
         case HttpMethod::Get:
-            return m_manager->sendGet(request);
+            return m_manager->get(request);
         case HttpMethod::Post:
-            return m_manager->sendPost(request, body);
+            return m_manager->post(request, body);
         case HttpMethod::Put:
-            return m_manager->sendPut(request, body);
+            return m_manager->put(request, body);
         case HttpMethod::Delete:
             return body.isEmpty()
                 ? m_manager->deleteResource(request)
                 : m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
         case HttpMethod::Patch:
-            return m_manager->sendPatch(request, body);
+            return m_manager->patch(request, body);
         case HttpMethod::Custom:
             return nullptr;
         default:
@@ -336,7 +336,7 @@ void TestQCNetworkReply::initTestCase()
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
 
-    QCNetworkReply *reply = m_manager->sendGet(request);
+    QCNetworkReply *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY2(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 4000),
              qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl,
@@ -485,7 +485,7 @@ void TestQCNetworkReply::testWaitedAsyncHeadRequest()
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
 
-    auto *reply = m_manager->sendHead(request);
+    auto *reply = m_manager->head(request);
     QVERIFY(reply != nullptr);
     TestSupport::waitForManagedTestReply(reply);
     QVERIFY(reply->isFinished());
@@ -534,7 +534,7 @@ void TestQCNetworkReply::testAsyncGetRequest()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
@@ -564,7 +564,7 @@ void TestQCNetworkReply::testAsyncPostRequest()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"async\": \"test\"}";
 
-    auto *reply = m_manager->sendPost(request, postData);
+    auto *reply = m_manager->post(request, postData);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
@@ -748,7 +748,7 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
     request.setTimeout(std::chrono::milliseconds(5000));
     request.setExpect100ContinueTimeout(std::chrono::milliseconds(0));
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -774,7 +774,7 @@ void TestQCNetworkReply::testAsyncHeadRequest()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendHead(request);
+    auto *reply = m_manager->head(request);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
 
@@ -796,9 +796,9 @@ void TestQCNetworkReply::testAsyncMultipleRequests()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     // 测试并发请求
-    auto *reply1 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/get")));
-    auto *reply2 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/delay/1")));
-    auto *reply3 = m_manager->sendGet(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/uuid")));
+    auto *reply1 = m_manager->get(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/get")));
+    auto *reply2 = m_manager->get(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/delay/1")));
+    auto *reply3 = m_manager->get(QCNetworkRequest(QUrl(m_httpbinBaseUrl + "/uuid")));
 
     QList<QCNetworkReply *> replies{reply1, reply2, reply3};
 
@@ -840,7 +840,7 @@ void TestQCNetworkReply::testStateTransitionIdleToFinished()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
 
@@ -861,7 +861,7 @@ void TestQCNetworkReply::testStateTransitionIdleToError()
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QVERIFY(reply->state() == ReplyState::Idle || reply->state() == ReplyState::Running);
 
@@ -878,7 +878,7 @@ void TestQCNetworkReply::testStateCancellation()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/delay/5"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
     QSignalSpy cancelledSpy(reply, &QCNetworkReply::cancelled);
@@ -946,7 +946,7 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
         const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
 
         QCNetworkRequest request(url);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         if (!reply) {
             return false;
         }
@@ -1092,7 +1092,7 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
     const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
 
     DciEvidenceRecorder recorder(QStringLiteral("testAsyncMockChaosCancel"),
@@ -1192,7 +1192,7 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
     const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
 
     DciEvidenceRecorder recorder(QStringLiteral("testAsyncMockChaosDeleteLater"),
@@ -1260,7 +1260,7 @@ void TestQCNetworkReply::testWaitedAsyncPauseResumeNoOp()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 15000);
     QCOMPARE(reply->state(), ReplyState::Finished);
@@ -1358,7 +1358,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     connect(&sendTimer, &QTimer::timeout, this, pumpPayload);
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/test").arg(port)));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -1498,7 +1498,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
     {
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/no_bp").arg(port)));
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
 
         QSignalSpy backpressureSpy(reply, &QCNetworkReply::backpressureStateChanged);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -1530,7 +1530,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         request.setBackpressureLimitBytes(kLimitBytes);
         request.setBackpressureResumeBytes(kResumeBytes);
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
 
         QCOMPARE(reply->backpressureLimitBytes(), kLimitBytes);
         QCOMPARE(reply->backpressureResumeBytes(), kResumeBytes);
@@ -1609,7 +1609,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         request.setBackpressureLimitBytes(kLimitBytes);
         request.setBackpressureResumeBytes(kResumeBytes);
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         DciEvidenceRecorder recorder(QStringLiteral("testAsyncDownloadBackpressure"),
                                      QStringLiteral("bp-user-pause"));
         const auto flushEvidence = qScopeGuard([&recorder]() { recorder.flush(); });
@@ -1762,7 +1762,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         request.setBackpressureLimitBytes(kTinyLimitBytes);
         request.setBackpressureResumeBytes(kTinyResumeBytes);
 
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
 
         QCOMPARE(reply->backpressureLimitBytes(), kTinyLimitBytes);
         QCOMPARE(reply->backpressureResumeBytes(), kTinyResumeBytes);
@@ -1986,7 +1986,7 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
     });
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/upload").arg(port)));
-    auto *reply = m_manager->sendPut(request, &device, payload.size());
+    auto *reply = m_manager->put(request, &device, payload.size());
     QVERIFY(reply);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -2222,7 +2222,7 @@ void TestQCNetworkReply::testFinishedSignal()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy spy(reply, &QCNetworkReply::finished);
 
@@ -2239,7 +2239,7 @@ void TestQCNetworkReply::testErrorSignal()
     // 避免在网络受限/DNS 异常环境下长时间阻塞导致用例超时
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(3000));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy errorSpy(reply,
                         QMetaMethod::fromSignal(static_cast<void (QCNetworkReply::*)(NetworkError)>(
@@ -2259,7 +2259,7 @@ void TestQCNetworkReply::testProgressSignal()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/bytes/10240")); // 下载 10KB
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
 
@@ -2284,7 +2284,7 @@ void TestQCNetworkReply::testStateChangedSignal()
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
 
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/get"));
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
 

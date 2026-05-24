@@ -100,7 +100,7 @@ void tst_QCNetworkMiddlewareIntegration::testSendGet_AutoWiredMiddleware()
     m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY(finishedSpy.wait(1000));
 
@@ -154,7 +154,7 @@ void tst_QCNetworkMiddlewareIntegration::testScheduleGet_AutoWiredMiddleware()
     m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(reply->parent() == m_manager);
 
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
@@ -264,7 +264,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.mockResponse(HttpMethod::Get, url1, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url1);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
@@ -281,7 +281,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     {
         QCNetworkRequest request(url2);
         request.setRawHeader("X-XSRF-TOKEN", "manual");
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
@@ -297,7 +297,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.mockResponse(HttpMethod::Get, url3, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url3);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
@@ -313,7 +313,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     m_mockHandler.mockResponse(HttpMethod::Get, url4, QByteArray("ok"), 200);
     {
         QCNetworkRequest request(url4);
-        auto *reply = m_manager->sendGet(request);
+        auto *reply = m_manager->get(request);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         QVERIFY(finishedSpy.wait(1000));
         const auto captured = m_mockHandler.takeCapturedRequests();
@@ -351,7 +351,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedQObjectMiddlewareNotInvoke
     m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     delete middleware;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -392,7 +392,7 @@ void tst_QCNetworkMiddlewareIntegration::testRemovedRawMiddlewareNotInvokedOnRes
     m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     m_manager->removeMiddleware(&middleware);
     QVERIFY(m_manager->middlewares().isEmpty());
@@ -432,7 +432,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedRawMiddlewareNotInvokedOnR
     m_mockHandler.mockResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
 
     delete middleware;
     QVERIFY(m_manager->middlewares().isEmpty());

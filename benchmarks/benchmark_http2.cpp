@@ -312,7 +312,7 @@ void BenchmarkHttp2::benchmarkHttp1Request()
     QBENCHMARK {
         QCNetworkRequest request = makeRequest(QCNetworkHttpVersion::Http1_1);
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
         const ReplySummary summary = waitForReply(reply, QCNetworkHttpVersion::Http1_1, 30000);
         QVERIFY(summary.finished);
         QCOMPARE(summary.error, NetworkError::NoError);
@@ -328,7 +328,7 @@ void BenchmarkHttp2::benchmarkHttp2Request()
     QBENCHMARK {
         QCNetworkRequest request = makeRequest(QCNetworkHttpVersion::Http2);
 
-        auto *reply = manager->sendGet(request);
+        auto *reply = manager->get(request);
         const ReplySummary summary = waitForReply(reply, QCNetworkHttpVersion::Http2, 30000);
         QVERIFY(summary.finished);
         QCOMPARE(summary.error, NetworkError::NoError);
@@ -362,7 +362,7 @@ void BenchmarkHttp2::benchmarkConcurrentRequests()
         for (int i = 0; i < concurrency; ++i) {
             QCNetworkRequest req = makeRequest(httpVersion);
 
-            auto *reply = manager->sendGet(req);
+            auto *reply = manager->get(req);
             replies.append(reply);
         }
 

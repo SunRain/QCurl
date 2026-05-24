@@ -136,7 +136,7 @@ void TestQCNetworkMockHandler::testMockHandlerIntegration()
 
     // Act
     QCNetworkRequest request(mockUrl);
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
     // Assert
@@ -152,7 +152,7 @@ void TestQCNetworkMockHandler::testMockHandlerIntegration()
     handler.mockResponse(HttpMethod::Post, mockUrl, QByteArray("post"), 200);
 
     QCNetworkRequest postReq(mockUrl);
-    auto *postReply = m_manager->sendPost(postReq, QByteArray("x"));
+    auto *postReply = m_manager->post(postReq, QByteArray("x"));
     QSignalSpy postFinishedSpy(postReply, &QCNetworkReply::finished);
     QVERIFY(postFinishedSpy.wait(1000));
     QCOMPARE(postReply->error(), NetworkError::NoError);
@@ -171,18 +171,18 @@ void TestQCNetworkMockHandler::testSequenceConsumption()
 
     QCNetworkRequest request(url);
 
-    auto *r1 = m_manager->sendGet(request);
+    auto *r1 = m_manager->get(request);
     QVERIFY(QSignalSpy(r1, &QCNetworkReply::finished).wait(1000));
     QCOMPARE(r1->readAll().value_or(QByteArray()), QByteArray("v1"));
     r1->deleteLater();
 
-    auto *r2 = m_manager->sendGet(request);
+    auto *r2 = m_manager->get(request);
     QVERIFY(QSignalSpy(r2, &QCNetworkReply::finished).wait(1000));
     QCOMPARE(r2->readAll().value_or(QByteArray()), QByteArray("v2"));
     r2->deleteLater();
 
     // 队列耗尽后复用最后一条
-    auto *r3 = m_manager->sendGet(request);
+    auto *r3 = m_manager->get(request);
     QVERIFY(QSignalSpy(r3, &QCNetworkReply::finished).wait(1000));
     QCOMPARE(r3->readAll().value_or(QByteArray()), QByteArray("v2"));
     r3->deleteLater();
@@ -201,7 +201,7 @@ void TestQCNetworkMockHandler::testGlobalDelayApplied()
     QElapsedTimer timer;
     timer.start();
 
-    auto *reply = m_manager->sendGet(request);
+    auto *reply = m_manager->get(request);
     QVERIFY(QSignalSpy(reply, &QCNetworkReply::finished).wait(2000));
 
     QVERIFY(timer.elapsed() >= 30);
@@ -220,7 +220,7 @@ void TestQCNetworkMockHandler::testRequestCapture()
 
     QCNetworkRequest request(url);
     request.setRawHeader("X-Test", "1234");
-    auto *reply = m_manager->sendPost(request, QByteArray("abcdef"));
+    auto *reply = m_manager->post(request, QByteArray("abcdef"));
     QVERIFY(QSignalSpy(reply, &QCNetworkReply::finished).wait(1000));
 
     const auto captured = handler.takeCapturedRequests();
