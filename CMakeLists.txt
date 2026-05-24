@@ -14,12 +14,12 @@ option(BUILD_EXAMPLES "Build example applications" ON)
 option(BUILD_TESTING "Build tests" ON)
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
 option(QCURL_BUILD_LIBCURL_CONSISTENCY "Build libcurl_consistency gate dependencies and use bundled curl (build/curl) for tests" OFF)
-option(QCURL_BUILD_STATIC "Build QCurl as a static library. This is opt-in and not Stable-ready until static release gates pass" OFF)
-
-if(QCURL_BUILD_STATIC)
-    set(QCURL_STATIC_BUILD ON)
-else()
-    set(QCURL_STATIC_BUILD OFF)
+option(QCURL_BUILD_SHARED_LIBS "Build QCurl libraries as shared libraries" ON)
+set(QCURL_STATIC_DEFINE OFF)
+set(QCURL_OTHER_EXTRAS_STATIC_DEFINE OFF)
+if(NOT QCURL_BUILD_SHARED_LIBS)
+    set(QCURL_STATIC_DEFINE ON)
+    set(QCURL_OTHER_EXTRAS_STATIC_DEFINE ON)
 endif()
 
 set(QCURL_MIN_LIBCURL_VERSION "7.85.0")
@@ -182,7 +182,7 @@ endif()
 # - `QCurl` 仅 PUBLIC 暴露 Qt，libcurl 为 PRIVATE 依赖，因此导出的 package
 #   不应把 bundled curl target 一并暴露给下游
 #
-install(TARGETS QCurl
+install(TARGETS QCurl QCurlBlockingExtras QCurlTestSupport QCurlOtherExtras
     EXPORT QCurlTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT Runtime
@@ -238,6 +238,10 @@ configure_file(qcurl.pc.in qcurl.pc @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/qcurl.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
         COMPONENT Development)
+configure_file(qcurl-other-extras.pc.in qcurl-other-extras.pc @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/qcurl-other-extras.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        COMPONENT OtherExtrasDevelopment)
 
 if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     # CPack 配置
@@ -278,6 +282,6 @@ message(STATUS "")
 message(STATUS "Build Options:")
 message(STATUS "  Examples: ${BUILD_EXAMPLES}")
 message(STATUS "  Testing: ${BUILD_TESTING}")
-message(STATUS "  Static library: ${QCURL_BUILD_STATIC}")
+message(STATUS "  Shared libraries: ${QCURL_BUILD_SHARED_LIBS}")
 message(STATUS "========================================")
 message(STATUS "")

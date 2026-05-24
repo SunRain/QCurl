@@ -38,7 +38,7 @@ namespace QCurl {
  * @endcode
  *
  */
-struct QCURL_EXPORT QCWebSocketCompressionConfig
+struct QCURL_OTHER_EXTRAS_EXPORT QCWebSocketCompressionConfig
 {
     /**
      * @brief 是否启用压缩（默认 false）

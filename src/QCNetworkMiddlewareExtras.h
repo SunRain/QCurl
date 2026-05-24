@@ -18,7 +18,7 @@ namespace QCurl {
  *
  * 输出 request/response 摘要，不输出 body 明文；URL/query/header 做脱敏处理。
  */
-class QCURL_EXPORT QCRedactingLoggingMiddleware : public QCNetworkMiddleware
+class QCURL_OTHER_EXTRAS_EXPORT QCRedactingLoggingMiddleware : public QCNetworkMiddleware
 {
 public:
     /// 在 reply 创建后挂接脱敏日志观察点。
@@ -34,7 +34,7 @@ public:
  *
  * 通过 logger 输出可用于排障与估价的关键指标。
  */
-class QCURL_EXPORT QCObservabilityMiddleware : public QCNetworkMiddleware
+class QCURL_OTHER_EXTRAS_EXPORT QCObservabilityMiddleware : public QCNetworkMiddleware
 {
 public:
     /// 在 reply 创建后绑定观测埋点。

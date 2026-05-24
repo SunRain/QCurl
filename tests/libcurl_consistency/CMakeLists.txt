@@ -16,6 +16,7 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         PRIVATE
             Qt6::Test
             QCurl
+            QCurlOtherExtras
             CURL::libcurl
     )
     target_compile_definitions(tst_LibcurlConsistency PRIVATE

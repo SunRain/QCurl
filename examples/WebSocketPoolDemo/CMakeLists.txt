@@ -29,6 +29,7 @@ target_link_libraries(WebSocketPoolDemo
         Qt6::Core
         Qt6::Network
         QCurl
+        QCurlOtherExtras
 )
 
 # 设置输出目录

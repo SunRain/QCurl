@@ -37,8 +37,11 @@ message(STATUS "配置性能基准测试套件")
 # WebSocket 基准测试（需要 WebSocket 支持）
 if(QCURL_WEBSOCKET_SUPPORT)
     add_qcurl_benchmark(benchmark_websocket_pool benchmark_websocket_pool.cpp)
+    target_link_libraries(benchmark_websocket_pool PRIVATE QCurlOtherExtras)
     add_qcurl_benchmark(benchmark_websocket_eventdriven benchmark_websocket_eventdriven.cpp)
+    target_link_libraries(benchmark_websocket_eventdriven PRIVATE QCurlOtherExtras)
     add_qcurl_benchmark(benchmark_websocket_compression benchmark_websocket_compression.cpp)
+    target_link_libraries(benchmark_websocket_compression PRIVATE QCurlOtherExtras)
 endif()
 
 # HTTP/2 基准测试（需要 HTTP/2 支持）

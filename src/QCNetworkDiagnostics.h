@@ -19,7 +19,7 @@ namespace QCurl {
 /**
  * @brief 诊断结果结构
  */
-struct QCURL_EXPORT DiagResult
+struct QCURL_OTHER_EXTRAS_EXPORT DiagResult
 {
     bool success;        ///< 诊断是否成功
     QString summary;     ///< 简要总结
@@ -42,7 +42,7 @@ struct QCURL_EXPORT DiagResult
  * @note 大多数 API 会阻塞当前线程；其中多处实现依赖局部 `QEventLoop`
  * 或外部命令，不应在 UI 线程或低延迟线程中直接调用。
  */
-class QCURL_EXPORT QCNetworkDiagnostics
+class QCURL_OTHER_EXTRAS_EXPORT QCNetworkDiagnostics
 {
 public:
     /**

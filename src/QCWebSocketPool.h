@@ -24,7 +24,7 @@ class QCWebSocket;
  * 连接池按 URL 分组维护连接，区分 in-use 与 idle 状态，并负责清理、
  * keepalive 和连接数限制。
  */
-class QCURL_EXPORT QCWebSocketPool : public QObject
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPool : public QObject
 {
     Q_OBJECT
 

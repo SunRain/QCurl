@@ -30,7 +30,7 @@ struct QCWebSocketCompressionConfig;
  * 封装基于 libcurl 的 WebSocket 连接、消息收发和关闭握手。
  * 所有方法都要求在对象所属线程中调用。
  */
-class QCURL_EXPORT QCWebSocket : public QObject
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocket : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)

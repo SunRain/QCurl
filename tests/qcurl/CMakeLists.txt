@@ -267,6 +267,7 @@ add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测�
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）
 add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp) # 统一重试/脱敏日志/观测埋点（离线门禁）
+target_link_libraries(tst_QCNetworkUnifiedPolicyMiddlewareOffline PRIVATE QCurlOtherExtras)
 add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp) # cookie bridge（share cookie store）离线门禁
 add_qcurl_test(tst_QCNetworkCancelToken tst_QCNetworkCancelToken.cpp) # 取消令牌测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalFlowApi tst_QCNetworkRequestCanonicalFlowApi.cpp) # canonical API: request handoff/send flow 语义回归
@@ -280,12 +281,14 @@ target_compile_definitions(tst_QCNetworkHttp3 PRIVATE QCURL_ENABLE_TEST_HOOKS)
 
 # 网络诊断工具测试
 add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # 网络诊断功能测试
+target_link_libraries(tst_QCNetworkDiagnostics PRIVATE QCurlOtherExtras)
 add_qcurl_test_with_preflight(
     tst_QCNetworkDiagnosticsLocal
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkDiagnosticsLocal.cpp
 ) # 本地 deterministic diagnostics gate
+target_link_libraries(tst_QCNetworkDiagnosticsLocal PRIVATE QCurlOtherExtras)
 
 # WebSocket 测试（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
@@ -296,6 +299,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
         SOURCES
         tst_QCWebSocket.cpp
     )
+    target_link_libraries(tst_QCWebSocket PRIVATE QCurlOtherExtras)
     add_qcurl_test_with_preflight(
         tst_QCWebSocketPool
         REQUIRE_LOCAL_PORT
@@ -303,7 +307,9 @@ if(QCURL_WEBSOCKET_SUPPORT)
         SOURCES
         tst_QCWebSocketPool.cpp
     ) # WebSocket 连接池测试
+    target_link_libraries(tst_QCWebSocketPool PRIVATE QCurlOtherExtras)
     add_qcurl_test(tst_QCWebSocketCompression tst_QCWebSocketCompression.cpp) # WebSocket 压缩测试
+    target_link_libraries(tst_QCWebSocketCompression PRIVATE QCurlOtherExtras)
 endif()
 
 add_qcurl_test_with_preflight(

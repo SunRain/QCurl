@@ -46,7 +46,7 @@ namespace QCurl {
  * @endcode
  *
  */
-class QCURL_EXPORT QCWebSocketReconnectPolicy
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketReconnectPolicy
 {
 public:
     /**

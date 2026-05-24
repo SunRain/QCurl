@@ -11,6 +11,7 @@ target_link_libraries(WebSocketCompressionDemo
     PRIVATE
         Qt6::Core
         QCurl
+        QCurlOtherExtras
 )
 
 # 包含目录

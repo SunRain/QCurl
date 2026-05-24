@@ -3,11 +3,11 @@ exec_prefix=${prefix}
 libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
-Name: QCurl
-Description: Qt6-based libcurl wrapper library with modern C++17 Core API
+Name: QCurlOtherExtras
+Description: Opt-in non-stable QCurl Other Extras and Preview components
 Version: @PROJECT_VERSION@
 URL: https://github.com/SunRain/QCurl
-Requires: Qt6Core >= 6.2, Qt6Network >= 6.2
-Requires.private: libcurl >= @QCURL_MIN_LIBCURL_VERSION@
-Libs: -L${libdir} -lQCurl
+Requires: qcurl = @PROJECT_VERSION@
+Requires.private: zlib
+Libs: -L${libdir} -lQCurlOtherExtras
 Cflags: -I${includedir}/qcurl

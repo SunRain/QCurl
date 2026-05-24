@@ -10,7 +10,8 @@
 // libcurl 版本信息
 #define QCURL_LIBCURL_VERSION "@CURL_VERSION_STRING@"
 
-#cmakedefine QCURL_STATIC_BUILD
+#cmakedefine QCURL_STATIC_DEFINE
+#cmakedefine QCURL_OTHER_EXTRAS_STATIC_DEFINE
 
 // 特性开关（由 CMake 配置）
 #ifndef QCURL_WEBSOCKET_SUPPORT

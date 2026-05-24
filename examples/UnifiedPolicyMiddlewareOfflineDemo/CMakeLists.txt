@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 
 add_executable(UnifiedPolicyMiddlewareOfflineDemo main.cpp)
 
-target_link_libraries(UnifiedPolicyMiddlewareOfflineDemo PRIVATE Qt6::Core QCurl)
+target_link_libraries(UnifiedPolicyMiddlewareOfflineDemo PRIVATE Qt6::Core QCurlOtherExtras)
 
 target_include_directories(UnifiedPolicyMiddlewareOfflineDemo PRIVATE
     ${CMAKE_SOURCE_DIR}/src

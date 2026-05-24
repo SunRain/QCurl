@@ -20,6 +20,7 @@ target_link_libraries(WebSocketDemo
     PRIVATE
         Qt6::Core
         QCurl
+        QCurlOtherExtras
 )
 
 message(STATUS "WebSocketDemo 示例程序已配置")
