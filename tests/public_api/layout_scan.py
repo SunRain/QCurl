@@ -92,7 +92,8 @@ def collect_nested_public_structs(body: str, *, default_public: bool) -> list[st
     nested: list[str] = []
     statements = split_public_statements(body, default_public=default_public)
     nested_pattern = re.compile(
-        r"^(?:[A-Z_][A-Z_0-9]*\s+)*struct\s+(?:QCURL_EXPORT\s+)?([A-Za-z_][A-Za-z_0-9]*)\b"
+        r"^(?:[A-Z_][A-Z_0-9]*\s+)*struct\s+"
+        r"(?:(?:QCURL|QCURL_OTHER_EXTRAS)_EXPORT\s+)?([A-Za-z_][A-Za-z_0-9]*)\b"
     )
     for statement in statements:
         normalized = " ".join(statement.split())
@@ -104,7 +105,9 @@ def collect_nested_public_structs(body: str, *, default_public: bool) -> list[st
 
 def has_top_level_exported_signature_with_type(stripped_header: str, type_name: str) -> bool:
     """Return True if a free exported signature references `type_name`."""
-    signature_pattern = re.compile(r"\bQCURL_EXPORT\b[^;{}]*\([^;{}]*\)\s*[^;{}]*;")
+    signature_pattern = re.compile(
+        r"\b(?:QCURL|QCURL_OTHER_EXTRAS)_EXPORT\b[^;{}]*\([^;{}]*\)\s*[^;{}]*;"
+    )
     type_pattern = re.compile(rf"\b{re.escape(type_name)}\b")
     for match in signature_pattern.finditer(stripped_header):
         statement = match.group(0)

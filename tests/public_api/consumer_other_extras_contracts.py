@@ -23,6 +23,10 @@ def validate_other_extras_fixture(source_dir: Path) -> None:
             "result.toString()",
             "QCurl::QCRedactingLoggingMiddleware redactingLog",
             "QCurl::QCObservabilityMiddleware observability",
+            "#include <QCWebSocket.h>",
+            "#include <QCWebSocketCompressionConfig.h>",
+            "QCurl::QCWebSocket socket",
+            "QCurl::QCWebSocketCompressionConfig::defaultConfig()",
         ],
-        "other extras consumer fixture is missing Diagnostics or Middleware Extras opt-in coverage",
+        "other extras consumer fixture is missing Diagnostics, Middleware Extras or WebSocket Preview opt-in coverage",
     )

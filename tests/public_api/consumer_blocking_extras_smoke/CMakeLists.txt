@@ -15,7 +15,7 @@ find_package(QCurl CONFIG REQUIRED COMPONENTS BlockingExtras
 add_executable(qcurl_public_api_consumer_blocking_extras_smoke main.cpp)
 target_link_libraries(qcurl_public_api_consumer_blocking_extras_smoke
     PRIVATE
-        QCurl::QCurl
+        QCurl::BlockingExtras
         Qt6::Core
         Qt6::Network
 )

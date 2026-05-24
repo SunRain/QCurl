@@ -54,6 +54,26 @@ DENY_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\bsendDelete\s*\("),
     ),
     (
+        "removed QCNetworkAccessManager sendHead",
+        re.compile(r"\bsendHead\s*\("),
+    ),
+    (
+        "removed QCNetworkAccessManager sendGet",
+        re.compile(r"\bsendGet\s*\("),
+    ),
+    (
+        "removed QCNetworkAccessManager sendPost",
+        re.compile(r"\bsendPost\s*\("),
+    ),
+    (
+        "removed QCNetworkAccessManager sendPut",
+        re.compile(r"\bsendPut\s*\("),
+    ),
+    (
+        "removed QCNetworkAccessManager sendPatch",
+        re.compile(r"\bsendPatch\s*\("),
+    ),
+    (
         "removed Blocking Extras generic send",
         re.compile(r"\bQCBlockingNetworkClient\s*::\s*send\s*\(|\bclient\s*\.\s*send\s*\("),
     ),
@@ -81,6 +101,17 @@ ALLOWLIST: dict[str, tuple[str, ...]] = {
         "#### ExecutionMode",
         "enum class ExecutionMode {",
         "return createReply(request, HttpMethod::Options, ExecutionMode::Async);",
+    ),
+    "docs/arch/3.0-hard-break-migration-guide.md": (
+        "QCNetworkAccessManager::sendHead()",
+        "`sendPatch()` 已移除",
+    ),
+    "docs/arch/3.0-rc-release-notes.md": (
+        "QCNetworkAccessManager::sendHead()",
+        "`sendPatch()` 已移除",
+    ),
+    "docs/arch/rc-stable-readiness-report.md": (
+        "旧 manager `sendHead()`",
     ),
 }
 

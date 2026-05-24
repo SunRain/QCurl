@@ -40,6 +40,20 @@ public:
     assert exported[0].name == "Exported"
     assert exported[0].inherits_qobject is True
 
+def test_collect_exported_types_reads_other_extras_export_macro() -> None:
+    header = """
+class QCURL_OTHER_EXTRAS_EXPORT ExportedExtra : public QObject {
+public:
+    ~ExportedExtra();
+};
+"""
+
+    exported = layout_scan.collect_exported_types(public_api.strip_comments_and_strings(header))
+
+    assert len(exported) == 1
+    assert exported[0].name == "ExportedExtra"
+    assert exported[0].inherits_qobject is True
+
 def test_collect_layout_findings_flags_public_fields_and_nested_structs() -> None:
     header = "QCNetworkExample.h"
     source = ""
@@ -148,6 +162,10 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
         "using ProgressFunction = int;\n",
         encoding="utf-8",
     )
+    (src / "QCNetworkAccessManager.h").write_text(
+        "class QCNetworkAccessManager { public: void sendGet(); };\n",
+        encoding="utf-8",
+    )
     qcurl_tests = tmp_path / "tests" / "qcurl"
     qcurl_tests.mkdir(parents=True)
     (qcurl_tests / "tst_QCNetworkReply.cpp").write_text(
@@ -161,6 +179,7 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     err = capsys.readouterr().err
     assert "old fromSingleFileDevice ownerThread" in err
     assert "releaseDevice" in err
+    assert "removed QCNetworkAccessManager sendGet" in err
     assert "QCNetworkRequest virtual destructor" in err
     assert "Blocking Extras std::function progress callback" in err
     assert "removed QCNetworkReply ExecutionMode" in err
@@ -405,3 +424,46 @@ def test_public_api_script_help_imports_layout_scan_from_repo_root() -> None:
 
     assert proc.returncode == 0
     assert "QCurl public API guardrail checks" in proc.stdout
+
+def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
+    stage = tmp_path / "stage"
+    pc_dir = stage / "lib" / "pkgconfig"
+    pc_dir.mkdir(parents=True)
+    (pc_dir / "qcurl.pc").write_text(
+        "Requires: Qt6Core >= 6.2, Qt6Network >= 6.2\n"
+        "Requires.private: libcurl >= 7.85.0\n"
+        "Libs: -L${libdir} -lQCurl\n"
+        "Libs.private: -lz\n",
+        encoding="utf-8",
+    )
+    (pc_dir / "qcurl-other-extras.pc").write_text(
+        "Requires: qcurl = 3.0.0\n"
+        "Requires.private: zlib\n"
+        "Libs: -L${libdir} -lQCurlOtherExtras\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.check_pkg_config_contract(
+        Namespace(stage_dir=stage, pkg_config="pkg-config")
+    )
+
+    assert rc == 1
+    assert "must not carry zlib" in capsys.readouterr().err
+
+def test_pkg_config_contract_requires_other_extras_pc(tmp_path, capsys) -> None:
+    stage = tmp_path / "stage"
+    pc_dir = stage / "lib" / "pkgconfig"
+    pc_dir.mkdir(parents=True)
+    (pc_dir / "qcurl.pc").write_text(
+        "Requires: Qt6Core >= 6.2, Qt6Network >= 6.2\n"
+        "Requires.private: libcurl >= 7.85.0\n"
+        "Libs: -L${libdir} -lQCurl\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.check_pkg_config_contract(
+        Namespace(stage_dir=stage, pkg_config="pkg-config")
+    )
+
+    assert rc == 1
+    assert "qcurl-other-extras.pc not found" in capsys.readouterr().err

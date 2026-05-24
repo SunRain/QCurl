@@ -1,8 +1,14 @@
 #include <QCNetworkDiagnostics.h>
 #include <QCNetworkMiddlewareExtras.h>
 
+#ifdef QCURL_WEBSOCKET_SUPPORT
+#include <QCWebSocket.h>
+#include <QCWebSocketCompressionConfig.h>
+#endif
+
 #include <QString>
 #include <QVariantMap>
+#include <QUrl>
 
 int main()
 {
@@ -25,6 +31,17 @@ int main()
         || observability.name() != QStringLiteral("QCObservabilityMiddleware")) {
         return 2;
     }
+
+#ifdef QCURL_WEBSOCKET_SUPPORT
+    QCurl::QCWebSocket socket(QUrl(QStringLiteral("wss://example.invalid")));
+    QCurl::QCWebSocketCompressionConfig compression =
+        QCurl::QCWebSocketCompressionConfig::defaultConfig();
+    socket.setCompressionConfig(compression);
+    if (!compression.enabled
+        || socket.state() != QCurl::QCWebSocket::State::Unconnected) {
+        return 3;
+    }
+#endif
 
     return 0;
 }

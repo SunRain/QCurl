@@ -15,7 +15,7 @@ find_package(QCurl CONFIG REQUIRED COMPONENTS TestSupport
 add_executable(qcurl_public_api_consumer_test_support_smoke main.cpp)
 target_link_libraries(qcurl_public_api_consumer_test_support_smoke
     PRIVATE
-        QCurl::QCurl
+        QCurl::TestSupport
         Qt6::Core
         Qt6::Network
 )

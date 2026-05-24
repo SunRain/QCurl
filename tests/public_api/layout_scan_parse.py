@@ -108,8 +108,10 @@ def find_matching_brace(text: str, opening_brace: int) -> int:
 
 
 def collect_exported_types(stripped_header: str) -> list[ExportedType]:
-    """Collect `class|struct QCURL_EXPORT ... { ... }` declarations."""
-    export_pattern = re.compile(r"\b(class|struct)\s+QCURL_EXPORT\s+([A-Za-z_][A-Za-z_0-9]*)\b")
+    """Collect `class|struct *_EXPORT ... { ... }` declarations."""
+    export_pattern = re.compile(
+        r"\b(class|struct)\s+(?:QCURL|QCURL_OTHER_EXTRAS)_EXPORT\s+([A-Za-z_][A-Za-z_0-9]*)\b"
+    )
     exported: list[ExportedType] = []
     for match in export_pattern.finditer(stripped_header):
         body_start = stripped_header.find("{", match.end())
