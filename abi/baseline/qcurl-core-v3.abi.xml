@@ -153,14 +153,10 @@
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl24QCCookieExportResultDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl24QCCookieExportResultDataEED1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl24QCNetworkRetryPolicyDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl24QCNetworkRetryPolicyDataEED2Ev' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl24QCNetworkRetryPolicyDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkClientDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkClientDataEED2Ev' is-defined='yes'/>
-    <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkClientDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkResultDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkResultDataEED2Ev' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCBlockingNetworkResultDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCCookieOperationResultDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl27QCCookieOperationResultDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl27QCCookieOperationResultDataEED1Ev' is-defined='yes'/>
-    <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl28QCBlockingRequestOptionsDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl28QCBlockingRequestOptionsDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl28QCBlockingRequestOptionsDataEED1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl33QCNetworkConnectionPoolConfigDataEED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN18QSharedDataPointerIN5QCurl33QCNetworkConnectionPoolConfigDataEED2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN18QSharedDataPointerIN5QCurl33QCNetworkConnectionPoolConfigDataEED1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN21QScopedPointerDeleterIN5QCurl15QCWebSocketPool4ImplEE7cleanupEPS2_' type='func-type' binding='weak-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -188,6 +184,7 @@
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl27QCNetworkRedirectConfigDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl27QCNetworkTransferConfigDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl27QCNetworkTransferConfigDataEE6detachEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl28QCBlockingRequestOptionsDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl28QCNetworkCapturedRequestDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl30QCNetworkCacheLookupResultDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN22QSharedDataPointerBaseI18QSharedDataPointerN5QCurl33QCNetworkConnectionPoolConfigDataEE13detach_helperEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
@@ -734,13 +731,12 @@
     <elf-symbol name='_ZN5QCurl21QCNetworkReplyPrivateC2EPNS_14QCNetworkReplyERKNS_16QCNetworkRequestENS_10HttpMethodERKNS_8Internal11RequestBodyERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl21QCNetworkReplyPrivateC1EPNS_14QCNetworkReplyERKNS_16QCNetworkRequestENS_10HttpMethodERKNS_8Internal11RequestBodyERK10QByteArray' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl21QCNetworkReplyPrivateD1Ev' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl21QCNetworkReplyPrivateD2Ev' type='func-type' binding='global-binding' visibility='default-visibility' alias='_ZN5QCurl21QCNetworkReplyPrivateD1Ev' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager10sendDeleteERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager10sendDeleteERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager11qt_metacallEN11QMetaObject4CallEiPPv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager11qt_metacastEPKc' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager13addMiddlewareEPNS_19QCNetworkMiddlewareE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager13importCookiesERK5QListI14QNetworkCookieERK4QUrlP7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager14cookiesClearedERKNS_23QCCookieOperationResultE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager14deleteResourceERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager15clearAllCookiesEP7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager15cookiesExportedERKNS_20QCCookieExportResultE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager15cookiesImportedERKNS_23QCCookieOperationResultE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -759,6 +755,8 @@
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17ShareHandleConfigD2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl22QCNetworkAccessManager17ShareHandleConfigD1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17ShareHandleConfigaSEOS1_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17ShareHandleConfigaSERKS1_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17sendCustomRequestERKNS_16QCNetworkRequestE14QByteArrayView' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17sendCustomRequestERKNS_16QCNetworkRequestE14QByteArrayViewRK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager17setCookieFilePathERK7QStringNS0_18CookieFileModeFlagE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager18importCookiesAsyncERK5QListI14QNetworkCookieERK4QUrl' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager20clearAllCookiesAsyncEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -778,17 +776,17 @@
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager21HstsAltSvcCacheConfigaSERKS1_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager22enableRequestSchedulerEb' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager24setHstsAltSvcCacheConfigERKNS0_21HstsAltSvcCacheConfigE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager7sendGetERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager7sendPutERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager7sendPutERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager7sendPutERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager8sendHeadERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager8sendPostERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager8sendPostERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager8sendPostERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager3getERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager3putERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager3putERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager3putERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager4headERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager4postERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager4postERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager4postERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager5patchERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager5patchERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager8setCacheEPNS_14QCNetworkCacheE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager9sendPatchERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager9sendPatchERKNS_16QCNetworkRequestERKNS_13QCNetworkBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManager9setLoggerEPNS_15QCNetworkLoggerE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManagerC1EP7QObject' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl22QCNetworkAccessManagerC2EP7QObject' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl22QCNetworkAccessManagerC1EP7QObject' is-defined='yes'/>
@@ -956,6 +954,7 @@
     <elf-symbol name='_ZN5QCurl23QCNetworkTransferConfigD2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl23QCNetworkTransferConfigaSEOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl23QCNetworkTransferConfigaSERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl24QCBlockingRequestOptions17setCookieSnapshotERKNS_16QCCookieSnapshotE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCBlockingRequestOptions19setProgressCallbackEPFbRKNS_18QCTransferProgressEPvES4_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCBlockingRequestOptions23setMaxInMemoryBodyBytesEx' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCBlockingRequestOptionsC1EOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl24QCBlockingRequestOptionsC2EOS0_' is-defined='yes'/>
@@ -971,6 +970,7 @@
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest10setHeadersERK5QListISt4pairI10QByteArrayS3_EE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest11setBodySizeEx' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest14setBodyPreviewERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest15setCustomMethodERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest17setFollowLocationEb' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest17setTotalTimeoutMsEx' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl24QCNetworkCapturedRequest19clearTotalTimeoutMsEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -1203,6 +1203,8 @@
     <elf-symbol name='_ZN5QCurl33QCNetworkConnectionPoolStatisticsaSEOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl33QCNetworkConnectionPoolStatisticsaSERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl6detail17toCurlHttpVersionENS_20QCNetworkHttpVersionE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal11RequestBodyD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QCurl8Internal11RequestBodyD2Ev' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal11RequestBodyD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal12buildHostKeyERK4QUrl' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal12curlBodySizeERKNS0_21QCBlockingRequestBodyE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal12replyFromKeyEP7QObject' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -1227,8 +1229,6 @@
     <elf-symbol name='_ZN5QCurl8Internal15SchedulerQueuesD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal15isStreamingBodyERKNS0_21QCBlockingRequestBodyE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal16normalizeRequestERKNS_16QCNetworkRequestENS_10HttpMethodERKNS0_11RequestBodyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl8Internal17NormalizedRequestD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QCurl8Internal17NormalizedRequestD2Ev' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl8Internal17NormalizedRequestD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal17QCNetworkMockDataD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QCurl8Internal17QCNetworkMockDataD2Ev' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal17QCNetworkMockDataD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal17cookieHeaderValueERKNS_16QCCookieSnapshotE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -1253,6 +1253,7 @@
     <elf-symbol name='_ZN5QCurl8Internal21desiredReplyPauseMaskEPKNS_21QCNetworkReplyPrivateE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal21isInReplyCurlCallbackEv' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal21makeBlockingBytesBodyERK10QByteArray' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal21makeCustomRequestBodyERK10QByteArray' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal21makeDeviceRequestBodyEP9QIODeviceSt8optionalIxEbb' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal21makeInlineRequestBodyERK10QByteArray' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal22ReplyCurlCallbackScopeC1Ev' type='func-type' binding='global-binding' visibility='default-visibility' alias='_ZN5QCurl8Internal22ReplyCurlCallbackScopeC2Ev' is-defined='yes'/>
@@ -1285,6 +1286,8 @@
     <elf-symbol name='_ZN5QCurl8Internal26buildCurlPlanDigestForTestERKNS0_8CurlPlanE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal26setReplyBackpressureActiveEPNS_21QCNetworkReplyPrivateEb' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal27attemptErrorFromCurlAndHttpEPNS_21QCNetworkReplyPrivateE8CURLcodel' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal27configureBlockingCurlMethodEPvNS_10HttpMethodERK10QByteArrayPNS0_30QCBlockingRequestBodyReadStateE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal27makeCustomInlineRequestBodyERK10QByteArrayS3_' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal27readReplyBodySourceCallbackEPcmmPNS_21QCNetworkReplyPrivateE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal27replyBodySourceErrorMessageERKNS0_20ReplyBodySourceStateE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal27seekReplyBodySourceCallbackEPNS_21QCNetworkReplyPrivateEli' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
@@ -1292,6 +1295,7 @@
     <elf-symbol name='_ZN5QCurl8Internal28appendReplyCapabilityWarningEPNS_21QCNetworkReplyPrivateERK7QString' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal28configureAdvancedPathOptionsEPvRKNS_16QCNetworkRequestEPNS0_20RequestOptionStorageE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal28configureBasicRequestOptionsEPvRKNS_16QCNetworkRequestEPNS0_20RequestOptionStorageE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal28performBlockingCustomRequestERKNS_16QCNetworkRequestE14QByteArrayViewNS0_21QCBlockingRequestBodyERKNS_16QCCookieSnapshotERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal29rewindReplyBodySourceForRetryEPNS_21QCNetworkReplyPrivateEP7QString' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal31QCSingleFileMultipartBodyDevice11qt_metacallEN11QMetaObject4CallEiPPv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal31QCSingleFileMultipartBodyDevice11qt_metacastEPKc' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -1304,7 +1308,7 @@
     <elf-symbol name='_ZN5QCurl8Internal31QCSingleFileMultipartBodyDeviceD1Ev' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal31QCSingleFileMultipartBodyDeviceD2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl8Internal31QCSingleFileMultipartBodyDeviceD1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal31commitResumableDownloadIfNeededEPNS_14QCNetworkReplyERK14QSharedPointerINS0_29ResumableDownloadWriteContextEERK7QStringxb' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl8Internal31performBlockingDownloadToDeviceERKNS_16QCNetworkRequestEP9QIODeviceRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal31performBlockingDownloadToDeviceERKNS_16QCNetworkRequestENS_10HttpMethodENS0_21QCBlockingRequestBodyEP9QIODeviceRKNS_24QCBlockingRequestOptionsEx' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal31readBlockingRequestBodyCallbackEPcmmPv' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal33isReplyCapabilityRelatedCurlErrorE8CURLcode' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal33makeResumableDownloadWriteContextERK7QString' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
@@ -1314,6 +1318,8 @@
     <elf-symbol name='_ZN5QCurl8Internal38QCNetworkConnectionPoolManagerInternal22recordRequestCompletedEPvb' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal40scheduleReplyBackpressureResumeAfterReadEPNS_14QCNetworkReplyEPNS_21QCNetworkReplyPrivateE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal44resumeReplySendFromRequestBodySourceIfNeededEPNS_21QCNetworkReplyPrivateE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal8CurlPlanD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QCurl8Internal8CurlPlanD2Ev' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl8Internal8CurlPlanD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl8Internal8replyKeyEPNS_14QCNetworkReplyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurllsE6QDebugRKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QHashI10QByteArrayS0_ED1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QHashI10QByteArrayS0_ED2Ev' is-defined='yes'/>
@@ -1692,22 +1698,23 @@
     <elf-symbol name='_ZNK5QCurl22QCNetworkTimeoutConfig12totalTimeoutEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl22QCNetworkTimeoutConfig13lowSpeedLimitEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl22QCNetworkTimeoutConfig14connectTimeoutEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient13performCustomERKNS_16QCNetworkRequestE14QByteArrayViewRK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient14deleteResourceERKNS_16QCNetworkRequestERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient16downloadToDeviceERKNS_16QCNetworkRequestEP9QIODeviceRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient17sendCustomRequestERKNS_16QCNetworkRequestE14QByteArrayViewRK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient17sendCustomRequestERKNS_16QCNetworkRequestE14QByteArrayViewRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient25applicationThreadRejectedEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient3getERKNS_16QCNetworkRequestERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient3putERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient3putERKNS_16QCNetworkRequestERK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient4headERKNS_16QCNetworkRequestERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient4sendERKNS_16QCNetworkRequestENS_10HttpMethodERK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient4postERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient4postERKNS_16QCNetworkRequestERK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient5patchERKNS_16QCNetworkRequestERK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7Options23applicationThreadPolicyEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7optionsEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7performERKNS_16QCNetworkRequestENS_10HttpMethodEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7performERKNS_16QCNetworkRequestENS_10HttpMethodERK10QByteArrayRKNS_16QCCookieSnapshotERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7sendGetERKNS_16QCNetworkRequestE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7sendGetERKNS_16QCNetworkRequestERKNS_16QCCookieSnapshotE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7sendPutERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7sendPutERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient8sendPostERKNS_16QCNetworkRequestEP9QIODeviceSt8optionalIxE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient8sendPostERKNS_16QCNetworkRequestERK10QByteArray' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient8sendPostERKNS_16QCNetworkRequestERK10QByteArrayRKNS_16QCCookieSnapshotE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7performERKNS_16QCNetworkRequestENS_10HttpMethodEP9QIODeviceSt8optionalIxERKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkClient7performERKNS_16QCNetworkRequestENS_10HttpMethodERK10QByteArrayRKNS_24QCBlockingRequestOptionsE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkResult10rawHeadersEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkResult10statusCodeEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCBlockingNetworkResult11cookieDeltaEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
@@ -1743,10 +1750,12 @@
     <elf-symbol name='_ZNK5QCurl23QCNetworkTransferConfig24expect100ContinueTimeoutEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCNetworkTransferConfig31unsupportedSecurityOptionPolicyEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl23QCNetworkTransferConfig9ipResolveEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl24QCBlockingRequestOptions14cookieSnapshotEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCBlockingRequestOptions16progressCallbackEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCBlockingRequestOptions20maxInMemoryBodyBytesEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCBlockingRequestOptions24progressCallbackUserDataEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkCapturedRequest11bodyPreviewEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl24QCNetworkCapturedRequest12customMethodEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkCapturedRequest14followLocationEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkCapturedRequest14totalTimeoutMsEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkCapturedRequest16connectTimeoutMsEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
