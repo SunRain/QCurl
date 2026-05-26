@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload UCE soak evidence [required]
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: uce-soak-${{ env.UCE_RUN_ID }}
           path: |
