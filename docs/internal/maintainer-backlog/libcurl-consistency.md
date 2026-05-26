@@ -1,4 +1,6 @@
-# libcurl_consistency 状态看板
+# libcurl_consistency maintainer backlog
+
+> Internal maintainer status board. It is not a public testing entrypoint and does not define current release readiness. Stable contract and run instructions stay in `tests/libcurl_consistency/README.md` and `docs/dev/build-and-test.md`.
 
 本文只保留当前专题状态、边界与维护规则；逐次执行日志与回归记录统一看 `reports/` 和 artifacts。
 
@@ -8,7 +10,7 @@
 - `p0` / `p1` / `p2` / `ext` 分层已落地
 - HTTP/3、WebSocket、pause/resume、backpressure、multipart 等专题均已有专门用例
 - 覆盖映射已落地：`tests/libcurl_consistency/coverage-map.yaml`
-- 当前文档的职责是“告诉维护者哪里有 contract、哪里有证据”，不是保存施工流水账
+- 当前文档的职责是“告诉维护者哪里有 contract、哪里有证据”，不是保存逐次执行日志
 
 ## 2. 主题状态
 
@@ -61,12 +63,11 @@
 
 ## 6. 大文件拆分边界清单
 
-本轮审查结论为：未发现阻塞级代码回归；存在提交前需修正的非阻塞遗漏与表述偏差。
-大文件治理按当前文件事实分层：第一批 runner 已低于 400 行，剩余大型测试 / fixture 文件继续作为后续治理对象。
+当前大文件治理按文件事实分层：第一批 gate runner 已低于 400 行，剩余大型测试 / fixture 文件继续作为后续治理对象。
 
 ### 6.1 已达标 runner
 
-以下文件已低于 400 行，本轮不再作为“未达标大文件”描述。
+以下文件已低于 400 行，不再作为“未达标大文件”描述。
 
 | 文件 | 当前行数 | 当前职责 | 验证入口 |
 |------|----------|----------|----------|

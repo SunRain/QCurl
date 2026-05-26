@@ -60,5 +60,5 @@
 ## 5. 关联文档
 
 - `tests/libcurl_consistency/README.md`
-- `tests/libcurl_consistency/tasks.md`
+- `docs/internal/maintainer-backlog/libcurl-consistency.md`
 - `docs/arch/transport-pause-resume.md`

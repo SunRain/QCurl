@@ -2,8 +2,8 @@
 
 本目录只回答一个问题：**在外部可观测层面，QCurl 与 libcurl 是否给出相同结果。**
 
-这里只保留稳定 contract、运行入口与排查路径；状态看板和专题决策分别落到
-`tasks.md` 与 handoff 文档。
+这里只保留稳定 contract、运行入口与排查路径；维护者状态看板已移到
+`docs/internal/maintainer-backlog/libcurl-consistency.md`，专题决策仍落到 handoff 文档。
 
 ## 1. 一致性定义
 
@@ -160,12 +160,12 @@ QCURL_REQUIRE_HTTP3=1
 
 - 不在本文件追加“本地跑过一次通过”的记录
 - 不在本文件保存单次环境快照或版本清单
-- 需要状态看板时更新 `tasks.md`
+- 需要状态看板时更新 `docs/internal/maintainer-backlog/libcurl-consistency.md`
 - 需要专题决策时补充 handoff / 设计说明
 
 ## 9. 相关文件
 
-- `tests/libcurl_consistency/tasks.md`
+- `docs/internal/maintainer-backlog/libcurl-consistency.md`
 - `tests/libcurl_consistency/LC-15_handoff.md`
 - `tests/libcurl_consistency/run_gate.py`
 - `tests/libcurl_consistency/pytest_support/compare.py`
