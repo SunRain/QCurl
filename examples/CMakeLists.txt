@@ -26,8 +26,8 @@ message(STATUS "✅ 代理示例程序已启用（ProxyDemo）")
 # WebSocket 示例程序（条件编译）
 if(QCURL_WEBSOCKET_SUPPORT)
     add_subdirectory(WebSocketDemo)
-    add_subdirectory(WebSocketPoolDemo)  # v2.5.0: 连接池演示
-    add_subdirectory(WebSocketCompressionDemo)  # v2.18.0: 压缩演示
+    add_subdirectory(WebSocketPoolDemo)  # Other Extras / Preview: 连接池演示
+    add_subdirectory(WebSocketCompressionDemo)  # Other Extras / Preview: 压缩演示
     message(STATUS "✅ WebSocket 示例程序已启用（WebSocketDemo + WebSocketPoolDemo + WebSocketCompressionDemo）")
 endif()
 
@@ -44,7 +44,7 @@ message(STATUS "✅ 批量请求管理器示例已启用（BatchRequestDemo）")
 add_subdirectory(ApiClientDemo)
 message(STATUS "✅ RESTful API 客户端示例已启用（ApiClientDemo）")
 
-# Multipart/form-data 示例程序（v2.11.0）
+# Multipart/form-data 示例程序（Core / Stable）
 add_subdirectory(MultipartSimpleDemo)
 message(STATUS "✅ Multipart/form-data 示例已启用（MultipartSimpleDemo）")
 

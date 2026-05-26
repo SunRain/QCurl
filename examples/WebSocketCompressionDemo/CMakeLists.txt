@@ -1,5 +1,5 @@
 # WebSocketCompressionDemo - WebSocket 压缩扩展演示
-# v2.18.0
+# Other Extras / Preview compression demo
 
 cmake_minimum_required(VERSION 3.16)
 

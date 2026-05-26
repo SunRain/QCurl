@@ -3,9 +3,9 @@
  * @brief 网络功能综合示例
  *
  * 演示 QCurl v2.17-v2.19 的新功能:
- * 1. HTTP/3 支持 (v2.17.0)
- * 2. WebSocket 压缩扩展 (v2.18.0)
- * 3. 网络诊断工具 (v2.19.0)
+ * 1. HTTP/3 支持 (Core / Stable capability)
+ * 2. WebSocket 压缩扩展 (Other Extras / Preview)
+ * 3. 网络诊断工具 (Other Extras / Preview)
  *
  */
 

@@ -10,7 +10,7 @@ void printWelcome()
     qDebug() << "";
     qDebug() << "==========================================";
     qDebug() << "   QCurl WebSocket 连接池演示程序";
-    qDebug() << "              v2.5.0";
+    qDebug() << "              QCurl 1.0.0 / Other Extras / Preview";
     qDebug() << "==========================================";
     qDebug() << "";
     qDebug() << "本程序展示 QCWebSocketPool 的功能和性能优势";

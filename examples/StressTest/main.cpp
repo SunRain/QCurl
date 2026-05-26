@@ -265,7 +265,7 @@ int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
 
-    qInfo() << "QCurl Stress Test v2.6.0";
+    qInfo() << "QCurl Stress Test 1.0.0 Core / Stable";
     qInfo() << "注意：使用无效 URL 快速失败进行压力测试\n";
 
     StressTest test;

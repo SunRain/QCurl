@@ -1,96 +1,37 @@
-# LoggingDemo - Logger 系统演示
+# LoggingDemo
 
-## 功能说明
+LoggingDemo shows the QCurl Core / Stable logger surface in `QCurl 1.0.0 first stable`.
 
-演示 QCurl v2.15.0 的 Logger 系统功能:
-
-1. **默认 Logger** - 使用内置的控制台日志
-2. **文件日志** - 将日志写入文件
-3. **自定义 Logger** - 实现自己的日志处理逻辑
-4. **日志格式** - 自定义日志输出格式
-
-## 编译和运行
+## Build and run
 
 ```bash
-# 编译
-cd build
-cmake --build . --target LoggingDemo
-
-# 运行
-./examples/LoggingDemo/LoggingDemo
+cmake -S . -B build -DBUILD_EXAMPLES=ON
+cmake --build build --target LoggingDemo
+./build/examples/LoggingDemo/LoggingDemo
 ```
 
-## 输出示例
+## Demonstrated behavior
 
-```
-=== QCurl Logger 系统演示 ===
+- Default logger setup.
+- Console and file output.
+- Custom logger implementation.
+- Basic log formatting.
 
->>> 示例 1: 使用默认 Logger
-Logger 已设置，最小日志级别: 1
-
->>> 示例 2: 启用文件日志
-文件日志已启用: /tmp/qcurl-demo.log
-
->>> 示例 3: 自定义 Logger (统计)
-[INFO] Request: GET http://example.com
-[INFO] Response: Status: 200 OK
-[INFO] Request: POST http://api.example.com/users
-[ERROR] Response: Status: 404 Not Found
-[INFO] Request: GET http://api.example.com/data
-[INFO] Response: Status: 200 OK
-
-=== 统计信息 ===
-总请求数: 6
-错误数: 1
-成功率: 83.33 %
-
->>> 示例 4: 自定义日志格式
-已设置自定义日志格式
-
-=== 演示完成 ===
-```
-
-## API 参考
-
-### QCNetworkDefaultLogger
+## API sketch
 
 ```cpp
-#include "QCNetworkDefaultLogger.h"
+#include <QCNetworkDefaultLogger.h>
+#include <QCNetworkLogger.h>
 
-// 创建默认 Logger
-auto *logger = new QCNetworkDefaultLogger();
-
-// 设置日志级别
-logger->setMinLogLevel(NetworkLogLevel::Info);
-
-// 启用控制台输出
+auto *logger = new QCurl::QCNetworkDefaultLogger();
+logger->setMinLogLevel(QCurl::NetworkLogLevel::Info);
 logger->enableConsoleOutput(true);
-
-// 启用文件输出
-logger->enableFileOutput("/tmp/qcurl.log", 1024 * 1024, 3);
-
-// 自定义格式
-logger->setLogFormat("[%{time}] %{level} - %{message}");
-
-// 设置到 Manager
-manager->setLogger(logger);
+manager.setLogger(logger);
 ```
 
-### 自定义 Logger
+Custom loggers override `QCNetworkLogger::log(const NetworkLogEntry &entry)`.
 
-```cpp
-class MyLogger : public QCNetworkLogger
-{
-public:
-    using QCNetworkLogger::log;
+## Related docs
 
-    void log(const NetworkLogEntry &entry) override {
-        // 实现自己的日志逻辑
-    }
-};
-```
-
-## 相关文档
-
-- [QCNetworkLogger API 文档](../../docs/API-Guide.md#logger)
-- [v2.15.0 发布说明](../../CHANGELOG.md#v2150)
+- `docs/arch/1.0-first-stable-release-contract.md`
+- `docs/dev/api-docs.md`

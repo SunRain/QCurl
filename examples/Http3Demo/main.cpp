@@ -313,7 +313,7 @@ int main(int argc, char *argv[])
 
     qDebug() << "========================================";
     qDebug() << "QCurl HTTP/3 功能演示";
-    qDebug() << "v2.17.0";
+    qDebug() << "QCurl 1.0.0 first stable / Core HTTP/3 capability";
     qDebug() << "========================================";
 
     // 检查 HTTP/3 支持

@@ -8,7 +8,7 @@ HTTP/2 基准测试数据分析脚本
 - 生成 Markdown 格式性能对比报告
 
 作者：QCurl 开发团队
-版本：v2.7.0
+版本：QCurl 1.0.0 first stable
 创建时间：2025-11-06
 """
 
@@ -148,7 +148,7 @@ def generate_report(results, output_file):
 
     # 报告标题和元信息
     report.append("# HTTP/2 性能基准测试报告\n")
-    report.append(f"**版本**: QCurl v2.7.0\n")
+    report.append(f"**版本**: QCurl 1.0.0 first stable\n")
     report.append(f"**测试日期**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     report.append(f"**测试环境**: Arch Linux 6.17.7-arch1-1\n")
     report.append(f"**Qt 版本**: 6.10.0\n")

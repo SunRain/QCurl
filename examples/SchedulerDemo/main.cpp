@@ -301,7 +301,7 @@ int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
 
-    qInfo() << "QCurl SchedulerDemo v2.6.0";
+    qInfo() << "QCurl SchedulerDemo 1.0.0 Core / Stable";
     qInfo() << "Build time:" << __DATE__ << __TIME__;
 
     SchedulerDemo demo;

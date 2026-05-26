@@ -1,5 +1,5 @@
 # LoggingDemo - Logger 系统演示程序
-# v2.15.0
+# Core / Stable logging demo
 
 cmake_minimum_required(VERSION 3.16)
 project(LoggingDemo)
