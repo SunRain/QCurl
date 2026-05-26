@@ -1,9 +1,16 @@
 # Doxygen configuration for QCurl
 #
 # 目标：生成可本地查阅的 API 参考文档（不提交生成产物）。
+#
+# INPUT 不在本文件中 broad 扫描 src/。请先运行：
+#   python3 scripts/generate_doxygen_input_from_surface_manifest.py \
+#     --manifest tests/public_api/surface_manifest.json \
+#     --output build/doxygen/qcurl_api_input.doxy \
+#     --check
+# 生成的片段会从 tests/public_api/surface_manifest.json 派生 public install surface。
 
 PROJECT_NAME           = "QCurl"
-PROJECT_NUMBER         = "3.0.0"
+PROJECT_NUMBER         = "1.0.0"
 
 OUTPUT_DIRECTORY       = build
 CREATE_SUBDIRS         = NO
@@ -13,10 +20,10 @@ OPTIMIZE_OUTPUT_JAVA   = NO
 OPTIMIZE_FOR_FORTRAN   = NO
 OPTIMIZE_OUTPUT_VHDL   = NO
 
-INPUT                  = src
-RECURSIVE              = YES
+@INCLUDE               = build/doxygen/qcurl_api_input.doxy
+RECURSIVE              = NO
 FILE_PATTERNS          = *.h *.hpp
-EXCLUDE_PATTERNS       = */private/*
+EXCLUDE_PATTERNS       = */private/* *_p.h
 
 EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = NO
