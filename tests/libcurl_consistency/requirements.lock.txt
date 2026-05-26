@@ -12,7 +12,7 @@
 # - 如需更强可重复性/审计口径，可升级为 `pip install --require-hashes` 形态，或提供 wheelhouse/离线镜像；
 #   当前仍使用“版本锁 + gate 产出 pip_freeze 工件”的最小策略。
 
-cryptography==46.0.3
+cryptography==48.0.0
 filelock==3.20.1
 psutil==7.1.3
 pytest==9.0.2
