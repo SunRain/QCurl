@@ -437,7 +437,7 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 3.0.0\n"
+        "Requires: qcurl = 1.0.0\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -467,3 +467,25 @@ def test_pkg_config_contract_requires_other_extras_pc(tmp_path, capsys) -> None:
 
     assert rc == 1
     assert "qcurl-other-extras.pc not found" in capsys.readouterr().err
+
+
+def test_release_metadata_scan_rejects_legacy_identity(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    (tmp_path / "README.md").write_text("QCurl 3.0.0 current release\n", encoding="utf-8")
+    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 1.0.0)\n", encoding="utf-8")
+
+    assert release_gate._scan_metadata(tmp_path) == 1
+    assert "forbidden legacy release identity" in capsys.readouterr().err
+
+
+def test_release_metadata_scan_allows_external_protocol_versions(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    (tmp_path / "README.md").write_text("HTTP/3 and Qt 6 are external versions\n", encoding="utf-8")
+    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("libcurl supports HTTP/2 and HTTP/3\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 1.0.0)\n", encoding="utf-8")
+
+    assert release_gate._scan_metadata(tmp_path) == 0
+    assert "metadata scan passed" in capsys.readouterr().out

@@ -102,17 +102,6 @@ ALLOWLIST: dict[str, tuple[str, ...]] = {
         "enum class ExecutionMode {",
         "return createReply(request, HttpMethod::Options, ExecutionMode::Async);",
     ),
-    "docs/arch/3.0-hard-break-migration-guide.md": (
-        "QCNetworkAccessManager::sendHead()",
-        "`sendPatch()` 已移除",
-    ),
-    "docs/arch/3.0-rc-release-notes.md": (
-        "QCNetworkAccessManager::sendHead()",
-        "`sendPatch()` 已移除",
-    ),
-    "docs/arch/rc-stable-readiness-report.md": (
-        "旧 manager `sendHead()`",
-    ),
 }
 
 

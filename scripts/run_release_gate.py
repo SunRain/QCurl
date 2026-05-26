@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -230,6 +231,51 @@ def _run_step(step: GateStep, repo_root: Path) -> int:
     return int(proc.returncode)
 
 
+def _is_release_identity_scan_target(path: Path) -> bool:
+    excluded_parts = {
+        ".git",
+        ".helloagents",
+        ".claude",
+        "build",
+        "build-static",
+        "build-static-gate",
+        "build-static-stage2",
+        "curl",
+        "node_modules",
+        "__pycache__",
+    }
+    if any(part in excluded_parts for part in path.parts):
+        return False
+    if path.suffix in {".pyc", ".so", ".a", ".o", ".png", ".jpg", ".jpeg", ".gif", ".pdf"}:
+        return False
+    return path.is_file()
+
+
+def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
+    allowed_file_prefixes = (
+        "docs/internal/",
+        "docs/arch/1.0-first-stable-release-contract.md",
+        "scripts/run_release_gate.py",
+        "tests/public_api/test_run_public_api_checks.py",
+        "abi/baseline/qcurl-core-v3.abi.xml",
+    )
+    if relative.startswith(allowed_file_prefixes):
+        return True
+    external_context = (
+        "HTTP/2",
+        "HTTP/3",
+        "Qt 6",
+        "Qt6",
+        "libcurl",
+        "CMake >= 3.0.0",
+        "cmake_policy(VERSION 3.0.0",
+        "License",
+        "spdx",
+        "SPDX",
+    )
+    return any(token in line for token in external_context)
+
+
 def _scan_metadata(repo_root: Path) -> int:
     checks = [
         {
@@ -271,6 +317,33 @@ def _scan_metadata(repo_root: Path) -> int:
         for needle in check["must_not_contain"]:
             if str(needle) in text:
                 violations.append(f"{check['path']}: forbidden release metadata text: {needle}")
+
+    forbidden_patterns = [
+        re.compile(r"\b3\.0\.0(?:-rc\.1)?\b"),
+        re.compile(r"\bqcurl-core-v3\b"),
+        re.compile(r"\blibQCurl\.so\.3\b"),
+        re.compile(r"\bSOVERSION\s+3\b"),
+        re.compile(r"\bQCurl\s+v2\.[0-9]+\.[0-9]+\b"),
+        re.compile(r"\bv2\.x\b"),
+    ]
+    for path in repo_root.rglob("*"):
+        if not _is_release_identity_scan_target(path):
+            continue
+        relative = path.relative_to(repo_root).as_posix()
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(lines, start=1):
+            if _is_allowed_release_identity_match(relative, line):
+                continue
+            for pattern in forbidden_patterns:
+                if pattern.search(line):
+                    violations.append(
+                        f"{relative}:{line_number}: forbidden legacy release identity: {line.strip()}"
+                    )
+                    break
+
     if violations:
         print("\n".join(violations), file=sys.stderr)
         return 1
