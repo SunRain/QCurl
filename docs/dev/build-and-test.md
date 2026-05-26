@@ -190,7 +190,7 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 该口径只用于本地自检，不等于正式门禁。
 
-## 6.1 RC / Stable release gate
+## 6.1 1.0.0 first stable release gate
 
 `scripts/run_release_gate.py` 是本仓库的 no-git 发布门禁入口。它不检查工作区历史，也不调用
 `git`；输入只来自当前源码、构建目录、ABI baseline、capability probe 和文档扫描。
@@ -213,12 +213,12 @@ Stable shared library 需要真实 ABI baseline，而不是只依赖 public head
 本仓库使用 `scripts/qcurl_abi_gate.py` 包装 `abidw` / `abidiff`：
 
 ```bash
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.3.0.0 baseline
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.3.0.0 diff
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 baseline
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 diff
 ```
 
-默认 baseline 路径为 `abi/baseline/qcurl-core-v3.abi.xml`，默认 diff 报告路径为
-`build/abi/qcurl-core-v3.abidiff.txt`。缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时，
+默认 baseline 路径为 `abi/baseline/qcurl-core-v1.abi.xml`，默认 diff 报告路径为
+`build/abi/qcurl-core-v1.abidiff.txt`。缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时，
 gate fail-closed；发布结论必须把它记录为 release blocker。
 
 ## 6.3 libcurl capability matrix

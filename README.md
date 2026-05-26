@@ -10,18 +10,18 @@
 
 ---
 
-## 发布状态与 Core first Stable 边界
+## 发布状态与 1.0.0 first stable 边界
 
-`QCurl Core first Stable` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于本次 Core first Stable 发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
+`QCurl 1.0.0 first stable` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于本次 1.0.0 first stable 发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
 
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装，作为 Core first Stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core** | 默认安装，作为 1.0.0 first stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
 | **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
 | **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
 | **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
 
-除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md`、`docs/arch/rc-maturity-review.md` 与 `docs/arch/rc-stable-readiness-report.md`。
+除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md`、`docs/arch/1.0-first-stable-release-contract.md` 与 `docs/arch/1.0-first-stable-readiness-report.md`。
 
 ## 为什么选择 QCurl？
 
@@ -36,8 +36,8 @@
 ### Core
 
 - **CMake 构建系统** - 跨平台支持，自动依赖检测
-- **统一 Reply 架构** - 1 个类替代 6 个子类，代码量减少 30%
-- **RAII 资源管理** - `QCCurlHandleManager` 自动管理 curl 句柄，零内存泄漏
+- **统一 Reply 架构** - `QCNetworkReply` 作为 Core 异步响应入口，统一承载状态、信号、读取和错误信息
+- **RAII 资源管理** - Core 资源生命周期由 public API 合同和测试门禁约束，调用方无需直接管理 libcurl handle
 - **C++17 特性** - `std::optional`、`std::chrono`、`[[nodiscard]]`、`enum class`
 - **HTTP/1.1、HTTP/2、HTTP/3 capability** - HTTP/3 取决于运行时 libcurl / QUIC backend
 - **SSL/TLS** - 可配置证书验证、客户端证书、CA 路径
@@ -78,7 +78,7 @@
 
 ### 性能基准说明
 
-性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。进入 RC 前，未绑定证据的数字不应作为稳定发布承诺。
+性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。未绑定证据的数字不应作为 `1.0.0 first stable` 稳定发布承诺。
 
 ---
 
@@ -98,17 +98,18 @@
 ### 构建安装
 
 ```bash
-git clone https://github.com/user/QCurl.git && cd QCurl
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-sudo cmake --install build
+git clone https://github.com/SunRain/QCurl.git
+cd QCurl
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+cmake --install build --prefix "$PWD/stage"
 ```
 
 发布合同提示：
 
-- Core first Stable 只承诺 Core install surface。
+- 1.0.0 first stable 只承诺 Core install surface。
 - Blocking Extras / Test Support / Other Extras 需要发行包显式安装对应 component，不随默认 Core 隐式安装。
-- 当前 lane-aware scheduler 的 breaking ABI 变更以 `QCurl 3.0.0 / SOVERSION 3` 发布。
+- 当前 lane-aware scheduler 已纳入 `QCurl 1.0.0 / SOVERSION 1` first stable Core 合同；本发布线不提供旧 2.x/3.x 兼容层。
 
 ### 代码示例
 
@@ -138,7 +139,7 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 #### 2. WebSocket 连接（Preview）
 
 > 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
-> 它可以作为 Preview 功能使用，但不属于 Core first Stable 承诺。
+> 它可以作为 Preview 功能使用，但不属于 1.0.0 first stable 承诺。
 
 ```cpp
 #include <QCWebSocket.h>
@@ -259,7 +260,7 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 ## ⚡ 性能回归入口
 
 性能数字只在绑定具体 benchmark 版本、依赖版本、网络环境和日期时才作为发布证据。
-当前 README 不把固定延迟或吞吐数字写成 `3.0.0-rc.1` 稳定承诺。
+当前 README 不把固定延迟或吞吐数字写成 `1.0.0 first stable` 稳定承诺。
 
 性能回归与能力证据以以下入口为准：
 
@@ -269,14 +270,11 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 
 ---
 
-## 🧪 测试覆盖
+## 🧪 测试与验证
 
-- **100+ 测试用例** - 单元测试 + 集成测试
-- **96.3% 通过率** - 自动化验证
-- **13 个示例程序** - 涵盖各种使用场景
-- **6 个性能基准** - HTTP/2、HTTP/3、WebSocket、连接池、调度器
+测试运行与门禁以 `docs/dev/build-and-test.md` 为准。发布前使用 full release gate、shared/static public-api gate、ABI gate、metadata scan 和 `git diff --check` 形成可复验结果。
 
-测试运行与门禁（offline/env/全量回归/libcurl_consistency）请以 `docs/dev/build-and-test.md` 为准；测试目录入口见 `tests/README.md`。
+本 README 不维护固定测试数量、通过率或一次性 gate 输出；这些数字必须绑定具体 build、依赖版本、环境和日期后，放入维护者证据文档或 CI artifacts。
 
 ---
 
@@ -285,7 +283,7 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 | 文档                                                 | 说明                    |
 | -------------------------------------------------- | --------------------- |
 | [docs/README.md](docs/README.md)                   | 文档入口（按读者角色分层）        |
-| [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) | 详细系统文档（全量说明/实现细节）     |
+| [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) | 维护者 Architecture overview |
 | [examples/README.md](examples/README.md)           | 示例集合与运行方式              |
 
 ---
@@ -297,6 +295,13 @@ scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
 ```cmake
 find_package(QCurl CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE QCurl::QCurl)
+```
+
+使用 staging prefix 验证独立 consumer 时：
+
+```bash
+cmake -S your-app -B build-your-app -DCMAKE_PREFIX_PATH=/path/to/QCurl/stage
+cmake --build build-your-app
 ```
 
 默认构建发布 shared library。Static library 需要显式 opt-in：
@@ -344,10 +349,5 @@ g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
 
 ---
 
-## ⭐ Star History
 
-如果 QCurl 对你有帮助，请给个 Star 支持一下！
-
----
-
-**QCurl** - 现代、高效、易用的 Qt6 网络库 🚀
+**QCurl** - Qt6 + libcurl Core HTTP library

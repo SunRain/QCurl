@@ -1,17 +1,26 @@
-# 维护者文档（docs/arch）
+# Architecture documents
 
-本目录用于收敛与“架构/迁移/交付设计”相关的说明，便于维护者定位关键上下文。
+This directory keeps current maintainer architecture notes for `QCurl 1.0.0 first stable`.
 
-## 导航
+## Public release contract
 
-- public/install 边界：`docs/arch/public-header-boundary.md`
-- first Stable hard-break 最终结论：`docs/arch/first-stable-hard-break-final-review.md`
-- RC 成熟度审查与复核：`docs/arch/rc-maturity-review.md`
-- internal request pipeline：`docs/arch/request-normalization-pipeline.md`
-- 传输暂停/恢复设计：`docs/arch/transport-pause-resume.md`
-- 移植尽调与交付对齐：`docs/arch/porting-due-diligence.md`
+- `docs/arch/1.0-first-stable-release-contract.md`
+- `docs/arch/1.0.0-release-notes.md`
+- `docs/arch/1.0-first-stable-readiness-report.md`
+- `docs/arch/public-header-boundary.md`
 
-## 相关入口
+## Maintainer reference
 
-- 系统全量文档：`SYSTEM_DOCUMENTATION.md`
-- 工程知识库（SSOT）：`helloagents/modules/arch.md`
+- `docs/arch/request-normalization-pipeline.md`
+- `docs/arch/transport-pause-resume.md`
+- `docs/arch/porting-due-diligence.md` — case study / maintainer reference, not a first-public-release entrypoint.
+
+## Internal history
+
+Old RC, 3.0, hard-break review, and task-log documents have moved to `docs/internal/archived-release/`.
+Pre-1.0 date-based history is indexed in `docs/internal/pre-1.0-history.md`; the raw archive lives under `docs/internal/archived-release/`.
+
+## Related entries
+
+- `SYSTEM_DOCUMENTATION.md` — maintainer Architecture overview.
+- `.helloagents/modules/arch.md` — local engineering knowledge base when present.

@@ -1,29 +1,31 @@
-# QCurl 文档
+# QCurl documentation
 
-> 本目录只保留技术文档入口与长期维护说明，并按读者角色分层组织。
+This documentation is organized for the `QCurl 1.0.0 first stable` public release.
 
-维护约定：
+## Public entrypoints
 
-- 入口页只保留导航与稳定 contract。
-- 单次执行日志、环境快照、性能数字和评审记录不应长期堆在索引页里。
-- 文档与代码冲突时，以代码和相关测试为准。
+- User guide: `docs/user/README.md`
+- Quick start: `docs/user/quickstart.md`
+- Configuration: `docs/user/configuration.md`
+- Flow control: `docs/user/flow-control.md`
+- Lane scheduler: `docs/user/lane-scheduler.md`
+- Build and test: `docs/dev/build-and-test.md`
+- Release contract: `docs/arch/1.0-first-stable-release-contract.md`
+- Release notes: `docs/arch/1.0.0-release-notes.md`
+- Readiness report: `docs/arch/1.0-first-stable-readiness-report.md`
+- Release procedure: `docs/dev/release-procedure.md`
 
-## 快速入口
+## Maintainer reference
 
-- 使用者（集成与用法）: `docs/user/README.md`
-- 贡献者（构建、测试、贡献流程）: `docs/dev/README.md`
-- 维护者（架构与设计索引）: `docs/arch/README.md`
-- 参考资料（性能/基准/协议等）: `docs/reference/README.md`
+- Architecture index: `docs/arch/README.md`
+- Developer docs: `docs/dev/README.md`
+- Supply-chain notes: `docs/dev/supply-chain.md`
+- Reference docs: `docs/reference/README.md`
+- Gate contract: `docs/test_gate.md`
+- UCE evidence contract: `docs/uce/README.md`
+- Architecture overview: `SYSTEM_DOCUMENTATION.md`
 
-## 目录结构（信息架构）
+## Internal history
 
-- `docs/user/`: 面向库使用者（快速开始、配置、常见问题）
-- `docs/dev/`: 面向贡献者（构建、测试门禁、贡献流程、API 文档生成）
-- `docs/arch/`: 面向维护者（架构说明、迁移/交付设计文档索引）
-- `docs/reference/`: 面向查阅（benchmark 报告、性能回归指南、协议/实现细节索引）
-
-## 其他入口
-
-- `README.md`: 项目总览与最小示例
-- `SYSTEM_DOCUMENTATION.md`: 详细系统文档（偏“全量说明/实现细节”）
-- `.helloagents/`: 工程知识库（维护者 SSOT，与代码保持一致）
+Pre-1.0 changelog history and old RC / 3.0 / hard-break documents live under `docs/internal/`.
+They are kept for audit/reference and should not be used as current public release guidance.

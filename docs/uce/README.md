@@ -1,5 +1,7 @@
 # UCE（Unified Contract & Evidence）
 
+> Maintainer evidence contract: this document is not part of the first-public-release user navigation. Keep it focused on gate semantics and reproducible evidence.
+
 UCE 是 QCurl 面向门禁与证据链的统一入口：它不试图证明“所有实现细节都正确”，而是把**可观测 contract**、**可归档 evidence** 与 **fail-closed 判定**收敛到同一套口径里。
 
 ## 1. 目标与非目标

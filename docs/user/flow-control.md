@@ -95,4 +95,7 @@ QObject::connect(reply, &QCurl::QCNetworkReply::uploadSendPausedChanged,
 ## 4. 相关文档
 
 - 维护者设计/实现索引：`docs/arch/transport-pause-resume.md`
-- 当前状态页：`docs/TRANSPORT_PAUSE_RESUME_TASKS.md`
+
+## 5. 维护者参考
+
+历史任务页已合并到本文和 `docs/arch/transport-pause-resume.md`。若需要追溯旧执行记录，请查看 `docs/internal/archived-release/transport-pause-resume-tasks.md`。
