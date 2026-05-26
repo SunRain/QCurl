@@ -13,7 +13,7 @@
 // Qt 6 检查（在 QCurlConfig.h 中已包含）
 // 这里主要提供全局的类型别名和工具函数
 
-// 导出宏定义（v2.15.0）
+// 导出宏定义（Core / Stable）
 #ifndef QCURL_EXPORT
 #if defined(QCURL_STATIC_DEFINE)
 #define QCURL_EXPORT

@@ -636,7 +636,7 @@ bool QCWebSocket::isValid() const
 }
 
 // ==================
-// 自动重连配置（v2.4.0）
+// 自动重连配置（Other Extras / Preview）
 // ==================
 
 void QCWebSocket::setReconnectPolicy(const QCWebSocketReconnectPolicy &policy)
@@ -668,7 +668,7 @@ QCNetworkSslConfig QCWebSocket::sslConfig() const
 }
 
 // ==================
-// Public 接口：压缩配置（v2.18.0）
+// Public 接口：压缩配置（Other Extras / Preview）
 // ==================
 
 void QCWebSocket::setCompressionConfig(const QCWebSocketCompressionConfig &config)
@@ -794,7 +794,7 @@ void QCWebSocketPrivate::fallbackToPollingMode()
 }
 
 // ==================
-// QCWebSocketPrivate 重连实现（v2.4.0）
+// QCWebSocketPrivate 重连实现（Other Extras / Preview）
 // ==================
 
 void QCWebSocketPrivate::handleDisconnection(int closeCode)
@@ -847,7 +847,7 @@ void QCWebSocketPrivate::attemptReconnect()
 }
 
 // ==================
-// 压缩/解压缩实现（v2.18.0）
+// 压缩/解压缩实现（Other Extras / Preview）
 // ==================
 
 bool QCWebSocketPrivate::compressData(const QByteArray &input, QByteArray &output)

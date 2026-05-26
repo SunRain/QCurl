@@ -179,12 +179,11 @@ QCURL_DECLARE_SHARED_DATA(Foo)
 - 已存在的嵌套 `Data` / `Private` 作为迁移债务逐步消除
 - 不为兼容旧风格新增 wrapper、helper macro 或过渡壳层
 
-### 7.1 当前迁移状态（2026-04-16）
+### 7.1 当前迁移状态
 
-截至 2026-04-16，Core install surface 中的 public / library-facing 类型已完成显式
-`FooData` / `FooPrivate` 命名迁移；当前没有新的裸 `Data` / `Private` 迁移债务。
+Core install surface 中的 public / library-facing 类型已完成显式 `FooData` / `FooPrivate` 命名迁移；当前没有新的裸 `Data` / `Private` 迁移债务。
 
-本轮已完成的触点迁移：
+已完成的触点迁移：
 
 - `QCNetworkSslConfig`：改为 `QCNetworkSslConfigData + QSharedDataPointer`
 - `QCNetworkTimeoutConfig`：改为 `QCNetworkTimeoutConfigData + QSharedDataPointer`
@@ -199,11 +198,11 @@ QCURL_DECLARE_SHARED_DATA(Foo)
 - `QCNetworkDefaultLogger`：改为 `QCNetworkDefaultLoggerPrivate + QScopedPointer`
 - `QCNetworkCancelToken`：改为 `QCNetworkCancelTokenPrivate + QScopedPointer`
 
-Extras / internal 范围内，本轮 public/library-facing 审计未新增新的裸 `Private` 例外。
+Extras / internal 范围内，public/library-facing 审计没有新的裸 `Private` 例外。
 
 ### 7.2 Consumer 迁移清单（accessor-only contract）
 
-这一轮不只是内部命名收口，也同步把一批默认安装面的值类型收敛成 accessor-only
+当前规范不只是内部命名收口，也把一批默认安装面的值类型收敛成 accessor-only
 contract。下游如果还在用 public field / aggregate 风格，需要一并迁移。
 
 受影响的类型：
@@ -287,9 +286,9 @@ lane.setWeight(3);
 - 是否存在不值得自动化的局部例外
 - 更细的风格一致性判断
 
-## 9. 当前方案包口径
+## 9. 稳定命名口径
 
-`qcpimpl-removal-guidelines-and-guardrails` 的当前统一口径如下：
+QCurl public / library-facing 头文件的统一口径如下：
 
 - 值类型：`ClassData` 占位，实际代码展开为 `FooData`
 - 运行时类：`ClassPrivate` 占位，实际代码展开为 `FooPrivate`

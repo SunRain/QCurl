@@ -51,9 +51,9 @@ Core 安装面新增未分层头文件。
 - 能用 forward declaration 的地方优先 forward declaration；调试输出、字符串化和实现细节优先放到 `.cpp`。
 - libcurl 语义转换必须下沉到 `.cpp` 或 `src/private/*`，不得通过 public header 把 `CURL*`、`curl_*` 或 `<curl/...>` 透传给下游。
 
-### 2.1 Include 热点收敛（第一梯队，2026-03）
+### 2.1 Include 热点收敛
 
-本轮只处理第一梯队热点头文件的“安装面 include 成本”，不扩展到第二梯队（例如 `QCNetworkRequest.h`、`QCNetworkAccessManager.h`）与长尾头文件。
+当前已收敛的第一梯队热点头文件用于降低安装面 include 成本；第二梯队（例如 `QCNetworkRequest.h`、`QCNetworkAccessManager.h`）与长尾头文件按后续独立审计处理。
 
 - `QCNetworkReply.h`：不再直接 `#include "QCNetworkRequest.h"`，改为前置声明并把完整依赖下沉到 `.cpp`，避免 reply 头成为 request 配置面的传递依赖中枢。
 - `QCNetworkRequestScheduler.h`：公开头仅保留 Config/Statistics 与调度控制 API；reply 创建统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QQueue/QTimer/QDateTime/QMutex` 等重依赖。
@@ -117,10 +117,10 @@ Core 安装面新增未分层头文件。
 以下头文件属于库内实现细节，不安装给 consumer：
 
 - `_p.h` / private：`QCNetworkAccessManager_p.h`、`QCNetworkReply_p.h`、`QCNetworkConnectionPoolManager_p.h`、`QCWebSocket_p.h`、`qbytedata_p.h`、`src/private/CurlGlobalConstructor_p.h`、`src/private/QCNetworkLogRedaction_p.h`
-- internal curl plumbing：`QCCurlHandleManager.h`、`QCCurlMultiManager.h`、`CurlFeatureProbe.h`、`QCUtility.h`
+- internal curl plumbing：curl handle / multi manager、feature probe 与 utility helper 头文件
 - internal pipeline / adapters：`src/private/*`
 
-本轮 install surface 审计已确认以下收口对象：
+当前 install surface 审计已确认以下收口对象：
 
 - `QCNetworkConnectionPoolManager::{configureCurlHandle, recordRequestCompleted}` → 已迁移到 `QCNetworkConnectionPoolManager_p.h`
 - `CurlGlobalConstructor` → 已迁移到 `src/private/CurlGlobalConstructor_p.h`

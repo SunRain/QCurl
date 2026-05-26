@@ -341,7 +341,7 @@ QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
 {
     QCWebSocket *socket = new QCWebSocket(url, this);
 
-    // 应用 v2.4.0 自动重连策略（如果启用）
+    // 应用 Preview 自动重连策略（如果启用）
     if (m_impl->config.autoReconnect) {
         QCWebSocketReconnectPolicy policy;
         policy.maxRetries        = 3;

@@ -84,7 +84,7 @@ public:
     unsigned int fragmentTypeFlags = 0;
 
     // ==================
-    // 自动重连状态（v2.4.0）
+    // 自动重连状态（Other Extras / Preview）
     // ==================
 
     /// 重连策略配置
@@ -116,7 +116,7 @@ public:
     QByteArray sslKeyPasswordUtf8;
 
     // ==================
-    // 压缩配置（v2.18.0）
+    // 压缩配置（Other Extras / Preview）
     // ==================
 
     /// WebSocket 压缩配置（RFC 7692 permessage-deflate）
@@ -234,7 +234,7 @@ public:
     void fallbackToPollingMode();
 
     // ==================
-    // 压缩/解压缩辅助方法（v2.18.0）
+    // 压缩/解压缩辅助方法（Other Extras / Preview）
     // ==================
 
     /**
@@ -256,7 +256,7 @@ public:
     bool decompressData(const QByteArray &input, QByteArray &output);
 
     // ==================
-    // 自动重连方法（v2.4.0）
+    // 自动重连方法（Other Extras / Preview）
     // ==================
 
     /**
