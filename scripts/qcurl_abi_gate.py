@@ -10,10 +10,10 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_LIBRARY = Path("build/src/libQCurl.so.3.0.0")
+DEFAULT_LIBRARY = Path("build/src/libQCurl.so.1.0.0")
 DEFAULT_HEADERS_DIR = Path("src")
-DEFAULT_BASELINE = Path("abi/baseline/qcurl-core-v3.abi.xml")
-DEFAULT_REPORT = Path("build/abi/qcurl-core-v3.abidiff.txt")
+DEFAULT_BASELINE = Path("abi/baseline/qcurl-core-v1.abi.xml")
+DEFAULT_REPORT = Path("build/abi/qcurl-core-v1.abidiff.txt")
 
 
 class AbiGateError(RuntimeError):
@@ -132,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     diff.set_defaults(func=command_diff)
 
     snapshot = subparsers.add_parser("snapshot", help="write a diagnostic ABI snapshot XML")
-    snapshot.add_argument("--output", type=Path, default=Path("build/abi/qcurl-core-v3.current.abi.xml"))
+    snapshot.add_argument("--output", type=Path, default=Path("build/abi/qcurl-core-v1.current.abi.xml"))
     snapshot.set_defaults(func=command_snapshot)
 
     return parser

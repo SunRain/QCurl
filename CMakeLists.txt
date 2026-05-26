@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QCurl VERSION 3.0.0 LANGUAGES CXX)
+project(QCurl VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -249,7 +249,7 @@ if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     set(CPACK_PACKAGE_VENDOR "QCurl Project")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Qt6-based libcurl wrapper library with Core HTTP API and opt-in Extras")
     set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-    set(CPACK_PACKAGE_CONTACT "qcurl@example.com")
+    set(CPACK_PACKAGE_CONTACT "41245110@qq.com")
     set(CPACK_GENERATOR "TGZ;DEB;RPM")
     set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS

@@ -46,7 +46,7 @@ set(QCURL_BLOCKING_EXTRAS_SOURCES
 set(QCURL_TEST_SUPPORT_SOURCES)
 
 set(QCURL_OTHER_EXTRAS_SOURCES
-    QCNetworkDiagnostics.cpp        # v2.19.0: 网络诊断工具
+    QCNetworkDiagnostics.cpp        # Other Extras / Preview: 网络诊断工具
     QCNetworkMiddlewareExtras.cpp   # Middleware Extras opt-in 实现
 )
 
@@ -91,20 +91,20 @@ set(QCURL_FEATURE_SOURCES
     private/QCCurlMultiManagerCookieContext.cpp
     private/QCCurlMultiManagerCookies.cpp
     QCNetworkRetryPolicy.cpp
-    QCNetworkRequestScheduler.cpp   # v2.6.0: 请求优先级调度
-    QCMultipartFormData.cpp         # v2.11.0: Multipart 表单数据
-    QCNetworkCache.cpp              # v2.12.0: 缓存基类
-    QCNetworkMemoryCache.cpp        # v2.12.0: 内存缓存
-    QCNetworkDiskCache.cpp          # v2.12.0: 磁盘缓存
+    QCNetworkRequestScheduler.cpp   # Core / Stable: 请求优先级调度
+    QCMultipartFormData.cpp         # Core / Stable: Multipart 表单数据
+    QCNetworkCache.cpp              # Core / Stable: 缓存基类
+    QCNetworkMemoryCache.cpp        # Core / Stable: 内存缓存
+    QCNetworkDiskCache.cpp          # Core / Stable: 磁盘缓存
     QCNetworkConnectionPoolConfig.cpp
     QCNetworkConnectionPoolStatistics.cpp
-    QCNetworkConnectionPoolManager.cpp  # v2.14.0: 连接池管理器
-    QCNetworkLogger.cpp             # v2.15.0: 日志系统
-    QCNetworkDefaultLogger.cpp      # v2.15.0: 默认日志实现
-    QCNetworkLogRedaction.cpp       # v2.20.0: 日志脱敏工具
-    QCNetworkMiddleware.cpp         # v2.15.0: 中间件
-    QCNetworkCancelToken.cpp        # v2.15.0: 取消令牌
-    QCNetworkMockHandler.cpp        # v2.16.0: Mock 工具
+    QCNetworkConnectionPoolManager.cpp  # Core / Stable: 连接池管理器
+    QCNetworkLogger.cpp             # Core / Stable: 日志系统
+    QCNetworkDefaultLogger.cpp      # Core / Stable: 默认日志实现
+    QCNetworkLogRedaction.cpp       # Core / Stable: 日志脱敏工具
+    QCNetworkMiddleware.cpp         # Core / Stable: 中间件 base
+    QCNetworkCancelToken.cpp        # Core / Stable: 取消令牌
+    QCNetworkMockHandler.cpp        # Test Support / Explicit opt-in: Mock 工具
     QCNetworkCapturedRequest.cpp
     QCNetworkTransferJob.cpp
     QCNetworkDownloadToDeviceJob.cpp
@@ -144,55 +144,55 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkReply_p.h
     QCCurlMultiManager.h
     QCNetworkRetryPolicy.h
-    QCNetworkRequestPriority.h      # v2.6.0: 优先级枚举
-    QCNetworkRequestScheduler.h     # v2.6.0: 请求调度器
-    QCMultipartFormData.h           # v2.11.0: Multipart 表单数据
-    QCNetworkCachePolicy.h          # v2.12.0: 缓存策略枚举
-    QCNetworkCache.h                # v2.12.0: 缓存基类
-    QCNetworkMemoryCache.h          # v2.12.0: 内存缓存
-    QCNetworkDiskCache.h            # v2.12.0: 磁盘缓存
-    QCNetworkConnectionPoolConfig.h # v2.14.0: 连接池配置
-    QCNetworkConnectionPoolManager.h # v2.14.0: 连接池管理器
-    QCNetworkConnectionPoolManager_p.h # v2.14.0: 连接池内部 companion（内部）
-    QCNetworkLogger.h               # v2.15.0: 日志系统
-    QCNetworkDefaultLogger.h        # v2.15.0: 默认日志实现
-    private/QCNetworkLogRedaction_p.h # v2.20.0: 日志脱敏工具（内部）
-    QCNetworkMiddleware.h           # v2.15.0: 中间件
+    QCNetworkRequestPriority.h      # Core / Stable: 优先级枚举
+    QCNetworkRequestScheduler.h     # Core / Stable: 请求调度器
+    QCMultipartFormData.h           # Core / Stable: Multipart 表单数据
+    QCNetworkCachePolicy.h          # Core / Stable: 缓存策略枚举
+    QCNetworkCache.h                # Core / Stable: 缓存基类
+    QCNetworkMemoryCache.h          # Core / Stable: 内存缓存
+    QCNetworkDiskCache.h            # Core / Stable: 磁盘缓存
+    QCNetworkConnectionPoolConfig.h # Core / Stable: 连接池配置
+    QCNetworkConnectionPoolManager.h # Core / Stable: 连接池管理器
+    QCNetworkConnectionPoolManager_p.h # Core / Stable: 连接池内部 companion
+    QCNetworkLogger.h               # Core / Stable: 日志系统
+    QCNetworkDefaultLogger.h        # Core / Stable: 默认日志实现
+    private/QCNetworkLogRedaction_p.h # Core / Stable: 日志脱敏工具（内部）
+    QCNetworkMiddleware.h           # Core / Stable: 中间件 base
     QCNetworkMiddlewareExtras.h     # Middleware Extras opt-in surface
-    private/QCNetworkMiddlewareInternal_p.h # 内部策略型 middleware
-    QCNetworkCancelToken.h          # v2.15.0: 取消令牌
+    private/QCNetworkMiddlewareInternal_p.h # Core / Stable: 内部策略型 middleware
+    QCNetworkCancelToken.h          # Core / Stable: 取消令牌
     QCNetworkTransferJob.h
     QCNetworkDownloadToDeviceJob.h
     QCNetworkResumableDownloadJob.h
-    QCNetworkMockHandler.h          # v2.16.0: Mock 工具
-    QCNetworkTestSupport.h          # Test Support 显式 manager 绑定
-    QCNetworkMockHandler_p.h        # v2.16.0: Mock 内部 companion（内部）
+    QCNetworkMockHandler.h          # Test Support / Explicit opt-in: Mock 工具
+    QCNetworkTestSupport.h          # Test Support / Explicit opt-in: 显式 manager 绑定
+    QCNetworkMockHandler_p.h        # Test Support / Explicit opt-in: Mock companion（内部）
     private/QCNetworkResumableDownloadWriter_p.h
-    QCNetworkDiagnostics.h          # v2.19.0: 网络诊断工具
+    QCNetworkDiagnostics.h          # Other Extras / Preview: 网络诊断工具
 )
 
 set(QCURL_WEBSOCKET_PREVIEW_SOURCES
     QCWebSocket.cpp
     QCWebSocketReconnectPolicy.cpp
-    QCWebSocketPool.cpp                 # v2.5.0: WebSocket 连接池
-    QCWebSocketCompressionConfig.cpp    # v2.18.0: WebSocket 压缩配置
+    QCWebSocketPool.cpp                 # Other Extras / Preview: WebSocket 连接池
+    QCWebSocketCompressionConfig.cpp    # Other Extras / Preview: WebSocket 压缩配置
 )
 
 # ============================================================================
-# WebSocket 支持（v2.3.0）+ 重连机制（v2.4.0）
+# WebSocket 支持（Other Extras / Preview）+ 重连机制
 # ============================================================================
 if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND QCURL_OTHER_EXTRAS_SOURCES ${QCURL_WEBSOCKET_PREVIEW_SOURCES})
     list(APPEND QCURL_FEATURE_HEADERS
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
-        QCWebSocketPool.h                   # v2.5.0: WebSocket 连接池
-        QCWebSocketCompressionConfig.h      # v2.18.0: WebSocket 压缩配置
+        QCWebSocketPool.h                   # Other Extras / Preview: WebSocket 连接池
+        QCWebSocketCompressionConfig.h      # Other Extras / Preview: WebSocket 压缩配置
     )
     list(APPEND QCURL_FEATURE_HEADERS
         QCWebSocket_p.h
     )
-    message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + v2.4.0 重连 + v2.5.0 连接池 + v2.18.0 压缩）")
+    message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + Other Extras / Preview）")
 else()
     message(STATUS "⏭️ WebSocket 支持未启用（需要 libcurl 7.86.0+）")
 endif()
@@ -331,14 +331,14 @@ add_library(QCurl::OtherExtras ALIAS QCurlOtherExtras)
 # 设置库属性
 set_target_properties(QCurl PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 3
+    SOVERSION 1
     AUTOMOC ON  # 自动处理 Qt MOC
     EXPORT_NAME QCurl
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(QCurlOtherExtras PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 3
+    SOVERSION 1
     AUTOMOC ON
     POSITION_INDEPENDENT_CODE ON
 )

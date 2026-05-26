@@ -174,7 +174,7 @@ def _build_steps(args: argparse.Namespace) -> list[GateStep]:
                 python,
                 "scripts/qcurl_abi_gate.py",
                 "--library",
-                str(build_dir / "src" / "libQCurl.so.3.0.0"),
+                str(build_dir / "src" / "libQCurl.so.1.0.0"),
                 "--headers-dir",
                 "src",
                 "diff",
