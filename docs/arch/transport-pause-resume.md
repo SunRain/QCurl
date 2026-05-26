@@ -88,3 +88,7 @@ QCurl 需要同时区分两类语义：
 - 记录某次修复发生在哪一天
 - 保存任务执行日志
 - 取代测试报告或 CI 工件
+
+## 9. 历史任务页
+
+旧传输暂停/恢复任务页已合并到用户文档和本文。旧任务状态只保留在 `docs/internal/archived-release/transport-pause-resume-tasks.md`，不再作为公开入口。

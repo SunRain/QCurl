@@ -1,4 +1,5 @@
 # QCurl 对 `legendary-python` 移植的技术尽调
+> Maintainer reference: this case study is kept at its original path for traceability. It is not part of the first-public-release navigation for new QCurl users.
 
 本文保留“是否值得以 QCurl 作为移植网络底座”的稳定结论、缺口与边界。历史回归数字、时间戳、报价快照和一次性执行记录不在这里维护。
 
