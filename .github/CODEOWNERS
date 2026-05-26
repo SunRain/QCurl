@@ -1,0 +1,14 @@
+# Default project owner
+* @SunRain
+
+# Release and packaging surfaces
+/CMakeLists.txt @SunRain
+/cmake/ @SunRain
+/.github/ @SunRain
+/docs/dev/release-procedure.md @SunRain
+/docs/dev/supply-chain.md @SunRain
+
+# Public API and release contract
+/src/*.h @SunRain
+/docs/arch/1.0-first-stable-release-contract.md @SunRain
+/docs/arch/public-header-boundary.md @SunRain

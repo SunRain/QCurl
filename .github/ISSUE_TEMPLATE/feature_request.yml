@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a QCurl feature or API improvement
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use case
+      description: What problem should QCurl solve?
+    validations:
+      required: true
+  - type: dropdown
+    id: target_surface
+    attributes:
+      label: Target surface
+      description: Core Stable changes require stronger compatibility and release-gate evidence.
+      options:
+        - Core / Stable
+        - Blocking Extras / non-default
+        - Test Support / explicit opt-in
+        - Other Extras / Preview
+        - WebSocket / Preview
+        - Diagnostics / Preview
+        - Documentation or examples
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: API sketch, behavior contract, or documentation change.
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and release impact
+      description: Note whether this can be additive, whether ABI/API compatibility is affected, and which gates should cover it.

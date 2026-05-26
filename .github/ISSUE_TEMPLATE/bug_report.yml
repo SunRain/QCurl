@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible QCurl bug
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not disclose security vulnerabilities here; use Security -> Report a vulnerability.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest code/configuration that reproduces the issue.
+      placeholder: |
+        1. Configure ...
+        2. Build ...
+        3. Run ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Core / Stable
+        - Blocking Extras / non-default
+        - Test Support / explicit opt-in
+        - Other Extras / Preview
+        - WebSocket / Preview
+        - Diagnostics / Preview
+        - Build, package, or documentation
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, compiler, Qt version, libcurl version, CMake version, shared/static build.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or failing commands
+      description: Paste relevant output after removing tokens, passwords, internal hostnames, or personal data.
+      render: shell

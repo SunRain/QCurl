@@ -4,7 +4,7 @@
 
 ## 1. 获取帮助
 
-优先通过仓库的 Issue / Discussions（如启用）进行讨论与提问。
+优先通过 GitHub Issues / Discussions（如启用）进行讨论与提问：`https://github.com/SunRain/QCurl`。
 
 ## 2. 报告 Bug（建议模板）
 
@@ -31,4 +31,4 @@ Issue 内容建议包含：
 
 ## 4. 安全问题
 
-安全漏洞请不要公开披露，按 `SECURITY.md` 的流程报告。
+安全漏洞请不要公开披露，按 `SECURITY.md` 使用 GitHub Private Vulnerability Reporting / Security Advisories 报告。

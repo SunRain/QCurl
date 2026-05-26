@@ -16,9 +16,16 @@
 - 文档补充与修订
 - 测试补齐（强烈欢迎）
 
-## 3. 本地构建与测试（最小门禁）
+## 3. 本地构建与测试
 
-请按 `docs/dev/build-and-test.md` 完成本地构建与测试（包含 offline/env/全量回归/libcurl_consistency）。
+请按改动范围选择验证层级，完整命令见 `docs/dev/build-and-test.md`。
+
+| 改动类型 | 建议验证 |
+| --- | --- |
+| docs-only | `git diff --check`，必要时补链接/metadata scan |
+| 普通代码改动 | configure + build + offline gate / 相关 Qt Test |
+| public header / install/export / pkg-config | `public-api` + `public-api-slow`，必要时补 static gate |
+| release 相关改动 | full release gate、ABI gate、metadata scan、shared/static consumer gate |
 
 > 如你的改动涉及一致性 gate，请参考 `docs/dev/build-and-test.md` 的 `libcurl_consistency` 章节。
 
