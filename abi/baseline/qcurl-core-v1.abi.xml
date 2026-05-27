@@ -407,8 +407,18 @@
     <elf-symbol name='_ZN5QCurl18QCNetworkSslConfigD2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl18QCNetworkSslConfigaSEOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl18QCNetworkSslConfigaSERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC1EOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC1ERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl18QCTransferProgressC2ERKS0_' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC1Ev' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl18QCTransferProgressC2Ev' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl18QCTransferProgressC1Exxxx' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl18QCTransferProgressC2Exxxx' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC2EOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl18QCTransferProgressC1EOS0_' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC2ERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressC2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl18QCTransferProgressC2Exxxx' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressD1Ev' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl18QCTransferProgressD2Ev' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressD2Ev' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressaSEOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl18QCTransferProgressaSERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl19QCCurlHandleManager12appendHeaderERK7QString' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl19QCCurlHandleManagerC1EOS0_' type='func-type' binding='global-binding' visibility='default-visibility' alias='_ZN5QCurl19QCCurlHandleManagerC2EOS0_' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl19QCCurlHandleManagerC1Ev' type='func-type' binding='global-binding' visibility='default-visibility' alias='_ZN5QCurl19QCCurlHandleManagerC2Ev' is-defined='yes'/>
