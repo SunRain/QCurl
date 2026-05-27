@@ -24,35 +24,60 @@ public:
     QCCookieSnapshot cookieSnapshot;
 };
 
+class QCTransferProgressData : public QSharedData
+{
+public:
+    qint64 bytesReceived = 0;
+    qint64 bytesTotal = -1;
+    qint64 bytesSent = 0;
+    qint64 uploadTotal = -1;
+};
+
+QCTransferProgress::QCTransferProgress()
+    : d(new QCTransferProgressData)
+{
+}
+
 QCTransferProgress::QCTransferProgress(qint64 bytesReceived,
                                        qint64 bytesTotal,
                                        qint64 bytesSent,
                                        qint64 uploadTotal)
-    : m_bytesReceived(bytesReceived)
-    , m_bytesTotal(bytesTotal)
-    , m_bytesSent(bytesSent)
-    , m_uploadTotal(uploadTotal)
+    : d(new QCTransferProgressData)
 {
+    d->bytesReceived = bytesReceived;
+    d->bytesTotal = bytesTotal;
+    d->bytesSent = bytesSent;
+    d->uploadTotal = uploadTotal;
 }
+
+QCTransferProgress::QCTransferProgress(const QCTransferProgress &other) = default;
+
+QCTransferProgress::QCTransferProgress(QCTransferProgress &&other) noexcept = default;
+
+QCTransferProgress::~QCTransferProgress() = default;
+
+QCTransferProgress &QCTransferProgress::operator=(const QCTransferProgress &other) = default;
+
+QCTransferProgress &QCTransferProgress::operator=(QCTransferProgress &&other) noexcept = default;
 
 qint64 QCTransferProgress::bytesReceived() const noexcept
 {
-    return m_bytesReceived;
+    return d->bytesReceived;
 }
 
 qint64 QCTransferProgress::bytesTotal() const noexcept
 {
-    return m_bytesTotal;
+    return d->bytesTotal;
 }
 
 qint64 QCTransferProgress::bytesSent() const noexcept
 {
-    return m_bytesSent;
+    return d->bytesSent;
 }
 
 qint64 QCTransferProgress::uploadTotal() const noexcept
 {
-    return m_uploadTotal;
+    return d->uploadTotal;
 }
 
 QCBlockingRequestOptions::QCBlockingRequestOptions()

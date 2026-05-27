@@ -25,6 +25,7 @@ namespace QCurl {
 class QCBlockingNetworkClientData;
 class QCBlockingNetworkClientOptionsData;
 class QCBlockingRequestOptionsData;
+class QCTransferProgressData;
 
 /**
  * @brief Blocking Extras 同步请求的传输进度快照。
@@ -34,8 +35,21 @@ class QCBlockingRequestOptionsData;
 class QCURL_EXPORT QCTransferProgress
 {
 public:
-    QCTransferProgress() = default;
+    QCTransferProgress();
+    /**
+     * @brief 构造当前回调时刻的传输进度快照。
+     * @param bytesReceived 已接收响应体字节数。
+     * @param bytesTotal 预期响应体总字节数；未知时保持底层上报值。
+     * @param bytesSent 已发送请求体字节数。
+     * @param uploadTotal 预期请求体总字节数；未知时保持底层上报值。
+     */
     QCTransferProgress(qint64 bytesReceived, qint64 bytesTotal, qint64 bytesSent, qint64 uploadTotal);
+    QCTransferProgress(const QCTransferProgress &other);
+    QCTransferProgress(QCTransferProgress &&other) noexcept;
+    ~QCTransferProgress();
+
+    QCTransferProgress &operator=(const QCTransferProgress &other);
+    QCTransferProgress &operator=(QCTransferProgress &&other) noexcept;
 
     /// 返回已接收的响应体字节数。
     [[nodiscard]] qint64 bytesReceived() const noexcept;
@@ -47,10 +61,7 @@ public:
     [[nodiscard]] qint64 uploadTotal() const noexcept;
 
 private:
-    qint64 m_bytesReceived = 0;
-    qint64 m_bytesTotal = -1;
-    qint64 m_bytesSent = 0;
-    qint64 m_uploadTotal = -1;
+    QSharedDataPointer<QCTransferProgressData> d;
 };
 
 /**
