@@ -93,6 +93,48 @@ private:
 
     assert "private-layout:direct-fields:QCNetworkExample.h:Job" in keys
 
+def test_collect_layout_findings_treats_all_exported_classes_as_abi_sensitive() -> None:
+    header = "QCBlockingNetworkClient.h"
+    source = ""
+    stripped = public_api.strip_comments_and_strings(
+        """
+class QCURL_EXPORT QCTransferProgress {
+public:
+    QCTransferProgress() = default;
+    [[nodiscard]] qint64 bytesReceived() const noexcept;
+
+private:
+    qint64 m_bytesReceived = 0;
+};
+"""
+    )
+
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
+    keys = {item.key for item in findings}
+
+    assert "private-layout:direct-fields:QCBlockingNetworkClient.h:QCTransferProgress" in keys
+
+def test_collect_layout_findings_flags_websocket_pool_nested_structs() -> None:
+    header = "QCWebSocketPool.h"
+    source = ""
+    stripped = public_api.strip_comments_and_strings(
+        """
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPool : public QObject {
+public:
+    struct Config { int maxPoolSize = 10; };
+    struct Stats { int totalConnections = 0; };
+    explicit QCWebSocketPool(const Config &config);
+    Stats statistics() const;
+};
+"""
+    )
+
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
+    keys = {item.key for item in findings}
+
+    assert "struct-layout:nested:QCWebSocketPool.h:QCWebSocketPool::Config" in keys
+    assert "struct-layout:nested:QCWebSocketPool.h:QCWebSocketPool::Stats" in keys
+
 def test_collect_layout_findings_allows_private_incomplete_holder() -> None:
     header = "QCNetworkExample.h"
     source = "Job::~Job() = default;"
