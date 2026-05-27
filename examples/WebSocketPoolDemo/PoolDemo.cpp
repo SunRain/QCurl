@@ -93,10 +93,10 @@ void PoolDemo::demoBasicUsage()
     auto stats = pool.statistics(url);
     qDebug() << "";
     qDebug() << "5. 统计信息:";
-    qDebug() << "   - 总连接数:" << stats.totalConnections;
-    qDebug() << "   - 活跃连接:" << stats.activeConnections;
-    qDebug() << "   - 空闲连接:" << stats.idleConnections;
-    qDebug() << "   - 未命中次数:" << stats.missCount;
+    qDebug() << "   - 总连接数:" << stats.totalConnections();
+    qDebug() << "   - 活跃连接:" << stats.activeConnections();
+    qDebug() << "   - 空闲连接:" << stats.idleConnections();
+    qDebug() << "   - 未命中次数:" << stats.missCount();
 
     // 再次获取（应复用）
     qDebug() << "";
@@ -115,9 +115,9 @@ void PoolDemo::demoBasicUsage()
     stats = pool.statistics(url);
     qDebug() << "";
     qDebug() << "7. 更新后的统计信息:";
-    qDebug() << "   - 命中次数:" << stats.hitCount;
-    qDebug() << "   - 未命中次数:" << stats.missCount;
-    qDebug() << "   - 命中率:" << stats.hitRate << "%";
+    qDebug() << "   - 命中次数:" << stats.hitCount();
+    qDebug() << "   - 未命中次数:" << stats.missCount();
+    qDebug() << "   - 命中率:" << stats.hitRate() << "%";
 
     pool.release(socket2);
 
@@ -144,9 +144,9 @@ void PoolDemo::demoPreWarm()
     auto stats = pool.statistics(url);
     qDebug() << "";
     qDebug() << "3. 预热后的统计信息:";
-    qDebug() << "   - 总连接数:" << stats.totalConnections;
-    qDebug() << "   - 空闲连接:" << stats.idleConnections;
-    qDebug() << "   - 活跃连接:" << stats.activeConnections;
+    qDebug() << "   - 总连接数:" << stats.totalConnections();
+    qDebug() << "   - 空闲连接:" << stats.idleConnections();
+    qDebug() << "   - 活跃连接:" << stats.activeConnections();
 
     qDebug() << "";
     qDebug() << "4. 获取连接（应直接从池中获取）...";
@@ -160,7 +160,7 @@ void PoolDemo::demoPreWarm()
     stats = pool.statistics(url);
     qDebug() << "";
     qDebug() << "5. 最终统计:";
-    qDebug() << "   - 命中率:" << stats.hitRate << "%";
+    qDebug() << "   - 命中率:" << stats.hitRate() << "%";
 
     qDebug() << "";
     qDebug() << "✅ 预热连接演示完成！";
@@ -199,14 +199,14 @@ void PoolDemo::demoStatistics()
     qDebug() << "2. 详细统计信息:";
     auto stats = pool.statistics(url);
     qDebug() << "   ┌─ 连接数统计";
-    qDebug() << "   ├─ 总连接数:" << stats.totalConnections;
-    qDebug() << "   ├─ 活跃连接:" << stats.activeConnections;
-    qDebug() << "   └─ 空闲连接:" << stats.idleConnections;
+    qDebug() << "   ├─ 总连接数:" << stats.totalConnections();
+    qDebug() << "   ├─ 活跃连接:" << stats.activeConnections();
+    qDebug() << "   └─ 空闲连接:" << stats.idleConnections();
     qDebug() << "";
     qDebug() << "   ┌─ 命中率统计";
-    qDebug() << "   ├─ 命中次数:" << stats.hitCount;
-    qDebug() << "   ├─ 未命中次数:" << stats.missCount;
-    qDebug() << "   └─ 命中率:" << QString::number(stats.hitRate, 'f', 2) << "%";
+    qDebug() << "   ├─ 命中次数:" << stats.hitCount();
+    qDebug() << "   ├─ 未命中次数:" << stats.missCount();
+    qDebug() << "   └─ 命中率:" << QString::number(stats.hitRate(), 'f', 2) << "%";
 
     qDebug() << "";
     qDebug() << "✅ 统计信息演示完成！";
@@ -256,20 +256,20 @@ void PoolDemo::demoMultipleUrls()
     qDebug() << "";
     qDebug() << "4. URL1 池统计:";
     auto stats1 = pool.statistics(url1);
-    qDebug() << "   - 总连接数:" << stats1.totalConnections;
-    qDebug() << "   - 活跃连接:" << stats1.activeConnections;
+    qDebug() << "   - 总连接数:" << stats1.totalConnections();
+    qDebug() << "   - 活跃连接:" << stats1.activeConnections();
 
     qDebug() << "";
     qDebug() << "5. URL2 池统计:";
     auto stats2 = pool.statistics(url2);
-    qDebug() << "   - 总连接数:" << stats2.totalConnections;
-    qDebug() << "   - 活跃连接:" << stats2.activeConnections;
+    qDebug() << "   - 总连接数:" << stats2.totalConnections();
+    qDebug() << "   - 活跃连接:" << stats2.activeConnections();
 
     qDebug() << "";
     qDebug() << "6. 全局统计（所有 URL）:";
     auto globalStats = pool.statistics();
-    qDebug() << "   - 全局总连接数:" << globalStats.totalConnections;
-    qDebug() << "   - 应等于 URL1 + URL2:" << (stats1.totalConnections + stats2.totalConnections);
+    qDebug() << "   - 全局总连接数:" << globalStats.totalConnections();
+    qDebug() << "   - 应等于 URL1 + URL2:" << (stats1.totalConnections() + stats2.totalConnections());
 
     pool.release(socket1);
     pool.release(socket2);

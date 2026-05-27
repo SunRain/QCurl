@@ -178,6 +178,8 @@ set(QCURL_WEBSOCKET_PREVIEW_SOURCES
     QCWebSocket.cpp
     QCWebSocketReconnectPolicy.cpp
     QCWebSocketPool.cpp                 # Other Extras / Preview: WebSocket 连接池
+    QCWebSocketPoolMaintenance.cpp      # Other Extras / Preview: WebSocket 连接池维护逻辑
+    QCWebSocketPoolValues.cpp           # Other Extras / Preview: WebSocket 连接池值类型
     QCWebSocketCompressionConfig.cpp    # Other Extras / Preview: WebSocket 压缩配置
 )
 

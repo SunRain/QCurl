@@ -13,10 +13,106 @@
 #include "QCNetworkSslConfig.h"
 #include <QObject>
 #include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QUrl>
 
 namespace QCurl {
 class QCWebSocket;
+class QCWebSocketPoolConfigData;
+class QCWebSocketPoolPrivate;
+class QCWebSocketPoolStatsData;
+
+/**
+ * @brief WebSocket 连接池配置。
+ *
+ * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
+ * 配置变更只影响后续连接池操作，不重写已建立连接的状态。
+ */
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPoolConfig
+{
+public:
+    QCWebSocketPoolConfig();
+    QCWebSocketPoolConfig(const QCWebSocketPoolConfig &other);
+    QCWebSocketPoolConfig(QCWebSocketPoolConfig &&other) noexcept;
+    ~QCWebSocketPoolConfig();
+
+    QCWebSocketPoolConfig &operator=(const QCWebSocketPoolConfig &other);
+    QCWebSocketPoolConfig &operator=(QCWebSocketPoolConfig &&other) noexcept;
+
+    /// 每个 URL 的最大连接数。
+    [[nodiscard]] int maxPoolSize() const noexcept;
+    void setMaxPoolSize(int value) noexcept;
+
+    /// 空闲超时秒数，超时连接会被清理。
+    [[nodiscard]] int maxIdleTime() const noexcept;
+    void setMaxIdleTime(int seconds) noexcept;
+
+    /// 每个 URL 保留的最小空闲连接数。
+    [[nodiscard]] int minIdleConnections() const noexcept;
+    void setMinIdleConnections(int value) noexcept;
+
+    /// 所有 URL 的全局最大连接数。
+    [[nodiscard]] int maxTotalConnections() const noexcept;
+    void setMaxTotalConnections(int value) noexcept;
+
+    /// 是否启用 Ping/保活定时器。
+    [[nodiscard]] bool enableKeepAlive() const noexcept;
+    void setEnableKeepAlive(bool enabled) noexcept;
+
+    /// 保活间隔秒数。
+    [[nodiscard]] int keepAliveInterval() const noexcept;
+    void setKeepAliveInterval(int seconds) noexcept;
+
+    /// 空闲连接断开时是否启用自动重连策略。
+    [[nodiscard]] bool autoReconnect() const noexcept;
+    void setAutoReconnect(bool enabled) noexcept;
+
+    /// WSS 连接使用的 SSL/TLS 配置。
+    [[nodiscard]] QCNetworkSslConfig sslConfig() const;
+    void setSslConfig(const QCNetworkSslConfig &config);
+
+private:
+    QSharedDataPointer<QCWebSocketPoolConfigData> d;
+};
+
+/**
+ * @brief WebSocket 连接池统计快照。
+ *
+ * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
+ * `hitRate()` 使用百分比值，例如 50.0 表示 50%。
+ */
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPoolStats
+{
+public:
+    QCWebSocketPoolStats();
+    QCWebSocketPoolStats(const QCWebSocketPoolStats &other);
+    QCWebSocketPoolStats(QCWebSocketPoolStats &&other) noexcept;
+    ~QCWebSocketPoolStats();
+
+    QCWebSocketPoolStats &operator=(const QCWebSocketPoolStats &other);
+    QCWebSocketPoolStats &operator=(QCWebSocketPoolStats &&other) noexcept;
+
+    [[nodiscard]] int totalConnections() const noexcept;
+    void setTotalConnections(int value) noexcept;
+
+    [[nodiscard]] int activeConnections() const noexcept;
+    void setActiveConnections(int value) noexcept;
+
+    [[nodiscard]] int idleConnections() const noexcept;
+    void setIdleConnections(int value) noexcept;
+
+    [[nodiscard]] int hitCount() const noexcept;
+    void setHitCount(int value) noexcept;
+
+    [[nodiscard]] int missCount() const noexcept;
+    void setMissCount(int value) noexcept;
+
+    [[nodiscard]] double hitRate() const noexcept;
+    void setHitRate(double value) noexcept;
+
+private:
+    QSharedDataPointer<QCWebSocketPoolStatsData> d;
+};
 
 /**
  * @brief 复用和管理 `QCWebSocket` 连接
@@ -30,39 +126,11 @@ class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPool : public QObject
 
 public:
     /**
-     * @brief 连接池配置
-     */
-    struct Config
-    {
-        int maxPoolSize         = 10;   ///< 最大连接数（每个 URL）
-        int maxIdleTime         = 300;  ///< 空闲超时（秒），超时连接将被清理
-        int minIdleConnections  = 2;    ///< 最小空闲连接数（保留热连接）
-        int maxTotalConnections = 50;   ///< 全局最大连接数（所有 URL 总和）
-        bool enableKeepAlive    = true; ///< 启用心跳保活（发送 Ping 帧）
-        int keepAliveInterval   = 30;   ///< 心跳间隔（秒）
-        bool autoReconnect      = true; ///< 空闲连接断开时自动重连
-        QCNetworkSslConfig sslConfig;   ///< WSS 的 SSL/TLS 配置（默认安全配置）
-    };
-
-    /**
-     * @brief 统计信息
-     */
-    struct Stats
-    {
-        int totalConnections  = 0;   ///< 总连接数（活跃 + 空闲）
-        int activeConnections = 0;   ///< 活跃连接数（正在使用）
-        int idleConnections   = 0;   ///< 空闲连接数（可复用）
-        int hitCount          = 0;   ///< 复用命中次数
-        int missCount         = 0;   ///< 未命中次数（需创建新连接）
-        double hitRate        = 0.0; ///< 命中率（百分比）
-    };
-
-    /**
      * @brief 构造函数
      * @param config 连接池配置
      * @param parent 父对象
      */
-    explicit QCWebSocketPool(const Config &config, QObject *parent = nullptr);
+    explicit QCWebSocketPool(const QCWebSocketPoolConfig &config, QObject *parent = nullptr);
 
     /**
      * @brief 构造函数（使用默认配置）
@@ -139,13 +207,13 @@ public:
      *
      * @note 修改配置不会影响已建立的连接，仅对后续操作生效
      */
-    void setConfig(const Config &config);
+    void setConfig(const QCWebSocketPoolConfig &config);
 
     /**
      * @brief 获取当前配置
      * @return 配置副本
      */
-    Config config() const;
+    QCWebSocketPoolConfig config() const;
 
     // ==================
     // 统计信息
@@ -156,7 +224,7 @@ public:
      * @param url WebSocket URL，如果为空则返回全局统计
      * @return 统计信息结构体
      */
-    Stats statistics(const QUrl &url = QUrl()) const;
+    QCWebSocketPoolStats statistics(const QUrl &url = QUrl()) const;
 
 signals:
     /**
@@ -189,8 +257,7 @@ private slots:
     void onSocketDisconnected();
 
 private:
-    struct Impl;
-    QScopedPointer<Impl> m_impl;
+    QScopedPointer<QCWebSocketPoolPrivate> d_ptr;
 
     // 内部方法
     QCWebSocket *createNewConnection(const QUrl &url);

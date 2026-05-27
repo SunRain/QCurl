@@ -79,9 +79,9 @@ void TestQCWebSocketPool::applyLocalWssConfig(QCWebSocketPool *target)
         return;
     }
     auto config      = target->config();
-    auto sslConfig   = config.sslConfig;
+    auto sslConfig   = config.sslConfig();
     sslConfig.setCaCertPath(m_caCertPath);
-    config.sslConfig = sslConfig;
+    config.setSslConfig(sslConfig);
     target->setConfig(config);
 }
 
@@ -155,21 +155,21 @@ void TestQCWebSocketPool::testConstructor()
     // 测试默认构造
     QCWebSocketPool pool1;
     auto config1 = pool1.config();
-    QCOMPARE(config1.maxPoolSize, 10);
-    QCOMPARE(config1.maxIdleTime, 300);
-    QCOMPARE(config1.enableKeepAlive, true);
+    QCOMPARE(config1.maxPoolSize(), 10);
+    QCOMPARE(config1.maxIdleTime(), 300);
+    QCOMPARE(config1.enableKeepAlive(), true);
 
     // 测试自定义配置
-    QCWebSocketPool::Config config;
-    config.maxPoolSize     = 5;
-    config.maxIdleTime     = 600;
-    config.enableKeepAlive = false;
+    QCWebSocketPoolConfig config;
+    config.setMaxPoolSize(5);
+    config.setMaxIdleTime(600);
+    config.setEnableKeepAlive(false);
 
     QCWebSocketPool pool2(config);
     auto config2 = pool2.config();
-    QCOMPARE(config2.maxPoolSize, 5);
-    QCOMPARE(config2.maxIdleTime, 600);
-    QCOMPARE(config2.enableKeepAlive, false);
+    QCOMPARE(config2.maxPoolSize(), 5);
+    QCOMPARE(config2.maxIdleTime(), 600);
+    QCOMPARE(config2.enableKeepAlive(), false);
 
 }
 
@@ -198,18 +198,18 @@ void TestQCWebSocketPool::testAcquireAndRelease()
 
     // 检查统计信息
     auto stats = pool->statistics(url);
-    QCOMPARE(stats.totalConnections, 1);
-    QCOMPARE(stats.activeConnections, 1);
-    QCOMPARE(stats.idleConnections, 0);
+    QCOMPARE(stats.totalConnections(), 1);
+    QCOMPARE(stats.activeConnections(), 1);
+    QCOMPARE(stats.idleConnections(), 0);
 
     // 归还连接
     pool->release(socket);
 
     // 检查统计信息
     stats = pool->statistics(url);
-    QCOMPARE(stats.totalConnections, 1);
-    QCOMPARE(stats.activeConnections, 0);
-    QCOMPARE(stats.idleConnections, 1);
+    QCOMPARE(stats.totalConnections(), 1);
+    QCOMPARE(stats.activeConnections(), 0);
+    QCOMPARE(stats.idleConnections(), 1);
 
     const QString handshakeError = TestWebSocketEvidenceUtils::verifyHandshakeEvidence(
         m_artifactsPath,
@@ -241,8 +241,8 @@ void TestQCWebSocketPool::testConnectionReuse()
     QVERIFY2(waitForConnection(socket1, 10000), "无法连接到测试服务器");
 
     auto stats1 = pool->statistics(url);
-    QCOMPARE(stats1.missCount, 1); // 未命中（创建新连接）
-    QCOMPARE(stats1.hitCount, 0);
+    QCOMPARE(stats1.missCount(), 1); // 未命中（创建新连接）
+    QCOMPARE(stats1.hitCount(), 0);
 
     // 归还
     pool->release(socket1);
@@ -253,9 +253,9 @@ void TestQCWebSocketPool::testConnectionReuse()
     QCOMPARE(socket2->state(), QCWebSocket::State::Connected);
 
     auto stats2 = pool->statistics(url);
-    QCOMPARE(stats2.hitCount, 1);  // 命中（复用连接）
-    QCOMPARE(stats2.missCount, 1); // 仍是 1（没有创建新连接）
-    QVERIFY(stats2.hitRate > 0.0); // 命中率应该 > 0
+    QCOMPARE(stats2.hitCount(), 1);  // 命中（复用连接）
+    QCOMPARE(stats2.missCount(), 1); // 仍是 1（没有创建新连接）
+    QVERIFY(stats2.hitRate() > 0.0); // 命中率应该 > 0
 
     pool->release(socket2);
 
@@ -268,7 +268,7 @@ void TestQCWebSocketPool::testConnectionReuse()
         2000);
     QVERIFY2(handshakeError.isEmpty(), qPrintable(handshakeError));
 
-    qDebug() << "连接复用命中率:" << stats2.hitRate << "%";
+    qDebug() << "连接复用命中率:" << stats2.hitRate() << "%";
 }
 
 void TestQCWebSocketPool::testMultipleUrls()
@@ -293,7 +293,7 @@ void TestQCWebSocketPool::testMultipleUrls()
 
     // 检查全局统计
     auto globalStats = pool->statistics();
-    QVERIFY(globalStats.totalConnections >= 2);
+    QVERIFY(globalStats.totalConnections() >= 2);
 
     pool->release(socket1);
     pool->release(socket2);
@@ -302,8 +302,8 @@ void TestQCWebSocketPool::testMultipleUrls()
 
 void TestQCWebSocketPool::testMaxPoolSize()
 {
-    QCWebSocketPool::Config config;
-    config.maxPoolSize = 2; // 每个 URL 最多 2 个连接
+    QCWebSocketPoolConfig config;
+    config.setMaxPoolSize(2); // 每个 URL 最多 2 个连接
 
     pool = new QCWebSocketPool(config);
     applyLocalWssConfig(pool);
@@ -373,8 +373,8 @@ void TestQCWebSocketPool::testPreWarm()
     pool->preWarm(url, 3);
 
     QTRY_COMPARE_WITH_TIMEOUT(createdSpy.count(), 3, 1000);
-    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).totalConnections == 3, 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).idleConnections == 3, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).totalConnections() == 3, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(pool->statistics(url).idleConnections() == 3, 2000);
 
     auto *socket = pool->acquire(url);
     QVERIFY2(socket != nullptr, "preWarm 后应能直接从池中拿到可复用连接");
@@ -385,12 +385,12 @@ void TestQCWebSocketPool::testPreWarm()
 
     // 检查统计
     auto stats = pool->statistics(url);
-    qDebug() << "预热后连接数:" << stats.totalConnections;
-    qDebug() << "空闲连接:" << stats.idleConnections;
+    qDebug() << "预热后连接数:" << stats.totalConnections();
+    qDebug() << "空闲连接:" << stats.idleConnections();
 
-    QCOMPARE(stats.totalConnections, 3);
-    QCOMPARE(stats.activeConnections, 0);
-    QCOMPARE(stats.idleConnections, 3);
+    QCOMPARE(stats.totalConnections(), 3);
+    QCOMPARE(stats.activeConnections(), 0);
+    QCOMPARE(stats.idleConnections(), 3);
 
 }
 
@@ -411,7 +411,7 @@ void TestQCWebSocketPool::testClearPool()
 
     // 检查统计
     auto stats = pool->statistics(url);
-    QCOMPARE(stats.totalConnections, 0);
+    QCOMPARE(stats.totalConnections(), 0);
     QVERIFY(!pool->contains(url));
 }
 
@@ -423,8 +423,8 @@ void TestQCWebSocketPool::testStatistics()
 
     // 初始统计
     auto stats0 = pool->statistics(url);
-    QCOMPARE(stats0.totalConnections, 0);
-    QCOMPARE(stats0.hitRate, 0.0);
+    QCOMPARE(stats0.totalConnections(), 0);
+    QCOMPARE(stats0.hitRate(), 0.0);
 
     // 第 1 次获取
     auto *socket1 = pool->acquire(url);
@@ -432,9 +432,9 @@ void TestQCWebSocketPool::testStatistics()
     QVERIFY2(waitForConnection(socket1, 10000), "无法连接到本地 WSS 测试服务器");
 
     auto stats1 = pool->statistics(url);
-    QCOMPARE(stats1.totalConnections, 1);
-    QCOMPARE(stats1.activeConnections, 1);
-    QCOMPARE(stats1.missCount, 1);
+    QCOMPARE(stats1.totalConnections(), 1);
+    QCOMPARE(stats1.activeConnections(), 1);
+    QCOMPARE(stats1.missCount(), 1);
 
     pool->release(socket1);
 
@@ -443,9 +443,9 @@ void TestQCWebSocketPool::testStatistics()
     QVERIFY(socket2 == socket1);
 
     auto stats2 = pool->statistics(url);
-    QCOMPARE(stats2.hitCount, 1);
-    QCOMPARE(stats2.missCount, 1);
-    QCOMPARE(stats2.hitRate, 50.0); // 1 hit / 2 total = 50%
+    QCOMPARE(stats2.hitCount(), 1);
+    QCOMPARE(stats2.missCount(), 1);
+    QCOMPARE(stats2.hitRate(), 50.0); // 1 hit / 2 total = 50%
 
     pool->release(socket2);
 
@@ -495,9 +495,9 @@ void TestQCWebSocketPool::testReleaseNonPooledSocket()
 
 void TestQCWebSocketPool::testMaxTotalConnections()
 {
-    QCWebSocketPool::Config config;
-    config.maxPoolSize         = 10;
-    config.maxTotalConnections = 3; // 全局最多 3 个连接
+    QCWebSocketPoolConfig config;
+    config.setMaxPoolSize(10);
+    config.setMaxTotalConnections(3); // 全局最多 3 个连接
 
     pool = new QCWebSocketPool(config);
     applyLocalWssConfig(pool);

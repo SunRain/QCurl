@@ -28,6 +28,12 @@ def validate_other_extras_fixture(source_dir: Path) -> None:
             "#include <QCWebSocketCompressionConfig.h>",
             "QCurl::QCWebSocket socket",
             "QCurl::QCWebSocketCompressionConfig::defaultConfig()",
+            "#include <QCWebSocketPool.h>",
+            "QCurl::QCWebSocketPoolConfig poolConfig",
+            "poolConfig.setMaxPoolSize(4)",
+            "QCurl::QCWebSocketPool pool(poolConfig)",
+            "QCurl::QCWebSocketPoolStats poolStats",
+            "poolStats.totalConnections()",
         ],
         "other extras consumer fixture is missing Diagnostics, Middleware Extras or WebSocket Preview opt-in coverage",
     )
