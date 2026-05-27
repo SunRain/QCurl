@@ -178,9 +178,9 @@ private slots:
 
         m_output << "连接到: " << wsUrl.toString() << "\n";
         m_output << "压缩配置:\n";
-        m_output << "  - 启用: " << (compConfig.enabled ? "是" : "否") << "\n";
-        m_output << "  - 客户端窗口位数: " << compConfig.clientMaxWindowBits << " (32KB)\n";
-        m_output << "  - 压缩级别: " << compConfig.compressionLevel << "\n";
+        m_output << "  - 启用: " << (compConfig.enabled() ? "是" : "否") << "\n";
+        m_output << "  - 客户端窗口位数: " << compConfig.clientMaxWindowBits() << " (32KB)\n";
+        m_output << "  - 压缩级别: " << compConfig.compressionLevel() << "\n";
         m_output << "  - 扩展头: " << compConfig.toExtensionHeader() << "\n\n";
 
         connect(socket, &QCWebSocket::connected, this, [this, socket]() {

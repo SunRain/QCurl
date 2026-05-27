@@ -37,7 +37,7 @@ int main()
     QCurl::QCWebSocketCompressionConfig compression =
         QCurl::QCWebSocketCompressionConfig::defaultConfig();
     socket.setCompressionConfig(compression);
-    if (!compression.enabled
+    if (!compression.enabled()
         || socket.state() != QCurl::QCWebSocket::State::Unconnected) {
         return 3;
     }

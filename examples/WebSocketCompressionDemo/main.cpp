@@ -113,9 +113,9 @@ void demo2_CompressionPresets()
 
         auto [name, config] = configs[currentIndex++];
         qDebug() << "\n--- 测试:" << name << "---";
-        qDebug() << "  窗口大小:" << config.clientMaxWindowBits;
-        qDebug() << "  压缩级别:" << config.compressionLevel;
-        qDebug() << "  无上下文接管:" << (config.clientNoContextTakeover ? "是" : "否");
+        qDebug() << "  窗口大小:" << config.clientMaxWindowBits();
+        qDebug() << "  压缩级别:" << config.compressionLevel();
+        qDebug() << "  无上下文接管:" << (config.clientNoContextTakeover() ? "是" : "否");
 
         auto *socket = new QCWebSocket(url);
         socket->setCompressionConfig(config);

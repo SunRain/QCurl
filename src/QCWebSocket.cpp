@@ -394,7 +394,7 @@ void QCWebSocket::open()
 
         // 添加 WebSocket 压缩扩展请求头
         d->clearRequestHeaders();
-        if (d->compressionConfig.enabled) {
+        if (d->compressionConfig.enabled()) {
             const QString extHeader = d->compressionConfig.toExtensionHeader();
             if (!extHeader.isEmpty()) {
                 const QString headerStr
@@ -459,7 +459,7 @@ void QCWebSocket::open()
         // 注意：libcurl 的 CONNECT_ONLY=2 模式不提供简单的响应头访问
         // 这里我们假设如果请求了压缩且连接成功，压缩就可能被启用
         // TODO: 更精确的方法是使用 CURLOPT_HEADERFUNCTION 回调捕获响应头
-        if (d->compressionConfig.enabled) {
+        if (d->compressionConfig.enabled()) {
             // 简化实现：假设压缩协商成功
             // 实际应用中需要解析响应头的 Sec-WebSocket-Extensions
             d->compressionNegotiated = true;
@@ -857,9 +857,9 @@ bool QCWebSocketPrivate::compressData(const QByteArray &input, QByteArray &outpu
     stream.zfree  = Z_NULL;
     stream.opaque = Z_NULL;
 
-    int windowBits = -compressionConfig.clientMaxWindowBits; // 负值表示无 zlib 头
+    int windowBits = -compressionConfig.clientMaxWindowBits(); // 负值表示无 zlib 头
     int ret        = deflateInit2(&stream,
-                                  compressionConfig.compressionLevel,
+                                  compressionConfig.compressionLevel(),
                                   Z_DEFLATED,
                                   windowBits,
                                   8,
@@ -909,7 +909,7 @@ bool QCWebSocketPrivate::decompressData(const QByteArray &input, QByteArray &out
     stream.zfree  = Z_NULL;
     stream.opaque = Z_NULL;
 
-    int windowBits = -compressionConfig.serverMaxWindowBits; // 负值表示无 zlib 头
+    int windowBits = -compressionConfig.serverMaxWindowBits(); // 负值表示无 zlib 头
     int ret        = inflateInit2(&stream, windowBits);
 
     if (ret != Z_OK) {

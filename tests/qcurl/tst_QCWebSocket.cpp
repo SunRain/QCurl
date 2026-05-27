@@ -307,33 +307,33 @@ void TestQCWebSocket::testCompressionConfigIgnoredWhileConnected()
     QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:65535"))};
 
     QCWebSocketCompressionConfig initialConfig;
-    initialConfig.enabled                 = false;
-    initialConfig.clientMaxWindowBits     = 15;
-    initialConfig.serverMaxWindowBits     = 15;
-    initialConfig.clientNoContextTakeover = false;
-    initialConfig.serverNoContextTakeover = false;
-    initialConfig.compressionLevel        = 6;
+    initialConfig.setEnabled(false);
+    initialConfig.setClientMaxWindowBits(15);
+    initialConfig.setServerMaxWindowBits(15);
+    initialConfig.setClientNoContextTakeover(false);
+    initialConfig.setServerNoContextTakeover(false);
+    initialConfig.setCompressionLevel(6);
     socket.setCompressionConfig(initialConfig);
 
     socket.open();
     QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
 
     QCWebSocketCompressionConfig updatedConfig = QCWebSocketCompressionConfig::defaultConfig();
-    updatedConfig.clientMaxWindowBits          = 12;
-    updatedConfig.serverMaxWindowBits          = 12;
-    updatedConfig.clientNoContextTakeover      = true;
-    updatedConfig.serverNoContextTakeover      = true;
-    updatedConfig.compressionLevel             = 9;
+    updatedConfig.setClientMaxWindowBits(12);
+    updatedConfig.setServerMaxWindowBits(12);
+    updatedConfig.setClientNoContextTakeover(true);
+    updatedConfig.setServerNoContextTakeover(true);
+    updatedConfig.setCompressionLevel(9);
 
     socket.setCompressionConfig(updatedConfig);
 
     const QCWebSocketCompressionConfig currentConfig = socket.compressionConfig();
-    QVERIFY(!currentConfig.enabled);
-    QCOMPARE(currentConfig.clientMaxWindowBits, initialConfig.clientMaxWindowBits);
-    QCOMPARE(currentConfig.serverMaxWindowBits, initialConfig.serverMaxWindowBits);
-    QCOMPARE(currentConfig.clientNoContextTakeover, initialConfig.clientNoContextTakeover);
-    QCOMPARE(currentConfig.serverNoContextTakeover, initialConfig.serverNoContextTakeover);
-    QCOMPARE(currentConfig.compressionLevel, initialConfig.compressionLevel);
+    QVERIFY(!currentConfig.enabled());
+    QCOMPARE(currentConfig.clientMaxWindowBits(), initialConfig.clientMaxWindowBits());
+    QCOMPARE(currentConfig.serverMaxWindowBits(), initialConfig.serverMaxWindowBits());
+    QCOMPARE(currentConfig.clientNoContextTakeover(), initialConfig.clientNoContextTakeover());
+    QCOMPARE(currentConfig.serverNoContextTakeover(), initialConfig.serverNoContextTakeover());
+    QCOMPARE(currentConfig.compressionLevel(), initialConfig.compressionLevel());
 }
 
 void TestQCWebSocket::testConnectInvalidUrl()

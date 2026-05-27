@@ -2,42 +2,100 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
+#include <QSharedData>
+
 #include <algorithm>
 #include <cmath>
 
 namespace QCurl {
 
-// ==================
-// 构造函数
-// ==================
+/// WebSocket 重连策略的共享负载；不保存 socket 运行时状态。
+class QCWebSocketReconnectPolicyData : public QSharedData
+{
+public:
+    int maxRetries = 0;
+    std::chrono::milliseconds initialDelay{1000};
+    double backoffMultiplier = 2.0;
+    std::chrono::milliseconds maxDelay{30000};
+    QSet<int> retriableCloseCodes = {1001, 1006, 1011};
+};
 
 QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy()
-    : maxRetries(0)
-    , initialDelay(1000)
-    , backoffMultiplier(2.0)
-    , maxDelay(30000)
+    : d(new QCWebSocketReconnectPolicyData)
 {
-    // 默认可重连的 CloseCode
-    retriableCloseCodes = {
-        1001, // GoingAway
-        1006, // AbnormalClosure
-        1011  // InternalError
-    };
 }
 
-// ==================
-// 核心方法
-// ==================
+QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy(
+    const QCWebSocketReconnectPolicy &other) = default;
+
+QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy(
+    QCWebSocketReconnectPolicy &&other) noexcept = default;
+
+QCWebSocketReconnectPolicy::~QCWebSocketReconnectPolicy() = default;
+
+QCWebSocketReconnectPolicy &QCWebSocketReconnectPolicy::operator=(
+    const QCWebSocketReconnectPolicy &other) = default;
+
+QCWebSocketReconnectPolicy &QCWebSocketReconnectPolicy::operator=(
+    QCWebSocketReconnectPolicy &&other) noexcept = default;
+
+int QCWebSocketReconnectPolicy::maxRetries() const noexcept
+{
+    return d->maxRetries;
+}
+
+void QCWebSocketReconnectPolicy::setMaxRetries(int maxRetries) noexcept
+{
+    d->maxRetries = maxRetries;
+}
+
+std::chrono::milliseconds QCWebSocketReconnectPolicy::initialDelay() const noexcept
+{
+    return d->initialDelay;
+}
+
+void QCWebSocketReconnectPolicy::setInitialDelay(std::chrono::milliseconds delay) noexcept
+{
+    d->initialDelay = delay;
+}
+
+double QCWebSocketReconnectPolicy::backoffMultiplier() const noexcept
+{
+    return d->backoffMultiplier;
+}
+
+void QCWebSocketReconnectPolicy::setBackoffMultiplier(double multiplier) noexcept
+{
+    d->backoffMultiplier = multiplier;
+}
+
+std::chrono::milliseconds QCWebSocketReconnectPolicy::maxDelay() const noexcept
+{
+    return d->maxDelay;
+}
+
+void QCWebSocketReconnectPolicy::setMaxDelay(std::chrono::milliseconds delay) noexcept
+{
+    d->maxDelay = delay;
+}
+
+QSet<int> QCWebSocketReconnectPolicy::retriableCloseCodes() const
+{
+    return d->retriableCloseCodes;
+}
+
+void QCWebSocketReconnectPolicy::setRetriableCloseCodes(const QSet<int> &closeCodes)
+{
+    d->retriableCloseCodes = closeCodes;
+}
 
 bool QCWebSocketReconnectPolicy::shouldRetry(int closeCode, int attemptCount) const
 {
-    // 检查是否超过最大重连次数
-    if (maxRetries <= 0 || attemptCount > maxRetries) {
+    if (d->maxRetries <= 0 || attemptCount > d->maxRetries) {
         return false;
     }
 
-    // 检查 CloseCode 是否可重连
-    return retriableCloseCodes.contains(closeCode);
+    return d->retriableCloseCodes.contains(closeCode);
 }
 
 std::chrono::milliseconds QCWebSocketReconnectPolicy::delayForAttempt(int attemptCount) const
@@ -46,48 +104,42 @@ std::chrono::milliseconds QCWebSocketReconnectPolicy::delayForAttempt(int attemp
         return std::chrono::milliseconds(0);
     }
 
-    // 计算指数退避延迟：initialDelay * (backoffMultiplier ^ (attemptCount - 1))
     double exponent        = static_cast<double>(attemptCount - 1);
-    double multiplier      = std::pow(backoffMultiplier, exponent);
-    double calculatedDelay = initialDelay.count() * multiplier;
+    double multiplier      = std::pow(d->backoffMultiplier, exponent);
+    double calculatedDelay = d->initialDelay.count() * multiplier;
 
-    // 限制在最大延迟范围内
     auto delayMs = static_cast<qint64>(
-        std::min(calculatedDelay, static_cast<double>(maxDelay.count())));
+        std::min(calculatedDelay, static_cast<double>(d->maxDelay.count())));
 
     return std::chrono::milliseconds(delayMs);
 }
 
-// ==================
-// 静态工厂方法
-// ==================
-
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::noReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.maxRetries = 0;
+    policy.setMaxRetries(0);
     return policy;
 }
 
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::standardReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.maxRetries          = 3;
-    policy.initialDelay        = std::chrono::milliseconds(1000);
-    policy.backoffMultiplier   = 2.0;
-    policy.maxDelay            = std::chrono::milliseconds(30000);
-    policy.retriableCloseCodes = {1001, 1006, 1011};
+    policy.setMaxRetries(3);
+    policy.setInitialDelay(std::chrono::milliseconds(1000));
+    policy.setBackoffMultiplier(2.0);
+    policy.setMaxDelay(std::chrono::milliseconds(30000));
+    policy.setRetriableCloseCodes({1001, 1006, 1011});
     return policy;
 }
 
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::aggressiveReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.maxRetries          = 10;
-    policy.initialDelay        = std::chrono::milliseconds(500);
-    policy.backoffMultiplier   = 1.5;
-    policy.maxDelay            = std::chrono::milliseconds(60000);
-    policy.retriableCloseCodes = {1001, 1006, 1011};
+    policy.setMaxRetries(10);
+    policy.setInitialDelay(std::chrono::milliseconds(500));
+    policy.setBackoffMultiplier(1.5);
+    policy.setMaxDelay(std::chrono::milliseconds(60000));
+    policy.setRetriableCloseCodes({1001, 1006, 1011});
     return policy;
 }
 

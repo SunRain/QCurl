@@ -2,13 +2,105 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
+#include <QSharedData>
 #include <QStringList>
 
 namespace QCurl {
 
+/// WebSocket 压缩配置的共享负载；不保存运行时 zlib 状态。
+class QCWebSocketCompressionConfigData : public QSharedData
+{
+public:
+    bool enabled = false;
+    int clientMaxWindowBits = 15;
+    int serverMaxWindowBits = 15;
+    bool clientNoContextTakeover = false;
+    bool serverNoContextTakeover = false;
+    int compressionLevel = 6;
+};
+
+QCWebSocketCompressionConfig::QCWebSocketCompressionConfig()
+    : d(new QCWebSocketCompressionConfigData)
+{
+}
+
+QCWebSocketCompressionConfig::QCWebSocketCompressionConfig(
+    const QCWebSocketCompressionConfig &other) = default;
+
+QCWebSocketCompressionConfig::QCWebSocketCompressionConfig(
+    QCWebSocketCompressionConfig &&other) noexcept = default;
+
+QCWebSocketCompressionConfig::~QCWebSocketCompressionConfig() = default;
+
+QCWebSocketCompressionConfig &QCWebSocketCompressionConfig::operator=(
+    const QCWebSocketCompressionConfig &other) = default;
+
+QCWebSocketCompressionConfig &QCWebSocketCompressionConfig::operator=(
+    QCWebSocketCompressionConfig &&other) noexcept = default;
+
+bool QCWebSocketCompressionConfig::enabled() const noexcept
+{
+    return d->enabled;
+}
+
+void QCWebSocketCompressionConfig::setEnabled(bool enabled) noexcept
+{
+    d->enabled = enabled;
+}
+
+int QCWebSocketCompressionConfig::clientMaxWindowBits() const noexcept
+{
+    return d->clientMaxWindowBits;
+}
+
+void QCWebSocketCompressionConfig::setClientMaxWindowBits(int bits) noexcept
+{
+    d->clientMaxWindowBits = bits;
+}
+
+int QCWebSocketCompressionConfig::serverMaxWindowBits() const noexcept
+{
+    return d->serverMaxWindowBits;
+}
+
+void QCWebSocketCompressionConfig::setServerMaxWindowBits(int bits) noexcept
+{
+    d->serverMaxWindowBits = bits;
+}
+
+bool QCWebSocketCompressionConfig::clientNoContextTakeover() const noexcept
+{
+    return d->clientNoContextTakeover;
+}
+
+void QCWebSocketCompressionConfig::setClientNoContextTakeover(bool enabled) noexcept
+{
+    d->clientNoContextTakeover = enabled;
+}
+
+bool QCWebSocketCompressionConfig::serverNoContextTakeover() const noexcept
+{
+    return d->serverNoContextTakeover;
+}
+
+void QCWebSocketCompressionConfig::setServerNoContextTakeover(bool enabled) noexcept
+{
+    d->serverNoContextTakeover = enabled;
+}
+
+int QCWebSocketCompressionConfig::compressionLevel() const noexcept
+{
+    return d->compressionLevel;
+}
+
+void QCWebSocketCompressionConfig::setCompressionLevel(int level) noexcept
+{
+    d->compressionLevel = level;
+}
+
 QString QCWebSocketCompressionConfig::toExtensionHeader() const
 {
-    if (!enabled) {
+    if (!d->enabled) {
         return QString();
     }
 
@@ -16,22 +108,19 @@ QString QCWebSocketCompressionConfig::toExtensionHeader() const
     parts << QStringLiteral("permessage-deflate");
 
     // 客户端窗口位数
-    if (clientMaxWindowBits < 15) {
-        parts << QStringLiteral("client_max_window_bits=%1").arg(clientMaxWindowBits);
+    if (d->clientMaxWindowBits < 15) {
+        parts << QStringLiteral("client_max_window_bits=%1").arg(d->clientMaxWindowBits);
     }
 
-    // 服务器窗口位数
-    if (serverMaxWindowBits < 15) {
-        parts << QStringLiteral("server_max_window_bits=%1").arg(serverMaxWindowBits);
+    if (d->serverMaxWindowBits < 15) {
+        parts << QStringLiteral("server_max_window_bits=%1").arg(d->serverMaxWindowBits);
     }
 
-    // 客户端无上下文接管
-    if (clientNoContextTakeover) {
+    if (d->clientNoContextTakeover) {
         parts << QStringLiteral("client_no_context_takeover");
     }
 
-    // 服务器无上下文接管
-    if (serverNoContextTakeover) {
+    if (d->serverNoContextTakeover) {
         parts << QStringLiteral("server_no_context_takeover");
     }
 
@@ -44,11 +133,11 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(c
 
     if (header.isEmpty()
         || !header.contains(QStringLiteral("permessage-deflate"), Qt::CaseInsensitive)) {
-        config.enabled = false;
+        config.setEnabled(false);
         return config;
     }
 
-    config.enabled = true;
+    config.setEnabled(true);
 
     // 解析参数
     QStringList parts = header.split(QLatin1Char(';'), Qt::SkipEmptyParts);
@@ -62,7 +151,7 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(c
                 bool ok;
                 int bits = trimmed.mid(eqPos + 1).trimmed().toInt(&ok);
                 if (ok && bits >= 8 && bits <= 15) {
-                    config.clientMaxWindowBits = bits;
+                    config.setClientMaxWindowBits(bits);
                 }
             }
         } else if (trimmed.startsWith(QStringLiteral("server_max_window_bits"),
@@ -72,15 +161,15 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(c
                 bool ok;
                 int bits = trimmed.mid(eqPos + 1).trimmed().toInt(&ok);
                 if (ok && bits >= 8 && bits <= 15) {
-                    config.serverMaxWindowBits = bits;
+                    config.setServerMaxWindowBits(bits);
                 }
             }
         } else if (trimmed.contains(QStringLiteral("client_no_context_takeover"),
                                     Qt::CaseInsensitive)) {
-            config.clientNoContextTakeover = true;
+            config.setClientNoContextTakeover(true);
         } else if (trimmed.contains(QStringLiteral("server_no_context_takeover"),
                                     Qt::CaseInsensitive)) {
-            config.serverNoContextTakeover = true;
+            config.setServerNoContextTakeover(true);
         }
     }
 
@@ -90,36 +179,36 @@ QCWebSocketCompressionConfig QCWebSocketCompressionConfig::fromExtensionHeader(c
 QCWebSocketCompressionConfig QCWebSocketCompressionConfig::defaultConfig()
 {
     QCWebSocketCompressionConfig config;
-    config.enabled                 = true;
-    config.clientMaxWindowBits     = 15;
-    config.serverMaxWindowBits     = 15;
-    config.clientNoContextTakeover = false;
-    config.serverNoContextTakeover = false;
-    config.compressionLevel        = 6;
+    config.setEnabled(true);
+    config.setClientMaxWindowBits(15);
+    config.setServerMaxWindowBits(15);
+    config.setClientNoContextTakeover(false);
+    config.setServerNoContextTakeover(false);
+    config.setCompressionLevel(6);
     return config;
 }
 
 QCWebSocketCompressionConfig QCWebSocketCompressionConfig::lowMemoryConfig()
 {
     QCWebSocketCompressionConfig config;
-    config.enabled                 = true;
-    config.clientMaxWindowBits     = 9; // 512B 窗口
-    config.serverMaxWindowBits     = 9;
-    config.clientNoContextTakeover = true; // 不保留状态
-    config.serverNoContextTakeover = true;
-    config.compressionLevel        = 3; // 较低压缩级别
+    config.setEnabled(true);
+    config.setClientMaxWindowBits(9);
+    config.setServerMaxWindowBits(9);
+    config.setClientNoContextTakeover(true);
+    config.setServerNoContextTakeover(true);
+    config.setCompressionLevel(3);
     return config;
 }
 
 QCWebSocketCompressionConfig QCWebSocketCompressionConfig::maxCompressionConfig()
 {
     QCWebSocketCompressionConfig config;
-    config.enabled                 = true;
-    config.clientMaxWindowBits     = 15; // 32KB 窗口
-    config.serverMaxWindowBits     = 15;
-    config.clientNoContextTakeover = false; // 保留状态提升压缩率
-    config.serverNoContextTakeover = false;
-    config.compressionLevel        = 9; // 最高压缩级别
+    config.setEnabled(true);
+    config.setClientMaxWindowBits(15);
+    config.setServerMaxWindowBits(15);
+    config.setClientNoContextTakeover(false);
+    config.setServerNoContextTakeover(false);
+    config.setCompressionLevel(9);
     return config;
 }
 

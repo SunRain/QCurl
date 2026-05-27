@@ -192,7 +192,7 @@ BenchmarkWebSocketCompression::testCompression(
     // 实际应该连接到 WebSocket 服务器并真正发送消息
     // 由于测试环境限制，这里只模拟压缩效果
 
-    if (config.enabled) {
+    if (config.enabled()) {
         // 模拟压缩效果（基于经验值）
         if (message.contains("repeating")) {
             // 重复文本：60-80% 压缩率
@@ -206,7 +206,7 @@ BenchmarkWebSocketCompression::testCompression(
         }
 
         // 压缩级别影响
-        double levelFactor = config.compressionLevel / 6.0;  // 6 是默认值
+        double levelFactor = config.compressionLevel() / 6.0;  // 6 是默认值
         result.compressedSize = static_cast<qint64>(
             result.compressedSize * (1.0 - (levelFactor - 1.0) * 0.1));
     } else {
@@ -217,7 +217,7 @@ BenchmarkWebSocketCompression::testCompression(
                                result.originalSize) * 100.0;
 
     // 模拟CPU时间（压缩有开销）
-    result.cpuTime = config.enabled ? (result.originalSize / 100) : 10;
+    result.cpuTime = config.enabled() ? (result.originalSize / 100) : 10;
 
     result.success = true;
     return result;
@@ -263,7 +263,7 @@ void BenchmarkWebSocketCompression::benchmark_TextMessage_NoCompression()
     QString message = generateRepeatingText(10);  // 10KB
 
     QCWebSocketCompressionConfig config;
-    config.enabled = false;
+    config.setEnabled(false);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -330,7 +330,7 @@ void BenchmarkWebSocketCompression::benchmark_JsonData_NoCompression()
     QString message = QString::fromUtf8(generateJsonData(10));
 
     QCWebSocketCompressionConfig config;
-    config.enabled = false;
+    config.setEnabled(false);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -397,7 +397,7 @@ void BenchmarkWebSocketCompression::benchmark_BinaryData_NoCompression()
     QString message = QString::fromLatin1(generateRandomBinary(10));
 
     QCWebSocketCompressionConfig config;
-    config.enabled = false;
+    config.setEnabled(false);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -442,8 +442,8 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_1()
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
-    config.enabled = true;
-    config.compressionLevel = 1;
+    config.setEnabled(true);
+    config.setCompressionLevel(1);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -466,8 +466,8 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_3()
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
-    config.enabled = true;
-    config.compressionLevel = 3;
+    config.setEnabled(true);
+    config.setCompressionLevel(3);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -490,8 +490,8 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_6()
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
-    config.enabled = true;
-    config.compressionLevel = 6;
+    config.setEnabled(true);
+    config.setCompressionLevel(6);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);
@@ -514,8 +514,8 @@ void BenchmarkWebSocketCompression::benchmark_CompressionLevel_9()
     QString message = generateRepeatingText(10);
 
     QCWebSocketCompressionConfig config;
-    config.enabled = true;
-    config.compressionLevel = 9;
+    config.setEnabled(true);
+    config.setCompressionLevel(9);
 
     QBENCHMARK {
         CompressionResult result = testCompression(message, config);

@@ -11,10 +11,13 @@
 #include "QCGlobal.h"
 
 #include <QSet>
+#include <QSharedDataPointer>
 
 #include <chrono>
 
 namespace QCurl {
+
+class QCWebSocketReconnectPolicyData;
 
 /**
  * @brief WebSocket 自动重连策略配置
@@ -23,6 +26,8 @@ namespace QCurl {
  * - 最大重连次数
  * - 指数退避算法参数（初始延迟、退避乘数、最大延迟）
  * - 可重连的 CloseCode 集合
+ *
+ * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
  *
  * @par 指数退避算法
  * 延迟时间计算公式：
@@ -38,10 +43,10 @@ namespace QCurl {
  *
  * // 自定义重连策略
  * QCWebSocketReconnectPolicy policy;
- * policy.maxRetries = 5;
- * policy.initialDelay = std::chrono::milliseconds(2000);
- * policy.backoffMultiplier = 1.5;
- * policy.retriableCloseCodes = {1001, 1006, 1011};
+ * policy.setMaxRetries(5);
+ * policy.setInitialDelay(std::chrono::milliseconds(2000));
+ * policy.setBackoffMultiplier(1.5);
+ * policy.setRetriableCloseCodes({1001, 1006, 1011});
  * socket.setReconnectPolicy(policy);
  * @endcode
  *
@@ -56,75 +61,36 @@ public:
      * 这是 QCWebSocket 的默认行为。
      */
     QCWebSocketReconnectPolicy();
+    QCWebSocketReconnectPolicy(const QCWebSocketReconnectPolicy &other);
+    QCWebSocketReconnectPolicy(QCWebSocketReconnectPolicy &&other) noexcept;
+    ~QCWebSocketReconnectPolicy();
+
+    QCWebSocketReconnectPolicy &operator=(const QCWebSocketReconnectPolicy &other);
+    QCWebSocketReconnectPolicy &operator=(QCWebSocketReconnectPolicy &&other) noexcept;
 
     // ==================
     // 重连参数
     // ==================
 
-    /**
-     * @brief 最大重连次数
-     *
-     * 当连接断开时，最多尝试重连的次数。
-     *
-     * - 0：不重连（默认）
-     * - >0：最多重连 N 次
-     */
-    int maxRetries = 0;
+    /// 返回最大重连次数；0 表示不重连。
+    [[nodiscard]] int maxRetries() const noexcept;
+    void setMaxRetries(int maxRetries) noexcept;
 
-    /**
-     * @brief 初始延迟时间（毫秒）
-     *
-     * 第一次重连尝试的延迟时间。
-     * 后续重连延迟将根据指数退避算法递增。
-     *
-     * @note 默认值：1000ms (1 秒)
-     */
-    std::chrono::milliseconds initialDelay{1000};
+    /// 返回第一次重连尝试的延迟。
+    [[nodiscard]] std::chrono::milliseconds initialDelay() const noexcept;
+    void setInitialDelay(std::chrono::milliseconds delay) noexcept;
 
-    /**
-     * @brief 退避乘数
-     *
-     * 每次重连失败后，延迟时间的乘数因子。
-     *
-     * - 1.0：固定延迟（不推荐）
-     * - 2.0：标准指数退避（推荐）
-     * - 1.5：较温和的退避
-     *
-     * @note 默认值：2.0
-     */
-    double backoffMultiplier = 2.0;
+    /// 返回指数退避乘数。
+    [[nodiscard]] double backoffMultiplier() const noexcept;
+    void setBackoffMultiplier(double multiplier) noexcept;
 
-    /**
-     * @brief 最大延迟时间（毫秒）
-     *
-     * 重连延迟的上限值，防止延迟时间无限增长。
-     *
-     * @note 默认值：30000ms (30 秒)
-     */
-    std::chrono::milliseconds maxDelay{30000};
+    /// 返回重连延迟上限。
+    [[nodiscard]] std::chrono::milliseconds maxDelay() const noexcept;
+    void setMaxDelay(std::chrono::milliseconds delay) noexcept;
 
-    /**
-     * @brief 可重连的 CloseCode 集合
-     *
-     * 当 WebSocket 关闭时，只有这些 CloseCode 才会触发自动重连。
-     *
-     * 默认可重连的 CloseCode：
-     * - 1001 (GoingAway): 端点离开
-     * - 1006 (AbnormalClosure): 异常关闭（如网络中断）
-     * - 1011 (InternalError): 服务器内部错误
-     *
-     * 不应重连的 CloseCode（通常是客户端错误）：
-     * - 1000 (Normal): 正常关闭
-     * - 1002 (ProtocolError): 协议错误
-     * - 1003 (UnsupportedData): 不支持的数据类型
-     * - 1007 (InvalidPayload): 无效载荷
-     * - 1008 (PolicyViolation): 策略违规
-     */
-    QSet<int> retriableCloseCodes = {
-        1001, // GoingAway
-        1006, // AbnormalClosure
-        1011  // InternalError
-    };
+    /// 返回允许触发重连的 WebSocket CloseCode 集合。
+    [[nodiscard]] QSet<int> retriableCloseCodes() const;
+    void setRetriableCloseCodes(const QSet<int> &closeCodes);
 
     // ==================
     // 核心方法
@@ -199,6 +165,9 @@ public:
      * @return 激进重连策略
      */
     [[nodiscard]] static QCWebSocketReconnectPolicy aggressiveReconnect();
+
+private:
+    QSharedDataPointer<QCWebSocketReconnectPolicyData> d;
 };
 
 } // namespace QCurl
