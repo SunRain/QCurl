@@ -18,6 +18,16 @@ updates:
     directory: "/tests/libcurl_consistency"
     schedule:
       interval: "weekly"
+    # tests/libcurl_consistency/requirements.lock.txt mirrors upstream curl
+    # tests/http/requirements.txt, with local brotli support appended.
+    #
+    # Dependabot cannot use that upstream file as the update trigger. Keep direct
+    # PyPI Dependabot PRs disabled here; update the lock only after the upstream
+    # curl testenv requirements change and the delta is reviewed. See
+    # .github/dependabot-policy.md.
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
     labels:
       - dependencies
       - tests
