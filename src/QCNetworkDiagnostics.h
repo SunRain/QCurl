@@ -9,6 +9,7 @@
 #include "QCGlobal.h"
 
 #include <QDateTime>
+#include <QSharedDataPointer>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -16,22 +17,57 @@
 
 namespace QCurl {
 
+class DiagResultData;
+
 /**
- * @brief 诊断结果结构
+ * @brief 诊断结果值类型。
+ *
+ * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
+ * `details()` 只承载当前实现的诊断线索，不承诺稳定 schema。
  */
-struct QCURL_OTHER_EXTRAS_EXPORT DiagResult
+class QCURL_OTHER_EXTRAS_EXPORT DiagResult
 {
-    bool success;        ///< 诊断是否成功
-    QString summary;     ///< 简要总结
-    QVariantMap details; ///< 详细信息（键值对）
-    qint64 durationMs;   ///< 诊断耗时（毫秒）
-    QDateTime timestamp; ///< 诊断时间戳
-    QString errorString; ///< 错误描述（失败时）
+public:
+    DiagResult();
+    DiagResult(const DiagResult &other);
+    DiagResult(DiagResult &&other) noexcept;
+    ~DiagResult();
+
+    DiagResult &operator=(const DiagResult &other);
+    DiagResult &operator=(DiagResult &&other) noexcept;
+
+    /// 返回诊断是否成功。
+    [[nodiscard]] bool success() const noexcept;
+    void setSuccess(bool success) noexcept;
+
+    /// 返回诊断摘要。
+    [[nodiscard]] QString summary() const;
+    void setSummary(const QString &summary);
+
+    /// 返回诊断明细；键集合是诊断实现细节，不承诺稳定 schema。
+    [[nodiscard]] QVariantMap details() const;
+    void setDetails(const QVariantMap &details);
+    void setDetail(const QString &key, const QVariant &value);
+
+    /// 返回诊断耗时，单位为毫秒。
+    [[nodiscard]] qint64 durationMs() const noexcept;
+    void setDurationMs(qint64 durationMs) noexcept;
+
+    /// 返回诊断时间戳。
+    [[nodiscard]] QDateTime timestamp() const;
+    void setTimestamp(const QDateTime &timestamp);
+
+    /// 返回失败时的错误描述。
+    [[nodiscard]] QString errorString() const;
+    void setErrorString(const QString &errorString);
 
     /**
      * @brief 转换为易读的字符串格式
      */
-    QString toString() const;
+    [[nodiscard]] QString toString() const;
+
+private:
+    QSharedDataPointer<DiagResultData> d;
 };
 
 /**

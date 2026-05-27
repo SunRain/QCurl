@@ -46,7 +46,10 @@ set(QCURL_BLOCKING_EXTRAS_SOURCES
 set(QCURL_TEST_SUPPORT_SOURCES)
 
 set(QCURL_OTHER_EXTRAS_SOURCES
-    QCNetworkDiagnostics.cpp        # Other Extras / Preview: 网络诊断工具
+    QCNetworkDiagnostics.cpp        # Other Extras / Preview: DNS 诊断工具
+    QCNetworkDiagnosticsConnectivity.cpp # Other Extras / Preview: 连接、SSL、HTTP 诊断工具
+    QCNetworkDiagnosticsProcess.cpp # Other Extras / Preview: 外部命令诊断工具
+    QCNetworkDiagnosticsValues.cpp  # Other Extras / Preview: 诊断结果值类型
     QCNetworkMiddlewareExtras.cpp   # Middleware Extras opt-in 实现
 )
 

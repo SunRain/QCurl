@@ -28,8 +28,8 @@ namespace {
 QString diagMessage(const DiagResult &result)
 {
     QString message = result.toString().trimmed();
-    if (!result.details.isEmpty()) {
-        const QJsonDocument detailsJson = QJsonDocument::fromVariant(result.details);
+    if (!result.details().isEmpty()) {
+        const QJsonDocument detailsJson = QJsonDocument::fromVariant(result.details());
         if (!detailsJson.isNull()) {
             message += QStringLiteral("\nJSON details: %1")
                            .arg(QString::fromUtf8(detailsJson.toJson(QJsonDocument::Compact)));
@@ -270,9 +270,9 @@ void tst_QCNetworkDiagnosticsLocal::testResolveDNSLocalhost()
 {
     const auto result = QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"), 1000);
 
-    QVERIFY2(result.success, qPrintable(diagMessage(result)));
-    QCOMPARE(result.details.value(QStringLiteral("hostname")).toString(), QStringLiteral("localhost"));
-    QVERIFY(result.details.value(QStringLiteral("ipv4")).toStringList().contains(
+    QVERIFY2(result.success(), qPrintable(diagMessage(result)));
+    QCOMPARE(result.details().value(QStringLiteral("hostname")).toString(), QStringLiteral("localhost"));
+    QVERIFY(result.details().value(QStringLiteral("ipv4")).toStringList().contains(
         QStringLiteral("127.0.0.1")));
 }
 
@@ -283,8 +283,8 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalSuccess()
 
     const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/health")), 3000);
 
-    QVERIFY2(result.success, qPrintable(diagMessage(result)));
-    QCOMPARE(result.details.value(QStringLiteral("statusCode")).toInt(), 200);
+    QVERIFY2(result.success(), qPrintable(diagMessage(result)));
+    QCOMPARE(result.details().value(QStringLiteral("statusCode")).toInt(), 200);
     QCOMPARE(server.requestCount(), 1);
     QCOMPARE(server.lastPath(), QByteArrayLiteral("/health"));
 }
@@ -296,10 +296,10 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalNotFound()
 
     const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/missing")), 3000);
 
-    QVERIFY2(!result.success, qPrintable(diagMessage(result)));
-    QVERIFY2(result.summary.contains(QStringLiteral("HTTP 探测失败")),
+    QVERIFY2(!result.success(), qPrintable(diagMessage(result)));
+    QVERIFY2(result.summary().contains(QStringLiteral("HTTP 探测失败")),
              qPrintable(diagMessage(result)));
-    QCOMPARE(result.details.value(QStringLiteral("statusCode")).toInt(), 404);
+    QCOMPARE(result.details().value(QStringLiteral("statusCode")).toInt(), 404);
     QCOMPARE(server.requestCount(), 1);
     QCOMPARE(server.lastPath(), QByteArrayLiteral("/missing"));
 }
@@ -311,17 +311,17 @@ void tst_QCNetworkDiagnosticsLocal::testDiagnoseLocalHTTP()
 
     const auto result = QCNetworkDiagnostics::diagnose(server.url(QStringLiteral("/diagnose")));
 
-    QVERIFY2(result.success, qPrintable(diagMessage(result)));
-    QCOMPARE(result.details.value(QStringLiteral("overallHealth")).toString(),
+    QVERIFY2(result.success(), qPrintable(diagMessage(result)));
+    QCOMPARE(result.details().value(QStringLiteral("overallHealth")).toString(),
              QStringLiteral("excellent"));
-    QVERIFY(result.details.contains(QStringLiteral("dns")));
-    QVERIFY(result.details.contains(QStringLiteral("connection")));
-    QVERIFY(result.details.contains(QStringLiteral("http")));
-    QVERIFY(!result.details.contains(QStringLiteral("ssl")));
+    QVERIFY(result.details().contains(QStringLiteral("dns")));
+    QVERIFY(result.details().contains(QStringLiteral("connection")));
+    QVERIFY(result.details().contains(QStringLiteral("http")));
+    QVERIFY(!result.details().contains(QStringLiteral("ssl")));
 
-    const QVariantMap dnsResult = result.details.value(QStringLiteral("dns")).toMap();
-    const QVariantMap connectionResult = result.details.value(QStringLiteral("connection")).toMap();
-    const QVariantMap httpResult = result.details.value(QStringLiteral("http")).toMap();
+    const QVariantMap dnsResult = result.details().value(QStringLiteral("dns")).toMap();
+    const QVariantMap connectionResult = result.details().value(QStringLiteral("connection")).toMap();
+    const QVariantMap httpResult = result.details().value(QStringLiteral("http")).toMap();
     QVERIFY2(dnsResult.value(QStringLiteral("success")).toBool(), qPrintable(diagMessage(result)));
     QVERIFY2(connectionResult.value(QStringLiteral("success")).toBool(),
              qPrintable(diagMessage(result)));
@@ -338,19 +338,19 @@ void tst_QCNetworkDiagnosticsLocal::testCheckSSLLocalFixture()
     const auto result = QCNetworkDiagnostics::checkSSL(QStringLiteral("localhost"), server.port(), 4000);
 
     QVERIFY2(server.connectionCount() > 0, "本地 TLS fixture 未收到任何连接");
-    QVERIFY(!result.details.value(QStringLiteral("timedOut")).toBool());
+    QVERIFY(!result.details().value(QStringLiteral("timedOut")).toBool());
 
-    if (result.success) {
-        QVERIFY2(result.details.value(QStringLiteral("verified")).toBool(),
+    if (result.success()) {
+        QVERIFY2(result.details().value(QStringLiteral("verified")).toBool(),
                  qPrintable(diagMessage(result)));
-        QVERIFY(!result.details.value(QStringLiteral("issuer")).toString().isEmpty());
-        QVERIFY(!result.details.value(QStringLiteral("subject")).toString().isEmpty());
+        QVERIFY(!result.details().value(QStringLiteral("issuer")).toString().isEmpty());
+        QVERIFY(!result.details().value(QStringLiteral("subject")).toString().isEmpty());
         return;
     }
 
-    QVERIFY2(result.summary.contains(QStringLiteral("SSL 握手失败")),
+    QVERIFY2(result.summary().contains(QStringLiteral("SSL 握手失败")),
              qPrintable(diagMessage(result)));
-    QVERIFY(result.details.contains(QStringLiteral("sslErrors")) || !result.errorString.isEmpty());
+    QVERIFY(result.details().contains(QStringLiteral("sslErrors")) || !result.errorString().isEmpty());
 }
 
 QTEST_MAIN(tst_QCNetworkDiagnosticsLocal)
