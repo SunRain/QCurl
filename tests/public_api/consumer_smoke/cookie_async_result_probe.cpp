@@ -1,9 +1,9 @@
 #include "contract_probes.h"
 
+#include <QCCookie.h>
 #include <QCCookieAsyncResult.h>
 
 #include <QList>
-#include <QNetworkCookie>
 #include <QString>
 
 int runCookieAsyncResultProbe()
@@ -11,8 +11,10 @@ int runCookieAsyncResultProbe()
     const auto cookieImportSuccess = QCurl::QCCookieOperationResult::success();
     const auto cookieImportFailure = QCurl::QCCookieOperationResult::failure(
         QStringLiteral("consumer cookie failure"));
-    QList<QNetworkCookie> exportedCookies{
-        QNetworkCookie(QByteArrayLiteral("session"), QByteArrayLiteral("value"))};
+    QCurl::QCCookie exportedCookie;
+    exportedCookie.setName(QByteArrayLiteral("session"));
+    exportedCookie.setValue(QByteArrayLiteral("value"));
+    QList<QCurl::QCCookie> exportedCookies{exportedCookie};
     const auto cookieExportSuccess = QCurl::QCCookieExportResult::success(exportedCookies);
     const auto cookieExportFailure = QCurl::QCCookieExportResult::failure(
         QStringLiteral("consumer export failure"));

@@ -10,7 +10,6 @@
 #include "QCNetworkRequestScheduler.h"
 
 #include <QEvent>
-#include <QNetworkCookie>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -216,7 +215,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
                 return;
             }
 
-            for (const QNetworkCookie &c : cookies.value()) {
+            for (const QCCookie &c : cookies.value()) {
                 if (c.name() == QByteArray("XSRF-TOKEN")) {
                     request.setRawHeader("X-XSRF-TOKEN", c.value());
                     break;
@@ -247,7 +246,7 @@ void tst_QCNetworkMiddlewareIntegration::testXsrfCookieToHeader_InMiddleware()
     shareCfg.setShareCookies(true);
     m_manager->setShareHandleConfig(shareCfg);
 
-    QNetworkCookie xsrf("XSRF-TOKEN", "token123");
+    QCCookie xsrf("XSRF-TOKEN", "token123");
     xsrf.setDomain("example.com");
     xsrf.setPath("/id");
 

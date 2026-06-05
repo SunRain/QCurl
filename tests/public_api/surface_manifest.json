@@ -23,6 +23,13 @@
       "rationale": "Primary asynchronous manager surface; blocking and test-support members are scheduled for extraction."
     },
     {
+      "path": "QCCookie.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "QtCore-only cookie value type used by Core manager cookie import/export and async result APIs."
+    },
+    {
       "path": "QCCookieAsyncResult.h",
       "layer": "Core",
       "currentInstall": "core-default",

@@ -92,12 +92,14 @@ def scan_headers(args: argparse.Namespace) -> int:
         ("Qt filesystem include", re.compile(r'^\s*#\s*include\s*<Q(File|Dir|FileInfo|SaveFile|TemporaryFile|StandardPaths)\b')),
         ("Qt process include", re.compile(r'^\s*#\s*include\s*<QProcess\b')),
         ("Qt JSON include", re.compile(r'^\s*#\s*include\s*<QJson')),
+        ("QtNetwork cookie include", re.compile(r'^\s*#\s*include\s*<QNetworkCookie\b')),
     ]
     code_rules = [
         ("curl type leak", re.compile(r"\bCURL[A-Za-z_0-9]*\b")),
         ("curl function leak", re.compile(r"\bcurl_[A-Za-z_0-9]+\b")),
         ("std::tuple leak", re.compile(r"\bstd::tuple\b")),
         ("qcpimpl helper macro", re.compile(r"\bQCURL_DECLARE_(?:DPTR|SHARED_DATA)\s*\(")),
+        ("QtNetwork cookie type leak", re.compile(r"\bQNetworkCookie\b")),
     ]
 
     violations: list[str] = []

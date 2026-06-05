@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from tests.public_api import run_public_api_checks as public_api
+from tests.public_api.consumer_contracts import validate_consumer_fixture
 from tests.public_api.consumer_contracts import validate_scheduler_core_contract_fixture
 from tests.public_api.consumer_cookie_contracts import validate_cookie_async_result_core_contract_fixture
 from tests.public_api import layout_scan
@@ -179,6 +180,32 @@ def test_scan_headers_fails_stale_allowlist(tmp_path, capsys) -> None:
 
     assert rc == 1
     assert "layout allowlist has stale entries" in capsys.readouterr().err
+
+def test_scan_headers_rejects_qtnetwork_cookie_in_core_header(tmp_path, capsys) -> None:
+    source_root = tmp_path / "src"
+    source_root.mkdir()
+    (source_root / "QCCookieLeak.h").write_text(
+        "#include <QNetworkCookie>\n"
+        "class QCURL_EXPORT QCCookieLeak { QList<QNetworkCookie> cookies() const; };\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "manifest.txt"
+    manifest.write_text("QCCookieLeak.h\n", encoding="utf-8")
+    allowlist = tmp_path / "allowlist.txt"
+    allowlist.write_text("", encoding="utf-8")
+
+    rc = public_api.scan_headers(
+        Namespace(
+            source_root=source_root,
+            manifest=manifest,
+            layout_allowlist=allowlist,
+        )
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "QtNetwork cookie include" in err
+    assert "QtNetwork cookie type leak" in err
 
 def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     src = tmp_path / "src"
@@ -439,6 +466,77 @@ def test_cookie_async_result_fixture_requires_core_snippets(tmp_path) -> None:
     else:
         raise AssertionError("validate_cookie_async_result_core_contract_fixture should fail")
 
+def test_cookie_async_result_fixture_rejects_legacy_qnetworkcookie_contract(tmp_path) -> None:
+    fixture_dir = tmp_path / "legacy_consumer"
+    fixture_dir.mkdir()
+    (fixture_dir / "main.cpp").write_text(
+        """
+#include <QCCookieAsyncResult.h>
+
+#include <QList>
+#include <QNetworkCookie>
+
+int main()
+{
+    QList<QNetworkCookie> cookies;
+    const auto result = QCurl::QCCookieExportResult::success(cookies);
+    return result.cookies().isEmpty() ? 0 : 1;
+}
+""",
+        encoding="utf-8",
+    )
+
+    try:
+        validate_cookie_async_result_core_contract_fixture(fixture_dir)
+    except RuntimeError as exc:
+        assert "must not use QNetworkCookie" in str(exc)
+    else:
+        raise AssertionError("legacy QNetworkCookie consumer fixture should fail")
+
+def test_cookie_async_result_fixture_rejects_qtnetwork_default_consumer(tmp_path) -> None:
+    fixture_dir = tmp_path / "consumer"
+    fixture_dir.mkdir()
+    (fixture_dir / "main.cpp").write_text(
+        """
+#include <QCCookie.h>
+#include <QCCookieAsyncResult.h>
+
+int main()
+{
+    QCurl::QCCookie exportedCookie;
+    exportedCookie.setName(QByteArrayLiteral("session"));
+    exportedCookie.setValue(QByteArrayLiteral("value"));
+    const auto cookieImportSuccess = QCurl::QCCookieOperationResult::success();
+    const auto cookieImportFailure = QCurl::QCCookieOperationResult::failure(QStringLiteral("err"));
+    const auto cookieExportSuccess =
+        QCurl::QCCookieExportResult::success({exportedCookie});
+    const auto cookieExportFailure = QCurl::QCCookieExportResult::failure(QStringLiteral("err"));
+    return cookieImportSuccess.isSuccess() && !cookieImportFailure.error().isEmpty()
+        && !cookieExportSuccess.cookies().isEmpty() && !cookieExportFailure.error().isEmpty()
+        ? 0
+        : 1;
+}
+""",
+        encoding="utf-8",
+    )
+    (fixture_dir / "CMakeLists.txt").write_text(
+        "find_package(Qt6 REQUIRED COMPONENTS Core Network)\n"
+        "target_link_libraries(app PRIVATE Qt6::Network)\n",
+        encoding="utf-8",
+    )
+
+    try:
+        validate_cookie_async_result_core_contract_fixture(fixture_dir)
+    except RuntimeError as exc:
+        assert "must not require QtNetwork" in str(exc)
+    else:
+        raise AssertionError("QtNetwork default consumer fixture should fail")
+
+def test_consumer_smoke_fixture_matches_current_core_contracts() -> None:
+    fixture_dir = Path(__file__).resolve().parent / "consumer_smoke"
+
+    validate_consumer_fixture(fixture_dir)
+
 def test_blocking_extras_fixture_requires_bounded_body_and_download_contracts(tmp_path) -> None:
     fixture_dir = tmp_path / "blocking"
     fixture_dir.mkdir()
@@ -472,14 +570,14 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
     pc_dir = stage / "lib" / "pkgconfig"
     pc_dir.mkdir(parents=True)
     (pc_dir / "qcurl.pc").write_text(
-        "Requires: Qt6Core >= 6.2, Qt6Network >= 6.2\n"
+        "Requires: Qt6Core >= 6.2\n"
         "Requires.private: libcurl >= 7.85.0\n"
         "Libs: -L${libdir} -lQCurl\n"
         "Libs.private: -lz\n",
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 1.0.0\n"
+        "Requires: qcurl = 1.0.0, Qt6Network >= 6.2\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -492,12 +590,36 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
     assert rc == 1
     assert "must not carry zlib" in capsys.readouterr().err
 
-def test_pkg_config_contract_requires_other_extras_pc(tmp_path, capsys) -> None:
+def test_pkg_config_contract_rejects_core_qtnetwork(tmp_path, capsys) -> None:
     stage = tmp_path / "stage"
     pc_dir = stage / "lib" / "pkgconfig"
     pc_dir.mkdir(parents=True)
     (pc_dir / "qcurl.pc").write_text(
         "Requires: Qt6Core >= 6.2, Qt6Network >= 6.2\n"
+        "Requires.private: libcurl >= 7.85.0\n"
+        "Libs: -L${libdir} -lQCurl\n",
+        encoding="utf-8",
+    )
+    (pc_dir / "qcurl-other-extras.pc").write_text(
+        "Requires: qcurl = 1.0.0, Qt6Network >= 6.2\n"
+        "Requires.private: zlib\n"
+        "Libs: -L${libdir} -lQCurlOtherExtras\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.check_pkg_config_contract(
+        Namespace(stage_dir=stage, pkg_config="pkg-config")
+    )
+
+    assert rc == 1
+    assert "must not carry Qt6Network" in capsys.readouterr().err
+
+def test_pkg_config_contract_requires_other_extras_pc(tmp_path, capsys) -> None:
+    stage = tmp_path / "stage"
+    pc_dir = stage / "lib" / "pkgconfig"
+    pc_dir.mkdir(parents=True)
+    (pc_dir / "qcurl.pc").write_text(
+        "Requires: Qt6Core >= 6.2\n"
         "Requires.private: libcurl >= 7.85.0\n"
         "Libs: -L${libdir} -lQCurl\n",
         encoding="utf-8",

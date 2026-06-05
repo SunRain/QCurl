@@ -51,7 +51,7 @@ def check_pkg_config_contract(
     core_pc = core_pc_files[0]
     core_pc_content = core_pc.read_text(encoding="utf-8")
     required_core_lines = [
-        "Requires: Qt6Core >= 6.2, Qt6Network >= 6.2",
+        "Requires: Qt6Core >= 6.2",
         "Requires.private: libcurl >= ",
         "Libs: -L${libdir} -lQCurl",
     ]
@@ -60,10 +60,13 @@ def check_pkg_config_contract(
         return fail_func("qcurl.pc contract missing: " + ", ".join(missing))
     if "-lz" in core_pc_content or "zlib" in core_pc_content.lower():
         return fail_func("qcurl.pc must not carry zlib for the default Core contract")
+    if "Qt6Network" in core_pc_content:
+        return fail_func("qcurl.pc must not carry Qt6Network for the default Core contract")
 
     other_extras_pc_content = other_extras_pc_files[0].read_text(encoding="utf-8")
     required_other_extras_lines = [
         "Requires: qcurl = ",
+        "Qt6Network >= 6.2",
         "Requires.private: zlib",
         "Libs: -L${libdir} -lQCurlOtherExtras",
     ]

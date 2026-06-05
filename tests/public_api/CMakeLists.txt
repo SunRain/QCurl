@@ -88,7 +88,6 @@ add_library(qcurl_public_header_self_compile OBJECT EXCLUDE_FROM_ALL
 target_link_libraries(qcurl_public_header_self_compile
     PRIVATE
         Qt6::Core
-        Qt6::Network
 )
 if(QCURL_WEBSOCKET_SUPPORT)
     target_compile_definitions(qcurl_public_header_self_compile PRIVATE QCURL_WEBSOCKET_SUPPORT)

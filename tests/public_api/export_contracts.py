@@ -30,6 +30,14 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
         zlib_find_dependency is not None
         and "OtherExtras" not in config_content[:zlib_find_dependency.start()]
     )
+    qtnetwork_find_dependency = re.search(
+        r"find_dependency\s*\(\s*Qt6\s+REQUIRED\s+COMPONENTS\s+Network\b",
+        config_content,
+    )
+    unconditional_qtnetwork_dependency = (
+        qtnetwork_find_dependency is not None
+        and "OtherExtras" not in config_content[:qtnetwork_find_dependency.start()]
+    )
     static_export = any(
         re.search(r"add_library\s*\(\s*QCurl::QCurl\s+STATIC\s+IMPORTED", content)
         for content in content_by_file.values()
@@ -62,6 +70,19 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
         )
         if core_zlib_dep:
             violations.append(f"{target_file.name}: Core export must not expose ZLIB::ZLIB")
+        core_qtnetwork_dep = (
+            core_properties is not None
+            and re.search(
+                r"INTERFACE_LINK_LIBRARIES[^\n]*\bQt6::Network\b",
+                core_properties.group("body"),
+            )
+        )
+        if core_qtnetwork_dep:
+            violations.append(f"{target_file.name}: Core export must not expose Qt6::Network")
+        if unconditional_qtnetwork_dependency:
+            violations.append(
+                "QCurlConfig.cmake: Core consumer must not unconditionally find Qt6::Network"
+            )
         if static_export and unconditional_zlib_dependency:
             violations.append("QCurlConfig.cmake: Core static consumer must not unconditionally find ZLIB")
         if static_export:

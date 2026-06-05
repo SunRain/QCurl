@@ -68,9 +68,9 @@ bool waitForEventDispatcher(QThread *thread, int timeoutMs = 1000)
         timeoutMs);
 }
 
-bool hasCookie(const QList<QNetworkCookie> &cookies, const QByteArray &name, const QByteArray &value)
+bool hasCookie(const QList<QCCookie> &cookies, const QByteArray &name, const QByteArray &value)
 {
-    for (const QNetworkCookie &cookie : cookies) {
+    for (const QCCookie &cookie : cookies) {
         if (cookie.name() == name && cookie.value() == value) {
             return true;
         }
@@ -252,7 +252,7 @@ void tst_QCNetworkActorThreadModel::testCrossThreadCookiesApis()
     });
 
     QString error;
-    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("123"));
+    QCCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("123"));
     QVERIFY(!manager->importCookies({sid}, QUrl(QStringLiteral("http://example.local")), &error));
     QVERIFY(error.contains(QStringLiteral("owner")));
 
@@ -295,7 +295,7 @@ void tst_QCNetworkActorThreadModel::testCookieSignalAsyncBridge()
                          importSignalReceived = true;
                      });
 
-    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("signal"));
+    QCCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("signal"));
     auto importFuture =
         manager->importCookiesAsync({sid}, QUrl(QStringLiteral("http://example.local")));
     QTRY_VERIFY_WITH_TIMEOUT(importSignalReceived, 1500);
@@ -338,7 +338,7 @@ void tst_QCNetworkActorThreadModel::testCookieQFutureAsyncBridge()
         actorThread.wait();
     });
 
-    QNetworkCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("future"));
+    QCCookie sid(QByteArrayLiteral("sid"), QByteArrayLiteral("future"));
     auto importFuture =
         manager->importCookiesAsync({sid}, QUrl(QStringLiteral("http://example.local")));
     importFuture.waitForFinished();

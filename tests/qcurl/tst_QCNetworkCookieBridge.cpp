@@ -13,9 +13,9 @@ using namespace QCurl;
 
 namespace {
 
-bool hasCookie(const QList<QNetworkCookie> &cookies, const QByteArray &name, const QByteArray &value)
+bool hasCookie(const QList<QCCookie> &cookies, const QByteArray &name, const QByteArray &value)
 {
-    for (const QNetworkCookie &c : cookies) {
+    for (const QCCookie &c : cookies) {
         if (c.name() == name && c.value() == value) {
             return true;
         }
@@ -42,7 +42,7 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
     shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
-    QNetworkCookie sid("sid", "abc");
+    QCCookie sid("sid", "abc");
     sid.setDomain("example.com");
     sid.setPath("/foo");
     sid.setSecure(true);
@@ -56,7 +56,7 @@ void TestQCNetworkCookieBridge::testImportExportRoundTrip()
     QVERIFY2(exported.has_value(), qPrintable(err));
     QVERIFY(!exported->isEmpty());
 
-    for (const QNetworkCookie &c : exported.value()) {
+    for (const QCCookie &c : exported.value()) {
         if (c.name() == QByteArray("sid") && c.value() == QByteArray("abc")) {
             QVERIFY(c.isSecure());
             QVERIFY(c.isHttpOnly());
@@ -74,11 +74,11 @@ void TestQCNetworkCookieBridge::testExportFilter_HostAndPathIsolation()
     shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
-    QNetworkCookie hostOnly("hostonly", "1");
+    QCCookie hostOnly("hostonly", "1");
     hostOnly.setDomain("example.com");
     hostOnly.setPath("/foo");
 
-    QNetworkCookie domainCookie("domain", "1");
+    QCCookie domainCookie("domain", "1");
     domainCookie.setDomain(".example.com");
     domainCookie.setPath("/foo");
 
@@ -109,7 +109,7 @@ void TestQCNetworkCookieBridge::testClearAllCookies()
     shareCfg.setShareCookies(true);
     manager.setShareHandleConfig(shareCfg);
 
-    QNetworkCookie sid("sid", "abc");
+    QCCookie sid("sid", "abc");
     sid.setDomain("example.com");
     sid.setPath("/");
 
