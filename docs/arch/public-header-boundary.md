@@ -18,7 +18,7 @@ Core 安装面新增未分层头文件。
 其中：
 
 - `QCPimpl.h` 已从默认安装面移除；`tests/public_api/run_public_api_checks.py scan` 会阻止 install headers 回流 `#include <QCPimpl.h>` 与 `QCURL_DECLARE_*` helper macro。
-- `QCCookieAsyncResult.h` 进入默认稳定安装面，因为 `QCNetworkAccessManager` 的 cookie async signal 与 `QFuture` API 对外依赖 `QCCookieOperationResult` / `QCCookieExportResult` 值结果。
+- `QCCookie.h` 与 `QCCookieAsyncResult.h` 进入默认稳定安装面，因为 `QCNetworkAccessManager` 的 cookie import/export、cookie async signal 与 `QFuture` API 对外依赖 `QCCookie`、`QCCookieOperationResult` 和 `QCCookieExportResult` 值类型。
 - `QCNetworkLogger.h` 进入默认稳定安装面，因为 `QCNetworkAccessManager::setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()` 对外依赖该 Core contract。
 - `QCNetworkCachePolicy.h` 进入默认稳定安装面，因为 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()` 对外依赖该 Core type header。
 - `QCNetworkRequestConfig.h` 进入默认稳定安装面，承载 `QCNetworkHttpAuthConfig`、`QCNetworkRedirectConfig`、`QCNetworkTransferConfig` 及相关枚举；`QCNetworkRequest.h` 只保留请求值对象与便捷转发 API。DNS / DoH / connect-to / resolve override / Happy Eyeballs / 本地端口绑定仍是 Advanced/Internal 候选，不属于默认 Core consumer contract。
@@ -93,6 +93,7 @@ Core 安装面新增未分层头文件。
 
 | Core header | ABI 策略 | 允许的后续演进方式 |
 |------------|----------|--------------------|
+| `QCCookie.h` | `QCCookie` 使用 implicit-sharing 值类型 + accessor API；承载 Core manager cookie import/export 和 Blocking Extras cookie snapshot/delta 的 public cookie model | 可在 Data 内扩展字段并新增 accessor；不得暴露 QtNetwork、libcurl cookie line 或 public fields |
 | `QCCookieAsyncResult.h` | `QCCookieOperationResult` / `QCCookieExportResult` 使用 implicit-sharing 值类型 + accessor API；承载 manager cookie async signal 与 `QFuture` 结果 | 可在 Data 内扩展字段并新增 accessor；不得恢复 public fields 或把 blocking cookie store 行为混入 Core |
 | `QCNetworkRequestScheduler.h` | `Config/Statistics/LaneConfig` 使用 implicit-sharing 值类型 + accessor API；Core 仅保留 owner-thread 配置/查询语义 | 可新增 accessor；不得恢复透明跨线程阻塞 getter或把 internal diagnostics 固化为默认 Core 承诺 |
 | `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 warning + fail-closed 返回 `nullptr`）；Core 不提供 `schedulerOnOwnerThread()` | 不得在生产 Core 默认合同中恢复透明阻塞 owner-thread getter |
@@ -160,7 +161,7 @@ Core 安装面新增未分层头文件。
 ### 5.3 Consumer Smoke
 
 - 正向 consumer：独立工程只能通过 staging prefix 执行 `find_package(QCurl CONFIG REQUIRED)`，随后 include public headers 并链接 `QCurl::QCurl` 成功。
-- cookie async result 作为 Core 值结果时，正向 consumer fixture 必须持续覆盖 `<QCCookieAsyncResult.h>`、`QCCookieOperationResult::success()/failure()`、`QCCookieExportResult::success()/failure()`、`isSuccess()`、`error()` 和 `cookies()`。
+- cookie value 与 async result 作为 Core 值结果时，正向 consumer fixture 必须持续覆盖 `<QCCookie.h>`、`<QCCookieAsyncResult.h>`、`QCCookie` accessor、`QCCookieOperationResult::success()/failure()`、`QCCookieExportResult::success()/failure()`、`isSuccess()`、`error()` 和 `cookies()`，且不得要求 default consumer 链接 QtNetwork。
 - 正向 Core consumer fixture 覆盖 `<QCNetworkRequestScheduler.h>`、owner-thread `manager.scheduler()`、以及 `Config/LaneConfig` accessor API（禁止 direct field 依赖）；不得覆盖或恢复 `schedulerOnOwnerThread()`。
 - logger 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkLogger.h>`、`NetworkLogEntry` accessor API、以及 `manager.setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()`。
 - cache policy 作为 Core type header 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCachePolicy.h>` 以及 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()`。

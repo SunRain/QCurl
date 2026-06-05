@@ -2,7 +2,10 @@
 
 include(CMakeFindDependencyMacro)
 
-find_dependency(Qt6 REQUIRED COMPONENTS Core Network)
+find_dependency(Qt6 REQUIRED COMPONENTS Core)
+if("OtherExtras" IN_LIST QCurl_FIND_COMPONENTS)
+    find_dependency(Qt6 REQUIRED COMPONENTS Network)
+endif()
 if(NOT @QCURL_BUILD_SHARED_LIBS@ AND NOT @QCURL_BUILD_LIBCURL_CONSISTENCY@)
     find_dependency(CURL @QCURL_MIN_LIBCURL_VERSION@ REQUIRED)
 endif()

@@ -5,7 +5,7 @@
 ## 1. 依赖
 
 - CMake 3.16+
-- Qt6（QtCore / QtNetwork）
+- Qt6（Core consumer 需要 QtCore；Other Extras diagnostics 需要 QtNetwork）
 - libcurl 7.85.0+（WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend）
 - 编译器：GCC 11+ / Clang 14+ / MSVC 2019+（C++17）
 

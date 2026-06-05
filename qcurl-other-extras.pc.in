@@ -7,7 +7,7 @@ Name: QCurlOtherExtras
 Description: Opt-in non-stable QCurl Other Extras and Preview components
 Version: @PROJECT_VERSION@
 URL: https://github.com/SunRain/QCurl
-Requires: qcurl = @PROJECT_VERSION@
+Requires: qcurl = @PROJECT_VERSION@, Qt6Network >= 6.2
 Requires.private: zlib
 Libs: -L${libdir} -lQCurlOtherExtras
 Cflags: -I${includedir}/qcurl

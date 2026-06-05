@@ -16,7 +16,7 @@
 
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装，作为 1.0.0 first stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core** | 默认安装，作为 1.0.0 first stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
 | **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
 | **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
 | **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
@@ -56,6 +56,7 @@
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
 - **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `post()/put()` raw-body device overload 支持大文件
 - **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
+- **Core cookie model** - `QCCookie` 是 Core public cookie 值类型；默认 consumer 不需要 QtNetwork cookie 类型
 - **Cookie async result** - `QCCookieOperationResult` / `QCCookieExportResult` 是 manager cookie async signal 与 `QFuture` 的 Core 值结果
 
 ### Blocking Extras
@@ -72,7 +73,7 @@
 
 ### Other Extras / Preview
 
-- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装；`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
+- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
 - **Middleware Extras** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
 - **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，条件进入 Other Extras；当前仍不属于默认 Core install surface。
 
@@ -87,7 +88,7 @@
 | 依赖          | 版本要求  | 说明                           |
 | ----------- | ----- | ---------------------------- |
 | **CMake**   | 3.16+ | 构建系统                         |
-| **Qt6**     | 6.2+  | QtCore、QtNetwork             |
+| **Qt6**     | 6.2+  | Core consumer 需要 QtCore；Other Extras diagnostics 需要 QtNetwork |
 | **libcurl** | 7.85.0+ | WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend |
 | **编译器**     | C++17 | GCC 11+、Clang 14+、MSVC 2019+ |
 
