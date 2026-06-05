@@ -39,6 +39,7 @@ set(QCURL_BLOCKING_EXTRAS_SOURCES
     QCBlockingNetworkClientOptions.cpp
     QCBlockingNetworkResult.cpp
     private/QCBlockingCurlAdapter.cpp
+    private/QCBlockingCurlCookieSetup.cpp
     private/QCBlockingCurlMethodSetup.cpp
     private/QCBlockingCurlRequestSetup.cpp
     private/QCBlockingCurlRequestSetupExtensions.cpp

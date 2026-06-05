@@ -41,19 +41,19 @@ public:
     QCBlockingNetworkResult &operator=(QCBlockingNetworkResult &&other) noexcept;
 
     [[nodiscard]] static QCBlockingNetworkResult success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers = {});
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers = {});
     [[nodiscard]] static QCBlockingNetworkResult success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers,
-                                                         QCCookieDelta cookieDelta);
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers,
+                                                         const QCCookieDelta &cookieDelta);
     [[nodiscard]] static QCBlockingNetworkResult success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers,
-                                                         QCCookieDelta cookieDelta,
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers,
+                                                         const QCCookieDelta &cookieDelta,
                                                          qint64 bytesReceived);
     [[nodiscard]] static QCBlockingNetworkResult failure(NetworkError error,
-                                                         QString errorMessage,
+                                                         const QString &errorMessage,
                                                          int statusCode = 0);
 
     [[nodiscard]] bool isSuccess() const noexcept;

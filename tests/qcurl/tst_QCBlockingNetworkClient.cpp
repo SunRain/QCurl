@@ -11,6 +11,7 @@
 
 #include <QBuffer>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QTemporaryFile>
 #include <QThread>
@@ -105,6 +106,9 @@ private slots:
     void getReportsProgress();
     void getCanBeCancelledFromProgressCallback();
     void rawHeaderListPreservesDuplicateSetCookieOrder();
+    void setCookieMaxAgeZeroReturnsExpiredCookieDelta();
+    void setCookieMaxAgeOverridesExpiresRegardlessOfOrder();
+    void setCookieExpiresGmtReturnsPersistentDelta();
     void downloadToDeviceWritesLargeResponse();
     void downloadToDeviceRejectsInvalidOutput_data();
     void downloadToDeviceRejectsInvalidOutput();
@@ -159,8 +163,7 @@ void tst_QCBlockingNetworkClient::appliesCookieSnapshotAndReturnsCookieDelta()
 
     QCBlockingRequestOptions requestOptions;
     requestOptions.setCookieSnapshot(
-        QCCookieSnapshot({QNetworkCookie(QByteArrayLiteral("session"),
-                                         QByteArrayLiteral("input"))}));
+        QCCookieSnapshot({QCCookie(QByteArrayLiteral("session"), QByteArrayLiteral("input"))}));
 
     const auto result = makeClient().post(makeRequest(server.url(QStringLiteral("/cookies"))),
                                           QByteArrayLiteral("body"),
@@ -334,6 +337,78 @@ void tst_QCBlockingNetworkClient::rawHeaderListPreservesDuplicateSetCookieOrder(
     QCOMPARE(result.cookieDelta().cookies().size(), 2);
     QCOMPARE(result.cookieDelta().cookies().at(0).name(), QByteArrayLiteral("first"));
     QCOMPARE(result.cookieDelta().cookies().at(1).name(), QByteArrayLiteral("second"));
+}
+
+void tst_QCBlockingNetworkClient::setCookieMaxAgeZeroReturnsExpiredCookieDelta()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.extraHeaders = {
+        QByteArrayLiteral("Set-Cookie: expired=gone; Max-Age=0; Path=/; HttpOnly; Secure"),
+    };
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    const auto result = makeClient().get(makeRequest(server.url(QStringLiteral("/cookies"))));
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+
+    const auto cookies = result.cookieDelta().cookies();
+    QCOMPARE(cookies.size(), 1);
+
+    const QCCookie cookie = cookies.constFirst();
+    QCOMPARE(cookie.name(), QByteArrayLiteral("expired"));
+    QCOMPARE(cookie.value(), QByteArrayLiteral("gone"));
+    QCOMPARE(cookie.path(), QStringLiteral("/"));
+    QVERIFY(cookie.isHttpOnly());
+    QVERIFY(cookie.isSecure());
+    QVERIFY(cookie.expirationDate().isValid());
+    QVERIFY(cookie.expirationDate() <= QDateTime::currentDateTimeUtc());
+}
+
+void tst_QCBlockingNetworkClient::setCookieMaxAgeOverridesExpiresRegardlessOfOrder()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.extraHeaders = {
+        QByteArrayLiteral(
+            "Set-Cookie: maxage-first=gone; Max-Age=0; "
+            "Expires=Tue, 09 Jun 2099 10:18:14 +0000; Path=/"),
+        QByteArrayLiteral(
+            "Set-Cookie: expires-first=gone; "
+            "Expires=Tue, 09 Jun 2099 10:18:14 GMT; Max-Age=0; Path=/"),
+    };
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    const auto result = makeClient().get(makeRequest(server.url(QStringLiteral("/cookies"))));
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+
+    const auto cookies = result.cookieDelta().cookies();
+    QCOMPARE(cookies.size(), 2);
+    QCOMPARE(cookies.at(0).name(), QByteArrayLiteral("maxage-first"));
+    QVERIFY(cookies.at(0).expirationDate().isValid());
+    QVERIFY(cookies.at(0).expirationDate() <= QDateTime::currentDateTimeUtc());
+    QCOMPARE(cookies.at(1).name(), QByteArrayLiteral("expires-first"));
+    QVERIFY(cookies.at(1).expirationDate().isValid());
+    QVERIFY(cookies.at(1).expirationDate() <= QDateTime::currentDateTimeUtc());
+}
+
+void tst_QCBlockingNetworkClient::setCookieExpiresGmtReturnsPersistentDelta()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.extraHeaders = {
+        QByteArrayLiteral("Set-Cookie: future=alive; "
+                          "Expires=Tue, 09 Jun 2099 10:18:14 GMT; Path=/"),
+    };
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    const auto result = makeClient().get(makeRequest(server.url(QStringLiteral("/cookies"))));
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+
+    const auto cookies = result.cookieDelta().cookies();
+    QCOMPARE(cookies.size(), 1);
+    QCOMPARE(cookies.constFirst().name(), QByteArrayLiteral("future"));
+    QVERIFY(cookies.constFirst().expirationDate().isValid());
+    QVERIFY(cookies.constFirst().expirationDate() > QDateTime::currentDateTimeUtc());
 }
 
 void tst_QCBlockingNetworkClient::downloadToDeviceWritesLargeResponse()

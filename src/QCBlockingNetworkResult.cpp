@@ -3,10 +3,9 @@
 
 #include <QSharedData>
 
-#include <utility>
-
 namespace QCurl {
 
+/** Blocking network result 值类型的共享数据。 */
 class QCBlockingNetworkResultData : public QSharedData
 {
 public:
@@ -38,48 +37,44 @@ QCBlockingNetworkResult &QCBlockingNetworkResult::operator=(
     QCBlockingNetworkResult &&other) noexcept = default;
 
 QCBlockingNetworkResult QCBlockingNetworkResult::success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers)
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers)
 {
-    return success(statusCode, std::move(body), std::move(headers), QCCookieDelta());
+    return success(statusCode, body, headers, QCCookieDelta());
 }
 
 QCBlockingNetworkResult QCBlockingNetworkResult::success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers,
-                                                         QCCookieDelta cookieDelta)
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers,
+                                                         const QCCookieDelta &cookieDelta)
 {
     const qint64 bytesReceived = body.size();
-    return success(statusCode,
-                   std::move(body),
-                   std::move(headers),
-                   std::move(cookieDelta),
-                   bytesReceived);
+    return success(statusCode, body, headers, cookieDelta, bytesReceived);
 }
 
 QCBlockingNetworkResult QCBlockingNetworkResult::success(int statusCode,
-                                                         QByteArray body,
-                                                         HeaderList headers,
-                                                         QCCookieDelta cookieDelta,
+                                                         const QByteArray &body,
+                                                         const HeaderList &headers,
+                                                         const QCCookieDelta &cookieDelta,
                                                          qint64 bytesReceived)
 {
     QCBlockingNetworkResult result;
     result.d->error = NetworkError::NoError;
     result.d->statusCode = statusCode;
-    result.d->body = std::move(body);
-    result.d->headers = std::move(headers);
-    result.d->cookieDelta = std::move(cookieDelta);
+    result.d->body = body;
+    result.d->headers = headers;
+    result.d->cookieDelta = cookieDelta;
     result.d->bytesReceived = bytesReceived;
     return result;
 }
 
 QCBlockingNetworkResult QCBlockingNetworkResult::failure(NetworkError error,
-                                                         QString errorMessage,
+                                                         const QString &errorMessage,
                                                          int statusCode)
 {
     QCBlockingNetworkResult result;
     result.d->error = error;
-    result.d->errorMessage = std::move(errorMessage);
+    result.d->errorMessage = errorMessage;
     result.d->statusCode = statusCode;
     return result;
 }

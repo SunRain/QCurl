@@ -12,7 +12,6 @@
 #include "QCNetworkTimeoutConfig.h"
 
 #include <QDebug>
-#include <QNetworkCookie>
 #include <QStringList>
 
 #include <utility>
@@ -166,29 +165,6 @@ bool appendRequestHeaders(CURL *handle, const QCNetworkRequest &request, curl_sl
     }
 
     return !*headers || curl_easy_setopt(handle, CURLOPT_HTTPHEADER, *headers) == CURLE_OK;
-}
-
-QByteArray cookieHeaderValue(const QCCookieSnapshot &snapshot)
-{
-    QList<QByteArray> pairs;
-    for (const QNetworkCookie &cookie : snapshot.cookies()) {
-        if (!cookie.name().isEmpty()) {
-            pairs.append(cookie.name() + QByteArrayLiteral("=") + cookie.value());
-        }
-    }
-    return pairs.join("; ");
-}
-
-QCCookieDelta extractCookieDelta(const QCBlockingNetworkResult::HeaderList &headers)
-{
-    QList<QNetworkCookie> cookies;
-    for (const auto &header : headers) {
-        if (header.first.compare(QByteArrayLiteral("Set-Cookie"), Qt::CaseInsensitive) != 0) {
-            continue;
-        }
-        cookies.append(QNetworkCookie::parseCookies(header.second));
-    }
-    return QCCookieDelta(cookies);
 }
 
 bool configureBasicRequestOptions(CURL *handle,

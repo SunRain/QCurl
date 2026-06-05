@@ -26,6 +26,7 @@ function(_add_qcurl_test_impl test_name)
     target_link_libraries(${test_name}
         PRIVATE
             Qt6::Test
+            Qt6::Network
             QCurl
             CURL::libcurl # 添加 libcurl 链接（某些测试需要直接调用 curl API）
     )
