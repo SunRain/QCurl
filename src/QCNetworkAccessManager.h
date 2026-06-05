@@ -7,13 +7,13 @@
 #define QCNETWORKACCESSMANAGER_H
 
 #include "QCGlobal.h"
+#include "QCCookie.h"
 #include "QCCookieAsyncResult.h"
 #include "QCNetworkHttpMethod.h"
 
 #include <QByteArray>
 #include <QByteArrayView>
 #include <QFuture>
-#include <QNetworkCookie>
 #include <QObject>
 #include <QScopedPointer>
 #include <QSharedDataPointer>
@@ -72,7 +72,7 @@ public:
                            CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
     /// 导入 cookies 到当前 manager 的 cookie store（仅在 shareCookies 开启时可用）。
-    bool importCookies(const QList<QNetworkCookie> &cookies,
+    bool importCookies(const QList<QCCookie> &cookies,
                        const QUrl &originUrl = QUrl(),
                        QString *error        = nullptr);
 
@@ -82,7 +82,7 @@ public:
      * @param error 可选错误输出；返回空值时写入失败原因。
      * @return 空值表示导出失败；空列表表示导出成功但没有匹配 cookie。
      */
-    [[nodiscard]] std::optional<QList<QNetworkCookie>> exportCookies(
+    [[nodiscard]] std::optional<QList<QCCookie>> exportCookies(
         const QUrl &filterUrl = QUrl(), QString *error = nullptr) const;
 
     /// 清空当前 manager 的 cookie store（仅在 shareCookies 开启时可用）。
@@ -90,7 +90,7 @@ public:
 
     /// 在 manager owner thread 异步导入 cookies，并通过 signal 与 QFuture 返回同一结果。
     [[nodiscard]] QFuture<QCCookieOperationResult> importCookiesAsync(
-        const QList<QNetworkCookie> &cookies, const QUrl &originUrl = QUrl());
+        const QList<QCCookie> &cookies, const QUrl &originUrl = QUrl());
 
     /// 在 manager owner thread 异步导出 cookies，并通过 signal 与 QFuture 返回同一结果。
     [[nodiscard]] QFuture<QCCookieExportResult> exportCookiesAsync(

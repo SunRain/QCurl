@@ -32,7 +32,8 @@ elseif(MSVC)
 endif()
 
 # 查找依赖
-find_package(Qt6 REQUIRED COMPONENTS Core Network)
+find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Network)
 find_package(ZLIB REQUIRED)
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     if(NOT BUILD_TESTING)

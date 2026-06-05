@@ -6,6 +6,8 @@
 #ifndef QCCURLMULTIMANAGER_H
 #define QCCURLMULTIMANAGER_H
 
+#include "QCCookie.h"
+
 #include <QHash>
 #include <QList>
 #include <QMutex>
@@ -22,8 +24,6 @@
 #include <curl/curl.h>
 #include <limits>
 #include <optional>
-
-class QNetworkCookie; // QtNetwork
 
 // moc 需要完整 reply 类型来生成信号参数元类型代码。
 Q_MOC_INCLUDE("QCNetworkReply.h")
@@ -111,7 +111,7 @@ public:
      * 为缺失 domain/path 的 cookie 补全作用域。
      */
     bool importCookiesForManager(const QCNetworkAccessManager *manager,
-                                 const QList<QNetworkCookie> &cookies,
+                                 const QList<QCCookie> &cookies,
                                  const QUrl &originUrl,
                                  QString *error);
 
@@ -122,7 +122,7 @@ public:
      * @param error 可选错误输出
      * @return 空值表示失败；空列表表示成功但无匹配 cookies
      */
-    [[nodiscard]] std::optional<QList<QNetworkCookie>> exportCookiesForManager(
+    [[nodiscard]] std::optional<QList<QCCookie>> exportCookiesForManager(
         const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error);
 
     /**

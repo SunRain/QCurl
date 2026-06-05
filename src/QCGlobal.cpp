@@ -3,12 +3,17 @@
 
 #include "QCGlobal.h"
 
+#include "QCCookie.h"
+#include "QCCookieAsyncResult.h"
 #include "QCNetworkRequestPriority.h"
 
 namespace QCurl {
 
 void initialize()
 {
+    qRegisterMetaType<QCCookie>("QCurl::QCCookie");
+    qRegisterMetaType<QCCookieOperationResult>("QCurl::QCCookieOperationResult");
+    qRegisterMetaType<QCCookieExportResult>("QCurl::QCCookieExportResult");
     registerQCNetworkRequestPriorityMetaType();
 }
 

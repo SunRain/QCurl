@@ -17,14 +17,14 @@ bool hasEventDispatcher(QThread *thread)
     return (thread != nullptr) && (QAbstractEventDispatcher::instance(thread) != nullptr);
 }
 
-QCurl::QCCookieOperationResult cookieOperationFailure(QString error)
+QCurl::QCCookieOperationResult cookieOperationFailure(const QString &error)
 {
-    return QCurl::QCCookieOperationResult::failure(std::move(error));
+    return QCurl::QCCookieOperationResult::failure(error);
 }
 
-QCurl::QCCookieExportResult cookieExportFailure(QString error)
+QCurl::QCCookieExportResult cookieExportFailure(const QString &error)
 {
-    return QCurl::QCCookieExportResult::failure(std::move(error));
+    return QCurl::QCCookieExportResult::failure(error);
 }
 
 template <typename Result>
@@ -62,7 +62,7 @@ void QCNetworkAccessManager::setCookieFilePath(const QString &cookieFilePath,
 }
 
 QCCookieOperationResult
-QCNetworkAccessManagerPrivate::importCookiesOnOwnerThread(const QList<QNetworkCookie> &cookies,
+QCNetworkAccessManagerPrivate::importCookiesOnOwnerThread(const QList<QCCookie> &cookies,
                                                           const QUrl &originUrl)
 {
     auto *multi = QCCurlMultiManager::instance();
@@ -72,7 +72,7 @@ QCNetworkAccessManagerPrivate::importCookiesOnOwnerThread(const QList<QNetworkCo
     QString localError;
     const bool ok = multi->importCookiesForManager(q_func(), cookies, originUrl, &localError);
     return ok ? QCCookieOperationResult::success()
-              : QCCookieOperationResult::failure(std::move(localError));
+              : QCCookieOperationResult::failure(localError);
 }
 
 QCCookieExportResult
@@ -101,7 +101,7 @@ QCNetworkAccessManagerPrivate::clearAllCookiesOnOwnerThread()
     QString localError;
     const bool ok = multi->clearAllCookiesForManager(q_func(), &localError);
     return ok ? QCCookieOperationResult::success()
-              : QCCookieOperationResult::failure(std::move(localError));
+              : QCCookieOperationResult::failure(localError);
 }
 
 QFuture<QCCookieOperationResult>
@@ -180,7 +180,7 @@ QFuture<QCCookieExportResult> QCNetworkAccessManagerPrivate::runCookieExportAsyn
     return future;
 }
 
-bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
+bool QCNetworkAccessManager::importCookies(const QList<QCCookie> &cookies,
                                            const QUrl &originUrl,
                                            QString *error)
 {
@@ -200,8 +200,8 @@ bool QCNetworkAccessManager::importCookies(const QList<QNetworkCookie> &cookies,
     return result.isSuccess();
 }
 
-std::optional<QList<QNetworkCookie>> QCNetworkAccessManager::exportCookies(const QUrl &filterUrl,
-                                                                           QString *error) const
+std::optional<QList<QCCookie>> QCNetworkAccessManager::exportCookies(const QUrl &filterUrl,
+                                                                     QString *error) const
 {
     if (QThread::currentThread() != thread()) {
         if (error) {
@@ -241,7 +241,7 @@ bool QCNetworkAccessManager::clearAllCookies(QString *error)
 }
 
 QFuture<QCCookieOperationResult>
-QCNetworkAccessManager::importCookiesAsync(const QList<QNetworkCookie> &cookies,
+QCNetworkAccessManager::importCookiesAsync(const QList<QCCookie> &cookies,
                                            const QUrl &originUrl)
 {
     Q_D(QCNetworkAccessManager);

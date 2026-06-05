@@ -57,7 +57,7 @@ public:
     [[nodiscard]] QCNetworkRequest prepareManagedRequest(
         const QCNetworkRequest &request, const QList<QCNetworkMiddleware *> &middlewares) const;
     [[nodiscard]] QCCookieOperationResult importCookiesOnOwnerThread(
-        const QList<QNetworkCookie> &cookies,
+        const QList<QCCookie> &cookies,
         const QUrl &originUrl);
     [[nodiscard]] QCCookieExportResult exportCookiesOnOwnerThread(
         const QUrl &filterUrl) const;

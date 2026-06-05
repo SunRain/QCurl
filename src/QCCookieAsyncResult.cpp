@@ -2,10 +2,9 @@
 
 #include <QSharedData>
 
-#include <utility>
-
 namespace QCurl {
 
+/** cookie 修改操作结果的共享数据。 */
 class QCCookieOperationResultData : public QSharedData
 {
 public:
@@ -13,11 +12,12 @@ public:
     QString error;
 };
 
+/** cookie 导出操作结果的共享数据。 */
 class QCCookieExportResultData : public QSharedData
 {
 public:
     bool success = false;
-    QList<QNetworkCookie> cookies;
+    QList<QCCookie> cookies;
     QString error;
 };
 
@@ -46,11 +46,11 @@ QCCookieOperationResult QCCookieOperationResult::success()
     return result;
 }
 
-QCCookieOperationResult QCCookieOperationResult::failure(QString error)
+QCCookieOperationResult QCCookieOperationResult::failure(const QString &error)
 {
     QCCookieOperationResult result;
     result.d->success = false;
-    result.d->error = std::move(error);
+    result.d->error = error;
     return result;
 }
 
@@ -80,19 +80,19 @@ QCCookieExportResult &QCCookieExportResult::operator=(
 QCCookieExportResult &QCCookieExportResult::operator=(
     QCCookieExportResult &&other) noexcept = default;
 
-QCCookieExportResult QCCookieExportResult::success(QList<QNetworkCookie> cookies)
+QCCookieExportResult QCCookieExportResult::success(const QList<QCCookie> &cookies)
 {
     QCCookieExportResult result;
     result.d->success = true;
-    result.d->cookies = std::move(cookies);
+    result.d->cookies = cookies;
     return result;
 }
 
-QCCookieExportResult QCCookieExportResult::failure(QString error)
+QCCookieExportResult QCCookieExportResult::failure(const QString &error)
 {
     QCCookieExportResult result;
     result.d->success = false;
-    result.d->error = std::move(error);
+    result.d->error = error;
     return result;
 }
 
@@ -101,7 +101,7 @@ bool QCCookieExportResult::isSuccess() const noexcept
     return d->success;
 }
 
-QList<QNetworkCookie> QCCookieExportResult::cookies() const
+QList<QCCookie> QCCookieExportResult::cookies() const
 {
     return d->cookies;
 }

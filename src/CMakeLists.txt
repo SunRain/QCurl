@@ -3,6 +3,7 @@
 set(QCURL_CORE_SOURCES
     CurlGlobalConstructor.cpp
     QCGlobal.cpp
+    QCCookie.cpp
     QCCookieAsyncResult.cpp
     QCNetworkAccessManager.cpp
     QCNetworkAccessManagerConfig.cpp
@@ -21,6 +22,7 @@ set(QCURL_CORE_SOURCES
 set(QCURL_CORE_HEADERS
     private/CurlGlobalConstructor_p.h
     QCBlockingCookieStore.h
+    QCCookie.h
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
     QCNetworkAccessManager_p.h
@@ -229,6 +231,7 @@ endforeach()
 # - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入默认安装面
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
+    QCCookie.h
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
     QCNetworkRequestConfig.h
@@ -362,7 +365,6 @@ set(_qcurl_component_targets
 target_link_libraries(QCurl
     PUBLIC
         Qt6::Core
-        Qt6::Network
 )
 
 target_link_libraries(QCurlBlockingExtras
@@ -379,12 +381,14 @@ if(NOT QCURL_BUILD_SHARED_LIBS)
     target_link_libraries(QCurlOtherExtras
         PUBLIC
             QCurl
+            Qt6::Network
             ZLIB::ZLIB
     )
 else()
     target_link_libraries(QCurlOtherExtras
         PUBLIC
             QCurl
+            Qt6::Network
         PRIVATE
             ZLIB::ZLIB
     )

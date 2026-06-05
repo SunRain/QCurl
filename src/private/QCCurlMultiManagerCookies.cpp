@@ -3,7 +3,6 @@
 #include "QCNetworkAccessManager.h"
 
 #include <QDateTime>
-#include <QNetworkCookie>
 #include <QMutexLocker>
 #include <QTimeZone>
 
@@ -77,7 +76,7 @@ bool pathMatchesUrl(const QString &cookiePath, const QString &urlPath)
     return u.at(p.size()) == QLatin1Char('/');
 }
 
-std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
+std::optional<QCCookie> parseCurlCookieLine(const QByteArray &line)
 {
     if (line.isEmpty()) {
         return std::nullopt;
@@ -104,16 +103,18 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
     const QByteArray nameBytes    = parts.at(5);
     const QByteArray valueBytes   = parts.at(6);
 
-    QNetworkCookie cookie(nameBytes, valueBytes);
+    QCCookie cookie(nameBytes, valueBytes);
     QString domain = QString::fromUtf8(domainBytes);
     if (includeSubdomains) {
         if (!domain.startsWith(QLatin1Char('.'))) {
             domain.prepend(QLatin1Char('.'));
         }
+        cookie.setHostOnly(false);
     } else {
         if (domain.startsWith(QLatin1Char('.'))) {
             domain.remove(0, 1);
         }
+        cookie.setHostOnly(true);
     }
     cookie.setDomain(domain);
     cookie.setPath(QString::fromUtf8(pathBytes));
@@ -131,7 +132,7 @@ std::optional<QNetworkCookie> parseCurlCookieLine(const QByteArray &line)
 } // namespace
 
 bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *manager,
-                                                 const QList<QNetworkCookie> &cookies,
+                                                 const QList<QCCookie> &cookies,
                                                  const QUrl &originUrl,
                                                  QString *error)
 {
@@ -168,10 +169,11 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
     curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
-    for (const QNetworkCookie &raw : cookies) {
-        QNetworkCookie c = raw;
+    for (const QCCookie &raw : cookies) {
+        QCCookie c = raw;
         if (c.domain().isEmpty() && !originUrl.host().isEmpty()) {
             c.setDomain(originUrl.host());
+            c.setHostOnly(true);
         }
         if (c.path().isEmpty()) {
             c.setPath(QStringLiteral("/"));
@@ -184,7 +186,7 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         const QByteArray domainBytes = c.domain().toUtf8();
         const QByteArray pathBytes   = c.path().toUtf8();
 
-        const bool includeSubdomains            = domainBytes.startsWith('.');
+        const bool includeSubdomains            = !c.isHostOnly() || domainBytes.startsWith('.');
         const QByteArray includeSubdomainsBytes = includeSubdomains ? QByteArray("TRUE")
                                                                     : QByteArray("FALSE");
         const QByteArray secureBytes = c.isSecure() ? QByteArray("TRUE") : QByteArray("FALSE");
@@ -221,7 +223,7 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
     return true;
 }
 
-std::optional<QList<QNetworkCookie>> QCCurlMultiManager::exportCookiesForManager(
+std::optional<QList<QCCookie>> QCCurlMultiManager::exportCookiesForManager(
     const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error)
 {
     if (!manager) {
@@ -267,7 +269,7 @@ std::optional<QList<QNetworkCookie>> QCCurlMultiManager::exportCookiesForManager
         return std::nullopt;
     }
 
-    QList<QNetworkCookie> out;
+    QList<QCCookie> out;
     const QString host    = filterUrl.host();
     const QString urlPath = filterUrl.path();
     for (auto *it = cookieList; it; it = it->next) {
