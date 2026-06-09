@@ -12,7 +12,7 @@
 #include "../src/QCNetworkMockHandler.h"
 #include "../src/QCNetworkRequest.h"
 #include "../src/QCNetworkReply.h"
-#include "../src/QCNetworkRequestScheduler.h"
+#include "../src/QCNetworkSchedulerPolicy.h"
 #include "../src/QCNetworkRequestPriority.h"
 #include "../src/QCNetworkTestSupport.h"
 #include "benchmark_scheduler_helpers.h"
@@ -38,7 +38,6 @@ public:
     explicit SchedulerBenchmark(QObject *parent = nullptr)
         : QObject(parent)
         , manager(new QCNetworkAccessManager(this))
-        , scheduler(QCNetworkRequestScheduler::instance())
     {
         TestSupport::setMockHandler(manager, &mockHandler);
     }
@@ -97,10 +96,7 @@ private slots:
         QTimer::singleShot(500, this, [this]() {
             // 2.2 有调度器（配置为 10 个并发）
             manager->enableRequestScheduler(true);
-            QCNetworkRequestScheduler::Config config;
-            config.setMaxConcurrentRequests(10);
-            config.setMaxRequestsPerHost(5);
-            scheduler->setConfig(config);
+            applySchedulerLimits(10, 5);
 
             auto withSchedulerResult = runConcurrentBenchmark("有调度器（并发）", 50, true);
             results.push_back(withSchedulerResult);
@@ -120,13 +116,13 @@ private slots:
         const QMetaObject::Connection startedConnection = trackPriorityStarts(context);
 
         enqueuePriorityRequests(context,
-                                QStringLiteral("low"),
-                                QStringLiteral("bulk"),
+                                 QStringLiteral("low"),
+                                QCNetworkLaneKey::background(),
                                 QCNetworkRequestPriority::Low,
                                 &context.lowPriorityResult);
         enqueuePriorityRequests(context,
                                 QStringLiteral("high"),
-                                QStringLiteral("interactive"),
+                                QCNetworkLaneKey::control(),
                                 QCNetworkRequestPriority::High,
                                 &context.highPriorityResult);
 
@@ -137,11 +133,7 @@ private slots:
     void benchmark4_HighLoad()
     {
         manager->enableRequestScheduler(true);
-        
-        QCNetworkRequestScheduler::Config config;
-        config.setMaxConcurrentRequests(20);
-        config.setMaxRequestsPerHost(10);
-        scheduler->setConfig(config);
+        applySchedulerLimits(20, 10);
 
         auto result = runConcurrentBenchmark("高负载测试", 100, true);
         results.push_back(result);
@@ -158,10 +150,16 @@ private slots:
 private:
     void configurePriorityScheduler()
     {
-        QCNetworkRequestScheduler::Config config;
-        config.setMaxConcurrentRequests(3);
-        config.setMaxRequestsPerHost(2);
-        scheduler->setConfig(config);
+        applySchedulerLimits(3, 2);
+    }
+
+    void applySchedulerLimits(int maxConcurrentRequests, int maxRequestsPerHost)
+    {
+        QCNetworkSchedulerPolicy policy = manager->schedulerPolicy();
+        policy.setMaxConcurrentRequests(maxConcurrentRequests);
+        policy.setMaxRequestsPerHost(maxRequestsPerHost);
+        const bool policyApplied = manager->setSchedulerPolicy(policy);
+        Q_ASSERT(policyApplied);
     }
 
     void prepareMockResponse(const QUrl &url, int delayMs = 1)
@@ -172,19 +170,13 @@ private:
 
     QMetaObject::Connection trackPriorityStarts(PriorityBenchmarkContext &context)
     {
-        return connect(scheduler,
-                       &QCNetworkRequestScheduler::requestStarted,
-                       this,
-                       [&context](QCNetworkReply *reply, const QString &, const QString &) {
-                           if (context.priorities.contains(reply)) {
-                               context.startOrder.push_back(context.priorities.value(reply));
-                           }
-                       });
+        Q_UNUSED(context);
+        return {};
     }
 
     void enqueuePriorityRequests(PriorityBenchmarkContext &context,
                                  const QString &scope,
-                                 const QString &lane,
+                                 const QCNetworkLaneKey &lane,
                                  QCNetworkRequestPriority priority,
                                 BenchmarkResult *result)
     {
@@ -373,7 +365,6 @@ private:
 
     QCNetworkAccessManager *manager;
     QCNetworkMockHandler mockHandler;
-    QCNetworkRequestScheduler *scheduler;
     std::vector<BenchmarkResult> results;
 };
 

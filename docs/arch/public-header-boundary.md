@@ -38,7 +38,7 @@ Core 安装面新增未分层头文件。
 - `QCNetworkDiagnostics.h` 属于显式 Other Extras，只通过 `OtherExtrasDevelopment` 安装；默认 Core 不安装 diagnostics 头。
 - WebSocket 相关头当前只会在 `QCURL_WEBSOCKET_SUPPORT` 打开时进入 `QCURL_INSTALL_HEADERS_EXTRAS` / `QCURL_INSTALL_HEADERS_OTHER_EXTRAS`；它们不属于默认 Core 安装面。
 - `QCURL_INSTALL_HEADERS_EXTRAS` 明确属于 **非默认 Extras**：源码树 examples / benchmarks 可以使用；默认 Core install/export/public-api gate 不为其提供稳定 consumer contract，显式 Extras gate 单独验证 opt-in 安装和 default Core 负向 consumer。
-- `QCNetworkRequestScheduler.h` 仍在默认 Core 安装面，但 T7 已移除 `schedulerOnOwnerThread()`，`scheduler()` owner-thread only；默认 Core 不再承诺透明跨线程阻塞 getter。
+- `QCNetworkLaneKey.h` 与 `QCNetworkSchedulerPolicy.h` 进入默认 Core 安装面；scheduler 配置入口收敛到 `QCNetworkAccessManager::setSchedulerPolicy()`，请求 lane 使用 typed key。`QCNetworkRequestScheduler.h` 仅保留既有观察/内部测试兼容面，不再作为下游配置 workflow。
 - 旧的 manager-level 同步发送 API 已从 Core 移除；同步 value-result API 归属 Blocking Extras。
 
 任何不在上述清单中的头文件，都不属于对下游的稳定承诺。
@@ -56,13 +56,14 @@ Core 安装面新增未分层头文件。
 当前已收敛的第一梯队热点头文件用于降低安装面 include 成本；第二梯队（例如 `QCNetworkRequest.h`、`QCNetworkAccessManager.h`）与长尾头文件按后续独立审计处理。
 
 - `QCNetworkReply.h`：不再直接 `#include "QCNetworkRequest.h"`，改为前置声明并把完整依赖下沉到 `.cpp`，避免 reply 头成为 request 配置面的传递依赖中枢。
-- `QCNetworkRequestScheduler.h`：公开头仅保留 Config/Statistics 与调度控制 API；reply 创建统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QQueue/QTimer/QDateTime/QMutex` 等重依赖。
+- `QCNetworkLaneKey.h` / `QCNetworkSchedulerPolicy.h`：typed lane 和 manager-level policy 独立成轻量 Core type header；reply 创建仍统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，scheduler 队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节留在 `.cpp`。
 - `QCWebSocketPool.h`：公开头仅暴露连接池 contract；池内记录、映射、统计与定时器下沉到 `.cpp`，避免在安装头暴露 `QMap/QHash/QTimer/QDateTime/QMutex` 等重依赖（仍保留必要的 `QCNetworkSslConfig`/`QObject`/`QUrl` 依赖以表达对外 contract）。
 
-### 2.2 Scheduler Core ABI 策略（`QCNetworkRequestScheduler`）
+### 2.2 Scheduler Core ABI 策略（typed lane / manager policy）
 
-- `Config` / `Statistics` / `LaneConfig` 已收敛为 implicit-sharing 值类型（`QSharedDataPointer<Data>`）。
-- public header 只保留 accessor API，不再暴露 public fields。
+- `QCNetworkLaneKey` 是轻量值类型，用于替代裸 `QString` lane public 入口。
+- `QCNetworkSchedulerPolicy` / `QCNetworkSchedulerStatistics` 使用 implicit-sharing 值类型（`QSharedDataPointer<Data>`）和 accessor API。
+- policy validation 负责 default lane、lane 注册、权重、quantum、reservation 与 scheduler admission limit 的 fail-closed 校验。
 - special members（析构/拷贝/移动/赋值）使用 out-of-line 定义，避免不完整类型删除与 ODR 风险。
 
 允许的后续演进方式：
@@ -70,24 +71,16 @@ Core 安装面新增未分层头文件。
 - 允许在 `Data` 内新增字段（不改变 public class 布局）。
 - 新能力仅通过新增 accessor API 对外暴露，不回退到 public fields。
 
-### 2.3 Scheduler 线程与信号 contract（T7 后 Core 收敛合同）
+### 2.3 Scheduler 线程与 manager-level contract
 
-- `QCNetworkAccessManager::scheduler()` 是 **owner-thread only**：
-  - 只能在 manager owner thread 调用
-  - 跨线程误用会 warning + fail-closed 返回 `nullptr`
-- scheduler 信号签名固定为：
-  - `requestQueued(reply, lane, hostKey, priority)`
-  - `requestAboutToStart(reply, lane, hostKey)`
-  - `requestStarted(reply, lane, hostKey)`
-  - `requestFinished(reply, lane, hostKey)`
-  - `requestCancelled(reply, lane, hostKey)`
-- 信号语义固定为：
-  - 全部在 scheduler owner thread 发射
-  - `requestAboutToStart` 是最后可拦截点；若 direct slot 中 `cancelRequest()` 生效，不会再 `execute()` / `requestStarted`
-  - `requestStarted` 表示已完成 `reply->execute()` 调用（启动提交点）
+- `QCNetworkAccessManager` 持有 manager-owned scheduler child object。
+- 下游配置入口固定为 `setSchedulerPolicy()`；观察入口固定为 `schedulerStatistics()`；lane 取消入口固定为返回 `QCNetworkLaneCancelResult` 的 `cancelLaneRequests(QCNetworkLaneKey, SchedulerCancelScope)`。
+- 上述 manager-level API 必须在 manager owner thread 调用；跨线程配置请显式投递到 owner thread。
+- unknown lane 固定按 RequireRegistered fail-closed；请求使用 `QCNetworkLaneKey::fromName(name, &lane, &error)` 创建自定义 lane 后，必须先注册到 `QCNetworkSchedulerPolicy`。
 - `cancelLaneRequests()` 语义固定为：
   - `PendingOnly`：仅清 pending + deferred
   - `PendingAndRunning`：pending + deferred + running 一并取消
+  - invalid lane、未注册 lane、非 owner thread 和 scheduler 未启用均返回结构化失败，不执行取消副作用。
 
 ### 2.4 Core headers ABI 策略速查表（关键公开头）
 
@@ -95,10 +88,10 @@ Core 安装面新增未分层头文件。
 |------------|----------|--------------------|
 | `QCCookie.h` | `QCCookie` 使用 implicit-sharing 值类型 + accessor API；承载 Core manager cookie import/export 和 Blocking Extras cookie snapshot/delta 的 public cookie model | 可在 Data 内扩展字段并新增 accessor；不得暴露 QtNetwork、libcurl cookie line 或 public fields |
 | `QCCookieAsyncResult.h` | `QCCookieOperationResult` / `QCCookieExportResult` 使用 implicit-sharing 值类型 + accessor API；承载 manager cookie async signal 与 `QFuture` 结果 | 可在 Data 内扩展字段并新增 accessor；不得恢复 public fields 或把 blocking cookie store 行为混入 Core |
-| `QCNetworkRequestScheduler.h` | `Config/Statistics/LaneConfig` 使用 implicit-sharing 值类型 + accessor API；Core 仅保留 owner-thread 配置/查询语义 | 可新增 accessor；不得恢复透明跨线程阻塞 getter或把 internal diagnostics 固化为默认 Core 承诺 |
-| `QCNetworkAccessManager.h`（scheduler 入口） | `scheduler()` owner-thread only（跨线程 warning + fail-closed 返回 `nullptr`）；Core 不提供 `schedulerOnOwnerThread()` | 不得在生产 Core 默认合同中恢复透明阻塞 owner-thread getter |
+| `QCNetworkLaneKey.h` / `QCNetworkSchedulerPolicy.h` | typed lane + manager-level policy/statistics 使用值类型 + accessor API；配置通过 `QCNetworkAccessManager::setSchedulerPolicy()` | 可在 Data 内扩展字段并新增 accessor；不得恢复裸 `QString` lane 或 `manager scheduler getter + setLaneConfig` public workflow |
+| `QCNetworkAccessManager.h`（scheduler 入口） | manager-owned scheduler；公开配置/观察/取消入口为 `setSchedulerPolicy()`、`schedulerStatistics()`、`cancelLaneRequests()` | 不得恢复 scheduler 指针配置 workflow 或透明跨线程阻塞 getter |
 | `QCNetworkAccessManager.h`（share/hsts 配置） | `ShareHandleConfig` / `HstsAltSvcCacheConfig` 使用 implicit-sharing 值类型 + accessor API；manager 的 cookie/scheduler/cache/share/hsts 状态已下沉到 `QCNetworkAccessManagerPrivate`，不再占用导出类布局 | 可在 `Data` 内扩展字段并新增 accessor；不得恢复 public fields 或新增 layout allowlist |
-| `QCNetworkRequest.h`（lane/priority 入口） | 保持 lane + priority 公开行为合同稳定，调度细节留在 scheduler 实现层；重定向/传输便捷 API 委托到 `QCNetworkRequestConfig.h` 的配置族 | 允许新增便捷 API，但不破坏既有 lane/priority 语义；Advanced 网络路径/DNS API 不进入默认 Core |
+| `QCNetworkRequest.h`（lane/priority 入口） | lane 使用 `QCNetworkLaneKey`，priority 保持非抢占语义；重定向/传输便捷 API 委托到 `QCNetworkRequestConfig.h` 的配置族 | 允许新增 typed 便捷 API；不得恢复 `QString` lane setter compatibility overload；Advanced 网络路径/DNS API 不进入默认 Core |
 | `QCNetworkRequestConfig.h` | `QCNetworkHttpAuthConfig` / `QCNetworkRedirectConfig` / `QCNetworkTransferConfig` 使用 implicit-sharing 值类型 + accessor API；聚合认证、重定向与传输配置自然边界 | 可在 Data 内扩展字段并新增 accessor；不得为单字段拆出 public config class，也不得暴露 `CURLOPT_*` |
 | `QCNetworkCachePolicy.h` | 独立轻量 enum type header；作为 `QCNetworkRequest` 的 Core 配置类型进入默认安装面 | 可新增策略枚举值，但不得把 concrete cache 实现类型或读取 API 混入该头 |
 | `QCNetworkCache.h` | `QCNetworkCacheMetadata` / `QCNetworkCacheLookupResult` 使用 implicit-sharing 值类型 + accessor API；canonical read API 为 `lookup(url, ReadMode)` | 可在 Data 内扩展字段；不得恢复 public fields、`contains()` / `data()` / `metadata()` 旧读路径或新增 layout allowlist |
@@ -162,7 +155,7 @@ Core 安装面新增未分层头文件。
 
 - 正向 consumer：独立工程只能通过 staging prefix 执行 `find_package(QCurl CONFIG REQUIRED)`，随后 include public headers 并链接 `QCurl::QCurl` 成功。
 - cookie value 与 async result 作为 Core 值结果时，正向 consumer fixture 必须持续覆盖 `<QCCookie.h>`、`<QCCookieAsyncResult.h>`、`QCCookie` accessor、`QCCookieOperationResult::success()/failure()`、`QCCookieExportResult::success()/failure()`、`isSuccess()`、`error()` 和 `cookies()`，且不得要求 default consumer 链接 QtNetwork。
-- 正向 Core consumer fixture 覆盖 `<QCNetworkRequestScheduler.h>`、owner-thread `manager.scheduler()`、以及 `Config/LaneConfig` accessor API（禁止 direct field 依赖）；不得覆盖或恢复 `schedulerOnOwnerThread()`。
+- 正向 Core consumer fixture 覆盖 `<QCNetworkLaneKey.h>`、`<QCNetworkSchedulerPolicy.h>`、typed lane、manager-level `setSchedulerPolicy()` / `schedulerPolicy()` / `schedulerStatistics()` 和 policy/lane accessor API；不得覆盖或恢复 `manager scheduler getter` 配置 workflow。
 - logger 作为 Core 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkLogger.h>`、`NetworkLogEntry` accessor API、以及 `manager.setLogger()` / `logger()` / `setDebugTraceEnabled()` / `debugTraceEnabled()`。
 - cache policy 作为 Core type header 时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCachePolicy.h>` 以及 `QCNetworkRequest::setCachePolicy()` / `cachePolicy()`。
 - Cache lookup 作为 Core 能力时，正向 consumer fixture 必须持续覆盖 `<QCNetworkCache.h>`、`<QCNetworkMemoryCache.h>`、`<QCNetworkDiskCache.h>`、`QCNetworkCacheMetadata` accessor API、`lookup(url, QCNetworkCacheReadMode::FreshOnly)` 和 `QCNetworkCacheLookupResult` accessor API。

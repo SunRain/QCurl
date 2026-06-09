@@ -5,7 +5,7 @@
 #include "../../src/QCNetworkReply.h"
 #include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkRequestPriority.h"
-#include "../../src/QCNetworkRequestScheduler.h"
+#include "../../src/QCNetworkSchedulerPolicy.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -38,7 +38,6 @@ public:
     explicit StressTest(QObject *parent = nullptr)
         : QObject(parent)
         , manager(new QCNetworkAccessManager(this))
-        , scheduler(QCNetworkRequestScheduler::instance())
     {
         setupScheduler();
     }
@@ -96,8 +95,8 @@ private slots:
                        .arg(totalRequests)
                        .arg(successCount.load())
                        .arg(failureCount.load())
-                       .arg(scheduler->statistics().pendingRequests())
-                       .arg(scheduler->statistics().runningRequests());
+                       .arg(manager->schedulerStatistics().pendingRequests())
+                       .arg(manager->schedulerStatistics().runningRequests());
 
         // 检查是否完成
         if (completed >= totalRequests) {
@@ -138,7 +137,7 @@ private slots:
         qInfo() << QString("  平均响应时间: %1 ms").arg(elapsedSec * 1000 / totalRequests, 0, 'f', 2);
 
         // 调度器统计
-        auto stats = scheduler->statistics();
+        auto stats = manager->schedulerStatistics();
         qInfo() << "\n📈 调度器统计：";
         qInfo() << QString("  已完成: %1").arg(stats.completedRequests());
         qInfo() << QString("  已取消: %1").arg(stats.cancelledRequests());
@@ -184,7 +183,10 @@ private slots:
         qInfo() << "\n========================================\n";
 
         // 清理并退出
-        scheduler->cancelAllRequests();
+        const QCNetworkLaneCancelResult cancelResult = manager->cancelLaneRequests(
+            QCNetworkLaneKey::defaultLane(),
+            QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+        Q_UNUSED(cancelResult);
         QTimer::singleShot(500, qApp, &QCoreApplication::quit);
     }
 
@@ -193,18 +195,18 @@ private:
     {
         manager->enableRequestScheduler(true);
 
-        QCNetworkRequestScheduler::Config config;
-        config.setMaxConcurrentRequests(50); // 高并发
-        config.setMaxRequestsPerHost(20);
-        config.setMaxBandwidthBytesPerSec(10 * 1024 * 1024); // 10 MB/s
-        config.setEnableThrottling(true);
-
-        scheduler->setConfig(config);
+        QCNetworkSchedulerPolicy policy = manager->schedulerPolicy();
+        policy.setMaxConcurrentRequests(50); // 高并发
+        policy.setMaxRequestsPerHost(20);
+        policy.setMaxBandwidthBytesPerSec(10 * 1024 * 1024); // 10 MB/s
+        policy.setThrottlingEnabled(true);
+        const bool policyApplied = manager->setSchedulerPolicy(policy);
+        Q_ASSERT(policyApplied);
 
         qInfo() << "✓ 调度器已配置";
-        qInfo() << "  - maxConcurrentRequests:" << config.maxConcurrentRequests();
-        qInfo() << "  - maxRequestsPerHost:" << config.maxRequestsPerHost();
-        qInfo() << "  - maxBandwidthBytesPerSec:" << config.maxBandwidthBytesPerSec() / 1024 / 1024
+        qInfo() << "  - maxConcurrentRequests:" << policy.maxConcurrentRequests();
+        qInfo() << "  - maxRequestsPerHost:" << policy.maxRequestsPerHost();
+        qInfo() << "  - maxBandwidthBytesPerSec:" << policy.maxBandwidthBytesPerSec() / 1024 / 1024
                 << "MB/s\n";
     }
 
@@ -250,7 +252,6 @@ private:
     }
 
     QCNetworkAccessManager *manager;
-    QCNetworkRequestScheduler *scheduler;
     QTimer *statsTimer = nullptr;
 
     int totalRequests = 0;

@@ -2,10 +2,11 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "../../src/QCNetworkAccessManager.h"
+#include "../../src/QCNetworkLaneKey.h"
 #include "../../src/QCNetworkReply.h"
 #include "../../src/QCNetworkRequest.h"
 #include "../../src/QCNetworkRequestPriority.h"
-#include "../../src/QCNetworkRequestScheduler.h"
+#include "../../src/QCNetworkSchedulerPolicy.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -36,8 +37,6 @@ public:
     explicit SchedulerDemo(QObject *parent = nullptr)
         : QObject(parent)
         , manager(new QCNetworkAccessManager(this))
-        // 必须在 manager owner thread 获取/配置 thread-local shared scheduler。
-        , scheduler(manager->scheduler())
     {
         setupScheduler();
         setupSignals();
@@ -94,11 +93,7 @@ private slots:
         qInfo() << "配置：maxConcurrentRequests=3, maxRequestsPerHost=2";
         qInfo() << "创建 5 个请求到同一主机，观察并发限制...\n";
 
-        // 修改配置
-        QCNetworkRequestScheduler::Config config = scheduler->config();
-        config.setMaxConcurrentRequests(3);
-        config.setMaxRequestsPerHost(2);
-        scheduler->setConfig(config);
+        applySchedulerLimits(3, 2);
 
         // 创建多个请求到同一主机
         for (int i = 0; i < 5; ++i) {
@@ -112,16 +107,16 @@ private slots:
 
     void demo3_DeferUndefer()
     {
-        qInfo() << "\n--- 演示 3：延后/恢复调度（仅 Pending，非传输级 pause/resume） ---";
-        qInfo() << "先启动一个耗时请求占用并发槽位，使目标请求保持 Pending；随后 deferPendingRequest/undeferRequest...\n";
+        qInfo() << "\n--- 演示 3：manager-level lane cancel ---";
+        qInfo() << "先启动一个耗时请求占用并发槽位，再通过 cancelLaneRequests 取消同 lane 的 pending 请求...\n";
 
         // 先清空前两个 demo 遗留的 reply，确保此处观察到的都是 defer/undefer 合同本身。
-        scheduler->cancelAllRequests();
+        const QCNetworkLaneCancelResult cleanupResult = manager->cancelLaneRequests(
+            QCNetworkLaneKey::defaultLane(),
+            QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+        Q_UNUSED(cleanupResult);
 
-        QCNetworkRequestScheduler::Config config = scheduler->config();
-        config.setMaxConcurrentRequests(1);
-        config.setMaxRequestsPerHost(1);
-        scheduler->setConfig(config);
+        applySchedulerLimits(1, 1);
 
         // blocker：占用唯一并发槽位
         QCNetworkRequest blocker(QUrl("https://httpbin.org/delay/4"));
@@ -144,22 +139,15 @@ private slots:
             reply->deleteLater();
         });
 
-        // 稍后 defer（仅 Pending 生效；若返回 false 表示请求已进入 Running/Finished 等状态）
         QTimer::singleShot(300, this, [this]() {
             if (!pauseResumeDemo) {
                 return;
             }
-            qInfo() << "⏸️  deferPendingRequest...";
-            const bool ok = scheduler->deferPendingRequest(pauseResumeDemo);
-            qInfo() << "deferPendingRequest result =" << ok;
-        });
-
-        // 再稍后恢复
-        QTimer::singleShot(1800, this, [this]() {
-            if (pauseResumeDemo) {
-                qInfo() << "▶️  undeferRequest...";
-                scheduler->undeferRequest(pauseResumeDemo);
-            }
+            qInfo() << "⏹️  cancelLaneRequests(default, PendingOnly)...";
+            const QCNetworkLaneCancelResult cancelResult = manager->cancelLaneRequests(
+                QCNetworkLaneKey::defaultLane(),
+                QCNetworkAccessManager::SchedulerCancelScope::PendingOnly);
+            qInfo() << "cancelled pending replies =" << cancelResult.cancelledRequests();
         });
     }
 
@@ -179,7 +167,10 @@ private slots:
         printStatistics();
 
         // 清理所有请求
-        scheduler->cancelAllRequests();
+        const QCNetworkLaneCancelResult cleanupResult = manager->cancelLaneRequests(
+            QCNetworkLaneKey::defaultLane(),
+            QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+        Q_UNUSED(cleanupResult);
 
         QCoreApplication::quit();
     }
@@ -190,67 +181,27 @@ private:
         // 启用调度器
         manager->enableRequestScheduler(true);
 
-        // 配置调度器
-        QCNetworkRequestScheduler::Config config;
-        config.setMaxConcurrentRequests(3);
-        config.setMaxRequestsPerHost(2);
-        config.setMaxBandwidthBytesPerSec(0); // 无带宽限制
-        config.setEnableThrottling(false);
-
-        scheduler->setConfig(config);
+        applySchedulerLimits(3, 2);
 
         qInfo() << "✓ 调度器已启用";
-        qInfo() << "  - 最大并发请求数:" << config.maxConcurrentRequests();
-        qInfo() << "  - 每主机最大并发:" << config.maxRequestsPerHost();
+        qInfo() << "  - 最大并发请求数:" << manager->schedulerPolicy().maxConcurrentRequests();
+        qInfo() << "  - 每主机最大并发:" << manager->schedulerPolicy().maxRequestsPerHost();
     }
 
     void setupSignals()
     {
-        // 这些日志直接映射新的 queue/about-to-start/started/finished 合同观察点。
-        // 请求加入队列
-        connect(scheduler,
-                &QCNetworkRequestScheduler::requestQueued,
-                this,
-                [](QCNetworkReply *reply,
-                   const QString &lane,
-                   const QString &hostKey,
-                   QCNetworkRequestPriority priority) {
-                    Q_UNUSED(reply);
-                    qInfo() << QString("📥 [%1] lane=%2 host=%3 请求加入队列")
-                                   .arg(toString(priority), lane, hostKey);
-                });
+        qInfo() << "✓ 使用 manager-level schedulerStatistics() 观察调度状态";
+    }
 
-        // 请求即将开始执行（about-to-start）
-        connect(scheduler,
-                &QCNetworkRequestScheduler::requestAboutToStart,
-                this,
-                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
-                    qInfo() << QString("🟡 lane=%1 host=%2 about-to-start: %3")
-                                   .arg(lane, hostKey, reply->url().toString());
-                });
-
-        // 请求已开始执行（started：scheduler 已完成 execute() 调用）
-        connect(scheduler,
-                &QCNetworkRequestScheduler::requestStarted,
-                this,
-                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
-                    qInfo() << QString("🚀 lane=%1 host=%2 started: %3")
-                                   .arg(lane, hostKey, reply->url().toString());
-                });
-
-        // 请求完成
-        connect(scheduler,
-                &QCNetworkRequestScheduler::requestFinished,
-                this,
-                [](QCNetworkReply *reply, const QString &lane, const QString &hostKey) {
-                    qInfo() << QString("✅ lane=%1 host=%2 请求完成: %3")
-                                   .arg(lane, hostKey, reply->url().toString());
-                });
-
-        // 队列已清空
-        connect(scheduler, &QCNetworkRequestScheduler::queueEmpty, this, []() {
-            qInfo() << "ℹ️  队列已清空";
-        });
+    void applySchedulerLimits(int maxConcurrentRequests, int maxRequestsPerHost)
+    {
+        QCNetworkSchedulerPolicy policy = manager->schedulerPolicy();
+        policy.setMaxConcurrentRequests(maxConcurrentRequests);
+        policy.setMaxRequestsPerHost(maxRequestsPerHost);
+        policy.setMaxBandwidthBytesPerSec(0);
+        policy.setThrottlingEnabled(false);
+        const bool policyApplied = manager->setSchedulerPolicy(policy);
+        Q_ASSERT(policyApplied);
     }
 
     QCNetworkReply *createRequest(const QString &url,
@@ -281,7 +232,7 @@ private:
 
     void printStatistics()
     {
-        auto stats = scheduler->statistics();
+        auto stats = manager->schedulerStatistics();
 
         qInfo() << "\n📊 当前统计信息:";
         qInfo() << "  ├─ 等待中:" << stats.pendingRequests() << "个";
@@ -293,7 +244,6 @@ private:
     }
 
     QCNetworkAccessManager *manager;
-    QCNetworkRequestScheduler *scheduler;
     QCNetworkReply *pauseResumeDemo = nullptr;
 };
 

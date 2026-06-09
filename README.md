@@ -200,57 +200,65 @@ auto *formReply = manager.post(formRequest, formBody);
 
 #### 5. Lane-aware Scheduler
 
-`QCNetworkRequestScheduler.h` 属于显式公开的调度能力；默认 Core 不提供透明跨线程阻塞 getter。
+调度配置入口在 `QCNetworkAccessManager` 上；请求 lane 使用 typed key，未注册 lane 会
+fail-closed。
 
 ```cpp
-#include <QCNetworkRequestScheduler.h>
+#include <QCNetworkLaneKey.h>
+#include <QCNetworkSchedulerPolicy.h>
 
-// 建议在 manager owner thread 的初始化阶段获取并配置 scheduler。
-auto *scheduler = manager.scheduler();
+QCurl::QCNetworkSchedulerPolicy policy = QCurl::QCNetworkSchedulerPolicy::defaultPolicy();
+policy.setMaxConcurrentRequests(6);
+policy.setMaxRequestsPerHost(2);
 
-QCurl::QCNetworkRequestScheduler::LaneConfig controlLane;
+QString schedulerError;
+QCurl::QCNetworkSchedulerPolicy::LaneConfig controlLane;
 controlLane.setWeight(3);
 controlLane.setQuantum(1);
 controlLane.setReservedGlobal(1);
 controlLane.setReservedPerHost(1);
-scheduler->setLaneConfig(QStringLiteral("Control"), controlLane);
+if (!policy.setLaneConfig(QCurl::QCNetworkLaneKey::control(), controlLane, &schedulerError)) {
+    qWarning() << schedulerError;
+}
 
-QCurl::QCNetworkRequestScheduler::LaneConfig transferLane;
+QCurl::QCNetworkSchedulerPolicy::LaneConfig transferLane;
 transferLane.setWeight(1);
 transferLane.setQuantum(1);
-scheduler->setLaneConfig(QStringLiteral("Transfer"), transferLane);
+if (!policy.setLaneConfig(QCurl::QCNetworkLaneKey::transfer(), transferLane, &schedulerError)) {
+    qWarning() << schedulerError;
+}
+
+if (!manager.setSchedulerPolicy(policy, &schedulerError)) {
+    qWarning() << schedulerError;
+}
 
 QCurl::QCNetworkRequest controlRequest(QUrl("https://api.example.com/manifest"));
-controlRequest.setLane(QStringLiteral("Control"))
+controlRequest.setLane(QCurl::QCNetworkLaneKey::control())
     .setPriority(QCurl::QCNetworkRequestPriority::High);
 
 QCurl::QCNetworkRequest transferRequest(QUrl("https://cdn.example.com/chunk.bin"));
-transferRequest.setLane(QStringLiteral("Transfer"))
+transferRequest.setLane(QCurl::QCNetworkLaneKey::transfer())
     .setPriority(QCurl::QCNetworkRequestPriority::Low);
 
-QObject::connect(scheduler,
-                 &QCurl::QCNetworkRequestScheduler::requestAboutToStart,
-                 [](QCurl::QCNetworkReply *, const QString &lane, const QString &hostKey) {
-                     qDebug() << "about-to-start lane=" << lane << "hostKey=" << hostKey;
-                 });
+const auto stats = manager.schedulerStatistics();
+qDebug() << "pending=" << stats.pendingRequests()
+         << "running=" << stats.runningRequests();
 
-QObject::connect(scheduler,
-                 &QCurl::QCNetworkRequestScheduler::requestStarted,
-                 [](QCurl::QCNetworkReply *, const QString &lane, const QString &hostKey) {
-                     qDebug() << "started lane=" << lane << "hostKey=" << hostKey;
-                 });
-
-scheduler->cancelLaneRequests(QStringLiteral("Transfer"),
-                              QCurl::QCNetworkRequestScheduler::CancelLaneScope::PendingAndRunning);
+const auto cancelResult = manager.cancelLaneRequests(
+    QCurl::QCNetworkLaneKey::transfer(),
+    QCurl::QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+if (!cancelResult.isSuccess()) {
+    qWarning() << cancelResult.error();
+}
 ```
 
 简要提示：
 
 - `lane` 可以理解成“请求车道”：先按车道分组，再在车道内按优先级排序。
 - `Critical` 现在只影响同一条 lane 内的启动顺序；若需要给控制类请求留保底名额，请使用 lane reservation。
-- 调度器信号携带 `lane + hostKey`，用于按车道和 host 做观测。
-- `cancelLaneRequests()` 语义：`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
-- `manager.scheduler()` 是 owner-thread only：跨线程误用会 warning 并返回 `nullptr`；跨线程配置时把“配置动作”显式投递到 manager owner thread 执行。
+- `QCNetworkLaneKey::fromName(name, &lane, &error)` 可创建自定义 lane；解析失败不会返回 invalid sentinel，成功后必须先写入 `QCNetworkSchedulerPolicy`。
+- `cancelLaneRequests()` 返回 `QCNetworkLaneCancelResult`；`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
+- scheduler policy 和统计接口必须在 manager owner thread 调用；跨线程配置请显式投递到 owner thread。
 
 完整说明、请求时序图和 `Control / Transfer / Background` 配置建议统一参考：
 
