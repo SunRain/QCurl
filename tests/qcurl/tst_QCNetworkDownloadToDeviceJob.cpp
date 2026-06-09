@@ -106,7 +106,7 @@ struct SideEffectHarness
     QSignalSpy startedSpy;
 
     SideEffectHarness()
-        : scheduler(manager.scheduler())
+        : scheduler(manager.schedulerForTesting())
         , queuedSpy(scheduler, &QCNetworkRequestScheduler::requestQueued)
         , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
     {
@@ -153,7 +153,7 @@ void tst_QCNetworkDownloadToDeviceJob::initTestCase()
 
 void tst_QCNetworkDownloadToDeviceJob::cleanup()
 {
-    QCNetworkRequestScheduler::instance()->cancelAllRequests();
+    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
 }
 
 void tst_QCNetworkDownloadToDeviceJob::constructorDoesNotStartRequest()

@@ -90,10 +90,19 @@ def validate_metatype_fixture(source_dir: Path) -> None:
     source = _fixture_source(source_dir)
     required_snippets = [
         "#include <QCGlobal.h>",
+        "#include <QCNetworkAccessManager.h>",
+        "#include <QCNetworkLaneCancelResult.h>",
+        "#include <QCNetworkLaneKey.h>",
         "#include <QCNetworkRequestPriority.h>",
+        "#include <QCNetworkSchedulerPolicy.h>",
         "QCurl::initialize();",
-        "QMetaType::fromName(\"QCurl::QCNetworkRequestPriority\")",
         "QMetaType::fromType<QCurl::QCNetworkRequestPriority>()",
+        "QMetaType::fromName(name)",
+        "QMetaType::fromType<QCurl::QCNetworkLaneKey>()",
+        "QMetaType::fromType<QCurl::QCNetworkSchedulerPolicy>()",
+        "QMetaType::fromType<QCurl::QCNetworkSchedulerPolicy::LaneConfig>()",
+        "QMetaType::fromType<QCurl::QCNetworkSchedulerStatistics>()",
+        "QMetaType::fromType<QCurl::QCNetworkLaneCancelResult>()",
     ]
     missing = [snippet for snippet in required_snippets if snippet not in source]
     if missing:

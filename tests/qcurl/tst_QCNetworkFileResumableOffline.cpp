@@ -240,7 +240,7 @@ struct ResumableSideEffectHarness
     QSignalSpy startedSpy;
 
     ResumableSideEffectHarness()
-        : scheduler(manager.scheduler())
+        : scheduler(manager.schedulerForTesting())
         , queuedSpy(scheduler, &QCNetworkRequestScheduler::requestQueued)
         , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
     {

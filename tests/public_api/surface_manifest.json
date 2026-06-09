@@ -115,11 +115,32 @@
       "rationale": "Core request priority enum type used by request configuration."
     },
     {
+      "path": "QCNetworkLaneKey.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core typed scheduler lane key used by QCNetworkRequest and manager-level scheduler policy."
+    },
+    {
+      "path": "QCNetworkLaneCancelResult.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core structured result type for manager-level scheduler lane cancellation."
+    },
+    {
+      "path": "QCNetworkSchedulerPolicy.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Core manager-level scheduler admission policy and scheduler statistics value types."
+    },
+    {
       "path": "QCNetworkRequestScheduler.h",
       "layer": "Core",
       "currentInstall": "core-default",
       "targetInstall": "core-default",
-      "rationale": "Core lane/priority scheduler control surface; T7 removed transparent owner-thread blocking getter and cross-thread stable introspection."
+      "rationale": "Core scheduler observation type retained for existing signal-level tests; downstream configuration workflow moved to QCNetworkSchedulerPolicy on QCNetworkAccessManager."
     },
     {
       "path": "QCNetworkCachePolicy.h",

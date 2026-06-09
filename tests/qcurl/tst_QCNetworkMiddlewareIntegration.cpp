@@ -46,12 +46,12 @@ void tst_QCNetworkMiddlewareIntegration::init()
     m_mockHandler.setCaptureBodyPreviewLimit(64);
     QCurl::TestSupport::setMockHandler(*m_manager, &m_mockHandler);
 
-    QCNetworkRequestScheduler::instance()->cancelAllRequests();
+    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
 }
 
 void tst_QCNetworkMiddlewareIntegration::cleanup()
 {
-    QCNetworkRequestScheduler::instance()->cancelAllRequests();
+    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
 
     if (m_manager) {
         m_manager->clearMiddlewares();

@@ -171,7 +171,9 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkHttp2.cpp
 ) # HTTP/2 功能测试
+add_qcurl_test(tst_QCNetworkSchedulerPolicy tst_QCNetworkSchedulerPolicy.cpp) # lane key / scheduler policy 值类型测试
 add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp) # 请求优先级调度测试
+target_compile_definitions(tst_QCNetworkScheduler PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(
     tst_QCNetworkActorThreadModel
     REQUIRE_LOCAL_PORT
@@ -196,12 +198,14 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkFileTransfer.cpp
 ) # 文件传输 API 测试
 add_qcurl_test(tst_QCNetworkDownloadToDeviceJob tst_QCNetworkDownloadToDeviceJob.cpp) # Download-to-device job 显式 start/fail-fast 合同测试
+target_compile_definitions(tst_QCNetworkDownloadToDeviceJob PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(
     tst_QCNetworkFileResumableOffline
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkFileResumableOffline.cpp
 ) # QCNetworkResumableDownloadJob 离线门禁：416 成功语义 + start 校验/覆盖重下
+target_compile_definitions(tst_QCNetworkFileResumableOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(
     tst_QCNetworkIODeviceLifetime
     REQUIRE_LOCAL_PORT
@@ -267,6 +271,7 @@ add_qcurl_test_with_preflight(
 add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测试
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）
+target_compile_definitions(tst_QCNetworkMiddlewareIntegration PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp) # 统一重试/脱敏日志/观测埋点（离线门禁）
 target_link_libraries(tst_QCNetworkUnifiedPolicyMiddlewareOffline PRIVATE QCurlOtherExtras)
 add_qcurl_test(tst_QCNetworkCookieBridge tst_QCNetworkCookieBridge.cpp) # cookie bridge（share cookie store）离线门禁
@@ -345,6 +350,7 @@ set_tests_properties(tst_QCNetworkRetryOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkResponseHeadersOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkRequestWarningsOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkHttpErrorMappingOffline PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkSchedulerPolicy PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkScheduler PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkActorThreadModel PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkRequestCanonicalApi PROPERTIES LABELS "offline")
@@ -417,6 +423,7 @@ set(_qcurl_qttest_targets
     tst_QCNetworkRequestWarningsOffline
     tst_QCNetworkHttpErrorMappingOffline
     tst_QCNetworkHttp2
+    tst_QCNetworkSchedulerPolicy
     tst_QCNetworkScheduler
     tst_QCNetworkActorThreadModel
     tst_QCNetworkProxy

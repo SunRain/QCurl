@@ -4,6 +4,7 @@
  */
 
 #include "QCNetworkRequest.h"
+#include "QCNetworkLaneKey.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequestPriority.h"
 #include "QCNetworkRetryPolicy.h"
@@ -51,6 +52,7 @@ private slots:
     // lane 测试
     void testLaneDefaults();
     void testSetLane();
+    void testSetLaneAcceptsInvalidLaneAsFailClosedSnapshot();
     void testCopyAndEqualityPreserveLane();
     void testEqualityIgnoresExecutionConfigFamily();
 
@@ -240,34 +242,42 @@ void TestQCNetworkRequest::testTransferConfig()
 void TestQCNetworkRequest::testLaneDefaults()
 {
     QCNetworkRequest request;
-    // 空串是 default lane 的稳定编码，避免 public API 再引入额外枚举态。
-    QVERIFY(request.lane().isEmpty());
+    QVERIFY(request.lane().isDefault());
 }
 
 void TestQCNetworkRequest::testSetLane()
 {
     QCNetworkRequest request;
 
-    // setter 会做 trim，确保 scheduler 不会把首尾空白当成不同 lane。
-    request.setLane(QStringLiteral("  Control  "));
-    QCOMPARE(request.lane(), QStringLiteral("Control"));
+    request.setLane(QCNetworkLaneKey::control());
+    QCOMPARE(request.lane(), QCNetworkLaneKey::control());
 
-    request.setLane(QString());
-    QVERIFY(request.lane().isEmpty());
+    request.setLane(QCNetworkLaneKey::defaultLane());
+    QVERIFY(request.lane().isDefault());
+}
+
+void TestQCNetworkRequest::testSetLaneAcceptsInvalidLaneAsFailClosedSnapshot()
+{
+    QCNetworkRequest request;
+    request.setLane(QCNetworkLaneKey::control());
+
+    request.setLane(QCNetworkLaneKey());
+
+    QVERIFY(!request.lane().isValid());
 }
 
 void TestQCNetworkRequest::testCopyAndEqualityPreserveLane()
 {
     QCNetworkRequest lhs(QUrl(QStringLiteral("https://example.com/api")));
     lhs.setFollowLocation(false);
-    lhs.setLane(QStringLiteral("Control"));
+    lhs.setLane(QCNetworkLaneKey::control());
 
     // lane 是请求标识的一部分：copy/equality 必须保留它，才能支撑 lane-aware scheduler contract。
     QCNetworkRequest rhs(lhs);
-    QCOMPARE(rhs.lane(), QStringLiteral("Control"));
+    QCOMPARE(rhs.lane(), QCNetworkLaneKey::control());
     QVERIFY(lhs == rhs);
 
-    rhs.setLane(QStringLiteral("Transfer"));
+    rhs.setLane(QCNetworkLaneKey::transfer());
     QVERIFY(lhs != rhs);
 }
 
@@ -275,7 +285,7 @@ void TestQCNetworkRequest::testEqualityIgnoresExecutionConfigFamily()
 {
     QCNetworkRequest lhs(QUrl(QStringLiteral("https://example.com/api")));
     lhs.setFollowLocation(false);
-    lhs.setLane(QStringLiteral("Control"));
+    lhs.setLane(QCNetworkLaneKey::control());
     lhs.setRawHeader(QByteArrayLiteral("X-Test"), QByteArrayLiteral("lhs"));
 
     QCNetworkRequest rhs(lhs);

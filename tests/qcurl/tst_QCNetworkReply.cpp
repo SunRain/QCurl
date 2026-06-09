@@ -293,30 +293,30 @@ QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
 
 QCNetworkRequestScheduler::Config TestQCNetworkReply::blockScheduler(bool &originalEnabled)
 {
-    auto *scheduler = QCNetworkRequestScheduler::instance();
+    auto *scheduler = m_manager->schedulerForTesting();
     Q_ASSERT(scheduler != nullptr);
 
     originalEnabled = m_manager->isSchedulerEnabled();
 
-    QCNetworkRequestScheduler::Config originalConfig = scheduler->config();
+    QCNetworkRequestScheduler::Config originalConfig = scheduler->configForTesting();
     QCNetworkRequestScheduler::Config blockedConfig  = originalConfig;
     blockedConfig.setMaxConcurrentRequests(0);
     blockedConfig.setMaxRequestsPerHost(std::max(originalConfig.maxRequestsPerHost(), 1));
 
     m_manager->enableRequestScheduler(true);
-    scheduler->setConfig(blockedConfig);
+    scheduler->setConfigForTesting(blockedConfig);
     return originalConfig;
 }
 
 void TestQCNetworkReply::restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
                                           bool originalEnabled)
 {
-    auto *scheduler = QCNetworkRequestScheduler::instance();
+    auto *scheduler = m_manager->schedulerForTesting();
     Q_ASSERT(scheduler != nullptr);
 
     scheduler->cancelAllRequests();
     QCoreApplication::processEvents();
-    scheduler->setConfig(originalConfig);
+    scheduler->setConfigForTesting(originalConfig);
     m_manager->enableRequestScheduler(originalEnabled);
 }
 
@@ -359,7 +359,8 @@ void TestQCNetworkReply::init()
 
 void TestQCNetworkReply::cleanup()
 {
-    // 每个测试后执行
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
 }
 
 // ============================================================================

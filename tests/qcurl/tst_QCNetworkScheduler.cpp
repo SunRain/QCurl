@@ -8,6 +8,7 @@
 #include "../src/QCNetworkRequest.h"
 #include "../src/QCNetworkRequestPriority.h"
 #include "../src/QCNetworkRequestScheduler.h"
+#include "../src/QCNetworkSchedulerPolicy.h"
 
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
@@ -36,6 +37,18 @@ void verifyPriorityMetaTypeContract()
     QVERIFY(byType.isValid());
     QCOMPARE(byName.id(), byType.id());
     QCOMPARE(QString::fromLatin1(byType.name()), QStringLiteral("QCurl::QCNetworkRequestPriority"));
+}
+
+template <typename T>
+void verifyCanonicalMetaTypeContract(const char *canonicalName)
+{
+    const QMetaType byName = QMetaType::fromName(canonicalName);
+    QVERIFY(byName.isValid());
+
+    const QMetaType byType = QMetaType::fromType<T>();
+    QVERIFY(byType.isValid());
+    QCOMPARE(byName.id(), byType.id());
+    QCOMPARE(QString::fromLatin1(byType.name()), QString::fromLatin1(canonicalName));
 }
 
 } // namespace
@@ -70,12 +83,19 @@ public slots:
     void lookupWorkerScheduler()
     {
         const quintptr workerThreadScheduler
-            = reinterpret_cast<quintptr>(QCNetworkRequestScheduler::instance());
+            = reinterpret_cast<quintptr>(QCNetworkRequestScheduler::instanceForTesting());
         emit lookupFinished(workerThreadScheduler);
+    }
+
+    void probeFreshSchedulerTimer()
+    {
+        const auto *timer = QCNetworkRequestScheduler::instanceForTesting()->findChild<QTimer *>();
+        emit timerProbeFinished(timer && timer->isActive());
     }
 
 signals:
     void lookupFinished(quintptr workerThreadScheduler);
+    void timerProbeFinished(bool timerActive);
 };
 
 /**
@@ -102,7 +122,11 @@ private slots:
     void testRequestStartedRequiresExecuteDispatch();
     void testCancelAfterStartQueuedDoesNotStart();
     void testCancelFromAboutToStartSlotPreventsExecute();
-    void testSchedulerAccessorOwnerThreadOnlyContract();
+    void testManagerOwnedSchedulerForTestingOwnerThreadContract();
+    void testSchedulerConstructionDoesNotStartThrottleTimer();
+    void testManagerLevelSchedulerPolicyConfiguresAdmission();
+    void testUnknownLaneFailsClosed();
+    void testManagerCancelLaneRequestsReturnsStructuredFailClosedResult();
     void testPriorityQueueOrdering();
     void testConcurrentRequestLimit();
     void testPerHostLimit();
@@ -141,11 +165,12 @@ private:
 
 void tst_QCNetworkScheduler::initTestCase()
 {
-    // 必须早于首次 QCNetworkRequestScheduler::instance()，用于锁定 canonical-name 合同。
+    // 必须早于首次 QCNetworkRequestScheduler::instanceForTesting()，用于锁定 canonical-name 合同。
     verifyPriorityMetaTypeContract();
 
     m_manager   = new QCNetworkAccessManager(this);
-    m_scheduler = QCNetworkRequestScheduler::instance();
+    m_scheduler = m_manager->schedulerForTesting();
+    QVERIFY(m_scheduler != nullptr);
 
     m_mock.clear();
     m_mock.setCaptureEnabled(false);
@@ -154,13 +179,12 @@ void tst_QCNetworkScheduler::initTestCase()
 
     qRegisterMetaType<QCNetworkReply *>("QCNetworkReply*");
 
-    // 重置配置为测试默认值
     QCNetworkRequestScheduler::Config config;
-    config.setMaxConcurrentRequests(2); // 限制为 2 以便测试
-    config.setMaxRequestsPerHost(1); // 限制为 1 以便测试
-    config.setMaxBandwidthBytesPerSec(0); // 默认无限制
+    config.setMaxConcurrentRequests(2);
+    config.setMaxRequestsPerHost(1);
+    config.setMaxBandwidthBytesPerSec(0);
     config.setEnableThrottling(true);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     qDebug() << "Test initialized with config:"
              << "maxConcurrent=" << config.maxConcurrentRequests()
@@ -169,7 +193,6 @@ void tst_QCNetworkScheduler::initTestCase()
 
 void tst_QCNetworkScheduler::cleanupTestCase()
 {
-    // 清理所有请求
     m_scheduler->cancelAllRequests();
     m_manager = nullptr;
 }
@@ -177,6 +200,7 @@ void tst_QCNetworkScheduler::cleanupTestCase()
 QCNetworkReply *tst_QCNetworkScheduler::sendScheduledGet(const QCNetworkRequest &request)
 {
     m_manager->enableRequestScheduler(true);
+    m_manager->registerSchedulerLaneForTesting(request.lane());
     return m_manager->get(request);
 }
 
@@ -186,9 +210,13 @@ QCNetworkReply *tst_QCNetworkScheduler::sendScheduledGet(const QUrl &url,
 {
     QCNetworkRequest request(url);
     request.setPriority(priority);
-    // 统一在 helper 中显式写 lane，方便各测试直接断言 scheduler 信号里的 lane/hostKey 快照。
-    request.setLane(lane);
-    m_mock.mockResponse(HttpMethod::Get, request.url(), QByteArray("OK"));
+    if (!lane.isEmpty()) {
+        QCNetworkLaneKey laneKey;
+        const bool laneOk = QCNetworkLaneKey::fromName(lane, &laneKey);
+        Q_ASSERT(laneOk);
+        request.setLane(laneKey);
+    }
+    m_mock.mockResponse(HttpMethod::Get, request.url(), QByteArrayLiteral("OK"));
     return sendScheduledGet(request);
 }
 
@@ -213,14 +241,11 @@ QCNetworkRequestPriority tst_QCNetworkScheduler::priorityFromArgs(const QList<QV
  */
 void tst_QCNetworkScheduler::testSchedulerEnabled()
 {
-    // 默认应该是禁用的
     QVERIFY(!m_manager->isSchedulerEnabled());
 
-    // 启用调度器
     m_manager->enableRequestScheduler(true);
     QVERIFY(m_manager->isSchedulerEnabled());
 
-    // 禁用调度器
     m_manager->enableRequestScheduler(false);
     QVERIFY(!m_manager->isSchedulerEnabled());
 
@@ -233,6 +258,15 @@ void tst_QCNetworkScheduler::testSchedulerEnabled()
 void tst_QCNetworkScheduler::testPriorityMetatypeContract()
 {
     verifyPriorityMetaTypeContract();
+    verifyCanonicalMetaTypeContract<QCNetworkLaneKey>("QCurl::QCNetworkLaneKey");
+    verifyCanonicalMetaTypeContract<QCNetworkSchedulerPolicy>(
+        "QCurl::QCNetworkSchedulerPolicy");
+    verifyCanonicalMetaTypeContract<QCNetworkSchedulerPolicy::LaneConfig>(
+        "QCurl::QCNetworkSchedulerPolicy::LaneConfig");
+    verifyCanonicalMetaTypeContract<QCNetworkSchedulerStatistics>(
+        "QCurl::QCNetworkSchedulerStatistics");
+    verifyCanonicalMetaTypeContract<QCNetworkLaneCancelResult>(
+        "QCurl::QCNetworkLaneCancelResult");
 
     QSignalSpy queueSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
     auto *reply = sendScheduledGet(QUrl(QStringLiteral("http://metatype.test/queue")),
@@ -284,11 +318,11 @@ void tst_QCNetworkScheduler::testRequestStartedRequiresExecuteDispatch()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QObject guard;
     QSignalSpy queuedSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
@@ -325,7 +359,7 @@ void tst_QCNetworkScheduler::testRequestStartedRequiresExecuteDispatch()
 
     reply->deleteLater();
 
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "requestAboutToStart/requestStarted are now gated by execute dispatch";
 }
@@ -335,11 +369,11 @@ void tst_QCNetworkScheduler::testCancelAfterStartQueuedDoesNotStart()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy cancelledSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
     QSignalSpy aboutToStartSpy(m_scheduler, &QCNetworkRequestScheduler::requestAboutToStart);
@@ -363,7 +397,7 @@ void tst_QCNetworkScheduler::testCancelAfterStartQueuedDoesNotStart()
     if (reply) {
         reply->deleteLater();
     }
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "Cancel-after-queue-before-execute contract verified";
 }
@@ -373,11 +407,11 @@ void tst_QCNetworkScheduler::testCancelFromAboutToStartSlotPreventsExecute()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QObject guard;
     bool cancelledBySlot = false;
@@ -415,15 +449,15 @@ void tst_QCNetworkScheduler::testCancelFromAboutToStartSlotPreventsExecute()
     if (reply) {
         reply->deleteLater();
     }
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "Cancel-in-requestAboutToStart slot contract verified";
 }
 
-void tst_QCNetworkScheduler::testSchedulerAccessorOwnerThreadOnlyContract()
+void tst_QCNetworkScheduler::testManagerOwnedSchedulerForTestingOwnerThreadContract()
 {
     const quintptr ownerThreadScheduler
-        = reinterpret_cast<quintptr>(m_manager->scheduler());
+        = reinterpret_cast<quintptr>(m_manager->schedulerForTesting());
     QVERIFY(ownerThreadScheduler != 0);
 
     QThread workerThread;
@@ -447,7 +481,173 @@ void tst_QCNetworkScheduler::testSchedulerAccessorOwnerThreadOnlyContract()
     QVERIFY(workerThreadScheduler != 0);
     QVERIFY(workerThreadScheduler != ownerThreadScheduler);
 
-    qDebug() << "Scheduler accessor owner-thread-only contract verified";
+    qDebug() << "Manager-owned scheduler test hook owner-thread contract verified";
+}
+
+void tst_QCNetworkScheduler::testSchedulerConstructionDoesNotStartThrottleTimer()
+{
+    QThread workerThread;
+    auto *worker = new SchedulerAccessorWorker();
+    worker->moveToThread(&workerThread);
+    QObject::connect(&workerThread, &QThread::finished, worker, &QObject::deleteLater);
+    QSignalSpy timerSpy(worker, &SchedulerAccessorWorker::timerProbeFinished);
+
+    workerThread.start();
+    const auto stopWorker = qScopeGuard([&]() {
+        workerThread.quit();
+        workerThread.wait();
+    });
+
+    const bool invoked = QMetaObject::invokeMethod(
+        worker, &SchedulerAccessorWorker::probeFreshSchedulerTimer, Qt::QueuedConnection);
+    QVERIFY(invoked);
+
+    QTRY_COMPARE_WITH_TIMEOUT(timerSpy.count(), 1, 2000);
+    QCOMPARE(timerSpy.at(0).at(0).toBool(), false);
+
+    qDebug() << "Scheduler constructor keeps throttle timer stopped until owner-thread lifecycle starts it";
+}
+
+void tst_QCNetworkScheduler::testManagerLevelSchedulerPolicyConfiguresAdmission()
+{
+    m_scheduler->cancelAllRequests();
+    m_mock.clear();
+
+    QCNetworkSchedulerPolicy policy = QCNetworkSchedulerPolicy::defaultPolicy();
+    policy.setMaxConcurrentRequests(1);
+    policy.setMaxRequestsPerHost(1);
+
+    QCNetworkSchedulerPolicy::LaneConfig control;
+    control.setWeight(3);
+    control.setQuantum(2);
+    control.setReservedGlobal(1);
+    QVERIFY(policy.setLaneConfig(QCNetworkLaneKey::control(), control));
+
+    QString error;
+    QVERIFY(m_manager->setSchedulerPolicy(policy, &error));
+    QCOMPARE(error, QString());
+    QCOMPARE(m_manager->schedulerPolicy().maxConcurrentRequests(), 1);
+    QCOMPARE(m_manager->schedulerPolicy().laneConfig(QCNetworkLaneKey::control()).weight(), 3);
+
+    const auto schedulerConfig = m_scheduler->configForTesting();
+    QCOMPARE(schedulerConfig.maxConcurrentRequests(), 1);
+    QCOMPARE(schedulerConfig.maxRequestsPerHost(), 1);
+    QCOMPARE(m_scheduler->laneConfigForTesting(QStringLiteral("Control")).weight(), 3);
+    QCOMPARE(m_scheduler->laneConfigForTesting(QStringLiteral("Control")).quantum(), 2);
+
+    QCNetworkRequest first(QUrl(QStringLiteral("http://manager-policy.test/first")));
+    QCNetworkRequest second(QUrl(QStringLiteral("http://manager-policy.test/second")));
+    first.setLane(QCNetworkLaneKey::control());
+    second.setLane(QCNetworkLaneKey::control());
+    m_mock.mockResponse(HttpMethod::Get, first.url(), QByteArrayLiteral("OK"));
+    m_mock.mockResponse(HttpMethod::Get, second.url(), QByteArrayLiteral("OK"));
+
+    QSignalSpy queuedSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
+    QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
+    auto *firstReply = sendScheduledGet(first);
+    auto *secondReply = sendScheduledGet(second);
+
+    QTRY_COMPARE_WITH_TIMEOUT(queuedSpy.count(), 2, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(startedSpy.count() >= 1, 2000);
+    QCOMPARE(m_manager->schedulerStatistics().pendingRequests(), 1);
+    QCOMPARE(m_manager->schedulerStatistics().runningRequests(), 1);
+
+    const QCNetworkLaneCancelResult cancelResult = m_manager->cancelLaneRequests(
+        QCNetworkLaneKey::control(),
+        QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+    QVERIFY(cancelResult.isSuccess());
+    QCOMPARE(cancelResult.cancelledRequests(), 2);
+    QTRY_VERIFY_WITH_TIMEOUT(firstReply->isFinished(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(secondReply->isFinished(), 2000);
+    firstReply->deleteLater();
+    secondReply->deleteLater();
+
+    QVERIFY(m_manager->setSchedulerPolicy(QCNetworkSchedulerPolicy::defaultPolicy(), &error));
+}
+
+void tst_QCNetworkScheduler::testUnknownLaneFailsClosed()
+{
+    m_scheduler->cancelAllRequests();
+    m_mock.clear();
+
+    QVERIFY(m_manager->setSchedulerPolicy(QCNetworkSchedulerPolicy::defaultPolicy()));
+    m_manager->enableRequestScheduler(true);
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://unknown-lane.test/fail-closed")));
+    QCNetworkLaneKey unregisteredLane;
+    QVERIFY(QCNetworkLaneKey::fromName(QStringLiteral("UnregisteredLane"), &unregisteredLane));
+    request.setLane(unregisteredLane);
+    m_mock.mockResponse(HttpMethod::Get, request.url(), QByteArrayLiteral("OK"));
+
+    auto *reply = m_manager->get(request);
+
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(QStringLiteral("UnregisteredLane")));
+    QCOMPARE(m_manager->schedulerStatistics().pendingRequests(), 0);
+    QCOMPARE(m_manager->schedulerStatistics().runningRequests(), 0);
+
+    reply->deleteLater();
+}
+
+void tst_QCNetworkScheduler::testManagerCancelLaneRequestsReturnsStructuredFailClosedResult()
+{
+    m_scheduler->cancelAllRequests();
+    m_mock.clear();
+
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
+    config.setMaxConcurrentRequests(0);
+    config.setMaxRequestsPerHost(10);
+    m_scheduler->setConfigForTesting(config);
+    m_manager->enableRequestScheduler(true);
+
+    auto *defaultReply = sendScheduledGet(
+        QUrl(QStringLiteral("http://manager-cancel-fail-closed.test/default")),
+        QCNetworkRequestPriority::Normal);
+    QTRY_COMPARE_WITH_TIMEOUT(m_manager->schedulerStatistics().pendingRequests(), 1, 2000);
+
+    const QCNetworkLaneCancelResult invalidLaneResult = m_manager->cancelLaneRequests(
+        QCNetworkLaneKey(),
+        QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+    QCOMPARE(invalidLaneResult.status(), QCNetworkLaneCancelResult::Status::InvalidLane);
+    QCOMPARE(invalidLaneResult.cancelledRequests(), 0);
+    QVERIFY(!invalidLaneResult.isSuccess());
+    QVERIFY(!defaultReply->isFinished());
+    QCOMPARE(m_manager->schedulerStatistics().pendingRequests(), 1);
+
+    QCNetworkLaneKey unregisteredLane;
+    QVERIFY(QCNetworkLaneKey::fromName(QStringLiteral("UnregisteredCancelLane"),
+                                       &unregisteredLane));
+    const QCNetworkLaneCancelResult unregisteredResult = m_manager->cancelLaneRequests(
+        unregisteredLane,
+        QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+    QCOMPARE(unregisteredResult.status(), QCNetworkLaneCancelResult::Status::UnregisteredLane);
+    QCOMPARE(unregisteredResult.cancelledRequests(), 0);
+    QVERIFY(!defaultReply->isFinished());
+    QCOMPARE(m_manager->schedulerStatistics().pendingRequests(), 1);
+
+    const QCNetworkLaneCancelResult noMatchResult = m_manager->cancelLaneRequests(
+        QCNetworkLaneKey::control(),
+        QCNetworkAccessManager::SchedulerCancelScope::PendingOnly);
+    QVERIFY(noMatchResult.isSuccess());
+    QCOMPARE(noMatchResult.status(), QCNetworkLaneCancelResult::Status::Success);
+    QCOMPARE(noMatchResult.cancelledRequests(), 0);
+    QVERIFY(!defaultReply->isFinished());
+
+    m_manager->enableRequestScheduler(false);
+    const QCNetworkLaneCancelResult disabledResult = m_manager->cancelLaneRequests(
+        QCNetworkLaneKey::control(),
+        QCNetworkAccessManager::SchedulerCancelScope::PendingOnly);
+    QCOMPARE(disabledResult.status(), QCNetworkLaneCancelResult::Status::SchedulerDisabled);
+    QCOMPARE(disabledResult.cancelledRequests(), 0);
+    QVERIFY(!disabledResult.isSuccess());
+    m_manager->enableRequestScheduler(true);
+
+    m_scheduler->cancelAllRequests();
+    QTRY_VERIFY_WITH_TIMEOUT(defaultReply->isFinished(), 2000);
+    defaultReply->deleteLater();
+
+    qDebug() << "Manager lane cancel structured fail-closed result verified";
 }
 
 /**
@@ -455,30 +655,29 @@ void tst_QCNetworkScheduler::testSchedulerAccessorOwnerThreadOnlyContract()
  */
 void tst_QCNetworkScheduler::testPriorityQueueOrdering()
 {
-    // 清理之前的请求
     m_scheduler->cancelAllRequests();
 
     // 固化测试契约：优先级为“非抢占”
     // - 已 Running 的请求不会被更高优先级请求中断
     // - 优先级只影响 pending 出队顺序
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     m_mock.clear();
 
-    QCNetworkRequest lowReq(QUrl("http://prio-low.test/test"));
-    QCNetworkRequest normalReq(QUrl("http://prio-normal.test/test"));
-    QCNetworkRequest highReq(QUrl("http://prio-high.test/test"));
+    QCNetworkRequest lowReq(QUrl(QStringLiteral("http://prio-low.test/test")));
+    QCNetworkRequest normalReq(QUrl(QStringLiteral("http://prio-normal.test/test")));
+    QCNetworkRequest highReq(QUrl(QStringLiteral("http://prio-high.test/test")));
 
     lowReq.setPriority(QCNetworkRequestPriority::Low);
     normalReq.setPriority(QCNetworkRequestPriority::Normal);
     highReq.setPriority(QCNetworkRequestPriority::High);
 
-    m_mock.mockResponse(HttpMethod::Get, lowReq.url(), QByteArray("OK"));
-    m_mock.mockResponse(HttpMethod::Get, normalReq.url(), QByteArray("OK"));
-    m_mock.mockResponse(HttpMethod::Get, highReq.url(), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, lowReq.url(), QByteArrayLiteral("OK"));
+    m_mock.mockResponse(HttpMethod::Get, normalReq.url(), QByteArrayLiteral("OK"));
+    m_mock.mockResponse(HttpMethod::Get, highReq.url(), QByteArrayLiteral("OK"));
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -505,7 +704,6 @@ void tst_QCNetworkScheduler::testPriorityQueueOrdering()
     QTRY_VERIFY_WITH_TIMEOUT(highReply->isFinished(), 2000);
     QTRY_VERIFY_WITH_TIMEOUT(normalReply->isFinished(), 2000);
 
-    // 清理
     m_scheduler->cancelAllRequests();
     lowReply->deleteLater();
     normalReply->deleteLater();
@@ -522,23 +720,20 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    // 配置为最多 2 个并发
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(2);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
-    // 创建 5 个请求
     QList<QCNetworkReply *> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest req(QUrl(QStringLiteral("http://concurrent-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
         auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
-    // 获取统计信息
     auto stats = m_scheduler->statistics();
 
     // 离线门禁：调度层统计应稳定可重复（不依赖真实网络时序）
@@ -547,7 +742,6 @@ void tst_QCNetworkScheduler::testConcurrentRequestLimit()
 
     qDebug() << "Running:" << stats.runningRequests() << "Pending:" << stats.pendingRequests();
 
-    // 清理
     m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
@@ -564,31 +758,26 @@ void tst_QCNetworkScheduler::testPerHostLimit()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    // 配置为每主机最多 1 个并发
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
-    config.setMaxConcurrentRequests(10); // 全局足够大
-    config.setMaxRequestsPerHost(1);  // 每主机限制为 1
-    m_scheduler->setConfig(config);
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
+    config.setMaxConcurrentRequests(10);
+    config.setMaxRequestsPerHost(1);
+    m_scheduler->setConfigForTesting(config);
 
-    // 向同一主机发送 3 个请求
     QList<QCNetworkReply *> replies;
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest req(QUrl(QStringLiteral("http://same-host.test/test?i=%1").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
         auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
 
-    // 获取运行中的请求
     auto running = m_scheduler->runningRequests();
 
-    // 运行中的请求应该只有 1 个（因为是同一主机）
     QVERIFY(running.size() <= 1);
 
     qDebug() << "Running requests to same host:" << running.size();
 
-    // 清理
     m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
@@ -606,18 +795,17 @@ void tst_QCNetworkScheduler::testDeferUndefer()
     m_mock.clear();
 
     // 让请求保持在 Pending，避免被立即启动（本测试验证“调度层 defer/undefer”合同）。
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy queueSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
 
-    // 创建一个请求
-    QCNetworkRequest req(QUrl("http://defer.test/test"));
+    QCNetworkRequest req(QUrl(QStringLiteral("http://defer.test/test")));
     req.setPriority(QCNetworkRequestPriority::High);
-    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
     auto *reply = sendScheduledGet(req);
 
     auto statsBefore  = m_scheduler->statistics();
@@ -626,7 +814,6 @@ void tst_QCNetworkScheduler::testDeferUndefer()
     // 延后请求（调度层语义，非传输级 pause）
     QVERIFY(m_scheduler->deferPendingRequest(reply));
 
-    // 恢复调度
     m_scheduler->undeferRequest(reply);
     QTRY_VERIFY_WITH_TIMEOUT(queueSpy.count() >= 2, 2000);
     QCOMPARE(static_cast<int>(priorityFromArgs(queueSpy.back())),
@@ -635,16 +822,14 @@ void tst_QCNetworkScheduler::testDeferUndefer()
     auto statsAfter  = m_scheduler->statistics();
     int pendingAfter = statsAfter.pendingRequests() + statsAfter.runningRequests();
 
-    // 恢复后请求应该重新加入队列
     QVERIFY(pendingAfter >= 1);
 
     qDebug() << "Pending before:" << pendingBefore << "after:" << pendingAfter;
 
-    // 清理
     m_scheduler->cancelRequest(reply);
     reply->deleteLater();
 
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "Defer/undefer scheduling contract verified";
 }
@@ -657,11 +842,11 @@ void tst_QCNetworkScheduler::testDeferPendingRequestRejectsRunning()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     m_mock.setGlobalDelay(200);
 
@@ -682,7 +867,7 @@ void tst_QCNetworkScheduler::testDeferPendingRequestRejectsRunning()
     reply->deleteLater();
 
     m_mock.setGlobalDelay(0);
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "deferPendingRequest() rejects Running state as expected";
 }
@@ -696,11 +881,11 @@ void tst_QCNetworkScheduler::testDirectCancelContract()
     m_mock.clear();
 
     {
-        const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+        const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
         QCNetworkRequestScheduler::Config config = oldConfig;
         config.setMaxConcurrentRequests(0);
         config.setMaxRequestsPerHost(10);
-        m_scheduler->setConfig(config);
+        m_scheduler->setConfigForTesting(config);
 
         QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
         QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
@@ -728,7 +913,7 @@ void tst_QCNetworkScheduler::testDirectCancelContract()
         pendingReply->deleteLater();
         deferredReply->deleteLater();
 
-        m_scheduler->setConfig(oldConfig);
+        m_scheduler->setConfigForTesting(oldConfig);
     }
 
     m_scheduler->cancelAllRequests();
@@ -736,11 +921,11 @@ void tst_QCNetworkScheduler::testDirectCancelContract()
     m_mock.setGlobalDelay(200);
 
     {
-        const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+        const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
         QCNetworkRequestScheduler::Config config = oldConfig;
         config.setMaxConcurrentRequests(1);
         config.setMaxRequestsPerHost(10);
-        m_scheduler->setConfig(config);
+        m_scheduler->setConfigForTesting(config);
 
         QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
         QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
@@ -770,7 +955,7 @@ void tst_QCNetworkScheduler::testDirectCancelContract()
 
         runningReply->deleteLater();
         waitingReply->deleteLater();
-        m_scheduler->setConfig(oldConfig);
+        m_scheduler->setConfigForTesting(oldConfig);
     }
 
     m_mock.setGlobalDelay(0);
@@ -786,19 +971,15 @@ void tst_QCNetworkScheduler::testCancelRequest()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    // 创建请求
-    QCNetworkRequest req(QUrl("http://cancel-one.test/test"));
+    QCNetworkRequest req(QUrl(QStringLiteral("http://cancel-one.test/test")));
     req.setPriority(QCNetworkRequestPriority::Normal);
-    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
     auto *reply = sendScheduledGet(req);
 
-    // 监听取消信号
     QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
 
-    // 取消请求
     m_scheduler->cancelRequest(reply);
 
-    // 应该收到取消信号
     QVERIFY(cancelSpy.count() >= 1);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
 
@@ -815,17 +996,16 @@ void tst_QCNetworkScheduler::testCancelAllRequests()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(2);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
-    // 创建多个请求
     QList<QCNetworkReply *> replies;
     for (int i = 0; i < 5; ++i) {
         QCNetworkRequest req(QUrl(QStringLiteral("http://cancel-all-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
         auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
@@ -835,13 +1015,11 @@ void tst_QCNetworkScheduler::testCancelAllRequests()
 
     QVERIFY(totalBefore >= 5);
 
-    // 取消所有请求
     m_scheduler->cancelAllRequests();
 
     auto statsAfter = m_scheduler->statistics();
     int totalAfter  = statsAfter.pendingRequests() + statsAfter.runningRequests();
 
-    // 所有请求应该被取消
     QCOMPARE(totalAfter, 0);
 
     qDebug() << "Total before:" << totalBefore << "after:" << totalAfter;
@@ -878,13 +1056,13 @@ void tst_QCNetworkScheduler::testBandwidthWindowUsesProgressDeltas()
     qputenv("QCURL_TEST_MOCK_CHAOS",
             QByteArrayLiteral("seed=17;max_chunk_bytes=12;chunk_delay_ms=20"));
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(10);
     config.setMaxBandwidthBytesPerSec(40);
     config.setEnableThrottling(true);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     const QByteArray payload("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
     QVERIFY(payload.size() < config.maxBandwidthBytesPerSec());
@@ -912,7 +1090,7 @@ void tst_QCNetworkScheduler::testBandwidthWindowUsesProgressDeltas()
 
     firstReply->deleteLater();
     secondReply->deleteLater();
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "Bandwidth window delta counting verified";
 }
@@ -926,31 +1104,23 @@ void tst_QCNetworkScheduler::testChangePriority()
     m_mock.clear();
 
     // 使请求保持在 pending，避免“已 Running 无法调整优先级”的不确定性
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
-    // 创建低优先级请求
-    QCNetworkRequest req(QUrl("http://priority-change.test/test"));
+    QCNetworkRequest req(QUrl(QStringLiteral("http://priority-change.test/test")));
     req.setPriority(QCNetworkRequestPriority::Low);
-    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
     auto *reply = sendScheduledGet(req);
 
-    // 监听队列信号
     QSignalSpy queueSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
 
-    // 调整优先级为 High
     m_scheduler->changePriority(reply, QCNetworkRequestPriority::High);
-
-    // 应该收到重新加入队列的信号
-    // 注意：可能因为请求已经开始执行而无法调整
-    // 这个测试主要验证 API 不会崩溃
 
     qDebug() << "Priority change signal count:" << queueSpy.count();
     QVERIFY(queueSpy.count() >= 1);
 
-    // 清理
     m_scheduler->cancelRequest(reply);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
     reply->deleteLater();
@@ -967,18 +1137,17 @@ void tst_QCNetworkScheduler::testStatistics()
     m_mock.clear();
     m_mock.setGlobalDelay(150);
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
     const auto statsBefore = m_scheduler->statistics();
 
-    // 创建几个请求
     QList<QCNetworkReply *> replies;
     for (int i = 0; i < 3; ++i) {
         QCNetworkRequest req(QUrl(QStringLiteral("http://stats-%1.test/test").arg(i)));
         req.setPriority(QCNetworkRequestPriority::Normal);
-        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+        m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
         auto *reply = sendScheduledGet(req);
         replies.append(reply);
     }
@@ -1001,7 +1170,6 @@ void tst_QCNetworkScheduler::testStatistics()
     QCOMPARE(stats.totalBytesSent(), statsBefore.totalBytesSent());
     QVERIFY(stats.avgResponseTime() >= 0.0);
 
-    // 清理
     m_scheduler->cancelAllRequests();
     for (auto *reply : replies) {
         reply->deleteLater();
@@ -1020,10 +1188,10 @@ void tst_QCNetworkScheduler::testCriticalPriority()
     m_mock.clear();
     m_mock.setGlobalDelay(150);
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(1);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1069,14 +1237,14 @@ void tst_QCNetworkScheduler::testLaneReservationGating()
 
     QCNetworkRequestScheduler::LaneConfig controlCfg;
     controlCfg.setReservedGlobal(1);
-    m_scheduler->setLaneConfig(QStringLiteral("ReservationControl"), controlCfg);
-    m_scheduler->setLaneConfig(QStringLiteral("ReservationTransfer"),
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("ReservationControl"), controlCfg);
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("ReservationTransfer"),
                                QCNetworkRequestScheduler::LaneConfig{});
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1089,7 +1257,7 @@ void tst_QCNetworkScheduler::testLaneReservationGating()
 
     // 放开唯一并发槽位后，应先兑现 Control lane 的 reservation，而不是按 priority 抢跑 Transfer。
     config.setMaxConcurrentRequests(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QTRY_COMPARE_WITH_TIMEOUT(startedSpy.count(), 1, 2000);
     QCOMPARE(qvariant_cast<QCNetworkReply *>(startedSpy.at(0).at(0)), controlReply);
@@ -1120,13 +1288,13 @@ void tst_QCNetworkScheduler::testDrrFairnessByLane()
     QCNetworkRequestScheduler::LaneConfig transferCfg;
     transferCfg.setWeight(1);
     transferCfg.setQuantum(1);
-    m_scheduler->setLaneConfig(QStringLiteral("FairControl"), controlCfg);
-    m_scheduler->setLaneConfig(QStringLiteral("FairTransfer"), transferCfg);
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("FairControl"), controlCfg);
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("FairTransfer"), transferCfg);
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QList<QCNetworkReply *> replies;
     for (int i = 0; i < 6; ++i) {
@@ -1145,7 +1313,7 @@ void tst_QCNetworkScheduler::testDrrFairnessByLane()
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
     config.setMaxConcurrentRequests(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QTRY_COMPARE_WITH_TIMEOUT(startedSpy.count(), 8, 5000);
 
@@ -1185,10 +1353,10 @@ void tst_QCNetworkScheduler::testPerHostHeadOfLineAvoidance()
     m_mock.clear();
     m_mock.setGlobalDelay(150);
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1203,7 +1371,7 @@ void tst_QCNetworkScheduler::testPerHostHeadOfLineAvoidance()
                                      QStringLiteral("HolLane"));
 
     config.setMaxConcurrentRequests(2);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QTRY_COMPARE_WITH_TIMEOUT(startedSpy.count(), 2, 2000);
 
@@ -1235,10 +1403,10 @@ void tst_QCNetworkScheduler::testHostKeyUsesOrigin()
     m_mock.clear();
     m_mock.setGlobalDelay(150);
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1265,7 +1433,7 @@ void tst_QCNetworkScheduler::testHostKeyUsesOrigin()
                                                 QStringLiteral("OriginLane"));
 
     config.setMaxConcurrentRequests(7);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QTRY_COMPARE_WITH_TIMEOUT(startedSpy.count(), 7, 2000);
 
@@ -1314,14 +1482,14 @@ void tst_QCNetworkScheduler::testReservationFallbackProgress()
 
     QCNetworkRequestScheduler::LaneConfig controlCfg;
     controlCfg.setReservedPerHost(1);
-    m_scheduler->setLaneConfig(QStringLiteral("FallbackControl"), controlCfg);
-    m_scheduler->setLaneConfig(QStringLiteral("FallbackTransfer"),
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("FallbackControl"), controlCfg);
+    m_scheduler->setLaneConfigForTesting(QStringLiteral("FallbackTransfer"),
                                QCNetworkRequestScheduler::LaneConfig{});
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(2);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1361,10 +1529,10 @@ void tst_QCNetworkScheduler::testCancelLaneRequests()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    QCNetworkRequestScheduler::Config config = m_scheduler->config();
+    QCNetworkRequestScheduler::Config config = m_scheduler->configForTesting();
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(10);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
 
@@ -1403,7 +1571,7 @@ void tst_QCNetworkScheduler::testCancelLaneRequests()
     cancelSpy.clear();
 
     config.setMaxConcurrentRequests(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
 
@@ -1444,16 +1612,13 @@ void tst_QCNetworkScheduler::testQueueEmptySignal()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    // 监听队列空信号
     QSignalSpy emptySpy(m_scheduler, &QCNetworkRequestScheduler::queueEmpty);
 
-    // 创建一个请求
-    QCNetworkRequest req(QUrl("http://queue-empty.test/test"));
+    QCNetworkRequest req(QUrl(QStringLiteral("http://queue-empty.test/test")));
     req.setPriority(QCNetworkRequestPriority::Normal);
-    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArray("OK"));
+    m_mock.mockResponse(HttpMethod::Get, req.url(), QByteArrayLiteral("OK"));
     auto *reply = sendScheduledGet(req);
 
-    // 立即取消
     m_scheduler->cancelRequest(reply);
 
     // 等待信号（避免固定 sleep 引入 flaky）
@@ -1461,7 +1626,6 @@ void tst_QCNetworkScheduler::testQueueEmptySignal()
         QVERIFY(emptySpy.wait(2000));
     }
 
-    // 应该收到队列空信号
     QVERIFY(emptySpy.count() >= 1);
 
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
@@ -1477,7 +1641,6 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
 {
     m_mock.clear();
 
-    // 启用调度器
     m_manager->enableRequestScheduler(true);
     QVERIFY(m_manager->isSchedulerEnabled());
 
@@ -1489,7 +1652,7 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
         const HttpMethod mockMethod = method == HttpMethod::Delete && !body.isEmpty()
             ? HttpMethod::Custom
             : method;
-        m_mock.mockResponse(mockMethod, req.url(), QByteArray("OK"));
+        m_mock.mockResponse(mockMethod, req.url(), QByteArrayLiteral("OK"));
 
         QSignalSpy queuedSpy(m_scheduler, &QCNetworkRequestScheduler::requestQueued);
         QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
@@ -1527,14 +1690,21 @@ void tst_QCNetworkScheduler::testSchedulerIntegration()
         reply->deleteLater();
     };
 
-    runAsyncMethod(HttpMethod::Head, QUrl("http://integration.test/head"));
-    runAsyncMethod(HttpMethod::Get, QUrl("http://integration.test/get"));
-    runAsyncMethod(HttpMethod::Post, QUrl("http://integration.test/post"), QByteArray("POST"));
-    runAsyncMethod(HttpMethod::Put, QUrl("http://integration.test/put"), QByteArray("PUT"));
-    runAsyncMethod(HttpMethod::Delete, QUrl("http://integration.test/delete"), QByteArray("DEL"));
-    runAsyncMethod(HttpMethod::Patch, QUrl("http://integration.test/patch"), QByteArray("PATCH"));
+    runAsyncMethod(HttpMethod::Head, QUrl(QStringLiteral("http://integration.test/head")));
+    runAsyncMethod(HttpMethod::Get, QUrl(QStringLiteral("http://integration.test/get")));
+    runAsyncMethod(HttpMethod::Post,
+                   QUrl(QStringLiteral("http://integration.test/post")),
+                   QByteArrayLiteral("POST"));
+    runAsyncMethod(HttpMethod::Put,
+                   QUrl(QStringLiteral("http://integration.test/put")),
+                   QByteArrayLiteral("PUT"));
+    runAsyncMethod(HttpMethod::Delete,
+                   QUrl(QStringLiteral("http://integration.test/delete")),
+                   QByteArrayLiteral("DEL"));
+    runAsyncMethod(HttpMethod::Patch,
+                   QUrl(QStringLiteral("http://integration.test/patch")),
+                   QByteArrayLiteral("PATCH"));
 
-    // 禁用调度器
     m_manager->enableRequestScheduler(false);
     QVERIFY(!m_manager->isSchedulerEnabled());
 
@@ -1546,11 +1716,11 @@ void tst_QCNetworkScheduler::testCrossThreadCancelMarshalsToOwnerThread()
     m_scheduler->cancelAllRequests();
     m_mock.clear();
 
-    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->config();
+    const QCNetworkRequestScheduler::Config oldConfig = m_scheduler->configForTesting();
     QCNetworkRequestScheduler::Config config = oldConfig;
     config.setMaxConcurrentRequests(0);
     config.setMaxRequestsPerHost(1);
-    m_scheduler->setConfig(config);
+    m_scheduler->setConfigForTesting(config);
 
     QSignalSpy cancelSpy(m_scheduler, &QCNetworkRequestScheduler::requestCancelled);
     QSignalSpy startedSpy(m_scheduler, &QCNetworkRequestScheduler::requestStarted);
@@ -1592,7 +1762,7 @@ void tst_QCNetworkScheduler::testCrossThreadCancelMarshalsToOwnerThread()
     QCOMPARE(qvariant_cast<QCNetworkReply *>(cancelSpy.at(0).at(0)), reply);
 
     reply->deleteLater();
-    m_scheduler->setConfig(oldConfig);
+    m_scheduler->setConfigForTesting(oldConfig);
 
     qDebug() << "Cross-thread scheduler cancel marshalled back to owner thread";
 }

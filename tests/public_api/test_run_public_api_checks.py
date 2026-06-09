@@ -450,7 +450,7 @@ def test_consumer_contract_fixture_requires_core_snippets(tmp_path) -> None:
     try:
         validate_scheduler_core_contract_fixture(fixture_dir)
     except RuntimeError as exc:
-        assert "#include <QCNetworkRequestScheduler.h>" in str(exc)
+        assert "#include <QCNetworkSchedulerPolicy.h>" in str(exc)
     else:
         raise AssertionError("validate_scheduler_core_contract_fixture should fail")
 

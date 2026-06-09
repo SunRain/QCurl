@@ -10,6 +10,8 @@
 #include <QCNetworkDownloadToDeviceJob.h>
 #include <QCNetworkDefaultLogger.h>
 #include <QCNetworkHttpMethod.h>
+#include <QCNetworkLaneCancelResult.h>
+#include <QCNetworkLaneKey.h>
 #include <QCNetworkLogger.h>
 #include <QCNetworkMemoryCache.h>
 #include <QCNetworkMiddleware.h>
@@ -21,7 +23,7 @@
 #include <QCNetworkRequest.h>
 #include <QCNetworkReply.h>
 #include <QCNetworkRetryPolicy.h>
-#include <QCNetworkRequestScheduler.h>
+#include <QCNetworkSchedulerPolicy.h>
 #include <QCNetworkSslConfig.h>
 #include <QCNetworkTimeoutConfig.h>
 #include <QBuffer>
@@ -60,38 +62,45 @@ int main(int argc, char **argv)
     QCurl::QCNetworkAccessManager manager;
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
     request.setFollowLocation(true);
-    request.setLane(QStringLiteral("Control"));
+    request.setLane(QCurl::QCNetworkLaneKey::control());
 
     const auto method = QCurl::HttpMethod::Get;
-    auto *ownerThreadScheduler = manager.scheduler();
-
-    if (method != QCurl::HttpMethod::Get || ownerThreadScheduler == nullptr) {
+    if (method != QCurl::HttpMethod::Get) {
         return 1;
     }
 
-    QCurl::QCNetworkRequestScheduler::Config config = ownerThreadScheduler->config();
-    config.setMaxConcurrentRequests(6);
-    config.setMaxRequestsPerHost(2);
-    config.setMaxBandwidthBytesPerSec(0);
-    config.setEnableThrottling(false);
-    ownerThreadScheduler->setConfig(config);
+    QCurl::QCNetworkSchedulerPolicy policy = QCurl::QCNetworkSchedulerPolicy::defaultPolicy();
+    policy.setMaxConcurrentRequests(6);
+    policy.setMaxRequestsPerHost(2);
+    policy.setMaxBandwidthBytesPerSec(0);
+    policy.setThrottlingEnabled(false);
 
-    const auto appliedConfig = ownerThreadScheduler->config();
-    if (appliedConfig.maxConcurrentRequests() < 1 || appliedConfig.maxRequestsPerHost() < 1) {
-        return 2;
-    }
-
-    QCurl::QCNetworkRequestScheduler::LaneConfig lane;
+    QCurl::QCNetworkSchedulerPolicy::LaneConfig lane;
     lane.setWeight(3);
     lane.setQuantum(1);
     lane.setReservedGlobal(1);
     lane.setReservedPerHost(1);
-    ownerThreadScheduler->setLaneConfig(QStringLiteral("Control"), lane);
+    QString laneConfigError;
+    if (!policy.setLaneConfig(QCurl::QCNetworkLaneKey::control(), lane, &laneConfigError)) {
+        return 2;
+    }
 
-    const auto appliedLane = ownerThreadScheduler->laneConfig(QStringLiteral("Control"));
+    QString schedulerPolicyError;
+    if (!manager.setSchedulerPolicy(policy, &schedulerPolicyError)) {
+        return 2;
+    }
+
+    const auto appliedConfig = manager.schedulerPolicy();
+    if (appliedConfig.maxConcurrentRequests() < 1 || appliedConfig.maxRequestsPerHost() < 1) {
+        return 2;
+    }
+
+    const auto appliedLane = appliedConfig.laneConfig(QCurl::QCNetworkLaneKey::control());
     if (appliedLane.weight() < 1 || appliedLane.quantum() < 1) {
         return 3;
     }
+    const auto schedulerStats = manager.schedulerStatistics();
+    Q_UNUSED(schedulerStats);
 
     QCurl::QCNetworkSslConfig sslConfig;
     sslConfig.setVerifyPeer(true);
@@ -272,21 +281,26 @@ int main(int argc, char **argv)
         return 14;
     }
 
-    const int cancelledPending = ownerThreadScheduler->cancelLaneRequests(
-        QStringLiteral("Control"), QCurl::QCNetworkRequestScheduler::CancelLaneScope::PendingOnly);
-    const int cancelledAll = ownerThreadScheduler->cancelLaneRequests(
-        QStringLiteral("Control"),
-        QCurl::QCNetworkRequestScheduler::CancelLaneScope::PendingAndRunning);
+    const QCurl::QCNetworkLaneCancelResult cancelledPending = manager.cancelLaneRequests(
+        QCurl::QCNetworkLaneKey::control(),
+        QCurl::QCNetworkAccessManager::SchedulerCancelScope::PendingOnly);
+    const QCurl::QCNetworkLaneCancelResult cancelledAll = manager.cancelLaneRequests(
+        QCurl::QCNetworkLaneKey::control(),
+        QCurl::QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+    if (cancelledPending.status() != QCurl::QCNetworkLaneCancelResult::Status::SchedulerDisabled
+        || cancelledAll.status() != QCurl::QCNetworkLaneCancelResult::Status::SchedulerDisabled) {
+        return 15;
+    }
 
     ConsumerSmokeLogger logger;
     manager.setLogger(&logger);
     if (manager.logger() != &logger) {
-        return 15;
+        return 16;
     }
 
     manager.setDebugTraceEnabled(true);
     if (!manager.debugTraceEnabled()) {
-        return 16;
+        return 17;
     }
 
     const QDateTime timestampUtc = QDateTime::currentDateTimeUtc();
@@ -301,13 +315,13 @@ int main(int argc, char **argv)
         || entry.message() != QStringLiteral("manager logger contract")
         || entry.timestampUtc().offsetFromUtc() != 0
         || entry.timestampUtc().toMSecsSinceEpoch() != timestampUtc.toMSecsSinceEpoch()) {
-        return 17;
+        return 18;
     }
 
     logger.log(entry);
     if (logger.count != 1 || logger.lastEntry.category() != QStringLiteral("ConsumerSmoke")
         || logger.lastEntry.message() != QStringLiteral("manager logger contract")) {
-        return 18;
+        return 19;
     }
 
     QCurl::QCNetworkDefaultLogger defaultLogger;
@@ -317,12 +331,12 @@ int main(int argc, char **argv)
     manager.setLogger(&defaultLogger);
     if (manager.logger() != &defaultLogger
         || defaultLogger.minLogLevel() != QCurl::NetworkLogLevel::Warning) {
-        return 19;
+        return 20;
     }
 
     defaultLogger.log(entry);
     if (defaultLogger.entries().size() != 1) {
-        return 20;
+        return 21;
     }
 
     QCurl::QCNetworkCancelToken cancelToken;
@@ -332,12 +346,12 @@ int main(int argc, char **argv)
     cancelToken.attachMultiple(repliesToCancel);
     cancelToken.setAutoTimeout(0);
     if (cancelToken.attachedCount() != 0 || cancelToken.isCancelled()) {
-        return 21;
+        return 22;
     }
 
     cancelToken.cancel();
     if (!cancelToken.isCancelled()) {
-        return 22;
+        return 23;
     }
 
     QCurl::QCNetworkConnectionPoolConfig poolConfig;
@@ -360,7 +374,7 @@ int main(int argc, char **argv)
         || poolConfig.multiMaxHostConnections().value_or(-1) != 2
         || poolConfig.multiMaxConcurrentStreams().value_or(-1) != 8
         || poolConfig.multiMaxConnects().value_or(-1) != 16) {
-        return 23;
+        return 24;
     }
 
     auto *poolManager = QCurl::QCNetworkConnectionPoolManager::instance();
@@ -368,14 +382,14 @@ int main(int argc, char **argv)
     const auto savedPoolConfig = poolManager->config();
     if (savedPoolConfig.maxConnectionsPerHost() != 4
         || savedPoolConfig.maxTotalConnections() != 12) {
-        return 24;
+        return 25;
     }
 
     const auto poolStats = poolManager->statistics();
     if (poolStats.totalRequests() < 0 || poolStats.reusedConnections() < 0
         || poolStats.reuseRate() < 0.0 || poolStats.activeConnections() < 0
         || poolStats.idleConnections() < 0) {
-        return 25;
+        return 26;
     }
     poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig());
 
@@ -388,14 +402,14 @@ int main(int argc, char **argv)
     manager.addMiddleware(&middleware);
     if (manager.middlewares().size() != 1 || manager.middlewares().first() != &middleware
         || middleware.name() != QStringLiteral("ConsumerSmokeMiddleware")) {
-        return 26;
+        return 27;
     }
     manager.removeMiddleware(&middleware);
     if (!manager.middlewares().isEmpty()) {
-        return 27;
+        return 28;
     }
 
     manager.setLogger(nullptr);
     manager.setDebugTraceEnabled(false);
-    return (cancelledPending >= 0 && cancelledAll >= 0) ? 0 : 28;
+    return (!cancelledPending.isSuccess() && !cancelledAll.isSuccess()) ? 0 : 29;
 }

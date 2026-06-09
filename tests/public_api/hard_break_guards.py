@@ -79,6 +79,51 @@ DENY_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
+SCHEDULER_PUBLIC_SURFACE_PATHS = (
+    "README.md",
+    "docs/user/",
+    "docs/arch/",
+    "examples/",
+    "tests/public_api/consumer_smoke/",
+)
+
+SCHEDULER_PUBLIC_HEADER_PATHS = (
+    "src/QCNetworkRequestScheduler.h",
+)
+
+SCOPED_DENY_RULES: tuple[tuple[str, re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        "removed QString lane request API",
+        re.compile(r"\bsetLane\s*\(\s*(?:QStringLiteral|QString|QLatin1String|u?\"|\")"),
+        SCHEDULER_PUBLIC_SURFACE_PATHS,
+    ),
+    (
+        "removed manager scheduler workflow",
+        re.compile(r"\bmanager\s*(?:\.|->)\s*scheduler\s*\("),
+        SCHEDULER_PUBLIC_SURFACE_PATHS,
+    ),
+    (
+        "removed scheduler direct config workflow",
+        re.compile(
+            r"#include\s*<QCNetworkRequestScheduler\.h>"
+            r"|\bQCNetworkRequestScheduler\s*::\s*instance\b"
+            r"|\bscheduler\s*(?:->|\.)\s*(?:setConfig|setLaneConfig)\s*\("
+        ),
+        SCHEDULER_PUBLIC_SURFACE_PATHS,
+    ),
+    (
+        "removed scheduler direct config method from public header",
+        re.compile(
+            r"\bstatic\s+QCNetworkRequestScheduler\s*\*\s*instance\s*\("
+            r"|\bvoid\s+setConfig\s*\("
+            r"|\bConfig\s+config\s*\("
+            r"|\bvoid\s+setLaneConfig\s*\("
+            r"|\bLaneConfig\s+laneConfig\s*\("
+        ),
+        SCHEDULER_PUBLIC_HEADER_PATHS,
+    ),
+)
+
 INCLUDE_PATHS: tuple[str, ...] = (
     "README.md",
     "SYSTEM_DOCUMENTATION.md",
@@ -121,6 +166,12 @@ def _scan_file(repo_root: Path, path: Path, allowlist: dict[str, tuple[str, ...]
         if _is_allowlisted(relative, line, allowlist):
             continue
         for rule_name, pattern in DENY_RULES:
+            if pattern.search(line):
+                findings.append(f"{relative}:{line_number}: {rule_name}: {line.strip()}")
+        for rule_name, pattern, path_prefixes in SCOPED_DENY_RULES:
+            if not any(relative == prefix.rstrip("/") or relative.startswith(prefix)
+                       for prefix in path_prefixes):
+                continue
             if pattern.search(line):
                 findings.append(f"{relative}:{line_number}: {rule_name}: {line.strip()}")
     return findings
