@@ -6,6 +6,7 @@
 #include "private/QCNetworkRequestSchedulerQueue_p.h"
 
 #include "QCNetworkReply.h"
+#include "private/LaneSchedulingPolicy_p.h"
 
 #include <QPointer>
 
@@ -211,14 +212,14 @@ QCNetworkRequestScheduler::LaneConfig SchedulerQueues::laneConfigFor(const QStri
 
 int SchedulerQueues::selectNextIndex(const QCNetworkRequestScheduler::Config &config)
 {
-    int nextIndex = selectReservationHostIndex(config);
-    if (nextIndex < 0) {
-        nextIndex = selectReservationGlobalIndex(config);
+    const SchedulerRequestId nextRequestId
+        = LaneSchedulingPolicy{}.selectNextRequestId(*this, config);
+    if (!nextRequestId) {
+        return -1;
     }
-    if (nextIndex < 0) {
-        nextIndex = selectBestEffortIndex(config);
-    }
-    return nextIndex;
+    return findQueuedRequestIndex(pendingRequests, [nextRequestId](const QueuedRequest &request) {
+        return request.requestId == nextRequestId;
+    });
 }
 
 void SchedulerQueues::markRunning(const QueuedRequest &request)

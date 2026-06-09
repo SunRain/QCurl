@@ -73,6 +73,8 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyState.cpp
     private/QCNetworkReplyControls.cpp
     private/QCNetworkReplyAccessors.cpp
+    private/LaneRuntimePruner.cpp
+    private/LaneSchedulingPolicy.cpp
     private/QCNetworkRequestSchedulerQueue.cpp
     private/QCNetworkRequestSchedulerLanePolicy.cpp
     private/QCNetworkRequestSchedulerDispatch.cpp
@@ -140,6 +142,8 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkRequestSchedulerQueue_p.h
     private/QCNetworkRequestSchedulerDispatch_p.h
     private/QCNetworkRequestSchedulerPrivate_p.h
+    private/LaneRuntimePruner_p.h
+    private/LaneSchedulingPolicy_p.h
     private/QCSingleFileMultipartBodyDevice.h
     QCNetworkBody.h
     QCNetworkMultipartBody.h

@@ -6,6 +6,7 @@
 #include "private/QCNetworkRequestSchedulerPrivate_p.h"
 
 #include "QCNetworkReply.h"
+#include "private/LaneRuntimePruner_p.h"
 
 #include <QMutexLocker>
 
@@ -165,6 +166,7 @@ Internal::FinalizeResult QCNetworkRequestScheduler::Impl::finalizeReplyLocked(
     }
 
     clearReplyTracking(key);
+    Internal::LaneRuntimePruner{}.pruneIdleTemporaryLanes(&queues);
     return result;
 }
 

@@ -48,9 +48,11 @@ void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
         // 空串也作为 default lane 进入轮转状态，保证后续 DRR/reservation 逻辑一致。
         m_impl->queues.ensureLane(laneKey);
 
+        const Internal::SchedulerRequestId requestId = m_impl->nextRequestId++;
         m_impl->replySnapshots.insert(key, snapshot);
         m_impl->replyStates.insert(key, Internal::ScheduledState::Pending);
-        m_impl->queues.pendingRequests.append({key, reply, snapshot, QDateTime::currentDateTime()});
+        m_impl->queues.pendingRequests.append(
+            {requestId, key, reply, snapshot, QDateTime::currentDateTime()});
         m_impl->stats.setPendingRequests(m_impl->queues.pendingRequests.size());
     }
 

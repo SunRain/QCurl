@@ -69,6 +69,10 @@ struct ReplyProgressState
     QMetaObject::Connection uploadConnection;
 };
 
+class LaneSchedulingPolicy;
+
+using SchedulerRequestId = quint64;
+
 QString normalizedLane(const QString &lane);
 bool hasEventDispatcher(QThread *thread);
 ReplyKey replyKey(QCNetworkReply *reply);
@@ -128,9 +132,12 @@ void decrementNestedCounter(QHash<QString, QHash<QString, int>> &counters,
 
 class SchedulerQueues
 {
+    friend class LaneSchedulingPolicy;
+
 public:
     struct QueuedRequest
     {
+        SchedulerRequestId requestId = 0;
         ReplyKey key = nullptr;
         QCNetworkReply *reply = nullptr;
         ReplySnapshot snapshot;

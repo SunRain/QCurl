@@ -30,6 +30,7 @@ struct QCNetworkRequestScheduler::Impl
     QHash<Internal::ReplyKey, Internal::ScheduledState> replyStates;
     QHash<Internal::ReplyKey, Internal::ReplyProgressState> replyProgressStates;
     QSet<Internal::ReplyKey> cancelledReplies;
+    quint64 nextRequestId = 1;
     quint64 nextStartTicket = 1;
     QHash<Internal::ReplyKey, quint64> startTickets;
     QTimer *throttleTimer           = nullptr;
