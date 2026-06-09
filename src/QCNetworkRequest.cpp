@@ -278,13 +278,13 @@ QCNetworkRequest &QCNetworkRequest::setConnectTimeout(std::chrono::milliseconds 
     return *this;
 }
 
-QCNetworkRequest &QCNetworkRequest::setLane(const QString &lane)
+QCNetworkRequest &QCNetworkRequest::setLane(const QCNetworkLaneKey &lane)
 {
-    d.data()->lane = lane.trimmed();
+    d.data()->lane = lane;
     return *this;
 }
 
-QString QCNetworkRequest::lane() const
+QCNetworkLaneKey QCNetworkRequest::lane() const
 {
     return d.constData()->lane;
 }
@@ -316,7 +316,7 @@ QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)
     dbg.nospace() << "QCNetworkRequest("
                   << "url=" << req.url().toString() << ", followLocation=" << req.followLocation()
                   << ", range=" << req.rangeStart() << "-" << req.rangeEnd()
-                  << ", lane=" << req.lane()
+                  << ", lane=" << req.lane().name()
                   << ", httpVersion=" << static_cast<int>(req.httpVersion()) << ")";
     return dbg.space();
 }

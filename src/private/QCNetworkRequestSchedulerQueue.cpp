@@ -191,6 +191,12 @@ void SchedulerQueues::ensureLane(const QString &lane)
     }
 }
 
+void SchedulerQueues::clearLaneConfigs()
+{
+    laneConfigs.clear();
+    resetRuntimeState();
+}
+
 void SchedulerQueues::setLaneConfig(const QString &lane,
                                     const QCNetworkRequestScheduler::LaneConfig &config)
 {

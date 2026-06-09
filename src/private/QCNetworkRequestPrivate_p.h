@@ -29,6 +29,7 @@ public:
         : sslConfig(QCNetworkSslConfig::defaultConfig())
         , timeoutConfig(QCNetworkTimeoutConfig::defaultConfig())
         , retryPolicy(QCNetworkRetryPolicy::noRetry())
+        , lane(QCNetworkLaneKey::defaultLane())
     {}
 
     int rangeStart = -1;
@@ -60,7 +61,7 @@ public:
     bool retryPolicyExplicit = false;
 
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
-    QString lane;
+    QCNetworkLaneKey lane;
     QCNetworkRequestPriority requestPriority = QCNetworkRequestPriority::Normal;
     QCNetworkCachePolicy cachePolicy = QCNetworkCachePolicy::PreferCache;
 };

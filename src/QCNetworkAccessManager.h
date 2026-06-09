@@ -10,13 +10,15 @@
 #include "QCCookie.h"
 #include "QCCookieAsyncResult.h"
 #include "QCNetworkHttpMethod.h"
+#include "QCNetworkLaneCancelResult.h"
+#include "QCNetworkLaneKey.h"
+#include "QCNetworkSchedulerPolicy.h"
 
 #include <QByteArray>
 #include <QByteArrayView>
 #include <QFuture>
 #include <QObject>
 #include <QScopedPointer>
-#include <QSharedDataPointer>
 #include <QString>
 #include <QUrl>
 
@@ -297,27 +299,51 @@ public:
      *
      * 启用后，异步 `send*()` 会经过调度器管理；关闭后直接创建并执行 reply。
      *
-     * `QCNetworkRequestScheduler` 是“当前线程共享”的 thread-local 实例，而不是
-     * `QCNetworkAccessManager` 私有对象。要配置当前 manager 实际使用到的 scheduler，
-     * 必须在 manager owner thread 上调用 `scheduler()` / `setConfig()` /
-     * `setLaneConfig()` 等接口。
+     * `QCNetworkAccessManager` 持有 manager 私有 scheduler。下游调度配置入口是
+     * `setSchedulerPolicy()`，无需取得 scheduler 指针。
      */
     void enableRequestScheduler(bool enabled);
 
     /// 检查调度器是否已启用。
     bool isSchedulerEnabled() const;
 
+    enum class SchedulerCancelScope {
+        PendingOnly,
+        PendingAndRunning,
+    };
+
     /**
-     * @brief 获取调度器实例
+     * @brief 应用 manager-level scheduler admission policy。
      *
-     * 仅允许在 manager owner thread 上返回当前线程共享的 thread-local scheduler；
-     * 本函数不会帮调用方跨线程取回 owner-thread scheduler。
-     * 通过本接口拿到的实例，才是当前 manager 的异步 `send*()` 真正会使用的 scheduler。
-     *
-     * 若从非 owner thread 调用，本函数会给出 warning，并在 debug 构建触发断言，
-     * 随后 fail-closed 返回 `nullptr`，避免误用线程懒创建新的 scheduler 实例。
+     * 必须在 manager owner thread 调用。失败时不修改现有 policy；`error` 非空时写入
+     * 校验、owner-thread 或 scheduler 应用失败原因。
      */
-    QCNetworkRequestScheduler *scheduler() const;
+    [[nodiscard]] bool setSchedulerPolicy(const QCNetworkSchedulerPolicy &policy,
+                                          QString *error = nullptr);
+
+    /// 返回当前 scheduler policy 快照；非 owner thread 调用返回默认值并告警。
+    [[nodiscard]] QCNetworkSchedulerPolicy schedulerPolicy() const;
+
+    /// 返回当前 scheduler 统计快照；非 owner thread 调用返回空统计并告警。
+    [[nodiscard]] QCNetworkSchedulerStatistics schedulerStatistics() const;
+    /**
+     * @brief 取消指定 scheduler lane 的请求。
+     *
+     * 必须在 manager owner thread 调用。invalid lane、未注册 lane、未启用 scheduler
+     * 或非 owner thread 调用均 fail-closed，不会取消 default lane 或其他 lane。
+     *
+     * @return 结构化结果；成功且无匹配请求时 `cancelledRequests()` 为 0。
+     */
+    [[nodiscard]] QCNetworkLaneCancelResult cancelLaneRequests(
+        const QCNetworkLaneKey &lane, SchedulerCancelScope scope);
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 仅供仓内测试观察 manager-owned scheduler 信号与队列状态。
+    [[nodiscard]] QCNetworkRequestScheduler *schedulerForTesting() const;
+
+    /// 仅供仓内白盒测试注册旧 scheduler 行为测试使用的临时 lane。
+    void registerSchedulerLaneForTesting(const QCNetworkLaneKey &lane);
+#endif
 
     /**
      * @brief 设置缓存实例

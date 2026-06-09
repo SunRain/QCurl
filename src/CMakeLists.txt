@@ -12,6 +12,9 @@ set(QCURL_CORE_SOURCES
     QCNetworkAccessManagerServices.cpp
     QCNetworkTestSupport.cpp
     QCNetworkHttpAuthConfig.cpp
+    QCNetworkLaneKey.cpp
+    QCNetworkLaneCancelResult.cpp
+    QCNetworkSchedulerPolicy.cpp
     QCNetworkRequest.cpp
     QCNetworkRequestTransferAccessors.cpp
     QCNetworkRedirectConfig.cpp
@@ -145,6 +148,9 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkTimeoutConfig.h
     QCNetworkHttpMethod.h
     QCNetworkHttpVersion.h
+    QCNetworkLaneKey.h
+    QCNetworkLaneCancelResult.h
+    QCNetworkSchedulerPolicy.h
     QCNetworkError.h
     QCNetworkReply.h
     QCNetworkReply_p.h
@@ -242,6 +248,9 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkTimeoutConfig.h
     QCNetworkHttpMethod.h
     QCNetworkHttpVersion.h
+    QCNetworkLaneKey.h
+    QCNetworkLaneCancelResult.h
+    QCNetworkSchedulerPolicy.h
     QCNetworkError.h
     QCNetworkReply.h
     QCNetworkRetryPolicy.h

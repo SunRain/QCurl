@@ -5,6 +5,7 @@
 
 #include "private/QCNetworkRequestSchedulerPrivate_p.h"
 
+#include <QThread>
 #include <QTimer>
 
 namespace {
@@ -22,11 +23,13 @@ Q_CONSTRUCTOR_FUNCTION(registerQCNetworkRequestPriorityMetaTypeOnLoad)
 
 namespace QCurl {
 
-QCNetworkRequestScheduler *QCNetworkRequestScheduler::instance()
+#ifdef QCURL_ENABLE_TEST_HOOKS
+QCNetworkRequestScheduler *QCNetworkRequestScheduler::instanceForTesting()
 {
     static thread_local QCNetworkRequestScheduler instance;
     return &instance;
 }
+#endif
 
 QCNetworkRequestScheduler::QCNetworkRequestScheduler(QObject *parent)
     : QObject(parent)
@@ -39,7 +42,6 @@ QCNetworkRequestScheduler::QCNetworkRequestScheduler(QObject *parent)
             &QTimer::timeout,
             this,
             &QCNetworkRequestScheduler::updateBandwidthStats);
-    m_impl->throttleTimer->start();
 }
 
 QCNetworkRequestScheduler::~QCNetworkRequestScheduler()

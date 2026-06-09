@@ -105,6 +105,14 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     , d_ptr(new QCNetworkAccessManagerPrivate(this))
 {
     CurlGlobalConstructor::instance();
+    Q_D(QCNetworkAccessManager);
+    d->scheduler = new QCNetworkRequestScheduler(this);
+    QString schedulerPolicyError;
+    const bool schedulerPolicyApplied = d->scheduler->applyPolicy(d->schedulerPolicy,
+                                                                  &schedulerPolicyError);
+    Q_ASSERT_X(schedulerPolicyApplied,
+               "QCNetworkAccessManager",
+               qPrintable(schedulerPolicyError));
 }
 
 QCNetworkAccessManager::~QCNetworkAccessManager()
@@ -216,9 +224,22 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
 
     if (schedulerEnabled) {
         // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
-        const auto *manager = q_func();
-        if (auto *requestScheduler = manager->scheduler()) {
-            requestScheduler->scheduleReply(reply, request.lane(), request.priority());
+        if (!request.lane().isValid()) {
+            reply->abortWithError(
+                NetworkError::InvalidRequest,
+                QStringLiteral("QCNetworkAccessManager: scheduler lane is invalid"));
+            return;
+        }
+        if (!schedulerPolicy.isLaneRegistered(request.lane())) {
+            reply->abortWithError(
+                NetworkError::InvalidRequest,
+                QStringLiteral("QCNetworkAccessManager: scheduler lane is not registered: %1")
+                    .arg(request.lane().name()));
+            return;
+        }
+
+        if (scheduler) {
+            scheduler->scheduleReply(reply, request.lane(), request.priority());
         } else {
             reply->abortWithError(NetworkError::InvalidRequest,
                                   QStringLiteral(

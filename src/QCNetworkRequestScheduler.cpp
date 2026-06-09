@@ -14,7 +14,7 @@
 namespace QCurl {
 
 void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
-                                              const QString &lane,
+                                              const QCNetworkLaneKey &lane,
                                               QCNetworkRequestPriority priority)
 {
     if (!reply) {
@@ -39,7 +39,7 @@ void QCNetworkRequestScheduler::scheduleReply(QCNetworkReply *reply,
                "reply must live on the scheduler owner thread");
 
     const Internal::ReplyKey key = Internal::replyKey(reply);
-    const QString laneKey = Internal::normalizedLane(lane);
+    const QString laneKey = lane.isValid() ? lane.name() : QString();
     const Internal::ReplySnapshot snapshot = {laneKey, Internal::buildHostKey(reply->url()), priority};
 
     {

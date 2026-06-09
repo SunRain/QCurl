@@ -152,6 +152,7 @@ public:
                                   ReplyKey key,
                                   QueuedRequest *out = nullptr);
 
+    void clearLaneConfigs();
     void ensureLane(const QString &lane);
     void setLaneConfig(const QString &lane,
                        const QCNetworkRequestScheduler::LaneConfig &config);

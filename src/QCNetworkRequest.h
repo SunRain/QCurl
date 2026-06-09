@@ -7,6 +7,7 @@
 #define QCNETWORKREQUEST_H
 
 #include "QCGlobal.h"
+#include "QCNetworkLaneKey.h"
 #include "QCNetworkRequestConfig.h"
 
 #include <QByteArray>
@@ -167,8 +168,8 @@ public:
     QCNetworkRequest &setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy);
     [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy() const;
 
-    QCNetworkRequest &setLane(const QString &lane);
-    [[nodiscard]] QString lane() const;
+    QCNetworkRequest &setLane(const QCNetworkLaneKey &lane);
+    [[nodiscard]] QCNetworkLaneKey lane() const;
 
     QCNetworkRequest &setPriority(QCNetworkRequestPriority priority);
     [[nodiscard]] QCNetworkRequestPriority priority() const;

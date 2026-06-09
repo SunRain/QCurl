@@ -10,7 +10,9 @@
 #define QCNETWORKREQUESTSCHEDULER_H
 
 #include "QCGlobal.h"
+#include "QCNetworkLaneKey.h"
 #include "QCNetworkRequestPriority.h"
+#include "QCNetworkSchedulerPolicy.h"
 
 #include <QList>
 #include <QObject>
@@ -46,7 +48,6 @@ class QCNetworkRequestSchedulerLaneConfigData;
  *
  * 线程 contract（NetworkEngine 合一线程）：
  *
- * - `instance()` 返回当前线程共享的 thread-local scheduler，而不是进程级全局单例。
  * - scheduler / `QCNetworkReply` / `QCCurlMultiManager` 必须处于同一 owner thread。
  * - 异步请求要求 owner thread 具备 Qt 事件循环；当 owner thread 事件循环停止或线程退出时，
  *   先前排队的 queued invoke / 信号投递不再保证可达。
@@ -174,40 +175,22 @@ public:
         PendingAndRunning, ///< pending + deferred + running 一并取消，用于整条 lane 排空
     };
 
-    /**
-     * @brief 获取当前线程绑定的调度器实例
-     *
-     * 实现为 thread-local；不同线程拿到的是不同实例。
-     *
-     * @note 该实例是“当前线程共享实例”，不是 `QCNetworkAccessManager` 私有对象。
-     */
-    static QCNetworkRequestScheduler *instance();
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 仅供仓内测试获取当前线程绑定的 scheduler。
+    static QCNetworkRequestScheduler *instanceForTesting();
 
-    /**
-     * @brief 设置调度器配置
-     *
-     * @param config 新的配置
-     */
-    void setConfig(const Config &config);
+    /// 仅供仓内测试直接调整内部 scheduler config。
+    void setConfigForTesting(const Config &config);
 
-    /**
-     * @brief 获取当前配置
-     *
-     * @return 当前配置的副本
-     */
-    Config config() const;
+    /// 仅供仓内测试读取内部 scheduler config。
+    Config configForTesting() const;
 
-    /**
-     * @brief 设置 lane 调度配置
-     *
-     * lane 名称会先做 trim；空字符串表示 default lane。
-     */
-    void setLaneConfig(const QString &lane, const LaneConfig &config);
+    /// 仅供仓内测试直接调整内部 lane config。
+    void setLaneConfigForTesting(const QString &lane, const LaneConfig &config);
 
-    /**
-     * @brief 获取 lane 调度配置
-     */
-    LaneConfig laneConfig(const QString &lane) const;
+    /// 仅供仓内测试读取内部 lane config。
+    LaneConfig laneConfigForTesting(const QString &lane) const;
+#endif
 
     /**
      * @brief 延后调度请求（仅 Pending，非传输级 pause/resume）
@@ -392,8 +375,10 @@ private:
      * lane/hostKey/priority 会在这里被快照，后续 scheduler 信号都引用这份快照。
      */
     void scheduleReply(QCNetworkReply *reply,
-                       const QString &lane,
+                       const QCNetworkLaneKey &lane,
                        QCNetworkRequestPriority priority);
+    [[nodiscard]] bool applyPolicy(const QCNetworkSchedulerPolicy &policy,
+                                   QString *error = nullptr);
 
     /**
      * @brief 处理队列
