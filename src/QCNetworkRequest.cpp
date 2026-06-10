@@ -11,7 +11,8 @@ namespace QCurl {
 
 QCNetworkRequest::QCNetworkRequest()
     : d(new QCNetworkRequestPrivate())
-{}
+{
+}
 
 QCNetworkRequest::QCNetworkRequest(const QUrl &url)
     : d(new QCNetworkRequestPrivate())
@@ -21,7 +22,8 @@ QCNetworkRequest::QCNetworkRequest(const QUrl &url)
 
 QCNetworkRequest::QCNetworkRequest(const QCNetworkRequest &other)
     : d(other.d)
-{}
+{
+}
 
 QCNetworkRequest::~QCNetworkRequest() = default;
 

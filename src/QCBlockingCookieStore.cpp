@@ -20,7 +20,8 @@ public:
 
 QCCookieSnapshot::QCCookieSnapshot()
     : d(new QCCookieSnapshotData)
-{}
+{
+}
 
 QCCookieSnapshot::QCCookieSnapshot(const QList<QCCookie> &cookies)
     : d(new QCCookieSnapshotData)
@@ -50,7 +51,8 @@ void QCCookieSnapshot::setCookies(const QList<QCCookie> &cookies)
 
 QCCookieDelta::QCCookieDelta()
     : d(new QCCookieDeltaData)
-{}
+{
+}
 
 QCCookieDelta::QCCookieDelta(const QList<QCCookie> &cookies)
     : d(new QCCookieDeltaData)

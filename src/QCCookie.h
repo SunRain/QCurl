@@ -10,6 +10,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QMetaType>
 #include <QSharedDataPointer>
 #include <QString>
 

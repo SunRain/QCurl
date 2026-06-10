@@ -23,7 +23,8 @@ public:
 
 QCCookieOperationResult::QCCookieOperationResult()
     : d(new QCCookieOperationResultData)
-{}
+{
+}
 
 QCCookieOperationResult::QCCookieOperationResult(
     const QCCookieOperationResult &other) = default;
@@ -66,7 +67,8 @@ QString QCCookieOperationResult::error() const
 
 QCCookieExportResult::QCCookieExportResult()
     : d(new QCCookieExportResultData)
-{}
+{
+}
 
 QCCookieExportResult::QCCookieExportResult(const QCCookieExportResult &other) = default;
 

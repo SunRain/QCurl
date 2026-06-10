@@ -10,6 +10,7 @@
 #include "QCGlobal.h"
 
 #include <QList>
+#include <QMetaType>
 #include <QSharedDataPointer>
 #include <QString>
 

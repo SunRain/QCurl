@@ -20,7 +20,8 @@ public:
 
 QCCookie::QCCookie()
     : d(new QCCookieData)
-{}
+{
+}
 
 QCCookie::QCCookie(const QByteArray &name, const QByteArray &value)
     : d(new QCCookieData)
