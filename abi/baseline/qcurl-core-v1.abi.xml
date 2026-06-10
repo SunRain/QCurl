@@ -295,7 +295,7 @@
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey10backgroundEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey11defaultLaneEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey7controlEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey8fromNameERK7QStringPS0_PS1_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey8fromNameE14QAnyStringViewPS0_P7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKey8transferEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKeyC1E7QStringb' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl16QCNetworkLaneKeyC1EOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl16QCNetworkLaneKeyC2EOS0_' is-defined='yes'/>
@@ -966,7 +966,7 @@
     <elf-symbol name='_ZN5QCurl25QCErrorHandlingMiddlewareD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl25QCErrorHandlingMiddlewareD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN5QCurl25QCErrorHandlingMiddlewareD1Ev' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl25QCNetworkDiskCachePrivate13evictIfNeededEx' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN5QCurl25QCNetworkLaneCancelResult7failureENS0_6StatusERK7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZN5QCurl25QCNetworkLaneCancelResult7failureENS0_13FailureReasonERK7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl25QCNetworkLaneCancelResult7successEi' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl25QCNetworkLaneCancelResultC1EOS0_' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN5QCurl25QCNetworkLaneCancelResultC1ERKS0_' type='func-type' binding='global-binding' visibility='protected-visibility' alias='_ZN5QCurl25QCNetworkLaneCancelResultC2ERKS0_' is-defined='yes'/>
@@ -1723,7 +1723,7 @@
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy10LaneConfig15reservedPerHostEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy10LaneConfig6weightEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy10LaneConfig7quantumEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy10laneConfigERKNS_16QCNetworkLaneKeyE' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
+    <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy10laneConfigERKNS_16QCNetworkLaneKeyEPNS0_10LaneConfigEP7QString' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy11defaultLaneEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy15registeredLanesEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_ZNK5QCurl24QCNetworkSchedulerPolicy15unknownLaneModeEv' type='func-type' binding='global-binding' visibility='protected-visibility' is-defined='yes'/>

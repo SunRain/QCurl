@@ -13,7 +13,9 @@
 #include "QCNetworkLaneKey.h"
 
 #include <QList>
+#include <QMetaType>
 #include <QSharedDataPointer>
+#include <QString>
 
 namespace QCurl {
 
@@ -117,7 +119,9 @@ public:
     [[nodiscard]] bool setLaneConfig(const QCNetworkLaneKey &lane,
                                      const LaneConfig &config,
                                      QString *error = nullptr);
-    [[nodiscard]] LaneConfig laneConfig(const QCNetworkLaneKey &lane) const;
+    [[nodiscard]] bool laneConfig(const QCNetworkLaneKey &lane,
+                                  LaneConfig *out,
+                                  QString *error = nullptr) const;
 
     [[nodiscard]] int maxConcurrentRequests() const;
     void setMaxConcurrentRequests(int value);

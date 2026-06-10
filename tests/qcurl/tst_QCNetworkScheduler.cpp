@@ -527,7 +527,10 @@ void tst_QCNetworkScheduler::testManagerLevelSchedulerPolicyConfiguresAdmission(
     QVERIFY(m_manager->setSchedulerPolicy(policy, &error));
     QCOMPARE(error, QString());
     QCOMPARE(m_manager->schedulerPolicy().maxConcurrentRequests(), 1);
-    QCOMPARE(m_manager->schedulerPolicy().laneConfig(QCNetworkLaneKey::control()).weight(), 3);
+    QCNetworkSchedulerPolicy::LaneConfig appliedControlConfig;
+    QVERIFY(m_manager->schedulerPolicy().laneConfig(QCNetworkLaneKey::control(),
+                                                    &appliedControlConfig));
+    QCOMPARE(appliedControlConfig.weight(), 3);
 
     const auto schedulerConfig = m_scheduler->configForTesting();
     QCOMPARE(schedulerConfig.maxConcurrentRequests(), 1);

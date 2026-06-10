@@ -305,10 +305,26 @@ bool QCNetworkSchedulerPolicy::setLaneConfig(const QCNetworkLaneKey &lane,
     return true;
 }
 
-QCNetworkSchedulerPolicy::LaneConfig QCNetworkSchedulerPolicy::laneConfig(
-    const QCNetworkLaneKey &lane) const
+bool QCNetworkSchedulerPolicy::laneConfig(const QCNetworkLaneKey &lane,
+                                          LaneConfig *out,
+                                          QString *error) const
 {
-    return d->laneConfigs.value(lane.name(), LaneConfig{});
+    setError(error, QString());
+    if (!out) {
+        setError(error, QStringLiteral("QCNetworkSchedulerPolicy::laneConfig requires output config"));
+        return false;
+    }
+    if (!lane.isValid()) {
+        setError(error, QStringLiteral("invalid lane key has no scheduler config"));
+        return false;
+    }
+    const auto it = d->laneConfigs.constFind(lane.name());
+    if (it == d->laneConfigs.cend()) {
+        setError(error, QStringLiteral("scheduler lane is not registered: %1").arg(lane.name()));
+        return false;
+    }
+    *out = it.value();
+    return true;
 }
 
 int QCNetworkSchedulerPolicy::maxConcurrentRequests() const

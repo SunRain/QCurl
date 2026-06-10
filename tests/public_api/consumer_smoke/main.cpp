@@ -95,7 +95,10 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    const auto appliedLane = appliedConfig.laneConfig(QCurl::QCNetworkLaneKey::control());
+    QCurl::QCNetworkSchedulerPolicy::LaneConfig appliedLane;
+    if (!appliedConfig.laneConfig(QCurl::QCNetworkLaneKey::control(), &appliedLane)) {
+        return 3;
+    }
     if (appliedLane.weight() < 1 || appliedLane.quantum() < 1) {
         return 3;
     }

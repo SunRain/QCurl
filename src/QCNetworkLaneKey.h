@@ -11,7 +11,9 @@
 
 #include "QCGlobal.h"
 
+#include <QAnyStringView>
 #include <QDebug>
+#include <QMetaType>
 #include <QSharedDataPointer>
 #include <QString>
 
@@ -49,7 +51,7 @@ public:
      * 失败时返回 false，`out` 保持不变，`error` 非空时写入可诊断原因。
      * 空名称不是自定义 lane；默认 lane 请使用 `defaultLane()`。
      */
-    [[nodiscard]] static bool fromName(const QString &name,
+    [[nodiscard]] static bool fromName(QAnyStringView name,
                                        QCNetworkLaneKey *out,
                                        QString *error = nullptr);
 

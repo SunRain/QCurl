@@ -396,22 +396,22 @@ QCNetworkLaneCancelResult QCNetworkAccessManager::cancelLaneRequests(const QCNet
     Q_D(QCNetworkAccessManager);
     if (d->rejectOffOwnerThread(nullptr, "QCNetworkAccessManager::cancelLaneRequests")) {
         return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::Status::NonOwnerThread,
+            QCNetworkLaneCancelResult::FailureReason::NonOwnerThread,
             QStringLiteral("QCNetworkAccessManager::cancelLaneRequests must run on owner thread"));
     }
     if (!d->schedulerEnabled) {
         return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::Status::SchedulerDisabled,
+            QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled,
             QStringLiteral("QCNetworkAccessManager: request scheduler is not enabled"));
     }
     if (!lane.isValid()) {
         return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::Status::InvalidLane,
+            QCNetworkLaneCancelResult::FailureReason::InvalidLane,
             QStringLiteral("QCNetworkAccessManager: invalid scheduler lane cannot be cancelled"));
     }
     if (!d->schedulerPolicy.isLaneRegistered(lane)) {
         return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::Status::UnregisteredLane,
+            QCNetworkLaneCancelResult::FailureReason::UnregisteredLane,
             QStringLiteral("QCNetworkAccessManager: scheduler lane is not registered: %1")
                 .arg(lane.name()));
     }

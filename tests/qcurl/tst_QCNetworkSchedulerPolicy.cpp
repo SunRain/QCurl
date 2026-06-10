@@ -4,9 +4,13 @@
  */
 
 #include "QCNetworkLaneKey.h"
+#include "QCNetworkLaneCancelResult.h"
 #include "QCNetworkSchedulerPolicy.h"
 
+#include <QLatin1StringView>
 #include <QtTest/QtTest>
+
+#include <type_traits>
 
 using namespace QCurl;
 
@@ -17,6 +21,7 @@ class tst_QCNetworkSchedulerPolicy : public QObject
 private slots:
     void testLaneKeyDefaultsAndBuiltins();
     void testLaneKeyFromNameReportsErrorsWithoutModifyingOutput();
+    void testLaneCancelResultFactoriesEnforceInvariants();
     void testPolicyRegistersCustomLaneAndValidatesDefaultLane();
     void testPolicyValidationRejectsInvalidLimitsAndLaneConfig();
     void testPolicySetLaneConfigRejectsInvalidInputWithoutSideEffects();
@@ -42,6 +47,10 @@ void tst_QCNetworkSchedulerPolicy::testLaneKeyFromNameReportsErrorsWithoutModify
     QCOMPARE(lane.name(), QStringLiteral("ImagePrefetch"));
     QCOMPARE(error, QString());
 
+    QVERIFY(QCNetworkLaneKey::fromName(QLatin1StringView("  LatinLane  "), &lane, &error));
+    QCOMPARE(lane.name(), QStringLiteral("LatinLane"));
+    QCOMPARE(error, QString());
+
     const QCNetworkLaneKey previousLane = lane;
     QVERIFY(!QCNetworkLaneKey::fromName(QStringLiteral("   "), &lane, &error));
     QCOMPARE(lane, previousLane);
@@ -49,6 +58,25 @@ void tst_QCNetworkSchedulerPolicy::testLaneKeyFromNameReportsErrorsWithoutModify
 
     QVERIFY(!QCNetworkLaneKey::fromName(QStringLiteral("ImagePrefetch"), nullptr, &error));
     QVERIFY(error.contains(QStringLiteral("output")));
+}
+
+void tst_QCNetworkSchedulerPolicy::testLaneCancelResultFactoriesEnforceInvariants()
+{
+    static_assert(!std::is_convertible_v<QCNetworkLaneCancelResult::Status,
+                                         QCNetworkLaneCancelResult::FailureReason>);
+
+    const QCNetworkLaneCancelResult success = QCNetworkLaneCancelResult::success(3);
+    QVERIFY(success.isSuccess());
+    QCOMPARE(success.status(), QCNetworkLaneCancelResult::Status::Success);
+    QCOMPARE(success.cancelledRequests(), 3);
+    QCOMPARE(success.error(), QString());
+
+    const QCNetworkLaneCancelResult failure = QCNetworkLaneCancelResult::failure(
+        QCNetworkLaneCancelResult::FailureReason::InvalidLane, QString());
+    QVERIFY(!failure.isSuccess());
+    QCOMPARE(failure.status(), QCNetworkLaneCancelResult::Status::InvalidLane);
+    QCOMPARE(failure.cancelledRequests(), 0);
+    QVERIFY(!failure.error().isEmpty());
 }
 
 void tst_QCNetworkSchedulerPolicy::testPolicyRegistersCustomLaneAndValidatesDefaultLane()
@@ -70,8 +98,10 @@ void tst_QCNetworkSchedulerPolicy::testPolicyRegistersCustomLaneAndValidatesDefa
 
     QVERIFY(policy.isLaneRegistered(imagePrefetch));
     QCOMPARE(policy.defaultLane(), imagePrefetch);
-    QCOMPARE(policy.laneConfig(imagePrefetch).weight(), 2);
-    QCOMPARE(policy.laneConfig(imagePrefetch).quantum(), 3);
+    QCNetworkSchedulerPolicy::LaneConfig readConfig;
+    QVERIFY(policy.laneConfig(imagePrefetch, &readConfig));
+    QCOMPARE(readConfig.weight(), 2);
+    QCOMPARE(readConfig.quantum(), 3);
     QVERIFY(policy.validate());
 
     QCNetworkLaneKey missingLane;
@@ -133,21 +163,33 @@ void tst_QCNetworkSchedulerPolicy::testPolicyValidationRejectsInvalidLimitsAndLa
 void tst_QCNetworkSchedulerPolicy::testPolicySetLaneConfigRejectsInvalidInputWithoutSideEffects()
 {
     QCNetworkSchedulerPolicy policy = QCNetworkSchedulerPolicy::defaultPolicy();
-    const QCNetworkSchedulerPolicy::LaneConfig originalControl
-        = policy.laneConfig(QCNetworkLaneKey::control());
+    QCNetworkSchedulerPolicy::LaneConfig originalControl;
+    QVERIFY(policy.laneConfig(QCNetworkLaneKey::control(), &originalControl));
 
     QString error;
     QCNetworkSchedulerPolicy::LaneConfig validConfig;
     validConfig.setWeight(4);
     QVERIFY(!policy.setLaneConfig(QCNetworkLaneKey(), validConfig, &error));
     QVERIFY(error.contains(QStringLiteral("invalid lane")));
-    QCOMPARE(policy.laneConfig(QCNetworkLaneKey::control()).weight(), originalControl.weight());
+    QCNetworkSchedulerPolicy::LaneConfig controlConfig;
+    QVERIFY(policy.laneConfig(QCNetworkLaneKey::control(), &controlConfig));
+    QCOMPARE(controlConfig.weight(), originalControl.weight());
 
     QCNetworkSchedulerPolicy::LaneConfig invalidConfig;
     invalidConfig.setWeight(0);
     QVERIFY(!policy.setLaneConfig(QCNetworkLaneKey::control(), invalidConfig, &error));
     QVERIFY(error.contains(QStringLiteral("weight")));
-    QCOMPARE(policy.laneConfig(QCNetworkLaneKey::control()).weight(), originalControl.weight());
+    QVERIFY(policy.laneConfig(QCNetworkLaneKey::control(), &controlConfig));
+    QCOMPARE(controlConfig.weight(), originalControl.weight());
+
+    QCNetworkLaneKey missingLane;
+    QVERIFY(QCNetworkLaneKey::fromName(QStringLiteral("MissingLane"), &missingLane));
+    QVERIFY(!policy.laneConfig(missingLane, &controlConfig, &error));
+    QVERIFY(error.contains(QStringLiteral("registered")));
+    QVERIFY(!policy.laneConfig(QCNetworkLaneKey(), &controlConfig, &error));
+    QVERIFY(error.contains(QStringLiteral("invalid lane")));
+    QVERIFY(!policy.laneConfig(QCNetworkLaneKey::control(), nullptr, &error));
+    QVERIFY(error.contains(QStringLiteral("output")));
 }
 
 void tst_QCNetworkSchedulerPolicy::testPolicyIsSharedDataValueType()

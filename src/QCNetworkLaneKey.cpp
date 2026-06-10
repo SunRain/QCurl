@@ -85,14 +85,14 @@ QCNetworkLaneKey QCNetworkLaneKey::background()
     return QCNetworkLaneKey(QStringLiteral("Background"), true);
 }
 
-bool QCNetworkLaneKey::fromName(const QString &name, QCNetworkLaneKey *out, QString *error)
+bool QCNetworkLaneKey::fromName(QAnyStringView name, QCNetworkLaneKey *out, QString *error)
 {
     if (!out) {
         setError(error, QStringLiteral("QCNetworkLaneKey::fromName requires a non-null output key"));
         return false;
     }
 
-    const QString normalizedName = name.trimmed();
+    const QString normalizedName = name.toString().trimmed();
     if (normalizedName.isEmpty()) {
         setError(error, QStringLiteral("QCNetworkLaneKey lane name must not be empty"));
         return false;

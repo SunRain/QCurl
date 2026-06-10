@@ -77,8 +77,13 @@ bool QCNetworkRequestScheduler::applyPolicy(const QCNetworkSchedulerPolicy &poli
         m_impl->config = schedulerConfigFromPolicy(policy);
         m_impl->queues.clearLaneConfigs();
         for (const QCNetworkLaneKey &lane : policy.registeredLanes()) {
+            QCNetworkSchedulerPolicy::LaneConfig laneConfig;
+            const bool hasLaneConfig = policy.laneConfig(lane, &laneConfig, error);
+            if (!hasLaneConfig) {
+                return false;
+            }
             m_impl->queues.setLaneConfig(
-                lane.name(), schedulerLaneConfigFromPolicy(policy.laneConfig(lane)));
+                lane.name(), schedulerLaneConfigFromPolicy(laneConfig));
         }
     }
 
