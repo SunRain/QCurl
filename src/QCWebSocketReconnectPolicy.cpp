@@ -9,21 +9,40 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr int kNoRetries            = 0;
+constexpr int kStandardMaxRetries   = 3;
+constexpr int kAggressiveMaxRetries = 10;
+constexpr std::chrono::milliseconds kDefaultInitialDelay{1000};
+constexpr std::chrono::milliseconds kAggressiveInitialDelay{500};
+constexpr double kDefaultBackoffMultiplier    = 2.0;
+constexpr double kAggressiveBackoffMultiplier = 1.5;
+constexpr std::chrono::milliseconds kDefaultMaxDelay{30000};
+constexpr std::chrono::milliseconds kAggressiveMaxDelay{60000};
+
+const QCWebSocketReconnectPolicy::CloseCodeSet kDefaultRetriableCloseCodes{
+    QCWebSocket::CloseCode::GoingAway,
+    QCWebSocket::CloseCode::AbnormalClosure,
+    QCWebSocket::CloseCode::InternalError,
+};
+
+} // namespace
+
 /// WebSocket 重连策略的共享负载；不保存 socket 运行时状态。
 class QCWebSocketReconnectPolicyData : public QSharedData
 {
 public:
-    int maxRetries = 0;
-    std::chrono::milliseconds initialDelay{1000};
-    double backoffMultiplier = 2.0;
-    std::chrono::milliseconds maxDelay{30000};
-    QSet<int> retriableCloseCodes = {1001, 1006, 1011};
+    int maxRetries                                               = kNoRetries;
+    std::chrono::milliseconds initialDelay                       = kDefaultInitialDelay;
+    double backoffMultiplier                                     = kDefaultBackoffMultiplier;
+    std::chrono::milliseconds maxDelay                           = kDefaultMaxDelay;
+    QCWebSocketReconnectPolicy::CloseCodeSet retriableCloseCodes = kDefaultRetriableCloseCodes;
 };
 
 QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy()
     : d(new QCWebSocketReconnectPolicyData)
-{
-}
+{}
 
 QCWebSocketReconnectPolicy::QCWebSocketReconnectPolicy(
     const QCWebSocketReconnectPolicy &other) = default;
@@ -79,17 +98,18 @@ void QCWebSocketReconnectPolicy::setMaxDelay(std::chrono::milliseconds delay) no
     d->maxDelay = delay;
 }
 
-QSet<int> QCWebSocketReconnectPolicy::retriableCloseCodes() const
+QCWebSocketReconnectPolicy::CloseCodeSet QCWebSocketReconnectPolicy::retriableCloseCodes() const
 {
     return d->retriableCloseCodes;
 }
 
-void QCWebSocketReconnectPolicy::setRetriableCloseCodes(const QSet<int> &closeCodes)
+void QCWebSocketReconnectPolicy::setRetriableCloseCodes(const CloseCodeSet &closeCodes)
 {
     d->retriableCloseCodes = closeCodes;
 }
 
-bool QCWebSocketReconnectPolicy::shouldRetry(int closeCode, int attemptCount) const
+bool QCWebSocketReconnectPolicy::shouldRetry(QCWebSocket::CloseCode closeCode,
+                                             int attemptCount) const
 {
     if (d->maxRetries <= 0 || attemptCount > d->maxRetries) {
         return false;
@@ -117,29 +137,29 @@ std::chrono::milliseconds QCWebSocketReconnectPolicy::delayForAttempt(int attemp
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::noReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.setMaxRetries(0);
+    policy.setMaxRetries(kNoRetries);
     return policy;
 }
 
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::standardReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.setMaxRetries(3);
-    policy.setInitialDelay(std::chrono::milliseconds(1000));
-    policy.setBackoffMultiplier(2.0);
-    policy.setMaxDelay(std::chrono::milliseconds(30000));
-    policy.setRetriableCloseCodes({1001, 1006, 1011});
+    policy.setMaxRetries(kStandardMaxRetries);
+    policy.setInitialDelay(kDefaultInitialDelay);
+    policy.setBackoffMultiplier(kDefaultBackoffMultiplier);
+    policy.setMaxDelay(kDefaultMaxDelay);
+    policy.setRetriableCloseCodes(kDefaultRetriableCloseCodes);
     return policy;
 }
 
 QCWebSocketReconnectPolicy QCWebSocketReconnectPolicy::aggressiveReconnect()
 {
     QCWebSocketReconnectPolicy policy;
-    policy.setMaxRetries(10);
-    policy.setInitialDelay(std::chrono::milliseconds(500));
-    policy.setBackoffMultiplier(1.5);
-    policy.setMaxDelay(std::chrono::milliseconds(60000));
-    policy.setRetriableCloseCodes({1001, 1006, 1011});
+    policy.setMaxRetries(kAggressiveMaxRetries);
+    policy.setInitialDelay(kAggressiveInitialDelay);
+    policy.setBackoffMultiplier(kAggressiveBackoffMultiplier);
+    policy.setMaxDelay(kAggressiveMaxDelay);
+    policy.setRetriableCloseCodes(kDefaultRetriableCloseCodes);
     return policy;
 }
 

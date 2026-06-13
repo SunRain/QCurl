@@ -28,8 +28,10 @@ class QCWebSocketCompressionConfigData;
  *
  * @par 基本用法
  * @code
+ * QCWebSocketOptions options;
  * QCWebSocketCompressionConfig config = QCWebSocketCompressionConfig::defaultConfig();
- * socket->setCompressionConfig(config);
+ * options.setCompressionConfig(config);
+ * QCWebSocket socket(QUrl("wss://example.com"), options);
  * socket->open();
  * @endcode
  *

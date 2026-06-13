@@ -16,8 +16,8 @@
 #include "QCWebSocket.h"
 #include "QCWebSocketPool.h"
 #include "QCWebSocketTestServer.h"
-#include "test_websocket_evidence_utils.h"
 #include "test_wait_utils.h"
+#include "test_websocket_evidence_utils.h"
 
 #include <QCoreApplication>
 #include <QEvent>
@@ -78,8 +78,8 @@ void TestQCWebSocketPool::applyLocalWssConfig(QCWebSocketPool *target)
     if (!target) {
         return;
     }
-    auto config      = target->config();
-    auto sslConfig   = config.sslConfig();
+    auto config    = target->config();
+    auto sslConfig = config.sslConfig();
     sslConfig.setCaCertPath(m_caCertPath);
     config.setSslConfig(sslConfig);
     target->setConfig(config);
@@ -97,9 +97,7 @@ bool TestQCWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
 
     QSignalSpy spy(socket, &QCWebSocket::connected);
     return TestWaitUtils::waitUntil(
-        [&]() {
-            return socket->state() == QCWebSocket::State::Connected || spy.count() > 0;
-        },
+        [&]() { return socket->state() == QCWebSocket::State::Connected || spy.count() > 0; },
         timeout);
 }
 
@@ -170,7 +168,6 @@ void TestQCWebSocketPool::testConstructor()
     QCOMPARE(config2.maxPoolSize(), 5);
     QCOMPARE(config2.maxIdleTime(), 600);
     QCOMPARE(config2.enableKeepAlive(), false);
-
 }
 
 void TestQCWebSocketPool::testAcquireAndRelease()
@@ -181,9 +178,9 @@ void TestQCWebSocketPool::testAcquireAndRelease()
     pool = new QCWebSocketPool();
     applyLocalWssConfig(pool);
     const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
-    const QUrl url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testServerUrl,
-                                                              QStringLiteral("/"),
-                                                              caseId);
+    const QUrl url       = TestWebSocketEvidenceUtils::buildCaseUrl(m_testServerUrl,
+                                                                    QStringLiteral("/"),
+                                                                    caseId);
 
     // 获取连接
     auto *socket = pool->acquire(url);
@@ -212,27 +209,20 @@ void TestQCWebSocketPool::testAcquireAndRelease()
     QCOMPARE(stats.idleConnections(), 1);
 
     const QString handshakeError = TestWebSocketEvidenceUtils::verifyHandshakeEvidence(
-        m_artifactsPath,
-        caseId,
-        QStringLiteral("/"),
-        true,
-        1,
-        2000);
+        m_artifactsPath, caseId, QStringLiteral("/"), true, 1, 2000);
     QVERIFY2(handshakeError.isEmpty(), qPrintable(handshakeError));
-
 }
 
 void TestQCWebSocketPool::testConnectionReuse()
 {
-    QVERIFY2(!m_artifactsPath.isEmpty(),
-             "WSS evidence artifactsPath 为空，无法复核复用握手证据。");
+    QVERIFY2(!m_artifactsPath.isEmpty(), "WSS evidence artifactsPath 为空，无法复核复用握手证据。");
 
     pool = new QCWebSocketPool();
     applyLocalWssConfig(pool);
     const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
-    const QUrl url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testServerUrl,
-                                                              QStringLiteral("/"),
-                                                              caseId);
+    const QUrl url       = TestWebSocketEvidenceUtils::buildCaseUrl(m_testServerUrl,
+                                                                    QStringLiteral("/"),
+                                                                    caseId);
 
     // 第 1 次获取（创建新连接）
     auto *socket1 = pool->acquire(url);
@@ -260,12 +250,7 @@ void TestQCWebSocketPool::testConnectionReuse()
     pool->release(socket2);
 
     const QString handshakeError = TestWebSocketEvidenceUtils::verifyHandshakeEvidence(
-        m_artifactsPath,
-        caseId,
-        QStringLiteral("/"),
-        true,
-        1,
-        2000);
+        m_artifactsPath, caseId, QStringLiteral("/"), true, 1, 2000);
     QVERIFY2(handshakeError.isEmpty(), qPrintable(handshakeError));
 
     qDebug() << "连接复用命中率:" << stats2.hitRate() << "%";
@@ -297,7 +282,6 @@ void TestQCWebSocketPool::testMultipleUrls()
 
     pool->release(socket1);
     pool->release(socket2);
-
 }
 
 void TestQCWebSocketPool::testMaxPoolSize()
@@ -354,7 +338,6 @@ void TestQCWebSocketPool::testMaxPoolSize()
             pool->release(s);
         }
     }
-
 }
 
 // ============================================================================
@@ -391,7 +374,6 @@ void TestQCWebSocketPool::testPreWarm()
     QCOMPARE(stats.totalConnections(), 3);
     QCOMPARE(stats.activeConnections(), 0);
     QCOMPARE(stats.idleConnections(), 3);
-
 }
 
 void TestQCWebSocketPool::testClearPool()
@@ -448,7 +430,6 @@ void TestQCWebSocketPool::testStatistics()
     QCOMPARE(stats2.hitRate(), 50.0); // 1 hit / 2 total = 50%
 
     pool->release(socket2);
-
 }
 
 // ============================================================================
@@ -475,7 +456,6 @@ void TestQCWebSocketPool::testReleaseNullPointer()
 
     // 释放空指针（应该安全处理，不崩溃）
     pool->release(nullptr);
-
 }
 
 void TestQCWebSocketPool::testReleaseNonPooledSocket()
@@ -483,14 +463,14 @@ void TestQCWebSocketPool::testReleaseNonPooledSocket()
     pool = new QCWebSocketPool();
 
     // 创建一个不在池中的 socket
-    QCWebSocket *socket = new QCWebSocket(QUrl(QStringLiteral("wss://localhost:1")));
+    QCWebSocket *socket = new QCWebSocket(QUrl(QStringLiteral("wss://localhost:1")),
+                                          QCWebSocketOptions{});
 
     // 尝试释放（应该安全处理，发出警告但不崩溃）
     pool->release(socket);
 
     socket->deleteLater();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-
 }
 
 void TestQCWebSocketPool::testMaxTotalConnections()

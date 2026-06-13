@@ -87,17 +87,20 @@ public:
     // 自动重连状态（Other Extras / Preview）
     // ==================
 
-    /// 重连策略配置
-    QCWebSocketReconnectPolicy reconnectPolicy;
+    /// 连接配置。
+    QCWebSocketOptions options;
 
     /// 当前重连尝试次数（从 0 开始，连接成功后重置）
     int reconnectAttemptCount = 0;
 
-    /// 最后一次关闭的状态码（用于判断是否可重连）
-    int lastCloseCode = 0;
+    /// 最后一次关闭的状态码（用于判断是否可重连）。
+    QCWebSocket::CloseCode lastCloseCode = QCWebSocket::CloseCode::AbnormalClosure;
 
-    /// 是否启用自动 Pong（默认 true；false 时使用 CURLWS_NOAUTOPONG）
-    bool autoPongEnabled = true;
+    /// Close 帧携带的原始 wire 状态码；应用自定义码只用于 closeReceived 上报。
+    int lastWireCloseCode = static_cast<int>(QCWebSocket::CloseCode::AbnormalClosure);
+
+    /// 是否允许最后一个标准/内部合成关闭状态码参与 typed retry policy。
+    bool hasRetriableCloseCode = false;
 
     /// 重连定时器（用于延迟重连）
     QTimer *reconnectTimer = nullptr;
@@ -105,9 +108,6 @@ public:
     // ==================
     // SSL/TLS 配置（v2.4.1）
     // ==================
-
-    /// SSL 配置（默认为安全配置：启用证书验证）
-    QCNetworkSslConfig sslConfig;
 
     /// libcurl TLS 字符串选项需要在 easy handle 生命周期内保持有效。
     QByteArray sslCaInfoUtf8;
@@ -118,9 +118,6 @@ public:
     // ==================
     // 压缩配置（Other Extras / Preview）
     // ==================
-
-    /// WebSocket 压缩配置（RFC 7692 permessage-deflate）
-    QCWebSocketCompressionConfig compressionConfig;
 
     /// 压缩是否已协商成功
     bool compressionNegotiated = false;
@@ -267,7 +264,7 @@ public:
      * - 如果应该重连，设置延迟定时器
      * - 如果不重连，发射 disconnected() 信号
      */
-    void handleDisconnection(int closeCode);
+    void handleDisconnection(QCWebSocket::CloseCode closeCode);
 
     /**
      * @brief 尝试重新连接

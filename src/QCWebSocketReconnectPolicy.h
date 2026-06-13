@@ -9,6 +9,7 @@
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCGlobal.h"
+#include "QCWebSocket.h"
 
 #include <QSet>
 #include <QSharedDataPointer>
@@ -25,7 +26,7 @@ class QCWebSocketReconnectPolicyData;
  * 提供 WebSocket 连接断开后的自动重连参数配置，包括：
  * - 最大重连次数
  * - 指数退避算法参数（初始延迟、退避乘数、最大延迟）
- * - 可重连的 CloseCode 集合
+ * - 可重连的强类型 CloseCode 集合
  *
  * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
  *
@@ -38,16 +39,19 @@ class QCWebSocketReconnectPolicyData;
  * @par 示例
  * @code
  * // 使用标准重连策略
- * QCWebSocket socket(QUrl("wss://example.com"));
- * socket.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
+ * QCWebSocketOptions options;
+ * options.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
+ * QCWebSocket socket(QUrl("wss://example.com"), options);
  *
  * // 自定义重连策略
  * QCWebSocketReconnectPolicy policy;
  * policy.setMaxRetries(5);
  * policy.setInitialDelay(std::chrono::milliseconds(2000));
  * policy.setBackoffMultiplier(1.5);
- * policy.setRetriableCloseCodes({1001, 1006, 1011});
- * socket.setReconnectPolicy(policy);
+ * policy.setRetriableCloseCodes({QCWebSocket::CloseCode::GoingAway,
+                                QCWebSocket::CloseCode::AbnormalClosure,
+                                QCWebSocket::CloseCode::InternalError});
+ * options.setReconnectPolicy(policy);
  * @endcode
  *
  */
@@ -89,8 +93,10 @@ public:
     void setMaxDelay(std::chrono::milliseconds delay) noexcept;
 
     /// 返回允许触发重连的 WebSocket CloseCode 集合。
-    [[nodiscard]] QSet<int> retriableCloseCodes() const;
-    void setRetriableCloseCodes(const QSet<int> &closeCodes);
+    using CloseCodeSet = QSet<QCWebSocket::CloseCode>;
+
+    [[nodiscard]] CloseCodeSet retriableCloseCodes() const;
+    void setRetriableCloseCodes(const CloseCodeSet &closeCodes);
 
     // ==================
     // 核心方法
@@ -107,7 +113,7 @@ public:
      * 1. attemptCount <= maxRetries
      * 2. closeCode 在 retriableCloseCodes 集合中
      */
-    [[nodiscard]] bool shouldRetry(int closeCode, int attemptCount) const;
+    [[nodiscard]] bool shouldRetry(QCWebSocket::CloseCode closeCode, int attemptCount) const;
 
     /**
      * @brief 计算重连延迟时间

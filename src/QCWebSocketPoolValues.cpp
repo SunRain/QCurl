@@ -6,17 +6,27 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr int kDefaultMaxPoolSize              = 10;
+constexpr int kDefaultMaxIdleTimeSeconds       = 300;
+constexpr int kDefaultMinIdleConnections       = 2;
+constexpr int kDefaultMaxTotalConnections      = 50;
+constexpr int kDefaultKeepAliveIntervalSeconds = 30;
+
+} // namespace
+
 /// QCWebSocketPoolConfig 的共享负载；仅保存可复制的配置值。
 class QCWebSocketPoolConfigData : public QSharedData
 {
 public:
-    int maxPoolSize = 10;
-    int maxIdleTime = 300;
-    int minIdleConnections = 2;
-    int maxTotalConnections = 50;
-    bool enableKeepAlive = true;
-    int keepAliveInterval = 30;
-    bool autoReconnect = true;
+    int maxPoolSize         = kDefaultMaxPoolSize;
+    int maxIdleTime         = kDefaultMaxIdleTimeSeconds;
+    int minIdleConnections  = kDefaultMinIdleConnections;
+    int maxTotalConnections = kDefaultMaxTotalConnections;
+    bool enableKeepAlive    = true;
+    int keepAliveInterval   = kDefaultKeepAliveIntervalSeconds;
+    bool autoReconnect      = true;
     QCNetworkSslConfig sslConfig;
 };
 
@@ -24,18 +34,17 @@ public:
 class QCWebSocketPoolStatsData : public QSharedData
 {
 public:
-    int totalConnections = 0;
+    int totalConnections  = 0;
     int activeConnections = 0;
-    int idleConnections = 0;
-    int hitCount = 0;
-    int missCount = 0;
-    double hitRate = 0.0;
+    int idleConnections   = 0;
+    int hitCount          = 0;
+    int missCount         = 0;
+    double hitRate        = 0.0;
 };
 
 QCWebSocketPoolConfig::QCWebSocketPoolConfig()
     : d(new QCWebSocketPoolConfigData)
-{
-}
+{}
 
 QCWebSocketPoolConfig::QCWebSocketPoolConfig(const QCWebSocketPoolConfig &other) = default;
 
@@ -43,8 +52,7 @@ QCWebSocketPoolConfig::QCWebSocketPoolConfig(QCWebSocketPoolConfig &&other) noex
 
 QCWebSocketPoolConfig::~QCWebSocketPoolConfig() = default;
 
-QCWebSocketPoolConfig &QCWebSocketPoolConfig::operator=(
-    const QCWebSocketPoolConfig &other) = default;
+QCWebSocketPoolConfig &QCWebSocketPoolConfig::operator=(const QCWebSocketPoolConfig &other) = default;
 
 QCWebSocketPoolConfig &QCWebSocketPoolConfig::operator=(
     QCWebSocketPoolConfig &&other) noexcept = default;
@@ -131,8 +139,7 @@ void QCWebSocketPoolConfig::setSslConfig(const QCNetworkSslConfig &config)
 
 QCWebSocketPoolStats::QCWebSocketPoolStats()
     : d(new QCWebSocketPoolStatsData)
-{
-}
+{}
 
 QCWebSocketPoolStats::QCWebSocketPoolStats(const QCWebSocketPoolStats &other) = default;
 
@@ -140,8 +147,7 @@ QCWebSocketPoolStats::QCWebSocketPoolStats(QCWebSocketPoolStats &&other) noexcep
 
 QCWebSocketPoolStats::~QCWebSocketPoolStats() = default;
 
-QCWebSocketPoolStats &QCWebSocketPoolStats::operator=(
-    const QCWebSocketPoolStats &other) = default;
+QCWebSocketPoolStats &QCWebSocketPoolStats::operator=(const QCWebSocketPoolStats &other) = default;
 
 QCWebSocketPoolStats &QCWebSocketPoolStats::operator=(
     QCWebSocketPoolStats &&other) noexcept = default;

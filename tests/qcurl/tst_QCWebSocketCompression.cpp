@@ -6,9 +6,12 @@
  * 
  */
 
+#include "QCWebSocket.h"
 #include "QCWebSocketCompressionConfig.h"
 
 #include <QtTest/QtTest>
+
+#include <limits>
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
@@ -30,6 +33,9 @@ private slots:
     // 算法测试（集成测试需要实际 WebSocket 服务器）
     void testCompressionConfig_WindowBitsValidation();
     void testCompressionConfig_CompressionLevelValidation();
+
+    // Options value type tests
+    void testOptions_ConnectTimeoutValidation();
 };
 
 // ============================================================================
@@ -83,7 +89,7 @@ void tst_QCWebSocketCompression::testCompressionConfig_ExtensionHeader()
 
     // 启用且使用默认值
     config.setEnabled(true);
-    header         = config.toExtensionHeader();
+    header = config.toExtensionHeader();
     QVERIFY(header.contains("permessage-deflate"));
     QVERIFY(!header.contains("client_max_window_bits")); // 默认15不显示
     QVERIFY(!header.contains("server_max_window_bits"));
@@ -91,14 +97,14 @@ void tst_QCWebSocketCompression::testCompressionConfig_ExtensionHeader()
     // 自定义窗口大小
     config.setClientMaxWindowBits(12);
     config.setServerMaxWindowBits(10);
-    header                     = config.toExtensionHeader();
+    header = config.toExtensionHeader();
     QVERIFY(header.contains("client_max_window_bits=12"));
     QVERIFY(header.contains("server_max_window_bits=10"));
 
     // 无上下文接管
     config.setClientNoContextTakeover(true);
     config.setServerNoContextTakeover(true);
-    header                         = config.toExtensionHeader();
+    header = config.toExtensionHeader();
     QVERIFY(header.contains("client_no_context_takeover"));
     QVERIFY(header.contains("server_no_context_takeover"));
 }
@@ -161,7 +167,7 @@ void tst_QCWebSocketCompression::testCompressionConfig_WindowBitsValidation()
     QCWebSocketCompressionConfig config15;
     config15.setEnabled(true);
     config15.setClientMaxWindowBits(15);
-    QString header15             = config15.toExtensionHeader();
+    QString header15 = config15.toExtensionHeader();
     QVERIFY(!header15.contains("client_max_window_bits")); // 默认值不显示
 }
 
@@ -178,6 +184,37 @@ void tst_QCWebSocketCompression::testCompressionConfig_CompressionLevelValidatio
 
         // 验证级别存储正确
         QCOMPARE(config.compressionLevel(), level);
+    }
+}
+
+void tst_QCWebSocketCompression::testOptions_ConnectTimeoutValidation()
+{
+    QCWebSocketOptions options;
+    const auto originalTimeout = options.connectTimeout();
+
+    QString error;
+    QVERIFY(!options.setConnectTimeout(std::chrono::milliseconds{0}, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.connectTimeout().count(), originalTimeout.count());
+
+    error.clear();
+    QVERIFY(!options.setConnectTimeout(std::chrono::milliseconds{-1}, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.connectTimeout().count(), originalTimeout.count());
+
+    const auto validTimeout = std::chrono::milliseconds{1500};
+    error.clear();
+    QVERIFY(options.setConnectTimeout(validTimeout, &error));
+    QCOMPARE(options.connectTimeout().count(), validTimeout.count());
+
+    using Rep = std::chrono::milliseconds::rep;
+    if constexpr (std::numeric_limits<Rep>::max() > std::numeric_limits<long>::max()) {
+        const auto tooLargeTimeout = std::chrono::milliseconds{
+            static_cast<Rep>(std::numeric_limits<long>::max()) + Rep{1}};
+        error.clear();
+        QVERIFY(!options.setConnectTimeout(tooLargeTimeout, &error));
+        QVERIFY(!error.isEmpty());
+        QCOMPARE(options.connectTimeout().count(), validTimeout.count());
     }
 }
 

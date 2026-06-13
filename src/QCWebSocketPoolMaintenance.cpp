@@ -12,24 +12,34 @@
 #include <QMutexLocker>
 #include <QTimer>
 
+#include <chrono>
+
 namespace QCurl {
+
+namespace {
+
+constexpr std::chrono::seconds kConnectionWaitTimeout{5};
+
+} // namespace
 
 QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
 {
-    QCWebSocket *socket = new QCWebSocket(url, this);
+    QCWebSocketOptions options;
 
     // 应用 Preview 自动重连策略（如果启用）
     if (d_ptr->config.autoReconnect()) {
-        socket->setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
+        options.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
     }
 
     // 应用 SSL/TLS 配置（用于 WSS + 自定义 CA 等）
-    socket->setSslConfig(d_ptr->config.sslConfig());
+    options.setSslConfig(d_ptr->config.sslConfig());
+
+    QCWebSocket *socket = new QCWebSocket(url, options, this);
 
     // 连接断开信号
     connect(socket, &QCWebSocket::disconnected, this, &QCWebSocketPool::onSocketDisconnected);
 
-    // 同步连接（阻塞等待，最多 5 秒）
+    // 同步连接，等待时间由 pool 内部策略控制。
     socket->open();
 
     QEventLoop loop;
@@ -39,7 +49,7 @@ QCWebSocket *QCWebSocketPool::createNewConnection(const QUrl &url)
     connect(socket, &QCWebSocket::connected, &loop, &QEventLoop::quit);
     connect(socket, &QCWebSocket::errorOccurred, &loop, &QEventLoop::quit);
 
-    timeout.start(5000);
+    timeout.start(std::chrono::duration_cast<std::chrono::milliseconds>(kConnectionWaitTimeout));
     loop.exec();
 
     if (socket->state() != QCWebSocket::State::Connected) {

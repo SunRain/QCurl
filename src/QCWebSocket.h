@@ -13,16 +13,56 @@
 #include <QByteArray>
 #include <QObject>
 #include <QScopedPointer>
+#include <QSharedDataPointer>
 #include <QString>
 #include <QUrl>
+
+#include <chrono>
 
 namespace QCurl {
 
 // 前向声明
 class QCWebSocketPrivate;
+class QCWebSocketOptionsData;
 class QCWebSocketReconnectPolicy;
 class QCNetworkSslConfig;
 struct QCWebSocketCompressionConfig;
+
+/**
+ * @brief WebSocket 连接配置值类型。
+ *
+ * 统一承载连接超时、TLS、重连、压缩和自动 Pong 配置。
+ */
+class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketOptions
+{
+public:
+    QCWebSocketOptions();
+    QCWebSocketOptions(const QCWebSocketOptions &other);
+    QCWebSocketOptions(QCWebSocketOptions &&other) noexcept;
+    ~QCWebSocketOptions();
+
+    QCWebSocketOptions &operator=(const QCWebSocketOptions &other);
+    QCWebSocketOptions &operator=(QCWebSocketOptions &&other) noexcept;
+
+    [[nodiscard]] std::chrono::milliseconds connectTimeout() const noexcept;
+    [[nodiscard]] bool setConnectTimeout(std::chrono::milliseconds timeout,
+                                         QString *error = nullptr);
+
+    [[nodiscard]] QCNetworkSslConfig sslConfig() const;
+    void setSslConfig(const QCNetworkSslConfig &config);
+
+    [[nodiscard]] QCWebSocketReconnectPolicy reconnectPolicy() const;
+    void setReconnectPolicy(const QCWebSocketReconnectPolicy &policy);
+
+    [[nodiscard]] QCWebSocketCompressionConfig compressionConfig() const;
+    void setCompressionConfig(const QCWebSocketCompressionConfig &config);
+
+    [[nodiscard]] bool autoPongEnabled() const noexcept;
+    void setAutoPongEnabled(bool enabled) noexcept;
+
+private:
+    QSharedDataPointer<QCWebSocketOptionsData> d;
+};
 
 /**
  * @brief WebSocket 客户端
@@ -79,9 +119,12 @@ public:
      * @brief 构造函数
      *
      * @param url WebSocket 服务器 URL（ws:// 或 wss://）
+     * @param options WebSocket 连接配置值类型
      * @param parent 父对象（可选）
      */
-    explicit QCWebSocket(const QUrl &url, QObject *parent = nullptr);
+    explicit QCWebSocket(const QUrl &url,
+                         const QCWebSocketOptions &options,
+                         QObject *parent = nullptr);
 
     /**
      * @brief 析构函数
@@ -169,7 +212,7 @@ public:
     /**
      * @brief 发送 Pong 帧
      *
-     * 当启用 NOAUTOPONG（setAutoPongEnabled(false)）时，可用于手动响应服务端的 Ping。
+     * 当启用 NOAUTOPONG（options().setAutoPongEnabled(false) 后 setOptions()）时，可用于手动响应服务端的 Ping。
      *
      * @param payload 可选的载荷数据（最大 125 字节）
      *
@@ -178,88 +221,16 @@ public:
     void pong(const QByteArray &payload = QByteArray());
 
     /**
-     * @brief 设置是否启用自动 Pong
-     *
-     * - enabled=true（默认）：由 libcurl 自动处理 Ping→Pong
-     * - enabled=false：禁用自动 Pong（CURLWS_NOAUTOPONG），应用需在 pingReceived() 中自行回复
-     * pong()
-     *
-     * @note 必须在下一次 open() 之前设置；Connecting / Connected / Closing 状态下调用会
-     *       warning 并保持旧值不变
+     * @brief 返回 WebSocket 配置。
      */
-    void setAutoPongEnabled(bool enabled);
+    [[nodiscard]] QCWebSocketOptions options() const;
 
     /**
-     * @brief 查询是否启用自动 Pong
+     * @brief 设置 WebSocket 配置。
+     *
+     * 只能在未连接状态或 Closed 状态下调用。
      */
-    [[nodiscard]] bool isAutoPongEnabled() const;
-
-    // ==================
-    // 自动重连配置
-    // ==================
-
-    /**
-     * @brief 设置自动重连策略
-     *
-     * 配置连接断开后的自动重连行为。
-     *
-     * @param policy 重连策略配置
-     * @see QCWebSocketReconnectPolicy, reconnectPolicy(), reconnectAttempt()
-     */
-    void setReconnectPolicy(const QCWebSocketReconnectPolicy &policy);
-
-    /**
-     * @brief 获取当前的重连策略
-     * @return QCWebSocketReconnectPolicy 当前配置的重连策略
-     */
-    [[nodiscard]] QCWebSocketReconnectPolicy reconnectPolicy() const;
-
-    // ==================
-    // SSL/TLS 配置
-    // ==================
-
-    /**
-     * @brief 设置 SSL/TLS 配置
-     *
-     * 用于 wss:// 协议的证书验证、客户端证书等配置。
-     * 默认启用对等证书验证和主机名验证（安全配置）。
-     *
-     * @param config SSL 配置对象
-     * @warning 生产环境务必启用证书验证（verifyPeer=true, verifyHost=true）
-     */
-    void setSslConfig(const QCNetworkSslConfig &config);
-
-    /**
-     * @brief 获取当前 SSL 配置
-     * @return SSL 配置对象
-     */
-    [[nodiscard]] QCNetworkSslConfig sslConfig() const;
-
-    // ==================
-    // 压缩配置
-    // ==================
-
-    /**
-     * @brief 设置 WebSocket 压缩配置
-     *
-     * 启用 RFC 7692 permessage-deflate 扩展，对 WebSocket 消息进行压缩。
-     * 压缩设置必须在下一次调用 open() 之前配置；Connecting / Connected / Closing
-     * 状态下调用会 warning 并保持旧值不变。
-     *
-     * @param config 压缩配置对象
-     * @note 服务器可能不支持压缩，或修改压缩参数。使用 isCompressionNegotiated()
-     *       检查实际协商结果。
-     *
-     * @see QCWebSocketCompressionConfig, isCompressionNegotiated(), compressionStats()
-     */
-    void setCompressionConfig(const QCWebSocketCompressionConfig &config);
-
-    /**
-     * @brief 获取当前压缩配置
-     *
-     * @return QCWebSocketCompressionConfig 当前配置的压缩参数
-     */
-    [[nodiscard]] QCWebSocketCompressionConfig compressionConfig() const;
+    [[nodiscard]] bool setOptions(const QCWebSocketOptions &options, QString *error = nullptr);
 
     /**
      * @brief 检查压缩是否已协商成功
@@ -372,14 +343,14 @@ Q_SIGNALS:
      *
      * @param payload Ping 帧载荷数据
      *
-     * @note 当禁用自动 Pong（setAutoPongEnabled(false)）时，应用需显式调用 pong() 回复
+     * @note 当禁用自动 Pong（options().setAutoPongEnabled(false) 后 setOptions()）时，应用需显式调用 pong() 回复
      */
     void pingReceived(const QByteArray &payload);
 
     /**
      * @brief 接收到 Close 帧信号
      *
-     * @param closeCode 关闭状态码（RFC 6455）
+     * @param closeCode Close 帧携带的 wire 状态码（RFC 6455）
      * @param reason 关闭原因（UTF-8）
      */
     void closeReceived(int closeCode, const QString &reason);
@@ -407,9 +378,9 @@ Q_SIGNALS:
      *
      * @param attemptCount 当前重连尝试次数（从 1 开始）
      * @param closeCode 导致断开的关闭状态码
-     * @see setReconnectPolicy(), QCWebSocketReconnectPolicy
+     * @see setOptions(), QCWebSocketReconnectPolicy
      */
-    void reconnectAttempt(int attemptCount, int closeCode);
+    void reconnectAttempt(int attemptCount, CloseCode closeCode);
 
 private:
     Q_DECLARE_PRIVATE(QCWebSocket)
