@@ -9,6 +9,40 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr std::chrono::milliseconds kDefaultTimeout{5000};
+constexpr std::chrono::milliseconds kMinTimeout{1};
+constexpr std::chrono::seconds kMaxTimeout{60};
+constexpr int kDefaultDiagnosticsPort   = 443;
+constexpr int kDefaultPingCount         = 4;
+constexpr int kDefaultTracerouteMaxHops = 30;
+constexpr int kMinTcpPort               = 1;
+constexpr int kMaxTcpPort               = 65535;
+constexpr int kMinCount                 = 1;
+constexpr int kMaxPingCount             = 100;
+constexpr int kMaxTracerouteMaxHops     = 255;
+
+bool failOption(QString *error, const QString &message)
+{
+    if (error) {
+        *error = message;
+    }
+    return false;
+}
+
+} // namespace
+
+/// QCNetworkDiagnosticsOptions 的共享负载，保存同步诊断的可调参数。
+class QCNetworkDiagnosticsOptionsData : public QSharedData
+{
+public:
+    std::chrono::milliseconds timeout = kDefaultTimeout;
+    int port                          = kDefaultDiagnosticsPort;
+    int pingCount                     = kDefaultPingCount;
+    int tracerouteMaxHops             = kDefaultTracerouteMaxHops;
+};
+
 /// DiagResult 的共享负载；details 字段不承诺稳定 schema。
 class DiagResultData : public QSharedData
 {
@@ -21,10 +55,87 @@ public:
     QString errorString;
 };
 
+QCNetworkDiagnosticsOptions::QCNetworkDiagnosticsOptions()
+    : d(new QCNetworkDiagnosticsOptionsData)
+{}
+
+QCNetworkDiagnosticsOptions::QCNetworkDiagnosticsOptions(
+    const QCNetworkDiagnosticsOptions &other) = default;
+
+QCNetworkDiagnosticsOptions::QCNetworkDiagnosticsOptions(
+    QCNetworkDiagnosticsOptions &&other) noexcept = default;
+
+QCNetworkDiagnosticsOptions::~QCNetworkDiagnosticsOptions() = default;
+
+QCNetworkDiagnosticsOptions &QCNetworkDiagnosticsOptions::operator=(
+    const QCNetworkDiagnosticsOptions &other) = default;
+
+QCNetworkDiagnosticsOptions &QCNetworkDiagnosticsOptions::operator=(
+    QCNetworkDiagnosticsOptions &&other) noexcept = default;
+
+std::chrono::milliseconds QCNetworkDiagnosticsOptions::timeout() const noexcept
+{
+    return d->timeout;
+}
+
+bool QCNetworkDiagnosticsOptions::setTimeout(std::chrono::milliseconds timeout, QString *error)
+{
+    if (timeout < kMinTimeout || timeout > kMaxTimeout) {
+        return failOption(error, QStringLiteral("timeout 必须在 1ms..60s 范围内"));
+    }
+
+    d->timeout = timeout;
+    return true;
+}
+
+int QCNetworkDiagnosticsOptions::port() const noexcept
+{
+    return d->port;
+}
+
+bool QCNetworkDiagnosticsOptions::setPort(int port, QString *error)
+{
+    if (port < kMinTcpPort || port > kMaxTcpPort) {
+        return failOption(error, QStringLiteral("port 必须在 1..65535 范围内"));
+    }
+
+    d->port = port;
+    return true;
+}
+
+int QCNetworkDiagnosticsOptions::pingCount() const noexcept
+{
+    return d->pingCount;
+}
+
+bool QCNetworkDiagnosticsOptions::setPingCount(int count, QString *error)
+{
+    if (count < kMinCount || count > kMaxPingCount) {
+        return failOption(error, QStringLiteral("pingCount 必须在 1..100 范围内"));
+    }
+
+    d->pingCount = count;
+    return true;
+}
+
+int QCNetworkDiagnosticsOptions::tracerouteMaxHops() const noexcept
+{
+    return d->tracerouteMaxHops;
+}
+
+bool QCNetworkDiagnosticsOptions::setTracerouteMaxHops(int hops, QString *error)
+{
+    if (hops < kMinCount || hops > kMaxTracerouteMaxHops) {
+        return failOption(error, QStringLiteral("tracerouteMaxHops 必须在 1..255 范围内"));
+    }
+
+    d->tracerouteMaxHops = hops;
+    return true;
+}
+
 DiagResult::DiagResult()
     : d(new DiagResultData)
-{
-}
+{}
 
 DiagResult::DiagResult(const DiagResult &other) = default;
 

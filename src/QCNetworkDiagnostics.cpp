@@ -11,13 +11,26 @@
 #include <QHostInfo>
 #include <QTimer>
 
+#include <limits>
+
 namespace QCurl {
+
+namespace {
+
+int timeoutMs(const QCNetworkDiagnosticsOptions &options)
+{
+    const auto timeout = options.timeout().count();
+    return static_cast<int>(std::min<qint64>(timeout, std::numeric_limits<int>::max()));
+}
+
+} // namespace
 
 // ==================
 // DNS 解析
 // ==================
 
-DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout)
+DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname,
+                                            const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
@@ -28,7 +41,8 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
     QHostInfo info;
     bool lookupCompleted = false;
 
-    if (timeout > 0) {
+    const int timeout = timeoutMs(options);
+    {
         QEventLoop loop;
         QTimer timeoutTimer;
         timeoutTimer.setSingleShot(true);
@@ -56,10 +70,6 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
             result.setDetail(QStringLiteral("timeoutMs"), timeout);
             return result;
         }
-    } else {
-        // 兼容：timeout <= 0 时沿用阻塞式解析
-        info            = QHostInfo::fromName(hostname);
-        lookupCompleted = true;
     }
 
     result.setDurationMs(timer.elapsed());
@@ -90,7 +100,8 @@ DiagResult QCNetworkDiagnostics::resolveDNS(const QString &hostname, int timeout
     return result;
 }
 
-DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
+DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip,
+                                            const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
@@ -101,7 +112,8 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
     QHostInfo info;
     bool lookupCompleted = false;
 
-    if (timeout > 0) {
+    const int timeout = timeoutMs(options);
+    {
         QEventLoop loop;
         QTimer timeoutTimer;
         timeoutTimer.setSingleShot(true);
@@ -127,10 +139,6 @@ DiagResult QCNetworkDiagnostics::reverseDNS(const QString &ip, int timeout)
             result.setDetail(QStringLiteral("timeoutMs"), timeout);
             return result;
         }
-    } else {
-        // 兼容：timeout <= 0 时沿用阻塞式解析
-        info            = QHostInfo::fromName(ip);
-        lookupCompleted = true;
     }
 
     result.setDurationMs(timer.elapsed());

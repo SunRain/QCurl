@@ -10,19 +10,56 @@
 #include <QProcess>
 #include <QRegularExpression>
 
+#include <limits>
+
 namespace QCurl {
+
+namespace {
+
+constexpr int kProcessGraceTimeoutMs           = 5000;
+constexpr int kTracerouteProcessGraceTimeoutMs = 10000;
+
+int timeoutMs(const QCNetworkDiagnosticsOptions &options)
+{
+    const auto timeout = options.timeout().count();
+    return static_cast<int>(std::min<qint64>(timeout, std::numeric_limits<int>::max()));
+}
+
+bool tryProcessWaitTimeoutMs(int timeoutMs, int multiplier, int graceMs, int *out)
+{
+    const qint64 waitMs = (static_cast<qint64>(timeoutMs) * multiplier) + graceMs;
+    if (waitMs > std::numeric_limits<int>::max()) {
+        return false;
+    }
+    *out = static_cast<int>(waitMs);
+    return true;
+}
+
+} // namespace
 
 // ==================
 // Ping 测试
 // ==================
 
-DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeout)
+DiagResult QCNetworkDiagnostics::ping(const QString &host,
+                                      const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
 
     QElapsedTimer timer;
     timer.start();
+
+    const int count        = options.pingCount();
+    const int timeout      = timeoutMs(options);
+    int processWaitTimeout = 0;
+    if (!tryProcessWaitTimeoutMs(timeout, count, kProcessGraceTimeoutMs, &processWaitTimeout)) {
+        result.setSuccess(false);
+        result.setSummary(QStringLiteral("Ping 配置无效: %1").arg(host));
+        result.setErrorString(QStringLiteral("派生 waitForFinished 超时超过 int 表达范围"));
+        result.setDurationMs(timer.elapsed());
+        return result;
+    }
 
     // 1. 先解析 DNS
     QHostInfo hostInfo = QHostInfo::fromName(host);
@@ -34,7 +71,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
         return result;
     }
 
-    QString resolvedIP           = hostInfo.addresses().first().toString();
+    QString resolvedIP = hostInfo.addresses().first().toString();
     result.setDetail(QStringLiteral("host"), host);
     result.setDetail(QStringLiteral("resolvedIP"), resolvedIP);
 
@@ -58,7 +95,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
     QProcess process;
     process.start(pingCmd, pingArgs);
 
-    if (!process.waitForFinished(timeout * count + 5000)) {
+    if (!process.waitForFinished(processWaitTimeout)) {
         result.setSuccess(false);
         result.setSummary(QStringLiteral("Ping 超时: %1").arg(host));
         result.setErrorString(QStringLiteral("进程执行超时"));
@@ -67,7 +104,7 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
         return result;
     }
 
-    QString output    = QString::fromLocal8Bit(process.readAllStandardOutput());
+    QString output = QString::fromLocal8Bit(process.readAllStandardOutput());
     result.setDurationMs(timer.elapsed());
 
     // 4. 解析输出
@@ -120,9 +157,9 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
 
         result.setSuccess(true);
         result.setSummary(QStringLiteral("Ping 成功: %1 (%2), 平均 %3ms, 丢包率 %4%")
-                             .arg(host, resolvedIP)
-                             .arg(avgRTT)
-                             .arg(lossRate, 0, 'f', 1));
+                              .arg(host, resolvedIP)
+                              .arg(avgRTT)
+                              .arg(lossRate, 0, 'f', 1));
     } else {
         result.setSuccess(false);
         result.setSummary(QStringLiteral("Ping 失败: %1, 100% 丢包").arg(host));
@@ -136,13 +173,28 @@ DiagResult QCNetworkDiagnostics::ping(const QString &host, int count, int timeou
 // Traceroute 路由跟踪
 // ==================
 
-DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, int timeout)
+DiagResult QCNetworkDiagnostics::traceroute(const QString &host,
+                                            const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
 
     QElapsedTimer timer;
     timer.start();
+
+    const int maxHops      = options.tracerouteMaxHops();
+    const int timeout      = timeoutMs(options);
+    int processWaitTimeout = 0;
+    if (!tryProcessWaitTimeoutMs(timeout,
+                                 maxHops,
+                                 kTracerouteProcessGraceTimeoutMs,
+                                 &processWaitTimeout)) {
+        result.setSuccess(false);
+        result.setSummary(QStringLiteral("Traceroute 配置无效: %1").arg(host));
+        result.setErrorString(QStringLiteral("派生 waitForFinished 超时超过 int 表达范围"));
+        result.setDurationMs(timer.elapsed());
+        return result;
+    }
 
     // 1. 先解析 DNS
     QHostInfo hostInfo = QHostInfo::fromName(host);
@@ -154,7 +206,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
         return result;
     }
 
-    QString resolvedIP           = hostInfo.addresses().first().toString();
+    QString resolvedIP = hostInfo.addresses().first().toString();
     result.setDetail(QStringLiteral("host"), host);
     result.setDetail(QStringLiteral("resolvedIP"), resolvedIP);
 
@@ -178,7 +230,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     QProcess process;
     process.start(traceCmd, traceArgs);
 
-    if (!process.waitForFinished(timeout * maxHops + 10000)) {
+    if (!process.waitForFinished(processWaitTimeout)) {
         result.setSuccess(false);
         result.setSummary(QStringLiteral("Traceroute 超时: %1").arg(host));
         result.setErrorString(QStringLiteral("进程执行超时"));
@@ -187,7 +239,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
         return result;
     }
 
-    QString output    = QString::fromLocal8Bit(process.readAllStandardOutput());
+    QString output = QString::fromLocal8Bit(process.readAllStandardOutput());
     result.setDurationMs(timer.elapsed());
 
     // 4. 解析输出
@@ -206,7 +258,7 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
         if (match.hasMatch()) {
             QVariantMap hop;
             hop[QStringLiteral("hopNumber")] = match.captured(1).toInt();
-            QString ipStr    = match.captured(3);
+            QString ipStr                    = match.captured(3);
 
             if (ipStr == QStringLiteral("*")) {
                 hop[QStringLiteral("ip")]      = QStringLiteral("timeout");
@@ -273,8 +325,8 @@ DiagResult QCNetworkDiagnostics::traceroute(const QString &host, int maxHops, in
     if (!hops.isEmpty()) {
         result.setSuccess(true);
         result.setSummary(QStringLiteral("Traceroute 完成: %1 (%2), 共 %3 跳")
-                             .arg(host, resolvedIP)
-                             .arg(hops.size()));
+                              .arg(host, resolvedIP)
+                              .arg(hops.size()));
     } else {
         result.setSuccess(false);
         result.setSummary(QStringLiteral("Traceroute 失败: %1").arg(host));

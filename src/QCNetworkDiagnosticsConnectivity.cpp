@@ -15,9 +15,20 @@
 #include <QTcpSocket>
 #include <QTimer>
 
+#include <limits>
+
 namespace QCurl {
 
 namespace {
+
+constexpr int kDefaultHttpPort  = 80;
+constexpr int kDefaultHttpsPort = 443;
+
+int timeoutMs(const QCNetworkDiagnosticsOptions &options)
+{
+    const auto timeout = options.timeout().count();
+    return static_cast<int>(std::min<qint64>(timeout, std::numeric_limits<int>::max()));
+}
 
 QVariantMap diagResultToVariantMap(const DiagResult &result)
 {
@@ -37,13 +48,17 @@ QVariantMap diagResultToVariantMap(const DiagResult &result)
 // 连接测试
 // ==================
 
-DiagResult QCNetworkDiagnostics::testConnection(const QString &host, int port, int timeout)
+DiagResult QCNetworkDiagnostics::testConnection(const QString &host,
+                                                const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
 
     QElapsedTimer timer;
     timer.start();
+
+    const int port    = options.port();
+    const int timeout = timeoutMs(options);
 
     QTcpSocket socket;
     QEventLoop loop;
@@ -90,13 +105,17 @@ DiagResult QCNetworkDiagnostics::testConnection(const QString &host, int port, i
 // SSL 检查
 // ==================
 
-DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int timeout)
+DiagResult QCNetworkDiagnostics::checkSSL(const QString &host,
+                                          const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
 
     QElapsedTimer timer;
     timer.start();
+
+    const int port    = options.port();
+    const int timeout = timeoutMs(options);
 
     QSslSocket socket;
     QEventLoop loop;
@@ -140,10 +159,11 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
         result.setDetail(QStringLiteral("notBefore"), cert.effectiveDate());
         result.setDetail(QStringLiteral("notAfter"), cert.expiryDate());
 
-        int daysValid                = QDateTime::currentDateTime().daysTo(cert.expiryDate());
+        int daysValid = QDateTime::currentDateTime().daysTo(cert.expiryDate());
         result.setDetail(QStringLiteral("daysValid"), daysValid);
-        result.setDetail(QStringLiteral("tlsVersion"), socket.sessionProtocol() == QSsl::TlsV1_3 ? QStringLiteral("TLSv1.3")
-                                                        : QStringLiteral("TLSv1.2"));
+        result.setDetail(QStringLiteral("tlsVersion"),
+                         socket.sessionProtocol() == QSsl::TlsV1_3 ? QStringLiteral("TLSv1.3")
+                                                                   : QStringLiteral("TLSv1.2"));
         result.setDetail(QStringLiteral("verified"), socket.sslHandshakeErrors().isEmpty());
 
         socket.close();
@@ -178,13 +198,16 @@ DiagResult QCNetworkDiagnostics::checkSSL(const QString &host, int port, int tim
 // HTTP 探测
 // ==================
 
-DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
+DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url,
+                                           const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
 
     QElapsedTimer timer;
     timer.start();
+
+    const int timeout = timeoutMs(options);
 
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
@@ -230,7 +253,8 @@ DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url, int timeout)
 // 综合诊断
 // ==================
 
-DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
+DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url,
+                                          const QCNetworkDiagnosticsOptions &options)
 {
     DiagResult result;
     result.setTimestamp(QDateTime::currentDateTime());
@@ -239,13 +263,23 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
     timer.start();
 
     QString host = url.host();
-    int port     = url.port(url.scheme() == QStringLiteral("https") ? 443 : 80);
     bool isHttps = url.scheme() == QStringLiteral("https");
 
+    QCNetworkDiagnosticsOptions stepOptions = options;
+    const int defaultPort                   = isHttps ? kDefaultHttpsPort : kDefaultHttpPort;
+    QString optionError;
+    if (!stepOptions.setPort(url.port(defaultPort), &optionError)) {
+        result.setSuccess(false);
+        result.setSummary(QStringLiteral("诊断失败: URL 端口无效"));
+        result.setErrorString(optionError);
+        result.setDurationMs(timer.elapsed());
+        result.setDetail(QStringLiteral("overallHealth"), QStringLiteral("error"));
+        return result;
+    }
     bool hasSslWarning = false;
 
     // 1. DNS 解析
-    DiagResult dnsResult  = resolveDNS(host);
+    DiagResult dnsResult = resolveDNS(host, stepOptions);
     result.setDetail(QStringLiteral("dns"), QVariant::fromValue(diagResultToVariantMap(dnsResult)));
 
     if (!dnsResult.success()) {
@@ -259,8 +293,9 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
     }
 
     // 2. 连接测试
-    DiagResult connResult        = testConnection(host, port);
-    result.setDetail(QStringLiteral("connection"), QVariant::fromValue(diagResultToVariantMap(connResult)));
+    DiagResult connResult = testConnection(host, stepOptions);
+    result.setDetail(QStringLiteral("connection"),
+                     QVariant::fromValue(diagResultToVariantMap(connResult)));
 
     if (!connResult.success()) {
         result.setSuccess(false);
@@ -274,8 +309,9 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
 
     // 3. SSL 检查（HTTPS）
     if (isHttps) {
-        DiagResult sslResult  = checkSSL(host, port);
-        result.setDetail(QStringLiteral("ssl"), QVariant::fromValue(diagResultToVariantMap(sslResult)));
+        DiagResult sslResult = checkSSL(host, stepOptions);
+        result.setDetail(QStringLiteral("ssl"),
+                         QVariant::fromValue(diagResultToVariantMap(sslResult)));
 
         if (!sslResult.success()) {
             hasSslWarning = true;
@@ -283,21 +319,19 @@ DiagResult QCNetworkDiagnostics::diagnose(const QUrl &url)
     }
 
     // 4. HTTP 探测
-    DiagResult httpResult  = probeHTTP(url);
-    result.setDetail(QStringLiteral("http"), QVariant::fromValue(diagResultToVariantMap(httpResult)));
+    DiagResult httpResult = probeHTTP(url, stepOptions);
+    result.setDetail(QStringLiteral("http"),
+                     QVariant::fromValue(diagResultToVariantMap(httpResult)));
 
     result.setDurationMs(timer.elapsed());
 
     if (httpResult.success()) {
         result.setSuccess(true);
         result.setSummary(hasSslWarning
-                                              ? QStringLiteral("综合诊断完成（SSL 警告）: %1")
-                                                    .arg(url.toString())
-                                              : QStringLiteral("综合诊断完成: %1")
-                                                    .arg(url.toString()));
-        result.setDetail(QStringLiteral("overallHealth"), hasSslWarning
-                                                              ? QStringLiteral("warning")
-                                                              : QStringLiteral("excellent"));
+                              ? QStringLiteral("综合诊断完成（SSL 警告）: %1").arg(url.toString())
+                              : QStringLiteral("综合诊断完成: %1").arg(url.toString()));
+        result.setDetail(QStringLiteral("overallHealth"),
+                         hasSslWarning ? QStringLiteral("warning") : QStringLiteral("excellent"));
     } else {
         result.setSuccess(false);
         result.setSummary(QStringLiteral("诊断失败: HTTP 探测失败"));

@@ -14,12 +14,33 @@
 #include <QUrl>
 #include <QtTest/QtTest>
 
+#include <chrono>
+#include <limits>
+
 using namespace QCurl;
 
 namespace {
 
 constexpr int kLocalHttpbinRetryAttempts = 3;
 constexpr int kLocalHttpbinRetryDelayMs  = 200;
+
+QCNetworkDiagnosticsOptions diagnosticsOptions(int timeoutMs)
+{
+    QCNetworkDiagnosticsOptions options;
+    QString error;
+    const bool ok = options.setTimeout(std::chrono::milliseconds{timeoutMs}, &error);
+    Q_ASSERT_X(ok, "diagnosticsOptions", qPrintable(error));
+    return options;
+}
+
+QCNetworkDiagnosticsOptions diagnosticsOptions(int timeoutMs, int port)
+{
+    QCNetworkDiagnosticsOptions options = diagnosticsOptions(timeoutMs);
+    QString error;
+    const bool ok = options.setPort(port, &error);
+    Q_ASSERT_X(ok, "diagnosticsOptions", qPrintable(error));
+    return options;
+}
 
 QString diagMessage(const DiagResult &result)
 {
@@ -41,7 +62,7 @@ DiagResult probeHttpWithRetry(const QUrl &url,
 {
     DiagResult lastResult;
     for (int attempt = 0; attempt < attempts; ++attempt) {
-        lastResult = QCNetworkDiagnostics::probeHTTP(url, timeoutMs);
+        lastResult = QCNetworkDiagnostics::probeHTTP(url, diagnosticsOptions(timeoutMs));
         if (lastResult.success() || lastResult.details().contains("statusCode")) {
             return lastResult;
         }
@@ -58,7 +79,7 @@ DiagResult diagnoseWithRetry(const QUrl &url,
 {
     DiagResult lastResult;
     for (int attempt = 0; attempt < attempts; ++attempt) {
-        lastResult = QCNetworkDiagnostics::diagnose(url);
+        lastResult = QCNetworkDiagnostics::diagnose(url, QCNetworkDiagnosticsOptions{});
         if (lastResult.success()) {
             return lastResult;
         }
@@ -81,6 +102,7 @@ private slots:
 
     // 1. DiagResult 结构测试
     void testDiagResult_ToString();
+    void testOptionsRejectOutOfRangeValues();
 
     // 2. DNS 解析测试
     void testResolveDNS_ValidDomain();
@@ -149,8 +171,7 @@ void tst_QCNetworkDiagnostics::initTestCase()
     }
 }
 
-void tst_QCNetworkDiagnostics::cleanupTestCase()
-{}
+void tst_QCNetworkDiagnostics::cleanupTestCase() {}
 
 bool tst_QCNetworkDiagnostics::hasNetworkAccess() const
 {
@@ -226,9 +247,38 @@ void tst_QCNetworkDiagnostics::testDiagResult_ToString()
     // 测试失败情况
     result.setSuccess(false);
     result.setErrorString("测试错误");
-    str                = result.toString();
+    str = result.toString();
     QVERIFY(str.contains("❌"));
     QVERIFY(str.contains("测试错误"));
+}
+
+void tst_QCNetworkDiagnostics::testOptionsRejectOutOfRangeValues()
+{
+    QCNetworkDiagnosticsOptions options;
+    QString error;
+
+    QVERIFY(options.setTimeout(std::chrono::milliseconds{1}, &error));
+    QCOMPARE(options.timeout(), std::chrono::milliseconds{1});
+    QVERIFY(options.setTimeout(std::chrono::seconds{60}, &error));
+    QCOMPARE(options.timeout(), std::chrono::seconds{60});
+    QVERIFY(!options.setTimeout(std::chrono::milliseconds{0}, &error));
+    QVERIFY(error.contains(QStringLiteral("1ms")));
+    QVERIFY(!options.setTimeout(std::chrono::milliseconds{60001}, &error));
+    QVERIFY(error.contains(QStringLiteral("60s")));
+    QVERIFY(!options.setTimeout(std::chrono::milliseconds{std::numeric_limits<int>::max()}, &error));
+    QCOMPARE(options.timeout(), std::chrono::seconds{60});
+
+    QVERIFY(options.setPingCount(100, &error));
+    QCOMPARE(options.pingCount(), 100);
+    QVERIFY(!options.setPingCount(101, &error));
+    QVERIFY(error.contains(QStringLiteral("100")));
+    QCOMPARE(options.pingCount(), 100);
+
+    QVERIFY(options.setTracerouteMaxHops(255, &error));
+    QCOMPARE(options.tracerouteMaxHops(), 255);
+    QVERIFY(!options.setTracerouteMaxHops(256, &error));
+    QVERIFY(error.contains(QStringLiteral("255")));
+    QCOMPARE(options.tracerouteMaxHops(), 255);
 }
 
 // ============================================================================
@@ -244,7 +294,7 @@ void tst_QCNetworkDiagnostics::testResolveDNS_ValidDomain()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::resolveDNS("example.com", 5000);
+    auto result = QCNetworkDiagnostics::resolveDNS("example.com", diagnosticsOptions(5000));
 
     QVERIFY(result.success());
     QVERIFY(result.summary().contains("DNS 解析成功"));
@@ -261,7 +311,8 @@ void tst_QCNetworkDiagnostics::testResolveDNS_ValidDomain()
 
 void tst_QCNetworkDiagnostics::testResolveDNS_InvalidDomain()
 {
-    auto result = QCNetworkDiagnostics::resolveDNS("this-domain-does-not-exist-12345.com", 2000);
+    auto result = QCNetworkDiagnostics::resolveDNS("this-domain-does-not-exist-12345.com",
+                                                   diagnosticsOptions(2000));
 
     // 注意：某些 DNS 服务器（如运营商 DNS）可能提供搜索建议或导航页面
     // 因此不强制要求失败，只验证基本功能
@@ -277,7 +328,7 @@ void tst_QCNetworkDiagnostics::testResolveDNS_InvalidDomain()
 
 void tst_QCNetworkDiagnostics::testResolveDNS_Localhost()
 {
-    auto result = QCNetworkDiagnostics::resolveDNS("localhost", 1000);
+    auto result = QCNetworkDiagnostics::resolveDNS("localhost", diagnosticsOptions(1000));
 
     QVERIFY(result.success());
     QCOMPARE(result.details()["hostname"].toString(), QStringLiteral("localhost"));
@@ -296,7 +347,7 @@ void tst_QCNetworkDiagnostics::testResolveDNS_IPv6Support()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::resolveDNS("google.com", 5000);
+    auto result = QCNetworkDiagnostics::resolveDNS("google.com", diagnosticsOptions(5000));
 
     if (result.success()) {
         // 检查是否支持 IPv6
@@ -321,7 +372,7 @@ void tst_QCNetworkDiagnostics::testReverseDNS_ValidIP()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::reverseDNS("8.8.8.8", 5000);
+    auto result = QCNetworkDiagnostics::reverseDNS("8.8.8.8", diagnosticsOptions(5000));
 
     QVERIFY(result.success());
     QVERIFY(result.summary().contains("反向 DNS 解析成功"));
@@ -332,7 +383,7 @@ void tst_QCNetworkDiagnostics::testReverseDNS_ValidIP()
 
 void tst_QCNetworkDiagnostics::testReverseDNS_InvalidIP()
 {
-    auto result = QCNetworkDiagnostics::reverseDNS("256.256.256.256", 2000);
+    auto result = QCNetworkDiagnostics::reverseDNS("256.256.256.256", diagnosticsOptions(2000));
 
     // 注意：无效的 IP 格式应该失败，但某些系统可能有不同行为
     if (!result.success()) {
@@ -357,7 +408,7 @@ void tst_QCNetworkDiagnostics::testConnection_ValidHost()
     }
 
     // 测试连接到 Google DNS (8.8.8.8:53)
-    auto result = QCNetworkDiagnostics::testConnection("8.8.8.8", 53, 5000);
+    auto result = QCNetworkDiagnostics::testConnection("8.8.8.8", diagnosticsOptions(5000, 53));
 
     if (result.success()) {
         QVERIFY(result.summary().contains("连接成功"));
@@ -373,7 +424,7 @@ void tst_QCNetworkDiagnostics::testConnection_ValidHost()
 void tst_QCNetworkDiagnostics::testConnection_InvalidHost()
 {
     // 连接到不存在的主机（使用 TEST-NET-1 保留地址段 192.0.2.0/24）
-    auto result = QCNetworkDiagnostics::testConnection("192.0.2.1", 12345, 2000);
+    auto result = QCNetworkDiagnostics::testConnection("192.0.2.1", diagnosticsOptions(2000, 12345));
 
     // 注意：某些网络环境可能有特殊路由配置
     if (!result.success()) {
@@ -389,8 +440,8 @@ void tst_QCNetworkDiagnostics::testConnection_Timeout()
 {
     // 连接到一个不可达的 IP 地址
     auto startTime = QDateTime::currentMSecsSinceEpoch();
-    auto result    = QCNetworkDiagnostics::testConnection("10.255.255.1", 81, 1000);
-    auto elapsed   = QDateTime::currentMSecsSinceEpoch() - startTime;
+    auto result = QCNetworkDiagnostics::testConnection("10.255.255.1", diagnosticsOptions(1000, 81));
+    auto elapsed = QDateTime::currentMSecsSinceEpoch() - startTime;
 
     QVERIFY(!result.success());
     // 验证超时时间大致正确（允许 ±500ms 误差）
@@ -417,7 +468,8 @@ void tst_QCNetworkDiagnostics::testConnection_CommonPorts()
     QList<PortTest> tests = {{"google.com", 80, "HTTP"}, {"google.com", 443, "HTTPS"}};
 
     for (const auto &test : tests) {
-        auto result = QCNetworkDiagnostics::testConnection(test.host, test.port, 5000);
+        auto result = QCNetworkDiagnostics::testConnection(test.host,
+                                                           diagnosticsOptions(5000, test.port));
         if (result.success()) {
             qDebug() << test.description << "连接成功:" << test.host << ":" << test.port;
             QVERIFY(result.details()["connected"].toBool());
@@ -438,7 +490,7 @@ void tst_QCNetworkDiagnostics::testCheckSSL_ValidCertificate()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::checkSSL("google.com", 443, 10000);
+    auto result = QCNetworkDiagnostics::checkSSL("google.com", diagnosticsOptions(10000, 443));
 
     if (!result.success()) {
         QSKIP(qPrintable(
@@ -463,7 +515,8 @@ void tst_QCNetworkDiagnostics::testCheckSSL_ExpiredCertificate()
     }
 
     // expired.badssl.com 是一个专门用于测试过期证书的网站
-    auto result = QCNetworkDiagnostics::checkSSL("expired.badssl.com", 443, 10000);
+    auto result = QCNetworkDiagnostics::checkSSL("expired.badssl.com",
+                                                 diagnosticsOptions(10000, 443));
 
     // 期望连接失败或证书无效
     if (!result.success()) {
@@ -486,7 +539,8 @@ void tst_QCNetworkDiagnostics::testCheckSSL_SelfSignedCertificate()
     }
 
     // self-signed.badssl.com 是一个专门用于测试自签名证书的网站
-    auto result = QCNetworkDiagnostics::checkSSL("self-signed.badssl.com", 443, 10000);
+    auto result = QCNetworkDiagnostics::checkSSL("self-signed.badssl.com",
+                                                 diagnosticsOptions(10000, 443));
 
     // 期望 SSL 验证失败（但在部分网络环境中可能被代理/阻断，需容错）
     if (result.success()) {
@@ -514,7 +568,7 @@ void tst_QCNetworkDiagnostics::testCheckSSL_CertificateDetails()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::checkSSL("www.github.com", 443, 10000);
+    auto result = QCNetworkDiagnostics::checkSSL("www.github.com", diagnosticsOptions(10000, 443));
 
     if (result.success()) {
         // 验证证书详情字段存在
@@ -564,7 +618,8 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_ValidURL()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("http://example.com"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("http://example.com"),
+                                                  diagnosticsOptions(10000));
 
     QVERIFY(result.success());
     QVERIFY(result.summary().contains("HTTP 探测成功"));
@@ -581,11 +636,12 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_HTTPS()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"),
+                                                  diagnosticsOptions(10000));
 
     if (!result.success()) {
-        QSKIP(qPrintable(
-            QStringLiteral("HTTPS 探测失败（网络/代理/证书环境相关）: %1").arg(result.errorString())));
+        QSKIP(qPrintable(QStringLiteral("HTTPS 探测失败（网络/代理/证书环境相关）: %1")
+                             .arg(result.errorString())));
     }
     QVERIFY(result.details()["statusCode"].toInt() == 200
             || result.details()["statusCode"].toInt() == 301
@@ -602,7 +658,8 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_Redirect()
     }
 
     // http://google.com 会重定向到 https://www.google.com
-    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("http://google.com"), 10000);
+    auto result = QCNetworkDiagnostics::probeHTTP(QUrl("http://google.com"),
+                                                  diagnosticsOptions(10000));
 
     if (result.success()) {
         QString finalURL = result.details()["finalURL"].toString();
@@ -624,7 +681,7 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_404NotFound()
 {
     QUrl url;
     const bool useLocalHttpbin = httpbinBaseUrl().isValid() && !httpbinBaseUrl().isEmpty();
-    const QUrl localUrl = httpbinUrl(QStringLiteral("/status/404"));
+    const QUrl localUrl        = httpbinUrl(QStringLiteral("/status/404"));
     if (localUrl.isValid() && !localUrl.isEmpty()) {
         url = localUrl;
     } else {
@@ -637,12 +694,14 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_404NotFound()
         url = QUrl(QStringLiteral("https://httpbin.org/status/404"));
     }
 
-    const auto result = useLocalHttpbin ? probeHttpWithRetry(url, 10000)
-                                        : QCNetworkDiagnostics::probeHTTP(url, 10000);
+    const auto result = useLocalHttpbin
+                            ? probeHttpWithRetry(url, 10000)
+                            : QCNetworkDiagnostics::probeHTTP(url, diagnosticsOptions(10000));
 
     if (!result.details().contains("statusCode") && useLocalHttpbin) {
         const QByteArray skipReason
-            = QStringLiteral("本地 httpbin `/status/404` 未返回稳定 HTTP 状态，跳过以避免环境误报: %1")
+            = QStringLiteral(
+                  "本地 httpbin `/status/404` 未返回稳定 HTTP 状态，跳过以避免环境误报: %1")
                   .arg(diagMessage(result))
                   .toUtf8();
         QSKIP(skipReason.constData());
@@ -656,7 +715,7 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_TimingBreakdown()
 {
     QUrl url;
     const bool useLocalHttpbin = httpbinBaseUrl().isValid() && !httpbinBaseUrl().isEmpty();
-    const QUrl localUrl = httpbinUrl(QStringLiteral("/get"));
+    const QUrl localUrl        = httpbinUrl(QStringLiteral("/get"));
     if (localUrl.isValid() && !localUrl.isEmpty()) {
         url = localUrl;
     } else {
@@ -669,8 +728,9 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_TimingBreakdown()
         url = QUrl(QStringLiteral("https://example.com"));
     }
 
-    const auto result = useLocalHttpbin ? probeHttpWithRetry(url, 10000)
-                                        : QCNetworkDiagnostics::probeHTTP(url, 10000);
+    const auto result = useLocalHttpbin
+                            ? probeHttpWithRetry(url, 10000)
+                            : QCNetworkDiagnostics::probeHTTP(url, diagnosticsOptions(10000));
 
     if (useLocalHttpbin && !result.success()) {
         const QByteArray skipReason
@@ -696,7 +756,7 @@ void tst_QCNetworkDiagnostics::testDiagnose_CompleteFlow()
 {
     QUrl url;
     const bool useLocalHttpbin = httpbinBaseUrl().isValid() && !httpbinBaseUrl().isEmpty();
-    const QUrl localUrl = httpbinUrl(QStringLiteral("/get"));
+    const QUrl localUrl        = httpbinUrl(QStringLiteral("/get"));
     if (localUrl.isValid() && !localUrl.isEmpty()) {
         url = localUrl;
     } else {
@@ -709,13 +769,15 @@ void tst_QCNetworkDiagnostics::testDiagnose_CompleteFlow()
         url = QUrl(QStringLiteral("http://example.com"));
     }
 
-    const auto result = useLocalHttpbin ? diagnoseWithRetry(url) : QCNetworkDiagnostics::diagnose(url);
+    const auto result = useLocalHttpbin
+                            ? diagnoseWithRetry(url)
+                            : QCNetworkDiagnostics::diagnose(url, QCNetworkDiagnosticsOptions{});
 
     if (useLocalHttpbin && !result.success()) {
-        const QByteArray skipReason
-            = QStringLiteral("本地 httpbin 综合诊断未稳定成功，跳过以避免环境误报: %1")
-                  .arg(diagMessage(result))
-                  .toUtf8();
+        const QByteArray skipReason = QStringLiteral(
+                                          "本地 httpbin 综合诊断未稳定成功，跳过以避免环境误报: %1")
+                                          .arg(diagMessage(result))
+                                          .toUtf8();
         QSKIP(skipReason.constData());
     }
 
@@ -734,8 +796,8 @@ void tst_QCNetworkDiagnostics::testDiagnose_CompleteFlow()
 void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
 {
     QUrl url;
-    const QUrl localUrl         = httpbinBaseUrl();
-    const bool useLocalHttpbin  = localUrl.isValid() && !localUrl.isEmpty();
+    const QUrl localUrl        = httpbinBaseUrl();
+    const bool useLocalHttpbin = localUrl.isValid() && !localUrl.isEmpty();
     if (localUrl.isValid() && !localUrl.isEmpty()) {
         url = localUrl;
     } else {
@@ -748,7 +810,9 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
         url = QUrl(QStringLiteral("http://httpbin.org"));
     }
 
-    const auto result = useLocalHttpbin ? diagnoseWithRetry(url) : QCNetworkDiagnostics::diagnose(url);
+    const auto result = useLocalHttpbin
+                            ? diagnoseWithRetry(url)
+                            : QCNetworkDiagnostics::diagnose(url, QCNetworkDiagnosticsOptions{});
 
     if (useLocalHttpbin && !result.success()) {
         const QByteArray skipReason
@@ -762,7 +826,8 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSite()
         QVERIFY2(result.details().contains("dns"), qPrintable(diagMessage(result)));
         QVERIFY2(result.details().contains("connection"), qPrintable(diagMessage(result)));
         QVERIFY2(result.details().contains("http"), qPrintable(diagMessage(result)));
-        QVERIFY2(!result.details().contains("ssl"), qPrintable(diagMessage(result))); // HTTP 不检查 SSL
+        QVERIFY2(!result.details().contains("ssl"),
+                 qPrintable(diagMessage(result))); // HTTP 不检查 SSL
     }
 }
 
@@ -775,7 +840,8 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSSite()
         QSKIP("无网络连接");
     }
 
-    auto result = QCNetworkDiagnostics::diagnose(QUrl("https://www.github.com"));
+    auto result = QCNetworkDiagnostics::diagnose(QUrl("https://www.github.com"),
+                                                 QCNetworkDiagnosticsOptions{});
 
     if (result.success()) {
         QVERIFY(result.details().contains("dns"));
@@ -788,7 +854,8 @@ void tst_QCNetworkDiagnostics::testDiagnose_HTTPSSite()
 void tst_QCNetworkDiagnostics::testDiagnose_FailedDNS()
 {
     auto result = QCNetworkDiagnostics::diagnose(
-        QUrl("http://this-domain-absolutely-does-not-exist-12345.com"));
+        QUrl("http://this-domain-absolutely-does-not-exist-12345.com"),
+        QCNetworkDiagnosticsOptions{});
 
     // 注意：某些 DNS 服务器可能提供搜索建议
     QVERIFY(result.details().contains("dns"));
@@ -807,7 +874,8 @@ void tst_QCNetworkDiagnostics::testDiagnose_FailedDNS()
 void tst_QCNetworkDiagnostics::testDiagnose_FailedConnection()
 {
     // 连接到不可达的地址
-    auto result = QCNetworkDiagnostics::diagnose(QUrl("http://192.0.2.1:12345"));
+    auto result = QCNetworkDiagnostics::diagnose(QUrl("http://192.0.2.1:12345"),
+                                                 QCNetworkDiagnosticsOptions{});
 
     QVERIFY(!result.success());
     // 可能在 DNS 或连接阶段失败

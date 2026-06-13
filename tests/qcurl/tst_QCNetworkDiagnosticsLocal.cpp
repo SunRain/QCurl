@@ -25,6 +25,24 @@ using namespace QCurl;
 
 namespace {
 
+QCNetworkDiagnosticsOptions diagnosticsOptions(int timeoutMs)
+{
+    QCNetworkDiagnosticsOptions options;
+    QString error;
+    const bool ok = options.setTimeout(std::chrono::milliseconds{timeoutMs}, &error);
+    Q_ASSERT_X(ok, "diagnosticsOptions", qPrintable(error));
+    return options;
+}
+
+QCNetworkDiagnosticsOptions diagnosticsOptions(int timeoutMs, int port)
+{
+    QCNetworkDiagnosticsOptions options = diagnosticsOptions(timeoutMs);
+    QString error;
+    const bool ok = options.setPort(port, &error);
+    Q_ASSERT_X(ok, "diagnosticsOptions", qPrintable(error));
+    return options;
+}
+
 QString diagMessage(const DiagResult &result)
 {
     QString message = result.toString().trimmed();
@@ -101,7 +119,7 @@ private:
 
                              const QByteArray requestLine
                                  = requestBuffer->left(headerEnd).split('\n').value(0).trimmed();
-                             QList<QByteArray> parts = requestLine.split(' ');
+                             QList<QByteArray> parts  = requestLine.split(' ');
                              const QByteArray rawPath = parts.size() >= 2 ? parts.at(1).trimmed()
                                                                           : QByteArrayLiteral("/");
                              const int queryPos       = rawPath.indexOf('?');
@@ -213,10 +231,7 @@ private:
         QObject::connect(socket, &QSslSocket::encrypted, socket, [socket]() {
             socket->disconnectFromHost();
         });
-        QObject::connect(socket,
-                         &QAbstractSocket::disconnected,
-                         socket,
-                         &QObject::deleteLater);
+        QObject::connect(socket, &QAbstractSocket::disconnected, socket, &QObject::deleteLater);
 
         socket->startServerEncryption();
     }
@@ -233,8 +248,8 @@ private:
 QString tlsFixturePath(const QString &fileName)
 {
     const QString appDir = QCoreApplication::applicationDirPath();
-    return QDir(appDir).absoluteFilePath(QStringLiteral("../../tests/qcurl/testdata/http2/%1")
-                                             .arg(fileName));
+    return QDir(appDir).absoluteFilePath(
+        QStringLiteral("../../tests/qcurl/testdata/http2/%1").arg(fileName));
 }
 
 } // namespace
@@ -262,18 +277,24 @@ void tst_QCNetworkDiagnosticsLocal::initTestCase()
     m_certPath = tlsFixturePath(QStringLiteral("localhost.crt"));
     m_keyPath  = tlsFixturePath(QStringLiteral("localhost.key"));
 
-    QVERIFY2(QFile::exists(m_certPath), qPrintable(QStringLiteral("缺少 TLS 证书: %1").arg(m_certPath)));
-    QVERIFY2(QFile::exists(m_keyPath), qPrintable(QStringLiteral("缺少 TLS 私钥: %1").arg(m_keyPath)));
+    QVERIFY2(QFile::exists(m_certPath),
+             qPrintable(QStringLiteral("缺少 TLS 证书: %1").arg(m_certPath)));
+    QVERIFY2(QFile::exists(m_keyPath),
+             qPrintable(QStringLiteral("缺少 TLS 私钥: %1").arg(m_keyPath)));
 }
 
 void tst_QCNetworkDiagnosticsLocal::testResolveDNSLocalhost()
 {
-    const auto result = QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"), 1000);
+    const auto result = QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"),
+                                                         diagnosticsOptions(1000));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
-    QCOMPARE(result.details().value(QStringLiteral("hostname")).toString(), QStringLiteral("localhost"));
-    QVERIFY(result.details().value(QStringLiteral("ipv4")).toStringList().contains(
-        QStringLiteral("127.0.0.1")));
+    QCOMPARE(result.details().value(QStringLiteral("hostname")).toString(),
+             QStringLiteral("localhost"));
+    QVERIFY(result.details()
+                .value(QStringLiteral("ipv4"))
+                .toStringList()
+                .contains(QStringLiteral("127.0.0.1")));
 }
 
 void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalSuccess()
@@ -281,7 +302,8 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalSuccess()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/health")), 3000);
+    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/health")),
+                                                        diagnosticsOptions(3000));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QCOMPARE(result.details().value(QStringLiteral("statusCode")).toInt(), 200);
@@ -294,7 +316,8 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalNotFound()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/missing")), 3000);
+    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/missing")),
+                                                        diagnosticsOptions(3000));
 
     QVERIFY2(!result.success(), qPrintable(diagMessage(result)));
     QVERIFY2(result.summary().contains(QStringLiteral("HTTP 探测失败")),
@@ -309,7 +332,8 @@ void tst_QCNetworkDiagnosticsLocal::testDiagnoseLocalHTTP()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::diagnose(server.url(QStringLiteral("/diagnose")));
+    const auto result = QCNetworkDiagnostics::diagnose(server.url(QStringLiteral("/diagnose")),
+                                                       diagnosticsOptions(3000));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QCOMPARE(result.details().value(QStringLiteral("overallHealth")).toString(),
@@ -335,7 +359,8 @@ void tst_QCNetworkDiagnosticsLocal::testCheckSSLLocalFixture()
     LocalTlsServer server(m_certPath, m_keyPath);
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::checkSSL(QStringLiteral("localhost"), server.port(), 4000);
+    const auto result = QCNetworkDiagnostics::checkSSL(QStringLiteral("localhost"),
+                                                       diagnosticsOptions(4000, server.port()));
 
     QVERIFY2(server.connectionCount() > 0, "本地 TLS fixture 未收到任何连接");
     QVERIFY(!result.details().value(QStringLiteral("timedOut")).toBool());
@@ -350,7 +375,8 @@ void tst_QCNetworkDiagnosticsLocal::testCheckSSLLocalFixture()
 
     QVERIFY2(result.summary().contains(QStringLiteral("SSL 握手失败")),
              qPrintable(diagMessage(result)));
-    QVERIFY(result.details().contains(QStringLiteral("sslErrors")) || !result.errorString().isEmpty());
+    QVERIFY(result.details().contains(QStringLiteral("sslErrors"))
+            || !result.errorString().isEmpty());
 }
 
 QTEST_MAIN(tst_QCNetworkDiagnosticsLocal)
