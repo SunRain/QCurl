@@ -1,7 +1,7 @@
 #include "QCCurlMultiManager.h"
-
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -20,7 +20,7 @@ bool QCCurlMultiManager::configureMultiCallbacks(const char *context)
         return false;
     }
 
-    bool ok = true;
+    bool ok          = true;
     auto setCallback = [&](CURLMoption option, auto value, const char *name) {
         const CURLMcode ret = curl_multi_setopt(m_multiHandle, option, value);
         if (ret != CURLM_OK) {
@@ -62,7 +62,8 @@ bool QCCurlMultiManager::recreateMultiHandleForLimits()
 
     m_multiHandle = curl_multi_init();
     if (!m_multiHandle) {
-        qCritical() << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
+        qCritical()
+            << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
         return false;
     }
 
@@ -84,12 +85,10 @@ void QCCurlMultiManager::wakeup()
         return;
     }
 
-#if defined(LIBCURL_VERSION_NUM) && (LIBCURL_VERSION_NUM >= 0x074400)
-    const CURLMcode wakeupCode = curl_multi_wakeup(m_multiHandle);
+    const CURLMcode wakeupCode = Internal::CurlOptions::wakeupMultiHandle(m_multiHandle);
     if (wakeupCode != CURLM_OK) {
         qWarning() << "QCCurlMultiManager::wakeup: curl_multi_wakeup failed:" << wakeupCode;
     }
-#endif
 
     QTimer::singleShot(0, this, [this]() { handleSocketAction(CURL_SOCKET_TIMEOUT, 0); });
 }
@@ -105,9 +104,9 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
 
     int runningHandles = 0;
     CURLMcode ret      = curl_multi_socket_action(m_multiHandle,
-                                             socketfd,
-                                             eventsBitmask,
-                                             &runningHandles);
+                                                  socketfd,
+                                                  eventsBitmask,
+                                                  &runningHandles);
 
     if (ret != CURLM_OK) {
         qWarning() << "QCCurlMultiManager::handleSocketAction: curl_multi_socket_action failed:"
@@ -141,8 +140,8 @@ void QCCurlMultiManager::checkMultiInfo()
     } while (messagesLeft > 0);
 }
 
-std::optional<QCCurlMultiManager::FinishedTransfer>
-QCCurlMultiManager::takeFinishedTransferLocked(CURLMsg *message)
+std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::takeFinishedTransferLocked(
+    CURLMsg *message)
 {
     if (!message || message->msg != CURLMSG_DONE || !message->easy_handle) {
         return std::nullopt;
@@ -285,7 +284,7 @@ void QCCurlMultiManager::updateReadNotifier(SocketInfo *socketInfo, int what)
 
     if (!socketInfo->readNotifier) {
         const curl_socket_t socketfd = socketInfo->socketfd;
-        socketInfo->readNotifier = new QSocketNotifier(socketfd, QSocketNotifier::Read, this);
+        socketInfo->readNotifier     = new QSocketNotifier(socketfd, QSocketNotifier::Read, this);
         connect(socketInfo->readNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
             qDebug() << "QCCurlMultiManager: Read event on socket" << socketfd;
             handleSocketAction(socketfd, CURL_CSELECT_IN);
@@ -306,7 +305,7 @@ void QCCurlMultiManager::updateWriteNotifier(SocketInfo *socketInfo, int what)
 
     if (!socketInfo->writeNotifier) {
         const curl_socket_t socketfd = socketInfo->socketfd;
-        socketInfo->writeNotifier = new QSocketNotifier(socketfd, QSocketNotifier::Write, this);
+        socketInfo->writeNotifier    = new QSocketNotifier(socketfd, QSocketNotifier::Write, this);
         connect(socketInfo->writeNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
             qDebug() << "QCCurlMultiManager: Write event on socket" << socketfd;
             handleSocketAction(socketfd, CURL_CSELECT_OUT);

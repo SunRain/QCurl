@@ -1,7 +1,7 @@
 #include "QCCurlMultiManager.h"
-
 #include "QCNetworkAccessManager.h"
 
+#include <QByteArrayView>
 #include <QDateTime>
 #include <QMutexLocker>
 #include <QTimeZone>
@@ -12,6 +12,25 @@
 namespace QCurl {
 
 namespace {
+
+enum class NetscapeCookieField : qsizetype {
+    Domain            = 0,
+    IncludeSubdomains = 1,
+    Path              = 2,
+    Secure            = 3,
+    Expires           = 4,
+    Name              = 5,
+    Value             = 6,
+    Count             = 7,
+};
+
+constexpr QByteArrayView kHttpOnlyPrefix{"#HttpOnly_"};
+constexpr QByteArrayView kCookieJarTrueValue{"TRUE"};
+
+[[nodiscard]] qsizetype cookieFieldIndex(NetscapeCookieField field)
+{
+    return static_cast<qsizetype>(field);
+}
 
 bool isCapabilityRelatedCurlError(CURLcode code)
 {
@@ -83,25 +102,26 @@ std::optional<QCCookie> parseCurlCookieLine(const QByteArray &line)
     }
 
     const QList<QByteArray> parts = line.split('\t');
-    if (parts.size() < 7) {
+    if (parts.size() < cookieFieldIndex(NetscapeCookieField::Count)) {
         return std::nullopt;
     }
 
-    QByteArray domainBytes                  = parts.at(0);
-    const QByteArray includeSubdomainsBytes = parts.at(1);
-    const bool includeSubdomains            = includeSubdomainsBytes.trimmed().toUpper() == "TRUE";
-    bool httpOnly                           = false;
-    static const QByteArray kHttpOnlyPrefix = "#HttpOnly_";
+    QByteArray domainBytes = parts.at(cookieFieldIndex(NetscapeCookieField::Domain));
+    const QByteArray includeSubdomainsBytes = parts.at(
+        cookieFieldIndex(NetscapeCookieField::IncludeSubdomains));
+    const bool includeSubdomains = includeSubdomainsBytes.trimmed().toUpper()
+                                   == kCookieJarTrueValue;
+    bool httpOnly                = false;
     if (domainBytes.startsWith(kHttpOnlyPrefix)) {
         httpOnly    = true;
         domainBytes = domainBytes.mid(kHttpOnlyPrefix.size());
     }
 
-    const QByteArray pathBytes    = parts.at(2);
-    const QByteArray secureBytes  = parts.at(3);
-    const QByteArray expiresBytes = parts.at(4);
-    const QByteArray nameBytes    = parts.at(5);
-    const QByteArray valueBytes   = parts.at(6);
+    const QByteArray pathBytes    = parts.at(cookieFieldIndex(NetscapeCookieField::Path));
+    const QByteArray secureBytes  = parts.at(cookieFieldIndex(NetscapeCookieField::Secure));
+    const QByteArray expiresBytes = parts.at(cookieFieldIndex(NetscapeCookieField::Expires));
+    const QByteArray nameBytes    = parts.at(cookieFieldIndex(NetscapeCookieField::Name));
+    const QByteArray valueBytes   = parts.at(cookieFieldIndex(NetscapeCookieField::Value));
 
     QCCookie cookie(nameBytes, valueBytes);
     QString domain = QString::fromUtf8(domainBytes);
@@ -118,7 +138,7 @@ std::optional<QCCookie> parseCurlCookieLine(const QByteArray &line)
     }
     cookie.setDomain(domain);
     cookie.setPath(QString::fromUtf8(pathBytes));
-    cookie.setSecure(secureBytes.trimmed().toUpper() == "TRUE");
+    cookie.setSecure(secureBytes.trimmed().toUpper() == kCookieJarTrueValue);
     cookie.setHttpOnly(httpOnly);
 
     bool ok            = false;
@@ -213,7 +233,7 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         if (rc != CURLE_OK) {
             if (error) {
                 *error = QStringLiteral("导入 cookie 失败（%1）")
-                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             }
             return false;
         }
@@ -337,10 +357,10 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
         if (error) {
             if (isCapabilityRelatedCurlError(rc)) {
                 *error = QStringLiteral("libcurl 不支持 CURLOPT_COOKIELIST（%1）")
-                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             } else {
                 *error = QStringLiteral("清空 cookies 失败（%1）")
-                                .arg(QString::fromUtf8(curl_easy_strerror(rc)));
+                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
             }
         }
         return false;

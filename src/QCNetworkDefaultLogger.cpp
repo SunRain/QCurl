@@ -10,14 +10,24 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr qint64 kKiB                     = 1024;
+constexpr qint64 kMiB                     = kKiB * kKiB;
+constexpr qint64 kDefaultLogFileSizeBytes = 10 * kMiB;
+constexpr int kDefaultBackupCount         = 5;
+constexpr int kMaxInMemoryLogEntries      = 10000;
+
+} // namespace
+
 class QCNetworkDefaultLoggerPrivate
 {
 public:
     NetworkLogLevel minLevel = NetworkLogLevel::Info;
     bool enableConsole       = true;
     QString logFile;
-    qint64 maxFileSize = 10 * 1024 * 1024;
-    int backupCount    = 5;
+    qint64 maxFileSize = kDefaultLogFileSizeBytes;
+    int backupCount    = kDefaultBackupCount;
     QString logFormat  = QStringLiteral("%{time} [%{level}] %{category}: %{message}");
     std::function<void(const NetworkLogEntry &)> customCallback;
     QList<NetworkLogEntry> entries;
@@ -27,8 +37,7 @@ public:
     {
         QString result = logFormat;
         result.replace(QStringLiteral("%{level}"), logLevelToString(entry.level()));
-        result.replace(QStringLiteral("%{time}"),
-                       entry.timestampUtc().toString(Qt::ISODateWithMs));
+        result.replace(QStringLiteral("%{time}"), entry.timestampUtc().toString(Qt::ISODateWithMs));
         result.replace(QStringLiteral("%{category}"), entry.category());
         result.replace(QStringLiteral("%{message}"), entry.message());
         return result;
@@ -80,7 +89,7 @@ void QCNetworkDefaultLogger::enableFileOutput(const QString &filePath,
     Q_D(QCNetworkDefaultLogger);
     QMutexLocker locker(&d->mutex);
     d->logFile     = filePath;
-    d->maxFileSize = maxSize > 0 ? maxSize : (10 * 1024 * 1024);
+    d->maxFileSize = maxSize > 0 ? maxSize : kDefaultLogFileSizeBytes;
     d->backupCount = backupCount;
 }
 
@@ -143,7 +152,7 @@ void QCNetworkDefaultLogger::log(const NetworkLogEntry &entry)
     }
 
     d->entries.append(entry);
-    if (d->entries.size() > 10000) {
+    if (d->entries.size() > kMaxInMemoryLogEntries) {
         d->entries.removeFirst();
     }
 

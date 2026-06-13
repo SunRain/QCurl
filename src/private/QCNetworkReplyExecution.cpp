@@ -3,16 +3,16 @@
  * @brief QCNetworkReply execution path.
  */
 
-#include "QCNetworkReply.h"
-
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
 #include "QCNetworkMockHandler_p.h"
+#include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkTestSupport.h"
 #include "QCNetworkTimeoutConfig.h"
+#include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
@@ -30,17 +30,17 @@ namespace QCurl {
 
 namespace {
 
+constexpr quint32 kFnv1a32OffsetBasis = 2166136261u;
+constexpr quint32 kFnv1a32Prime       = 16777619u;
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
-enum class TestMockChaosAction
-{
+enum class TestMockChaosAction {
     None,
     PauseRecv,
     Cancel,
 };
 
-enum class TestMockChaosActionPoint
-{
+enum class TestMockChaosActionPoint {
     BeforeFirstChunk,
     AfterFirstChunk,
     BeforeFinish,
@@ -48,12 +48,12 @@ enum class TestMockChaosActionPoint
 
 struct TestMockChaosConfig
 {
-    quint32 seed                          = 1u;
-    int maxChunkBytes                     = 0;
-    int chunkDelayMs                      = 0;
-    TestMockChaosAction action            = TestMockChaosAction::None;
-    TestMockChaosActionPoint actionPoint  = TestMockChaosActionPoint::AfterFirstChunk;
-    int resumeDelayMs                     = 0;
+    quint32 seed                         = 1u;
+    int maxChunkBytes                    = 0;
+    int chunkDelayMs                     = 0;
+    TestMockChaosAction action           = TestMockChaosAction::None;
+    TestMockChaosActionPoint actionPoint = TestMockChaosActionPoint::AfterFirstChunk;
+    int resumeDelayMs                    = 0;
 };
 
 struct TestMockChaosReplayState
@@ -71,10 +71,10 @@ struct TestMockChaosReplayState
 
 [[nodiscard]] quint32 fnv1a32(const QByteArray &bytes)
 {
-    quint32 hash = 2166136261u;
+    quint32 hash = kFnv1a32OffsetBasis;
     for (const unsigned char byte : bytes) {
         hash ^= byte;
-        hash *= 16777619u;
+        hash *= kFnv1a32Prime;
     }
     return hash;
 }
@@ -125,7 +125,7 @@ struct TestMockChaosReplayState
         }
 
         if (key == "chunk_delay_ms") {
-            bool ok        = false;
+            bool ok         = false;
             const int delay = value.toInt(&ok);
             if (ok) {
                 config.chunkDelayMs = qMax(0, delay);
@@ -183,10 +183,8 @@ struct TestMockChaosReplayState
         return chunks;
     }
 
-    const QByteArray salt = QByteArray::number(static_cast<int>(method))
-                            + QByteArrayLiteral("|")
-                            + url.toString().toUtf8()
-                            + QByteArrayLiteral("|")
+    const QByteArray salt = QByteArray::number(static_cast<int>(method)) + QByteArrayLiteral("|")
+                            + url.toString().toUtf8() + QByteArrayLiteral("|")
                             + QByteArray::number(payload.size());
     std::mt19937 engine(config.seed ^ fnv1a32(salt));
 
@@ -204,10 +202,11 @@ struct TestMockChaosReplayState
 
 void scheduleTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &state, int delayMs);
 
-[[nodiscard]] bool triggerTestMockChaosAction(
-    const std::shared_ptr<TestMockChaosReplayState> &state, TestMockChaosActionPoint point)
+[[nodiscard]] bool triggerTestMockChaosAction(const std::shared_ptr<TestMockChaosReplayState> &state,
+                                              TestMockChaosActionPoint point)
 {
-    if (!state || !state->reply || state->actionFired || state->config.action == TestMockChaosAction::None
+    if (!state || !state->reply || state->actionFired
+        || state->config.action == TestMockChaosAction::None
         || state->config.actionPoint != point) {
         return false;
     }
@@ -243,7 +242,8 @@ void runTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &state
     QCNetworkReply *reply      = state->reply.data();
     QCNetworkReplyPrivate *d   = state->d;
     const ReplyState curState  = d->state;
-    const bool terminalReached = curState == ReplyState::Cancelled || curState == ReplyState::Finished
+    const bool terminalReached = curState == ReplyState::Cancelled
+                                 || curState == ReplyState::Finished
                                  || curState == ReplyState::Error;
     if (terminalReached) {
         return;
@@ -329,7 +329,6 @@ void scheduleTestMockChaosStep(const std::shared_ptr<TestMockChaosReplayState> &
     });
 }
 #endif
-
 
 } // namespace
 
@@ -437,11 +436,11 @@ void QCNetworkReply::execute()
             }
 
             captured.setBodySize(bodySpec.hasKnownSize()
-                                      ? static_cast<qsizetype>(qMax<qint64>(0, bodySpec.sizeBytes))
-                                      : bodySpec.inlineBytes.size());
+                                     ? static_cast<qsizetype>(qMax<qint64>(0, bodySpec.sizeBytes))
+                                     : bodySpec.inlineBytes.size());
             const int previewLimit = mock->captureBodyPreviewLimit();
             captured.setBodyPreview(previewLimit > 0 ? bodySpec.inlineBytes.left(previewLimit)
-                                                      : QByteArray());
+                                                     : QByteArray());
             mock->recordRequest(captured);
         }
 
@@ -502,9 +501,9 @@ void QCNetworkReply::execute()
 
                     Internal::QCNetworkMockData mockData;
                     if (!Internal::QCNetworkMockHandlerAccess::consumeMock(*mock,
-                                                                            normalizedMethod,
-                                                                            normalizedUrl,
-                                                                            mockData)) {
+                                                                           normalizedMethod,
+                                                                           normalizedUrl,
+                                                                           mockData)) {
                         d->setError(NetworkError::InvalidRequest,
                                     QStringLiteral("MockHandler: no mock matched for %1")
                                         .arg(normalizedUrl.toString()));
@@ -513,18 +512,18 @@ void QCNetworkReply::execute()
                     }
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
-                    if (const auto chaosConfig = testMockChaosConfigFromEnv(); chaosConfig.has_value()) {
-                        auto replayState      = std::make_shared<TestMockChaosReplayState>();
-                        replayState->reply    = safeThis;
-                        replayState->d        = d;
-                        replayState->mockData = mockData;
-                        replayState->config   = chaosConfig.value();
+                    if (const auto chaosConfig = testMockChaosConfigFromEnv();
+                        chaosConfig.has_value()) {
+                        auto replayState        = std::make_shared<TestMockChaosReplayState>();
+                        replayState->reply      = safeThis;
+                        replayState->d          = d;
+                        replayState->mockData   = mockData;
+                        replayState->config     = chaosConfig.value();
                         replayState->totalBytes = mockData.response.size();
-                        replayState->chunks
-                            = buildDeterministicMockChunks(mockData.response,
-                                                           replayState->config,
-                                                           normalizedMethod,
-                                                           normalizedUrl);
+                        replayState->chunks     = buildDeterministicMockChunks(mockData.response,
+                                                                               replayState->config,
+                                                                               normalizedMethod,
+                                                                               normalizedUrl);
                         scheduleTestMockChaosStep(replayState, 0);
                         return;
                     }
@@ -582,13 +581,14 @@ void QCNetworkReply::execute()
     if (handle && d->cookieMode != 0 && !d->cookieFilePath.isEmpty()) {
         QByteArray cookiePathBytes = d->cookieFilePath.toUtf8();
 
-        // ReadOnly (0x1) 或 ReadWrite (0x3)：从文件读取 cookie
-        if (d->cookieMode & 0x1) {
+        const int readCookieMode  = static_cast<int>(QCNetworkAccessManager::ReadOnly);
+        const int writeCookieMode = static_cast<int>(QCNetworkAccessManager::WriteOnly);
+
+        if (d->cookieMode & readCookieMode) {
             curl_easy_setopt(handle, CURLOPT_COOKIEFILE, cookiePathBytes.constData());
         }
 
-        // WriteOnly (0x2) 或 ReadWrite (0x3)：将 cookie 写入文件
-        if (d->cookieMode & 0x2) {
+        if (d->cookieMode & writeCookieMode) {
             curl_easy_setopt(handle, CURLOPT_COOKIEJAR, cookiePathBytes.constData());
         }
     }
@@ -603,19 +603,11 @@ void QCNetworkReply::execute()
         d->altSvcCachePathBytes = cacheCfg.altSvcFilePath().toUtf8();
 
         if (!d->hstsCachePathBytes.isEmpty()) {
-#if LIBCURL_VERSION_NUM >= 0x074a00 /* 7.74.0 */
             curl_easy_setopt(handle, CURLOPT_HSTS, d->hstsCachePathBytes.constData());
-#else
-            Internal::appendReplyCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_HSTS"));
-#endif
         }
 
         if (!d->altSvcCachePathBytes.isEmpty()) {
-#if LIBCURL_VERSION_NUM >= 0x074001 /* 7.64.1 */
             curl_easy_setopt(handle, CURLOPT_ALTSVC, d->altSvcCachePathBytes.constData());
-#else
-            Internal::appendReplyCapabilityWarning(d, QStringLiteral("当前构建的 libcurl 不支持 CURLOPT_ALTSVC"));
-#endif
         }
     }
 
@@ -624,7 +616,14 @@ void QCNetworkReply::execute()
     // ==================
 
     if (handle && manager && manager->debugTraceEnabled() && manager->logger()) {
-        curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
+        const CURLcode verboseResult = Internal::CurlOptions::setVerbose(handle, true);
+        if (verboseResult != CURLE_OK) {
+            d->setError(NetworkError::InvalidRequest,
+                        QStringLiteral("设置 CURLOPT_VERBOSE 失败（%1）")
+                            .arg(QString::fromUtf8(curl_easy_strerror(verboseResult))));
+            d->setState(ReplyState::Error);
+            return;
+        }
         curl_easy_setopt(handle, CURLOPT_DEBUGFUNCTION, QCNetworkReplyPrivate::curlDebugCallback);
         curl_easy_setopt(handle, CURLOPT_DEBUGDATA, d);
     }
@@ -648,6 +647,5 @@ void QCNetworkReply::execute()
     QCCurlMultiManager::instance()->addReply(this);
     qDebug() << "QCNetworkReply::execute: Started async request for" << d->request.url();
 }
-
 
 } // namespace QCurl

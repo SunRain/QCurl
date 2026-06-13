@@ -1,5 +1,4 @@
 #include "QCNetworkRequest.h"
-
 #include "private/QCNetworkRequestPrivate_p.h"
 
 #include <QDebug>
@@ -11,6 +10,7 @@ namespace QCurl {
 
 namespace {
 
+#ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 QStringList cleanedAdvancedStringList(const QStringList &entries)
 {
     QStringList cleaned;
@@ -23,6 +23,7 @@ QStringList cleanedAdvancedStringList(const QStringList &entries)
     }
     return cleaned;
 }
+#endif
 
 } // namespace
 
@@ -168,7 +169,7 @@ QCNetworkRequest &QCNetworkRequest::setLocalPortRange(int port, int range)
         return *this;
     }
 
-    d.data()->localPort = port;
+    d.data()->localPort      = port;
     d.data()->localPortRange = range;
     return *this;
 }

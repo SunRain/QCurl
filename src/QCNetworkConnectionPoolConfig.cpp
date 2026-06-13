@@ -7,23 +7,48 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr int kDefaultMaxConnectionsPerHost        = 6;
+constexpr int kDefaultMaxTotalConnections          = 30;
+constexpr int kDefaultMaxIdleTimeSeconds           = 60;
+constexpr int kDefaultMaxConnectionLifetimeSeconds = 120;
+constexpr int kDefaultDnsCacheTimeoutSeconds       = 60;
+
+constexpr int kConservativeMaxConnectionsPerHost        = 2;
+constexpr int kConservativeMaxTotalConnections          = 10;
+constexpr int kConservativeMaxIdleTimeSeconds           = 30;
+constexpr int kConservativeMaxConnectionLifetimeSeconds = 60;
+
+constexpr int kAggressiveMaxConnectionsPerHost        = 10;
+constexpr int kAggressiveMaxTotalConnections          = 100;
+constexpr int kAggressiveMaxIdleTimeSeconds           = 120;
+constexpr int kAggressiveMaxConnectionLifetimeSeconds = 300;
+
+constexpr int kHttp2MaxConnectionsPerHost        = 2;
+constexpr int kHttp2MaxTotalConnections          = 20;
+constexpr int kHttp2MaxIdleTimeSeconds           = 90;
+constexpr int kHttp2MaxConnectionLifetimeSeconds = 180;
+
+} // namespace
+
 /// 连接池配置的共享存储；空 optional 表示保留 libcurl 默认 multi 限制。
 class QCNetworkConnectionPoolConfigData : public QSharedData
 {
 public:
-    int maxConnectionsPerHost = 6;
-    int maxTotalConnections = 30;
-    std::optional<long> multiMaxTotalConnections = std::nullopt;
-    std::optional<long> multiMaxHostConnections = std::nullopt;
+    int maxConnectionsPerHost                     = kDefaultMaxConnectionsPerHost;
+    int maxTotalConnections                       = kDefaultMaxTotalConnections;
+    std::optional<long> multiMaxTotalConnections  = std::nullopt;
+    std::optional<long> multiMaxHostConnections   = std::nullopt;
     std::optional<long> multiMaxConcurrentStreams = std::nullopt;
-    std::optional<long> multiMaxConnects = std::nullopt;
-    int maxIdleTime = 60;
-    int maxConnectionLifetime = 120;
-    bool enablePipelining = false;
-    bool enableMultiplexing = true;
-    bool enableDnsCache = true;
-    int dnsCacheTimeout = 60;
-    bool enableConnectionWarming = false;
+    std::optional<long> multiMaxConnects          = std::nullopt;
+    int maxIdleTime                               = kDefaultMaxIdleTimeSeconds;
+    int maxConnectionLifetime                     = kDefaultMaxConnectionLifetimeSeconds;
+    bool enablePipelining                         = false;
+    bool enableMultiplexing                       = true;
+    bool enableDnsCache                           = true;
+    int dnsCacheTimeout                           = kDefaultDnsCacheTimeoutSeconds;
+    bool enableConnectionWarming                  = false;
 };
 
 QCNetworkConnectionPoolConfig::QCNetworkConnectionPoolConfig()
@@ -199,10 +224,8 @@ bool QCNetworkConnectionPoolConfig::isValid() const
     return d->maxConnectionsPerHost > 0 && d->maxTotalConnections > 0
            && d->maxConnectionsPerHost <= d->maxTotalConnections && d->maxIdleTime >= 0
            && d->maxConnectionLifetime >= 0 && d->dnsCacheTimeout >= -1
-           && (!d->multiMaxTotalConnections.has_value()
-               || d->multiMaxTotalConnections.value() >= 0)
-           && (!d->multiMaxHostConnections.has_value()
-               || d->multiMaxHostConnections.value() >= 0)
+           && (!d->multiMaxTotalConnections.has_value() || d->multiMaxTotalConnections.value() >= 0)
+           && (!d->multiMaxHostConnections.has_value() || d->multiMaxHostConnections.value() >= 0)
            && (!d->multiMaxConcurrentStreams.has_value()
                || d->multiMaxConcurrentStreams.value() >= 0)
            && (!d->multiMaxConnects.has_value() || d->multiMaxConnects.value() >= 0);
@@ -211,10 +234,10 @@ bool QCNetworkConnectionPoolConfig::isValid() const
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolConfig::conservative()
 {
     QCNetworkConnectionPoolConfig config;
-    config.setMaxConnectionsPerHost(2);
-    config.setMaxTotalConnections(10);
-    config.setMaxIdleTime(30);
-    config.setMaxConnectionLifetime(60);
+    config.setMaxConnectionsPerHost(kConservativeMaxConnectionsPerHost);
+    config.setMaxTotalConnections(kConservativeMaxTotalConnections);
+    config.setMaxIdleTime(kConservativeMaxIdleTimeSeconds);
+    config.setMaxConnectionLifetime(kConservativeMaxConnectionLifetimeSeconds);
     config.setPipeliningEnabled(false);
     config.setMultiplexingEnabled(false);
     return config;
@@ -223,10 +246,10 @@ QCNetworkConnectionPoolConfig QCNetworkConnectionPoolConfig::conservative()
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolConfig::aggressive()
 {
     QCNetworkConnectionPoolConfig config;
-    config.setMaxConnectionsPerHost(10);
-    config.setMaxTotalConnections(100);
-    config.setMaxIdleTime(120);
-    config.setMaxConnectionLifetime(300);
+    config.setMaxConnectionsPerHost(kAggressiveMaxConnectionsPerHost);
+    config.setMaxTotalConnections(kAggressiveMaxTotalConnections);
+    config.setMaxIdleTime(kAggressiveMaxIdleTimeSeconds);
+    config.setMaxConnectionLifetime(kAggressiveMaxConnectionLifetimeSeconds);
     config.setPipeliningEnabled(false);
     config.setMultiplexingEnabled(true);
     config.setConnectionWarmingEnabled(true);
@@ -236,10 +259,10 @@ QCNetworkConnectionPoolConfig QCNetworkConnectionPoolConfig::aggressive()
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolConfig::http2Optimized()
 {
     QCNetworkConnectionPoolConfig config;
-    config.setMaxConnectionsPerHost(2);
-    config.setMaxTotalConnections(20);
-    config.setMaxIdleTime(90);
-    config.setMaxConnectionLifetime(180);
+    config.setMaxConnectionsPerHost(kHttp2MaxConnectionsPerHost);
+    config.setMaxTotalConnections(kHttp2MaxTotalConnections);
+    config.setMaxIdleTime(kHttp2MaxIdleTimeSeconds);
+    config.setMaxConnectionLifetime(kHttp2MaxConnectionLifetimeSeconds);
     config.setPipeliningEnabled(false);
     config.setMultiplexingEnabled(true);
     return config;

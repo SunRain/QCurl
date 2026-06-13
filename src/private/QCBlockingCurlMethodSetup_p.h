@@ -15,10 +15,10 @@
 
 namespace QCurl::Internal {
 
-void configureBlockingCurlMethod(CURL *handle,
-                                 HttpMethod method,
-                                 const QByteArray &customMethod,
-                                 QCBlockingRequestBodyReadState *readState);
+[[nodiscard]] bool configureBlockingCurlMethod(CURL *handle,
+                                               HttpMethod method,
+                                               const QByteArray &customMethod,
+                                               QCBlockingRequestBodyReadState *readState);
 
 } // namespace QCurl::Internal
 

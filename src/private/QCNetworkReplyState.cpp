@@ -3,14 +3,13 @@
  * @brief QCNetworkReply private state transitions and curl callbacks.
  */
 
-#include "QCNetworkReply_p.h"
-
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkLogger.h"
+#include "QCNetworkReply_p.h"
 #include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
@@ -21,6 +20,12 @@
 #include <QPointer>
 
 namespace QCurl {
+
+namespace {
+
+constexpr int kCookieWriteMode = static_cast<int>(QCNetworkAccessManager::WriteOnly);
+
+} // namespace
 
 void QCNetworkReplyPrivate::setState(ReplyState newState)
 {
@@ -72,7 +77,7 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // ==================
         // Cookie jar flush：当启用 COOKIEJAR 时，确保请求完成后立即落盘
         // ==================
-        if (curlManager.handle() && (cookieMode & 0x2) && !cookieFilePath.isEmpty()) {
+        if (curlManager.handle() && (cookieMode & kCookieWriteMode) && !cookieFilePath.isEmpty()) {
             const CURLcode rc = curl_easy_setopt(curlManager.handle(), CURLOPT_COOKIELIST, "FLUSH");
             if (rc != CURLE_OK) {
                 if (Internal::isReplyCapabilityRelatedCurlError(rc)) {
@@ -84,8 +89,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
                             .arg(QString::fromUtf8(curl_easy_strerror(rc))));
                 } else {
                     Internal::appendReplyCapabilityWarning(this,
-                                            QStringLiteral("Cookie flush 失败（%1）")
-                                                .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+                                                           QStringLiteral("Cookie flush 失败（%1）")
+                                                               .arg(QString::fromUtf8(
+                                                                   curl_easy_strerror(rc))));
                 }
             }
         }
@@ -94,9 +100,9 @@ void QCNetworkReplyPrivate::setState(ReplyState newState)
         // 连接池统计 - 记录连接复用情况
         // ==================
         if (curlManager.handle()) {
-            Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(
-                curlManager.handle(),
-                false);
+            Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(curlManager
+                                                                                         .handle(),
+                                                                                     false);
         }
 
         // ==================
@@ -198,8 +204,10 @@ void QCNetworkReplyPrivate::resumeSendFromRequestBodySourceIfNeeded()
 
 size_t QCNetworkReplyPrivate::curlWriteCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
-    return Internal::writeReplyCurlCallback(
-        ptr, size, nmemb, static_cast<QCNetworkReplyPrivate *>(userdata));
+    return Internal::writeReplyCurlCallback(ptr,
+                                            size,
+                                            nmemb,
+                                            static_cast<QCNetworkReplyPrivate *>(userdata));
 }
 
 size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr,
@@ -207,16 +215,20 @@ size_t QCNetworkReplyPrivate::curlHeaderCallback(char *ptr,
                                                  size_t nmemb,
                                                  void *userdata)
 {
-    return Internal::headerReplyCurlCallback(
-        ptr, size, nmemb, static_cast<QCNetworkReplyPrivate *>(userdata));
+    return Internal::headerReplyCurlCallback(ptr,
+                                             size,
+                                             nmemb,
+                                             static_cast<QCNetworkReplyPrivate *>(userdata));
 }
 
 size_t QCNetworkReplyPrivate::curlReadCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
     Internal::ReplyCurlCallbackScope callbackScope;
 
-    return Internal::readReplyBodySourceCallback(
-        ptr, size, nmemb, static_cast<QCNetworkReplyPrivate *>(userdata));
+    return Internal::readReplyBodySourceCallback(ptr,
+                                                 size,
+                                                 nmemb,
+                                                 static_cast<QCNetworkReplyPrivate *>(userdata));
 }
 
 int QCNetworkReplyPrivate::curlSeekCallback(void *userdata, curl_off_t offset, int origin)
@@ -353,6 +365,5 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode)
     setError(info.error, info.message);
     setState(ReplyState::Error);
 }
-
 
 } // namespace QCurl

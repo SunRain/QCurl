@@ -1,74 +1,167 @@
 #include "private/QCBlockingCurlMethodSetup_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
+
+#include <QString>
 
 namespace QCurl::Internal {
 namespace {
 
-void configureUploadMethod(CURL *handle,
+bool setBlockingCurlOption(CURLcode code,
+                           QCBlockingRequestBodyReadState *readState,
+                           const QString &optionName)
+{
+    if (code == CURLE_OK) {
+        return true;
+    }
+
+    readState->failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
+                                    .arg(optionName)
+                                    .arg(QString::fromUtf8(curl_easy_strerror(code)));
+    return false;
+}
+
+bool configureUploadMethod(CURL *handle,
                            const char *methodName,
                            QCBlockingRequestBodyReadState *readState)
 {
-    curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-    curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, methodName);
-    curl_easy_setopt(handle, CURLOPT_READFUNCTION, readBlockingRequestBodyCallback);
-    curl_easy_setopt(handle, CURLOPT_READDATA, readState);
-    curl_easy_setopt(handle, CURLOPT_SEEKFUNCTION, seekBlockingRequestBodyCallback);
-    curl_easy_setopt(handle, CURLOPT_SEEKDATA, readState);
-    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, curlBodySize(readState->body));
+    return setBlockingCurlOption(CurlOptions::setEnabled(handle, CURLOPT_UPLOAD, true),
+                                 readState,
+                                 QStringLiteral("CURLOPT_UPLOAD"))
+           && setBlockingCurlOption(curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, methodName),
+                                    readState,
+                                    QStringLiteral("CURLOPT_CUSTOMREQUEST"))
+           && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                     CURLOPT_READFUNCTION,
+                                                     readBlockingRequestBodyCallback),
+                                    readState,
+                                    QStringLiteral("CURLOPT_READFUNCTION"))
+           && setBlockingCurlOption(curl_easy_setopt(handle, CURLOPT_READDATA, readState),
+                                    readState,
+                                    QStringLiteral("CURLOPT_READDATA"))
+           && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                     CURLOPT_SEEKFUNCTION,
+                                                     seekBlockingRequestBodyCallback),
+                                    readState,
+                                    QStringLiteral("CURLOPT_SEEKFUNCTION"))
+           && setBlockingCurlOption(curl_easy_setopt(handle, CURLOPT_SEEKDATA, readState),
+                                    readState,
+                                    QStringLiteral("CURLOPT_SEEKDATA"))
+           && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                     CURLOPT_INFILESIZE_LARGE,
+                                                     curlBodySize(readState->body)),
+                                    readState,
+                                    QStringLiteral("CURLOPT_INFILESIZE_LARGE"));
 }
 
 } // namespace
 
-void configureBlockingCurlMethod(CURL *handle,
+bool configureBlockingCurlMethod(CURL *handle,
                                  HttpMethod method,
                                  const QByteArray &customMethod,
                                  QCBlockingRequestBodyReadState *readState)
 {
     switch (method) {
         case HttpMethod::Head:
-            curl_easy_setopt(handle, CURLOPT_NOBODY, 1L);
-            break;
+            return setBlockingCurlOption(CurlOptions::setEnabled(handle, CURLOPT_NOBODY, true),
+                                         readState,
+                                         QStringLiteral("CURLOPT_NOBODY"));
         case HttpMethod::Get:
-            curl_easy_setopt(handle, CURLOPT_HTTPGET, 1L);
-            break;
+            return setBlockingCurlOption(CurlOptions::setEnabled(handle, CURLOPT_HTTPGET, true),
+                                         readState,
+                                         QStringLiteral("CURLOPT_HTTPGET"));
         case HttpMethod::Post:
             if (isStreamingBody(readState->body)) {
-                configureUploadMethod(handle, "POST", readState);
-            } else {
-                curl_easy_setopt(handle, CURLOPT_POST, 1L);
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, readState->body.bytes->constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, curlBodySize(readState->body));
+                return configureUploadMethod(handle, "POST", readState);
             }
-            break;
+            return setBlockingCurlOption(CurlOptions::setEnabled(handle, CURLOPT_POST, true),
+                                         readState,
+                                         QStringLiteral("CURLOPT_POST"))
+                   && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                             CURLOPT_POSTFIELDS,
+                                                             readState->body.bytes->constData()),
+                                            readState,
+                                            QStringLiteral("CURLOPT_POSTFIELDS"))
+                   && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                             CURLOPT_POSTFIELDSIZE_LARGE,
+                                                             curlBodySize(readState->body)),
+                                            readState,
+                                            QStringLiteral("CURLOPT_POSTFIELDSIZE_LARGE"));
         case HttpMethod::Put:
-            configureUploadMethod(handle, "PUT", readState);
-            break;
+            return configureUploadMethod(handle, "PUT", readState);
         case HttpMethod::Patch:
             if (isStreamingBody(readState->body)) {
-                configureUploadMethod(handle, "PATCH", readState);
-            } else {
-                curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PATCH");
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, readState->body.bytes->constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, curlBodySize(readState->body));
+                return configureUploadMethod(handle, "PATCH", readState);
             }
-            break;
+            return setBlockingCurlOption(curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "PATCH"),
+                                         readState,
+                                         QStringLiteral("CURLOPT_CUSTOMREQUEST"))
+                   && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                             CURLOPT_POSTFIELDS,
+                                                             readState->body.bytes->constData()),
+                                            readState,
+                                            QStringLiteral("CURLOPT_POSTFIELDS"))
+                   && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                             CURLOPT_POSTFIELDSIZE_LARGE,
+                                                             curlBodySize(readState->body)),
+                                            readState,
+                                            QStringLiteral("CURLOPT_POSTFIELDSIZE_LARGE"));
         case HttpMethod::Delete:
-            curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "DELETE");
-            break;
+            return setBlockingCurlOption(curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "DELETE"),
+                                         readState,
+                                         QStringLiteral("CURLOPT_CUSTOMREQUEST"));
         case HttpMethod::Custom:
-            curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, customMethod.constData());
-            if (isStreamingBody(readState->body)) {
-                curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-                curl_easy_setopt(handle, CURLOPT_READFUNCTION, readBlockingRequestBodyCallback);
-                curl_easy_setopt(handle, CURLOPT_READDATA, readState);
-                curl_easy_setopt(handle, CURLOPT_SEEKFUNCTION, seekBlockingRequestBodyCallback);
-                curl_easy_setopt(handle, CURLOPT_SEEKDATA, readState);
-                curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, curlBodySize(readState->body));
-            } else if (curlBodySize(readState->body) > 0) {
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDS, readState->body.bytes->constData());
-                curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, curlBodySize(readState->body));
+            if (!setBlockingCurlOption(curl_easy_setopt(handle,
+                                                        CURLOPT_CUSTOMREQUEST,
+                                                        customMethod.constData()),
+                                       readState,
+                                       QStringLiteral("CURLOPT_CUSTOMREQUEST"))) {
+                return false;
             }
-            break;
+            if (isStreamingBody(readState->body)) {
+                return setBlockingCurlOption(CurlOptions::setEnabled(handle, CURLOPT_UPLOAD, true),
+                                             readState,
+                                             QStringLiteral("CURLOPT_UPLOAD"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_READFUNCTION,
+                                                                 readBlockingRequestBodyCallback),
+                                                readState,
+                                                QStringLiteral("CURLOPT_READFUNCTION"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_READDATA,
+                                                                 readState),
+                                                readState,
+                                                QStringLiteral("CURLOPT_READDATA"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_SEEKFUNCTION,
+                                                                 seekBlockingRequestBodyCallback),
+                                                readState,
+                                                QStringLiteral("CURLOPT_SEEKFUNCTION"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_SEEKDATA,
+                                                                 readState),
+                                                readState,
+                                                QStringLiteral("CURLOPT_SEEKDATA"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_INFILESIZE_LARGE,
+                                                                 curlBodySize(readState->body)),
+                                                readState,
+                                                QStringLiteral("CURLOPT_INFILESIZE_LARGE"));
+            } else if (curlBodySize(readState->body) > 0) {
+                return setBlockingCurlOption(curl_easy_setopt(handle,
+                                                              CURLOPT_POSTFIELDS,
+                                                              readState->body.bytes->constData()),
+                                             readState,
+                                             QStringLiteral("CURLOPT_POSTFIELDS"))
+                       && setBlockingCurlOption(curl_easy_setopt(handle,
+                                                                 CURLOPT_POSTFIELDSIZE_LARGE,
+                                                                 curlBodySize(readState->body)),
+                                                readState,
+                                                QStringLiteral("CURLOPT_POSTFIELDSIZE_LARGE"));
+            }
+            return true;
     }
+
+    return true;
 }
 
 } // namespace QCurl::Internal

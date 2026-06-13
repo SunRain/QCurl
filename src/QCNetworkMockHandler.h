@@ -201,6 +201,7 @@ public:
 
     /**
      * @brief 获取模拟响应
+     * @param method HTTP 方法
      * @param url 请求 URL
      * @param statusCode 输出状态码
      * @return 响应数据
@@ -209,6 +210,7 @@ public:
 
     /**
      * @brief 获取模拟错误
+     * @param method HTTP 方法
      * @param url 请求 URL
      * @return 错误类型
      */
@@ -216,6 +218,7 @@ public:
 
     /**
      * @brief 检查是否为错误模拟
+     * @param method HTTP 方法
      * @param url 请求 URL
      * @return 如果是错误模拟返回 true
      */

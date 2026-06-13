@@ -3,11 +3,11 @@
  * @brief 实现 Blocking Extras 的扩展请求配置辅助函数。
  */
 
-#include "private/QCBlockingCurlRequestSetup_p.h"
-
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestConfig.h"
+#include "private/QCBlockingCurlRequestSetup_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
 
 #include <QByteArrayView>
 
@@ -71,7 +71,7 @@ unsigned long curlHttpAuth(QCNetworkHttpAuthMethod method)
 bool isHeaderSet(const QCNetworkRequest &request, QByteArrayView headerName)
 {
     const QByteArray normalizedHeaderName = headerName.toByteArray();
-    const QList<QByteArray> names = request.rawHeaderList();
+    const QList<QByteArray> names         = request.rawHeaderList();
     for (const QByteArray &name : names) {
         if (name.trimmed().compare(normalizedHeaderName, Qt::CaseInsensitive) == 0) {
             return true;
@@ -102,7 +102,7 @@ bool configureProxyOptions(CURL *handle,
             setLongOption(handle, CURLOPT_PROXYPORT, proxy->port());
         }
         setLongOption(handle, CURLOPT_PROXYTYPE, curlProxyType(proxy->type()));
-        storage->proxyUser = proxy->userName().toUtf8();
+        storage->proxyUser     = proxy->userName().toUtf8();
         storage->proxyPassword = proxy->password().toUtf8();
         if (!storage->proxyUser.isEmpty()) {
             setStringOption(handle, CURLOPT_PROXYUSERNAME, storage->proxyUser);
@@ -134,14 +134,14 @@ bool configureTransferOptions(CURL *handle,
         }
     }
 
-    if (const auto bytesPerSec = request.maxDownloadBytesPerSec(); bytesPerSec.has_value()
-        && bytesPerSec.value() > 0) {
+    if (const auto bytesPerSec = request.maxDownloadBytesPerSec();
+        bytesPerSec.has_value() && bytesPerSec.value() > 0) {
         if (!setOffTOption(handle, CURLOPT_MAX_RECV_SPEED_LARGE, bytesPerSec.value())) {
             return failOption(storage, "CURLOPT_MAX_RECV_SPEED_LARGE");
         }
     }
-    if (const auto bytesPerSec = request.maxUploadBytesPerSec(); bytesPerSec.has_value()
-        && bytesPerSec.value() > 0) {
+    if (const auto bytesPerSec = request.maxUploadBytesPerSec();
+        bytesPerSec.has_value() && bytesPerSec.value() > 0) {
         if (!setOffTOption(handle, CURLOPT_MAX_SEND_SPEED_LARGE, bytesPerSec.value())) {
             return failOption(storage, "CURLOPT_MAX_SEND_SPEED_LARGE");
         }
@@ -153,14 +153,14 @@ bool configureAuthOptions(CURL *handle,
                           const QCNetworkRequest &request,
                           RequestOptionStorage *storage)
 {
-    bool hasSensitiveHeader = false;
+    bool hasSensitiveHeader           = false;
     const bool hasAuthorizationHeader = isHeaderSet(request, QByteArrayLiteral("authorization"));
     hasSensitiveHeader = hasAuthorizationHeader || isHeaderSet(request, QByteArrayLiteral("cookie"))
-        || isHeaderSet(request, QByteArrayLiteral("proxy-authorization"));
+                         || isHeaderSet(request, QByteArrayLiteral("proxy-authorization"));
 
     if (const auto auth = request.httpAuth(); auth.has_value() && !hasAuthorizationHeader) {
-        hasSensitiveHeader = true;
-        storage->httpAuthUser = auth->userName().toUtf8();
+        hasSensitiveHeader        = true;
+        storage->httpAuthUser     = auth->userName().toUtf8();
         storage->httpAuthPassword = auth->password().toUtf8();
         if (!setStringOption(handle, CURLOPT_USERNAME, storage->httpAuthUser)) {
             return failOption(storage, "CURLOPT_USERNAME");
@@ -174,7 +174,7 @@ bool configureAuthOptions(CURL *handle,
             return failOption(storage, "CURLOPT_HTTPAUTH");
         }
         if (auth->allowUnrestrictedAuth() && request.followLocation()) {
-            if (!setLongOption(handle, CURLOPT_UNRESTRICTED_AUTH, 1L)) {
+            if (!setLongOption(handle, CURLOPT_UNRESTRICTED_AUTH, Internal::CurlOptions::kEnabled)) {
                 return failOption(storage, "CURLOPT_UNRESTRICTED_AUTH");
             }
         }
@@ -182,7 +182,7 @@ bool configureAuthOptions(CURL *handle,
 
     if (request.followLocation() && request.allowUnrestrictedSensitiveHeadersOnRedirect()
         && hasSensitiveHeader) {
-        if (!setLongOption(handle, CURLOPT_UNRESTRICTED_AUTH, 1L)) {
+        if (!setLongOption(handle, CURLOPT_UNRESTRICTED_AUTH, Internal::CurlOptions::kEnabled)) {
             return failOption(storage, "CURLOPT_UNRESTRICTED_AUTH");
         }
     }

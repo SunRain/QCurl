@@ -207,6 +207,39 @@ def test_scan_headers_rejects_qtnetwork_cookie_in_core_header(tmp_path, capsys) 
     assert "QtNetwork cookie include" in err
     assert "QtNetwork cookie type leak" in err
 
+def test_curl_option_adapter_uses_checked_connect_timeout_conversion() -> None:
+    adapter = Path(__file__).resolve().parents[2] / "src" / "private" / "QCCurlOptionAdapter_p.h"
+    source = adapter.read_text(encoding="utf-8")
+    set_timeout = source.split("[[nodiscard]] inline CURLcode setConnectTimeout", 1)[1]
+
+    assert "tryCurlMilliseconds" in source
+    assert "tryCurlMilliseconds(timeout, &timeoutMs)" in set_timeout
+    assert "static_cast<long>(timeout.count())" not in set_timeout
+
+def test_curl_option_adapter_keeps_websocket_options_feature_guarded() -> None:
+    adapter = Path(__file__).resolve().parents[2] / "src" / "private" / "QCCurlOptionAdapter_p.h"
+    source = adapter.read_text(encoding="utf-8")
+
+    websocket_header = "#include <curl/websockets.h>"
+    header_index = source.index(websocket_header)
+    header_guard_start = source.rfind("#ifdef QCURL_WEBSOCKET_SUPPORT", 0, header_index)
+    header_guard_end = source.find("#endif", header_index)
+    assert header_guard_start != -1
+    assert header_guard_end != -1
+
+    no_auto_pong_index = source.index("setWebSocketNoAutoPong")
+    function_guard_start = source.rfind("#ifdef QCURL_WEBSOCKET_SUPPORT", 0, no_auto_pong_index)
+    function_guard_end = source.find("#endif // QCURL_WEBSOCKET_SUPPORT", no_auto_pong_index)
+    assert function_guard_start != -1
+    assert function_guard_end != -1
+
+def test_websocket_options_reuses_curl_timeout_range_guard() -> None:
+    options_impl = Path(__file__).resolve().parents[2] / "src" / "QCWebSocketOptions.cpp"
+    source = options_impl.read_text(encoding="utf-8")
+
+    assert "Internal::CurlOptions::tryCurlMilliseconds(timeout, &timeoutMs)" in source
+    assert "connectTimeout 超出 libcurl 毫秒超时可表达范围" in source
+
 def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     src = tmp_path / "src"
     src.mkdir()

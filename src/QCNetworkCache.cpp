@@ -7,6 +7,12 @@
 
 namespace QCurl {
 
+namespace {
+
+constexpr QLatin1StringView kMaxAgeDirectivePrefix{"max-age="};
+
+} // namespace
+
 /// QCNetworkCacheMetadata 的共享存储，避免按值传递时复制 headers。
 class QCNetworkCacheMetadataData : public QSharedData
 {
@@ -38,9 +44,11 @@ QCNetworkCacheMetadata::QCNetworkCacheMetadata(QCNetworkCacheMetadata &&other) n
 
 QCNetworkCacheMetadata::~QCNetworkCacheMetadata() = default;
 
-QCNetworkCacheMetadata &QCNetworkCacheMetadata::operator=(const QCNetworkCacheMetadata &other) = default;
+QCNetworkCacheMetadata &QCNetworkCacheMetadata::operator=(
+    const QCNetworkCacheMetadata &other) = default;
 
-QCNetworkCacheMetadata &QCNetworkCacheMetadata::operator=(QCNetworkCacheMetadata &&other) noexcept = default;
+QCNetworkCacheMetadata &QCNetworkCacheMetadata::operator=(
+    QCNetworkCacheMetadata &&other) noexcept = default;
 
 QUrl QCNetworkCacheMetadata::url() const
 {
@@ -179,9 +187,9 @@ QDateTime QCNetworkCache::parseExpirationDate(const QMap<QByteArray, QByteArray>
         QStringList directives = ccStr.split(QLatin1Char(','), Qt::SkipEmptyParts);
         for (const QString &directive : directives) {
             QString trimmed = directive.trimmed();
-            if (trimmed.startsWith(QStringLiteral("max-age="), Qt::CaseInsensitive)) {
+            if (trimmed.startsWith(kMaxAgeDirectivePrefix, Qt::CaseInsensitive)) {
                 bool ok    = false;
-                int maxAge = trimmed.mid(8).toInt(&ok);
+                int maxAge = trimmed.mid(kMaxAgeDirectivePrefix.size()).toInt(&ok);
                 if (ok && maxAge > 0) {
                     return QDateTime::currentDateTime().addSecs(maxAge);
                 }

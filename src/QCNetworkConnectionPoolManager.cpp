@@ -2,18 +2,36 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkConnectionPoolManager.h"
-#include "QCNetworkConnectionPoolManager_p.h"
 
 #include "QCCurlMultiManager.h"
-
-#include <curl/curl.h>
+#include "QCNetworkConnectionPoolManager_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
 
 #include <QDebug>
 #include <QHash>
 #include <QMutex>
 #include <QMutexLocker>
 
+#include <chrono>
+#include <curl/curl.h>
+
 namespace QCurl {
+
+namespace {
+
+constexpr std::chrono::seconds kTcpKeepAliveInterval{30};
+
+void logCurlOptionFailure(CURLcode code, const char *optionName)
+{
+    if (code == CURLE_OK) {
+        return;
+    }
+
+    qWarning() << "QCNetworkConnectionPoolManager: failed to set" << optionName << ":"
+               << curl_easy_strerror(code);
+}
+
+} // namespace
 
 /// 管理器内部状态；配置和统计计数必须通过 mutex 访问。
 class QCNetworkConnectionPoolManagerPrivate
@@ -21,7 +39,7 @@ class QCNetworkConnectionPoolManagerPrivate
 public:
     mutable QMutex mutex;
     QCNetworkConnectionPoolConfig config;
-    qint64 totalRequests = 0;
+    qint64 totalRequests     = 0;
     qint64 reusedConnections = 0;
     QHash<QString, int> activeConnectionsPerHost;
 };
@@ -48,8 +66,8 @@ QCNetworkConnectionPoolManager::~QCNetworkConnectionPoolManager()
     qDebug() << "  - Total requests:" << d_ptr->totalRequests;
     qDebug() << "  - Reused connections:" << d_ptr->reusedConnections;
     if (d_ptr->totalRequests > 0) {
-        qDebug() << "  - Reuse rate:"
-                 << (d_ptr->reusedConnections * 100.0 / d_ptr->totalRequests) << "%";
+        qDebug() << "  - Reuse rate:" << (d_ptr->reusedConnections * 100.0 / d_ptr->totalRequests)
+                 << "%";
     }
 }
 
@@ -75,13 +93,11 @@ void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConf
                      << (config.multiplexingEnabled() ? "enabled" : "disabled");
         }
 
-        multiLimitsChanged = (d_ptr->config.multiMaxTotalConnections()
-                              != config.multiMaxTotalConnections())
-                             || (d_ptr->config.multiMaxHostConnections()
-                                 != config.multiMaxHostConnections())
-                             || (d_ptr->config.multiMaxConcurrentStreams()
-                                 != config.multiMaxConcurrentStreams())
-                             || (d_ptr->config.multiMaxConnects() != config.multiMaxConnects());
+        multiLimitsChanged
+            = (d_ptr->config.multiMaxTotalConnections() != config.multiMaxTotalConnections())
+              || (d_ptr->config.multiMaxHostConnections() != config.multiMaxHostConnections())
+              || (d_ptr->config.multiMaxConcurrentStreams() != config.multiMaxConcurrentStreams())
+              || (d_ptr->config.multiMaxConnects() != config.multiMaxConnects());
 
         d_ptr->config = config;
     }
@@ -112,43 +128,61 @@ void Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(void 
     QCNetworkConnectionPoolConfig cfg = manager->d_ptr->config;
     locker.unlock();
 
-    curl_easy_setopt(curlHandle, CURLOPT_MAXCONNECTS, cfg.maxTotalConnections());
+    logCurlOptionFailure(curl_easy_setopt(curlHandle,
+                                          CURLOPT_MAXCONNECTS,
+                                          cfg.maxTotalConnections()),
+                         "CURLOPT_MAXCONNECTS");
 
-    curl_easy_setopt(curlHandle, CURLOPT_FRESH_CONNECT, 0L);
+    logCurlOptionFailure(Internal::CurlOptions::setEnabled(curlHandle, CURLOPT_FRESH_CONNECT, false),
+                         "CURLOPT_FRESH_CONNECT");
 
-    curl_easy_setopt(curlHandle, CURLOPT_FORBID_REUSE, 0L);
+    logCurlOptionFailure(Internal::CurlOptions::setEnabled(curlHandle, CURLOPT_FORBID_REUSE, false),
+                         "CURLOPT_FORBID_REUSE");
 
-    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPALIVE, 1L);
+    logCurlOptionFailure(Internal::CurlOptions::setTcpKeepAlive(curlHandle, true),
+                         "CURLOPT_TCP_KEEPALIVE");
 
-    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPIDLE, static_cast<long>(cfg.maxIdleTime()));
+    logCurlOptionFailure(curl_easy_setopt(curlHandle,
+                                          CURLOPT_TCP_KEEPIDLE,
+                                          static_cast<long>(cfg.maxIdleTime())),
+                         "CURLOPT_TCP_KEEPIDLE");
 
-    curl_easy_setopt(curlHandle, CURLOPT_TCP_KEEPINTVL, 30L);
+    logCurlOptionFailure(Internal::CurlOptions::setTcpKeepInterval(curlHandle,
+                                                                   kTcpKeepAliveInterval),
+                         "CURLOPT_TCP_KEEPINTVL");
 
     if (cfg.dnsCacheEnabled()) {
-        curl_easy_setopt(curlHandle,
-                         CURLOPT_DNS_CACHE_TIMEOUT,
-                         static_cast<long>(cfg.dnsCacheTimeout()));
+        logCurlOptionFailure(curl_easy_setopt(curlHandle,
+                                              CURLOPT_DNS_CACHE_TIMEOUT,
+                                              static_cast<long>(cfg.dnsCacheTimeout())),
+                             "CURLOPT_DNS_CACHE_TIMEOUT");
     } else {
-        curl_easy_setopt(curlHandle, CURLOPT_DNS_CACHE_TIMEOUT, 0L);
+        logCurlOptionFailure(Internal::CurlOptions::setLong(curlHandle,
+                                                            CURLOPT_DNS_CACHE_TIMEOUT,
+                                                            Internal::CurlOptions::kDisabled),
+                             "CURLOPT_DNS_CACHE_TIMEOUT");
     }
 
     if (cfg.multiplexingEnabled()) {
-        curl_easy_setopt(curlHandle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+        logCurlOptionFailure(curl_easy_setopt(curlHandle,
+                                              CURLOPT_HTTP_VERSION,
+                                              CURL_HTTP_VERSION_2_0),
+                             "CURLOPT_HTTP_VERSION");
     }
 
     if (cfg.pipeliningEnabled()) {
-        curl_easy_setopt(curlHandle, CURLOPT_PIPEWAIT, 1L);
+        logCurlOptionFailure(Internal::CurlOptions::setPipeWait(curlHandle, true),
+                             "CURLOPT_PIPEWAIT");
 
         qDebug() << "QCNetworkConnectionPoolManager: HTTP/1.1 pipelining enabled for" << host;
     }
 
-#if LIBCURL_VERSION_NUM >= 0x075000
     if (cfg.maxConnectionLifetime() > 0) {
-        curl_easy_setopt(curlHandle,
-                         CURLOPT_MAXLIFETIME_CONN,
-                         static_cast<long>(cfg.maxConnectionLifetime()));
+        logCurlOptionFailure(curl_easy_setopt(curlHandle,
+                                              CURLOPT_MAXLIFETIME_CONN,
+                                              static_cast<long>(cfg.maxConnectionLifetime())),
+                             "CURLOPT_MAXLIFETIME_CONN");
     }
-#endif
 
     locker.relock();
     manager->d_ptr->activeConnectionsPerHost[host]++;
@@ -203,7 +237,7 @@ void QCNetworkConnectionPoolManager::resetStatistics()
 
     qDebug() << "QCNetworkConnectionPoolManager: Resetting statistics";
 
-    d_ptr->totalRequests = 0;
+    d_ptr->totalRequests     = 0;
     d_ptr->reusedConnections = 0;
     d_ptr->activeConnectionsPerHost.clear();
 }
