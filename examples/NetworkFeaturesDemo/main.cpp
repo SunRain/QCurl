@@ -14,6 +14,8 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <chrono>
+
 // QCurl 核心头文件
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkDiagnostics.h"
@@ -170,11 +172,11 @@ private slots:
 
         // 创建 WebSocket 连接
         QUrl wsUrl("wss://echo.websocket.org");
-        QCWebSocket *socket = new QCWebSocket(wsUrl, this);
-
         // 配置压缩（RFC 7692 permessage-deflate）
         QCWebSocketCompressionConfig compConfig = QCWebSocketCompressionConfig::defaultConfig();
-        socket->setCompressionConfig(compConfig);
+        QCWebSocketOptions options;
+        options.setCompressionConfig(compConfig);
+        QCWebSocket *socket = new QCWebSocket(wsUrl, options, this);
 
         m_output << "连接到: " << wsUrl.toString() << "\n";
         m_output << "压缩配置:\n";
@@ -188,8 +190,8 @@ private slots:
 
             if (socket->isCompressionNegotiated()) {
                 m_output << "✅ 压缩协商成功!\n";
-                m_output << "协商后的配置: " << socket->compressionConfig().toExtensionHeader()
-                         << "\n";
+                m_output << "协商后的配置: "
+                         << socket->options().compressionConfig().toExtensionHeader() << "\n";
             } else {
                 m_output << "ℹ️  服务器不支持压缩或拒绝了压缩请求\n";
             }
@@ -248,29 +250,56 @@ private slots:
         m_output << "3. 网络诊断示例\n";
         m_output << "========================================\n\n";
 
+        QCNetworkDiagnosticsOptions quickOptions;
+        QString optionError;
+        if (!quickOptions.setTimeout(std::chrono::milliseconds{5000}, &optionError)) {
+            m_output << "❌ DNS 诊断配置无效: " << optionError << "\n";
+            return;
+        }
+
+        QCNetworkDiagnosticsOptions httpOptions;
+        if (!httpOptions.setTimeout(std::chrono::milliseconds{10000}, &optionError)) {
+            m_output << "❌ HTTP 诊断配置无效: " << optionError << "\n";
+            return;
+        }
+
+        QCNetworkDiagnosticsOptions httpPortOptions = quickOptions;
+        if (!httpPortOptions.setPort(80, &optionError)) {
+            m_output << "❌ TCP 诊断配置无效: " << optionError << "\n";
+            return;
+        }
+
+        QCNetworkDiagnosticsOptions sslOptions = httpOptions;
+        if (!sslOptions.setPort(443, &optionError)) {
+            m_output << "❌ SSL 诊断配置无效: " << optionError << "\n";
+            return;
+        }
+
         // 1. DNS 解析示例
         m_output << "【DNS 解析】\n";
-        auto dnsResult = QCNetworkDiagnostics::resolveDNS("example.com", 5000);
+        auto dnsResult = QCNetworkDiagnostics::resolveDNS("example.com", quickOptions);
         m_output << dnsResult.toString() << "\n";
 
         // 2. TCP 连接测试示例
         m_output << "【TCP 连接测试】\n";
-        auto connResult = QCNetworkDiagnostics::testConnection("example.com", 80, 5000);
+        auto connResult = QCNetworkDiagnostics::testConnection("example.com", httpPortOptions);
         m_output << connResult.toString() << "\n";
 
         // 3. SSL 证书检查示例
         m_output << "【SSL 证书检查】\n";
-        auto sslResult = QCNetworkDiagnostics::checkSSL("www.github.com", 443, 10000);
+        auto sslResult = QCNetworkDiagnostics::checkSSL("www.github.com", sslOptions);
         m_output << sslResult.toString() << "\n";
 
         // 4. HTTP 探测示例
         m_output << "【HTTP 探测】\n";
-        auto httpResult = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"), 10000);
+        auto httpResult = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"),
+                                                          httpOptions);
         m_output << httpResult.toString() << "\n";
 
         // 5. 综合诊断示例
         m_output << "【综合诊断】\n";
-        auto diagResult = QCNetworkDiagnostics::diagnose(QUrl("https://www.cloudflare.com"));
+        auto diagResult = QCNetworkDiagnostics::diagnose(QUrl("https://www.cloudflare.com"),
+                                                         httpOptions);
         m_output << diagResult.toString() << "\n";
 
         m_output << "\n========================================\n";

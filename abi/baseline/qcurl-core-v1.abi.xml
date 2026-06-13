@@ -21,8 +21,6 @@
     <elf-symbol name='_Z41qRegisterNormalizedMetaTypeImplementationIN5QCurl25QCNetworkLaneCancelResultEEiRK10QByteArray' type='func-type' binding='weak-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_Z41qRegisterNormalizedMetaTypeImplementationIN5QCurl28QCNetworkSchedulerStatisticsEEiRK10QByteArray' type='func-type' binding='weak-binding' visibility='protected-visibility' is-defined='yes'/>
     <elf-symbol name='_Z41qRegisterNormalizedMetaTypeImplementationIN5QCurl8QCCookieEEiRK10QByteArray' type='func-type' binding='weak-binding' visibility='protected-visibility' is-defined='yes'/>
-    <elf-symbol name='_ZN10QByteArrayD1Ev' type='func-type' binding='weak-binding' visibility='default-visibility' alias='_ZN10QByteArrayD2Ev' is-defined='yes'/>
-    <elf-symbol name='_ZN10QByteArrayD2Ev' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN11QBasicMutex6unlockEv' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN12QHashPrivate4DataIN6QCacheI7QStringN5QCurl25QCNetworkMemoryCacheEntryEE4NodeEE6rehashEm' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
     <elf-symbol name='_ZN12QHashPrivate4DataINS_4NodeI10QByteArrayS2_EEE6rehashEm' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
@@ -2338,6 +2336,7 @@
     <elf-symbol name='_ZNK7QObject6senderEv' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
     <elf-symbol name='_ZNK7QObject6threadEv' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
     <elf-symbol name='_ZNK7QObject8propertyEPKc' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <elf-symbol name='_ZNK7QString10startsWithE13QLatin1StringN2Qt15CaseSensitivityE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
     <elf-symbol name='_ZNK7QString10startsWithE5QCharN2Qt15CaseSensitivityE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
     <elf-symbol name='_ZNK7QString10startsWithERKS_N2Qt15CaseSensitivityE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
     <elf-symbol name='_ZNK7QString5splitE5QChar6QFlagsIN2Qt18SplitBehaviorFlagsEENS2_15CaseSensitivityE' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>

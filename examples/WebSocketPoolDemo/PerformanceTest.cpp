@@ -61,7 +61,7 @@ void PerformanceTest::printPerformanceResult(const QString &metric,
     if (with > 0 && without > 0) {
         const double improvement = static_cast<double>(without - with)
                                    / static_cast<double>(without) * 100.0;
-        const double speedup = static_cast<double>(without) / static_cast<double>(with);
+        const double speedup     = static_cast<double>(without) / static_cast<double>(with);
 
         if (improvement > 0) {
             qDebug() << "   ├─ 性能提升:" << QString::number(improvement, 'f', 1) << "%";
@@ -93,7 +93,7 @@ void PerformanceTest::testConnectionTime()
         QElapsedTimer timer;
         timer.start();
 
-        QCWebSocket socket(url);
+        QCWebSocket socket(url, QCWebSocketOptions{});
         socket.open();
 
         if (waitForConnection(&socket, 10000)) {
@@ -184,7 +184,7 @@ void PerformanceTest::testThroughput()
 
     int sentWithout = 0;
     for (int i = 0; i < messageCount; ++i) {
-        QCWebSocket socket(url);
+        QCWebSocket socket(url, QCWebSocketOptions{});
         socket.open();
 
         if (waitForConnection(&socket, 10000)) {

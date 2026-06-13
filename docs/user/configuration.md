@@ -56,16 +56,17 @@
 
 WebSocket 的 public 配置入口集中在以下头文件注释：
 
-- `src/QCWebSocket.h`：连接生命周期、`close(...)` / `ping(...)` / `pong(...)` / `setAutoPongEnabled(...)` / SSL 配置
+- `src/QCWebSocket.h`：连接生命周期、`QCWebSocketOptions`、`close(...)` / `ping(...)` / `pong(...)`
 - `src/QCWebSocketReconnectPolicy.h`：重连次数、指数退避参数、可重连 close code 集合
 - `src/QCWebSocketCompressionConfig.h`：压缩开关、 window bits、context takeover、compression level
 
 常见边界可先关注：
 
+- `QCWebSocket` 构造时必须传入 `QCWebSocketOptions`；连接超时、TLS、重连、压缩和自动 Pong 都通过 options 配置
 - `QCWebSocket::open()` 在 `Closed` 状态下允许再次调用；只有 `Connecting / Connected / Closing` 状态会拒绝并发 `open()`
 - `close(reason)` 的 `reason` 最大 123 字节
 - `ping(...)` / `pong(...)` 的 payload 最大 125 字节
-- `setAutoPongEnabled(...)` / `setCompressionConfig(...)` 必须在下一次 `open()` 前设置；`Closed` 状态可为重连前重新配置，`Connecting / Connected / Closing` 阶段会拒绝修改并保留旧值
+- `setOptions(...)` 必须在下一次 `open()` 前调用；`Closed` 状态可为重连前重新配置，`Connecting / Connected / Closing` 阶段会拒绝修改并保留旧值
 - `QCWebSocketCompressionConfig` 的 `clientMaxWindowBits` / `serverMaxWindowBits` 约束为 8-15
 
 示例目录（`examples/WebSocketDemo/`、`examples/WebSocketCompressionDemo/`、`examples/WebSocketPoolDemo/`）只演示典型用法，不定义参数合同。

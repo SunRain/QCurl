@@ -40,7 +40,7 @@ void demo1_CompressionComparison()
 
     // 1. 禁用压缩
     qDebug() << "\n--- 禁用压缩 ---";
-    QCWebSocket socket1(url);
+    QCWebSocket socket1(url, QCWebSocketOptions{});
 
     QObject::connect(&socket1, &QCWebSocket::connected, [&]() {
         qDebug() << "✅ 已连接（无压缩）";
@@ -60,10 +60,9 @@ void demo1_CompressionComparison()
     QTimer::singleShot(3000, [&]() {
         // 2. 启用压缩
         qDebug() << "\n--- 启用压缩 ---";
-        QCWebSocket socket2(url);
-
-        // 配置压缩
-        socket2.setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
+        QCWebSocketOptions options;
+        options.setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
+        QCWebSocket socket2(url, options);
 
         QObject::connect(&socket2, &QCWebSocket::connected, [&]() {
             qDebug() << "✅ 已连接（启用压缩）";
@@ -117,8 +116,9 @@ void demo2_CompressionPresets()
         qDebug() << "  压缩级别:" << config.compressionLevel();
         qDebug() << "  无上下文接管:" << (config.clientNoContextTakeover() ? "是" : "否");
 
-        auto *socket = new QCWebSocket(url);
-        socket->setCompressionConfig(config);
+        QCWebSocketOptions options;
+        options.setCompressionConfig(config);
+        auto *socket = new QCWebSocket(url, options);
 
         QObject::connect(socket, &QCWebSocket::connected, [socket, testMessage]() {
             qDebug() << "✅ 已连接";
@@ -173,8 +173,9 @@ void demo3_LargeMessageCompression()
 
         qDebug() << "\n--- 测试:" << size << "字节消息 ---";
 
-        auto *socket = new QCWebSocket(url);
-        socket->setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
+        QCWebSocketOptions options;
+        options.setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
+        auto *socket = new QCWebSocket(url, options);
 
         QObject::connect(socket, &QCWebSocket::connected, [socket, message]() {
             qDebug() << "✅ 已连接，发送消息...";

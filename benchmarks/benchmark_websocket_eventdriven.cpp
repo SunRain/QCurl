@@ -5,12 +5,14 @@
  * 测量事件驱动收发模式在延迟和空闲连接场景下的表现。
  */
 
-#include <QtTest>
-#include <QSignalSpy>
-#include <QElapsedTimer>
-#include <numeric>
-#include <algorithm>
 #include "QCWebSocket.h"
+
+#include <QElapsedTimer>
+#include <QSignalSpy>
+#include <QtTest>
+
+#include <algorithm>
+#include <numeric>
 
 using namespace QCurl;
 
@@ -38,9 +40,7 @@ void BenchmarkWebSocketEventDriven::initTestCase()
     qDebug() << "测试 URL:" << TEST_URL;
 }
 
-void BenchmarkWebSocketEventDriven::cleanupTestCase()
-{
-}
+void BenchmarkWebSocketEventDriven::cleanupTestCase() {}
 
 bool BenchmarkWebSocketEventDriven::waitForConnection(QCWebSocket *socket, int timeout)
 {
@@ -70,7 +70,7 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
     QFETCH(QString, message);
     QFETCH(int, iterations);
 
-    QCWebSocket *socket = new QCWebSocket(QUrl(TEST_URL));
+    QCWebSocket *socket = new QCWebSocket(QUrl(TEST_URL), QCWebSocketOptions{});
     socket->open();
 
     if (!waitForConnection(socket, 10000)) {
@@ -90,16 +90,17 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
         if (spy.wait(5000)) {
             qint64 latency = timer.elapsed();
             latencies.append(latency);
-            qDebug() << "  第" << (i+1) << "次延迟:" << latency << "ms";
+            qDebug() << "  第" << (i + 1) << "次延迟:" << latency << "ms";
         } else {
-            qWarning() << "  第" << (i+1) << "次：响应超时";
+            qWarning() << "  第" << (i + 1) << "次：响应超时";
         }
 
         QTest::qWait(100);
     }
 
     if (!latencies.isEmpty()) {
-        qint64 avgLatency = std::accumulate(latencies.begin(), latencies.end(), 0LL) / latencies.size();
+        qint64 avgLatency = std::accumulate(latencies.begin(), latencies.end(), 0LL)
+                            / latencies.size();
         qint64 maxLatency = *std::max_element(latencies.begin(), latencies.end());
         qint64 minLatency = *std::min_element(latencies.begin(), latencies.end());
 
@@ -118,17 +119,18 @@ void BenchmarkWebSocketEventDriven::benchmarkMultipleConnections()
 {
     qDebug() << "创建 10 个连接并保持空闲 10 秒...";
 
-    QList<QCWebSocket*> sockets;
+    QList<QCWebSocket *> sockets;
 
     // 创建 10 个连接
     for (int i = 0; i < 10; ++i) {
-        auto *socket = new QCWebSocket(QUrl(TEST_URL));
+        auto *socket = new QCWebSocket(QUrl(TEST_URL), QCWebSocketOptions{});
         socket->open();
         sockets.append(socket);
         QTest::qWait(500);
     }
 
-    QBENCHMARK_ONCE {
+    QBENCHMARK_ONCE
+    {
         // 空闲 10 秒
         QTest::qWait(10000);
     }

@@ -144,12 +144,14 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 
 ```cpp
 #include <QCWebSocket.h>
+#include <QCWebSocketCompressionConfig.h>
+#include <QCWebSocketReconnectPolicy.h>
 
-auto *socket = new QCurl::QCWebSocket(QUrl("wss://echo.websocket.org"));
+QCurl::QCWebSocketOptions options;
+options.setCompressionConfig(QCurl::QCWebSocketCompressionConfig::defaultConfig());
+options.setReconnectPolicy(QCurl::QCWebSocketReconnectPolicy::standardReconnect());
 
-// 启用压缩和自动重连
-socket->setCompressionConfig(QCurl::QCWebSocketCompressionConfig::defaultConfig());
-socket->setReconnectPolicy(QCurl::QCWebSocketReconnectPolicy::standardReconnect());
+auto *socket = new QCurl::QCWebSocket(QUrl("wss://echo.websocket.org"), options);
 
 connect(socket, &QCurl::QCWebSocket::connected, [socket]() {
     socket->sendTextMessage("Hello WebSocket!");

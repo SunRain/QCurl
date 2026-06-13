@@ -5,10 +5,11 @@
  * 使用 Qt Test 框架的 QBENCHMARK 宏测量性能。
  */
 
-#include <QtTest>
-#include <QSignalSpy>
-#include "QCWebSocketPool.h"
 #include "QCWebSocket.h"
+#include "QCWebSocketPool.h"
+
+#include <QSignalSpy>
+#include <QtTest>
 
 using namespace QCurl;
 
@@ -41,9 +42,7 @@ void BenchmarkWebSocketPool::initTestCase()
     qDebug() << "测试 URL:" << TEST_URL;
 }
 
-void BenchmarkWebSocketPool::cleanupTestCase()
-{
-}
+void BenchmarkWebSocketPool::cleanupTestCase() {}
 
 void BenchmarkWebSocketPool::init()
 {
@@ -79,10 +78,11 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithoutPool()
 {
     QUrl url(TEST_URL);
 
-    QBENCHMARK {
-        QCWebSocket socket(url);
+    QBENCHMARK
+    {
+        QCWebSocket socket(url, QCWebSocketOptions{});
         socket.open();
-        
+
         if (waitForConnection(&socket, 10000)) {
             socket.close();
             QTest::qWait(100);
@@ -110,12 +110,13 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithPool()
     // 预热连接
     if (warmupCount > 0) {
         pool->preWarm(url, warmupCount);
-        QTest::qWait(3000);  // 等待连接建立
+        QTest::qWait(3000); // 等待连接建立
     }
 
-    QBENCHMARK {
+    QBENCHMARK
+    {
         auto *socket = pool->acquire(url);
-        
+
         if (!socket) {
             QSKIP("无法获取连接");
         }
@@ -139,14 +140,15 @@ void BenchmarkWebSocketPool::benchmarkConnectionReuse()
     pool->preWarm(url, 1);
     QTest::qWait(3000);
 
-    QBENCHMARK {
+    QBENCHMARK
+    {
         // 获取 → 释放 → 再次获取（应复用）
         auto *s1 = pool->acquire(url);
         QVERIFY(s1 != nullptr);
         pool->release(s1);
 
         auto *s2 = pool->acquire(url);
-        QVERIFY(s2 == s1);  // 验证复用
+        QVERIFY(s2 == s1); // 验证复用
         pool->release(s2);
     }
 }
@@ -155,7 +157,8 @@ void BenchmarkWebSocketPool::benchmarkPreWarm()
 {
     QUrl url(TEST_URL);
 
-    QBENCHMARK {
+    QBENCHMARK
+    {
         QCWebSocketPool tempPool;
         tempPool.preWarm(url, 5);
         QTest::qWait(3000);

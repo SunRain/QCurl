@@ -28,7 +28,7 @@ class WebSocketDemo : public QObject
 public:
     explicit WebSocketDemo(QObject *parent = nullptr)
         : QObject(parent)
-        , m_socket(new QCWebSocket(QUrl("wss://echo.websocket.org"), this))
+        , m_socket(new QCWebSocket(QUrl("wss://echo.websocket.org"), QCWebSocketOptions{}, this))
         , m_inputTimer(new QTimer(this))
     {
         setupConnections();
