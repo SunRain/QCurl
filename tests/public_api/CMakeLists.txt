@@ -49,6 +49,14 @@ set(QCURL_PUBLIC_API_OTHER_EXTRAS_POSITIVE_BUILD_DIR
     "${CMAKE_BINARY_DIR}/public_api/consumer_other_extras_positive")
 set(QCURL_PUBLIC_API_OTHER_EXTRAS_NEGATIVE_BUILD_DIR
     "${CMAKE_BINARY_DIR}/public_api/consumer_other_extras_negative")
+set(QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_DIAGNOSTICS_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_magic_hard_break_negative_diagnostics_defaults")
+set(QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_WEBSOCKET_MUTATORS_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_magic_hard_break_negative_websocket_mutators")
+set(QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_RECONNECT_CODES_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_magic_hard_break_negative_reconnect_int_codes")
+set(QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_CLOSE_SIGNAL_BUILD_DIR
+    "${CMAKE_BINARY_DIR}/public_api/consumer_magic_hard_break_negative_close_received_typed")
 
 file(MAKE_DIRECTORY "${QCURL_PUBLIC_API_GENERATED_DIR}")
 file(MAKE_DIRECTORY "${QCURL_PUBLIC_API_SELF_COMPILE_DIR}")
@@ -379,4 +387,64 @@ add_test(
 set_tests_properties(qcurl_public_api_other_extras_consumer_smoke PROPERTIES
     LABELS "public-api-slow"
     FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_other_extras_stage"
+)
+
+add_test(
+    NAME qcurl_public_api_magic_hard_break_negative_diagnostics_defaults
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            hard-break-negative-consumer
+            --cmake "${CMAKE_COMMAND}"
+            --stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_magic_hard_break_negative_diagnostics_defaults"
+            --build-dir "${QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_DIAGNOSTICS_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_magic_hard_break_negative_diagnostics_defaults PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_other_extras_stage
+)
+
+add_test(
+    NAME qcurl_public_api_magic_hard_break_negative_websocket_mutators
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            hard-break-negative-consumer
+            --cmake "${CMAKE_COMMAND}"
+            --stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_magic_hard_break_negative_websocket_mutators"
+            --build-dir "${QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_WEBSOCKET_MUTATORS_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_magic_hard_break_negative_websocket_mutators PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_other_extras_stage
+)
+
+add_test(
+    NAME qcurl_public_api_magic_hard_break_negative_reconnect_int_codes
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            hard-break-negative-consumer
+            --cmake "${CMAKE_COMMAND}"
+            --stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_magic_hard_break_negative_reconnect_int_codes"
+            --build-dir "${QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_RECONNECT_CODES_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_magic_hard_break_negative_reconnect_int_codes PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_other_extras_stage
+)
+
+add_test(
+    NAME qcurl_public_api_magic_hard_break_negative_close_received_typed
+    COMMAND "${Python3_EXECUTABLE}" "${_qcurl_public_api_check_script}"
+            hard-break-negative-consumer
+            --cmake "${CMAKE_COMMAND}"
+            --stage-dir "${QCURL_PUBLIC_API_OTHER_EXTRAS_STAGE_DIR}"
+            --source-dir "${CMAKE_CURRENT_SOURCE_DIR}/consumer_magic_hard_break_negative_close_received_typed"
+            --build-dir "${QCURL_PUBLIC_API_MAGIC_HARD_BREAK_NEGATIVE_CLOSE_SIGNAL_BUILD_DIR}"
+            --config "$<CONFIG>"
+)
+set_tests_properties(qcurl_public_api_magic_hard_break_negative_close_received_typed PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_other_extras_stage
 )

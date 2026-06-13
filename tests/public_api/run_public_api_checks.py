@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -240,6 +241,37 @@ def other_extras_consumer_smoke(args: argparse.Namespace) -> int:
     return run_other_extras_consumer_smoke(args, run_command=run, fail_func=fail)
 
 
+def hard_break_negative_consumer(args: argparse.Namespace) -> int:
+    """Verify a removed public API fixture fails against a staged package."""
+
+    if args.build_dir.exists():
+        shutil.rmtree(args.build_dir)
+
+    configure = [
+        args.cmake,
+        "-S",
+        str(args.source_dir),
+        "-B",
+        str(args.build_dir),
+        f"-DQCURL_STAGE_PREFIX={args.stage_dir}",
+    ]
+    try:
+        run(configure)
+    except RuntimeError as exc:
+        return fail(f"hard-break negative consumer configure failed unexpectedly: {exc}")
+
+    build = [args.cmake, "--build", str(args.build_dir)]
+    if args.config:
+        build.extend(["--config", args.config])
+
+    proc = run(build, expect_success=False)
+    if proc.returncode == 0:
+        return fail("hard-break negative consumer unexpectedly built successfully")
+
+    print("[public_api] hard-break negative consumer passed")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the CLI parser."""
 
@@ -338,6 +370,14 @@ def build_parser() -> argparse.ArgumentParser:
     other_extras_smoke = subparsers.add_parser("other-extras-consumer-smoke")
     _add_opt_in_smoke_args(other_extras_smoke, "--other-extras-stage-dir")
     other_extras_smoke.set_defaults(func=other_extras_consumer_smoke)
+
+    hard_break_negative = subparsers.add_parser("hard-break-negative-consumer")
+    hard_break_negative.add_argument("--cmake", required=True)
+    hard_break_negative.add_argument("--stage-dir", type=Path, required=True)
+    hard_break_negative.add_argument("--source-dir", type=Path, required=True)
+    hard_break_negative.add_argument("--build-dir", type=Path, required=True)
+    hard_break_negative.add_argument("--config", default="")
+    hard_break_negative.set_defaults(func=hard_break_negative_consumer)
 
     return parser
 
