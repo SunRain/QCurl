@@ -59,3 +59,14 @@ add_test(
 set_tests_properties(qcurl_release_contract_guard PROPERTIES
     LABELS "offline;source_guard"
 )
+
+add_test(
+    NAME qcurl_libcurl_binding_contract_guard
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/scripts/check_libcurl_binding_contract.py"
+            --source-root
+            "${CMAKE_SOURCE_DIR}/src"
+)
+set_tests_properties(qcurl_libcurl_binding_contract_guard PROPERTIES
+    LABELS "offline;source_guard"
+)
