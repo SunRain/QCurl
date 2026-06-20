@@ -14,6 +14,7 @@ DEFAULT_LIBRARY = Path("build/src/libQCurl.so.1.0.0")
 DEFAULT_HEADERS_DIR = Path("src")
 DEFAULT_BASELINE = Path("abi/baseline/qcurl-core-v1.abi.xml")
 DEFAULT_REPORT = Path("build/abi/qcurl-core-v1.abidiff.txt")
+DEFAULT_CURRENT_SNAPSHOT = Path("build/abi/qcurl-core-v1.current.abi.xml")
 
 
 class AbiGateError(RuntimeError):
@@ -84,7 +85,9 @@ def command_diff(args: argparse.Namespace) -> int:
     baseline = _resolve_existing_file(args.baseline, "ABI baseline")
     report = args.report.resolve()
     headers_dir = _resolve_existing_dir(args.headers_dir, "headers directory")
-    library = _resolve_existing_file(args.library, "QCurl shared library")
+    current_snapshot = args.current_snapshot.resolve()
+    current_snapshot.parent.mkdir(parents=True, exist_ok=True)
+    _run(_abidw_command(args, current_snapshot))
     command = [
         _tool_path("abidiff"),
         "--exported-interfaces-only",
@@ -94,9 +97,10 @@ def command_diff(args: argparse.Namespace) -> int:
         "--headers-dir2",
         str(headers_dir),
         str(baseline),
-        str(library),
+        str(current_snapshot),
     ]
     _run(command, output_file=report)
+    print(f"[qcurl_abi_gate] current snapshot written: {current_snapshot}")
     print(f"[qcurl_abi_gate] ABI diff passed: {report}")
     return 0
 
@@ -129,10 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
     diff = subparsers.add_parser("diff", help="compare current library against an ABI baseline")
     diff.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     diff.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    diff.add_argument("--current-snapshot", type=Path, default=DEFAULT_CURRENT_SNAPSHOT)
     diff.set_defaults(func=command_diff)
 
     snapshot = subparsers.add_parser("snapshot", help="write a diagnostic ABI snapshot XML")
-    snapshot.add_argument("--output", type=Path, default=Path("build/abi/qcurl-core-v1.current.abi.xml"))
+    snapshot.add_argument("--output", type=Path, default=DEFAULT_CURRENT_SNAPSHOT)
     snapshot.set_defaults(func=command_snapshot)
 
     return parser
