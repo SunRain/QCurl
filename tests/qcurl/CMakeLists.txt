@@ -2,6 +2,14 @@
 
 include(CMakeParseArguments)
 
+add_library(qcurl_qttest_paths INTERFACE)
+target_compile_definitions(qcurl_qttest_paths INTERFACE
+    QCURL_TEST_SOURCE_ROOT="${PROJECT_SOURCE_DIR}"
+)
+target_include_directories(qcurl_qttest_paths INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # 测试辅助函数：添加单个测试
 function(_add_qcurl_test_impl test_name)
     set(options
@@ -29,13 +37,14 @@ function(_add_qcurl_test_impl test_name)
             Qt6::Network
             QCurl
             CURL::libcurl # 添加 libcurl 链接（某些测试需要直接调用 curl API）
+            qcurl_qttest_paths
     )
 
     target_include_directories(${test_name}
         PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_BINARY_DIR}/src
-            ${CMAKE_SOURCE_DIR}/tests/support
+            ${PROJECT_SOURCE_DIR}/src
+            ${PROJECT_BINARY_DIR}/src
+            ${PROJECT_SOURCE_DIR}/tests/support
     )
 
     if(QT_REQUIRE_HTTPBIN
@@ -46,7 +55,7 @@ function(_add_qcurl_test_impl test_name)
        OR QT_REQUIRE_FRAGMENT_WS)
         set(test_command
             "${Python3_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/tests/qcurl/run_qttest_with_preflight.py"
+            "${PROJECT_SOURCE_DIR}/tests/qcurl/run_qttest_with_preflight.py"
             "--test-bin" "$<TARGET_FILE:${test_name}>"
             "--test-name" "${test_name}"
         )
@@ -136,8 +145,8 @@ target_link_libraries(qcurl_http2_capability_probe
 )
 target_include_directories(qcurl_http2_capability_probe
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_BINARY_DIR}/src
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_BINARY_DIR}/src
 )
 set_target_properties(qcurl_http2_capability_probe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
@@ -238,8 +247,8 @@ target_link_libraries(qcurl_cache_extras_header_self_compile
 )
 target_include_directories(qcurl_cache_extras_header_self_compile
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_BINARY_DIR}/src
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_BINARY_DIR}/src
 )
 add_qcurl_test_with_preflight(
     tst_QCNetworkCacheIntegration

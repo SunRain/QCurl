@@ -7,9 +7,9 @@
  */
 
 #include "QCNetworkDiagnostics.h"
+#include "test_source_paths.h"
 
-#include <QCoreApplication>
-#include <QDir>
+#include <QByteArray>
 #include <QFile>
 #include <QHostAddress>
 #include <QJsonDocument>
@@ -247,9 +247,8 @@ private:
 
 QString tlsFixturePath(const QString &fileName)
 {
-    const QString appDir = QCoreApplication::applicationDirPath();
-    return QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/qcurl/testdata/http2/%1").arg(fileName));
+    const QString relativePath = QStringLiteral("tests/qcurl/testdata/http2/%1").arg(fileName);
+    return TestSourcePaths::sourcePath(relativePath);
 }
 
 } // namespace

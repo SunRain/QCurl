@@ -12,7 +12,9 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "test_source_paths.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -109,9 +111,8 @@ bool TestQCNetworkShareHandle::startObserveServer()
         return false;
     }
 
-    const QString appDir     = QCoreApplication::applicationDirPath();
-    const QString scriptPath = QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/libcurl_consistency/http_observe_server.py"));
+    const QString scriptPath = TestSourcePaths::sourcePath(
+        QStringLiteral("tests/libcurl_consistency/http_observe_server.py"));
     if (!QFileInfo::exists(scriptPath)) {
         m_skipReason = QStringLiteral("未找到 http_observe_server.py，跳过 share handle 测试");
         return false;

@@ -17,9 +17,10 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
+#include "test_source_paths.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
-#include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
@@ -168,9 +169,8 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     m_localH2BaseUrl.clear();
     m_localHttp1BaseUrl.clear();
 
-    const QString appDir     = QCoreApplication::applicationDirPath();
-    const QString scriptPath = QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/qcurl/http2-test-server.js"));
+    const QString scriptPath =
+        TestSourcePaths::sourcePath(QStringLiteral("tests/qcurl/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         m_serverError = QStringLiteral(
             "未找到本地 HTTP/2 测试服务器脚本（tests/qcurl/http2-test-server.js）。");

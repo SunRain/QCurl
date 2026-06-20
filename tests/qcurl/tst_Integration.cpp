@@ -20,10 +20,11 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "test_httpbin_env.h"
+#include "test_source_paths.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QCryptographicHash>
-#include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
@@ -706,9 +707,8 @@ void TestIntegration::testHttpbinRequestSslConfigAlignment()
 void TestIntegration::testLocalHttpsTlsVerification()
 {
     // 使用仓库自带证书启动本地 HTTPS server，分别验证失败和成功路径。
-    const QString appDir     = QCoreApplication::applicationDirPath();
-    const QString scriptPath = QDir(appDir).absoluteFilePath(
-        QStringLiteral("../../tests/qcurl/http2-test-server.js"));
+    const QString scriptPath =
+        TestSourcePaths::sourcePath(QStringLiteral("tests/qcurl/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         QFAIL("未找到本地 HTTPS 测试服务器脚本（tests/qcurl/http2-test-server.js）。");
     }
@@ -783,8 +783,8 @@ void TestIntegration::testLocalHttpsTlsVerification()
     }
 
     if (certPath.isEmpty()) {
-        certPath = QDir(appDir).absoluteFilePath(
-            QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
+        certPath =
+            TestSourcePaths::sourcePath(QStringLiteral("tests/qcurl/testdata/http2/localhost.crt"));
     }
 
     QVERIFY2(waitForPortReady(static_cast<quint16>(httpsPort), 3000),

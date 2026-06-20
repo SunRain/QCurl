@@ -1,6 +1,8 @@
 #ifndef QCURL_TEST_QCWEBSOCKETTESTSERVER_H
 #define QCURL_TEST_QCWEBSOCKETTESTSERVER_H
 
+#include "test_source_paths.h"
+
 /**
  * @file QCWebSocketTestServer.h
  * @brief 启动和管理 Qt Test 使用的本地 WebSocket server。
@@ -94,9 +96,7 @@ public:
     /// @return `tests/qcurl/testdata/http2/localhost.crt` 的绝对路径。
     [[nodiscard]] QString caCertPath() const
     {
-        const QString appDir = QCoreApplication::applicationDirPath();
-        return QDir(appDir).absoluteFilePath(
-            QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
+        return testAssetPath(QStringLiteral("tests/qcurl/testdata/http2/localhost.crt"));
     }
 
     /// @brief 启动指定模式和实现类型的本地 server。
@@ -113,20 +113,18 @@ public:
         m_artifactsPath.clear();
         m_skipReason = {};
 
-        const QString appDir     = QCoreApplication::applicationDirPath();
-        const QString scriptPath = QDir(appDir).absoluteFilePath(
+        const QString scriptPath = testAssetPath(
             (m_kind == ServerKind::Evidence)
-                ? QStringLiteral("../../tests/qcurl/websocket-evidence-server.js")
-                : QStringLiteral("../../tests/qcurl/websocket-fragment-server.js"));
+                ? QStringLiteral("tests/qcurl/websocket-evidence-server.js")
+                : QStringLiteral("tests/qcurl/websocket-fragment-server.js"));
         if (!QFileInfo::exists(scriptPath)) {
             m_skipReason = QStringLiteral("未找到本地 WebSocket 测试服务器脚本：%1").arg(scriptPath);
             return false;
         }
         if (m_kind == ServerKind::FragmentEcho) {
-            const QString lockPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/qcurl/package-lock.json"));
-            const QString wsPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/qcurl/node_modules/ws/package.json"));
+            const QString lockPath = testAssetPath(QStringLiteral("tests/qcurl/package-lock.json"));
+            const QString wsPath =
+                testAssetPath(QStringLiteral("tests/qcurl/node_modules/ws/package.json"));
             if (!QFileInfo::exists(lockPath)) {
                 m_skipReason = QStringLiteral("Fragment Echo server 缺少 package-lock.json：%1")
                                    .arg(lockPath);
@@ -141,10 +139,10 @@ public:
 
         QStringList args{scriptPath, QStringLiteral("--port"), QStringLiteral("0")};
         if (m_mode == Mode::Wss) {
-            const QString certPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/qcurl/testdata/http2/localhost.crt"));
-            const QString keyPath = QDir(appDir).absoluteFilePath(
-                QStringLiteral("../../tests/qcurl/testdata/http2/localhost.key"));
+            const QString certPath =
+                testAssetPath(QStringLiteral("tests/qcurl/testdata/http2/localhost.crt"));
+            const QString keyPath =
+                testAssetPath(QStringLiteral("tests/qcurl/testdata/http2/localhost.key"));
             if (!QFileInfo::exists(certPath) || !QFileInfo::exists(keyPath)) {
                 m_skipReason = QStringLiteral(
                     "未找到本地 WSS 证书或私钥（tests/qcurl/testdata/http2/localhost.{crt,key}）。");
@@ -162,6 +160,7 @@ public:
         m_process.setProcessChannelMode(QProcess::SeparateChannels);
 
         // 统一将工件写入 build/<...>/test-artifacts（由 appDir 推导，避免硬编码 build 目录名）。
+        const QString appDir = QCoreApplication::applicationDirPath();
         const QString artifactRoot = QDir(appDir).absoluteFilePath(
             QStringLiteral("../test-artifacts"));
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -235,6 +234,11 @@ public:
     }
 
 private:
+    static QString testAssetPath(const QString &relativePath)
+    {
+        return TestSourcePaths::sourcePath(relativePath);
+    }
+
     static bool tryParseReady(const QString &stdoutBuf, quint16 &outPort, QString &outArtifactsPath)
     {
         const QString marker    = QStringLiteral("QCURL_WEBSOCKET_TEST_SERVER_READY ");
