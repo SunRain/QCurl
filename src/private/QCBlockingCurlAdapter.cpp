@@ -1,6 +1,6 @@
 #include "CurlFeatureProbe.h"
+#include "QCCurlHandleManager.h"
 #include "QCNetworkError.h"
-#include "private/CurlGlobalConstructor_p.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCBlockingCurlMethodSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
@@ -223,8 +223,8 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                 availability.reason);
     }
 
-    CurlGlobalConstructor::instance();
-    CURL *handle = curl_easy_init();
+    QCCurlHandleManager curlManager;
+    CURL *handle = curlManager.handle();
     if (!handle) {
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest,
                                                 QStringLiteral("Blocking Extras curl init failed"));
@@ -256,7 +256,6 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
         if (storage.connectToList) {
             curl_slist_free_all(storage.connectToList);
         }
-        curl_easy_cleanup(handle);
     });
 
     if (!configureRequestOptions(handle, request, &storage)
@@ -274,11 +273,6 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
     const QByteArray cookieHeader = cookieHeaderValue(cookies);
     if (!cookieHeader.isEmpty()) {
         curl_easy_setopt(handle, CURLOPT_COOKIE, cookieHeader.constData());
-    }
-    if (CurlOptions::setEnabled(handle, CURLOPT_NOSIGNAL, true) != CURLE_OK) {
-        return QCBlockingNetworkResult::failure(
-            NetworkError::InvalidRequest,
-            QStringLiteral("Blocking Extras failed to set CURLOPT_NOSIGNAL"));
     }
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writeBodyCallback);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, &responseSink);

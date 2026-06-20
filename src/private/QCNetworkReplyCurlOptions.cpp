@@ -462,13 +462,6 @@ namespace {
         }
     }
 
-    // 多线程安全（禁用信号处理）
-    if (!setRequiredOption(reply,
-                           Internal::CurlOptions::setEnabled(handle, CURLOPT_NOSIGNAL, true),
-                           "CURLOPT_NOSIGNAL")) {
-        return false;
-    }
-
     // ==================
     // 1.2 流式上传源准备（M2）
     // ==================

@@ -1,13 +1,39 @@
 #include "QCCurlHandleManager.h"
 
+#include "private/CurlGlobalConstructor_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
+
 #include <QDebug>
 
 #include <utility> // for std::exchange
 
 namespace QCurl {
+namespace {
+
+CURL *createEasyHandle()
+{
+    CurlGlobalConstructor::instance();
+
+    CURL *handle = curl_easy_init();
+    if (!handle) {
+        return nullptr;
+    }
+
+    const CURLcode rc = Internal::CurlOptions::setEnabled(handle, CURLOPT_NOSIGNAL, true);
+    if (rc != CURLE_OK) {
+        qWarning() << "QCCurlHandleManager: failed to apply CURLOPT_NOSIGNAL:"
+                   << curl_easy_strerror(rc);
+        curl_easy_cleanup(handle);
+        return nullptr;
+    }
+
+    return handle;
+}
+
+} // namespace
 
 QCCurlHandleManager::QCCurlHandleManager()
-    : m_curlHandle(curl_easy_init())
+    : m_curlHandle(createEasyHandle())
     , m_headerList(nullptr)
 {
     // curl_easy_init() 可能返回 nullptr（内存不足等情况）

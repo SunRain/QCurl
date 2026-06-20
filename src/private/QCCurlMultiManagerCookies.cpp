@@ -1,4 +1,5 @@
 #include "QCCurlMultiManager.h"
+#include "QCCurlHandleManager.h"
 #include "QCNetworkAccessManager.h"
 
 #include <QByteArrayView>
@@ -7,8 +8,6 @@
 #include <QTimeZone>
 
 #include <ctime>
-#include <memory>
-
 namespace QCurl {
 
 namespace {
@@ -177,7 +176,8 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         return false;
     }
 
-    CURL *easy = curl_easy_init();
+    QCCurlHandleManager easyHandle;
+    CURL *easy = easyHandle.handle();
     if (!easy) {
         if (error) {
             *error = QStringLiteral("curl_easy_init 失败");
@@ -185,7 +185,6 @@ bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *m
         return false;
     }
 
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
     curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
@@ -267,7 +266,8 @@ std::optional<QList<QCCookie>> QCCurlMultiManager::exportCookiesForManager(
         return std::nullopt;
     }
 
-    CURL *easy = curl_easy_init();
+    QCCurlHandleManager easyHandle;
+    CURL *easy = easyHandle.handle();
     if (!easy) {
         if (error) {
             *error = QStringLiteral("curl_easy_init 失败");
@@ -275,7 +275,6 @@ std::optional<QList<QCCookie>> QCCurlMultiManager::exportCookiesForManager(
         return std::nullopt;
     }
 
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
     curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
@@ -340,7 +339,8 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
         return false;
     }
 
-    CURL *easy = curl_easy_init();
+    QCCurlHandleManager easyHandle;
+    CURL *easy = easyHandle.handle();
     if (!easy) {
         if (error) {
             *error = QStringLiteral("curl_easy_init 失败");
@@ -348,7 +348,6 @@ bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager 
         return false;
     }
 
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> easyGuard(easy, &curl_easy_cleanup);
     curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
     curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
 
