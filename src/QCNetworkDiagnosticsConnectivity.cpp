@@ -5,11 +5,13 @@
 
 #include "QCNetworkDiagnostics.h"
 
+#include "QCNetworkAccessManager.h"
+#include "QCNetworkReply.h"
+#include "QCNetworkRequest.h"
+#include "private/QCNetworkLogRedaction_p.h"
+
 #include <QElapsedTimer>
 #include <QEventLoop>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QSslCertificate>
 #include <QSslSocket>
 #include <QTcpSocket>
@@ -208,40 +210,62 @@ DiagResult QCNetworkDiagnostics::probeHTTP(const QUrl &url,
     timer.start();
 
     const int timeout = timeoutMs(options);
+    const QString redactedUrl = QCNetworkLogRedaction::redactUrl(url);
 
-    QNetworkAccessManager manager;
-    QNetworkRequest request(url);
-    request.setTransferTimeout(timeout);
+    QCNetworkAccessManager manager;
+    QCNetworkRequest request(url);
+    request.setTimeout(options.timeout());
+    request.setConnectTimeout(options.timeout());
 
-    QNetworkReply *reply = manager.get(request);
-    QEventLoop loop;
+    QCNetworkReply *reply = manager.get(request);
+    if (!reply) {
+        result.setDurationMs(timer.elapsed());
+        result.setDetail(QStringLiteral("url"), redactedUrl);
+        result.setSuccess(false);
+        result.setSummary(QStringLiteral("HTTP 探测失败: %1").arg(redactedUrl));
+        result.setErrorString(QStringLiteral("QCurl reply 创建失败"));
+        result.setDetail(QStringLiteral("errorString"), result.errorString());
+        return result;
+    }
 
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    bool timedOut = false;
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        QObject::connect(reply, &QCNetworkReply::finished, &loop, &QEventLoop::quit);
+        QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
+            timedOut = true;
+            reply->cancel();
+            loop.quit();
+        });
 
-    loop.exec();
+        timeoutTimer.start(timeout);
+        loop.exec();
+    }
+
+    const int statusCode = reply->httpStatusCode();
+    const NetworkError networkError = timedOut ? NetworkError::ConnectionTimeout : reply->error();
+    const QString errorMessage = timedOut ? QStringLiteral("Timeout") : reply->errorString();
+    const QString finalUrl = QCNetworkLogRedaction::redactUrl(reply->url());
 
     result.setDurationMs(timer.elapsed());
-    result.setDetail(QStringLiteral("url"), url.toString());
+    result.setDetail(QStringLiteral("url"), redactedUrl);
     result.setDetail(QStringLiteral("totalTime"), result.durationMs());
-    result.setDetail(QStringLiteral("finalURL"), reply->url().toString());
-    result.setDetail(QStringLiteral("networkError"), static_cast<int>(reply->error()));
+    result.setDetail(QStringLiteral("finalURL"), finalUrl);
+    result.setDetail(QStringLiteral("networkError"), static_cast<int>(networkError));
 
-    const QVariant statusCodeAttr = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
-    if (statusCodeAttr.isValid()) {
-        result.setDetail(QStringLiteral("statusCode"), statusCodeAttr.toInt());
-    }
-    const QVariant statusTextAttr = reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute);
-    if (statusTextAttr.isValid()) {
-        result.setDetail(QStringLiteral("statusText"), statusTextAttr.toString());
+    if (statusCode > 0) {
+        result.setDetail(QStringLiteral("statusCode"), statusCode);
     }
 
-    if (reply->error() == QNetworkReply::NoError) {
+    if (!timedOut && networkError == NetworkError::NoError) {
         result.setSuccess(true);
-        result.setSummary(QStringLiteral("HTTP 探测成功: %1").arg(url.toString()));
+        result.setSummary(QStringLiteral("HTTP 探测成功: %1").arg(redactedUrl));
     } else {
         result.setSuccess(false);
-        result.setSummary(QStringLiteral("HTTP 探测失败: %1").arg(url.toString()));
-        result.setErrorString(reply->errorString());
+        result.setSummary(QStringLiteral("HTTP 探测失败: %1").arg(redactedUrl));
+        result.setErrorString(errorMessage);
         result.setDetail(QStringLiteral("errorString"), result.errorString());
     }
 

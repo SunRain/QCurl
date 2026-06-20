@@ -180,7 +180,7 @@ public:
      * @param options 诊断配置，包含超时
      * @return DiagResult 探测结果
      *
-     * 当前实现会进入局部事件循环等待 `QNetworkReply::finished()`。
+     * 当前实现会进入局部事件循环等待 `QCNetworkReply::finished()`。
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
     static DiagResult probeHTTP(const QUrl &url, const QCNetworkDiagnosticsOptions &options);
