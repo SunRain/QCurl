@@ -19,6 +19,26 @@ bool isSensitiveQueryKey(const QString &keyLower)
            || keyLower == QStringLiteral("pwd");
 }
 
+static bool isSignedUrlQueryKey(const QString &keyLower)
+{
+    if (keyLower.startsWith(QStringLiteral("x-amz-"))
+        || keyLower.startsWith(QStringLiteral("x-goog-"))) {
+        return true;
+    }
+
+    return keyLower == QStringLiteral("awsaccesskeyid")
+           || keyLower == QStringLiteral("signature") || keyLower == QStringLiteral("policy")
+           || keyLower == QStringLiteral("key-pair-id") || keyLower == QStringLiteral("expires")
+           || keyLower == QStringLiteral("sig") || keyLower == QStringLiteral("se")
+           || keyLower == QStringLiteral("sp") || keyLower == QStringLiteral("sv")
+           || keyLower == QStringLiteral("sr") || keyLower == QStringLiteral("sip")
+           || keyLower == QStringLiteral("spr") || keyLower == QStringLiteral("skoid")
+           || keyLower == QStringLiteral("sktid") || keyLower == QStringLiteral("skt")
+           || keyLower == QStringLiteral("ske") || keyLower == QStringLiteral("sks")
+           || keyLower == QStringLiteral("skv") || keyLower == QStringLiteral("signed")
+           || keyLower == QStringLiteral("signedheaders");
+}
+
 bool isSensitiveHeaderKey(const QByteArray &keyLower)
 {
     if (keyLower == "authorization" || keyLower == "proxy-authorization" || keyLower == "cookie"
@@ -62,6 +82,24 @@ QString redactSensitiveQueryParams(const QString &line)
     const QString after  = line.mid(end);
 
     QStringList parts = query.split(QLatin1Char('&'));
+    bool hasSignedUrlMarker = false;
+    for (const QString &part : parts) {
+        const int eq = part.indexOf(QLatin1Char('='));
+        if (eq <= 0) {
+            continue;
+        }
+
+        const QString key = part.left(eq).trimmed();
+        if (key.isEmpty()) {
+            continue;
+        }
+
+        if (isSignedUrlQueryKey(key.toLower())) {
+            hasSignedUrlMarker = true;
+            break;
+        }
+    }
+
     for (QString &part : parts) {
         const int eq = part.indexOf(QLatin1Char('='));
         if (eq <= 0) {
@@ -71,7 +109,9 @@ QString redactSensitiveQueryParams(const QString &line)
         if (key.isEmpty()) {
             continue;
         }
-        if (isSensitiveQueryKey(key.toLower())) {
+
+        const QString keyLower = key.toLower();
+        if (hasSignedUrlMarker || isSensitiveQueryKey(keyLower)) {
             part = key + QStringLiteral("=[REDACTED]");
         }
     }

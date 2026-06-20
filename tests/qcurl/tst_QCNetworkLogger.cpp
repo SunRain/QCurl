@@ -47,6 +47,7 @@ private slots:
     void testLoggerNullptr();
     void testDebugTraceFlag();
     void testDebugTraceRedaction();
+    void testDebugTraceSignedUrlRedaction();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -309,6 +310,52 @@ void TestQCNetworkLogger::testDebugTraceRedaction()
     QVERIFY(message.contains("Set-Cookie: [REDACTED]"));
     QVERIFY(message.contains("token=[REDACTED]"));
     QVERIFY(message.contains("foo=bar"));
+}
+
+void TestQCNetworkLogger::testDebugTraceSignedUrlRedaction()
+{
+    const QByteArray raw
+        = QByteArray("GET /s3/object?X-Amz-Algorithm=AWS4-HMAC-SHA256&"
+                     "X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&"
+                     "response-content-disposition=attachment HTTP/1.1\r\n"
+                     "GET /cf/video.mp4?Policy=cloudfront-policy&Signature=cf-signature&"
+                     "Key-Pair-Id=K123 HTTP/1.1\r\n"
+                     "GET /gcs/object?X-Goog-Algorithm=GOOG4-RSA-SHA256&alt=media&"
+                     "X-Goog-Signature=gcs-signature HTTP/1.1\r\n"
+                     "GET /azure/blob?sv=2024-11-04&se=2026-06-19T00%3A00%3A00Z&"
+                     "sp=r&sig=azure-signature&rsct=text/plain HTTP/1.1\r\n"
+                     "GET /normal/path?file=readme.txt&download=1&token=secret-token "
+                     "HTTP/1.1\r\n");
+
+    const QString message = QCNetworkReplyPrivate::formatDebugTraceMessage(CURLINFO_HEADER_OUT, raw);
+
+    QVERIFY(!message.contains(QStringLiteral("AWS4-HMAC-SHA256")));
+    QVERIFY(!message.contains(QStringLiteral("AKIAIOSFODNN7EXAMPLE")));
+    QVERIFY(!message.contains(QStringLiteral("attachment")));
+    QVERIFY(!message.contains(QStringLiteral("cloudfront-policy")));
+    QVERIFY(!message.contains(QStringLiteral("cf-signature")));
+    QVERIFY(!message.contains(QStringLiteral("K123")));
+    QVERIFY(!message.contains(QStringLiteral("GOOG4-RSA-SHA256")));
+    QVERIFY(!message.contains(QStringLiteral("media")));
+    QVERIFY(!message.contains(QStringLiteral("gcs-signature")));
+    QVERIFY(!message.contains(QStringLiteral("2024-11-04")));
+    QVERIFY(!message.contains(QStringLiteral("azure-signature")));
+    QVERIFY(!message.contains(QStringLiteral("text/plain")));
+    QVERIFY(!message.contains(QStringLiteral("secret-token")));
+
+    QVERIFY(message.contains(QStringLiteral("X-Amz-Algorithm=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("X-Amz-Credential=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("response-content-disposition=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("Policy=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("Key-Pair-Id=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("X-Goog-Algorithm=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("alt=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("sv=[REDACTED]")));
+    QVERIFY(message.contains(QStringLiteral("rsct=[REDACTED]")));
+
+    QVERIFY(message.contains(QStringLiteral("file=readme.txt")));
+    QVERIFY(message.contains(QStringLiteral("download=1")));
+    QVERIFY(message.contains(QStringLiteral("token=[REDACTED]")));
 }
 
 QTEST_MAIN(TestQCNetworkLogger)
