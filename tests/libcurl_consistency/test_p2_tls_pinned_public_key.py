@@ -1,17 +1,21 @@
 """
 P2：TLS pinned public key 语义一致性。
 
-复用仓库内固定 fixture，不在运行时调用 openssl。
+复用 curl testenv 当前生成的服务端证书，不在运行时调用 openssl。
 """
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import uuid
 from pathlib import Path
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
 
 from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces, write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
@@ -22,7 +26,6 @@ from tests.libcurl_consistency.pytest_support.service_logs import collect_servic
 
 
 _CURLCODE_RE = re.compile(r"curlcode=(\d+)")
-_PINNED_FIXTURE = Path(__file__).resolve().parent / "testdata" / "pinned_public_key_sha256.txt"
 
 
 def _parse_curlcode(stderr_lines) -> int:
@@ -66,23 +69,35 @@ def _make_ctbp_payload(*, proto: str, mode: str) -> dict[str, object]:
     return payload
 
 
-def _read_pinned_fixture() -> str:
-    if not _PINNED_FIXTURE.exists():
-        pytest.fail(f"missing pinned public key fixture: {_PINNED_FIXTURE}")
-    value = _PINNED_FIXTURE.read_text(encoding="utf-8").strip()
-    if not value.startswith("sha256//"):
-        pytest.fail(f"invalid pinned public key fixture: {_PINNED_FIXTURE}")
-    return value
+def _pinned_public_key_for_cert(cert_path: Path) -> str:
+    """Return libcurl-compatible sha256 public-key pin for the active test certificate."""
+    try:
+        cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        public_key_der = cert.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        digest = hashes.Hash(hashes.SHA256())
+        digest.update(public_key_der)
+        return "sha256//" + base64.b64encode(digest.finalize()).decode("ascii")
+    except Exception as exc:
+        pytest.fail(f"failed to derive pinned public key from {cert_path}: {exc}")
 
 
 def _mutate_pinned(pinned: str) -> str:
-    if not pinned.startswith("sha256//"):
+    prefix = "sha256//"
+    if not pinned.startswith(prefix):
         return "sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    b64 = pinned[len("sha256//") :]
+    b64 = pinned[len(prefix) :]
     if not b64:
         return "sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    last = "A" if b64[-1] != "A" else "B"
-    return "sha256//" + b64[:-1] + last
+    chars = list(b64)
+    for index in range(len(chars) - 1, -1, -1):
+        if chars[index] == "=":
+            continue
+        chars[index] = "A" if chars[index] != "A" else "B"
+        return prefix + "".join(chars)
+    return "sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 
 @pytest.mark.parametrize("mode", ["match", "mismatch"])
@@ -93,7 +108,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
     collect_logs = should_collect_service_logs()
     port = int(lc_observe_https["port"])
     ca_cert = str(lc_observe_https["ca_cert"])
-    pinned = _read_pinned_fixture()
+    pinned = _pinned_public_key_for_cert(Path(str(lc_observe_https["cert"])))
 
     if mode == "mismatch":
         pinned = _mutate_pinned(pinned)
@@ -171,7 +186,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
                     "baseline_req_id": baseline_req_id,
                     "qcurl_req_id": qcurl_req_id,
                     "observe_https_port": port,
-                    "fixture": str(_PINNED_FIXTURE),
+                    "cert": str(lc_observe_https["cert"]),
                 },
             )
         raise

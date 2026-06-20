@@ -98,6 +98,18 @@ _CURLINFO_BIN = _CURL_BUILD_DIR / "src" / "curlinfo"
 _QCURL_BUILD_DIR = _CURL_BUILD_DIR.parent
 _NGHTTPX_H3_BIN = _QCURL_BUILD_DIR / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
 
+
+def _curl_supports_http3() -> bool:
+    """Return whether the bundled curl build can actually execute HTTP/3 cases."""
+    return bool(Env.have_h3_curl())
+
+
+def _disable_testenv_nghttpx() -> None:
+    """Hide nghttpx from upstream curl fixtures when HTTP/3 cannot be exercised."""
+    Env.CONFIG.nghttpx = None
+    Env.CONFIG._nghttpx_version = None
+    Env.CONFIG.nghttpx_with_h3 = False
+
 def _ensure_qcurl_qttest_env() -> None:
     """
     为 QCURL_QTTEST 提供“可用即用”的默认值，并确保为绝对路径。
@@ -151,6 +163,9 @@ def _override_testenv_nghttpx_bin() -> None:
     curl testenv 默认会优先读取 <qcurl_build>/curl/tests/http/config.ini（其中 nghttpx 通常指向 /usr/bin/nghttpx）。
     为了覆盖 HTTP/3 场景，这里在不改 curl/tests/... 的前提下，将 Env.CONFIG.nghttpx 指向本仓库构建的 h3-capable nghttpx。
     """
+    if not _curl_supports_http3():
+        _disable_testenv_nghttpx()
+        return
     if not _NGHTTPX_H3_BIN.exists():
         return
     Env.CONFIG.nghttpx = str(_NGHTTPX_H3_BIN)
@@ -310,6 +325,11 @@ def env_config(pytestconfig, testrun_uid, worker_id) -> EnvConfig:
     """
     cfg = EnvConfig(pytestconfig=pytestconfig, testrun_uid=testrun_uid, worker_id=worker_id)
     cfg.build_dir = str(_CURL_BUILD_DIR)
+    if not _curl_supports_http3():
+        cfg.nghttpx = None
+        cfg._nghttpx_version = None  # type: ignore[attr-defined]
+        cfg.nghttpx_with_h3 = False
+        return cfg
     if _NGHTTPX_H3_BIN.exists():
         cfg.nghttpx = str(_NGHTTPX_H3_BIN)
         try:
