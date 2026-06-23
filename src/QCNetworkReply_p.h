@@ -185,6 +185,7 @@ public:
     QByteArray proxyHostBytes;     ///< 代理主机名缓存
     QByteArray proxyUserBytes;     ///< 代理用户名缓存
     QByteArray proxyPasswordBytes; ///< 代理密码缓存
+    bool proxyEnvironmentDisabled = false; ///< 默认不继承 libcurl 代理环境变量
 
     QByteArray httpAuthUserBytes;     ///< HTTP 认证用户名缓存
     QByteArray httpAuthPasswordBytes; ///< HTTP 认证密码缓存

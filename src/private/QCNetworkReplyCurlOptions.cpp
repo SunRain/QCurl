@@ -147,6 +147,15 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
     return false;
 }
 
+void disableProxyEnvironmentInheritance(QCNetworkReplyPrivate *reply, CURL *handle)
+{
+    reply->proxyEnvironmentDisabled = true;
+    reply->proxyHostBytes.clear();
+    reply->proxyUserBytes.clear();
+    reply->proxyPasswordBytes.clear();
+    curl_easy_setopt(handle, CURLOPT_PROXY, "");
+}
+
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 curl_slist *buildSlistFromStrings(const QStringList &entries)
 {
@@ -833,89 +842,89 @@ namespace {
     // 6. 代理配置
     // ==================
 
-    if (const auto proxyConfigOpt = request.proxyConfig(); proxyConfigOpt.has_value()) {
+    if (const auto proxyConfigOpt = request.proxyConfig(); !proxyConfigOpt.has_value()
+        || proxyConfigOpt->type() == QCNetworkProxyConfig::ProxyType::None) {
+        disableProxyEnvironmentInheritance(reply, handle);
+    } else {
         const QCNetworkProxyConfig &proxyConfig = proxyConfigOpt.value();
-        if (proxyConfig.type() != QCNetworkProxyConfig::ProxyType::None) {
-            if (!proxyConfig.isValid()) {
-                qWarning() << "QCNetworkReply: invalid proxy configuration ignored";
-            } else {
-                reply->proxyHostBytes = proxyConfig.hostName().toUtf8();
-                curl_easy_setopt(handle, CURLOPT_PROXY, reply->proxyHostBytes.constData());
+        if (!proxyConfig.isValid()) {
+            qWarning() << "QCNetworkReply: invalid proxy configuration ignored";
+            disableProxyEnvironmentInheritance(reply, handle);
+        } else {
+            reply->proxyEnvironmentDisabled = false;
+            reply->proxyHostBytes = proxyConfig.hostName().toUtf8();
+            curl_easy_setopt(handle, CURLOPT_PROXY, reply->proxyHostBytes.constData());
 
-                if (proxyConfig.port() > 0) {
-                    curl_easy_setopt(handle,
-                                     CURLOPT_PROXYPORT,
-                                     static_cast<long>(proxyConfig.port()));
-                }
+            if (proxyConfig.port() > 0) {
+                curl_easy_setopt(handle, CURLOPT_PROXYPORT, static_cast<long>(proxyConfig.port()));
+            }
 
-                long proxyType = CURLPROXY_HTTP;
-                switch (proxyConfig.type()) {
-                    case QCNetworkProxyConfig::ProxyType::Http:
-                        proxyType = CURLPROXY_HTTP;
-                        break;
-                    case QCNetworkProxyConfig::ProxyType::Https:
+            long proxyType = CURLPROXY_HTTP;
+            switch (proxyConfig.type()) {
+                case QCNetworkProxyConfig::ProxyType::Http:
+                    proxyType = CURLPROXY_HTTP;
+                    break;
+                case QCNetworkProxyConfig::ProxyType::Https:
 #ifdef CURLPROXY_HTTPS
-                        proxyType = CURLPROXY_HTTPS;
+                    proxyType = CURLPROXY_HTTPS;
 #else
-                        if (const auto proxyTlsConfigOpt = proxyConfig.tlsConfig();
-                            proxyTlsConfigOpt.has_value()
-                            && proxyTlsConfigOpt->unsupportedSecurityPolicy()
-                                   == QCUnsupportedSecurityOptionPolicy::Fail) {
-                            reply->setError(NetworkError::InvalidRequest,
-                                            QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
-                                                           "代理（CURLPROXY_HTTPS 未定义）"));
-                            return false;
-                        }
-                        proxyType = CURLPROXY_HTTP;
-                        appendCapabilityWarning(
-                            reply,
-                            QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
-                                           "代理（CURLPROXY_HTTPS 未定义），已按 HTTP 代理处理"));
+                    if (const auto proxyTlsConfigOpt = proxyConfig.tlsConfig();
+                        proxyTlsConfigOpt.has_value()
+                        && proxyTlsConfigOpt->unsupportedSecurityPolicy()
+                               == QCUnsupportedSecurityOptionPolicy::Fail) {
+                        reply->setError(NetworkError::InvalidRequest,
+                                        QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
+                                                       "代理（CURLPROXY_HTTPS 未定义）"));
+                        return false;
+                    }
+                    proxyType = CURLPROXY_HTTP;
+                    appendCapabilityWarning(
+                        reply,
+                        QStringLiteral("当前构建的 libcurl 不支持 HTTPS "
+                                       "代理（CURLPROXY_HTTPS 未定义），已按 HTTP 代理处理"));
 #endif
-                        break;
-                    case QCNetworkProxyConfig::ProxyType::Socks4:
-                        proxyType = CURLPROXY_SOCKS4;
-                        break;
-                    case QCNetworkProxyConfig::ProxyType::Socks4A:
-                        proxyType = CURLPROXY_SOCKS4A;
-                        break;
-                    case QCNetworkProxyConfig::ProxyType::Socks5:
-                        proxyType = CURLPROXY_SOCKS5;
-                        break;
-                    case QCNetworkProxyConfig::ProxyType::Socks5Hostname:
-                        proxyType = CURLPROXY_SOCKS5_HOSTNAME;
-                        break;
-                    default:
-                        proxyType = CURLPROXY_HTTP;
-                        break;
-                }
-                curl_easy_setopt(handle, CURLOPT_PROXYTYPE, proxyType);
+                    break;
+                case QCNetworkProxyConfig::ProxyType::Socks4:
+                    proxyType = CURLPROXY_SOCKS4;
+                    break;
+                case QCNetworkProxyConfig::ProxyType::Socks4A:
+                    proxyType = CURLPROXY_SOCKS4A;
+                    break;
+                case QCNetworkProxyConfig::ProxyType::Socks5:
+                    proxyType = CURLPROXY_SOCKS5;
+                    break;
+                case QCNetworkProxyConfig::ProxyType::Socks5Hostname:
+                    proxyType = CURLPROXY_SOCKS5_HOSTNAME;
+                    break;
+                default:
+                    proxyType = CURLPROXY_HTTP;
+                    break;
+            }
+            curl_easy_setopt(handle, CURLOPT_PROXYTYPE, proxyType);
 
-                if (!proxyConfig.userName().isEmpty()) {
-                    reply->proxyUserBytes = proxyConfig.userName().toUtf8();
-                    curl_easy_setopt(handle,
-                                     CURLOPT_PROXYUSERNAME,
-                                     reply->proxyUserBytes.constData());
-                } else {
-                    reply->proxyUserBytes.clear();
-                }
+            if (!proxyConfig.userName().isEmpty()) {
+                reply->proxyUserBytes = proxyConfig.userName().toUtf8();
+                curl_easy_setopt(handle, CURLOPT_PROXYUSERNAME, reply->proxyUserBytes.constData());
+            } else {
+                reply->proxyUserBytes.clear();
+            }
 
-                if (!proxyConfig.password().isEmpty()) {
-                    reply->proxyPasswordBytes = proxyConfig.password().toUtf8();
-                    curl_easy_setopt(handle,
-                                     CURLOPT_PROXYPASSWORD,
-                                     reply->proxyPasswordBytes.constData());
-                } else {
-                    reply->proxyPasswordBytes.clear();
-                }
+            if (!proxyConfig.password().isEmpty()) {
+                reply->proxyPasswordBytes = proxyConfig.password().toUtf8();
+                curl_easy_setopt(handle,
+                                 CURLOPT_PROXYPASSWORD,
+                                 reply->proxyPasswordBytes.constData());
+            } else {
+                reply->proxyPasswordBytes.clear();
+            }
 
-                if (!proxyConfig.userName().isEmpty() || !proxyConfig.password().isEmpty()) {
-                    curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
-                }
+            if (!proxyConfig.userName().isEmpty() || !proxyConfig.password().isEmpty()) {
+                curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+            }
 
-                // ==================
-                // Proxy TLS（M5，可选）：仅 HTTPS proxy + 显式配置时生效
-                // ==================
+            // ==================
+            // Proxy TLS（M5，可选）：仅 HTTPS proxy + 显式配置时生效
+            // ==================
 
 #ifdef CURLPROXY_HTTPS
                 if (const auto proxyTlsConfigOpt = proxyConfig.tlsConfig();
@@ -1098,15 +1107,6 @@ namespace {
                 }
 #endif
             }
-        } else {
-            reply->proxyHostBytes.clear();
-            reply->proxyUserBytes.clear();
-            reply->proxyPasswordBytes.clear();
-        }
-    } else {
-        reply->proxyHostBytes.clear();
-        reply->proxyUserBytes.clear();
-        reply->proxyPasswordBytes.clear();
     }
 
     // ==================

@@ -43,6 +43,7 @@ private slots:
     void testProxyAuthentication();
     void testProxyWithSsl();
     void testProxyAppliedToCurlHandle();
+    void testProxyEnvironmentDisabledByDefault();
     void testSslConfigApplied();
     void testSslConfigValueSemantics();
     void testTimeoutConfigOptionalLifecycle();
@@ -218,6 +219,34 @@ void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
     QVERIFY(invalidPrivate.proxyPasswordBytes.isEmpty());
 
     qDebug() << "Proxy config propagation verified";
+}
+
+void TestQCNetworkProxy::testProxyEnvironmentDisabledByDefault()
+{
+    QCNetworkRequest defaultRequest(QUrl(QStringLiteral("https://example.com")));
+    QCNetworkReplyPrivate defaultPrivate(nullptr,
+                                         defaultRequest,
+                                         HttpMethod::Get,
+                                         Internal::makeEmptyRequestBody(),
+                                         QByteArray());
+
+    QVERIFY(defaultPrivate.configureCurlOptions());
+    QVERIFY(defaultPrivate.proxyEnvironmentDisabled);
+    QVERIFY(defaultPrivate.proxyHostBytes.isEmpty());
+
+    QCNetworkRequest noneRequest(QUrl(QStringLiteral("https://example.com")));
+    QCNetworkProxyConfig noneProxy;
+    noneProxy.setType(QCNetworkProxyConfig::ProxyType::None);
+    noneRequest.setProxyConfig(noneProxy);
+    QCNetworkReplyPrivate nonePrivate(nullptr,
+                                      noneRequest,
+                                      HttpMethod::Get,
+                                      Internal::makeEmptyRequestBody(),
+                                      QByteArray());
+
+    QVERIFY(nonePrivate.configureCurlOptions());
+    QVERIFY(nonePrivate.proxyEnvironmentDisabled);
+    QVERIFY(nonePrivate.proxyHostBytes.isEmpty());
 }
 
 void TestQCNetworkProxy::testSslConfigApplied()
