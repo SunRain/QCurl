@@ -10,8 +10,8 @@ QCurl 的 install surface 只有两个来源：
 - 生成头 `QCurlConfig.h`
 
 机器可读发布面清单位于 `tests/public_api/surface_manifest.json`。它记录每个 public header
-当前属于 Core、Blocking Extras、Other Extras、Test Support 还是 Internal，以及 hard-break
-完成后的目标安装面。`qcurl_public_api_surface_manifest` 会把这份清单同
+当前属于 Core、Blocking Extras、Other Extras、Test Support 还是 Internal，以及 1.0.0
+目标安装面。`qcurl_public_api_surface_manifest` 会把这份清单同
 `QCURL_INSTALL_HEADERS` / `QCURL_INSTALL_HEADERS_EXTRAS` 生成的 manifest 对齐，防止默认
 Core 安装面新增未分层头文件。
 

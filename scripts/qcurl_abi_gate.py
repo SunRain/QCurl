@@ -15,6 +15,12 @@ DEFAULT_HEADERS_DIR = Path("src")
 DEFAULT_BASELINE = Path("abi/baseline/qcurl-core-v1.abi.xml")
 DEFAULT_REPORT = Path("build/abi/qcurl-core-v1.abidiff.txt")
 DEFAULT_CURRENT_SNAPSHOT = Path("build/abi/qcurl-core-v1.current.abi.xml")
+DEFAULT_HARDBREAK_REPORT = Path("build/abi/qcurl-core-v1.hardbreak-from-previous.abidiff.txt")
+DEFAULT_HARDBREAK_SNAPSHOT = Path("build/abi/qcurl-core-v1.hardbreak-current.abi.xml")
+
+ABIDIFF_ABI_CHANGE = 4
+ABIDIFF_ABI_INCOMPATIBLE_CHANGE = 8
+ABIDIFF_HARDBREAK_ACCEPTED_MASK = ABIDIFF_ABI_CHANGE | ABIDIFF_ABI_INCOMPATIBLE_CHANGE
 
 
 class AbiGateError(RuntimeError):
@@ -55,6 +61,43 @@ def _run(command: list[str], *, output_file: Path | None = None) -> subprocess.C
     return proc
 
 
+def _abidiff_command(baseline: Path, current_snapshot: Path, headers_dir: Path) -> list[str]:
+    return [
+        _tool_path("abidiff"),
+        "--exported-interfaces-only",
+        "--fail-no-debug-info",
+        "--headers-dir1",
+        str(headers_dir),
+        "--headers-dir2",
+        str(headers_dir),
+        str(baseline),
+        str(current_snapshot),
+    ]
+
+
+def abidiff_returncode_is_hardbreak_evidence(returncode: int) -> bool:
+    """Return whether abidiff reported only ABI change evidence bits."""
+
+    return returncode & ~ABIDIFF_HARDBREAK_ACCEPTED_MASK == 0
+
+
+def _run_abidiff_hardbreak_report(command: list[str], report: Path) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(command, text=True, capture_output=True)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+    if not abidiff_returncode_is_hardbreak_evidence(proc.returncode):
+        details = (proc.stdout or "") + (proc.stderr or "")
+        raise AbiGateError(
+            "hard-break ABI report failed: "
+            + " ".join(command)
+            + f"\nreturncode={proc.returncode}\n"
+            + details
+        )
+    if proc.returncode != 0 and not report.read_text(encoding="utf-8").strip():
+        raise AbiGateError(f"hard-break ABI report is empty: {report}")
+    return proc
+
+
 def _abidw_command(args: argparse.Namespace, output: Path) -> list[str]:
     return [
         _tool_path("abidw"),
@@ -89,15 +132,7 @@ def command_diff(args: argparse.Namespace) -> int:
     current_snapshot.parent.mkdir(parents=True, exist_ok=True)
     _run(_abidw_command(args, current_snapshot))
     command = [
-        _tool_path("abidiff"),
-        "--exported-interfaces-only",
-        "--fail-no-debug-info",
-        "--headers-dir1",
-        str(headers_dir),
-        "--headers-dir2",
-        str(headers_dir),
-        str(baseline),
-        str(current_snapshot),
+        *_abidiff_command(baseline, current_snapshot, headers_dir),
     ]
     _run(command, output_file=report)
     print(f"[qcurl_abi_gate] current snapshot written: {current_snapshot}")
@@ -112,6 +147,30 @@ def command_snapshot(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     _run(_abidw_command(args, output))
     print(f"[qcurl_abi_gate] snapshot written: {output}")
+    return 0
+
+
+def command_hardbreak_report(args: argparse.Namespace) -> int:
+    """Write an old-baseline-to-current hard-break ABI report.
+
+    ABI changes and incompatible ABI changes are accepted for this command,
+    while tool errors, usage errors, missing debug information and missing
+    inputs still fail closed.
+    """
+
+    baseline = _resolve_existing_file(args.baseline, "previous ABI baseline")
+    report = args.report.resolve()
+    headers_dir = _resolve_existing_dir(args.headers_dir, "headers directory")
+    current_snapshot = args.current_snapshot.resolve()
+    current_snapshot.parent.mkdir(parents=True, exist_ok=True)
+    _run(_abidw_command(args, current_snapshot))
+    proc = _run_abidiff_hardbreak_report(
+        _abidiff_command(baseline, current_snapshot, headers_dir),
+        report,
+    )
+    print(f"[qcurl_abi_gate] hard-break current snapshot written: {current_snapshot}")
+    print(f"[qcurl_abi_gate] hard-break ABI report written: {report}")
+    print(f"[qcurl_abi_gate] hard-break abidiff returncode: {proc.returncode}")
     return 0
 
 
@@ -139,6 +198,15 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot = subparsers.add_parser("snapshot", help="write a diagnostic ABI snapshot XML")
     snapshot.add_argument("--output", type=Path, default=DEFAULT_CURRENT_SNAPSHOT)
     snapshot.set_defaults(func=command_snapshot)
+
+    hardbreak = subparsers.add_parser(
+        "hardbreak-report",
+        help="write an old-baseline-to-current hard-break ABI report without treating ABI differences as failure",
+    )
+    hardbreak.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
+    hardbreak.add_argument("--report", type=Path, default=DEFAULT_HARDBREAK_REPORT)
+    hardbreak.add_argument("--current-snapshot", type=Path, default=DEFAULT_HARDBREAK_SNAPSHOT)
+    hardbreak.set_defaults(func=command_hardbreak_report)
 
     return parser
 

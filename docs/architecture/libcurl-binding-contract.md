@@ -73,17 +73,17 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 - 不用 busy wait、sleep、手写 poll 或 signal handler 修补 resolver timeout / SIGPIPE 行为。
 - 不删除或弱化 public raw accessor。
 - 不把 signed URL 整段隐藏到不可诊断；必须保留 scheme、host、path 和 query key。
-- 默认不在本合同范围内做 public API / ABI hard break；若当前 release / 方案明确授权 hard break，必须补充 ABI hard-break 差异说明，并把 baseline 刷新纳入同一证据链。
+- 默认不在本合同范围内改变 public API / ABI。若 release 前确需改变公开面，必须同步更新当前 fresh baseline、release contract、用户文档和测试证据。
 
-## ABI hard-break 证据合同
+## ABI 证据合同
 
-当本合同范围内的变更被明确授权为 hard-breaking 时，ABI gate 不再以“旧 baseline 对当前库有差异”作为阻断项，但 reviewer 必须确认：
+`QCurl 1.0.0` 作为 fresh release 时，pre-1.0、RC 或历史草稿不构成公开 ABI 兼容承诺。Reviewer 必须确认：
 
-1. 当前库与刷新后的 baseline 通过 `qcurl_abi_gate.py diff`。
-2. 旧 baseline 到当前库的差异被记录为 hard-break 证据，而不是被静默吞掉。
-3. 差异说明必须写清授权前提、影响范围和是否存在超出本轮 binding hardening 的公开符号扩张。
+1. 当前库与 `abi/baseline/qcurl-core-v1.abi.xml` 通过 `qcurl_abi_gate.py diff`。
+2. 当前 baseline 由当前 `libQCurl.so.1.0.0` 生成，不能复用旧草稿产物。
+3. 历史 ABI 对比材料只保留为内部归档，不作为当前 release gate 或用户可见放行证据。
 
-本轮 hard-breaking ABI 说明见 `docs/architecture/libcurl-binding-hard-break-abi-evidence.md`。
+历史 libcurl binding ABI 对比材料归档在 `docs/internal/archived-release/libcurl-binding-abi-comparison-evidence.md`。
 
 ## Review checklist
 
@@ -102,5 +102,5 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 - signed URL marker 命中后全部 query value 被脱敏。
 - 普通非签名 URL 的非敏感 query value 保持可诊断。
 - 修改未引入 busy wait、sleep、手写 poll 或 signal handler。
-- 修改未引入 public API / ABI 变化；若当前明确允许 hard break，则 ABI 变化已记录为 hard-break 证据。
+- 修改未引入 public API / ABI 变化；若 release 前确需改变公开面，相关 baseline、合同、用户文档和测试证据已同步更新。
 - `qcurl_libcurl_binding_contract_guard`、logger redaction 用例和相关 targeted Qt Test 通过。

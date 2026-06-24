@@ -13,12 +13,11 @@ This directory keeps current maintainer architecture notes for `QCurl 1.0.0 firs
 
 - `docs/arch/request-normalization-pipeline.md`
 - `docs/arch/transport-pause-resume.md`
-- `docs/arch/lane-scheduler-hard-break-recommendation.md` — hard-breaking lane scheduler recommendation for hundreds of pending requests.
 - `docs/arch/porting-due-diligence.md` — case study / maintainer reference, not a first-public-release entrypoint.
 
 ## Internal history
 
-Old RC, 3.0, hard-break review, and task-log documents have moved to `docs/internal/archived-release/`.
+Old RC, 3.0, incompatible-change review, and task-log documents have moved to `docs/internal/archived-release/`.
 Pre-1.0 date-based history is indexed in `docs/internal/pre-1.0-history.md`; the raw archive lives under `docs/internal/archived-release/`.
 
 ## Related entries

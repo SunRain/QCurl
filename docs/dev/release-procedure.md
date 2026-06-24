@@ -51,19 +51,24 @@ cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
   -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
 cmake --build build-static --target QCurl qcurl_public_api_self_compile --parallel
 
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 baseline \
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 \
+  --headers-dir src baseline \
   --output abi/baseline/qcurl-core-v1.abi.xml
 python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 \
   --headers-dir src diff \
   --baseline abi/baseline/qcurl-core-v1.abi.xml \
-  --report build/abi/qcurl-core-v1.abidiff.txt
+  --report build/abi/qcurl-core-v1.abidiff.txt \
+  --current-snapshot build/abi/qcurl-core-v1.current.abi.xml
 
 python3 scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static
 python3 scripts/run_release_gate.py --scan-metadata --build-dir build
 git diff --check
 ```
 
-若任一 gate 失败，不得 tag 或创建 GitHub Release。缺少 `abidw` / `abidiff`、HTTP/3 环境、httpbin 等前置条件时，应先补齐环境或把失败记录为 release blocker。
+Fresh release 口径下，`QCurl 1.0.0` 是首个 Stable ABI baseline。ABI 证据以当前
+`libQCurl.so.1.0.0` 生成的 `abi/baseline/qcurl-core-v1.abi.xml` 和
+`build/abi/qcurl-core-v1.abidiff.txt` clean diff 为准。若任一 gate 失败，不得 tag 或创建
+GitHub Release。缺少 `abidw` / `abidiff`、HTTP/3 环境、httpbin 等前置条件时，应先补齐环境或把失败记录为 release blocker。
 
 ## 3. 打包与 release assets
 
@@ -81,7 +86,7 @@ cmake --build build --target package
 - Doxygen HTML artifact（见 `docs/dev/api-docs.md`）。
 - release gate logs / manifest。
 - checksums：`SHA256SUMS`。
-- SBOM / provenance / signature（见 `docs/dev/supply-chain.md`）。
+- SBOM / provenance / signature（仅在对应流程已启用时，见 `docs/dev/supply-chain.md`）。
 
 生成 checksum 示例：
 

@@ -221,6 +221,39 @@ python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 diff
 `build/abi/qcurl-core-v1.abidiff.txt`。缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时，
 gate fail-closed；发布结论必须把它记录为 release blocker。
 
+Fresh release 口径下，`QCurl 1.0.0` 是首个 Stable ABI baseline。pre-1.0、RC
+或历史草稿不构成公开 ABI 兼容承诺；正式 release gate 只使用当前 baseline → 当前库的
+clean diff 作为阻断证据。
+
+示例：
+
+```bash
+python3 scripts/qcurl_abi_gate.py \
+  --library build/src/libQCurl.so.1.0.0 \
+  --headers-dir src \
+  baseline \
+  --output abi/baseline/qcurl-core-v1.abi.xml
+
+python3 scripts/qcurl_abi_gate.py \
+  --library build/src/libQCurl.so.1.0.0 \
+  --headers-dir src \
+  diff \
+  --baseline abi/baseline/qcurl-core-v1.abi.xml \
+  --report build/abi/qcurl-core-v1.abidiff.txt \
+  --current-snapshot build/abi/qcurl-core-v1.current.abi.xml
+```
+
+`run_release_gate.py --tier full` 执行正式 release gate，包含当前 ABI baseline 的阻断 diff：
+
+```bash
+python3 scripts/run_release_gate.py \
+  --tier full \
+  --build-dir build \
+  --static-build-dir build-static
+```
+
+历史 ABI 对比材料只作为内部归档，不进入 fresh release 的公开 gate 示例或放行证据。
+
 ## 6.3 libcurl capability matrix
 
 `tests/libcurl_consistency/qcurl_lc_capability_probe` 会生成

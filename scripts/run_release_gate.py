@@ -169,7 +169,7 @@ def _build_steps(args: argparse.Namespace) -> list[GateStep]:
             "run full QCurl/libcurl observable consistency gate",
         ),
         GateStep(
-            "abi_diff",
+            "abi_current_baseline_diff",
             "full",
             [
                 python,
@@ -180,7 +180,7 @@ def _build_steps(args: argparse.Namespace) -> list[GateStep]:
                 "src",
                 "diff",
             ],
-            "compare the current shared library against the release ABI baseline",
+            "compare the current shared library against the current release ABI baseline",
         ),
         GateStep(
             "capability_matrix_build",
@@ -205,7 +205,38 @@ def _build_steps(args: argparse.Namespace) -> list[GateStep]:
             "scan release docs and package metadata for default Stable overclaims",
         ),
     ])
+    if args.abi_hardbreak_baseline is not None:
+        steps.insert(
+            _find_step_index(steps, "abi_current_baseline_diff"),
+            GateStep(
+                "abi_hardbreak_report",
+                "full",
+                [
+                    python,
+                    "scripts/qcurl_abi_gate.py",
+                    "--library",
+                    str(build_dir / "src" / "libQCurl.so.1.0.0"),
+                    "--headers-dir",
+                    "src",
+                    "hardbreak-report",
+                    "--baseline",
+                    str(args.abi_hardbreak_baseline),
+                    "--report",
+                    str(args.abi_hardbreak_report),
+                    "--current-snapshot",
+                    str(args.abi_hardbreak_current_snapshot),
+                ],
+                "write an archived pre-1.0 old-baseline ABI comparison for internal audit",
+            ),
+        )
     return steps
+
+
+def _find_step_index(steps: list[GateStep], name: str) -> int:
+    for index, step in enumerate(steps):
+        if step.name == name:
+            return index
+    raise ValueError(f"release gate step not found: {name}")
 
 
 def _selected_steps(args: argparse.Namespace) -> list[GateStep]:
@@ -387,6 +418,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="print the selected gate plan without running it")
     parser.add_argument("--scan-metadata", action="store_true", help="run only the release metadata scan")
+    parser.add_argument(
+        "--abi-hardbreak-baseline",
+        type=Path,
+        help="archived pre-1.0 baseline XML used only for internal ABI comparison; omit for the fresh release gate",
+    )
+    parser.add_argument(
+        "--abi-hardbreak-report",
+        type=Path,
+        help="output path for the archived old-baseline ABI comparison report",
+    )
+    parser.add_argument(
+        "--abi-hardbreak-current-snapshot",
+        type=Path,
+        help="output path for the current ABI XML snapshot used by the archived ABI comparison report",
+    )
     return parser
 
 
@@ -398,6 +444,16 @@ def main(argv: list[str] | None = None) -> int:
         args.build_dir = (repo_root / args.build_dir).resolve()
     if not args.static_build_dir.is_absolute():
         args.static_build_dir = (repo_root / args.static_build_dir).resolve()
+    if args.abi_hardbreak_baseline is not None and not args.abi_hardbreak_baseline.is_absolute():
+        args.abi_hardbreak_baseline = (repo_root / args.abi_hardbreak_baseline).resolve()
+    if args.abi_hardbreak_report is None:
+        args.abi_hardbreak_report = args.build_dir / "abi" / "qcurl-core-v1.hardbreak-from-previous.abidiff.txt"
+    elif not args.abi_hardbreak_report.is_absolute():
+        args.abi_hardbreak_report = (repo_root / args.abi_hardbreak_report).resolve()
+    if args.abi_hardbreak_current_snapshot is None:
+        args.abi_hardbreak_current_snapshot = args.build_dir / "abi" / "qcurl-core-v1.hardbreak-current.abi.xml"
+    elif not args.abi_hardbreak_current_snapshot.is_absolute():
+        args.abi_hardbreak_current_snapshot = (repo_root / args.abi_hardbreak_current_snapshot).resolve()
 
     if args.scan_metadata:
         return _scan_metadata(repo_root)

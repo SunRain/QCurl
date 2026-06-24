@@ -1,6 +1,6 @@
 # Lane Scheduler（manager-owned typed lane）
 
-> 本页面面向 QCurl 使用者，说明 hard-break 后的 lane scheduler public contract。代码事实以 `src/QCNetworkRequest.h`、`src/QCNetworkLaneKey.h`、`src/QCNetworkSchedulerPolicy.h`、`src/QCNetworkAccessManager.h` 和对应测试为准。
+> 本页面面向 QCurl 使用者，说明 1.0.0 lane scheduler public contract。代码事实以 `src/QCNetworkRequest.h`、`src/QCNetworkLaneKey.h`、`src/QCNetworkSchedulerPolicy.h`、`src/QCNetworkAccessManager.h` 和对应测试为准。
 
 ## 1. 核心结论
 

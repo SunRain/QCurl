@@ -742,10 +742,12 @@ void tst_QCNetworkDiagnostics::testProbeHTTP_TimingBreakdown()
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QVERIFY2(result.details().contains("totalTime"), qPrintable(diagMessage(result)));
-    QVERIFY(result.details()["totalTime"].toLongLong() > 0);
+    const qint64 totalTimeMs = result.details()["totalTime"].toLongLong();
+    QCOMPARE(totalTimeMs, result.durationMs());
+    QVERIFY(totalTimeMs >= 0);
 
     qDebug() << "HTTP 探测耗时详情:";
-    qDebug() << "  总耗时:" << result.details()["totalTime"].toLongLong() << "ms";
+    qDebug() << "  总耗时:" << totalTimeMs << "ms";
 }
 
 // ============================================================================

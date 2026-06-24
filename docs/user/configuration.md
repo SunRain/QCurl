@@ -27,6 +27,11 @@
 - async raw-body 可以通过 `readyRead()` 从 source-not-ready 恢复；sync raw-body 遇到 `read() == 0 && !atEnd()` 会失败。
 - `QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` 在构造阶段只校验 source device、长度和 seek 能力；返回空值表示构造失败并通过 `error` 给出原因。发送阶段仍要求 source device、wrapper device、manager/reply 在同一线程，并拒绝 unknown-size/sequential source。
 
+代理默认行为：
+
+- 未设置 `setProxyConfig(...)` 或显式设置 `QCNetworkProxyConfig::ProxyType::None` 时，请求不会继承 libcurl 的 `HTTP_PROXY` / `HTTPS_PROXY` 等环境代理。
+- 需要代理时，必须显式设置 `QCNetworkProxyConfig` 的类型、地址、端口和认证信息。
+
 ### 值语义与 `operator==`
 
 - `QCNetworkRequest` 是值语义配置对象，但 `operator==` 当前只比较 URL、follow redirect、raw headers、Range、HTTP version 与 `lane`。

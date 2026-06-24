@@ -27,5 +27,5 @@ This documentation is organized for the `QCurl 1.0.0 first stable` public releas
 
 ## Internal history
 
-Pre-1.0 changelog history and old RC / 3.0 / hard-break documents live under `docs/internal/`.
+Pre-1.0 changelog history and old RC / 3.0 / incompatible-change documents live under `docs/internal/`.
 They are kept for audit/reference and should not be used as current public release guidance.
