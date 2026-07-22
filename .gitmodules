@@ -1,3 +1,6 @@
 [submodule "curl"]
 	path = curl
 	url = https://github.com/curl/curl.git
+[submodule "Qt6_CPP17_Coding_Style"]
+	path = Qt6_CPP17_Coding_Style
+	url = https://github.com/SunRain/Qt6_CPP17_Coding_Style.git
