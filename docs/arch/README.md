@@ -1,9 +1,12 @@
 # Architecture documents
 
-This directory keeps current maintainer architecture notes for `QCurl 1.0.0 first stable`.
+This directory keeps current maintainer architecture notes for the `QCurl 2.0.0` release candidate.
 
 ## Public release contract
 
+- `docs/arch/2.0.0-hard-break-release-contract.md`
+- `docs/arch/2.0.0-release-notes.md`
+- `docs/arch/2.0.0-migration-guide.md`
 - `docs/arch/1.0-first-stable-release-contract.md`
 - `docs/arch/1.0.0-release-notes.md`
 - `docs/arch/1.0-first-stable-readiness-report.md`

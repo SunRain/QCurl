@@ -14,7 +14,7 @@
 
 创建顺序固定为：
 
-1. `CurlGlobalConstructor::instance()`
+1. 通过 QCurl runtime lease 确认进程级 libcurl 运行时处于 `Running`
 2. `curl_easy_init()`
 3. common easy defaults
 
@@ -29,6 +29,20 @@
 跨线程入口必须通过 Qt queued 调用回到 owner thread。非 owner thread 不得直接驱动 reply、multi、scheduler、easy handle 或 upload device。
 
 网络推进只允许 Qt event loop 与 libcurl multi socket/timer 集成。禁止通过 busy wait、sleep、手写 poll 或 signal handler 修补网络时序。
+
+### multi transfer ownership
+
+成功调用 `curl_multi_add_handle()` 后，`QCCurlMultiManager` 的 transfer record 独占 easy handle、callback userdata
+和 transfer backing storage，直到 `curl_multi_remove_handle()` 完成。`QCNetworkReply` 只保留观察关系；reply 析构只
+清空 observer 并请求 owner thread 延迟 detach，不得提前销毁仍注册在 multi 中的 handle 或 callback target。
+
+WebSocket 握手复用同一 multi driver，不得回退到 owner-thread `curl_easy_perform()` 或新增 worker transport。
+Core 与 Other Extras 之间只通过 opaque transfer token 传递 persistent transfer 身份；非安装的 transfer record 类型不得进入跨库导出签名或 Core 动态符号。CONNECT_ONLY easy handle 在 `curl_easy_send()` / `curl_easy_recv()` 使用期间持续留在 multi 中。
+
+### Core HTTP protocol boundary
+
+Core request entry points 在创建 easy handle 前只接受 `http` / `https`。异步和 Blocking Extras 都必须显式设置初始
+请求与重定向协议白名单为 `http,https`；调用方配置只能收窄该集合，不能恢复 libcurl 的全部协议默认值。
 
 ## share handle 合同
 
@@ -77,11 +91,15 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 
 ## ABI 证据合同
 
-`QCurl 1.0.0` 作为 fresh release 时，pre-1.0、RC 或历史草稿不构成公开 ABI 兼容承诺。Reviewer 必须确认：
+`QCurl 2.0.0` 是相对于已发布 v1.0.0 的 hard-break 候选。Reviewer 必须确认：
 
-1. 当前库与 `abi/baseline/qcurl-core-v1.abi.xml` 通过 `qcurl_abi_gate.py diff`。
-2. 当前 baseline 由当前 `libQCurl.so.1.0.0` 生成，不能复用旧草稿产物。
-3. 历史 ABI 对比材料只保留为内部归档，不作为当前 release gate 或用户可见放行证据。
+1. candidate 阶段使用 `abi/baseline/qcurl-core-v1.abi.xml` 生成 v1-to-v2 hard-break report。
+2. 当前 v2 baseline 由当前 `libQCurl.so.2.0.0` 通过受控 promotion 生成，不能复用旧草稿产物。
+3. final 阶段只对 `abi/baseline/qcurl-core-v2.abi.xml` 执行 clean diff。
+4. `qcurl_abi_gate.py` 在生成诊断 snapshot/candidate 和正式 diff 前检查动态符号，拒绝包含
+   `QCCurlMultiTransferRecord`、`QCCurlHandleManager`、reply-private 或 jitter helper 的产物；
+   诊断命令不得写入 `abi/baseline/`，只能由经过 machine manifest 身份重放的显式 promotion
+   更新 baseline，不得先刷新 baseline 再掩盖私有类型泄漏。
 
 历史 libcurl binding ABI 对比材料归档在 `docs/internal/archived-release/libcurl-binding-abi-comparison-evidence.md`。
 
@@ -90,7 +108,11 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 新增或修改 libcurl binding 路径时，reviewer 必须逐项确认：
 
 - easy handle 来自 `QCCurlHandleManager`。
-- easy handle 创建前已有 `CurlGlobalConstructor::instance()` 保证。
+- 成功进入 multi 后，transfer record 持有 easy handle 和 callback userdata 直到 detach 完成；reply 只作为 observer。
+- Core / Other Extras 桥接只传 opaque token，Core 动态符号不包含 transfer record 类型。
+- CONNECT_ONLY easy handle 在 WebSocket 收发期间保持注册在 multi 中。
+- Core 和 Blocking 请求入口只允许 HTTP/HTTPS，并同时设置初始与重定向协议白名单。
+- easy handle 创建前已经取得有效的 QCurl runtime lease。
 - easy handle 创建后统一继承 `CURLOPT_NOSIGNAL=1L`。
 - 代码没有新增 direct `curl_easy_init()`。
 - 代码没有新增路径级 `CURLOPT_NOSIGNAL` 设置。

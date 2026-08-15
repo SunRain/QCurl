@@ -1,6 +1,6 @@
 # QCurl documentation
 
-This documentation is organized for the `QCurl 1.0.0 first stable` public release.
+This documentation describes the latest published `QCurl 1.0.0` and the current `QCurl 2.0.0` release candidate.
 
 ## Public entrypoints
 
@@ -10,6 +10,9 @@ This documentation is organized for the `QCurl 1.0.0 first stable` public releas
 - Flow control: `docs/user/flow-control.md`
 - Lane scheduler: `docs/user/lane-scheduler.md`
 - Build and test: `docs/dev/build-and-test.md`
+- Current release contract: `docs/arch/2.0.0-hard-break-release-contract.md`
+- Current release notes: `docs/arch/2.0.0-release-notes.md`
+- Migration guide: `docs/arch/2.0.0-migration-guide.md`
 - Release contract: `docs/arch/1.0-first-stable-release-contract.md`
 - Release notes: `docs/arch/1.0.0-release-notes.md`
 - Readiness report: `docs/arch/1.0-first-stable-readiness-report.md`
@@ -18,6 +21,9 @@ This documentation is organized for the `QCurl 1.0.0 first stable` public releas
 ## Maintainer reference
 
 - Architecture index: `docs/arch/README.md`
+- Current engineering review: `docs/reviews/2026-08-05-qcurl-2.0.0-comprehensive-readonly-review-conclusion.md`
+- Current Qt6/C++17 source review: `docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md`
+- Historical Qt6/libcurl lifecycle review (`a1bafb7`): `docs/reviews/2026-08-07-qcurl-qt6-libcurl-lifecycle-review-comprehensive-conclusion.md`
 - Developer docs: `docs/dev/README.md`
 - Supply-chain notes: `docs/dev/supply-chain.md`
 - Reference docs: `docs/reference/README.md`

@@ -39,11 +39,17 @@ build/doxygen/index.html
 ## 3. 文档范围与约定
 
 - `tests/public_api/surface_manifest.json` 是 API 文档输入的唯一机器可读真源。
+- `tests/public_api/metatype_inventory.json` 记录公共 Qt 元类型的 canonical name、兼容理由、
+  注册源码与 staged consumer；`qcurl_public_api_metatype_consumer_smoke` 同时验证 typed queued
+  投递、动态名称解析和 `QCurl::initialize()` 早于首次连接。
 - 生成脚本只选择 `currentInstall != internal` 且 `layer != Internal` 的 public headers。
 - `_p.h`、`src/private/` 和未安装 internal helper 不得进入 release API 文档输入。
 - Preview / Other Extras 可以生成文档，但必须继续标注为 opt-in / Preview，不能写成 Core Stable。
+- 当前 Core API 文档必须反映结构化 `QCNetworkCacheRequestKey`、`cachePartitionKey`、统一 retry method gate、`QCNetworkLoggerHandle` opaque ownership 与 reply snapshot；private transfer record 和 global-init state 不进入安装面文档。
 - 注释风格参考：`CPP_Code_Comment_Guidelines.md`。
 - 新增、移动或删除公共头文件时，先同步 `tests/public_api/surface_manifest.json` 与 public API gate，再重新生成 Doxygen 输入片段。
+- 当前仓库未配置 Doxyqml，且没有 QML public API；Doxyqml 在本 profile 中不适用，不能把
+  普通 Doxygen 生成成功记录为 Doxyqml 通过。
 
 `Doxyfile` 通过 `@INCLUDE = build/doxygen/qcurl_api_input.doxy` 读取脚本生成的 `INPUT`，因此直接运行 `doxygen Doxyfile` 前必须先执行生成脚本。
 

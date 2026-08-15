@@ -122,7 +122,7 @@ find_package(QCurl CONFIG REQUIRED COMPONENTS OtherExtras)
 target_link_libraries(your_app PRIVATE QCurl::OtherExtras)
 ```
 
-Other Extras 包含 Diagnostics、Middleware Extras、WebSocket 等非默认能力；它们可随包发布，但不属于 `1.0.0 first stable` 默认 Core Stable 承诺。
+Other Extras 包含 Diagnostics、Middleware Extras、WebSocket 等非默认能力；它们可随包发布，但不属于 `2.0.0` 默认 Core Stable 承诺。
 
 ## 5. Static library 初始化
 

@@ -36,7 +36,6 @@ Run examples from `build/examples/<ExampleName>/` after building.
 
 - `WebSocketDemo`
 - `WebSocketPoolDemo`
-- `WebSocketCompressionDemo`
 - `NetworkFeaturesDemo` diagnostics and WebSocket sections
 
 Preview examples can be built and packaged, but they are not part of the default Core Stable contract.

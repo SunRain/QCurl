@@ -76,7 +76,7 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 
 其中以下专题字段会被 UCE 继续消费：
 
-- `payload.hes`：HES（headers / encoding / `Expect: 100-continue` / chunked upload）专题证据
+- `payload.hes`：HES（headers / encoding / `Expect: 100-continue` / Blocking Extras 显式长度上传）专题证据
 - `payload.ctbp`：CTBP（连接复用 / TLS 边界）专题证据
 - `qcurl_run/dci_evidence_*.jsonl`：Qt/DCI timeline 证据（由 QtTest 直接落盘）
 

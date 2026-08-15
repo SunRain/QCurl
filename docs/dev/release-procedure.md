@@ -1,6 +1,6 @@
 # Release procedure
 
-本文是 QCurl 维护者执行 GitHub Release 的单一流程入口。它不替代 release contract；`docs/arch/1.0-first-stable-release-contract.md` 定义发布承诺，本文定义执行步骤和证据归档。
+本文是 QCurl 维护者执行后续 GitHub Release 的单一流程入口。它不替代 release contract；`docs/arch/2.0.0-hard-break-release-contract.md` 定义当前候选承诺，本文定义执行步骤和证据归档。
 
 ## 0. 当前 workflow 覆盖边界
 
@@ -39,36 +39,83 @@
 
 ## 2. 本地/CI 验证
 
-推荐使用 clean build 目录执行 release gate：
+完整 gate 只接受六棵彼此独立、从空目录配置的物理树。每个参数都必须显式提供，
+不得把其他树作为 producer fallback：
+
+| tree ID | 参数 | 固定能力与职责 |
+| --- | --- | --- |
+| `release-shared` | `--release-shared-build-dir` | `BUILD_TESTING=OFF`、shared；安装、导出、consumer、生命周期、符号和 ABI |
+| `release-static` | `--release-static-build-dir` | `BUILD_TESTING=OFF`、static；安装、导出、consumer 和生命周期 |
+| `test-shared-gcc` | `--test-shared-gcc-build-dir` | `BUILD_TESTING=ON`、GCC；QtTest、public API、libcurl consistency |
+| `test-shared-clang` | `--test-shared-clang-build-dir` | `BUILD_TESTING=ON`、Clang；交叉编译器 QtTest 和 public API |
+| `asan-ubsan-lsan` | `--asan-ubsan-lsan-build-dir` | `BUILD_TESTING=ON`、Clang、ASan/UBSan/LSan |
+| `tsan` | `--tsan-build-dir` | `BUILD_TESTING=ON`、Clang、TSan |
+
+示例配置和构建命令如下：
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build --parallel
+cmake -S . -B build-release-shared -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=OFF -DQCURL_BUILD_SHARED_LIBS=ON
+cmake --build build-release-shared --parallel
 
-cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
-  -DQCURL_BUILD_SHARED_LIBS=OFF \
-  -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
-cmake --build build-static --target QCurl qcurl_public_api_self_compile --parallel
+cmake -S . -B build-release-static -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=OFF \
+  -DQCURL_BUILD_SHARED_LIBS=OFF -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
+cmake --build build-release-static --target QCurl QCurlOtherExtras --parallel
 
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 \
-  --headers-dir src baseline \
-  --output abi/baseline/qcurl-core-v1.abi.xml
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 \
-  --headers-dir src diff \
-  --baseline abi/baseline/qcurl-core-v1.abi.xml \
-  --report build/abi/qcurl-core-v1.abidiff.txt \
-  --current-snapshot build/abi/qcurl-core-v1.current.abi.xml
+cmake -S . -B build-test-shared-gcc -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON -DCMAKE_CXX_COMPILER=g++
+cmake --build build-test-shared-gcc --parallel
 
-python3 scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static
-python3 scripts/run_release_gate.py --scan-metadata --build-dir build
+cmake -S . -B build-test-shared-clang -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON -DCMAKE_CXX_COMPILER=clang++
+cmake --build build-test-shared-clang --parallel
+
+cmake -S . -B build-asan-ubsan-lsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined,leak"
+cmake --build build-asan-ubsan-lsan --parallel
+
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread"
+cmake --build build-tsan --parallel
+
+python3 scripts/run_release_gate.py --tier full --abi-mode current \
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc \
+  --test-shared-clang-build-dir build-test-shared-clang \
+  --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
+  --tsan-build-dir build-tsan
+python3 scripts/run_release_gate.py --scan-metadata \
+  --release-shared-build-dir build-release-shared
 git diff --check
 ```
 
-Fresh release 口径下，`QCurl 1.0.0` 是首个 Stable ABI baseline。ABI 证据以当前
-`libQCurl.so.1.0.0` 生成的 `abi/baseline/qcurl-core-v1.abi.xml` 和
-`build/abi/qcurl-core-v1.abidiff.txt` clean diff 为准。若任一 gate 失败，不得 tag 或创建
-GitHub Release。缺少 `abidw` / `abidiff`、HTTP/3 环境、httpbin 等前置条件时，应先补齐环境或把失败记录为 release blocker。
+`release-shared` 和 `release-static` 的 package evidence 由
+`scripts/release_package_evidence.py` 直接执行默认安装、四个独立 consumer 和生命周期
+报告；这两棵 `BUILD_TESTING=OFF` 树不注册 CTest。测试和 sanitizer 证据只消费表中指定的
+ON tree。候选 manifest 必须绑定同一 Linux、同一完整 commit、同一 toolchain、clean
+worktree、tree capability、规范化 command 和 regular-file digest；手工编辑结果字段不能
+授权 promotion。
+
+ABI `baseline` / `snapshot` 只生成 producer tree `abi/` 下的诊断候选，不能写入受控
+`abi/baseline/`。审计通过后，才可显式执行：
+
+```bash
+python3 scripts/qcurl_abi_gate.py promote \
+  --candidate-manifest build/release/promotion-candidate-manifest.json \
+  --candidate-commit "$(git rev-parse HEAD)" \
+  --old-baseline abi/baseline/qcurl-core-v1.abi.xml \
+  --output abi/baseline/qcurl-core-v2.abi.xml
+```
+
+`promote` 会先重放 manifest 身份、required gates、producer tree、artifact digest 和
+old-to-new ABI 报告；只有该命令允许写入 `abi/baseline/`。promotion 必须作为单独的
+baseline-only commit 完成，随后重新运行 full gate，最后才允许创建 tag/release。若任一
+gate 失败，或缺少 `abidw` / `abidiff`、HTTP/3、httpbin 等前置条件，不得 promotion、tag
+或创建 GitHub Release，应记录为 release blocker。
 
 ## 3. 打包与 release assets
 
@@ -82,7 +129,7 @@ cmake --build build --target package
 
 - source archive（GitHub tag 自动生成，必要时补充维护者生成的 source package）。
 - CPack TGZ / DEB / RPM。
-- ABI diff report：`build/abi/qcurl-core-v1.abidiff.txt`。
+- ABI diff report：`build/abi/qcurl-core-v1-to-v2.abidiff.txt`。
 - Doxygen HTML artifact（见 `docs/dev/api-docs.md`）。
 - release gate logs / manifest。
 - checksums：`SHA256SUMS`。
@@ -91,7 +138,7 @@ cmake --build build --target package
 生成 checksum 示例：
 
 ```bash
-sha256sum build/*.tar.gz build/*.deb build/*.rpm build/abi/qcurl-core-v1.abidiff.txt > SHA256SUMS
+sha256sum build/*.tar.gz build/*.deb build/*.rpm build/abi/qcurl-core-v1-to-v2.abidiff.txt > SHA256SUMS
 ```
 
 ## 4. Tag 与 GitHub Release
@@ -101,17 +148,17 @@ Tag 和 GitHub Release 是远程发布动作，不能由本地 readiness PASS �
 推荐顺序：
 
 1. 确认 release commit。
-2. 创建带注释 tag，例如 `v1.0.0`。
+2. 创建带注释 tag，例如 `v2.0.0`。
 3. 推送 tag。
-4. 在 GitHub Release 中使用 `docs/arch/1.0.0-release-notes.md` 和 `CHANGELOG.md` 生成 release notes。
+4. 在 GitHub Release 中使用 `docs/arch/2.0.0-release-notes.md` 和 `CHANGELOG.md` 生成 release notes。
 5. 上传 assets、checksums、ABI report、SBOM/provenance/signature。
 6. 标记是否为 latest stable release。
 
 示例命令只供维护者人工执行：
 
 ```bash
-git tag -a v1.0.0 -m "QCurl 1.0.0"
-git push public v1.0.0
+git tag -a v2.0.0 -m "QCurl 2.0.0"
+git push public v2.0.0
 ```
 
 ## 5. 安全发布与 advisory

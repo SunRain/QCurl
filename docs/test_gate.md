@@ -49,7 +49,7 @@
   - 通过 `FAIL_REGULAR_EXPRESSION` 把 `QSKIP` 视为无证据失败
   - `env/local_port/httpbin/websocket` 组通过 `tests/qcurl/run_qttest_with_preflight.py` 在进入 QtTest 前先做 suite 级前置检查，缺少本地端口、`QCURL_HTTPBIN_URL`、`node` 或受控 `ws` 依赖时直接 fail-closed
   - `tst_QCNetworkHttp2` 额外通过 `qcurl_http2_capability_probe` + `--require-http2-suite` 把 HTTP/2 编译期/运行期能力与本地 fixture 前置统一到 preflight
-  - `tst_QCNetworkDiagnosticsLocal` 已作为 `env;local_port;diagnostics` 的 deterministic provider 接入默认 gate：覆盖 `resolveDNS(localhost)`、本地 HTTP 200/404 probe、local HTTP `diagnose()`，以及 repo TLS fixture 的 `checkSSL()` 合同；原 `tst_QCNetworkDiagnostics` 保持 `external_network`，只负责公网探测
+  - `tst_QCNetworkDiagnosticsLocal` 已作为 `env;local_port;diagnostics` 的 deterministic provider 接入默认 gate：覆盖异步 `resolveDNS(localhost)`、本地 HTTP 200/404 probe、local HTTP `diagnose()`、repo TLS fixture 的 `checkSSL()`，以及 heartbeat、deadline、取消/owner 析构、并发与进程启动失败的恰好一次 Future 完成合同；原 `tst_QCNetworkDiagnostics` 保持 `external_network`，只负责公网探测
 
 ## 2. 当前门禁不能证明的内容
 
@@ -72,7 +72,7 @@
 - HES：头部 / 压缩 / `Expect: 100-continue` / chunked 上传语义
 - DCI：固定 seed 的 mock chaos（pause / cancel / deleteLater）与 Qt timeline 证据（deterministic）
 - BP：backpressure 语义合同（buffer pressure + user pause/resume；独立于 DCI fixed-seed suite）
-- HFG：offline suite 的 `strace` network syscall 证明
+- HFG：offline suite 的 `strace` 网络活动证明；报告完整保留 INET socket 创建，`bind/listen/connect/send/recv/accept` 任一活动均 fail-closed。sanitizer build 在该 ptrace 子门禁中关闭 LSan，泄漏证据由独立 sanitizer 门禁负责
 
 ## 3. 应如何解读 P0
 

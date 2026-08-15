@@ -60,6 +60,33 @@ ctest --test-dir build -L '^public-api-slow$' --output-on-failure
 - `public-api-slow`：staging install、安装头集合校验、导出合同校验、staging-isolated consumer smoke（含 `QCNetworkReply_p.h` 反向断言）
 - 为避免 `public-api` 正则误匹配 `public-api-slow`，文档统一使用带锚点的 label 写法
 
+T7 发布合同变更还必须同步验证机器可读 surface、ABI 和 API 文档输入：
+
+```bash
+python3 scripts/run_release_gate.py --scan-metadata \
+  --release-shared-build-dir build-release-shared
+python3 scripts/generate_doxygen_input_from_surface_manifest.py \
+  --manifest tests/public_api/surface_manifest.json \
+  --output build/doxygen/qcurl_api_input.doxy --check
+doxygen Doxyfile
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.2.0.0 \
+  --headers-dir src diff --baseline abi/baseline/qcurl-core-v2.abi.xml \
+  --report build/abi/qcurl-core-v2.abidiff.txt
+```
+
+`QCNetworkCacheRequestKey.h` 属于 Core install surface；runtime registry、multi transfer record 和 handle
+accessor 属于 internal/private，不能加入 surface manifest 或 Doxygen public input。`QCurlRuntimeState`
+作为 `QCurlRuntime.h` 中的 public 状态枚举随应用级关闭控制器进入 Core install surface。
+
+### 2.5 白盒测试 companion
+
+`BUILD_TESTING=ON` 时，正式 `QCurl` 和 `QCurlOtherExtras` 仍保持发行语义，不定义
+`QCURL_ENABLE_TEST_HOOKS`。需要故障注入或私有实现覆盖的 QtTest 与一致性测试链接
+`QCurlTestInternals`、`QCurlOtherExtrasTestInternals` 两个静态 companion。
+
+这两个 companion 只用于测试构建，使用 `EXCLUDE_FROM_ALL`，不安装、不导出，也不进入
+公共 ABI。`BUILD_TESTING=OFF` 的发行构建不生成 companion。
+
 Linux-only 支持边界如下：
 
 | 组合 | 级别 | 说明 |
@@ -97,17 +124,24 @@ ctest --test-dir build-public-api-system-no-ws -L '^public-api-slow$' --output-o
 
 最近一次本地复验：`2026-04-16` 已按上述命令在 `build-public-api-system-no-ws` 路径执行，`public-api` 与 `public-api-slow` 均通过。
 
-Static library 是显式 opt-in 路径，不能用默认 shared gate 代替。涉及 static target、导出依赖、安装包合同或 release ready 结论时，至少补跑：
+Static library 是显式 opt-in 路径，但 static 与 `BUILD_TESTING=ON` 的组合不受支持。
+`QCURL_STATIC_TESTING_UNSUPPORTED：静态构建不支持测试` 是 configure 阶段的固定诊断；只运行
+负向 configure 测试，不进入 build 或链接阶段。涉及 static target、导出依赖、安装包合同或
+release ready 结论时，使用 `BUILD_TESTING=OFF` 的 release-static 树：
 
 ```bash
-cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=ON \
+cmake -S . -B build-release-static -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=OFF \
   -DQCURL_BUILD_SHARED_LIBS=OFF \
   -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
 
-cmake --build build-static --target QCurl qcurl_public_api_self_compile -j"$(nproc)"
-ctest --test-dir build-static -L '^public-api$' --output-on-failure
-ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
+cmake --build build-release-static --target QCurl QCurlOtherExtras -j"$(nproc)"
+python3 scripts/release_package_evidence.py \
+  --build-dir build-release-static --linkage static \
+  --contract tests/public_api/package_gate_manifest.json \
+  --surface-manifest tests/public_api/surface_manifest.json \
+  --install-report build-release-static/evidence/package/static-install-consumer.json \
+  --lifecycle-report build-release-static/evidence/lifecycle/static.xml
 ```
 
 Static export 只允许 `QCurl::QCurl` 通过 public link interface 暴露 Core 必需的 `CURL::libcurl`，并由 `QCurlConfig.cmake` 同步 `find_dependency(CURL ...)`；`ZLIB::ZLIB` 不属于默认 Core export / `qcurl.pc` 合同。正式打包前仍以 full release gate 的最新 shared/static 结果为准；static gate 通过只证明 Core static library ready，不代表 whole project Stable。
@@ -190,16 +224,32 @@ QCURL_LC_EXT=1 QCURL_REQUIRE_HTTP3=1 \
 
 该口径只用于本地自检，不等于正式门禁。
 
-## 6.1 1.0.0 first stable release gate
+## 6.1 2.0.0 release-candidate gate
 
 `scripts/run_release_gate.py` 是本仓库的 no-git 发布门禁入口。它不检查工作区历史，也不调用
-`git`；输入只来自当前源码、构建目录、ABI baseline、capability probe 和文档扫描。
+`git`；输入只来自当前源码、六棵显式构建树、ABI baseline、capability probe 和文档扫描。
 
 ```bash
-python3 scripts/run_release_gate.py --tier fast --build-dir build --dry-run
-python3 scripts/run_release_gate.py --tier strict --build-dir build --dry-run
-python3 scripts/run_release_gate.py --tier full --build-dir build --dry-run
+python3 scripts/run_release_gate.py --tier fast \
+  --release-shared-build-dir build-release-shared --dry-run
+python3 scripts/run_release_gate.py --tier strict \
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc --dry-run
+python3 scripts/run_release_gate.py --tier full \
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc \
+  --test-shared-clang-build-dir build-test-shared-clang \
+  --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
+  --tsan-build-dir build-tsan --dry-run
 ```
+
+`full` 固定要求六棵树：`release-shared`、`release-static`、`test-shared-gcc`、
+`test-shared-clang`、`asan-ubsan-lsan` 和 `tsan`。门禁会在执行步骤前重新检查每棵树的
+真实路径、编译器、`BUILD_TESTING`、`QCURL_BUILD_SHARED_LIBS` 和 sanitizer capability；
+缺参或 capability 漂移直接失败。OFF 树的安装、consumer 和生命周期证据由
+`release_package_evidence.py` 生成，不调用 OFF 树的 CTest。
 
 分层含义：
 
@@ -207,50 +257,59 @@ python3 scripts/run_release_gate.py --tier full --build-dir build --dry-run
 - `strict`：在 fast 基础上增加 QtTest skip=fail、deprecated curl API、label matrix 和 skip contract。
 - `full`：在 strict 基础上增加完整 CTest、libcurl consistency full gate、ABI diff、capability matrix 和 release metadata scan。只有 full 层可作为 Stable shared library release gate。
 
-## 6.2 ABI baseline / ABI diff gate
+## 6.2 ABI promotion and current diff gate
 
 Stable shared library 需要真实 ABI baseline，而不是只依赖 public header layout scan。
 本仓库使用 `scripts/qcurl_abi_gate.py` 包装 `abidw` / `abidiff`：
 
 ```bash
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 baseline
-python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.1.0.0 diff
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.2.0.0 baseline
+python3 scripts/qcurl_abi_gate.py --library build/src/libQCurl.so.2.0.0 diff
 ```
 
-默认 baseline 路径为 `abi/baseline/qcurl-core-v1.abi.xml`，默认 diff 报告路径为
-`build/abi/qcurl-core-v1.abidiff.txt`。缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时，
+`baseline` 命令的默认输出是 `build/abi/qcurl-core-v2.candidate.abi.xml`；
+`diff` 命令默认读取受控 `abi/baseline/qcurl-core-v2.abi.xml`，默认报告路径为
+`build/abi/qcurl-core-v2.abidiff.txt`。诊断命令拒绝写入受控 baseline。缺少 `abidw` /
+`abidiff`、共享库、头目录或调试信息时，
 gate fail-closed；发布结论必须把它记录为 release blocker。
 
-Fresh release 口径下，`QCurl 1.0.0` 是首个 Stable ABI baseline。pre-1.0、RC
-或历史草稿不构成公开 ABI 兼容承诺；正式 release gate 只使用当前 baseline → 当前库的
+候选口径下，`qcurl-core-v1.abi.xml` 是已发布 v1 historical baseline，只用于
+v1-to-v2 hard-break report。正式 current gate 只使用受控 v2 baseline -> 当前库的
 clean diff 作为阻断证据。
 
 示例：
 
 ```bash
 python3 scripts/qcurl_abi_gate.py \
-  --library build/src/libQCurl.so.1.0.0 \
+  --library build/src/libQCurl.so.2.0.0 \
   --headers-dir src \
-  baseline \
-  --output abi/baseline/qcurl-core-v1.abi.xml
+  baseline
 
 python3 scripts/qcurl_abi_gate.py \
-  --library build/src/libQCurl.so.1.0.0 \
+  --library build/src/libQCurl.so.2.0.0 \
   --headers-dir src \
   diff \
-  --baseline abi/baseline/qcurl-core-v1.abi.xml \
-  --report build/abi/qcurl-core-v1.abidiff.txt \
-  --current-snapshot build/abi/qcurl-core-v1.current.abi.xml
+  --baseline abi/baseline/qcurl-core-v2.abi.xml \
+  --report build/abi/qcurl-core-v2.abidiff.txt \
+  --current-snapshot build/abi/qcurl-core-v2.current.abi.xml
 ```
 
-`run_release_gate.py --tier full` 执行正式 release gate，包含当前 ABI baseline 的阻断 diff：
+`run_release_gate.py --tier full --abi-mode current` 执行正式 current gate，包含 v2 ABI baseline 的阻断 diff：
 
 ```bash
 python3 scripts/run_release_gate.py \
   --tier full \
-  --build-dir build \
-  --static-build-dir build-static
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc \
+  --test-shared-clang-build-dir build-test-shared-clang \
+  --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
+  --tsan-build-dir build-tsan
 ```
+
+受控 baseline 只能在 full gate 的 machine manifest 通过身份重放和 artifact digest 验证后，
+按 `docs/dev/release-procedure.md` 使用显式 `promote` 命令更新；baseline-only commit 后必须重跑
+full gate，不能用诊断命令覆盖 baseline 来消除 diff。
 
 历史 ABI 对比材料只作为内部归档，不进入 fresh release 的公开 gate 示例或放行证据。
 
@@ -326,7 +385,36 @@ python3 scripts/run_uce_sanitizers.py --profile tsan \
 说明：
 
 - `asan-ubsan-lsan` profile 会单独配置 sanitizer build，并调用 `run_uce_gate.py --tier nightly`
-- `tsan` profile 只运行线程相关子集：`tst_QCNetworkReply`、`tst_QCNetworkScheduler`、`tst_QCNetworkConnectionPool`
+- `asan-ubsan-lsan` 和 `tsan` 都构建四目标代表性生命周期测试；`tsan` 运行
+  `tst_QCNetworkReply`、`tst_QCNetworkScheduler`、`tst_QCNetworkConnectionPool`、
+  `tst_QCWebSocket` 与 `tst_QCWebSocketPool`，不能省略 Pool 线程证据。
+
+### 8.4 默认安装包安全门禁
+
+发布候选必须验证默认、不带 `--component` 过滤的完整安装树，而不是仅验证 Core
+或关闭能力后的裁剪构建：
+
+```bash
+python3 scripts/run_release_gate.py --tier full \
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc \
+  --test-shared-clang-build-dir build-test-shared-clang \
+  --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
+  --tsan-build-dir build-tsan
+```
+
+- `tests/public_api/package_gate_manifest.json` 是四个导出目标的机器合同：
+  `Core`、`BlockingExtras`、`TestSupport`、`OtherExtras` 均必须声明 shared/static
+  consumer、生命周期测试和 sanitizer 证据。
+- `qcurl_public_api_package_stage_install` 执行默认 `cmake --install`，
+  `qcurl_public_api_package_install_inventory` 将安装树中的每个文件写入相对路径清单，
+  并关联到对应运行时目标或 package 元数据。
+- `release-shared` / `release-static` 都从完整 package stage 构建四目标正向 consumer；Core-only
+  stage 仅用于证明 Extras 未泄漏到默认 Core 组件，且每份报告绑定对应 OFF producer tree。
+- WebSocket-capable libcurl 必须保持默认 WebSocket 能力并通过 `tst_QCWebSocket` 与
+  `tst_QCWebSocketPool`。`QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON` 只允许作为能力矩阵
+  negative variant，不能替代正式 release gate PASS。
 
 ## 9. basic-no-problem 归档门禁（historical acceptance）
 

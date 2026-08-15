@@ -10,13 +10,15 @@
 
 ---
 
-## 发布状态与 1.0.0 first stable 边界
+## 2.0.0 hard-break 候选边界
 
-`QCurl 1.0.0 first stable` 的稳定承诺范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于本次 1.0.0 first stable 发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
+最新已发布版本为 `v1.0.0`，当前开发候选为 `v2.0.0`。`QCurl 2.0.0` 的稳定范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成当前 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于候选发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
+
+本节只定义当前候选合同，不证明当前工作树已经通过 release gate。当前 checkout 只有在最后一次源码变更之后重新通过 shared/static public API、ABI、完整 CTest、libcurl consistency 和 sanitizer 门禁，才可形成新的本地 readiness 证据；文档本身、历史 snapshot 或旧 QA 数字不能替代该证据。
 
 | 层级 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装，作为 1.0.0 first stable 维护 API / ABI | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Core** | 默认安装；通过最终 release gate 后作为 2.0.0 维护 API / ABI | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
 | **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
 | **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
 | **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
@@ -44,10 +46,10 @@
 - **代理支持** - HTTP、HTTPS、SOCKS4/4A、SOCKS5
 - **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::head()/get()/post()/put()/patch()` 一套入口覆盖配置与发送
 - **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置；`QCNetworkRedirectConfig` 与 `QCNetworkTransferConfig` 聚合重定向和传输配置
-- **请求重试** - 指数退避算法，自动处理临时性错误
+- **请求重试** - GET/HEAD 默认安全重试；其他方法必须显式启用幂等键门禁，并使用有界 equal-jitter 退避
 - **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
 - **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
-- **Cache lookup API** - `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 提供 `lookup(url, ReadMode)`，返回 `Miss / FreshHit / StaleHit`
+- **Cache lookup API** - 显式启用的 `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 使用包含 method、规范化 URL、Vary 请求头和认证分区的结构化请求键；`clear()` 返回删除计数、失败计数和残留容量
 - **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `post()` 发送
 - **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
@@ -73,13 +75,13 @@
 
 ### Other Extras / Preview
 
-- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
+- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装，公开入口统一返回可取消的 `QFuture<DiagResult>`；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，HTTP 探测只使用 `QCNetworkAccessManager/QCNetworkReply`，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
 - **Middleware Extras** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
-- **WebSocket** - 客户端实现包含压缩、自动重连和连接池能力，条件进入 Other Extras；当前仍不属于默认 Core install surface。
+- **WebSocket** - 客户端提供有界异步收发、关闭握手和重连能力，条件进入 Other Extras；保持 Preview，默认不提供 permessage-deflate，也不属于默认 Core install surface。
 
 ### 性能基准说明
 
-性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。未绑定证据的数字不应作为 `1.0.0 first stable` 稳定发布承诺。
+性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。未绑定证据的数字不应作为 `2.0.0` 稳定发布承诺。
 
 ---
 
@@ -108,9 +110,9 @@ cmake --install build --prefix "$PWD/stage"
 
 发布合同提示：
 
-- 1.0.0 first stable 只承诺 Core install surface。
+- 2.0.0 只承诺 Core install surface。
 - Blocking Extras / Test Support / Other Extras 需要发行包显式安装对应 component，不随默认 Core 隐式安装。
-- 当前 lane-aware scheduler 已纳入 `QCurl 1.0.0 / SOVERSION 1` first stable Core 合同；本发布线不提供旧 2.x/3.x 兼容层。
+- 当前 lane-aware scheduler 已纳入 `QCurl 2.0.0 / SOVERSION 2` Core 合同；本 hard-break 发布线不提供 v1 alias、wrapper、shim 或兼容开关。
 
 ### 代码示例
 
@@ -140,16 +142,16 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 #### 2. WebSocket 连接（Preview）
 
 > 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
-> 它可以作为 Preview 功能使用，但不属于 1.0.0 first stable 承诺。
+> 它可以作为 Preview 功能使用，但不属于 2.0.0 默认 Core 承诺。
 
 ```cpp
 #include <QCWebSocket.h>
-#include <QCWebSocketCompressionConfig.h>
 #include <QCWebSocketReconnectPolicy.h>
 
 QCurl::QCWebSocketOptions options;
-options.setCompressionConfig(QCurl::QCWebSocketCompressionConfig::defaultConfig());
 options.setReconnectPolicy(QCurl::QCWebSocketReconnectPolicy::standardReconnect());
+options.setMaxMessageBytes(8 * 1024 * 1024);
+options.setMaxPendingSendBytes(4 * 1024 * 1024);
 
 auto *socket = new QCurl::QCWebSocket(QUrl("wss://echo.websocket.org"), options);
 
@@ -271,7 +273,7 @@ if (!cancelResult.isSuccess()) {
 ## ⚡ 性能回归入口
 
 性能数字只在绑定具体 benchmark 版本、依赖版本、网络环境和日期时才作为发布证据。
-当前 README 不把固定延迟或吞吐数字写成 `1.0.0 first stable` 稳定承诺。
+当前 README 不把固定延迟或吞吐数字写成 `2.0.0` 稳定承诺。
 
 性能回归与能力证据以以下入口为准：
 
