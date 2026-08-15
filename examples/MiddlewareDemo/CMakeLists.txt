@@ -5,6 +5,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 set(CMAKE_AUTOMOC ON)
 
 add_executable(MiddlewareDemo main.cpp)
+qcurl_enable_qt_no_keywords(MiddlewareDemo)
 
 target_link_libraries(MiddlewareDemo PRIVATE Qt6::Core QCurl)
 

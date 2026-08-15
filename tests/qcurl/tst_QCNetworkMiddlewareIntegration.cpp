@@ -19,7 +19,7 @@ class tst_QCNetworkMiddlewareIntegration : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void init();
     void cleanup();
 
@@ -46,12 +46,12 @@ void tst_QCNetworkMiddlewareIntegration::init()
     m_mockHandler.setCaptureBodyPreviewLimit(64);
     QCurl::TestSupport::setMockHandler(*m_manager, &m_mockHandler);
 
-    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
+    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
 }
 
 void tst_QCNetworkMiddlewareIntegration::cleanup()
 {
-    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
+    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
 
     if (m_manager) {
         m_manager->clearMiddlewares();

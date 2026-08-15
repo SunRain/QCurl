@@ -8,11 +8,12 @@
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMiddlewareExtras.h"
 #include "QCNetworkMockHandler.h"
-#include "private/QCNetworkMiddlewareInternal_p.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
+#include "private/QCNetworkMiddlewareInternal_p.h"
+#include "qcnetwork_mock_test_support.h"
+#include "qcnetwork_retry_policy_test_helper.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -27,13 +28,14 @@ class TestQCNetworkUnifiedPolicyMiddlewareOffline : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void init();
     void cleanup();
 
     void testDefaultRetryPolicyInjected();
     void testExplicitNoRetryNotOverridden();
     void testRedactingLoggingNoLeak();
+    void testReplyUsesLoggerSnapshotAfterManagerReplacement();
     void testObservabilityFieldsAndRetryCount();
 
 private:
@@ -45,7 +47,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::init()
 {
     m_manager = new QCNetworkAccessManager(this);
     QCurl::TestSupport::setMockHandler(*m_manager, &m_mock);
-    m_manager->setLogger(nullptr);
+    m_manager->setLogger({});
     m_manager->clearMiddlewares();
 
     m_mock.clear();
@@ -56,7 +58,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::cleanup()
 {
     if (m_manager) {
         m_manager->clearMiddlewares();
-        m_manager->setLogger(nullptr);
+        m_manager->setLogger({});
         QCurl::TestSupport::setMockHandler(*m_manager, nullptr);
         m_manager->deleteLater();
         m_manager = nullptr;
@@ -70,11 +72,11 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDefaultRetryPolicyInjected
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("fail"), 500);
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
-    QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.setMaxRetries(1);
-    defaultPolicy.setInitialDelay(std::chrono::milliseconds(1));
-    defaultPolicy.setBackoffMultiplier(1.0);
-    defaultPolicy.setMaxDelay(std::chrono::milliseconds(10));
+    const QCNetworkRetryPolicy defaultPolicy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(1),
+                                             1.0,
+                                             std::chrono::milliseconds(10));
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -100,11 +102,11 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testExplicitNoRetryNotOverridd
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("fail"), 500);
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
-    QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.setMaxRetries(2);
-    defaultPolicy.setInitialDelay(std::chrono::milliseconds(1));
-    defaultPolicy.setBackoffMultiplier(1.0);
-    defaultPolicy.setMaxDelay(std::chrono::milliseconds(10));
+    const QCNetworkRetryPolicy defaultPolicy
+        = TestSupport::makeRetryPolicyOrFail(2,
+                                             std::chrono::milliseconds(1),
+                                             1.0,
+                                             std::chrono::milliseconds(10));
 
     QCUnifiedRetryPolicyMiddleware retryMw(defaultPolicy);
     m_manager->addMiddleware(&retryMw);
@@ -126,10 +128,11 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testExplicitNoRetryNotOverridd
 
 void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
 {
-    QCNetworkDefaultLogger logger;
-    logger.enableConsoleOutput(false);
-    logger.setMinLogLevel(NetworkLogLevel::Debug);
-    m_manager->setLogger(&logger);
+    QCNetworkDefaultLogger *defaultLogger = nullptr;
+    const auto logger                     = QCNetworkLoggerHandle::createWithBorrow(&defaultLogger);
+    defaultLogger->enableConsoleOutput(false);
+    defaultLogger->setMinLogLevel(NetworkLogLevel::Debug);
+    m_manager->setLogger(logger);
 
     QCRedactingLoggingMiddleware loggingMw;
     m_manager->addMiddleware(&loggingMw);
@@ -147,7 +150,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
     QVERIFY(finishedSpy.wait(2000));
 
     bool sawRedacted = false;
-    for (const auto &entry : logger.entries()) {
+    for (const auto &entry : defaultLogger->entries()) {
         const QString msg = entry.message();
         QVERIFY2(!msg.contains(QString::fromLatin1(secret)), "日志中泄漏了敏感 token 明文");
         if (msg.contains(QStringLiteral("[REDACTED]"))) {
@@ -157,16 +160,55 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
     QVERIFY(sawRedacted);
 
     m_manager->clearMiddlewares();
-    m_manager->setLogger(nullptr);
+    m_manager->setLogger({});
+    reply->deleteLater();
+}
+
+void TestQCNetworkUnifiedPolicyMiddlewareOffline::testReplyUsesLoggerSnapshotAfterManagerReplacement()
+{
+    m_mock.setGlobalDelay(20);
+    QCNetworkDefaultLogger *originalDefaultLogger = nullptr;
+    const auto originalLogger = QCNetworkLoggerHandle::createWithBorrow(&originalDefaultLogger);
+    originalDefaultLogger->enableConsoleOutput(false);
+    originalDefaultLogger->setMinLogLevel(NetworkLogLevel::Debug);
+    m_manager->setLogger(originalLogger);
+
+    QCRedactingLoggingMiddleware loggingMw;
+    m_manager->addMiddleware(&loggingMw);
+
+    const QUrl url(QStringLiteral("http://example.com/offline/policy/logger_snapshot"));
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("ok"), 200);
+
+    auto *reply = m_manager->get(QCNetworkRequest(url));
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+
+    const auto replacementLogger = QCNetworkLoggerHandle::create<QCNetworkDefaultLogger>();
+    m_manager->setLogger(replacementLogger);
+
+    QVERIFY(finishedSpy.wait(2000));
+    const QCNetworkLoggerHandle retainedLogger = reply->loggerSnapshot();
+    QCOMPARE(retainedLogger, originalLogger);
+
+    bool sawResponse = false;
+    for (const auto &entry : originalDefaultLogger->entries()) {
+        if (entry.category() == QStringLiteral("Response")) {
+            sawResponse = true;
+            break;
+        }
+    }
+    QVERIFY(sawResponse);
+
+    m_manager->clearMiddlewares();
     reply->deleteLater();
 }
 
 void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetryCount()
 {
-    QCNetworkDefaultLogger logger;
-    logger.enableConsoleOutput(false);
-    logger.setMinLogLevel(NetworkLogLevel::Debug);
-    m_manager->setLogger(&logger);
+    QCNetworkDefaultLogger *defaultLogger = nullptr;
+    const auto logger                     = QCNetworkLoggerHandle::createWithBorrow(&defaultLogger);
+    defaultLogger->enableConsoleOutput(false);
+    defaultLogger->setMinLogLevel(NetworkLogLevel::Debug);
+    m_manager->setLogger(logger);
 
     QCObservabilityMiddleware obsMw;
     m_manager->addMiddleware(&obsMw);
@@ -178,11 +220,11 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("fail"), 503);
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
-    QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(1);
-    policy.setInitialDelay(std::chrono::milliseconds(1));
-    policy.setBackoffMultiplier(1.0);
-    policy.setMaxDelay(std::chrono::milliseconds(10));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(1),
+                                             1.0,
+                                             std::chrono::milliseconds(10));
 
     QCNetworkRequest request(url);
     request.setRetryPolicy(policy);
@@ -192,7 +234,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     QVERIFY(finishedSpy.wait(2000));
 
     bool found = false;
-    for (const auto &entry : logger.entries()) {
+    for (const auto &entry : defaultLogger->entries()) {
         if (entry.category() != QStringLiteral("Observability")) {
             continue;
         }
@@ -225,7 +267,7 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testObservabilityFieldsAndRetr
     QVERIFY(found);
 
     m_manager->clearMiddlewares();
-    m_manager->setLogger(nullptr);
+    m_manager->setLogger({});
     reply->deleteLater();
 }
 

@@ -36,10 +36,9 @@ QString httpMethodToString(HttpMethod method)
     return QStringLiteral("UNKNOWN");
 }
 
-QCNetworkLogger *loggerFromReply(QCNetworkReply *reply)
+QCNetworkLoggerHandle loggerFromReply(QCNetworkReply *reply)
 {
-    auto *manager = reply ? qobject_cast<QCNetworkAccessManager *>(reply->parent()) : nullptr;
-    return manager ? manager->logger() : nullptr;
+    return reply ? reply->loggerSnapshot() : QCNetworkLoggerHandle();
 }
 
 constexpr const char kObservabilityRetryCountProperty[] = "_qcurl_observe_retry_count";
@@ -52,7 +51,7 @@ void QCRedactingLoggingMiddleware::onReplyCreated(QCNetworkReply *reply)
         return;
     }
 
-    auto *logger = loggerFromReply(reply);
+    const auto logger = loggerFromReply(reply);
     if (!logger) {
         return;
     }
@@ -60,9 +59,9 @@ void QCRedactingLoggingMiddleware::onReplyCreated(QCNetworkReply *reply)
     const QString method = httpMethodToString(reply->method());
     const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
 
-    logger->log(NetworkLogLevel::Debug,
-                QStringLiteral("Request"),
-                QStringLiteral("method=%1 url=%2").arg(method, url));
+    static_cast<void>(logger->log(NetworkLogLevel::Debug,
+                                  QStringLiteral("Request"),
+                                  QStringLiteral("method=%1 url=%2").arg(method, url)));
 }
 
 void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
@@ -71,7 +70,7 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
         return;
     }
 
-    auto *logger = loggerFromReply(reply);
+    const auto logger = loggerFromReply(reply);
     if (!logger) {
         return;
     }
@@ -87,13 +86,14 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
                                       ? NetworkLogLevel::Info
                                       : NetworkLogLevel::Warning;
 
-    logger->log(level,
-                QStringLiteral("Response"),
-                QStringLiteral("method=%1 url=%2 status=%3 durationMs=%4 error=%5")
-                    .arg(method, url)
-                    .arg(httpStatus)
-                    .arg(duration)
-                    .arg(errorCode));
+    static_cast<void>(
+        logger->log(level,
+                    QStringLiteral("Response"),
+                    QStringLiteral("method=%1 url=%2 status=%3 durationMs=%4 error=%5")
+                        .arg(method, url)
+                        .arg(httpStatus)
+                        .arg(duration)
+                        .arg(errorCode)));
 }
 
 void QCObservabilityMiddleware::onReplyCreated(QCNetworkReply *reply)
@@ -121,7 +121,7 @@ void QCObservabilityMiddleware::onResponseReceived(QCNetworkReply *reply)
         return;
     }
 
-    auto *logger = loggerFromReply(reply);
+    const auto logger = loggerFromReply(reply);
     if (!logger) {
         return;
     }
@@ -141,9 +141,10 @@ void QCObservabilityMiddleware::onResponseReceived(QCNetworkReply *reply)
     obj.insert(QStringLiteral("bytesTotal"), static_cast<double>(reply->bytesTotal()));
     obj.insert(QStringLiteral("error"), static_cast<int>(reply->error()));
 
-    logger->log(NetworkLogLevel::Info,
-                QStringLiteral("Observability"),
-                QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
+    static_cast<void>(
+        logger->log(NetworkLogLevel::Info,
+                    QStringLiteral("Observability"),
+                    QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact))));
 }
 
 } // namespace QCurl

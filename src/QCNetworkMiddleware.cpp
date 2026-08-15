@@ -4,12 +4,10 @@
 #include "QCNetworkMiddleware.h"
 
 #include "QCNetworkAccessManager.h"
-#include "private/QCNetworkMiddlewareInternal_p.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkMiddlewareInternal_p.h"
 
-#include <QCryptographicHash>
-#include <QDateTime>
 #include <QDebug>
 #include <QSet>
 
@@ -21,7 +19,7 @@ namespace QCurl {
 class QCNetworkMiddlewarePrivate
 {
 public:
-    QSet<QCNetworkAccessManager *> registeredManagers;
+    QSet<QCNetworkAccessManager *> registeredManagers; ///< 借用指针，不负责释放 manager。
 };
 
 QCNetworkMiddleware::QCNetworkMiddleware()
@@ -97,34 +95,6 @@ void QCErrorHandlingMiddleware::onResponseReceived(QCNetworkReply *reply)
 
         qWarning() << "[QCurl] Error:" << errorMsg;
     }
-}
-
-// ==================
-// QCSigningMiddleware Implementation
-// ==================
-
-void QCSigningMiddleware::setSigningKey(const QString &key)
-{
-    m_signingKey = key;
-}
-
-void QCSigningMiddleware::onRequestPreSend(QCNetworkRequest &request)
-{
-    if (m_signingKey.isEmpty()) {
-        return;
-    }
-
-    // Generate signature (simple example: SHA256 hash of key + timestamp)
-    QString timestamp  = QString::number(QDateTime::currentMSecsSinceEpoch());
-    QString signString = m_signingKey + timestamp;
-
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    hash.addData(signString.toUtf8());
-    QString signature = QString::fromLatin1(hash.result().toHex());
-
-    // Add signature headers
-    request.setRawHeader("X-Signature", signature.toLatin1());
-    request.setRawHeader("X-Timestamp", timestamp.toLatin1());
 }
 
 // ==================

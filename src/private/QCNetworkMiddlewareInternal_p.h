@@ -49,24 +49,6 @@ private:
 };
 
 /**
- * @brief 内部请求签名中间件示例。
- */
-class QCSigningMiddleware : public QCNetworkMiddleware
-{
-public:
-    /// 设置签名密钥。
-    void setSigningKey(const QString &key);
-
-    /// 在发送前把签名信息写入请求。
-    void onRequestPreSend(QCNetworkRequest &request) override;
-    /// 返回中间件标识名。
-    QString name() const override { return QStringLiteral("QCSigningMiddleware"); }
-
-private:
-    QString m_signingKey;
-};
-
-/**
  * @brief 内部统一重试策略中间件。
  *
  * 仅在 request 未显式设置 retryPolicy 时注入默认策略。

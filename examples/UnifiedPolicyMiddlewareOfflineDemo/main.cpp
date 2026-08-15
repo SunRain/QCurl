@@ -40,8 +40,7 @@ class DefaultRetryPolicyMiddleware : public QCNetworkMiddleware
 public:
     explicit DefaultRetryPolicyMiddleware(QCNetworkRetryPolicy defaultPolicy)
         : m_defaultPolicy(std::move(defaultPolicy))
-    {
-    }
+    {}
 
     void onRequestPreSend(QCNetworkRequest &request) override
     {
@@ -83,10 +82,11 @@ int main(int argc, char *argv[])
     QCNetworkAccessManager manager;
 
     // 1) Logger：显式启用（库默认行为不变）
-    QCNetworkDefaultLogger logger;
-    logger.setMinLogLevel(NetworkLogLevel::Debug);
-    logger.enableConsoleOutput(true);
-    manager.setLogger(&logger);
+    QCNetworkDefaultLogger *loggerImplementation = nullptr;
+    auto logger = QCNetworkLoggerHandle::createWithBorrow(&loggerImplementation);
+    loggerImplementation->setMinLogLevel(NetworkLogLevel::Debug);
+    loggerImplementation->enableConsoleOutput(true);
+    manager.setLogger(logger);
 
     // 2) MockHandler：显式启用（纯离线）
     QCNetworkMockHandler mock;
@@ -96,10 +96,13 @@ int main(int argc, char *argv[])
 
     // 3) Middleware：显式注入（库默认行为不变）
     QCNetworkRetryPolicy defaultPolicy;
-    defaultPolicy.setMaxRetries(1);
-    defaultPolicy.setInitialDelay(std::chrono::milliseconds(10));
-    defaultPolicy.setBackoffMultiplier(1.0);
-    defaultPolicy.setMaxDelay(std::chrono::milliseconds(100));
+    if (QCNetworkRetryPolicy::tryCreate(1, std::chrono::milliseconds(10), 1.0, &defaultPolicy)
+            != QCNetworkRetryPolicy::UpdateResult::Applied
+        || defaultPolicy.setMaxDelay(std::chrono::milliseconds(100))
+               != QCNetworkRetryPolicy::UpdateResult::Applied) {
+        qCritical() << "默认重试策略配置无效";
+        return 1;
+    }
 
     DefaultRetryPolicyMiddleware retryPolicyMw(defaultPolicy);
     QCRedactingLoggingMiddleware redactingLogMw;
@@ -171,7 +174,7 @@ int main(int argc, char *argv[])
     replyNoRetry->deleteLater();
 
     TestSupport::setMockHandler(&manager, nullptr);
-    manager.setLogger(nullptr);
+    manager.setLogger({});
 
     qDebug() << "=== 演示完成 ===";
     return 0;
