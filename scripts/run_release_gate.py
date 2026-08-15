@@ -10,239 +10,127 @@ import re
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-
-@dataclass(frozen=True)
-class GateStep:
-    name: str
-    tier: str
-    command: list[str]
-    description: str
+if __package__:
+    from . import release_identity
+    from .release_gate_steps import GateStep
+    from .release_gate_steps import build_steps as _build_steps
+    from .release_gate_execution import artifact_path as _artifact_path
+    from .release_gate_execution import execute_gate as _execute_gate_impl
+    from .release_gate_execution import identity_build_dirs as _identity_build_dirs_impl
+    from .release_gate_execution import manifest_authority_paths as _manifest_authority_paths
+    from .release_gate_execution import required_artifacts as _required_artifacts
+    from .release_gate_execution import verify_manifest as _verify_manifest_impl
+    from .release_gate_execution import write_gate_manifest as _write_gate_manifest
+    from .release_gate_execution import write_snapshot_only as _write_snapshot_only_impl
+    from .release_gate_execution import source_identity_stable as _source_identity_stable
+    from .release_gate_paths import resolve_paths as _resolve_paths
+    from .release_gate_parser import add_abi_arguments as _add_abi_arguments
+    from .release_gate_parser import add_manifest_arguments as _add_manifest_arguments
+    from .release_metadata_gate import scan_metadata as _scan_metadata
+    from .release_tree_model import compiler_family
+    from .release_tree_model import required_tree_ids
+    from .release_tree_model import sanitizer_matches
+    from .release_tree_model import tree_path
+    from .release_tree_model import tree_registry
+else:
+    import release_identity
+    from release_gate_steps import GateStep
+    from release_gate_steps import build_steps as _build_steps
+    from release_gate_execution import artifact_path as _artifact_path
+    from release_gate_execution import execute_gate as _execute_gate_impl
+    from release_gate_execution import identity_build_dirs as _identity_build_dirs_impl
+    from release_gate_execution import manifest_authority_paths as _manifest_authority_paths
+    from release_gate_execution import required_artifacts as _required_artifacts
+    from release_gate_execution import verify_manifest as _verify_manifest_impl
+    from release_gate_execution import write_gate_manifest as _write_gate_manifest
+    from release_gate_execution import write_snapshot_only as _write_snapshot_only_impl
+    from release_gate_execution import source_identity_stable as _source_identity_stable
+    from release_gate_paths import resolve_paths as _resolve_paths
+    from release_gate_parser import add_abi_arguments as _add_abi_arguments
+    from release_gate_parser import add_manifest_arguments as _add_manifest_arguments
+    from release_metadata_gate import scan_metadata as _scan_metadata
+    from release_tree_model import compiler_family
+    from release_tree_model import required_tree_ids
+    from release_tree_model import sanitizer_matches
+    from release_tree_model import tree_path
+    from release_tree_model import tree_registry
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _build_steps(args: argparse.Namespace) -> list[GateStep]:
-    build_dir = args.build_dir
-    static_build_dir = args.static_build_dir
-    jobs = str(args.jobs)
-    python = args.python
-    ctest = args.ctest
-    cmake = args.cmake
-
-    steps: list[GateStep] = []
-    if args.contract_json is not None:
-        steps.append(GateStep(
-            "contract_json",
-            "fast",
-            [python, "-m", "json.tool", str(args.contract_json)],
-            "validate the explicit readiness contract JSON",
-        ))
-
-    steps.extend([
-        GateStep(
-            "shared_public_api",
-            "fast",
-            [ctest, "--test-dir", str(build_dir), "-L", "^public-api$", "--output-on-failure"],
-            "run shared public header self-compile and manifest checks",
-        ),
-        GateStep(
-            "shared_public_api_slow",
-            "fast",
-            [ctest, "--test-dir", str(build_dir), "-L", "^public-api-slow$", "--output-on-failure"],
-            "run shared staging install/export/pkg-config and consumer smoke checks",
-        ),
-        GateStep(
-            "static_configure",
-            "full",
-            [
-                cmake,
-                "-S",
-                ".",
-                "-B",
-                str(static_build_dir),
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-DBUILD_EXAMPLES=OFF",
-                "-DBUILD_BENCHMARKS=OFF",
-                "-DBUILD_TESTING=ON",
-                "-DQCURL_BUILD_SHARED_LIBS=OFF",
-                "-DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF",
-            ],
-            "configure independent QCURL_BUILD_SHARED_LIBS=OFF build tree",
-        ),
-        GateStep(
-            "static_build",
-            "full",
-            [
-                cmake,
-                "--build",
-                str(static_build_dir),
-                "--target",
-                "QCurl",
-                "QCurlOtherExtras",
-                "qcurl_public_api_self_compile",
-                "-j",
-                jobs,
-            ],
-            "build static Core, packaged OtherExtras and static public header self-compile target",
-        ),
-        GateStep(
-            "static_public_api",
-            "full",
-            [
-                ctest,
-                "--test-dir",
-                str(static_build_dir),
-                "-L",
-                "^public-api$",
-                "--output-on-failure",
-            ],
-            "run static public-api gate in the independent static build tree",
-        ),
-        GateStep(
-            "static_public_api_slow",
-            "full",
-            [
-                ctest,
-                "--test-dir",
-                str(static_build_dir),
-                "-L",
-                "^public-api-slow$",
-                "--output-on-failure",
-            ],
-            "run static install/export/pkg-config and consumer smoke gate",
-        ),
-        GateStep(
-            "strict_qttest",
-            "strict",
-            [python, "scripts/ctest_strict.py", "--build-dir", str(build_dir)],
-            "run skip=fail QtTest gate",
-        ),
-        GateStep(
-            "deprecated_curl_api_guard",
-            "strict",
-            [
-                python,
-                "scripts/check_deprecated_curl_apis.py",
-                "--curl-header",
-                "curl/include/curl/curl.h",
-                "--scan-root",
-                "src",
-            ],
-            "scan QCurl sources for deprecated libcurl API usage",
-        ),
-        GateStep(
-            "label_matrix_guard",
-            "strict",
-            [python, "scripts/check_qcurl_label_matrix.py"],
-            "validate qcurl CTest label matrix",
-        ),
-        GateStep(
-            "skip_contract_guard",
-            "strict",
-            [python, "scripts/check_skip_contract.py"],
-            "validate CTest skip contract policy",
-        ),
-        GateStep(
-            "full_ctest",
-            "full",
-            [ctest, "--test-dir", str(build_dir), "--output-on-failure"],
-            "run the full CTest suite configured in the build tree",
-        ),
-        GateStep(
-            "libcurl_consistency_full",
-            "full",
-            [
-                python,
-                "tests/libcurl_consistency/run_gate.py",
-                "--suite",
-                "all",
-                "--with-ext",
-                "--build",
-                "--qcurl-build",
-                str(build_dir),
-            ],
-            "run full QCurl/libcurl observable consistency gate",
-        ),
-        GateStep(
-            "abi_current_baseline_diff",
-            "full",
-            [
-                python,
-                "scripts/qcurl_abi_gate.py",
-                "--library",
-                str(build_dir / "src" / "libQCurl.so.1.0.0"),
-                "--headers-dir",
-                "src",
-                "diff",
-            ],
-            "compare the current shared library against the current release ABI baseline",
-        ),
-        GateStep(
-            "capability_matrix_build",
-            "full",
-            [cmake, "--build", str(build_dir), "--target", "qcurl_lc_capability_probe", "-j", jobs],
-            "build the libcurl capability matrix probe used by the consistency gate",
-        ),
-        GateStep(
-            "capability_matrix_probe",
-            "full",
-            [
-                str(build_dir / "tests" / "qcurl_lc_capability_probe"),
-                "--output",
-                str(build_dir / "libcurl_consistency" / "reports" / "capabilities.json"),
-            ],
-            "write the release capability matrix JSON",
-        ),
-        GateStep(
-            "metadata_scan",
-            "full",
-            [python, "scripts/run_release_gate.py", "--scan-metadata", "--build-dir", str(build_dir)],
-            "scan release docs and package metadata for default Stable overclaims",
-        ),
-    ])
-    if args.abi_hardbreak_baseline is not None:
-        steps.insert(
-            _find_step_index(steps, "abi_current_baseline_diff"),
-            GateStep(
-                "abi_hardbreak_report",
-                "full",
-                [
-                    python,
-                    "scripts/qcurl_abi_gate.py",
-                    "--library",
-                    str(build_dir / "src" / "libQCurl.so.1.0.0"),
-                    "--headers-dir",
-                    "src",
-                    "hardbreak-report",
-                    "--baseline",
-                    str(args.abi_hardbreak_baseline),
-                    "--report",
-                    str(args.abi_hardbreak_report),
-                    "--current-snapshot",
-                    str(args.abi_hardbreak_current_snapshot),
-                ],
-                "write an archived pre-1.0 old-baseline ABI comparison for internal audit",
-            ),
-        )
-    return steps
-
-
-def _find_step_index(steps: list[GateStep], name: str) -> int:
-    for index, step in enumerate(steps):
-        if step.name == name:
-            return index
-    raise ValueError(f"release gate step not found: {name}")
-
-
 def _selected_steps(args: argparse.Namespace) -> list[GateStep]:
     order = {"fast": 0, "strict": 1, "full": 2}
     max_order = order[args.tier]
     return [step for step in _build_steps(args) if order[step.tier] <= max_order]
+
+
+def _identity_build_dirs(args: argparse.Namespace) -> list[Path]:
+    return [tree_path(args, tree_id) for tree_id in tree_registry(args)]
+
+
+def _tree_registry(args: argparse.Namespace) -> dict[str, dict[str, object]]:
+    """返回当前参数对应的六树 registry。"""
+
+    return tree_registry(args)
+
+
+def _build_cache_options(build_dir: Path) -> dict[str, str]:
+    cache_path = build_dir / "CMakeCache.txt"
+    if not cache_path.is_file():
+        raise ValueError(
+            "BUILD_TESTING capability cache is missing: " + str(cache_path)
+        )
+
+    options: dict[str, str] = {}
+    for line in cache_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(
+            r"^(BUILD_TESTING|QCURL_BUILD_SHARED_LIBS|CMAKE_CXX_COMPILER|"
+            r"QCURL_SANITIZER_PROFILE|CMAKE_CXX_FLAGS):[^=]*=(.*)$",
+            line,
+        )
+        if match is not None:
+            options[match.group(1)] = match.group(2)
+    return options
+
+
+def _validate_build_capabilities(args: argparse.Namespace) -> None:
+    """要求所有必需 producer tree 满足固定能力矩阵。"""
+
+    registry = _tree_registry(args)
+    required = required_tree_ids(args.tier)
+    missing = [tree_id for tree_id in required if tree_id not in registry]
+    if missing:
+        raise ValueError("release gate requires explicit tree path: " + ", ".join(missing))
+    for tree_id in required:
+        spec = registry[tree_id]
+        build_dir = Path(spec["path"])
+        options = _build_cache_options(build_dir)
+        expected_testing = str(spec["build_testing"])
+        expected_shared = str(spec["shared_libs"])
+        expected_compiler = str(spec["compiler_family"])
+        actual_testing = options.get("BUILD_TESTING")
+        if actual_testing != expected_testing:
+            actual = actual_testing if actual_testing is not None else "missing"
+            raise ValueError(
+                f"{tree_id} BUILD_TESTING must be {expected_testing}, got {actual}"
+            )
+        actual_shared = options.get("QCURL_BUILD_SHARED_LIBS")
+        if actual_shared != expected_shared:
+            actual = actual_shared if actual_shared is not None else "missing"
+            raise ValueError(
+                f"{tree_id} QCURL_BUILD_SHARED_LIBS must be {expected_shared}, got {actual}"
+            )
+        actual_compiler = compiler_family(options.get("CMAKE_CXX_COMPILER"))
+        if actual_compiler != expected_compiler:
+            raise ValueError(
+                f"{tree_id} compiler family must be {expected_compiler}, got {actual_compiler}"
+            )
+        if not sanitizer_matches(options, spec.get("sanitizer_profile")):
+            raise ValueError(f"{tree_id} sanitizer capability does not match its fixed profile")
 
 
 def _format_command(command: list[str]) -> str:
@@ -262,137 +150,43 @@ def _run_step(step: GateStep, repo_root: Path) -> int:
     return int(proc.returncode)
 
 
-def _is_release_identity_scan_target(path: Path) -> bool:
-    excluded_parts = {
-        ".git",
-        ".helloagents",
-        ".claude",
-        "build",
-        "build-static",
-        "build-static-gate",
-        "build-static-stage2",
-        "curl",
-        "node_modules",
-        "__pycache__",
-    }
-    if any(part in excluded_parts for part in path.parts):
-        return False
-    if path.suffix in {".pyc", ".so", ".a", ".o", ".png", ".jpg", ".jpeg", ".gif", ".pdf"}:
-        return False
-    return path.is_file()
+_verify_manifest = _verify_manifest_impl
+_write_snapshot_only = _write_snapshot_only_impl
 
 
-def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
-    allowed_file_prefixes = (
-        "docs/internal/",
-        "docs/arch/1.0-first-stable-release-contract.md",
-        "scripts/run_release_gate.py",
-        "tests/public_api/test_run_public_api_checks.py",
-        "abi/baseline/qcurl-core-v3.abi.xml",
+def _execute_gate(
+    args: argparse.Namespace,
+    repo_root: Path,
+    steps: list[GateStep],
+    authority_paths: list[Path],
+) -> int:
+    return _execute_gate_impl(
+        args,
+        repo_root,
+        steps,
+        authority_paths,
+        run_step=_run_step,
     )
-    if relative.startswith(allowed_file_prefixes):
-        return True
-    external_context = (
-        "HTTP/2",
-        "HTTP/3",
-        "Qt 6",
-        "Qt6",
-        "libcurl",
-        "CMake >= 3.0.0",
-        "cmake_policy(VERSION 3.0.0",
-        "License",
-        "spdx",
-        "SPDX",
-    )
-    return any(token in line for token in external_context)
-
-
-def _scan_metadata(repo_root: Path) -> int:
-    checks = [
-        {
-            "path": "CMakeLists.txt",
-            "must_not_contain": [
-                "WebSocket support\")",
-                "HTTP/2 and WebSocket support",
-            ],
-        },
-        {
-            "path": "README.md",
-            "must_not_contain": [
-                "单请求延迟",
-                "31,000 ms",
-                "~15,000 ms",
-                "~10,000 ms",
-            ],
-        },
-        {
-            "path": "SYSTEM_DOCUMENTATION.md",
-            "must_not_contain": [
-                "提供同步和异步两种网络请求方式",
-                "| **执行模式** | 同步、异步 |",
-                "enum class ExecutionMode",
-                "同时支持所有 HTTP 方法和同步/异步模式",
-                "QCWebSocket (WebSocket 客户端)",
-                "QCNetworkDiagnostics (网络诊断)",
-                "sendOptions(",
-            ],
-        },
-    ]
-    violations: list[str] = []
-    for check in checks:
-        path = repo_root / str(check["path"])
-        if not path.is_file():
-            violations.append(f"missing metadata scan target: {path}")
-            continue
-        text = path.read_text(encoding="utf-8")
-        for needle in check["must_not_contain"]:
-            if str(needle) in text:
-                violations.append(f"{check['path']}: forbidden release metadata text: {needle}")
-
-    forbidden_patterns = [
-        re.compile(r"\b3\.0\.0(?:-rc\.1)?\b"),
-        re.compile(r"\bqcurl-core-v3\b"),
-        re.compile(r"\blibQCurl\.so\.3\b"),
-        re.compile(r"\bSOVERSION\s+3\b"),
-        re.compile(r"\bQCurl\s+v2\.[0-9]+\.[0-9]+\b"),
-        re.compile(r"\bv2\.x\b"),
-    ]
-    for path in repo_root.rglob("*"):
-        if not _is_release_identity_scan_target(path):
-            continue
-        relative = path.relative_to(repo_root).as_posix()
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except UnicodeDecodeError:
-            continue
-        for line_number, line in enumerate(lines, start=1):
-            if _is_allowed_release_identity_match(relative, line):
-                continue
-            for pattern in forbidden_patterns:
-                if pattern.search(line):
-                    violations.append(
-                        f"{relative}:{line_number}: forbidden legacy release identity: {line.strip()}"
-                    )
-                    break
-
-    if violations:
-        print("\n".join(violations), file=sys.stderr)
-        return 1
-    print("[release_gate] metadata scan passed")
-    return 0
 
 
 def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
     payload = {
         "tier": args.tier,
-        "buildDir": str(args.build_dir),
-        "staticBuildDir": str(args.static_build_dir),
+        "trees": {
+            tree_id: {
+                **record,
+                "path": str(record["path"]),
+            }
+            for tree_id, record in _tree_registry(args).items()
+        },
         "steps": [
             {
                 "name": step.name,
                 "tier": step.tier,
                 "description": step.description,
                 "command": step.command,
+                "producerTreeId": step.producer_tree_id,
+                "requiredArtifactIds": list(step.required_artifact_ids),
             }
             for step in steps
         ],
@@ -400,75 +194,82 @@ def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _authority_paths(args: argparse.Namespace, repo_root: Path) -> list[Path]:
+    paths = list(args.authority)
+    if args.contract_json is not None:
+        paths.append(args.contract_json)
+    resolved = [
+        (path if path.is_absolute() else repo_root / path).resolve()
+        for path in paths
+    ]
+    if args.tier == "full":
+        expected = release_identity.default_authority_paths(repo_root)
+        if (
+            len(resolved) != len(expected)
+            or len(set(resolved)) != len(resolved)
+            or set(resolved) != set(expected)
+        ):
+            raise ValueError(
+                "full release gate requires the exact four authority inputs"
+            )
+        missing = [path for path in expected if not path.is_file()]
+        if missing:
+            raise ValueError(
+                "full release gate authority input is not a regular file: "
+                + ", ".join(str(path) for path in missing)
+            )
+    return sorted(set(resolved))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="QCurl no-git release gate. fast is not a Stable release gate; full includes ABI and capability evidence."
+        description=(
+            "QCurl no-git release gate. fast is not a Stable release gate; "
+            "full includes ABI and capability evidence."
+        )
     )
     parser.add_argument("--tier", choices=("fast", "strict", "full"), default="fast")
-    parser.add_argument("--build-dir", type=Path, default=Path("build"))
-    parser.add_argument("--static-build-dir", type=Path, default=Path("build-static"))
+    parser.add_argument("--release-shared-build-dir", type=Path)
+    parser.add_argument("--release-static-build-dir", type=Path)
+    parser.add_argument("--test-shared-gcc-build-dir", type=Path)
+    parser.add_argument("--test-shared-clang-build-dir", type=Path)
+    parser.add_argument("--asan-ubsan-lsan-build-dir", type=Path)
+    parser.add_argument("--tsan-build-dir", type=Path)
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--cmake", default="cmake")
     parser.add_argument("--ctest", default="ctest")
-    parser.add_argument(
-        "--contract-json",
-        type=Path,
-        help="validate this explicit local readiness contract JSON as part of the fast gate",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="print the selected gate plan without running it")
-    parser.add_argument("--scan-metadata", action="store_true", help="run only the release metadata scan")
-    parser.add_argument(
-        "--abi-hardbreak-baseline",
-        type=Path,
-        help="archived pre-1.0 baseline XML used only for internal ABI comparison; omit for the fresh release gate",
-    )
-    parser.add_argument(
-        "--abi-hardbreak-report",
-        type=Path,
-        help="output path for the archived old-baseline ABI comparison report",
-    )
-    parser.add_argument(
-        "--abi-hardbreak-current-snapshot",
-        type=Path,
-        help="output path for the current ABI XML snapshot used by the archived ABI comparison report",
-    )
+    _add_manifest_arguments(parser)
+    _add_abi_arguments(parser)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    args = build_parser().parse_args(argv)
     repo_root = _repo_root()
-    if not args.build_dir.is_absolute():
-        args.build_dir = (repo_root / args.build_dir).resolve()
-    if not args.static_build_dir.is_absolute():
-        args.static_build_dir = (repo_root / args.static_build_dir).resolve()
-    if args.abi_hardbreak_baseline is not None and not args.abi_hardbreak_baseline.is_absolute():
-        args.abi_hardbreak_baseline = (repo_root / args.abi_hardbreak_baseline).resolve()
-    if args.abi_hardbreak_report is None:
-        args.abi_hardbreak_report = args.build_dir / "abi" / "qcurl-core-v1.hardbreak-from-previous.abidiff.txt"
-    elif not args.abi_hardbreak_report.is_absolute():
-        args.abi_hardbreak_report = (repo_root / args.abi_hardbreak_report).resolve()
-    if args.abi_hardbreak_current_snapshot is None:
-        args.abi_hardbreak_current_snapshot = args.build_dir / "abi" / "qcurl-core-v1.hardbreak-current.abi.xml"
-    elif not args.abi_hardbreak_current_snapshot.is_absolute():
-        args.abi_hardbreak_current_snapshot = (repo_root / args.abi_hardbreak_current_snapshot).resolve()
-
+    try:
+        _resolve_paths(args, repo_root)
+    except ValueError as exc:
+        print(f"[release_gate] ERROR: {exc}", file=sys.stderr)
+        return 2
     if args.scan_metadata:
         return _scan_metadata(repo_root)
-
+    if args.tier == "full":
+        try:
+            _validate_build_capabilities(args)
+        except ValueError as exc:
+            print(f"[release_gate] ERROR: {exc}", file=sys.stderr)
+            return 2
     steps = _selected_steps(args)
     if args.dry_run:
         _write_plan(args, steps)
         return 0
-
-    for step in steps:
-        rc = _run_step(step, repo_root)
-        if rc != 0:
-            return rc
-    print(f"[release_gate] {args.tier} gate passed")
-    return 0
+    if args.verify_manifest:
+        return _verify_manifest(args, repo_root, steps)
+    authority_paths = _authority_paths(args, repo_root)
+    if args.snapshot_only:
+        return _write_snapshot_only(args, repo_root, steps, authority_paths)
+    return _execute_gate(args, repo_root, steps, authority_paths)
 
 
 if __name__ == "__main__":
