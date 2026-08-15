@@ -4,13 +4,14 @@
 
 namespace QCurl {
 
+/// @brief 保存连接与传输超时的隐式共享配置。
 class QCNetworkTimeoutConfigData : public QSharedData
 {
 public:
     std::optional<std::chrono::milliseconds> connectTimeout = std::nullopt;
-    std::optional<std::chrono::milliseconds> totalTimeout = std::nullopt;
-    std::optional<std::chrono::seconds> lowSpeedTime = std::nullopt;
-    std::optional<long> lowSpeedLimit = std::nullopt;
+    std::optional<std::chrono::milliseconds> totalTimeout   = std::nullopt;
+    std::optional<std::chrono::seconds> lowSpeedTime        = std::nullopt;
+    std::optional<long> lowSpeedLimit                       = std::nullopt;
 };
 
 QCNetworkTimeoutConfig::QCNetworkTimeoutConfig()

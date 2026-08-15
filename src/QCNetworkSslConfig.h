@@ -27,7 +27,7 @@ enum class QCNetworkTlsVersion {
     Tls1_0,
     Tls1_1,
     Tls1_2,
-    Tls1_3
+    Tls1_3,
 };
 
 /**

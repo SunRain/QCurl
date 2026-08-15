@@ -41,7 +41,7 @@ class TestQCNetworkHttp3 : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testHttp3EnumConversion();
     void testHttp3OnlyRuntimeGating();
     void testHttp3DowngradeWhenUnsupported();

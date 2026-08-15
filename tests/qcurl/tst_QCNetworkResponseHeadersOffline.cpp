@@ -23,7 +23,7 @@ class TestQCNetworkResponseHeadersOffline final : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testHeaderUnfoldFromRawHeaderData();
     void testFinalHeaderBlockOnlyExposesLastResponseHeaders();
 };

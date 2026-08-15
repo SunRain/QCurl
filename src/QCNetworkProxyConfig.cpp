@@ -4,6 +4,7 @@
 
 namespace QCurl {
 
+/// @brief 保存代理 TLS 策略的隐式共享配置。
 class QCNetworkProxyTlsConfigData : public QSharedData
 {
 public:
@@ -17,6 +18,7 @@ public:
         = QCUnsupportedSecurityOptionPolicy::Fail;
 };
 
+/// @brief 保存代理连接参数的隐式共享配置。
 class QCNetworkProxyConfigData : public QSharedData
 {
 public:

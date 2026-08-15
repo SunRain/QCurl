@@ -180,7 +180,7 @@ public:
         makeRequest(request);
     }
 
-signals:
+Q_SIGNALS:
     void demoComplete();
 
 private:
@@ -222,7 +222,7 @@ private:
             }
 
             reply->deleteLater();
-            emit demoComplete();
+            Q_EMIT demoComplete();
         });
     }
 

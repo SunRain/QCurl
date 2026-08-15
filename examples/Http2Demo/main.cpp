@@ -85,7 +85,7 @@ public:
                                            / static_cast<double>(elapsed1) * 100.0;
                 std::cout << "\n✅ 性能提升: " << improvement << "%" << std::endl;
 
-                emit demoComplete();
+                Q_EMIT demoComplete();
             });
         });
     }
@@ -156,10 +156,10 @@ public:
             std::cout << "  ✅ Zstd 压缩支持" << std::endl;
         }
 
-        emit demoComplete();
+        Q_EMIT demoComplete();
     }
 
-signals:
+Q_SIGNALS:
     void demoComplete();
 
 private:
@@ -192,7 +192,7 @@ private:
                     std::cout << "💡 HTTP/2 多路复用：5 个请求复用单个连接，减少 TLS 握手"
                               << std::endl;
 
-                    emit demoComplete();
+                    Q_EMIT demoComplete();
                 }
             });
         }

@@ -44,6 +44,16 @@ enum class QCNetworkIpResolve {
     Ipv6,
 };
 
+/**
+ * @brief 表示请求配置值的一次同步更新结果。
+ *
+ * `Applied` 表示新值已完整提交；`InvalidArgument` 表示输入无效，配置对象保持原状态。
+ */
+enum class QCNetworkConfigUpdateResult {
+    Applied,
+    InvalidArgument,
+};
+
 /** 请求级 HTTP 认证配置。 */
 class QCURL_EXPORT QCNetworkHttpAuthConfig
 {
@@ -102,8 +112,13 @@ public:
 
     /// 返回最大重定向次数；`std::nullopt` 表示使用底层默认。
     [[nodiscard]] std::optional<int> maxRedirects() const;
-    /// 设置最大重定向次数；负值会被忽略并清空显式上限。
-    void setMaxRedirects(std::optional<int> maxRedirects);
+    /**
+     * @brief 设置最大重定向次数。
+     * @param maxRedirects 非负值表示显式上限，`std::nullopt` 表示清除显式上限。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument` 且保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxRedirects(
+        std::optional<int> maxRedirects);
 
     /// 返回 POST 在 301/302/303 下是否保持 POST 的策略。
     [[nodiscard]] QCNetworkPostRedirectPolicy postRedirectPolicy() const;
@@ -152,28 +167,51 @@ public:
 
     /// 返回下载限速；`std::nullopt` 表示不限速。
     [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
-    /// 设置下载限速；`0` 清空限速，负值会被忽略并清空限速。
-    void setMaxDownloadBytesPerSec(qint64 bytesPerSec);
+    /**
+     * @brief 设置下载限速。
+     * @param bytesPerSec 正值表示每秒字节上限，`0` 表示清除限速。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument` 且保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxDownloadBytesPerSec(qint64 bytesPerSec);
 
     /// 返回上传限速；`std::nullopt` 表示不限速。
     [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
-    /// 设置上传限速；`0` 清空限速，负值会被忽略并清空限速。
-    void setMaxUploadBytesPerSec(qint64 bytesPerSec);
+    /**
+     * @brief 设置上传限速。
+     * @param bytesPerSec 正值表示每秒字节上限，`0` 表示清除限速。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument` 且保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxUploadBytesPerSec(qint64 bytesPerSec);
 
     /// 返回 backpressure 高水位；`0` 表示关闭内部接收流控。
     [[nodiscard]] qint64 backpressureLimitBytes() const noexcept;
-    /// 设置 backpressure 高水位；负值按 `0` 处理。
-    void setBackpressureLimitBytes(qint64 bytes);
+    /**
+     * @brief 设置 backpressure 高水位。
+     * @param bytes 非负高水位；`0` 表示关闭并同时清除恢复低水位。
+     * @return 成功时返回 `Applied`；负值或不高于既有非零低水位时返回
+     * `InvalidArgument` 且保持全部旧状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setBackpressureLimitBytes(qint64 bytes);
 
     /// 返回 backpressure 恢复低水位；`0` 表示使用默认低水位或未启用。
     [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
-    /// 设置 backpressure 恢复低水位；必须小于高水位，否则回到默认。
-    void setBackpressureResumeBytes(qint64 bytes);
+    /**
+     * @brief 设置 backpressure 恢复低水位。
+     * @param bytes 非负低水位；`0` 表示使用默认低水位。
+     * @return 成功时返回 `Applied`；负值或不小于已启用的高水位时返回
+     * `InvalidArgument` 且保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setBackpressureResumeBytes(qint64 bytes);
 
     /// 返回 Expect: 100-continue 超时；`std::nullopt` 表示使用底层默认。
     [[nodiscard]] std::optional<std::chrono::milliseconds> expect100ContinueTimeout() const;
-    /// 设置 Expect: 100-continue 超时；负值会被忽略并清空显式配置。
-    void setExpect100ContinueTimeout(std::chrono::milliseconds timeout);
+    /**
+     * @brief 设置 Expect: 100-continue 超时。
+     * @param timeout 非负超时时间；`0ms` 表示立即继续发送请求体。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument` 且保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setExpect100ContinueTimeout(
+        std::chrono::milliseconds timeout);
 
     /// 返回 IP 族选择；`std::nullopt` 表示不强制 IPv4/IPv6。
     [[nodiscard]] std::optional<QCNetworkIpResolve> ipResolve() const;

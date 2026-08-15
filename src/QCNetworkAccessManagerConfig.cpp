@@ -4,14 +4,16 @@
 
 namespace QCurl {
 
+/// @brief 保存 access manager share handle 的隐式共享配置。
 class ShareHandleConfigData : public QSharedData
 {
 public:
-    bool shareDnsCache = false;
-    bool shareCookies = false;
+    bool shareDnsCache   = false;
+    bool shareCookies    = false;
     bool shareSslSession = false;
 };
 
+/// @brief 保存 HSTS 与 Alt-Svc 持久化的隐式共享配置。
 class HstsAltSvcCacheConfigData : public QSharedData
 {
 public:

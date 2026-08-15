@@ -11,19 +11,17 @@ namespace QCurl {
 
 QCNetworkRequest::QCNetworkRequest()
     : d(new QCNetworkRequestPrivate())
-{
-}
+{}
 
 QCNetworkRequest::QCNetworkRequest(const QUrl &url)
     : d(new QCNetworkRequestPrivate())
 {
-    d.data()->reqUrl = url;
+    d.data()->requestUrl = url;
 }
 
 QCNetworkRequest::QCNetworkRequest(const QCNetworkRequest &other)
     : d(other.d)
-{
-}
+{}
 
 QCNetworkRequest::~QCNetworkRequest() = default;
 
@@ -41,7 +39,7 @@ bool QCNetworkRequest::operator==(const QCNetworkRequest &other) const
     const QCNetworkRequestPrivate *rhs = other.d.constData();
 
     return lhs->redirectConfig.followLocation() == rhs->redirectConfig.followLocation()
-           && lhs->reqUrl == rhs->reqUrl && lhs->rawHeaderMap == rhs->rawHeaderMap
+           && lhs->requestUrl == rhs->requestUrl && lhs->rawHeaderMap == rhs->rawHeaderMap
            && lhs->rangeStart == rhs->rangeStart && lhs->rangeEnd == rhs->rangeEnd
            && lhs->httpVersion == rhs->httpVersion && lhs->lane == rhs->lane;
 }
@@ -53,12 +51,12 @@ bool QCNetworkRequest::operator!=(const QCNetworkRequest &other) const
 
 QUrl QCNetworkRequest::url() const
 {
-    return d.constData()->reqUrl;
+    return d.constData()->requestUrl;
 }
 
 QCNetworkRequest &QCNetworkRequest::setUrl(const QUrl &url)
 {
-    d.data()->reqUrl = url;
+    d.data()->requestUrl = url;
     return *this;
 }
 
@@ -73,10 +71,9 @@ bool QCNetworkRequest::followLocation() const
     return d.constData()->redirectConfig.followLocation();
 }
 
-QCNetworkRequest &QCNetworkRequest::setMaxRedirects(int maxRedirects)
+QCNetworkConfigUpdateResult QCNetworkRequest::setMaxRedirects(int maxRedirects)
 {
-    d.data()->redirectConfig.setMaxRedirects(maxRedirects);
-    return *this;
+    return d.data()->redirectConfig.setMaxRedirects(maxRedirects);
 }
 
 std::optional<int> QCNetworkRequest::maxRedirects() const
@@ -148,7 +145,7 @@ QByteArray QCNetworkRequest::rawHeader(const QByteArray &headerName) const
 QCNetworkRequest &QCNetworkRequest::setRange(int start, int end)
 {
     d.data()->rangeStart = start;
-    d.data()->rangeEnd = end;
+    d.data()->rangeEnd   = end;
     return *this;
 }
 
@@ -197,7 +194,7 @@ QCNetworkTimeoutConfig QCNetworkRequest::timeoutConfig() const
 
 QCNetworkRequest &QCNetworkRequest::setHttpVersion(QCNetworkHttpVersion version)
 {
-    d.data()->httpVersion = version;
+    d.data()->httpVersion         = version;
     d.data()->httpVersionExplicit = true;
     return *this;
 }
@@ -214,7 +211,7 @@ bool QCNetworkRequest::isHttpVersionExplicit() const noexcept
 
 QCNetworkRequest &QCNetworkRequest::setRetryPolicy(const QCNetworkRetryPolicy &policy)
 {
-    d.data()->retryPolicy = policy;
+    d.data()->retryPolicy         = policy;
     d.data()->retryPolicyExplicit = true;
     return *this;
 }
@@ -311,6 +308,17 @@ QCNetworkRequest &QCNetworkRequest::setCachePolicy(QCNetworkCachePolicy policy)
 QCNetworkCachePolicy QCNetworkRequest::cachePolicy() const
 {
     return d.constData()->cachePolicy;
+}
+
+QCNetworkRequest &QCNetworkRequest::setCachePartitionKey(const QByteArray &partitionKey)
+{
+    d.data()->cachePartitionKey = partitionKey;
+    return *this;
+}
+
+QByteArray QCNetworkRequest::cachePartitionKey() const
+{
+    return d.constData()->cachePartitionKey;
 }
 
 QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)

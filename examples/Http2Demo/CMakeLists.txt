@@ -14,6 +14,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 
 # 添加可执行文件
 add_executable(Http2Demo main.cpp)
+qcurl_enable_qt_no_keywords(Http2Demo)
 
 # 链接库
 target_link_libraries(Http2Demo

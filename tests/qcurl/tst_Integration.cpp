@@ -20,6 +20,7 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "test_httpbin_env.h"
+#include "qcnetwork_retry_policy_test_helper.h"
 #include "test_source_paths.h"
 
 #include <QByteArray>
@@ -52,7 +53,7 @@ class TestIntegration : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
@@ -627,7 +628,7 @@ void TestIntegration::testMaxRedirects()
     {
         QCNetworkRequest request(redirectUrl);
         request.setFollowLocation(true);
-        request.setMaxRedirects(20);
+        QCOMPARE(request.setMaxRedirects(20), QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = m_manager->get(request);
         QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
@@ -653,7 +654,7 @@ void TestIntegration::testMaxRedirects()
     {
         QCNetworkRequest request(redirectUrl);
         request.setFollowLocation(true);
-        request.setMaxRedirects(1);
+        QCOMPARE(request.setMaxRedirects(1), QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = m_manager->get(request);
         QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
@@ -1043,9 +1044,8 @@ void TestIntegration::testRetryWithConcurrentRequests()
         timeout.setTotalTimeout(std::chrono::milliseconds(3000));
         request.setTimeoutConfig(timeout);
 
-        QCNetworkRetryPolicy policy;
-        policy.setMaxRetries(2);
-        policy.setInitialDelay(std::chrono::milliseconds(100));
+        const QCNetworkRetryPolicy policy
+            = TestSupport::makeRetryPolicyOrFail(2, std::chrono::milliseconds(100));
         request.setRetryPolicy(policy);
 
         auto *reply = m_manager->get(request);
@@ -1141,9 +1141,8 @@ void TestIntegration::testRetryOnTimeout()
     timeout.setTotalTimeout(std::chrono::milliseconds(500)); // 500ms 超时
     request.setTimeoutConfig(timeout);
 
-    QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(2);
-    policy.setInitialDelay(std::chrono::milliseconds(100));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(2, std::chrono::milliseconds(100));
     // ConnectionTimeout 已在默认 retryableErrors 中，无需手动添加
     request.setRetryPolicy(policy);
 
@@ -1192,10 +1191,8 @@ void TestIntegration::testRetryDelayAccuracy()
 {
     // 配置精确的重试延迟
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
-    QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(3);
-    policy.setInitialDelay(std::chrono::milliseconds(200));
-    policy.setBackoffMultiplier(1.5);
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(3, std::chrono::milliseconds(200), 1.5);
     request.setRetryPolicy(policy);
 
     QElapsedTimer timer;

@@ -4,11 +4,10 @@
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestScheduler.h"
+#include "private/QCNetworkProtocolPolicy_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "private/QCThreading_p.h"
 
-#include <QDebug>
 #include <QIODevice>
 #include <QThread>
 
@@ -147,6 +146,11 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchSendRequest(
                                          nullptr);
     }
 
+    QString protocolError;
+    if (!Internal::QCNetworkProtocolPolicy::validateCoreUrl(request.url(), &protocolError)) {
+        return createInvalidRequestReply(request, method, protocolError, nullptr);
+    }
+
     if (!Internal::hasEventDispatcher(q_func()->thread())) {
         return createNoEventLoopErrorReply(request,
                                            method,
@@ -177,8 +181,7 @@ QCNetworkReply *QCNetworkAccessManager::get(const QCNetworkRequest &request)
                                                 "QCNetworkAccessManager::get");
 }
 
-QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request,
-                                             const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request, const QByteArray &data)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Post,
@@ -214,8 +217,7 @@ QCNetworkReply *QCNetworkAccessManager::post(const QCNetworkRequest &request,
                                                 apiName);
 }
 
-QCNetworkReply *QCNetworkAccessManager::put(const QCNetworkRequest &request,
-                                            const QByteArray &data)
+QCNetworkReply *QCNetworkAccessManager::put(const QCNetworkRequest &request, const QByteArray &data)
 {
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Put,
@@ -287,12 +289,11 @@ QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest
     }
 
     const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
-    return d_func()->dispatchManagedSendRequest(
-        request,
-        HttpMethod::Custom,
-        Internal::makeCustomRequestBody(normalizedMethod),
-        QByteArray(),
-        "QCNetworkAccessManager::sendCustomRequest");
+    return d_func()->dispatchManagedSendRequest(request,
+                                                HttpMethod::Custom,
+                                                Internal::makeCustomRequestBody(normalizedMethod),
+                                                QByteArray(),
+                                                "QCNetworkAccessManager::sendCustomRequest");
 }
 
 QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest &request,
@@ -307,149 +308,12 @@ QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest
     }
 
     const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
-    return d_func()->dispatchManagedSendRequest(
-        request,
-        HttpMethod::Custom,
-        Internal::makeCustomInlineRequestBody(normalizedMethod, data),
-        data,
-        "QCNetworkAccessManager::sendCustomRequest");
+    return d_func()
+        ->dispatchManagedSendRequest(request,
+                                     HttpMethod::Custom,
+                                     Internal::makeCustomInlineRequestBody(normalizedMethod, data),
+                                     data,
+                                     "QCNetworkAccessManager::sendCustomRequest");
 }
-
-void QCNetworkAccessManager::enableRequestScheduler(bool enabled)
-{
-    Q_D(QCNetworkAccessManager);
-    d->schedulerEnabled = enabled;
-}
-
-bool QCNetworkAccessManager::isSchedulerEnabled() const
-{
-    Q_D(const QCNetworkAccessManager);
-    return d->schedulerEnabled;
-}
-
-bool QCNetworkAccessManagerPrivate::rejectOffOwnerThread(QString *error, const char *apiName) const
-{
-    if (QThread::currentThread() == q_func()->thread()) {
-        return false;
-    }
-
-    if (error) {
-        *error = QStringLiteral("%1 must run on manager owner thread")
-                     .arg(QString::fromUtf8(apiName));
-    }
-    qWarning() << apiName << ": called from non-owner thread";
-    Q_ASSERT_X(QThread::currentThread() == q_func()->thread(),
-               apiName,
-               "QCNetworkAccessManager scheduler API must run on owner thread");
-    return true;
-}
-
-bool QCNetworkAccessManager::setSchedulerPolicy(const QCNetworkSchedulerPolicy &policy,
-                                                QString *error)
-{
-    Q_D(QCNetworkAccessManager);
-    if (d->rejectOffOwnerThread(error, "QCNetworkAccessManager::setSchedulerPolicy")) {
-        return false;
-    }
-    if (!policy.validate(error)) {
-        return false;
-    }
-    if (!d->scheduler->applyPolicy(policy, error)) {
-        return false;
-    }
-    d->schedulerPolicy = policy;
-    return true;
-}
-
-QCNetworkSchedulerPolicy QCNetworkAccessManager::schedulerPolicy() const
-{
-    Q_D(const QCNetworkAccessManager);
-    if (d->rejectOffOwnerThread(nullptr, "QCNetworkAccessManager::schedulerPolicy")) {
-        return QCNetworkSchedulerPolicy{};
-    }
-    return d->schedulerPolicy;
-}
-
-QCNetworkSchedulerStatistics QCNetworkAccessManager::schedulerStatistics() const
-{
-    Q_D(const QCNetworkAccessManager);
-    if (d->rejectOffOwnerThread(nullptr, "QCNetworkAccessManager::schedulerStatistics")) {
-        return QCNetworkSchedulerStatistics{};
-    }
-
-    const QCNetworkRequestScheduler::Statistics stats = d->scheduler->statistics();
-
-    QCNetworkSchedulerStatistics result;
-    result.setPendingRequests(stats.pendingRequests());
-    result.setRunningRequests(stats.runningRequests());
-    result.setCompletedRequests(stats.completedRequests());
-    result.setCancelledRequests(stats.cancelledRequests());
-    result.setTotalBytesReceived(stats.totalBytesReceived());
-    result.setTotalBytesSent(stats.totalBytesSent());
-    result.setAvgResponseTime(stats.avgResponseTime());
-    return result;
-}
-
-QCNetworkLaneCancelResult QCNetworkAccessManager::cancelLaneRequests(const QCNetworkLaneKey &lane,
-                                                                     SchedulerCancelScope scope)
-{
-    Q_D(QCNetworkAccessManager);
-    if (d->rejectOffOwnerThread(nullptr, "QCNetworkAccessManager::cancelLaneRequests")) {
-        return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::FailureReason::NonOwnerThread,
-            QStringLiteral("QCNetworkAccessManager::cancelLaneRequests must run on owner thread"));
-    }
-    if (!d->schedulerEnabled) {
-        return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled,
-            QStringLiteral("QCNetworkAccessManager: request scheduler is not enabled"));
-    }
-    if (!lane.isValid()) {
-        return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::FailureReason::InvalidLane,
-            QStringLiteral("QCNetworkAccessManager: invalid scheduler lane cannot be cancelled"));
-    }
-    if (!d->schedulerPolicy.isLaneRegistered(lane)) {
-        return QCNetworkLaneCancelResult::failure(
-            QCNetworkLaneCancelResult::FailureReason::UnregisteredLane,
-            QStringLiteral("QCNetworkAccessManager: scheduler lane is not registered: %1")
-                .arg(lane.name()));
-    }
-    const auto schedulerScope
-        = scope == SchedulerCancelScope::PendingAndRunning
-        ? QCNetworkRequestScheduler::CancelLaneScope::PendingAndRunning
-        : QCNetworkRequestScheduler::CancelLaneScope::PendingOnly;
-    return QCNetworkLaneCancelResult::success(
-        d->scheduler->cancelLaneRequests(lane.name(), schedulerScope));
-}
-
-#ifdef QCURL_ENABLE_TEST_HOOKS
-QCNetworkRequestScheduler *QCNetworkAccessManager::schedulerForTesting() const
-{
-    Q_D(const QCNetworkAccessManager);
-    if (d->rejectOffOwnerThread(nullptr, "QCNetworkAccessManager::schedulerForTesting")) {
-        return nullptr;
-    }
-    return d->scheduler;
-}
-
-void QCNetworkAccessManager::registerSchedulerLaneForTesting(const QCNetworkLaneKey &lane)
-{
-    Q_D(QCNetworkAccessManager);
-    if (!lane.isValid()
-        || d->rejectOffOwnerThread(nullptr,
-                                   "QCNetworkAccessManager::registerSchedulerLaneForTesting")) {
-        return;
-    }
-    if (!d->schedulerPolicy.isLaneRegistered(lane)) {
-        QString error;
-        const bool registered = d->schedulerPolicy.setLaneConfig(
-            lane, QCNetworkSchedulerPolicy::LaneConfig{}, &error);
-        Q_ASSERT_X(registered,
-                   "QCNetworkAccessManager::registerSchedulerLaneForTesting",
-                   qPrintable(error));
-    }
-}
-#endif
 
 } // namespace QCurl

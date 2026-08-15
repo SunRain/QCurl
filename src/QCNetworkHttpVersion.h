@@ -45,7 +45,7 @@ enum class QCNetworkHttpVersion {
     Http2TLS,  ///< HTTP/2 over TLS（自动协商）
     Http3,     ///< HTTP/3（需要 libcurl >= 7.66.0 + nghttp3）尝试 HTTP/3，失败则降级
     Http3Only, ///< 仅 HTTP/3，失败则报错（Core capability）
-    HttpAny    ///< 让 libcurl 自动选择最优版本
+    HttpAny,   ///< 让 libcurl 自动选择最优版本
 };
 
 } // namespace QCurl

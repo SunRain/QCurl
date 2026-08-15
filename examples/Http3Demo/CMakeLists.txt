@@ -10,6 +10,7 @@ set(CMAKE_AUTOMOC ON)
 
 # 创建可执行文件
 add_executable(Http3Demo main.cpp)
+qcurl_enable_qt_no_keywords(Http3Demo)
 
 # 链接库
 target_link_libraries(Http3Demo

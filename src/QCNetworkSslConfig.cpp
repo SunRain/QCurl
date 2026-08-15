@@ -4,6 +4,7 @@
 
 namespace QCurl {
 
+/// @brief 保存 TLS 校验与证书参数的隐式共享配置。
 class QCNetworkSslConfigData : public QSharedData
 {
 public:

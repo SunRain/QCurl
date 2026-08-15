@@ -36,7 +36,7 @@ class QCURL_EXPORT QCNetworkRequest
 {
 public:
     QCNetworkRequest();
-    QCNetworkRequest(const QUrl &url);
+    explicit QCNetworkRequest(const QUrl &url);
     QCNetworkRequest(const QCNetworkRequest &other);
     ~QCNetworkRequest();
 
@@ -55,8 +55,11 @@ public:
     /// 返回是否跟随重定向。
     bool followLocation() const;
 
-    /// 设置最大重定向次数；负值会清空显式上限。
-    QCNetworkRequest &setMaxRedirects(int maxRedirects);
+    /**
+     * @brief 设置最大重定向次数。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument`，请求保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxRedirects(int maxRedirects);
     /// 返回最大重定向次数；`std::nullopt` 表示使用底层默认。
     [[nodiscard]] std::optional<int> maxRedirects() const;
 
@@ -117,19 +120,47 @@ public:
     QCNetworkRequest &setAcceptedEncodings(const QStringList &encodings);
     [[nodiscard]] QStringList acceptedEncodings() const;
 
-    QCNetworkRequest &setMaxDownloadBytesPerSec(qint64 bytesPerSec);
+    /**
+     * @brief 设置请求级下载限速。
+     * @param bytesPerSec 正值表示每秒字节上限，`0` 表示清除限速。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument`，请求保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxDownloadBytesPerSec(qint64 bytesPerSec);
     [[nodiscard]] std::optional<qint64> maxDownloadBytesPerSec() const;
 
-    QCNetworkRequest &setMaxUploadBytesPerSec(qint64 bytesPerSec);
+    /**
+     * @brief 设置请求级上传限速。
+     * @param bytesPerSec 正值表示每秒字节上限，`0` 表示清除限速。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument`，请求保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxUploadBytesPerSec(qint64 bytesPerSec);
     [[nodiscard]] std::optional<qint64> maxUploadBytesPerSec() const;
 
-    QCNetworkRequest &setBackpressureLimitBytes(qint64 bytes);
+    /**
+     * @brief 设置接收 backpressure 高水位。
+     * @param bytes 非负高水位；`0` 表示关闭流控并清除恢复低水位。
+     * @return 成功时返回 `Applied`；负值或不高于既有非零低水位时返回
+     *         `InvalidArgument`，请求的完整传输配置保持不变。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setBackpressureLimitBytes(qint64 bytes);
     [[nodiscard]] qint64 backpressureLimitBytes() const noexcept;
 
-    QCNetworkRequest &setBackpressureResumeBytes(qint64 bytes);
+    /**
+     * @brief 设置接收 backpressure 恢复低水位。
+     * @param bytes 非负低水位；`0` 表示使用默认低水位。
+     * @return 成功时返回 `Applied`；负值或不小于已启用的高水位时返回
+     *         `InvalidArgument`，请求保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setBackpressureResumeBytes(qint64 bytes);
     [[nodiscard]] qint64 backpressureResumeBytes() const noexcept;
 
-    QCNetworkRequest &setExpect100ContinueTimeout(std::chrono::milliseconds timeout);
+    /**
+     * @brief 设置 Expect: 100-continue 超时。
+     * @param timeout 非负超时时间；`0ms` 表示立即继续发送请求体。
+     * @return 成功时返回 `Applied`；负值返回 `InvalidArgument`，请求保持原状态。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setExpect100ContinueTimeout(
+        std::chrono::milliseconds timeout);
     [[nodiscard]] std::optional<std::chrono::milliseconds> expect100ContinueTimeout() const;
 
     QCNetworkRequest &setIpResolve(QCNetworkIpResolve resolve);
@@ -176,6 +207,15 @@ public:
 
     QCNetworkRequest &setCachePolicy(QCNetworkCachePolicy policy);
     [[nodiscard]] QCNetworkCachePolicy cachePolicy() const;
+
+    /**
+     * @brief 设置认证缓存的 opaque 分区标识。
+     *
+     * 存在 Authorization、Cookie、HTTP auth 或 TLS client certificate 身份时，
+     * 未设置该值的响应不会进入缓存。缓存实现只能持久化其摘要。
+     */
+    QCNetworkRequest &setCachePartitionKey(const QByteArray &partitionKey);
+    [[nodiscard]] QByteArray cachePartitionKey() const;
 
 private:
     QSharedDataPointer<QCurl::QCNetworkRequestPrivate> d;

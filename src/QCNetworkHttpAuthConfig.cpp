@@ -7,14 +7,15 @@
 
 namespace QCurl {
 
+/// @brief 保存 HTTP 认证配置的隐式共享值状态。
 class QCNetworkHttpAuthConfigData : public QSharedData
 {
 public:
     QString userName;
     QString password;
     QCNetworkHttpAuthMethod method = QCNetworkHttpAuthMethod::Basic;
-    bool allowUnrestrictedAuth = false;
-    bool warnIfBasicOverHttp = true;
+    bool allowUnrestrictedAuth     = false;
+    bool warnIfBasicOverHttp       = true;
 };
 
 QCNetworkHttpAuthConfig::QCNetworkHttpAuthConfig()

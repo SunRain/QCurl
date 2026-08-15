@@ -3,20 +3,20 @@
 
 #include "QCNetworkRequestConfig.h"
 
-#include <QDebug>
 #include <QSharedData>
 
 #include <optional>
 
 namespace QCurl {
 
+/// @brief 保存 HTTP 重定向策略的隐式共享配置。
 class QCNetworkRedirectConfigData : public QSharedData
 {
 public:
     bool followLocation = true;
     std::optional<int> maxRedirects;
     QCNetworkPostRedirectPolicy postRedirectPolicy = QCNetworkPostRedirectPolicy::Default;
-    bool autoRefererEnabled = false;
+    bool autoRefererEnabled                        = false;
     QString referer;
     bool allowUnrestrictedSensitiveHeadersOnRedirect = false;
 };
@@ -52,15 +52,14 @@ std::optional<int> QCNetworkRedirectConfig::maxRedirects() const
     return d->maxRedirects;
 }
 
-void QCNetworkRedirectConfig::setMaxRedirects(std::optional<int> maxRedirects)
+QCNetworkConfigUpdateResult QCNetworkRedirectConfig::setMaxRedirects(
+    std::optional<int> maxRedirects)
 {
     if (maxRedirects.has_value() && maxRedirects.value() < 0) {
-        qWarning() << "QCNetworkRedirectConfig: maxRedirects must be >= 0, got"
-                   << maxRedirects.value() << "(ignored)";
-        d->maxRedirects.reset();
-        return;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     d->maxRedirects = maxRedirects;
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 QCNetworkPostRedirectPolicy QCNetworkRedirectConfig::postRedirectPolicy() const

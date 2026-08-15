@@ -8,7 +8,10 @@ int runRequestConfigProbe(QCurl::QCNetworkRequest &request)
 {
     QCurl::QCNetworkRedirectConfig redirectConfig;
     redirectConfig.setFollowLocation(false);
-    redirectConfig.setMaxRedirects(3);
+    if (redirectConfig.setMaxRedirects(3)
+        != QCurl::QCNetworkConfigUpdateResult::Applied) {
+        return 8;
+    }
     redirectConfig.setPostRedirectPolicy(QCurl::QCNetworkPostRedirectPolicy::KeepPost301);
 
     QCurl::QCNetworkTransferConfig transferConfig;
