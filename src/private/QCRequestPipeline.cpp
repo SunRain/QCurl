@@ -1,6 +1,5 @@
-#include "private/QCRequestPipeline_p.h"
-
 #include "QCNetworkTimeoutConfig.h"
+#include "private/QCRequestPipeline_p.h"
 
 #include <QIODevice>
 #include <QStringList>
@@ -58,7 +57,7 @@ RequestBody makeCustomRequestBody(const QByteArray &method)
 
 RequestBody makeCustomInlineRequestBody(const QByteArray &method, const QByteArray &inlineBody)
 {
-    RequestBody body = makeInlineRequestBody(inlineBody);
+    RequestBody body  = makeInlineRequestBody(inlineBody);
     body.customMethod = method;
     return body;
 }
@@ -87,8 +86,8 @@ NormalizedRequest normalizeRequest(const QCNetworkRequest &request,
 {
     NormalizedRequest normalized;
     normalized.request = request;
-    normalized.method = method;
-    normalized.body = body;
+    normalized.method  = method;
+    normalized.body    = body;
 
     return normalized;
 }
@@ -97,7 +96,7 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
 {
     CurlPlan plan;
     plan.normalized             = normalized;
-    const bool hasBodySource = normalized.body.hasBodySource();
+    const bool hasBodySource    = normalized.body.hasBodySource();
     const qint64 inlineBodySize = normalized.body.inlineBytes.size();
 
     switch (normalized.method) {
@@ -110,43 +109,43 @@ CurlPlan compileRequest(const NormalizedRequest &normalized)
         case HttpMethod::Post:
             plan.setPost = true;
             // POST 允许内联 body 与请求体来源两条路径；后者会在执行期走 read callback。
-            plan.transferMode = hasBodySource ? CurlTransferMode::RequestBodySource
-                                              : CurlTransferMode::InlineBytes;
+            plan.transferMode  = hasBodySource ? CurlTransferMode::RequestBodySource
+                                               : CurlTransferMode::InlineBytes;
             plan.bodySizeBytes = hasBodySource ? normalized.body.sizeBytes : inlineBodySize;
             break;
         case HttpMethod::Put:
             // PUT 只有在外部请求体来源存在时才打开 CURLOPT_UPLOAD；内联 body 走自定义请求路径。
-            plan.setUpload = hasBodySource;
+            plan.setUpload     = hasBodySource;
             plan.customRequest = QByteArrayLiteral("PUT");
             if (hasBodySource) {
-                plan.transferMode = CurlTransferMode::RequestBodySource;
+                plan.transferMode  = CurlTransferMode::RequestBodySource;
                 plan.bodySizeBytes = normalized.body.sizeBytes;
             } else if (normalized.body.hasInlineBytes()) {
-                plan.transferMode = CurlTransferMode::InlineBytes;
+                plan.transferMode  = CurlTransferMode::InlineBytes;
                 plan.bodySizeBytes = inlineBodySize;
             }
             break;
         case HttpMethod::Delete:
             plan.customRequest = QByteArrayLiteral("DELETE");
             if (normalized.body.hasInlineBytes()) {
-                plan.transferMode = CurlTransferMode::InlineBytes;
+                plan.transferMode  = CurlTransferMode::InlineBytes;
                 plan.bodySizeBytes = inlineBodySize;
             }
             break;
         case HttpMethod::Patch:
             plan.customRequest = QByteArrayLiteral("PATCH");
             if (normalized.body.hasInlineBytes()) {
-                plan.transferMode = CurlTransferMode::InlineBytes;
+                plan.transferMode  = CurlTransferMode::InlineBytes;
                 plan.bodySizeBytes = inlineBodySize;
             }
             break;
         case HttpMethod::Custom:
             plan.customRequest = normalized.body.customMethod;
             if (hasBodySource) {
-                plan.transferMode = CurlTransferMode::RequestBodySource;
+                plan.transferMode  = CurlTransferMode::RequestBodySource;
                 plan.bodySizeBytes = normalized.body.sizeBytes;
             } else if (normalized.body.hasInlineBytes()) {
-                plan.transferMode = CurlTransferMode::InlineBytes;
+                plan.transferMode  = CurlTransferMode::InlineBytes;
                 plan.bodySizeBytes = inlineBodySize;
             }
             break;
@@ -170,9 +169,9 @@ QByteArray buildCurlPlanDigestForTest(const CurlPlan &plan)
     QStringList headerParts;
     headerParts.reserve(headerNames.size());
     for (const auto &name : headerNames) {
-        headerParts << QStringLiteral("%1=%2")
-                           .arg(QString::fromUtf8(name),
-                                QString::fromUtf8(normalized.request.rawHeader(name)));
+        headerParts << QStringLiteral("%1=%2").arg(QString::fromUtf8(name),
+                                                   QString::fromUtf8(
+                                                       normalized.request.rawHeader(name)));
     }
     parts << QStringLiteral("headers=%1").arg(headerParts.join(QStringLiteral(";")));
 

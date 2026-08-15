@@ -27,23 +27,23 @@ enum class RequestBodyKind {
 struct RequestBody
 {
     RequestBodyKind kind = RequestBodyKind::Empty;
-    QByteArray inlineBytes;    ///< InlineBytes 模式下的内联 body
-    QPointer<QIODevice> device; ///< Device 模式下的设备句柄
-    QByteArray customMethod; ///< Custom 方法的已校验 HTTP token
-    qint64 sizeBytes      = 0; ///< 已知请求体大小；未知时为负值
-    qint64 basePos        = 0; ///< 通过线程检查后采样的请求体读取起始偏移
+    QByteArray inlineBytes;        ///< InlineBytes 模式下的内联 body
+    QPointer<QIODevice> device;    ///< Device 模式下的设备句柄
+    QByteArray customMethod;       ///< Custom 方法的已校验 HTTP token
+    qint64 sizeBytes      = 0;     ///< 已知请求体大小；未知时为负值
+    qint64 basePos        = 0;     ///< 通过线程检查后采样的请求体读取起始偏移
     bool seekable         = false; ///< 通过线程检查后采样的请求体来源 seek 能力
     bool allowChunkedPost = false; ///< POST 请求体来源是否允许 chunked 传输
-    bool inferDeviceSize  = true; ///< 是否允许从 seekable device 推导剩余长度
+    bool inferDeviceSize  = true;  ///< 是否允许从 seekable device 推导剩余长度
 
     /// 返回当前 body 是否使用内联字节。
-    [[nodiscard]] bool hasInlineBytes() const noexcept { return kind == RequestBodyKind::InlineBytes; }
+    [[nodiscard]] bool hasInlineBytes() const noexcept
+    {
+        return kind == RequestBodyKind::InlineBytes;
+    }
 
     /// 返回当前 body 是否依赖外部请求体来源。
-    [[nodiscard]] bool hasBodySource() const noexcept
-    {
-        return kind == RequestBodyKind::Device;
-    }
+    [[nodiscard]] bool hasBodySource() const noexcept { return kind == RequestBodyKind::Device; }
 
     /// 返回当前 body 是否具有可用的长度信息。
     [[nodiscard]] bool hasKnownSize() const noexcept { return sizeBytes >= 0; }
@@ -68,10 +68,10 @@ enum class CurlTransferMode {
 struct CurlPlan
 {
     NormalizedRequest normalized;
-    bool setNoBody                = false;
-    bool setHttpGet               = false;
-    bool setPost                  = false;
-    bool setUpload                = false;
+    bool setNoBody  = false;
+    bool setHttpGet = false;
+    bool setPost    = false;
+    bool setUpload  = false;
     QByteArray customRequest;
     CurlTransferMode transferMode = CurlTransferMode::None;
     qint64 bodySizeBytes          = 0;

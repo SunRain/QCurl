@@ -19,8 +19,10 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
-#include "test_httpbin_env.h"
+#include "private/QCNetworkRetryDecision_p.h"
+#include "private/QCNetworkRetryPolicy_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
+#include "test_httpbin_env.h"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -35,7 +37,7 @@ class TestQCNetworkRetry : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
@@ -44,9 +46,12 @@ private slots:
     // ========== QCNetworkRetryPolicy 配置测试 ==========
     void testRetryPolicyDefaults();
     void testRetryPolicyFactoryMethods();
-    void testRetryPolicyChronoCtorAndCopyDetach();
+    void testRetryPolicyValidatedFactoryAndCopyDetach();
     void testRetryPolicyDelayCalculation();
     void testRetryPolicyShouldRetry();
+    void testRetryPolicyRejectsInvalidValues();
+    void testRetryPolicyValidatedFactory();
+    void testRetryDecisionUsesUnifiedMethodGate();
 
     // ========== 实际重试行为测试 ==========
     void testNoRetry();            // 验证默认不重试
@@ -98,12 +103,12 @@ void TestQCNetworkRetry::cleanupTestCase()
 
 void TestQCNetworkRetry::init()
 {
-    // 每个测试前执行
+    Internal::setRetryJitterFractionForTest(0.0);
 }
 
 void TestQCNetworkRetry::cleanup()
 {
-    // 每个测试后执行
+    Internal::setRetryJitterFractionForTest(std::nullopt);
 }
 
 // ============================================================================
@@ -134,10 +139,15 @@ QCNetworkRequest TestQCNetworkRetry::createRequestWithRetry(const QUrl &url, int
 {
     QCNetworkRequest request(url);
     QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(maxRetries);
-    policy.setInitialDelay(std::chrono::milliseconds(100)); // 缩短测试时间
-    policy.setBackoffMultiplier(1.5);
-    policy.setMaxDelay(std::chrono::milliseconds(5000));
+    const auto result = QCNetworkRetryPolicy::tryCreate(maxRetries,
+                                                        std::chrono::milliseconds(100),
+                                                        1.5,
+                                                        &policy);
+    if (result != QCNetworkRetryPolicy::UpdateResult::Applied
+        || policy.setMaxDelay(std::chrono::milliseconds(5000))
+               != QCNetworkRetryPolicy::UpdateResult::Applied) {
+        qFatal("测试重试策略配置无效");
+    }
     request.setRetryPolicy(policy);
     return request;
 }
@@ -192,16 +202,22 @@ void TestQCNetworkRetry::testRetryPolicyFactoryMethods()
     QCOMPARE(aggressive.backoffMultiplier(), 1.5);
 }
 
-void TestQCNetworkRetry::testRetryPolicyChronoCtorAndCopyDetach()
+void TestQCNetworkRetry::testRetryPolicyValidatedFactoryAndCopyDetach()
 {
-    QCNetworkRetryPolicy policy(2, std::chrono::milliseconds(250), 1.5);
+    QCNetworkRetryPolicy policy;
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
+                                             std::chrono::milliseconds(250),
+                                             1.5,
+                                             &policy),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
     QCOMPARE(policy.maxRetries(), 2);
     QCOMPARE(policy.initialDelay().count(), 250);
     QCOMPARE(policy.backoffMultiplier(), 1.5);
 
     QCNetworkRetryPolicy copied(policy);
-    policy.setMaxRetries(5);
-    policy.setInitialDelay(std::chrono::seconds(1));
+    QCOMPARE(policy.setMaxRetries(5), QCNetworkRetryPolicy::UpdateResult::Applied);
+    QCOMPARE(policy.setInitialDelay(std::chrono::seconds(1)),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
 
     QCOMPARE(copied.maxRetries(), 2);
     QCOMPARE(copied.initialDelay().count(), 250);
@@ -210,22 +226,34 @@ void TestQCNetworkRetry::testRetryPolicyChronoCtorAndCopyDetach()
 void TestQCNetworkRetry::testRetryPolicyDelayCalculation()
 {
     QCNetworkRetryPolicy policy;
-    policy.setInitialDelay(std::chrono::milliseconds(1000));
-    policy.setBackoffMultiplier(2.0);
-    policy.setMaxDelay(std::chrono::milliseconds(10000));
+    const auto applied = QCNetworkRetryPolicy::UpdateResult::Applied;
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(1000)), applied);
+    QCOMPARE(policy.setBackoffMultiplier(2.0), applied);
+    QCOMPARE(policy.setMaxDelay(std::chrono::milliseconds(10000)), applied);
 
-    // 测试指数退避：delay = initialDelay * (backoffMultiplier ^ attemptCount)
-    QCOMPARE(policy.delayForAttempt(0).count(), 1000);  // 1000 * 2^0 = 1000
-    QCOMPARE(policy.delayForAttempt(1).count(), 2000);  // 1000 * 2^1 = 2000
-    QCOMPARE(policy.delayForAttempt(2).count(), 4000);  // 1000 * 2^2 = 4000
-    QCOMPARE(policy.delayForAttempt(3).count(), 8000);  // 1000 * 2^3 = 8000
-    QCOMPARE(policy.delayForAttempt(4).count(), 10000); // 限制在 maxDelay
+    // Equal-jitter starts at half of the bounded exponential delay.
+    QCOMPARE(policy.delayForAttempt(0).count(), 500);
+    QCOMPARE(policy.delayForAttempt(1).count(), 1000);
+    QCOMPARE(policy.delayForAttempt(2).count(), 2000);
+    QCOMPARE(policy.delayForAttempt(3).count(), 4000);
+    QCOMPARE(policy.delayForAttempt(4).count(), 5000);
+
+    Internal::setRetryJitterFractionForTest(1.0);
+    QCOMPARE(policy.delayForAttempt(0).count(), 1000);
+    QCOMPARE(policy.delayForAttempt(1).count(), 2000);
+    QCOMPARE(policy.delayForAttempt(2).count(), 4000);
+    QCOMPARE(policy.delayForAttempt(3).count(), 8000);
+    QCOMPARE(policy.delayForAttempt(4).count(), 10000);
+
+    Internal::setRetryJitterFractionForTest(0.0);
+    QCOMPARE(policy.delayForAttempt(0, std::chrono::milliseconds(750)).count(), 750);
+    QCOMPARE(policy.delayForAttempt(0, std::chrono::milliseconds(50000)).count(), 10000);
 }
 
 void TestQCNetworkRetry::testRetryPolicyShouldRetry()
 {
     QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(3);
+    QCOMPARE(policy.setMaxRetries(3), QCNetworkRetryPolicy::UpdateResult::Applied);
     policy.setRetryableErrors({NetworkError::ConnectionTimeout, NetworkError::HttpServiceUnavailable});
 
     // 测试可重试错误
@@ -241,8 +269,142 @@ void TestQCNetworkRetry::testRetryPolicyShouldRetry()
     QVERIFY(!policy.shouldRetry(NetworkError::ConnectionTimeout, 4));
 
     // 测试 maxRetries = 0 的情况
-    policy.setMaxRetries(0);
+    QCOMPARE(policy.setMaxRetries(0), QCNetworkRetryPolicy::UpdateResult::Applied);
     QVERIFY(!policy.shouldRetry(NetworkError::ConnectionTimeout, 0));
+}
+
+void TestQCNetworkRetry::testRetryPolicyRejectsInvalidValues()
+{
+    QCNetworkRetryPolicy policy;
+    using UpdateResult = QCNetworkRetryPolicy::UpdateResult;
+
+    QCOMPARE(policy.setMaxRetries(-1), UpdateResult::InvalidArgument);
+    QCOMPARE(policy.maxRetries(), 0);
+    QCOMPARE(policy.setMaxRetries(2), UpdateResult::Applied);
+
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(-1)),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(policy.initialDelay().count(), 1000);
+    QCOMPARE(policy.setMaxDelay(std::chrono::milliseconds(-1)), UpdateResult::InvalidArgument);
+    QCOMPARE(policy.maxDelay().count(), 30000);
+
+    QCOMPARE(policy.setBackoffMultiplier(-1.0), UpdateResult::InvalidArgument);
+    QCOMPARE(policy.setBackoffMultiplier(std::numeric_limits<double>::quiet_NaN()),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(policy.setBackoffMultiplier(std::numeric_limits<double>::infinity()),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(policy.backoffMultiplier(), 2.0);
+
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(1)), UpdateResult::Applied);
+    QCOMPARE(policy.setMaxDelay(std::chrono::milliseconds::max()), UpdateResult::Applied);
+    QCOMPARE(policy.setBackoffMultiplier(2.0), UpdateResult::Applied);
+    Internal::setRetryJitterFractionForTest(1.0);
+    const auto bounded = policy.delayForAttempt(std::numeric_limits<int>::max());
+    QCOMPARE(bounded, std::chrono::milliseconds::max());
+}
+
+void TestQCNetworkRetry::testRetryPolicyValidatedFactory()
+{
+    using UpdateResult = QCNetworkRetryPolicy::UpdateResult;
+
+    QCNetworkRetryPolicy output = QCNetworkRetryPolicy::aggressiveRetry();
+    const QCNetworkRetryPolicy original = output;
+
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(-1,
+                                             std::chrono::milliseconds(250),
+                                             1.5,
+                                             &output),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(output.maxRetries(), original.maxRetries());
+    QCOMPARE(output.initialDelay(), original.initialDelay());
+    QCOMPARE(output.backoffMultiplier(), original.backoffMultiplier());
+
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
+                                             std::chrono::milliseconds(-1),
+                                             1.5,
+                                             &output),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(output.maxRetries(), original.maxRetries());
+
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
+                                             std::chrono::milliseconds(250),
+                                             std::numeric_limits<double>::quiet_NaN(),
+                                             &output),
+             UpdateResult::InvalidArgument);
+    QCOMPARE(output.maxRetries(), original.maxRetries());
+
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
+                                             std::chrono::milliseconds(250),
+                                             1.5,
+                                             nullptr),
+             UpdateResult::InvalidArgument);
+
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
+                                             std::chrono::milliseconds(250),
+                                             1.5,
+                                             &output),
+             UpdateResult::Applied);
+    QCOMPARE(output.maxRetries(), 2);
+    QCOMPARE(output.initialDelay(), std::chrono::milliseconds(250));
+    QCOMPARE(output.backoffMultiplier(), 1.5);
+}
+
+void TestQCNetworkRetry::testRetryDecisionUsesUnifiedMethodGate()
+{
+    QCNetworkRetryPolicy policy;
+    QCOMPARE(policy.setMaxRetries(1), QCNetworkRetryPolicy::UpdateResult::Applied);
+
+    const QCNetworkRequest getRequest(QUrl(QStringLiteral("http://example.com/get")));
+    const QCNetworkRequest postRequest(QUrl(QStringLiteral("http://example.com/post")));
+
+    QVERIFY(Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                       HttpMethod::Get,
+                                                       getRequest,
+                                                       true,
+                                                       NetworkError::HttpServiceUnavailable,
+                                                       0)
+                .allowed);
+    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                        HttpMethod::Post,
+                                                        postRequest,
+                                                        true,
+                                                        NetworkError::HttpServiceUnavailable,
+                                                        0)
+                 .allowed);
+    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                        HttpMethod::Post,
+                                                        postRequest,
+                                                        true,
+                                                        NetworkError::ConnectionRefused,
+                                                        0)
+                 .allowed);
+
+    QCOMPARE(policy.setRetryMethodPolicy(QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
+    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                        HttpMethod::Post,
+                                                        postRequest,
+                                                        true,
+                                                        NetworkError::ConnectionRefused,
+                                                        0)
+                 .allowed);
+
+    QCNetworkRequest keyedRequest = postRequest;
+    keyedRequest.setRawHeader(QByteArrayLiteral("idempotency-key"), QByteArrayLiteral("stable-1"));
+    QVERIFY(Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                       HttpMethod::Post,
+                                                       keyedRequest,
+                                                       true,
+                                                       NetworkError::ConnectionRefused,
+                                                       0)
+                .allowed);
+    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                        HttpMethod::Post,
+                                                        keyedRequest,
+                                                        false,
+                                                        NetworkError::ConnectionRefused,
+                                                        0)
+                 .allowed);
 }
 
 // ============================================================================
@@ -336,10 +498,12 @@ void TestQCNetworkRetry::testExponentialBackoff()
     // 测试延迟时间符合指数退避算法
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(2);
-    policy.setInitialDelay(std::chrono::milliseconds(200));
-    policy.setBackoffMultiplier(1.5);
+    const auto applied = QCNetworkRetryPolicy::UpdateResult::Applied;
+    QCOMPARE(policy.setMaxRetries(2), applied);
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(200)), applied);
+    QCOMPARE(policy.setBackoffMultiplier(1.5), applied);
     request.setRetryPolicy(policy);
+    Internal::setRetryJitterFractionForTest(1.0);
 
     QElapsedTimer timer;
     timer.start();
@@ -408,10 +572,11 @@ void TestQCNetworkRetry::testCustomRetryPolicy()
     // 测试自定义重试策略
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/500"));
     QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(4);
-    policy.setInitialDelay(std::chrono::milliseconds(50));
-    policy.setBackoffMultiplier(1.2);
-    policy.setMaxDelay(std::chrono::milliseconds(1000));
+    const auto applied = QCNetworkRetryPolicy::UpdateResult::Applied;
+    QCOMPARE(policy.setMaxRetries(4), applied);
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(50)), applied);
+    QCOMPARE(policy.setBackoffMultiplier(1.2), applied);
+    QCOMPARE(policy.setMaxDelay(std::chrono::milliseconds(1000)), applied);
     policy.setRetryableErrors({NetworkError::HttpInternalServerError});
     request.setRetryPolicy(policy);
 
@@ -432,10 +597,12 @@ void TestQCNetworkRetry::testManagedWaitRetry()
     // 测试 managed reply wait helper 覆盖重试延迟。
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/status/503"));
     QCNetworkRetryPolicy policy;
-    policy.setMaxRetries(2);
-    policy.setInitialDelay(std::chrono::milliseconds(100));
-    policy.setBackoffMultiplier(1.5);
+    const auto applied = QCNetworkRetryPolicy::UpdateResult::Applied;
+    QCOMPARE(policy.setMaxRetries(2), applied);
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(100)), applied);
+    QCOMPARE(policy.setBackoffMultiplier(1.5), applied);
     request.setRetryPolicy(policy);
+    Internal::setRetryJitterFractionForTest(1.0);
 
     QElapsedTimer timer;
     timer.start();
