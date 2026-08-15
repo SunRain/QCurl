@@ -66,7 +66,7 @@ public:
         statsTimer->start(1000);
     }
 
-private slots:
+private Q_SLOTS:
     void runStressTest()
     {
         qInfo() << "开始压力测试...";

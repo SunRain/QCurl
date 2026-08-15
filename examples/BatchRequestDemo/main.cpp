@@ -48,7 +48,7 @@ public:
         showMenu();
     }
 
-private slots:
+private Q_SLOTS:
     void setupSignals()
     {
         // 批量操作信号

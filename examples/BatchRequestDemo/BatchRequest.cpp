@@ -84,7 +84,7 @@ void BatchRequest::start()
     }
 
     m_paused = false;
-    emit started();
+    Q_EMIT started();
 
     processQueue();
 }
@@ -92,7 +92,7 @@ void BatchRequest::start()
 void BatchRequest::pause()
 {
     m_paused = true;
-    emit paused();
+    Q_EMIT paused();
 }
 
 void BatchRequest::resume()
@@ -102,7 +102,7 @@ void BatchRequest::resume()
     }
 
     m_paused = false;
-    emit resumed();
+    Q_EMIT resumed();
 
     processQueue();
 }
@@ -121,7 +121,7 @@ void BatchRequest::cancel()
     m_runningRequests.clear();
     m_pendingRequests.clear();
 
-    emit cancelled();
+    Q_EMIT cancelled();
 }
 
 void BatchRequest::clear()
@@ -188,7 +188,7 @@ void BatchRequest::processQueue()
 
     // 检查是否全部完成
     if (m_runningRequests.isEmpty() && m_pendingRequests.isEmpty()) {
-        emit allCompleted();
+        Q_EMIT allCompleted();
     }
 }
 
@@ -246,12 +246,12 @@ void BatchRequest::startRequest(const QString &id)
     // 执行请求
     reply->execute();
 
-    emit requestStarted(id);
+    Q_EMIT requestStarted(id);
 
     // 更新进度
-    emit requestProgress(completedCount(),
-                         totalCount(),
-                         (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+    Q_EMIT requestProgress(completedCount(),
+                           totalCount(),
+                           (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 }
 
 void BatchRequest::retryRequest(const QString &id)
@@ -282,10 +282,10 @@ void BatchRequest::retryRequest(const QString &id)
         info->completed = true;
         info->success   = false;
 
-        emit requestCompleted(id, false);
-        emit requestProgress(completedCount(),
-                             totalCount(),
-                             (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+        Q_EMIT requestCompleted(id, false);
+        Q_EMIT requestProgress(completedCount(),
+                               totalCount(),
+                               (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 
         processQueue();
     }
@@ -324,7 +324,7 @@ void BatchRequest::onRequestFinished()
         info->completed = true;
         info->success   = true;
 
-        emit requestCompleted(id, true);
+        Q_EMIT requestCompleted(id, true);
     }
 
     // 从运行列表中移除
@@ -332,9 +332,9 @@ void BatchRequest::onRequestFinished()
     reply->deleteLater();
 
     // 更新进度
-    emit requestProgress(completedCount(),
-                         totalCount(),
-                         (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
+    Q_EMIT requestProgress(completedCount(),
+                           totalCount(),
+                           (totalCount() > 0) ? (completedCount() * 100.0 / totalCount()) : 0.0);
 
     // 处理下一个请求
     processQueue();
@@ -370,7 +370,7 @@ void BatchRequest::onRequestError(QCurl::NetworkError errorCode)
     m_runningRequests.remove(id);
     reply->deleteLater();
 
-    emit error(id, errorString);
+    Q_EMIT error(id, errorString);
 
     // 尝试重试
     retryRequest(id);

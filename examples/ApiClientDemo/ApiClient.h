@@ -71,7 +71,7 @@ public:
     // 取消所有请求
     void cancelAll();
 
-signals:
+Q_SIGNALS:
     void requestStarted(const QString &endpoint);
     void requestCompleted(const QString &endpoint, bool success);
 

@@ -5,6 +5,16 @@
 # - QtTest 执行器 `tst_LibcurlConsistency` 由 pytest driver 调用，不注册为 ctest（避免 QSKIP=0 被误判为 Passed）。
 
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
+    if(CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize=")
+        add_link_options(-no-pie)
+    endif()
+
+    set(QCURL_LC_CORE_TARGET QCurl)
+    set(QCURL_LC_OTHER_EXTRAS_TARGET QCurlOtherExtras)
+    if(TARGET QCurlTestInternals)
+        set(QCURL_LC_CORE_TARGET QCurlTestInternals)
+        set(QCURL_LC_OTHER_EXTRAS_TARGET QCurlOtherExtrasTestInternals)
+    endif()
     # pytest 驱动：Qt Test 执行器（不注册为 ctest）
     #
     # 背景：
@@ -12,11 +22,12 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     # - 若直接作为 ctest 测试运行，在缺少 env 时会 QSKIP 且进程返回 0，ctest 会将其计为 Passed，
     #   容易造成“全绿但未覆盖”的误读。
     add_executable(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
+    qcurl_enable_qt_no_keywords(tst_LibcurlConsistency)
     target_link_libraries(tst_LibcurlConsistency
         PRIVATE
             Qt6::Test
-            QCurl
-            QCurlOtherExtras
+            ${QCURL_LC_CORE_TARGET}
+            ${QCURL_LC_OTHER_EXTRAS_TARGET}
             CURL::libcurl
     )
     target_compile_definitions(tst_LibcurlConsistency PRIVATE
@@ -35,64 +46,74 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
 
     # baseline clients（非 Qt Test，供 pytest suite 使用）
     add_executable(qcurl_lc_ws_baseline ws_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_ws_baseline)
     target_link_libraries(qcurl_lc_ws_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_ws_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_range_resume_baseline range_resume_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_range_resume_baseline)
     target_link_libraries(qcurl_lc_range_resume_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_range_resume_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_postfields_binary_baseline postfields_binary_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_postfields_binary_baseline)
     target_link_libraries(qcurl_lc_postfields_binary_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_postfields_binary_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_multi_get4_baseline multi_get4_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_multi_get4_baseline)
     target_link_libraries(qcurl_lc_multi_get4_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_multi_get4_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_http_baseline http_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_http_baseline)
     target_link_libraries(qcurl_lc_http_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_http_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_share_handle_baseline share_handle_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_share_handle_baseline)
     target_link_libraries(qcurl_lc_share_handle_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_share_handle_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_pause_resume_baseline pause_resume_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_pause_resume_baseline)
     target_link_libraries(qcurl_lc_pause_resume_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_pause_resume_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_backpressure_baseline backpressure_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_backpressure_baseline)
     target_link_libraries(qcurl_lc_backpressure_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_backpressure_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_upload_pause_resume_baseline upload_pause_resume_baseline_client.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_upload_pause_resume_baseline)
     target_link_libraries(qcurl_lc_upload_pause_resume_baseline PRIVATE CURL::libcurl)
     set_target_properties(qcurl_lc_upload_pause_resume_baseline PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
     )
 
     add_executable(qcurl_lc_capability_probe qcurl_lc_capability_probe.cpp)
+    qcurl_enable_qt_no_keywords(qcurl_lc_capability_probe)
     target_link_libraries(qcurl_lc_capability_probe
         PRIVATE
             Qt6::Core
-            QCurl
+            ${QCURL_LC_CORE_TARGET}
             CURL::libcurl
     )
     target_include_directories(qcurl_lc_capability_probe

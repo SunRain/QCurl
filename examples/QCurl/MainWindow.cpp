@@ -15,6 +15,8 @@
 #include <QUrlQuery>
 #include <QUuid>
 
+#include <utility>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -47,7 +49,7 @@ void MainWindow::tst_async()
                 "com%2F20170523%2F20170523000003_d41d8cd98f00b204e9800998ecf8427e_16.jpeg");
 
     //    list.append("http://bos.pgzs.com/sjapp91/pcsuite/plugin/91assistant_pc_v6_1_20180416.exe");
-    foreach (const QString &url, list) {
+    for (const QString &url : std::as_const(list)) {
         qDebug() << Q_FUNC_INFO << "for url " << url;
         QUrl u(url);
         QCurl::QCNetworkRequest request(u);
@@ -99,7 +101,7 @@ void MainWindow::tst_blockingExtras()
     QStringList list;
 
     list.append("https://passport.baidu.com/v2/api/");
-    foreach (const QString &url, list) {
+    for (const QString &url : std::as_const(list)) {
         qDebug() << Q_FUNC_INFO << "for url " << url;
         QUrl u(url);
         {

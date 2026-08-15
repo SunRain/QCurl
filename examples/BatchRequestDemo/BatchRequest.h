@@ -86,7 +86,7 @@ public:
     RequestInfo getRequestInfo(const QString &id) const;
     QList<RequestInfo> allRequests() const { return m_requests; }
 
-signals:
+Q_SIGNALS:
     void started();
     void paused();
     void resumed();
@@ -99,7 +99,7 @@ signals:
     void allCompleted();
     void error(const QString &id, const QString &errorString);
 
-private slots:
+private Q_SLOTS:
     void onRequestFinished();
     void onRequestError(QCurl::NetworkError errorCode);
 

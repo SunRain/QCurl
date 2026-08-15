@@ -70,3 +70,23 @@ add_test(
 set_tests_properties(qcurl_libcurl_binding_contract_guard PROPERTIES
     LABELS "offline;source_guard"
 )
+
+add_test(
+    NAME qcurl_qt_member_naming_guard
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/scripts/check_qt_member_naming.py"
+            --source-root "${CMAKE_SOURCE_DIR}"
+            --compile-commands "${CMAKE_BINARY_DIR}"
+)
+set_tests_properties(qcurl_qt_member_naming_guard PROPERTIES
+    LABELS "offline;source_guard"
+)
+
+add_test(
+    NAME qcurl_qt_contract_guard
+    COMMAND "${Python3_EXECUTABLE}" -m pytest -q
+            "${CMAKE_SOURCE_DIR}/tests/test_qt_contract_guards.py"
+)
+set_tests_properties(qcurl_qt_contract_guard PROPERTIES
+    LABELS "offline;source_guard"
+)

@@ -14,6 +14,7 @@ add_executable(ApiClientDemo
     ApiClient.h
     ApiClient.cpp
 )
+qcurl_enable_qt_no_keywords(ApiClientDemo)
 
 # 链接库
 target_link_libraries(ApiClientDemo

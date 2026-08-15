@@ -251,6 +251,20 @@ add_library(QCurlOtherExtras ${_qcurl_library_type}
 )
 add_library(QCurl::OtherExtras ALIAS QCurlOtherExtras)
 
+if(QCURL_BUILD_SHARED_LIBS)
+    foreach(_qcurl_shared_target IN ITEMS QCurl QCurlOtherExtras)
+        set_target_properties(${_qcurl_shared_target} PROPERTIES
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN YES
+        )
+    endforeach()
+endif()
+
+qcurl_enable_qt_no_keywords(QCurl)
+qcurl_enable_qt_no_keywords(QCurlBlockingExtras)
+qcurl_enable_qt_no_keywords(QCurlTestSupport)
+qcurl_enable_qt_no_keywords(QCurlOtherExtras)
+
 # 设置库属性
 set_target_properties(QCurl PROPERTIES
     VERSION ${PROJECT_VERSION}
@@ -362,6 +376,10 @@ target_include_directories(QCurlOtherExtras
 target_compile_definitions(QCurl
     PRIVATE
         $<$<BOOL:${QCURL_BUILD_SHARED_LIBS}>:QCURL_BUILDING_LIBRARY>
+        setWithTestHook=setWithCheckedOption
+        curlEasySetoptWithTestHook=curlEasySetoptWithCheckedOption
+        setProxySslVerifyHostWithTestHook=setProxySslVerifyHostWithCheckedOption
+        setProxySslVerifyPeerWithTestHook=setProxySslVerifyPeerWithCheckedOption
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
         QT_NO_URL_CAST_FROM_STRING
@@ -369,16 +387,14 @@ target_compile_definitions(QCurl
 target_compile_definitions(QCurlOtherExtras
     PRIVATE
         $<$<BOOL:${QCURL_BUILD_SHARED_LIBS}>:QCURL_BUILDING_OTHER_EXTRAS_LIBRARY>
+        setWithTestHook=setWithCheckedOption
+        curlEasySetoptWithTestHook=curlEasySetoptWithCheckedOption
+        setProxySslVerifyHostWithTestHook=setProxySslVerifyHostWithCheckedOption
+        setProxySslVerifyPeerWithTestHook=setProxySslVerifyPeerWithCheckedOption
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
         QT_NO_URL_CAST_FROM_STRING
 )
-
-# 测试专用：为单元测试提供可控的 capability 分支覆盖（不影响默认构建）
-if(BUILD_TESTING)
-    target_compile_definitions(QCurl PRIVATE QCURL_ENABLE_TEST_HOOKS)
-    target_compile_definitions(QCurlOtherExtras PRIVATE QCURL_ENABLE_TEST_HOOKS)
-endif()
 
 # 特性宏定义
 if(QCURL_WEBSOCKET_SUPPORT)
@@ -389,6 +405,92 @@ endif()
 if(QCURL_HTTP2_SUPPORT)
     target_compile_definitions(QCurl PUBLIC QCURL_HTTP2_SUPPORT)
     target_compile_definitions(QCurlOtherExtras PUBLIC QCURL_HTTP2_SUPPORT)
+endif()
+
+# Shared release libraries keep a minimal dynamic export surface. White-box Qt tests
+# instead link non-installed static companions so private implementation details never
+# need QCURL_EXPORT solely for test linkage.
+if(BUILD_TESTING AND QCURL_BUILD_SHARED_LIBS)
+    add_library(QCurlTestInternals STATIC EXCLUDE_FROM_ALL
+        ${QCURL_ALL_SOURCES}
+        ${QCURL_CORE_HEADERS}
+    )
+    add_library(QCurlOtherExtrasTestInternals STATIC EXCLUDE_FROM_ALL
+        ${QCURL_OTHER_EXTRAS_ALL_SOURCES}
+        ${QCURL_OTHER_EXTRAS_HEADERS}
+    )
+
+    foreach(_qcurl_test_internal_target IN ITEMS
+            QCurlTestInternals
+            QCurlOtherExtrasTestInternals)
+        qcurl_enable_qt_no_keywords(${_qcurl_test_internal_target})
+        set_target_properties(${_qcurl_test_internal_target} PROPERTIES
+            AUTOMOC ON
+            POSITION_INDEPENDENT_CODE ON
+        )
+        target_compile_definitions(${_qcurl_test_internal_target}
+            PRIVATE
+                QCURL_ENABLE_TEST_HOOKS
+                QT_NO_CAST_FROM_ASCII
+                QT_NO_CAST_TO_ASCII
+                QT_NO_URL_CAST_FROM_STRING
+        )
+    endforeach()
+
+    target_link_libraries(QCurlTestInternals PUBLIC Qt6::Core)
+    target_include_directories(QCurlTestInternals
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}
+            ${CMAKE_BINARY_DIR}/src
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/private
+    )
+    target_compile_definitions(QCurlTestInternals PUBLIC QCURL_STATIC_DEFINE)
+    target_compile_definitions(QCurlTestInternals
+        PRIVATE QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API)
+
+    target_link_libraries(QCurlOtherExtrasTestInternals
+        PUBLIC
+            QCurlTestInternals
+            Qt6::Network
+    )
+    target_include_directories(QCurlOtherExtrasTestInternals
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}
+            ${CMAKE_BINARY_DIR}/src
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/private
+    )
+    target_compile_definitions(QCurlOtherExtrasTestInternals
+        PUBLIC
+            QCURL_OTHER_EXTRAS_STATIC_DEFINE
+    )
+
+    if(QCURL_WEBSOCKET_SUPPORT)
+        target_compile_definitions(QCurlTestInternals PUBLIC QCURL_WEBSOCKET_SUPPORT)
+        target_compile_definitions(QCurlOtherExtrasTestInternals PUBLIC QCURL_WEBSOCKET_SUPPORT)
+    endif()
+    if(QCURL_HTTP2_SUPPORT)
+        target_compile_definitions(QCurlTestInternals PUBLIC QCURL_HTTP2_SUPPORT)
+        target_compile_definitions(QCurlOtherExtrasTestInternals PUBLIC QCURL_HTTP2_SUPPORT)
+    endif()
+
+    if(QCURL_BUILD_LIBCURL_CONSISTENCY)
+        foreach(_qcurl_test_internal_target IN ITEMS
+                QCurlTestInternals
+                QCurlOtherExtrasTestInternals)
+            target_include_directories(${_qcurl_test_internal_target}
+                PRIVATE "${CMAKE_SOURCE_DIR}/curl/include")
+            target_link_libraries(${_qcurl_test_internal_target}
+                PRIVATE "$<BUILD_INTERFACE:$<TARGET_FILE:libcurl_shared>>")
+            add_dependencies(${_qcurl_test_internal_target} libcurl_shared)
+        endforeach()
+    else()
+        target_link_libraries(QCurlTestInternals PUBLIC CURL::libcurl)
+        target_link_libraries(QCurlOtherExtrasTestInternals PUBLIC CURL::libcurl)
+    endif()
 endif()
 
 # 安装头文件

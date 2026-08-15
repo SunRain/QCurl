@@ -3,11 +3,13 @@ project(QCurl VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QCurlFirstPartyTarget.cmake")
 
 # 要求 C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # 构建选项
 option(BUILD_EXAMPLES "Build example applications" ON)
@@ -286,3 +288,6 @@ message(STATUS "  Testing: ${BUILD_TESTING}")
 message(STATUS "  Shared libraries: ${QCURL_BUILD_SHARED_LIBS}")
 message(STATUS "========================================")
 message(STATUS "")
+
+# Keep this last: every first-party compile target declared above must opt in.
+qcurl_verify_first_party_targets_have_qt_no_keywords()

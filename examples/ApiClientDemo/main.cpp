@@ -20,7 +20,7 @@ public:
         showMenu();
     }
 
-private slots:
+private Q_SLOTS:
     void setupSignals()
     {
         connect(m_client, &ApiClient::requestStarted, this, [](const QString &endpoint) {

@@ -14,6 +14,7 @@ add_executable(BatchRequestDemo
     BatchRequest.h
     BatchRequest.cpp
 )
+qcurl_enable_qt_no_keywords(BatchRequestDemo)
 
 # 链接库
 target_link_libraries(BatchRequestDemo

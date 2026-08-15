@@ -20,7 +20,7 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
-private slots:
+private Q_SLOTS:
     void on_pushButton_clicked();
 
 private:

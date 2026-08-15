@@ -195,7 +195,7 @@ void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
                             const RequestContext &context,
                             const QByteArray &postData)
 {
-    emit requestStarted(context.endpoint);
+    Q_EMIT requestStarted(context.endpoint);
 
     QCurl::QCNetworkReply *reply = nullptr;
 
@@ -241,7 +241,7 @@ void ApiClient::sendRequest(QCurl::QCNetworkRequest &request,
                 m_activeRequests.removeOne(reply);
                 reply->deleteLater();
 
-                emit requestCompleted(context.endpoint, false);
+                Q_EMIT requestCompleted(context.endpoint, false);
             });
 
     m_activeRequests.append(reply);
@@ -278,5 +278,5 @@ void ApiClient::handleResponse(QCurl::QCNetworkReply *reply, const RequestContex
     m_activeRequests.removeOne(reply);
     reply->deleteLater();
 
-    emit requestCompleted(context.endpoint, true);
+    Q_EMIT requestCompleted(context.endpoint, true);
 }

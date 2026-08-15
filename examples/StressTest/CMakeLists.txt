@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 
 # 创建可执行文件
 add_executable(StressTest main.cpp)
+qcurl_enable_qt_no_keywords(StressTest)
 
 # 启用 Qt 自动工具
 set_target_properties(StressTest PROPERTIES

@@ -14,6 +14,7 @@ enable_testing()
 # 基准测试辅助函数
 function(add_qcurl_benchmark test_name source_file)
     add_executable(${test_name} ${source_file} ${ARGN})
+    qcurl_enable_qt_no_keywords(${test_name})
     
     target_link_libraries(${test_name}
         PRIVATE
@@ -40,8 +41,6 @@ if(QCURL_WEBSOCKET_SUPPORT)
     target_link_libraries(benchmark_websocket_pool PRIVATE QCurlOtherExtras)
     add_qcurl_benchmark(benchmark_websocket_eventdriven benchmark_websocket_eventdriven.cpp)
     target_link_libraries(benchmark_websocket_eventdriven PRIVATE QCurlOtherExtras)
-    add_qcurl_benchmark(benchmark_websocket_compression benchmark_websocket_compression.cpp)
-    target_link_libraries(benchmark_websocket_compression PRIVATE QCurlOtherExtras)
 endif()
 
 # HTTP/2 基准测试（需要 HTTP/2 支持）

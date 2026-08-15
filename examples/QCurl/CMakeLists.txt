@@ -18,6 +18,7 @@ set(EXAMPLE_SOURCES
 
 # 创建可执行文件
 add_executable(QCurlExample ${EXAMPLE_SOURCES})
+qcurl_enable_qt_no_keywords(QCurlExample)
 
 # 链接库
 target_link_libraries(QCurlExample
