@@ -11,6 +11,17 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 enable_testing()
 set(CMAKE_AUTOMOC ON)
 
+add_test(
+    NAME qcurl_static_testing_unsupported_configure
+    COMMAND "${CMAKE_COMMAND}"
+            "-DQCURL_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DQCURL_TEST_BINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/qcurl_static_testing_unsupported.cmake"
+)
+set_tests_properties(qcurl_static_testing_unsupported_configure PROPERTIES
+    LABELS "cmake;negative;offline"
+)
+
 add_subdirectory(public_api)
 add_subdirectory(qcurl)
 add_subdirectory(libcurl_consistency)

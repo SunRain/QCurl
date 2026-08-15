@@ -268,14 +268,14 @@ qcurl_enable_qt_no_keywords(QCurlOtherExtras)
 # 设置库属性
 set_target_properties(QCurl PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    SOVERSION 2
     AUTOMOC ON  # 自动处理 Qt MOC
     EXPORT_NAME QCurl
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(QCurlOtherExtras PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    SOVERSION 2
     AUTOMOC ON
     POSITION_INDEPENDENT_CODE ON
 )
@@ -311,20 +311,14 @@ if(NOT QCURL_BUILD_SHARED_LIBS)
         PUBLIC
             QCurl
             Qt6::Network
-            ZLIB::ZLIB
     )
 else()
     target_link_libraries(QCurlOtherExtras
         PUBLIC
             QCurl
             Qt6::Network
-        PRIVATE
-            ZLIB::ZLIB
     )
 endif()
-
-# zlib 仅服务 WebSocket Preview 的 permessage-deflate 实现，由 OtherExtras opt-in
-# target 承担；Core 导出 / qcurl.pc 合同不传播 zlib 给默认 Core consumer。
 
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     target_include_directories(QCurl PRIVATE "${CMAKE_SOURCE_DIR}/curl/include")

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QCurl VERSION 1.0.0 LANGUAGES CXX)
+project(QCurl VERSION 2.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -17,6 +17,12 @@ option(BUILD_TESTING "Build tests" ON)
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
 option(QCURL_BUILD_LIBCURL_CONSISTENCY "Build libcurl_consistency gate dependencies and use bundled curl (build/curl) for tests" OFF)
 option(QCURL_BUILD_SHARED_LIBS "Build QCurl libraries as shared libraries" ON)
+
+if(NOT QCURL_BUILD_SHARED_LIBS AND BUILD_TESTING)
+    message(FATAL_ERROR
+        "QCURL_STATIC_TESTING_UNSUPPORTED：静态构建不支持测试")
+endif()
+
 set(QCURL_STATIC_DEFINE OFF)
 set(QCURL_OTHER_EXTRAS_STATIC_DEFINE OFF)
 if(NOT QCURL_BUILD_SHARED_LIBS)
@@ -103,6 +109,18 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     endif()
 
     add_subdirectory(curl "${CMAKE_BINARY_DIR}/curl" EXCLUDE_FROM_ALL)
+
+    if(CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize=")
+        if(TARGET curl)
+            target_link_options(curl PRIVATE -no-pie)
+        endif()
+        if(TARGET curlinfo)
+            target_link_options(curlinfo PRIVATE -no-pie)
+        endif()
+        if(TARGET libtests)
+            target_link_options(libtests PRIVATE -no-pie)
+        endif()
+    endif()
 
     set(BUILD_EXAMPLES ${_qcurl_saved_BUILD_EXAMPLES} CACHE BOOL "Build example applications" FORCE)
     unset(_qcurl_saved_BUILD_EXAMPLES)
