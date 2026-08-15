@@ -38,11 +38,11 @@ using namespace QCurl;
 class StatisticsLogger : public QCNetworkLogger
 {
 public:
-    int totalRequests          = 0;
-    int errorRequests          = 0;
+    int totalRequests = 0;
+    int errorRequests = 0;
     using QCNetworkLogger::log;
 
-    void log(const NetworkLogEntry &entry) override
+    QCNetworkLogResult log(const NetworkLogEntry &entry) override
     {
         totalRequests++;
 
@@ -50,9 +50,11 @@ public:
             errorRequests++;
         }
 
-        qDebug().noquote()
-            << QStringLiteral("[%1] %2: %3")
-                   .arg(logLevelToString(entry.level()), entry.category(), entry.message());
+        qDebug().noquote() << QStringLiteral("[%1] %2: %3")
+                                  .arg(logLevelToString(entry.level()),
+                                       entry.category(),
+                                       entry.message());
+        return {};
     }
 
     void printStatistics()
@@ -83,15 +85,17 @@ int main(int argc, char *argv[])
 
     qDebug() << ">>> 示例 1: 使用默认 Logger";
 
-    auto *manager1      = new QCNetworkAccessManager();
-    auto *defaultLogger = new QCNetworkDefaultLogger();
+    auto *manager1                                      = new QCNetworkAccessManager();
+    QCNetworkDefaultLogger *defaultLoggerImplementation = nullptr;
+    auto defaultLogger = QCNetworkLoggerHandle::createWithBorrow(&defaultLoggerImplementation);
 
-    defaultLogger->setMinLogLevel(NetworkLogLevel::Info);
-    defaultLogger->enableConsoleOutput(true);
+    defaultLoggerImplementation->setMinLogLevel(NetworkLogLevel::Info);
+    defaultLoggerImplementation->enableConsoleOutput(true);
 
     manager1->setLogger(defaultLogger);
 
-    qDebug() << "Logger 已设置，最小日志级别:" << static_cast<int>(defaultLogger->minLogLevel());
+    qDebug() << "Logger 已设置，最小日志级别:"
+             << static_cast<int>(defaultLoggerImplementation->minLogLevel());
 
     // ========================================================================
     // 示例 2: 启用文件日志
@@ -99,11 +103,19 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 2: 启用文件日志";
 
-    auto *manager2   = new QCNetworkAccessManager();
-    auto *fileLogger = new QCNetworkDefaultLogger();
+    auto *manager2                                   = new QCNetworkAccessManager();
+    QCNetworkDefaultLogger *fileLoggerImplementation = nullptr;
+    auto fileLogger = QCNetworkLoggerHandle::createWithBorrow(&fileLoggerImplementation);
 
-    fileLogger->setMinLogLevel(NetworkLogLevel::Debug);
-    fileLogger->enableFileOutput("/tmp/qcurl-demo.log", 1024 * 1024, 3); // 1MB, 3 个备份
+    fileLoggerImplementation->setMinLogLevel(NetworkLogLevel::Debug);
+    const QCNetworkLogResult fileConfigResult
+        = fileLoggerImplementation->enableFileOutput(QStringLiteral("/tmp/qcurl-demo.log"),
+                                                     1024 * 1024,
+                                                     3);
+    if (!fileConfigResult.isSuccess()) {
+        qCritical().noquote() << fileConfigResult.error();
+        return 1;
+    }
 
     manager2->setLogger(fileLogger);
 
@@ -115,21 +127,34 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 3: 自定义 Logger (统计)";
 
-    auto *manager3    = new QCNetworkAccessManager();
-    auto *statsLogger = new StatisticsLogger();
+    auto *manager3                     = new QCNetworkAccessManager();
+    StatisticsLogger *statisticsLogger = nullptr;
+    auto statsLogger                   = QCNetworkLoggerHandle::createWithBorrow(&statisticsLogger);
 
     manager3->setLogger(statsLogger);
 
     // 模拟一些日志记录
-    statsLogger->log(NetworkLogLevel::Info, "Request", "GET http://example.com");
-    statsLogger->log(NetworkLogLevel::Info, "Response", "Status: 200 OK");
-    statsLogger->log(NetworkLogLevel::Info, "Request", "POST http://api.example.com/users");
-    statsLogger->log(NetworkLogLevel::Error, "Response", "Status: 404 Not Found");
-    statsLogger->log(NetworkLogLevel::Info, "Request", "GET http://api.example.com/data");
-    statsLogger->log(NetworkLogLevel::Info, "Response", "Status: 200 OK");
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Info,
+                                       QStringLiteral("Request"),
+                                       QStringLiteral("GET http://example.com")));
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Info,
+                                       QStringLiteral("Response"),
+                                       QStringLiteral("Status: 200 OK")));
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Info,
+                                       QStringLiteral("Request"),
+                                       QStringLiteral("POST http://api.example.com/users")));
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Error,
+                                       QStringLiteral("Response"),
+                                       QStringLiteral("Status: 404 Not Found")));
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Info,
+                                       QStringLiteral("Request"),
+                                       QStringLiteral("GET http://api.example.com/data")));
+    static_cast<void>(statsLogger->log(NetworkLogLevel::Info,
+                                       QStringLiteral("Response"),
+                                       QStringLiteral("Status: 200 OK")));
 
     // 打印统计信息
-    statsLogger->printStatistics();
+    statisticsLogger->printStatistics();
 
     // ========================================================================
     // 示例 4: 自定义日志格式
@@ -137,11 +162,12 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 4: 自定义日志格式";
 
-    auto *manager4        = new QCNetworkAccessManager();
-    auto *formattedLogger = new QCNetworkDefaultLogger();
+    auto *manager4                                        = new QCNetworkAccessManager();
+    QCNetworkDefaultLogger *formattedLoggerImplementation = nullptr;
+    auto formattedLogger = QCNetworkLoggerHandle::createWithBorrow(&formattedLoggerImplementation);
 
-    formattedLogger->setLogFormat("[%{time}] %{level} - %{message}");
-    formattedLogger->enableConsoleOutput(true);
+    formattedLoggerImplementation->setLogFormat(QStringLiteral("[%{time}] %{level} - %{message}"));
+    formattedLoggerImplementation->enableConsoleOutput(true);
 
     manager4->setLogger(formattedLogger);
 
@@ -153,12 +179,20 @@ int main(int argc, char *argv[])
 
     qDebug() << "\n>>> 示例 5: 真实网络请求 + 日志记录";
 
-    auto *manager5      = new QCNetworkAccessManager();
-    auto *requestLogger = new QCNetworkDefaultLogger();
+    auto *manager5                                      = new QCNetworkAccessManager();
+    QCNetworkDefaultLogger *requestLoggerImplementation = nullptr;
+    auto requestLogger = QCNetworkLoggerHandle::createWithBorrow(&requestLoggerImplementation);
 
-    requestLogger->setMinLogLevel(NetworkLogLevel::Debug);
-    requestLogger->enableConsoleOutput(true);
-    requestLogger->enableFileOutput("/tmp/qcurl-requests.log", 1024 * 1024, 3);
+    requestLoggerImplementation->setMinLogLevel(NetworkLogLevel::Debug);
+    requestLoggerImplementation->enableConsoleOutput(true);
+    const QCNetworkLogResult requestLogConfigResult
+        = requestLoggerImplementation->enableFileOutput(QStringLiteral("/tmp/qcurl-requests.log"),
+                                                        1024 * 1024,
+                                                        3);
+    if (!requestLogConfigResult.isSuccess()) {
+        qCritical().noquote() << requestLogConfigResult.error();
+        return 1;
+    }
 
     manager5->setLogger(requestLogger);
 
@@ -193,7 +227,6 @@ int main(int argc, char *argv[])
 
     reply->deleteLater();
     delete manager5;
-    delete requestLogger;
 
     // ========================================================================
     // 清理
@@ -202,13 +235,9 @@ int main(int argc, char *argv[])
     qDebug() << "\n=== 演示完成 ===";
 
     delete manager1;
-    delete defaultLogger;
     delete manager2;
-    delete fileLogger;
     delete manager3;
-    delete statsLogger;
     delete manager4;
-    delete formattedLogger;
 
     return 0;
 }

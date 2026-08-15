@@ -14,6 +14,7 @@ set(CMAKE_AUTOMOC ON)
 add_executable(LoggingDemo
     main.cpp
 )
+qcurl_enable_qt_no_keywords(LoggingDemo)
 
 # 链接库
 target_link_libraries(LoggingDemo

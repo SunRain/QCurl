@@ -23,13 +23,15 @@ cmake --build build --target LoggingDemo
 #include <QCNetworkDefaultLogger.h>
 #include <QCNetworkLogger.h>
 
-auto *logger = new QCurl::QCNetworkDefaultLogger();
-logger->setMinLogLevel(QCurl::NetworkLogLevel::Info);
-logger->enableConsoleOutput(true);
+QCurl::QCNetworkDefaultLogger *implementation = nullptr;
+auto logger = QCurl::QCNetworkLoggerHandle::createWithBorrow(&implementation);
+implementation->setMinLogLevel(QCurl::NetworkLogLevel::Info);
+implementation->enableConsoleOutput(true);
 manager.setLogger(logger);
 ```
 
-Custom loggers override `QCNetworkLogger::log(const NetworkLogEntry &entry)`.
+Custom loggers override the `[[nodiscard]] QCNetworkLogResult
+QCNetworkLogger::log(const NetworkLogEntry &entry)` contract.
 
 ## Related docs
 
