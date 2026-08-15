@@ -24,14 +24,14 @@ struct QCBlockingRequestBody
         Device,
     };
 
-    Kind kind = Kind::Bytes;
-    const QByteArray *bytes = nullptr;
-    QIODevice *device = nullptr;
-    qint64 sizeBytes = 0;
-    bool explicitSize = false;
-    qint64 basePosition = 0;
+    Kind kind                = Kind::Bytes;
+    const QByteArray *bytes  = nullptr;
+    QIODevice *device        = nullptr;
+    qint64 sizeBytes         = 0;
+    bool explicitSize        = false;
+    qint64 basePosition      = 0;
     qint64 initialDeviceSize = -1;
-    bool seekable = false;
+    bool seekable            = false;
 };
 
 struct QCBlockingRequestBodyReadState

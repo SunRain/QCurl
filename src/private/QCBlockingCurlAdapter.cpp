@@ -4,167 +4,30 @@
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCBlockingCurlMethodSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
+#include "private/QCBlockingResponseSink_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkProtocolPolicy_p.h"
 
 #include <QIODevice>
-#include <QScopeGuard>
 
 #include <curl/curl.h>
-#include <limits>
+#include <optional>
 #include <utility>
 
 namespace QCurl::Internal {
 namespace {
 
-struct ResponseSink
-{
-    QByteArray *body        = nullptr;
-    QIODevice *device       = nullptr;
-    qint64 maxInMemoryBytes = 0;
-    qint64 bytesReceived    = 0;
-    qint64 abortAfterBytes  = -1;
-    QString failureMessage;
-    bool cancelledByProgress = false;
-};
-
-struct BlockingProgressState
-{
-    QCBlockingProgressCallback callback = nullptr;
-    void *userData                      = nullptr;
-    QString failureMessage;
-};
-
-struct HeaderSink
-{
-    QCBlockingNetworkResult::HeaderList *headers = nullptr;
-    QString failureMessage;
-};
-
-bool calculateCallbackBytes(size_t size, size_t nmemb, qint64 *bytes)
-{
-    if (size != 0 && nmemb > std::numeric_limits<size_t>::max() / size) {
-        return false;
-    }
-
-    const size_t totalSize = size * nmemb;
-    if (totalSize > static_cast<size_t>(std::numeric_limits<qint64>::max())) {
-        return false;
-    }
-
-    *bytes = static_cast<qint64>(totalSize);
-    return true;
-}
-
-bool canAppendToMemorySink(const ResponseSink &sink, qint64 totalSize)
-{
-    if (totalSize > std::numeric_limits<qsizetype>::max()) {
-        return false;
-    }
-    if (sink.bytesReceived > std::numeric_limits<qint64>::max() - totalSize) {
-        return false;
-    }
-
-    return sink.maxInMemoryBytes < 0 || totalSize <= sink.maxInMemoryBytes - sink.bytesReceived;
-}
-
-size_t writeBodyCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
-{
-    auto *sink = static_cast<ResponseSink *>(userdata);
-    if (!sink) {
-        return 0;
-    }
-
-    qint64 totalSize = 0;
-    if (!calculateCallbackBytes(size, nmemb, &totalSize)) {
-        sink->failureMessage = QStringLiteral("Blocking Extras response body chunk is too large");
-        return 0;
-    }
-    if (totalSize <= 0) {
-        return 0;
-    }
-
-    qint64 bytesToAccept = totalSize;
-    if (sink->abortAfterBytes >= 0) {
-        const qint64 remainingBytes = qMax<qint64>(0, sink->abortAfterBytes - sink->bytesReceived);
-        bytesToAccept               = qMin(totalSize, remainingBytes);
-    }
-
-    if (sink->device && bytesToAccept > 0) {
-        const qint64 written = sink->device->write(ptr, bytesToAccept);
-        if (written != bytesToAccept) {
-            sink->failureMessage = QStringLiteral("Blocking Extras output device write failed");
-            return 0;
-        }
-    } else if (sink->body && bytesToAccept > 0) {
-        if (!canAppendToMemorySink(*sink, bytesToAccept)) {
-            sink->failureMessage = QStringLiteral(
-                "Blocking Extras response body exceeds maxInMemoryBodyBytes");
-            return 0;
-        }
-        sink->body->append(ptr, static_cast<qsizetype>(bytesToAccept));
-    } else if (!sink->body && !sink->device) {
-        return 0;
-    }
-
-    sink->bytesReceived += bytesToAccept;
-    if (sink->abortAfterBytes >= 0 && sink->bytesReceived >= sink->abortAfterBytes) {
-        sink->cancelledByProgress = true;
-        return 0;
-    }
-
-    return static_cast<size_t>(bytesToAccept);
-}
-
 int progressCallback(
     void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
 {
-    auto *state = static_cast<BlockingProgressState *>(userdata);
-    if (!state || !state->callback) {
-        return 0;
-    }
-
-    const QCTransferProgress progress(static_cast<qint64>(dlnow),
-                                      static_cast<qint64>(dltotal),
-                                      static_cast<qint64>(ulnow),
-                                      static_cast<qint64>(ultotal));
-    if (state->callback(progress, state->userData)) {
-        return 0;
-    }
-
-    state->failureMessage = QStringLiteral("Blocking Extras progress callback cancelled request");
-    return 1;
+    return invokeBlockingProgress(userdata,
+                                  static_cast<qint64>(dltotal),
+                                  static_cast<qint64>(dlnow),
+                                  static_cast<qint64>(ultotal),
+                                  static_cast<qint64>(ulnow));
 }
 
-size_t writeHeaderCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
-{
-    auto *sink = static_cast<HeaderSink *>(userdata);
-    if (!sink || !sink->headers) {
-        return 0;
-    }
-
-    qint64 totalSize = 0;
-    if (!calculateCallbackBytes(size, nmemb, &totalSize)) {
-        sink->failureMessage = QStringLiteral("Blocking Extras response header chunk is too large");
-        return 0;
-    }
-    if (totalSize <= 0) {
-        return 0;
-    }
-    if (totalSize > std::numeric_limits<qsizetype>::max()) {
-        sink->failureMessage = QStringLiteral(
-            "Blocking Extras response header exceeds Qt size limit");
-        return 0;
-    }
-
-    QByteArray line(ptr, static_cast<qsizetype>(totalSize));
-    line            = line.trimmed();
-    const int colon = line.indexOf(':');
-    if (colon > 0) {
-        sink->headers->append({line.left(colon).trimmed(), line.mid(colon + 1).trimmed()});
-    }
-    return static_cast<size_t>(totalSize);
-}
-
+/// 保存一次阻塞请求执行累计的响应数据和 libcurl 结果。
 struct BlockingExecution
 {
     QByteArray responseBody;
@@ -172,6 +35,51 @@ struct BlockingExecution
     qint64 bytesReceived = 0;
     long httpStatus      = 0;
     CURLcode code        = CURLE_OK;
+};
+
+struct BlockingRequestContext
+{
+    BlockingRequestContext(CURL *curlHandle,
+                           QCBlockingRequestBody body,
+                           const QCBlockingRequestOptions &options,
+                           QIODevice *output,
+                           qint64 abortAfterBytes)
+        : handle(curlHandle)
+        , responseSink{&execution.responseBody,
+                       output,
+                       output ? -1 : options.maxInMemoryBodyBytes(),
+                       0,
+                       abortAfterBytes,
+                       QString(),
+                       false}
+        , headerSink{&execution.responseHeaders, QString()}
+        , progressState{options.progressCallback(), options.progressCallbackUserData(), QString()}
+        , readState{std::move(body), 0, QString()}
+        , downloadOutput(output)
+    {}
+
+    ~BlockingRequestContext()
+    {
+        if (requestHeaders) {
+            curl_slist_free_all(requestHeaders);
+        }
+        if (storage.resolveList) {
+            curl_slist_free_all(storage.resolveList);
+        }
+        if (storage.connectToList) {
+            curl_slist_free_all(storage.connectToList);
+        }
+    }
+
+    CURL *handle = nullptr;
+    RequestOptionStorage storage;
+    curl_slist *requestHeaders = nullptr;
+    BlockingExecution execution;
+    QCBlockingResponseSink responseSink;
+    QCBlockingHeaderSink headerSink;
+    QCBlockingProgressState progressState;
+    QCBlockingRequestBodyReadState readState;
+    QIODevice *downloadOutput = nullptr;
 };
 
 NetworkError requestBodyError(const QCBlockingRequestBodyReadState &readState)
@@ -208,6 +116,135 @@ QCBlockingNetworkResult finishBlockingResult(const BlockingExecution &execution)
                                             execution.bytesReceived);
 }
 
+template<typename T>
+bool setRequiredOption(BlockingRequestContext *context,
+                       CURLoption option,
+                       const char *optionName,
+                       T value)
+{
+    const CURLcode code = CurlOptions::setWithTestHook(context->handle, option, optionName, value);
+    if (code == CURLE_OK) {
+        return true;
+    }
+    context->storage.failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
+                                          .arg(QString::fromUtf8(optionName))
+                                          .arg(QString::fromUtf8(curl_easy_strerror(code)));
+    return false;
+}
+
+QCBlockingNetworkResult optionFailure(const BlockingRequestContext &context)
+{
+    return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest,
+                                            context.storage.failureMessage);
+}
+
+std::optional<QCBlockingNetworkResult> configureRequestAndHeaders(BlockingRequestContext *context,
+                                                                  const QCNetworkRequest &request)
+{
+    if (configureRequestOptions(context->handle, request, &context->storage)
+        && appendRequestHeaders(context->handle,
+                                request,
+                                &context->requestHeaders,
+                                &context->storage.failureMessage)) {
+        return std::nullopt;
+    }
+
+    const QString errorMessage = context->storage.failureMessage.isEmpty()
+                                     ? QStringLiteral(
+                                           "Blocking Extras request option configuration failed")
+                                     : context->storage.failureMessage;
+    return QCBlockingNetworkResult::failure(context->storage.unsupportedCapability
+                                                ? NetworkError::UnsupportedCapability
+                                                : NetworkError::InvalidRequest,
+                                            errorMessage);
+}
+
+std::optional<QCBlockingNetworkResult> configureResponseCallbacks(BlockingRequestContext *context,
+                                                                  const QCCookieSnapshot &cookies)
+{
+    const QByteArray cookieHeader = cookieHeaderValue(cookies);
+    if (!cookieHeader.isEmpty()
+        && !setRequiredOption(context, CURLOPT_COOKIE, "CURLOPT_COOKIE", cookieHeader.constData())) {
+        return optionFailure(*context);
+    }
+
+    if (!setRequiredOption(context,
+                           CURLOPT_WRITEFUNCTION,
+                           "CURLOPT_WRITEFUNCTION",
+                           writeBlockingResponseBody)
+        || !setRequiredOption(context, CURLOPT_WRITEDATA, "CURLOPT_WRITEDATA", &context->responseSink)
+        || !setRequiredOption(context,
+                              CURLOPT_HEADERFUNCTION,
+                              "CURLOPT_HEADERFUNCTION",
+                              writeBlockingResponseHeader)
+        || !setRequiredOption(context,
+                              CURLOPT_HEADERDATA,
+                              "CURLOPT_HEADERDATA",
+                              &context->headerSink)) {
+        return optionFailure(*context);
+    }
+    return std::nullopt;
+}
+
+std::optional<QCBlockingNetworkResult> configureProgressCallback(BlockingRequestContext *context)
+{
+    if (!context->progressState.callback) {
+        return std::nullopt;
+    }
+    if (!setRequiredOption(context,
+                           CURLOPT_XFERINFOFUNCTION,
+                           "CURLOPT_XFERINFOFUNCTION",
+                           progressCallback)
+        || !setRequiredOption(context,
+                              CURLOPT_XFERINFODATA,
+                              "CURLOPT_XFERINFODATA",
+                              &context->progressState)) {
+        return optionFailure(*context);
+    }
+    if (CurlOptions::setEnabled(context->handle, CURLOPT_NOPROGRESS, false) != CURLE_OK) {
+        return QCBlockingNetworkResult::failure(
+            NetworkError::InvalidRequest,
+            QStringLiteral("Blocking Extras failed to set CURLOPT_NOPROGRESS"));
+    }
+    return std::nullopt;
+}
+
+QCBlockingNetworkResult curlExecutionFailure(const BlockingRequestContext &context)
+{
+    const int httpStatus = static_cast<int>(context.execution.httpStatus);
+    if (!context.readState.failureMessage.isEmpty()) {
+        return QCBlockingNetworkResult::failure(requestBodyError(context.readState),
+                                                context.readState.failureMessage,
+                                                httpStatus);
+    }
+    if (context.responseSink.cancelledByProgress) {
+        return QCBlockingNetworkResult::failure(
+            NetworkError::OperationCancelled,
+            QStringLiteral("Blocking Extras download cancelled after writing requested byte limit"),
+            httpStatus);
+    }
+    if (!context.responseSink.failureMessage.isEmpty()) {
+        return QCBlockingNetworkResult::failure(context.downloadOutput
+                                                    ? NetworkError::OutputDeviceError
+                                                    : NetworkError::BodyTooLarge,
+                                                context.responseSink.failureMessage,
+                                                httpStatus);
+    }
+    if (!context.headerSink.failureMessage.isEmpty()) {
+        return QCBlockingNetworkResult::failure(NetworkError::CallbackError,
+                                                context.headerSink.failureMessage,
+                                                httpStatus);
+    }
+    if (!context.progressState.failureMessage.isEmpty()) {
+        return QCBlockingNetworkResult::failure(NetworkError::OperationCancelled,
+                                                context.progressState.failureMessage,
+                                                httpStatus);
+    }
+    return makeCurlFailure(context.execution.code,
+                           QString::fromUtf8(curl_easy_strerror(context.execution.code)),
+                           httpStatus);
+}
+
 QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                HttpMethod method,
                                                const QByteArray &customMethod,
@@ -217,6 +254,11 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                QIODevice *downloadOutput,
                                                qint64 abortAfterBytes = -1)
 {
+    QString protocolError;
+    if (!QCNetworkProtocolPolicy::validateCoreUrl(request.url(), &protocolError)) {
+        return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest, protocolError);
+    }
+
     const auto availability = CurlFeatureProbe::instance().minimumRuntimeAvailability();
     if (!availability.supported) {
         return QCBlockingNetworkResult::failure(NetworkError::UnsupportedCapability,
@@ -227,110 +269,33 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
     CURL *handle = curlManager.handle();
     if (!handle) {
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest,
-                                                QStringLiteral("Blocking Extras curl init failed"));
+                                                curlManager.initializationError());
     }
 
-    RequestOptionStorage storage;
-    curl_slist *requestHeaders = nullptr;
-    BlockingExecution execution;
-    ResponseSink responseSink{&execution.responseBody,
-                              downloadOutput,
-                              downloadOutput ? -1 : options.maxInMemoryBodyBytes(),
-                              0,
-                              abortAfterBytes,
-                              QString(),
-                              false};
-    HeaderSink headerSink{&execution.responseHeaders, QString()};
-    BlockingProgressState progressState{options.progressCallback(),
-                                        options.progressCallbackUserData(),
-                                        QString()};
-    QCBlockingRequestBodyReadState readState{std::move(body), 0, QString()};
-
-    const auto cleanup = qScopeGuard([&]() {
-        if (requestHeaders) {
-            curl_slist_free_all(requestHeaders);
-        }
-        if (storage.resolveList) {
-            curl_slist_free_all(storage.resolveList);
-        }
-        if (storage.connectToList) {
-            curl_slist_free_all(storage.connectToList);
-        }
-    });
-
-    if (!configureRequestOptions(handle, request, &storage)
-        || !appendRequestHeaders(handle, request, &requestHeaders)) {
-        const QString errorMessage
-            = storage.failureMessage.isEmpty()
-                  ? QStringLiteral("Blocking Extras request option configuration failed")
-                  : storage.failureMessage;
-        return QCBlockingNetworkResult::failure(storage.unsupportedCapability
-                                                    ? NetworkError::UnsupportedCapability
-                                                    : NetworkError::InvalidRequest,
-                                                errorMessage);
+    BlockingRequestContext context(handle, std::move(body), options, downloadOutput, abortAfterBytes);
+    if (const auto failure = configureRequestAndHeaders(&context, request)) {
+        return *failure;
     }
-
-    const QByteArray cookieHeader = cookieHeaderValue(cookies);
-    if (!cookieHeader.isEmpty()) {
-        curl_easy_setopt(handle, CURLOPT_COOKIE, cookieHeader.constData());
+    if (const auto failure = configureResponseCallbacks(&context, cookies)) {
+        return *failure;
     }
-    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writeBodyCallback);
-    curl_easy_setopt(handle, CURLOPT_WRITEDATA, &responseSink);
-    curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION, writeHeaderCallback);
-    curl_easy_setopt(handle, CURLOPT_HEADERDATA, &headerSink);
-    if (progressState.callback) {
-        curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressCallback);
-        curl_easy_setopt(handle, CURLOPT_XFERINFODATA, &progressState);
-        if (CurlOptions::setEnabled(handle, CURLOPT_NOPROGRESS, false) != CURLE_OK) {
-            return QCBlockingNetworkResult::failure(
-                NetworkError::InvalidRequest,
-                QStringLiteral("Blocking Extras failed to set CURLOPT_NOPROGRESS"));
-        }
+    if (const auto failure = configureProgressCallback(&context)) {
+        return *failure;
     }
-    if (!configureBlockingCurlMethod(handle, method, customMethod, &readState)) {
+    if (!configureBlockingCurlMethod(handle, method, customMethod, &context.readState)) {
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest,
-                                                readState.failureMessage);
+                                                context.readState.failureMessage);
     }
 
-    execution.code          = curl_easy_perform(handle);
-    execution.bytesReceived = responseSink.bytesReceived;
-    curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &execution.httpStatus);
+    context.execution.code          = curl_easy_perform(handle);
+    context.execution.bytesReceived = context.responseSink.bytesReceived;
+    curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &context.execution.httpStatus);
 
-    if (execution.code != CURLE_OK) {
-        if (!readState.failureMessage.isEmpty()) {
-            return QCBlockingNetworkResult::failure(requestBodyError(readState),
-                                                    readState.failureMessage,
-                                                    static_cast<int>(execution.httpStatus));
-        }
-        if (responseSink.cancelledByProgress) {
-            return QCBlockingNetworkResult::failure(
-                NetworkError::OperationCancelled,
-                QStringLiteral(
-                    "Blocking Extras download cancelled after writing requested byte limit"),
-                static_cast<int>(execution.httpStatus));
-        }
-        if (!responseSink.failureMessage.isEmpty()) {
-            return QCBlockingNetworkResult::failure(downloadOutput ? NetworkError::OutputDeviceError
-                                                                   : NetworkError::BodyTooLarge,
-                                                    responseSink.failureMessage,
-                                                    static_cast<int>(execution.httpStatus));
-        }
-        if (!headerSink.failureMessage.isEmpty()) {
-            return QCBlockingNetworkResult::failure(NetworkError::CallbackError,
-                                                    headerSink.failureMessage,
-                                                    static_cast<int>(execution.httpStatus));
-        }
-        if (!progressState.failureMessage.isEmpty()) {
-            return QCBlockingNetworkResult::failure(NetworkError::OperationCancelled,
-                                                    progressState.failureMessage,
-                                                    static_cast<int>(execution.httpStatus));
-        }
-        return makeCurlFailure(execution.code,
-                               QString::fromUtf8(curl_easy_strerror(execution.code)),
-                               static_cast<int>(execution.httpStatus));
+    if (context.execution.code != CURLE_OK) {
+        return curlExecutionFailure(context);
     }
 
-    return finishBlockingResult(execution);
+    return finishBlockingResult(context.execution);
 }
 
 } // namespace

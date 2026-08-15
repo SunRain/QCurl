@@ -54,6 +54,57 @@ private:
     qint64 m_offset = 0;
 };
 
+class ShortWriteDevice final : public QIODevice
+{
+public:
+    explicit ShortWriteDevice(qint64 maxChunkBytes, QObject *parent = nullptr)
+        : QIODevice(parent)
+        , m_maxChunkBytes(maxChunkBytes)
+    {}
+
+    bool isSequential() const override { return true; }
+    [[nodiscard]] QByteArray data() const { return m_data; }
+
+protected:
+    qint64 readData(char *, qint64) override { return -1; }
+
+    qint64 writeData(const char *data, qint64 maxSize) override
+    {
+        const qint64 amount = qMin(maxSize, m_maxChunkBytes);
+        m_data.append(data, static_cast<qsizetype>(amount));
+        return amount;
+    }
+
+private:
+    qint64 m_maxChunkBytes;
+    QByteArray m_data;
+};
+
+class ZeroWriteDevice final : public QIODevice
+{
+public:
+    bool isSequential() const override { return true; }
+
+protected:
+    qint64 readData(char *, qint64) override { return -1; }
+    qint64 writeData(const char *, qint64) override { return 0; }
+};
+
+class FailingWriteDevice final : public QIODevice
+{
+public:
+    bool isSequential() const override { return true; }
+
+protected:
+    qint64 readData(char *, qint64) override { return -1; }
+
+    qint64 writeData(const char *, qint64) override
+    {
+        setErrorString(QStringLiteral("synthetic output failure"));
+        return -1;
+    }
+};
+
 QCBlockingNetworkClient makeClient()
 {
     QCBlockingNetworkClient::Options options;
@@ -94,7 +145,7 @@ class tst_QCBlockingNetworkClient : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void postDeviceWithExplicitSize();
     void putDeviceWithInferredSeekableSize();
     void appliesCookieSnapshotAndReturnsCookieDelta();
@@ -110,6 +161,9 @@ private slots:
     void setCookieMaxAgeOverridesExpiresRegardlessOfOrder();
     void setCookieExpiresGmtReturnsPersistentDelta();
     void downloadToDeviceWritesLargeResponse();
+    void downloadToDeviceCompletesShortWrites();
+    void downloadToDeviceRejectsZeroProgressWrite();
+    void downloadToDevicePreservesNegativeWriteDiagnostic();
     void downloadToDeviceRejectsInvalidOutput_data();
     void downloadToDeviceRejectsInvalidOutput();
     void customRequestRejectsInvalidMethod_data();
@@ -433,6 +487,65 @@ void tst_QCBlockingNetworkClient::downloadToDeviceWritesLargeResponse()
     QCOMPARE(output.size(), qint64(plan.body.size()));
     QVERIFY(output.seek(0));
     QCOMPARE(output.readAll(), plan.body);
+}
+
+void tst_QCBlockingNetworkClient::downloadToDeviceCompletesShortWrites()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.body = QByteArray(16 * 1024, 's');
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    ShortWriteDevice output(7);
+    QVERIFY(output.open(QIODevice::WriteOnly));
+
+    const auto result = makeClient().downloadToDevice(makeRequest(server.url(
+                                                          QStringLiteral("/short-write"))),
+                                                      &output);
+
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+    QCOMPARE(result.bytesReceived(), qint64(plan.body.size()));
+    QCOMPARE(output.data(), plan.body);
+}
+
+void tst_QCBlockingNetworkClient::downloadToDeviceRejectsZeroProgressWrite()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.body = QByteArrayLiteral("zero-progress");
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    ZeroWriteDevice output;
+    QVERIFY(output.open(QIODevice::WriteOnly));
+
+    const auto result = makeClient().downloadToDevice(makeRequest(server.url(
+                                                          QStringLiteral("/zero-write"))),
+                                                      &output);
+
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::OutputDeviceError);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("no progress")),
+             qPrintable(result.errorMessage()));
+}
+
+void tst_QCBlockingNetworkClient::downloadToDevicePreservesNegativeWriteDiagnostic()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.body = QByteArrayLiteral("write-failure");
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+
+    FailingWriteDevice output;
+    QVERIFY(output.open(QIODevice::WriteOnly));
+
+    const auto result = makeClient().downloadToDevice(makeRequest(server.url(
+                                                          QStringLiteral("/negative-write"))),
+                                                      &output);
+
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::OutputDeviceError);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("synthetic output failure")),
+             qPrintable(result.errorMessage()));
 }
 
 void tst_QCBlockingNetworkClient::downloadToDeviceRejectsInvalidOutput_data()

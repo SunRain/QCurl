@@ -26,6 +26,9 @@ class QCBlockingNetworkResultData;
  *
  * 该类型只表达一次阻塞请求的最终快照：状态码、响应体、响应头和错误。
  * 它不持有 live manager、reply 或事件驱动对象。
+ *
+ * @note 错误生命周期：结果构造后不再变化。成功时 `error()` 为 `NoError` 且
+ * `errorMessage()` 为空；失败时错误枚举是权威分类，文本仅用于诊断，HTTP 状态码可为零。
  */
 class QCURL_EXPORT QCBlockingNetworkResult
 {

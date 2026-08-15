@@ -12,7 +12,7 @@ public:
     NetworkError error = NetworkError::InvalidRequest;
     QString errorMessage;
     int diagnosticCurlCode = 0;
-    int statusCode = 0;
+    int statusCode         = 0;
     QCBlockingNetworkResult::HeaderList headers;
     QByteArray body;
     QCCookieDelta cookieDelta;
@@ -59,11 +59,11 @@ QCBlockingNetworkResult QCBlockingNetworkResult::success(int statusCode,
                                                          qint64 bytesReceived)
 {
     QCBlockingNetworkResult result;
-    result.d->error = NetworkError::NoError;
-    result.d->statusCode = statusCode;
-    result.d->body = body;
-    result.d->headers = headers;
-    result.d->cookieDelta = cookieDelta;
+    result.d->error         = NetworkError::NoError;
+    result.d->statusCode    = statusCode;
+    result.d->body          = body;
+    result.d->headers       = headers;
+    result.d->cookieDelta   = cookieDelta;
     result.d->bytesReceived = bytesReceived;
     return result;
 }
@@ -73,9 +73,9 @@ QCBlockingNetworkResult QCBlockingNetworkResult::failure(NetworkError error,
                                                          int statusCode)
 {
     QCBlockingNetworkResult result;
-    result.d->error = error;
+    result.d->error        = error;
     result.d->errorMessage = errorMessage;
-    result.d->statusCode = statusCode;
+    result.d->statusCode   = statusCode;
     return result;
 }
 

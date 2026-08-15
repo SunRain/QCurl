@@ -48,6 +48,8 @@ set(QCURL_BLOCKING_EXTRAS_SOURCES
     private/QCBlockingCurlAdapter.cpp
     private/QCBlockingCurlCookieSetup.cpp
     private/QCBlockingCurlMethodSetup.cpp
+    private/QCBlockingCurlProtocolSetup.cpp
+    private/QCBlockingResponseSink.cpp
     private/QCBlockingCurlRequestSetup.cpp
     private/QCBlockingCurlRequestSetupExtensions.cpp
     private/QCBlockingRequestBody.cpp

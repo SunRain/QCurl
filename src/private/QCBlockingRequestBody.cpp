@@ -41,7 +41,8 @@ qint64 resolveDeviceSeekPosition(const QCBlockingRequestBodyReadState &state,
         case SEEK_CUR:
             return device->pos() + static_cast<qint64>(offset);
         case SEEK_END:
-            return state.body.basePosition + state.body.sizeBytes + static_cast<qint64>(offset);
+            return state.body.basePosition + state.body.sizeBytes
+                   + static_cast<qint64>(offset);
         default:
             return -1;
     }
@@ -58,9 +59,9 @@ bool isDeviceSeekPositionInRange(const QCBlockingRequestBodyReadState &state, qi
 QCBlockingRequestBody makeBlockingBytesBody(const QByteArray &body)
 {
     QCBlockingRequestBody requestBody;
-    requestBody.kind = QCBlockingRequestBody::Kind::Bytes;
-    requestBody.bytes = &body;
-    requestBody.sizeBytes = body.size();
+    requestBody.kind         = QCBlockingRequestBody::Kind::Bytes;
+    requestBody.bytes        = &body;
+    requestBody.sizeBytes    = body.size();
     requestBody.explicitSize = true;
     return requestBody;
 }
@@ -68,13 +69,13 @@ QCBlockingRequestBody makeBlockingBytesBody(const QByteArray &body)
 QCBlockingRequestBody makeBlockingDeviceBody(QIODevice *device, qint64 sizeBytes, bool explicitSize)
 {
     QCBlockingRequestBody requestBody;
-    requestBody.kind = QCBlockingRequestBody::Kind::Device;
-    requestBody.device = device;
-    requestBody.sizeBytes = sizeBytes;
-    requestBody.explicitSize = explicitSize;
-    requestBody.basePosition = device ? device->pos() : 0;
+    requestBody.kind              = QCBlockingRequestBody::Kind::Device;
+    requestBody.device            = device;
+    requestBody.sizeBytes         = sizeBytes;
+    requestBody.explicitSize      = explicitSize;
+    requestBody.basePosition      = device ? device->pos() : 0;
     requestBody.initialDeviceSize = device ? device->size() : -1;
-    requestBody.seekable = device && !device->isSequential();
+    requestBody.seekable          = device && !device->isSequential();
     return requestBody;
 }
 
@@ -121,20 +122,20 @@ size_t readBlockingRequestBodyCallback(char *ptr, size_t size, size_t nmemb, voi
     }
     if (!state->body.explicitSize && state->body.initialDeviceSize >= 0
         && device->size() != state->body.initialDeviceSize) {
-        state->failureMessage =
-            QStringLiteral("Blocking Extras raw body device size changed during upload");
+        state->failureMessage = QStringLiteral(
+            "Blocking Extras raw body device size changed during upload");
         return CURL_READFUNC_ABORT;
     }
 
     const qint64 read = device->read(ptr, amount);
     if (read < 0) {
-        state->failureMessage =
-            QStringLiteral("Blocking Extras raw body device read failed during upload");
+        state->failureMessage = QStringLiteral(
+            "Blocking Extras raw body device read failed during upload");
         return CURL_READFUNC_ABORT;
     }
     if (read == 0 && !device->atEnd()) {
-        state->failureMessage =
-            QStringLiteral("Blocking Extras raw body device is not ready for synchronous upload");
+        state->failureMessage = QStringLiteral(
+            "Blocking Extras raw body device is not ready for synchronous upload");
         return CURL_READFUNC_ABORT;
     }
 
@@ -160,15 +161,15 @@ Q_DECL_HIDDEN int seekBlockingRequestBodyCallback(void *userdata, curl_off_t off
 
     QIODevice *device = state->body.device;
     if (!device || !state->body.seekable) {
-        state->failureMessage =
-            QStringLiteral("Blocking Extras raw body device does not support replay seek");
+        state->failureMessage = QStringLiteral(
+            "Blocking Extras raw body device does not support replay seek");
         return CURL_SEEKFUNC_CANTSEEK;
     }
 
     const qint64 targetPosition = resolveDeviceSeekPosition(*state, device, offset, origin);
     if (!isDeviceSeekPositionInRange(*state, targetPosition)) {
-        state->failureMessage =
-            QStringLiteral("Blocking Extras raw body replay seek target is out of range");
+        state->failureMessage = QStringLiteral(
+            "Blocking Extras raw body replay seek target is out of range");
         return CURL_SEEKFUNC_FAIL;
     }
     if (!device->seek(targetPosition)) {

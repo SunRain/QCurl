@@ -6,31 +6,34 @@
 
 namespace QCurl {
 
+/// @brief 保存 QCBlockingNetworkClientOptions 的隐式共享选项。
 class QCBlockingNetworkClientOptionsData : public QSharedData
 {
 public:
-    QCBlockingNetworkClient::ApplicationThreadPolicy applicationThreadPolicy =
-        QCBlockingNetworkClient::ApplicationThreadPolicy::Reject;
+    QCBlockingNetworkClient::ApplicationThreadPolicy applicationThreadPolicy
+        = QCBlockingNetworkClient::ApplicationThreadPolicy::Reject;
 };
 
+/// @brief 保存单次阻塞请求的隐式共享选项。
 class QCBlockingRequestOptionsData : public QSharedData
 {
 public:
     static constexpr qint64 DefaultMaxInMemoryBodyBytes = 16 * 1024 * 1024;
 
-    qint64 maxInMemoryBodyBytes = DefaultMaxInMemoryBodyBytes;
+    qint64 maxInMemoryBodyBytes                 = DefaultMaxInMemoryBodyBytes;
     QCBlockingProgressCallback progressCallback = nullptr;
-    void *progressCallbackUserData = nullptr;
+    void *progressCallbackUserData              = nullptr;
     QCCookieSnapshot cookieSnapshot;
 };
 
+/// @brief 保存阻塞传输的隐式共享进度快照。
 class QCTransferProgressData : public QSharedData
 {
 public:
     qint64 bytesReceived = 0;
-    qint64 bytesTotal = -1;
-    qint64 bytesSent = 0;
-    qint64 uploadTotal = -1;
+    qint64 bytesTotal    = -1;
+    qint64 bytesSent     = 0;
+    qint64 uploadTotal   = -1;
 };
 
 QCTransferProgress::QCTransferProgress()
@@ -45,9 +48,9 @@ QCTransferProgress::QCTransferProgress(qint64 bytesReceived,
     : d(new QCTransferProgressData)
 {
     d->bytesReceived = bytesReceived;
-    d->bytesTotal = bytesTotal;
-    d->bytesSent = bytesSent;
-    d->uploadTotal = uploadTotal;
+    d->bytesTotal    = bytesTotal;
+    d->bytesSent     = bytesSent;
+    d->uploadTotal   = uploadTotal;
 }
 
 QCTransferProgress::QCTransferProgress(const QCTransferProgress &other) = default;
@@ -126,7 +129,7 @@ void *QCBlockingRequestOptions::progressCallbackUserData() const noexcept
 void QCBlockingRequestOptions::setProgressCallback(QCBlockingProgressCallback callback,
                                                    void *userData) noexcept
 {
-    d->progressCallback = callback;
+    d->progressCallback         = callback;
     d->progressCallbackUserData = callback ? userData : nullptr;
 }
 

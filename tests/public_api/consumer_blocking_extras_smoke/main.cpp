@@ -1,9 +1,8 @@
+#include <QBuffer>
 #include <QCBlockingNetworkClient.h>
 #include <QCBlockingNetworkResult.h>
 #include <QCNetworkRequest.h>
-
 #include <QCoreApplication>
-#include <QBuffer>
 #include <QFile>
 #include <QUrl>
 
@@ -33,14 +32,15 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
-    QCurl::QCBlockingNetworkResult success = QCurl::QCBlockingNetworkResult::success(
-        200,
-        QByteArrayLiteral("ok"),
-        {{QByteArrayLiteral("content-type"), QByteArrayLiteral("text/plain")}});
+    QCurl::QCBlockingNetworkResult success
+        = QCurl::QCBlockingNetworkResult::success(200,
+                                                  QByteArrayLiteral("ok"),
+                                                  {{QByteArrayLiteral("content-type"),
+                                                    QByteArrayLiteral("text/plain")}});
     if (!success.isSuccess() || success.statusCode() != 200
         || success.body() != QByteArrayLiteral("ok") || success.headers().size() != 1
         || success.rawHeaders().value(QByteArrayLiteral("content-type"))
-            != QByteArrayLiteral("text/plain")
+               != QByteArrayLiteral("text/plain")
         || success.rawHeaderList().size() != 1
         || success.rawHeaderList().constFirst().first != QByteArrayLiteral("content-type")
         || success.bytesReceived() != 2) {
@@ -65,8 +65,8 @@ int main(int argc, char **argv)
     }
 
     QCurl::QCTransferProgress progress(10, 100, 4, 16);
-    if (progress.bytesReceived() != 10 || progress.bytesTotal() != 100
-        || progress.bytesSent() != 4 || progress.uploadTotal() != 16) {
+    if (progress.bytesReceived() != 10 || progress.bytesTotal() != 100 || progress.bytesSent() != 4
+        || progress.uploadTotal() != 16) {
         return 9;
     }
 
@@ -75,38 +75,36 @@ int main(int argc, char **argv)
         QCurl::QCBlockingNetworkClient::ApplicationThreadPolicy::AllowForCliOrTests);
 
     QCurl::QCBlockingNetworkClient client(options);
-    QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
-    const auto result = client.get(request, requestOptions);
+    QCurl::QCNetworkRequest request(QUrl(QStringLiteral("ftp://example.invalid")));
+    const auto result       = client.get(request, requestOptions);
     const auto deleteResult = client.deleteResource(request, requestOptions);
-    const auto postResult =
-        client.post(request, QByteArrayLiteral("payload"), requestOptions);
-    const auto putResult =
-        client.put(request, QByteArrayLiteral("payload"), requestOptions);
-    const auto patchResult =
-        client.patch(request, QByteArrayLiteral("payload"), requestOptions);
-    const auto customDeleteResult = client.sendCustomRequest(
-        request,
-        QByteArrayLiteral("DELETE"),
-        QByteArrayLiteral("payload"),
-        requestOptions);
+    const auto postResult   = client.post(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto putResult    = client.put(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto patchResult  = client.patch(request, QByteArrayLiteral("payload"), requestOptions);
+    const auto customDeleteResult = client.sendCustomRequest(request,
+                                                             QByteArrayLiteral("DELETE"),
+                                                             QByteArrayLiteral("payload"),
+                                                             requestOptions);
 
     QBuffer body;
     body.setData(QByteArrayLiteral("body"));
     if (!body.open(QIODevice::ReadOnly)) {
         return 5;
     }
-    static_cast<void>(static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-        const QCurl::QCNetworkRequest &,
-        QIODevice *,
-        std::optional<qint64>,
-        const QCurl::QCBlockingRequestOptions &) const>(
-        &QCurl::QCBlockingNetworkClient::post));
-    static_cast<void>(static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-        const QCurl::QCNetworkRequest &,
-        QIODevice *,
-        std::optional<qint64>,
-        const QCurl::QCBlockingRequestOptions &) const>(
-        &QCurl::QCBlockingNetworkClient::put));
+    static_cast<void>(
+        static_cast<QCurl::QCBlockingNetworkResult (
+            QCurl::QCBlockingNetworkClient::*)(const QCurl::QCNetworkRequest &,
+                                               QIODevice *,
+                                               std::optional<qint64>,
+                                               const QCurl::QCBlockingRequestOptions &) const>(
+            &QCurl::QCBlockingNetworkClient::post));
+    static_cast<void>(
+        static_cast<QCurl::QCBlockingNetworkResult (
+            QCurl::QCBlockingNetworkClient::*)(const QCurl::QCNetworkRequest &,
+                                               QIODevice *,
+                                               std::optional<qint64>,
+                                               const QCurl::QCBlockingRequestOptions &) const>(
+            &QCurl::QCBlockingNetworkClient::put));
     const auto uploadResult = client.post(request, &body, qint64(4));
 
     QBuffer output;
@@ -116,7 +114,8 @@ int main(int argc, char **argv)
     const auto downloadResult = client.downloadToDevice(request, &output, requestOptions);
 
     if (result.isSuccess() || result.error() != QCurl::NetworkError::InvalidRequest
-        || result.errorMessage().isEmpty() || result.errorMessage().contains(QStringLiteral("not wired"))) {
+        || result.errorMessage().isEmpty()
+        || result.errorMessage().contains(QStringLiteral("not wired"))) {
         return 2;
     }
     if (deleteResult.isSuccess() || postResult.isSuccess() || putResult.isSuccess()

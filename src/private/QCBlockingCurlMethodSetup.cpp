@@ -15,8 +15,8 @@ bool setBlockingCurlOption(CURLcode code,
     }
 
     readState->failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
-                                    .arg(optionName)
-                                    .arg(QString::fromUtf8(curl_easy_strerror(code)));
+                                      .arg(optionName)
+                                      .arg(QString::fromUtf8(curl_easy_strerror(code)));
     return false;
 }
 

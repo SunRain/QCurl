@@ -131,6 +131,7 @@ QByteArray normalizedHttpMethodToken(QByteArrayView method)
 
 } // namespace
 
+/// @brief 保存 QCBlockingNetworkClient 的隐式共享配置状态。
 class QCBlockingNetworkClientData : public QSharedData
 {
 public:
@@ -360,7 +361,7 @@ QCBlockingNetworkResult QCBlockingNetworkClient::performCustom(
 bool QCBlockingNetworkClient::applicationThreadRejected() const
 {
     return d->options.applicationThreadPolicy() == ApplicationThreadPolicy::Reject
-        && isApplicationThread();
+           && isApplicationThread();
 }
 
 } // namespace QCurl

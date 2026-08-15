@@ -11,6 +11,8 @@
 #include <QCoreApplication>
 #include <QtTest/QtTest>
 
+#include <curl/curl.h>
+
 using namespace QCurl;
 
 namespace {
@@ -72,10 +74,15 @@ class tst_QCBlockingRequestConfig : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void appliesTransferRequestHeaders();
     void preservesExplicitHeadersOverRequestConfig();
     void rejectsUnsupportedAllowedProtocolsByDefault();
+    void rejectsNonHttpCoreUrls();
+    void rejectsHttpRedirectToFtp();
+    void rejectsSlistAppendFailure();
+    void rejectsHeaderAppendFailure();
+    void rejectsRequiredSetoptFailure();
 };
 
 void tst_QCBlockingRequestConfig::appliesTransferRequestHeaders()
@@ -86,7 +93,8 @@ void tst_QCBlockingRequestConfig::appliesTransferRequestHeaders()
     QCNetworkRequest request = makeRequest(server.url(QStringLiteral("/headers")));
     request.setReferer(QStringLiteral("https://origin.example/source"));
     request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
-    request.setMaxDownloadBytesPerSec(1024 * 1024);
+    QCOMPARE(request.setMaxDownloadBytesPerSec(1024 * 1024),
+             QCNetworkConfigUpdateResult::Applied);
 
     const auto result = makeClient().get(request);
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
@@ -132,6 +140,83 @@ void tst_QCBlockingRequestConfig::rejectsUnsupportedAllowedProtocolsByDefault()
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::UnsupportedCapability);
     QVERIFY2(result.errorMessage().contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")),
+             qPrintable(result.errorMessage()));
+}
+
+void tst_QCBlockingRequestConfig::rejectsNonHttpCoreUrls()
+{
+    const QList<QUrl> urls{
+        QUrl(QStringLiteral("file:///tmp/qcurl-core-protocol-test")),
+        QUrl(QStringLiteral("ftp://127.0.0.1:1/resource")),
+        QUrl(QStringLiteral("ftps://127.0.0.1:1/resource")),
+    };
+
+    for (const QUrl &url : urls) {
+        const auto result = makeClient().get(makeRequest(url));
+        QVERIFY2(!result.isSuccess(), qPrintable(url.toString()));
+        QCOMPARE(result.error(), NetworkError::InvalidRequest);
+        QVERIFY2(result.errorMessage().contains(QStringLiteral("HTTP/HTTPS")),
+                 qPrintable(result.errorMessage()));
+    }
+}
+
+void tst_QCBlockingRequestConfig::rejectsHttpRedirectToFtp()
+{
+    UploadEchoServer::ResponsePlan plan;
+    plan.statusLine   = QByteArrayLiteral("HTTP/1.1 302 Found");
+    plan.extraHeaders = {QByteArrayLiteral("Location: ftp://127.0.0.1:1/resource")};
+    UploadEchoServer server(std::move(plan));
+    QVERIFY(server.start());
+
+    const auto result = makeClient().get(makeRequest(server.url(QStringLiteral("/redirect"))));
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.diagnosticCurlCode(), static_cast<int>(CURLE_UNSUPPORTED_PROTOCOL));
+}
+
+void tst_QCBlockingRequestConfig::rejectsSlistAppendFailure()
+{
+    ScopedEnvVar forcedSlistError("QCURL_TEST_FORCE_SLIST_APPEND_ERROR",
+                                  QByteArrayLiteral("CURLOPT_RESOLVE:2"));
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/blocked")));
+    request.setResolveOverride(QStringList{
+        QStringLiteral("example.com:80:127.0.0.1"),
+        QStringLiteral("example.net:80:127.0.0.1"),
+    });
+
+    const auto result = makeClient().get(request);
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::InvalidRequest);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("CURLOPT_RESOLVE")),
+             qPrintable(result.errorMessage()));
+}
+
+void tst_QCBlockingRequestConfig::rejectsHeaderAppendFailure()
+{
+    ScopedEnvVar forcedSlistError("QCURL_TEST_FORCE_SLIST_APPEND_ERROR",
+                                  QByteArrayLiteral("CURLOPT_HTTPHEADER"));
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/blocked")));
+    request.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("redacted"));
+
+    const auto result = makeClient().get(request);
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::InvalidRequest);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("CURLOPT_HTTPHEADER")),
+             qPrintable(result.errorMessage()));
+}
+
+void tst_QCBlockingRequestConfig::rejectsRequiredSetoptFailure()
+{
+    ScopedEnvVar forcedSetoptError("QCURL_TEST_FORCE_SETOPT_ERROR",
+                                   QByteArrayLiteral("CURLOPT_WRITEFUNCTION"));
+
+    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/blocked")));
+    const auto result = makeClient().get(request);
+
+    QVERIFY(!result.isSuccess());
+    QCOMPARE(result.error(), NetworkError::InvalidRequest);
+    QVERIFY2(result.errorMessage().contains(QStringLiteral("CURLOPT_WRITEFUNCTION")),
              qPrintable(result.errorMessage()));
 }
 

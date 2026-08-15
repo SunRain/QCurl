@@ -17,6 +17,7 @@ def validate_blocking_extras_fixture(source_dir) -> None:
     required = [
         "#include <QCBlockingNetworkClient.h>",
         "QCurl::QCBlockingRequestOptions requestOptions",
+        "QUrl(QStringLiteral(\"ftp://example.invalid\"))",
         "requestOptions.setMaxInMemoryBodyBytes(4096)",
         "requestOptions.setProgressCallback(recordProgress, &probe)",
         "requestOptions.progressCallbackUserData()",
