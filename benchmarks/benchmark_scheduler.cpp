@@ -66,7 +66,7 @@ public:
         QTimer::singleShot(8000, this, &SchedulerBenchmark::printSummary);
     }
 
-private slots:
+private Q_SLOTS:
     void benchmark1_BasicLatency()
     {
         // 1.1 无调度器

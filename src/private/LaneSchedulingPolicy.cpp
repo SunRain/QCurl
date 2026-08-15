@@ -23,7 +23,7 @@ SchedulerRequestId LaneSchedulingPolicy::selectNextRequestId(
     if (nextIndex < 0) {
         return 0;
     }
-    return queues.pendingRequests.at(nextIndex).requestId;
+    return queues.m_pendingRequests.at(nextIndex).requestId;
 }
 
 } // namespace Internal

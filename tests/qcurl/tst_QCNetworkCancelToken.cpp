@@ -4,15 +4,19 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCancelToken.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QMetaObject>
 #include <QSignalSpy>
+#include <QThread>
 #include <QUrl>
 #include <QtTest>
+
+#include <future>
 
 using namespace QCurl;
 
@@ -23,7 +27,7 @@ class TestQCNetworkCancelToken : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
@@ -32,12 +36,17 @@ private slots:
     // 基础功能测试
     void testCreateToken();
     void testAttachReply();
+    void testAttachResultContract();
+    void testAttachRejectsWrongThreadAndForeignAffinity();
+    void testCommandsRejectWrongThreadWithoutMutation();
+    void testDestroyedReplyRemovesRegistration();
     void testDetachReply();
     void testAttachMultiple();
 
     // 取消功能测试
     void testCancelSignal();
     void testCancelAttachedReplies();
+    void testDestructorTeardownIsSilent();
     void testClearReplies();
 
     // 自动超时测试
@@ -49,11 +58,9 @@ private:
     QCNetworkMockHandler m_mock;
 };
 
-void TestQCNetworkCancelToken::initTestCase()
-{}
+void TestQCNetworkCancelToken::initTestCase() {}
 
-void TestQCNetworkCancelToken::cleanupTestCase()
-{}
+void TestQCNetworkCancelToken::cleanupTestCase() {}
 
 void TestQCNetworkCancelToken::init()
 {
@@ -110,12 +117,116 @@ void TestQCNetworkCancelToken::testAttachReply()
     QCNetworkRequest request(QUrl("http://example.com"));
     auto *reply = m_manager->get(request);
 
-    m_token->attach(reply);
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
 
     QCOMPARE(m_token->attachedCount(), 1);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(m_token->attachedCount(), 0);
 
     reply->deleteLater();
+}
+
+/**
+ * @brief 验证所有同步命令在错误线程 fail-closed，且不读取或修改 reply registration。
+ */
+void TestQCNetworkCancelToken::testCommandsRejectWrongThreadWithoutMutation()
+{
+    m_mock.setGlobalDelay(5000);
+    QCNetworkRequest request(QUrl("http://example.com"));
+    auto *reply = m_manager->get(request);
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
+
+    const auto results
+        = std::async(std::launch::async, [this, reply]() {
+              return QList<QCNetworkCancelToken::CommandResult>{m_token->detach(reply),
+                                                                m_token->cancel(),
+                                                                m_token->clear(),
+                                                                m_token->setAutoTimeout(100)};
+          }).get();
+    for (QCNetworkCancelToken::CommandResult result : results) {
+        QCOMPARE(result, QCNetworkCancelToken::CommandResult::WrongThread);
+    }
+
+    QCOMPARE(m_token->attachedCount(), 1);
+    QCOMPARE(m_token->isCancelled(), false);
+    QCOMPARE(m_token->clear(), QCNetworkCancelToken::CommandResult::Applied);
+
+    reply->deleteLater();
+    m_mock.setGlobalDelay(0);
+}
+
+/**
+ * @brief 验证 attach() 对成功、重复、空指针和已取消状态返回稳定结构化结果。
+ */
+void TestQCNetworkCancelToken::testAttachResultContract()
+{
+    QCNetworkRequest request(QUrl("http://example.com"));
+    auto *reply = m_manager->get(request);
+
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::AlreadyAttached);
+    QCOMPARE(m_token->attach(nullptr), QCNetworkCancelToken::AttachResult::NullReply);
+    QCOMPARE(m_token->attachedCount(), 1);
+
+    QCOMPARE(m_token->cancel(), QCNetworkCancelToken::CommandResult::Applied);
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::TokenCancelled);
+    QCOMPARE(m_token->attachedCount(), 0);
+
+    reply->deleteLater();
+}
+
+/**
+ * @brief 验证 attach() 只接受 token owner thread 中、且与 token 同 affinity 的 reply。
+ */
+void TestQCNetworkCancelToken::testAttachRejectsWrongThreadAndForeignAffinity()
+{
+    QCNetworkRequest request(QUrl("http://example.com"));
+    auto *reply = m_manager->get(request);
+
+    QThread tokenThread;
+    auto *token = new QCNetworkCancelToken;
+    token->moveToThread(&tokenThread);
+    tokenThread.start();
+
+    QCOMPARE(token->attach(reply), QCNetworkCancelToken::AttachResult::WrongThread);
+
+    QCNetworkCancelToken::AttachResult affinityResult = QCNetworkCancelToken::AttachResult::Attached;
+    int attachedCount = -1;
+    QVERIFY(QMetaObject::invokeMethod(
+        token,
+        [&]() {
+            affinityResult = token->attach(reply);
+            attachedCount  = token->attachedCount();
+        },
+        Qt::BlockingQueuedConnection));
+    QCOMPARE(affinityResult, QCNetworkCancelToken::AttachResult::ThreadAffinityMismatch);
+    QCOMPARE(attachedCount, 0);
+
+    QVERIFY(
+        QMetaObject::invokeMethod(token, [token]() { delete token; }, Qt::BlockingQueuedConnection));
+    tokenThread.quit();
+    QVERIFY(tokenThread.wait(1000));
+
+    reply->deleteLater();
+}
+
+/**
+ * @brief 验证 reply 析构只按 registration id 清理，不保留或操作已析构对象地址。
+ */
+void TestQCNetworkCancelToken::testDestroyedReplyRemovesRegistration()
+{
+    m_mock.setGlobalDelay(5000);
+    QCNetworkRequest request(QUrl("http://example.com"));
+    auto *reply = m_manager->get(request);
+
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
+    QCOMPARE(m_token->attachedCount(), 1);
+
+    delete reply;
+    QCOMPARE(m_token->attachedCount(), 0);
+    QCOMPARE(m_token->isCancelled(), false);
+
+    m_mock.setGlobalDelay(0);
 }
 
 /**
@@ -125,10 +236,10 @@ void TestQCNetworkCancelToken::testDetachReply()
 {
     QCNetworkRequest request(QUrl("http://example.com"));
     auto *reply = m_manager->get(request);
-    m_token->attach(reply);
+    QCOMPARE(m_token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
     QCOMPARE(m_token->attachedCount(), 1);
 
-    m_token->detach(reply);
+    QCOMPARE(m_token->detach(reply), QCNetworkCancelToken::CommandResult::Applied);
 
     QCOMPARE(m_token->attachedCount(), 0);
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
@@ -151,7 +262,11 @@ void TestQCNetworkCancelToken::testAttachMultiple()
 
     QList<QCNetworkReply *> replies = {reply1, reply2, reply3};
 
-    m_token->attachMultiple(replies);
+    const QList<QCNetworkCancelToken::AttachResult> results = m_token->attachMultiple(replies);
+    QCOMPARE(results.size(), replies.size());
+    for (QCNetworkCancelToken::AttachResult result : results) {
+        QCOMPARE(result, QCNetworkCancelToken::AttachResult::Attached);
+    }
 
     QCOMPARE(m_token->attachedCount(), 3);
     for (auto *reply : replies) {
@@ -170,7 +285,7 @@ void TestQCNetworkCancelToken::testCancelSignal()
 {
     QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
-    m_token->cancel();
+    QCOMPARE(m_token->cancel(), QCNetworkCancelToken::CommandResult::Applied);
 
     QCOMPARE(spy.count(), 1);
     QCOMPARE(m_token->isCancelled(), true);
@@ -193,12 +308,12 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     QSignalSpy cancelSpy1(reply1, &QCNetworkReply::cancelled);
     QSignalSpy cancelSpy2(reply2, &QCNetworkReply::cancelled);
 
-    m_token->attach(reply1);
-    m_token->attach(reply2);
+    QCOMPARE(m_token->attach(reply1), QCNetworkCancelToken::AttachResult::Attached);
+    QCOMPARE(m_token->attach(reply2), QCNetworkCancelToken::AttachResult::Attached);
 
     QCOMPARE(m_token->attachedCount(), 2);
 
-    m_token->cancel();
+    QCOMPARE(m_token->cancel(), QCNetworkCancelToken::CommandResult::Applied);
 
     QCOMPARE(m_token->isCancelled(), true);
     QCOMPARE(m_token->attachedCount(), 0); // 取消后应该清空
@@ -219,6 +334,40 @@ void TestQCNetworkCancelToken::testCancelAttachedReplies()
     m_mock.setGlobalDelay(0);
 }
 
+/// @brief 验证析构同步取消 reply，但不发射 token 或 reply 的业务信号。
+void TestQCNetworkCancelToken::testDestructorTeardownIsSilent()
+{
+    m_mock.setGlobalDelay(5000);
+
+    QCNetworkRequest request(QUrl("http://example.com"));
+    auto *reply = m_manager->get(request);
+    QSignalSpy replyCancelledSpy(reply, &QCNetworkReply::cancelled);
+    QSignalSpy replyFinishedSpy(reply, &QCNetworkReply::finished);
+
+    QObject observer;
+    int tokenCancelledCount = 0;
+    {
+        QObject tokenOwner;
+        auto *token = new QCNetworkCancelToken(&tokenOwner);
+        QObject::connect(token,
+                         &QCNetworkCancelToken::cancelled,
+                         &observer,
+                         [&tokenCancelledCount]() { ++tokenCancelledCount; });
+        QCOMPARE(token->attach(reply), QCNetworkCancelToken::AttachResult::Attached);
+        QCOMPARE(token->setAutoTimeout(5000), QCNetworkCancelToken::CommandResult::Applied);
+        QCOMPARE(token->attachedCount(), 1);
+    }
+
+    QCOMPARE(tokenCancelledCount, 0);
+    QCOMPARE(replyCancelledSpy.count(), 0);
+    QCOMPARE(replyFinishedSpy.count(), 0);
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+
+    reply->deleteLater();
+    m_mock.setGlobalDelay(0);
+}
+
 /**
  * @brief 验证 clear() 只清空附着列表，不会把 token 标记为已取消。
  */
@@ -230,11 +379,11 @@ void TestQCNetworkCancelToken::testClearReplies()
     auto *reply1 = m_manager->get(request1);
     auto *reply2 = m_manager->get(request2);
 
-    m_token->attach(reply1);
-    m_token->attach(reply2);
+    QCOMPARE(m_token->attach(reply1), QCNetworkCancelToken::AttachResult::Attached);
+    QCOMPARE(m_token->attach(reply2), QCNetworkCancelToken::AttachResult::Attached);
     QCOMPARE(m_token->attachedCount(), 2);
 
-    m_token->clear();
+    QCOMPARE(m_token->clear(), QCNetworkCancelToken::CommandResult::Applied);
 
     QCOMPARE(m_token->attachedCount(), 0);
     QCOMPARE(m_token->isCancelled(), false); // clear 不会标记为已取消
@@ -251,7 +400,7 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     QSignalSpy spy(m_token, &QCNetworkCancelToken::cancelled);
 
     // 设置 100ms 自动超时。
-    m_token->setAutoTimeout(100);
+    QCOMPARE(m_token->setAutoTimeout(100), QCNetworkCancelToken::CommandResult::Applied);
 
     // 应在超时窗口内自动取消。
     QVERIFY(spy.wait(1000));
@@ -260,8 +409,8 @@ void TestQCNetworkCancelToken::testAutoTimeout()
     // 验证禁用 auto-timeout 后不会再触发取消。
     auto *token2 = new QCNetworkCancelToken(this);
     QSignalSpy spy2(token2, &QCNetworkCancelToken::cancelled);
-    token2->setAutoTimeout(100);
-    token2->setAutoTimeout(0); // 禁用
+    QCOMPARE(token2->setAutoTimeout(100), QCNetworkCancelToken::CommandResult::Applied);
+    QCOMPARE(token2->setAutoTimeout(0), QCNetworkCancelToken::CommandResult::Applied); // 禁用
 
     QVERIFY(!spy2.wait(200));
     QCOMPARE(token2->isCancelled(), false); // 应该未取消

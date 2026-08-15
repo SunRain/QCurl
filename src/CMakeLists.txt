@@ -11,6 +11,7 @@ set(QCURL_CORE_SOURCES
     QCNetworkAccessManagerConfig.cpp
     QCNetworkAccessManagerCookies.cpp
     QCNetworkAccessManagerSend.cpp
+    QCNetworkAccessManagerScheduler.cpp
     QCNetworkAccessManagerServices.cpp
     QCNetworkTestSupport.cpp
     QCNetworkHttpAuthConfig.cpp

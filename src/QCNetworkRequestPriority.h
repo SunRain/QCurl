@@ -9,6 +9,8 @@
 #ifndef QCNETWORKREQUESTPRIORITY_H
 #define QCNETWORKREQUESTPRIORITY_H
 
+#include "QCGlobal.h"
+
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -16,7 +18,7 @@
 namespace QCurl {
 
 // 让优先级枚举走 Qt 的 canonical 反射路径，供 queued connection/QSignalSpy/QVariant 复用。
-Q_NAMESPACE
+Q_NAMESPACE_EXPORT(QCURL_EXPORT)
 
 /**
  * @brief 网络请求的优先级枚举
@@ -74,7 +76,7 @@ enum class QCNetworkRequestPriority {
      * Critical 仍受全局并发、每主机并发和限流等硬上限约束；若需要控制面保底，请使用 lane reservation。
      * 用于紧急通知、实时数据更新、安全相关请求等。
      */
-    Critical = 5
+    Critical = 5,
 };
 
 Q_ENUM_NS(QCNetworkRequestPriority)
@@ -93,8 +95,8 @@ Q_ENUM_NS(QCNetworkRequestPriority)
 inline int registerQCNetworkRequestPriorityMetaType()
 {
     // 函数内静态值确保整个进程只注册一次 canonical name。
-    static const int kMetaTypeId
-        = qRegisterMetaType<QCNetworkRequestPriority>("QCurl::QCNetworkRequestPriority");
+    static const int kMetaTypeId = qRegisterMetaType<QCNetworkRequestPriority>(
+        "QCurl::QCNetworkRequestPriority");
     return kMetaTypeId;
 }
 

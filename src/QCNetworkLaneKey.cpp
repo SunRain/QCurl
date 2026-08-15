@@ -21,6 +21,7 @@ void setError(QString *error, const QString &message)
 
 } // namespace
 
+/// @brief 保存请求调度通道的隐式共享键值。
 class QCNetworkLaneKeyData : public QSharedData
 {
 public:
@@ -46,7 +47,7 @@ QCNetworkLaneKey &QCNetworkLaneKey::operator=(QCNetworkLaneKey &&other) noexcept
 QCNetworkLaneKey::QCNetworkLaneKey(QString name, bool valid)
     : d(new QCNetworkLaneKeyData)
 {
-    d->name = std::move(name);
+    d->name  = std::move(name);
     d->valid = valid;
 }
 

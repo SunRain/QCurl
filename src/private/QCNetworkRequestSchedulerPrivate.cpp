@@ -3,10 +3,9 @@
  * @brief Private state helpers for QCNetworkRequestScheduler.
  */
 
-#include "private/QCNetworkRequestSchedulerPrivate_p.h"
-
 #include "QCNetworkReply.h"
 #include "private/LaneRuntimePruner_p.h"
+#include "private/QCNetworkRequestSchedulerPrivate_p.h"
 
 #include <QMutexLocker>
 
@@ -30,11 +29,11 @@ void QCNetworkRequestScheduler::Impl::connectProgressTracking(QCNetworkRequestSc
                 return;
             }
 
-            const qint64 delta = qMax<qint64>(0, bytesReceived - it->lastBytesReceived);
+            const qint64 delta    = qMax<qint64>(0, bytesReceived - it->lastBytesReceived);
             it->lastBytesReceived = bytesReceived;
             bytesTransferredInWindow += delta;
         },
-        Qt::QueuedConnection);
+        Qt::AutoConnection);
 
     progressState.uploadConnection = QObject::connect(
         reply,
@@ -48,10 +47,10 @@ void QCNetworkRequestScheduler::Impl::connectProgressTracking(QCNetworkRequestSc
             }
 
             const qint64 delta = qMax<qint64>(0, bytesSent - it->lastBytesSent);
-            it->lastBytesSent = bytesSent;
+            it->lastBytesSent  = bytesSent;
             bytesTransferredInWindow += delta;
         },
-        Qt::QueuedConnection);
+        Qt::AutoConnection);
 }
 
 void QCNetworkRequestScheduler::Impl::disconnectProgressTracking(Internal::ReplyKey key)
@@ -92,17 +91,78 @@ bool QCNetworkRequestScheduler::Impl::isStartTicketValidLocked(Internal::ReplyKe
     return ticketIt != startTickets.constEnd() && ticketIt.value() == ticket;
 }
 
+void QCNetworkRequestScheduler::Impl::removeReplyFromQueueLocked(Internal::ReplyKey key,
+                                                                 Internal::ScheduledState state,
+                                                                 Internal::FinalizeTrigger trigger,
+                                                                 Internal::FinalizeResult *result)
+{
+    if (state == Internal::ScheduledState::Pending) {
+        if (queues.takePending(key)) {
+            stats.setPendingRequests(queues.pendingCount());
+            result->shouldKickQueue = trigger != Internal::FinalizeTrigger::ExplicitCancel;
+        }
+    } else if (state == Internal::ScheduledState::Deferred) {
+        if (queues.takeDeferred(key)) {
+            result->shouldKickQueue = trigger == Internal::FinalizeTrigger::Destroyed;
+        }
+    } else if (queues.removeRunning(key, result->snapshot)) {
+        stats.setRunningRequests(queues.runningCount());
+        result->shouldKickQueue = true;
+    }
+}
+
+void QCNetworkRequestScheduler::Impl::finalizeExplicitCancelLocked(Internal::ReplyKey key,
+                                                                   Internal::FinalizeResult *result)
+{
+    disconnectProgressTracking(key);
+    requestStartTimes.remove(key);
+    replyStates.remove(key);
+    replySnapshots.remove(key);
+    startTickets.remove(key);
+    cancelledReplies.insert(key);
+    stats.setCancelledRequests(stats.cancelledRequests() + 1);
+    result->emitCancelled = true;
+}
+
+void QCNetworkRequestScheduler::Impl::recordFinishedReplyLocked(Internal::ReplyKey key,
+                                                                Internal::ScheduledState state,
+                                                                const Internal::ReplyOutcome &outcome,
+                                                                Internal::FinalizeResult *result)
+{
+    if (outcome.cancelled) {
+        stats.setCancelledRequests(stats.cancelledRequests() + 1);
+        result->emitCancelled = true;
+        return;
+    }
+    if (state != Internal::ScheduledState::Running) {
+        return;
+    }
+
+    const QDateTime startTime = requestStartTimes.value(key);
+    const qint64 duration = startTime.isValid() ? startTime.msecsTo(QDateTime::currentDateTime())
+                                                : 0;
+    stats.setCompletedRequests(stats.completedRequests() + 1);
+    if (stats.completedRequests() == 1) {
+        stats.setAvgResponseTime(duration);
+    } else {
+        const double average = (stats.avgResponseTime() * (stats.completedRequests() - 1) + duration)
+                               / stats.completedRequests();
+        stats.setAvgResponseTime(average);
+    }
+    stats.setTotalBytesReceived(stats.totalBytesReceived() + outcome.bytesReceived);
+    result->emitFinished = true;
+}
+
 Internal::FinalizeResult QCNetworkRequestScheduler::Impl::finalizeReplyLocked(
-    Internal::ReplyKey key,
-    Internal::FinalizeTrigger trigger,
-    const Internal::ReplyOutcome &outcome)
+    Internal::ReplyKey key, Internal::FinalizeTrigger trigger, const Internal::ReplyOutcome &outcome)
 {
     Internal::FinalizeResult result;
     if (!key) {
         return result;
     }
 
-    if (!replySnapshots.contains(key) && !replyStates.contains(key) && !cancelledReplies.contains(key)) {
+    if (!replySnapshots.contains(key) && !replyStates.contains(key)
+        && !cancelledReplies.contains(key)) {
         return result;
     }
 
@@ -115,54 +175,15 @@ Internal::FinalizeResult QCNetworkRequestScheduler::Impl::finalizeReplyLocked(
     }
 
     const Internal::ScheduledState state = replyStates.value(key, Internal::ScheduledState::Pending);
-
-    if (state == Internal::ScheduledState::Pending) {
-        if (Internal::SchedulerQueues::takeQueuedRequest(queues.pendingRequests, key)) {
-            stats.setPendingRequests(queues.pendingRequests.size());
-            result.shouldKickQueue = trigger != Internal::FinalizeTrigger::ExplicitCancel;
-        }
-    } else if (state == Internal::ScheduledState::Deferred) {
-        if (Internal::SchedulerQueues::takeQueuedRequest(queues.deferredRequests, key)) {
-            result.shouldKickQueue = trigger == Internal::FinalizeTrigger::Destroyed;
-        }
-    } else if (queues.removeRunning(Internal::replyFromKey(key), result.snapshot)) {
-        stats.setRunningRequests(queues.runningRequests.size());
-        result.shouldKickQueue = true;
-    }
+    removeReplyFromQueueLocked(key, state, trigger, &result);
 
     if (trigger == Internal::FinalizeTrigger::ExplicitCancel) {
-        disconnectProgressTracking(key);
-        requestStartTimes.remove(key);
-        replyStates.remove(key);
-        replySnapshots.remove(key);
-        startTickets.remove(key);
-        cancelledReplies.insert(key);
-        stats.setCancelledRequests(stats.cancelledRequests() + 1);
-        result.emitCancelled = true;
+        finalizeExplicitCancelLocked(key, &result);
         return result;
     }
 
     if (trigger == Internal::FinalizeTrigger::FinishedSignal) {
-        if (outcome.cancelled) {
-            stats.setCancelledRequests(stats.cancelledRequests() + 1);
-            result.emitCancelled = true;
-        } else if (state == Internal::ScheduledState::Running) {
-            const QDateTime finishTime = QDateTime::currentDateTime();
-            const QDateTime startTime  = requestStartTimes.value(key);
-            const qint64 duration      = startTime.isValid() ? startTime.msecsTo(finishTime) : 0;
-
-            stats.setCompletedRequests(stats.completedRequests() + 1);
-            if (stats.completedRequests() == 1) {
-                stats.setAvgResponseTime(duration);
-            } else {
-                const double rollingAverage
-                    = (stats.avgResponseTime() * (stats.completedRequests() - 1) + duration)
-                      / stats.completedRequests();
-                stats.setAvgResponseTime(rollingAverage);
-            }
-            stats.setTotalBytesReceived(stats.totalBytesReceived() + outcome.bytesReceived);
-            result.emitFinished = true;
-        }
+        recordFinishedReplyLocked(key, state, outcome, &result);
     }
 
     clearReplyTracking(key);

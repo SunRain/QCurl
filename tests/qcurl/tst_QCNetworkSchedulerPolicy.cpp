@@ -18,7 +18,7 @@ class tst_QCNetworkSchedulerPolicy : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testLaneKeyDefaultsAndBuiltins();
     void testLaneKeyFromNameReportsErrorsWithoutModifyingOutput();
     void testLaneCancelResultFactoriesEnforceInvariants();

@@ -36,7 +36,7 @@ QStringList SchedulerQueues::rotatedLaneHosts(const QString &lane) const
     QStringList hosts;
     QSet<QString> seenHosts;
 
-    for (const auto &request : pendingRequests) {
+    for (const auto &request : m_pendingRequests) {
         if (!request.reply || request.snapshot.lane != lane) {
             continue;
         }
@@ -47,7 +47,7 @@ QStringList SchedulerQueues::rotatedLaneHosts(const QString &lane) const
         seenHosts.insert(request.snapshot.hostKey);
     }
 
-    const QString lastStartedHost = laneLastStartedHost.value(lane);
+    const QString lastStartedHost = m_laneLastStartedHost.value(lane);
     if (hosts.size() <= 1 || lastStartedHost.isEmpty()) {
         return hosts;
     }
@@ -71,7 +71,7 @@ bool SchedulerQueues::hasRunnablePendingExcluding(
     const QHash<QString, int> &hostCounts,
     const QCNetworkRequestScheduler::Config &config) const
 {
-    for (const auto &request : pendingRequests) {
+    for (const auto &request : m_pendingRequests) {
         if (!request.reply || request.key == excludeKey || request.snapshot.lane != lane) {
             continue;
         }
@@ -89,7 +89,7 @@ bool SchedulerQueues::hasRunnablePendingForHostExcluding(
     const QHash<QString, int> &hostCounts,
     const QCNetworkRequestScheduler::Config &config) const
 {
-    for (const auto &request : pendingRequests) {
+    for (const auto &request : m_pendingRequests) {
         if (!request.reply || request.key == excludeKey) {
             continue;
         }
@@ -108,23 +108,23 @@ bool SchedulerQueues::wouldViolateReservation(
     const QCNetworkRequestScheduler::Config &config) const
 {
     // best-effort 选路前先“试占”一个槽位，避免偷走 reservation 仍需保底的容量。
-    QHash<QString, int> hostCounts = hostConnectionCount;
+    QHash<QString, int> hostCounts = m_hostConnectionCount;
     hostCounts[candidate.snapshot.hostKey]++;
     if (hostCounts.value(candidate.snapshot.hostKey, 0) > config.maxRequestsPerHost()) {
         return true;
     }
 
-    QHash<QString, int> laneCounts = runningLaneCount;
+    QHash<QString, int> laneCounts = m_runningLaneCount;
     laneCounts[candidate.snapshot.lane]++;
 
-    QHash<QString, QHash<QString, int>> laneHostCounts = runningLaneHostCount;
+    QHash<QString, QHash<QString, int>> laneHostCounts = m_runningLaneHostCount;
     incrementNestedCounter(laneHostCounts, candidate.snapshot.lane, candidate.snapshot.hostKey);
 
-    const int freeGlobalAfter = config.maxConcurrentRequests() - (runningRequests.size() + 1);
+    const int freeGlobalAfter = config.maxConcurrentRequests() - (m_runningRequests.size() + 1);
     int globalDemand          = 0;
     QHash<QString, int> hostDemand;
 
-    for (const auto &lane : laneOrder) {
+    for (const auto &lane : m_laneOrder) {
         const auto laneCfg = laneConfigFor(lane);
         if (laneCfg.reservedGlobal() > 0
             && hasRunnablePendingExcluding(lane, candidate.key, hostCounts, config)) {
@@ -136,11 +136,14 @@ bool SchedulerQueues::wouldViolateReservation(
         }
 
         QSet<QString> hosts;
-        reserveLaneHosts(pendingRequests, lane, candidate.key, &hosts);
+        reserveLaneHosts(m_pendingRequests, lane, candidate.key, &hosts);
 
         for (const auto &hostKey : hosts) {
-            if (!hasRunnablePendingForHostExcluding(
-                    lane, hostKey, candidate.key, hostCounts, config)) {
+            if (!hasRunnablePendingForHostExcluding(lane,
+                                                    hostKey,
+                                                    candidate.key,
+                                                    hostCounts,
+                                                    config)) {
                 continue;
             }
             hostDemand[hostKey]
@@ -167,22 +170,25 @@ bool SchedulerQueues::wouldViolateReservation(
 int SchedulerQueues::selectReservationHostIndex(const QCNetworkRequestScheduler::Config &config)
 {
     QStringList activeLanes;
-    for (const auto &lane : laneOrder) {
+    for (const auto &lane : m_laneOrder) {
         const auto laneCfg = laneConfigFor(lane);
         if (laneCfg.reservedPerHost() <= 0) {
             continue;
         }
 
-        const bool active = findQueuedRequestIndex(
-            pendingRequests,
-            [&](const QueuedRequest &request) {
-                return request.reply && request.snapshot.lane == lane
-                       && hostConnectionCount.value(request.snapshot.hostKey, 0)
-                              < config.maxRequestsPerHost()
-                       && nestedCounter(runningLaneHostCount, lane, request.snapshot.hostKey)
-                              < laneCfg.reservedPerHost();
-            })
-            >= 0;
+        const bool active
+            = findQueuedRequestIndex(m_pendingRequests,
+                                     [&](const QueuedRequest &request) {
+                                         return request.reply && request.snapshot.lane == lane
+                                                && m_hostConnectionCount
+                                                           .value(request.snapshot.hostKey, 0)
+                                                       < config.maxRequestsPerHost()
+                                                && nestedCounter(m_runningLaneHostCount,
+                                                                 lane,
+                                                                 request.snapshot.hostKey)
+                                                       < laneCfg.reservedPerHost();
+                                     })
+              >= 0;
 
         if (active) {
             activeLanes.append(lane);
@@ -193,24 +199,22 @@ int SchedulerQueues::selectReservationHostIndex(const QCNetworkRequestScheduler:
         return -1;
     }
 
-    const int laneCount = laneOrder.size();
+    const int laneCount = m_laneOrder.size();
     for (int attempt = 0; attempt < laneCount; ++attempt) {
-        const QString &lane = laneOrder.at((hostReservationCursor + attempt) % laneCount);
+        const QString &lane = m_laneOrder.at((m_hostReservationCursor + attempt) % laneCount);
         if (!activeLanes.contains(lane)) {
             continue;
         }
 
         const auto laneCfg = laneConfigFor(lane);
-        const int index    = candidateIndexForLane(
-            lane,
-            [&](const QueuedRequest &request) {
-                return hostConnectionCount.value(request.snapshot.hostKey, 0)
-                           < config.maxRequestsPerHost()
-                       && nestedCounter(runningLaneHostCount, lane, request.snapshot.hostKey)
-                              < laneCfg.reservedPerHost();
-            });
+        const int index    = candidateIndexForLane(lane, [&](const QueuedRequest &request) {
+            return m_hostConnectionCount.value(request.snapshot.hostKey, 0)
+                       < config.maxRequestsPerHost()
+                   && nestedCounter(m_runningLaneHostCount, lane, request.snapshot.hostKey)
+                          < laneCfg.reservedPerHost();
+        });
         if (index >= 0) {
-            hostReservationCursor = (laneOrder.indexOf(lane) + 1) % laneCount;
+            m_hostReservationCursor = (m_laneOrder.indexOf(lane) + 1) % laneCount;
             return index;
         }
     }
@@ -221,24 +225,25 @@ int SchedulerQueues::selectReservationHostIndex(const QCNetworkRequestScheduler:
 int SchedulerQueues::selectReservationGlobalIndex(const QCNetworkRequestScheduler::Config &config)
 {
     QStringList activeLanes;
-    for (const auto &lane : laneOrder) {
+    for (const auto &lane : m_laneOrder) {
         const auto laneCfg = laneConfigFor(lane);
         if (laneCfg.reservedGlobal() <= 0) {
             continue;
         }
 
-        if (runningLaneCount.value(lane, 0) >= laneCfg.reservedGlobal()) {
+        if (m_runningLaneCount.value(lane, 0) >= laneCfg.reservedGlobal()) {
             continue;
         }
 
-        const bool active = findQueuedRequestIndex(
-            pendingRequests,
-            [&](const QueuedRequest &request) {
-                return request.reply && request.snapshot.lane == lane
-                       && hostConnectionCount.value(request.snapshot.hostKey, 0)
-                              < config.maxRequestsPerHost();
-            })
-            >= 0;
+        const bool active
+            = findQueuedRequestIndex(m_pendingRequests,
+                                     [&](const QueuedRequest &request) {
+                                         return request.reply && request.snapshot.lane == lane
+                                                && m_hostConnectionCount
+                                                           .value(request.snapshot.hostKey, 0)
+                                                       < config.maxRequestsPerHost();
+                                     })
+              >= 0;
         if (active) {
             activeLanes.append(lane);
         }
@@ -248,21 +253,19 @@ int SchedulerQueues::selectReservationGlobalIndex(const QCNetworkRequestSchedule
         return -1;
     }
 
-    const int laneCount = laneOrder.size();
+    const int laneCount = m_laneOrder.size();
     for (int attempt = 0; attempt < laneCount; ++attempt) {
-        const QString &lane = laneOrder.at((globalReservationCursor + attempt) % laneCount);
+        const QString &lane = m_laneOrder.at((m_globalReservationCursor + attempt) % laneCount);
         if (!activeLanes.contains(lane)) {
             continue;
         }
 
-        const int index = candidateIndexForLane(
-            lane,
-            [&](const QueuedRequest &request) {
-                return hostConnectionCount.value(request.snapshot.hostKey, 0)
-                       < config.maxRequestsPerHost();
-            });
+        const int index = candidateIndexForLane(lane, [&](const QueuedRequest &request) {
+            return m_hostConnectionCount.value(request.snapshot.hostKey, 0)
+                   < config.maxRequestsPerHost();
+        });
         if (index >= 0) {
-            globalReservationCursor = (laneOrder.indexOf(lane) + 1) % laneCount;
+            m_globalReservationCursor = (m_laneOrder.indexOf(lane) + 1) % laneCount;
             return index;
         }
     }
@@ -272,49 +275,48 @@ int SchedulerQueues::selectReservationGlobalIndex(const QCNetworkRequestSchedule
 
 int SchedulerQueues::selectBestEffortIndex(const QCNetworkRequestScheduler::Config &config)
 {
-    if (laneOrder.isEmpty()) {
+    if (m_laneOrder.isEmpty()) {
         return -1;
     }
 
-    const int laneCount = laneOrder.size();
+    const int laneCount = m_laneOrder.size();
     for (int attempt = 0; attempt < laneCount; ++attempt) {
-        const int laneIndex = (bestEffortCursor + attempt) % laneCount;
-        const QString &lane = laneOrder.at(laneIndex);
+        const int laneIndex = (m_bestEffortCursor + attempt) % laneCount;
+        const QString &lane = m_laneOrder.at(laneIndex);
 
-        const bool laneHasPending = findQueuedRequestIndex(
-            pendingRequests,
-            [&](const QueuedRequest &request) {
-                return request.reply && request.snapshot.lane == lane;
-            })
-            >= 0;
+        const bool laneHasPending = findQueuedRequestIndex(m_pendingRequests,
+                                                           [&](const QueuedRequest &request) {
+                                                               return request.reply
+                                                                      && request.snapshot.lane
+                                                                             == lane;
+                                                           })
+                                    >= 0;
         if (!laneHasPending) {
             continue;
         }
 
         const auto laneCfg = laneConfigFor(lane);
-        if (laneDeficit.value(lane, 0) < 1) {
-            laneDeficit[lane] += std::max(1, laneCfg.weight() * std::max(1, laneCfg.quantum()));
+        if (m_laneDeficit.value(lane, 0) < 1) {
+            m_laneDeficit[lane] += std::max(1, laneCfg.weight() * std::max(1, laneCfg.quantum()));
         }
 
-        if (laneDeficit.value(lane, 0) < 1) {
+        if (m_laneDeficit.value(lane, 0) < 1) {
             continue;
         }
 
-        const int index = candidateIndexForLane(
-            lane,
-            [&](const QueuedRequest &request) {
-                return hostConnectionCount.value(request.snapshot.hostKey, 0)
-                           < config.maxRequestsPerHost()
-                       && !wouldViolateReservation(request, config);
-            });
+        const int index = candidateIndexForLane(lane, [&](const QueuedRequest &request) {
+            return m_hostConnectionCount.value(request.snapshot.hostKey, 0)
+                       < config.maxRequestsPerHost()
+                   && !wouldViolateReservation(request, config);
+        });
         if (index >= 0) {
-            laneDeficit[lane] -= 1;
-            bestEffortCursor
-                = (laneDeficit.value(lane, 0) < 1) ? (laneIndex + 1) % laneCount : laneIndex;
+            m_laneDeficit[lane] -= 1;
+            m_bestEffortCursor = (m_laneDeficit.value(lane, 0) < 1) ? (laneIndex + 1) % laneCount
+                                                                    : laneIndex;
             return index;
         }
 
-        laneDeficit[lane] = 0;
+        m_laneDeficit[lane] = 0;
     }
 
     return -1;

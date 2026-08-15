@@ -50,7 +50,10 @@ int main(int argc, char *argv[])
         QCNetworkRequest req(url);
         auto *reply = manager->get(req);
 
-        token->attach(reply);
+        const auto attachResult = token->attach(reply);
+        if (attachResult != QCNetworkCancelToken::AttachResult::Attached) {
+            qWarning() << "无法附着请求，结果:" << static_cast<int>(attachResult);
+        }
         replies.append(reply);
 
         qDebug() << QString("  请求 %1 已创建: delay/%2秒").arg(i).arg(i);
@@ -66,7 +69,10 @@ int main(int argc, char *argv[])
     // 2秒后取消所有请求
     QTimer::singleShot(2000, [token]() {
         qDebug() << "\n⏱️  2秒到，执行 cancel()...";
-        token->cancel();
+        const auto cancelResult = token->cancel();
+        if (cancelResult == QCNetworkCancelToken::CommandResult::WrongThread) {
+            qWarning() << "取消命令必须在 token owner thread 调用";
+        }
         qDebug() << "Token 状态: isCancelled =" << token->isCancelled();
         qDebug() << "Token 剩余请求数:" << token->attachedCount();
     });
@@ -78,8 +84,11 @@ int main(int argc, char *argv[])
     QTimer::singleShot(5000, [&]() {
         qDebug() << "\n>>> 示例 2: 自动超时取消（3秒后自动取消）";
 
-        auto *token2 = new QCNetworkCancelToken();
-        token2->setAutoTimeout(3000); // 3秒后自动取消
+        auto *token2             = new QCNetworkCancelToken();
+        const auto timeoutResult = token2->setAutoTimeout(3000); // 3秒后自动取消
+        if (timeoutResult != QCNetworkCancelToken::CommandResult::Applied) {
+            qWarning() << "无法设置自动超时，结果:" << static_cast<int>(timeoutResult);
+        }
 
         // 监听取消信号
         QObject::connect(token2, &QCNetworkCancelToken::cancelled, []() {
@@ -89,8 +98,11 @@ int main(int argc, char *argv[])
         // 创建3个长时间请求
         for (int i = 1; i <= 3; ++i) {
             QUrl url(QString("https://httpbin.org/delay/%1").arg(i * 2));
-            auto *reply = manager->get(QCNetworkRequest(url));
-            token2->attach(reply);
+            auto *reply             = manager->get(QCNetworkRequest(url));
+            const auto attachResult = token2->attach(reply);
+            if (attachResult != QCNetworkCancelToken::AttachResult::Attached) {
+                qWarning() << "无法附着请求，结果:" << static_cast<int>(attachResult);
+            }
             qDebug() << QString("  请求 %1: delay/%2秒").arg(i).arg(i * 2);
         }
 

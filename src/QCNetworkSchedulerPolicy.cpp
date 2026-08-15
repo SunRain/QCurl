@@ -8,16 +8,17 @@
 
 namespace QCurl {
 
+/// @brief 保存请求调度器的隐式共享统计快照。
 class QCNetworkSchedulerStatisticsData : public QSharedData
 {
 public:
-    int pendingRequests = 0;
-    int runningRequests = 0;
-    int completedRequests = 0;
-    int cancelledRequests = 0;
+    int pendingRequests       = 0;
+    int runningRequests       = 0;
+    int completedRequests     = 0;
+    int cancelledRequests     = 0;
     qint64 totalBytesReceived = 0;
-    qint64 totalBytesSent = 0;
-    double avgResponseTime = 0.0;
+    qint64 totalBytesSent     = 0;
+    double avgResponseTime    = 0.0;
 };
 
 QCNetworkSchedulerStatistics::QCNetworkSchedulerStatistics()
@@ -113,12 +114,13 @@ void QCNetworkSchedulerStatistics::setAvgResponseTime(double value)
     d->avgResponseTime = value;
 }
 
+/// @brief 保存单个调度通道的隐式共享配额配置。
 class QCNetworkSchedulerPolicyLaneConfigData : public QSharedData
 {
 public:
-    int weight = 1;
-    int quantum = 1;
-    int reservedGlobal = 0;
+    int weight          = 1;
+    int quantum         = 1;
+    int reservedGlobal  = 0;
     int reservedPerHost = 0;
 };
 
@@ -181,16 +183,17 @@ void QCNetworkSchedulerPolicy::LaneConfig::setReservedPerHost(int value)
     d->reservedPerHost = value;
 }
 
+/// @brief 保存请求调度器的隐式共享策略配置。
 class QCNetworkSchedulerPolicyData : public QSharedData
 {
 public:
     QCNetworkLaneKey defaultLane = QCNetworkLaneKey::defaultLane();
     QHash<QString, QCNetworkSchedulerPolicy::LaneConfig> laneConfigs;
     QList<QString> laneOrder;
-    int maxConcurrentRequests = 6;
-    int maxRequestsPerHost = 2;
+    int maxConcurrentRequests      = 6;
+    int maxRequestsPerHost         = 2;
     qint64 maxBandwidthBytesPerSec = 0;
-    bool throttlingEnabled = true;
+    bool throttlingEnabled         = true;
 };
 
 namespace {

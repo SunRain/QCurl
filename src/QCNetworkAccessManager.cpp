@@ -1,12 +1,13 @@
 #include "QCNetworkAccessManager.h"
 
 #include "QCNetworkAccessManager_p.h"
+#include "QCNetworkCachePolicy.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
-#include "private/CurlGlobalConstructor_p.h"
+#include "private/QCNetworkCacheIntegration_p.h"
 
 #include <QPointer>
 #include <QVariant>
@@ -66,15 +67,20 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
 
     QPointer<QCNetworkReply> safeReply(reply);
     QPointer<QCNetworkAccessManager> safeManager(manager);
-    QObject::connect(reply, &QCNetworkReply::finished, manager, [safeReply, safeManager, middlewares]() {
-        if (!safeManager) {
-            return;
-        }
-        if (!safeReply) {
-            return;
-        }
-        runResponseMiddlewaresOnce(safeReply.data(), safeManager.data(), middlewares);
-    });
+    QObject::connect(reply,
+                     &QCNetworkReply::finished,
+                     manager,
+                     [safeReply, safeManager, middlewares]() {
+                         if (!safeManager) {
+                             return;
+                         }
+                         if (!safeReply) {
+                             return;
+                         }
+                         runResponseMiddlewaresOnce(safeReply.data(),
+                                                    safeManager.data(),
+                                                    middlewares);
+                     });
 
     // 对已完成 reply 立即补跑一次，避免“先 finished、后接线”导致漏掉响应中间件。
     if (reply->isFinished()) {
@@ -104,15 +110,12 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
     : QObject(parent)
     , d_ptr(new QCNetworkAccessManagerPrivate(this))
 {
-    CurlGlobalConstructor::instance();
     Q_D(QCNetworkAccessManager);
     d->scheduler = new QCNetworkRequestScheduler(this);
     QString schedulerPolicyError;
     const bool schedulerPolicyApplied = d->scheduler->applyPolicy(d->schedulerPolicy,
                                                                   &schedulerPolicyError);
-    Q_ASSERT_X(schedulerPolicyApplied,
-               "QCNetworkAccessManager",
-               qPrintable(schedulerPolicyError));
+    Q_ASSERT_X(schedulerPolicyApplied, "QCNetworkAccessManager", qPrintable(schedulerPolicyError));
 }
 
 QCNetworkAccessManager::~QCNetworkAccessManager()
@@ -156,7 +159,31 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
     const QByteArray &body,
     const QList<QCNetworkMiddleware *> &middlewares)
 {
-    auto *reply = createReply(request, method, requestBodySource, body, q_func());
+    const bool managerUsesCookies = shareHandleConfig.shareCookies() || !cookieFilePath.isEmpty();
+    const QCNetworkCacheRequestKey cacheKey = Internal::buildCacheRequestKey(request,
+                                                                             method,
+                                                                             managerUsesCookies);
+    QCNetworkRequest effectiveRequest       = request;
+    QCNetworkCacheLookupResult staleEntry;
+    bool cacheRevalidation = false;
+    if (cache && request.cachePolicy() == QCNetworkCachePolicy::PreferCache
+        && (method == HttpMethod::Get || method == HttpMethod::Head)) {
+        staleEntry = cache->lookup(cacheKey, QCNetworkCacheReadMode::AllowStale);
+        if (staleEntry.status() == QCNetworkCacheLookupStatus::StaleHit
+            && Internal::cacheMetadataHasValidator(staleEntry.metadata())) {
+            effectiveRequest = Internal::requestWithCacheValidators(request, staleEntry.metadata());
+            cacheRevalidation = true;
+        }
+    }
+
+    auto *reply = createReply(effectiveRequest, method, requestBodySource, body, q_func());
+    if (reply) {
+        auto *replyPrivate                       = reply->d_func();
+        replyPrivate->cacheRequestKey            = cacheKey;
+        replyPrivate->cacheRequestKeyInitialized = true;
+        replyPrivate->staleCacheEntry            = staleEntry;
+        replyPrivate->cacheRevalidation          = cacheRevalidation;
+    }
     prepareManagedReply(reply, middlewares);
     return reply;
 }
@@ -181,12 +208,13 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createNoEventLoopErrorReply(
 }
 
 QCNetworkReply *QCNetworkAccessManagerPrivate::createInvalidRequestReply(
-    const QCNetworkRequest &request,
-    HttpMethod method,
-    const QString &message,
-    QObject *parent)
+    const QCNetworkRequest &request, HttpMethod method, const QString &message, QObject *parent)
 {
-    auto *reply = createReply(request, method, Internal::makeEmptyRequestBody(), QByteArray(), parent);
+    auto *reply = createReply(request,
+                              method,
+                              Internal::makeEmptyRequestBody(),
+                              QByteArray(),
+                              parent);
     if (!reply) {
         return nullptr;
     }
@@ -201,9 +229,13 @@ void QCNetworkAccessManagerPrivate::applyReplyDefaults(QCNetworkReply *reply) co
         return;
     }
 
+    auto *replyPrivate              = reply->d_func();
+    replyPrivate->logger            = logger;
+    replyPrivate->debugTraceEnabled = debugTraceEnabled;
+
     if (cookieModeFlag != QCNetworkAccessManager::NotOpen && !cookieFilePath.isEmpty()) {
-        reply->d_func()->cookieFilePath = cookieFilePath;
-        reply->d_func()->cookieMode     = cookieModeFlag;
+        replyPrivate->cookieFilePath = cookieFilePath;
+        replyPrivate->cookieMode     = cookieModeFlag;
     }
 }
 
@@ -225,21 +257,30 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
     if (schedulerEnabled) {
         // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
         if (!request.lane().isValid()) {
-            reply->abortWithError(
-                NetworkError::InvalidRequest,
-                QStringLiteral("QCNetworkAccessManager: scheduler lane is invalid"));
+            reply->abortWithError(NetworkError::InvalidRequest,
+                                  QStringLiteral(
+                                      "QCNetworkAccessManager: scheduler lane is invalid"));
             return;
         }
         if (!schedulerPolicy.isLaneRegistered(request.lane())) {
-            reply->abortWithError(
-                NetworkError::InvalidRequest,
-                QStringLiteral("QCNetworkAccessManager: scheduler lane is not registered: %1")
-                    .arg(request.lane().name()));
+            reply
+                ->abortWithError(NetworkError::InvalidRequest,
+                                 QStringLiteral(
+                                     "QCNetworkAccessManager: scheduler lane is not registered: %1")
+                                     .arg(request.lane().name()));
             return;
         }
 
         if (scheduler) {
-            scheduler->scheduleReply(reply, request.lane(), request.priority());
+            const QCNetworkRequestScheduler::CommandResult result
+                = scheduler->scheduleReply(reply, request.lane(), request.priority());
+            if (result != QCNetworkRequestScheduler::CommandResult::Applied) {
+                reply->abortWithError(
+                    NetworkError::InvalidRequest,
+                    QStringLiteral(
+                        "QCNetworkAccessManager: scheduler rejected request command (%1)")
+                        .arg(static_cast<int>(result)));
+            }
         } else {
             reply->abortWithError(NetworkError::InvalidRequest,
                                   QStringLiteral(

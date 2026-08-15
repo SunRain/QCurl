@@ -34,8 +34,8 @@ QList<QCNetworkReply *> QCNetworkRequestScheduler::pendingRequests() const
     QMutexLocker locker(&m_impl->mutex);
 
     QList<QCNetworkReply *> result;
-    result.reserve(m_impl->queues.pendingRequests.size());
-    for (const auto &request : std::as_const(m_impl->queues.pendingRequests)) {
+    result.reserve(m_impl->queues.pendingCount());
+    for (const auto &request : m_impl->queues.pendingRequests()) {
         if (request.reply) {
             result.append(request.reply);
         }
@@ -53,7 +53,7 @@ QList<QCNetworkReply *> QCNetworkRequestScheduler::runningRequests() const
     Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::runningRequests");
 
     QMutexLocker locker(&m_impl->mutex);
-    return m_impl->queues.runningRequests;
+    return m_impl->queues.runningRequests();
 }
 
 } // namespace QCurl

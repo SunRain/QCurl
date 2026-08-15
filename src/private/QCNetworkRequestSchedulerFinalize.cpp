@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include "QCNetworkRequestScheduler.h"
-
 #include "QCNetworkReply.h"
+#include "QCNetworkRequestScheduler.h"
 #include "private/QCNetworkRequestSchedulerPrivate_p.h"
 
 #include <QMetaObject>
@@ -15,49 +14,54 @@ namespace QCurl {
 
 void QCNetworkRequestScheduler::onRequestFinished(QCNetworkReply *reply)
 {
-    if (!reply) {
-        return;
-    }
-
     if (QThread::currentThread() != thread()) {
-        QPointer<QCNetworkReply> safeReply(reply);
-        Internal::invokeOnSchedulerOwnerThread(
-            this,
-            [this, safeReply]() {
-                if (safeReply) {
-                    onRequestFinished(safeReply.data());
-                }
-            },
-            "QCNetworkRequestScheduler::onRequestFinished");
+        qWarning() << "QCNetworkRequestScheduler::onRequestFinished: owner thread required";
         return;
     }
     Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::onRequestFinished");
+    if (!reply) {
+        return;
+    }
     Q_ASSERT_X(reply->thread() == thread(),
                "QCNetworkRequestScheduler::onRequestFinished",
                "reply must live on the scheduler owner thread");
 
-    const Internal::ReplyKey key = Internal::replyKey(reply);
+    const Internal::ReplyKey key         = Internal::replyKey(reply);
     const Internal::ReplyOutcome outcome = Internal::captureReplyOutcome(reply);
     Internal::FinalizeResult result;
     {
         QMutexLocker locker(&m_impl->mutex);
-        result = m_impl->finalizeReplyLocked(key, Internal::FinalizeTrigger::FinishedSignal, outcome);
+        result = m_impl->finalizeReplyLocked(key,
+                                             Internal::FinalizeTrigger::FinishedSignal,
+                                             outcome);
     }
 
     if (!result.wasTracked) {
         return;
     }
 
+    QPointer<QCNetworkRequestScheduler> safeScheduler(this);
+    QPointer<QCNetworkReply> safeReply(reply);
     if (result.emitCancelled) {
-        emit requestCancelled(reply, result.snapshot.lane, result.snapshot.hostKey);
+        Q_EMIT safeScheduler->requestCancelled(safeReply.data(),
+                                               result.snapshot.lane,
+                                               result.snapshot.hostKey);
+        if (!safeScheduler || !safeReply) {
+            return;
+        }
     }
 
     if (result.emitFinished) {
-        emit requestFinished(reply, result.snapshot.lane, result.snapshot.hostKey);
+        Q_EMIT safeScheduler->requestFinished(safeReply.data(),
+                                              result.snapshot.lane,
+                                              result.snapshot.hostKey);
+        if (!safeScheduler || !safeReply) {
+            return;
+        }
     }
 
     if (result.shouldKickQueue) {
-        processQueue();
+        safeScheduler->processQueue();
     }
 }
 
@@ -81,23 +85,14 @@ void QCNetworkRequestScheduler::updateBandwidthStats()
 
 void QCNetworkRequestScheduler::onReplyDestroyed(QObject *obj)
 {
-    if (!obj) {
-        return;
-    }
-
     if (QThread::currentThread() != thread()) {
-        QPointer<QObject> safeObject(obj);
-        Internal::invokeOnSchedulerOwnerThread(
-            this,
-            [this, safeObject]() {
-                if (safeObject) {
-                    onReplyDestroyed(safeObject.data());
-                }
-            },
-            "QCNetworkRequestScheduler::onReplyDestroyed");
+        qWarning() << "QCNetworkRequestScheduler::onReplyDestroyed: owner thread required";
         return;
     }
     Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::onReplyDestroyed");
+    if (!obj) {
+        return;
+    }
 
     const Internal::ReplyKey key = obj;
     Internal::FinalizeResult result;

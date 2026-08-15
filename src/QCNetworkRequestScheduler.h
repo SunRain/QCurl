@@ -31,6 +31,7 @@ class QCNetworkReply;
 class QCNetworkRequestSchedulerConfigData;
 class QCNetworkRequestSchedulerStatisticsData;
 class QCNetworkRequestSchedulerLaneConfigData;
+class QCNetworkRequestSchedulerTestAccess;
 
 /**
  * @brief 网络请求调度器
@@ -53,9 +54,13 @@ class QCNetworkRequestSchedulerLaneConfigData;
  *   先前排队的 queued invoke / 信号投递不再保证可达。
  * - 返回值型查询接口必须在 scheduler owner thread 调用；从非 owner thread 调用会
  *   fail-closed 返回默认值。
- * - fire-and-forget 控制接口从非 owner thread 调用时会排队回 scheduler owner thread。
+ * - 所有调度命令仅允许在 scheduler owner thread 调用；错误线程调用同步返回
+ *   `CommandResult::WrongThread`，不会排队，也不会触碰 reply 或调度状态。
  * - 本类信号始终在 scheduler owner thread 发射，不会漂移到调用线程。
  *
+ * @note QObject 借用合同：命令参数以及 `pendingRequests()`/`runningRequests()` 返回的
+ * reply 裸指针均为 non-owning 当次借用；只在 scheduler/reply owner thread 判空和调用，
+ * reply 析构后立即失效，不得跨事件循环保存。
  * @note 所有公共方法都使用互斥锁保护
  */
 class QCURL_EXPORT QCNetworkRequestScheduler : public QObject
@@ -175,6 +180,24 @@ public:
         PendingAndRunning, ///< pending + deferred + running 一并取消，用于整条 lane 排空
     };
 
+    /**
+     * @brief 表示调度命令的同步接受结果。
+     *
+     * 结果只描述命令返回时是否已同步提交调度状态变更；reply 的取消、执行与完成仍由
+     * reply 状态和 scheduler 信号表达。除 `Applied` 外均保证不触碰 reply 或调度状态。
+     */
+    enum class CommandResult {
+        Applied,                ///< 命令已同步提交状态变更。
+        NoChange,               ///< 命令合法，但目标已处于请求状态。
+        NotTracked,             ///< reply 未由当前 scheduler 跟踪。
+        InvalidState,           ///< 当前调度状态不接受该命令。
+        NullReply,              ///< reply 参数为空。
+        WrongThread,            ///< 调用线程不是 scheduler owner thread。
+        ThreadAffinityMismatch, ///< reply 与 scheduler 不在同一 owner thread。
+        InvalidArgument,        ///< 枚举或其他命令参数无效。
+    };
+    Q_ENUM(CommandResult)
+
 #ifdef QCURL_ENABLE_TEST_HOOKS
     /// 仅供仓内测试获取当前线程绑定的 scheduler。
     static QCNetworkRequestScheduler *instanceForTesting();
@@ -197,38 +220,42 @@ public:
      *
      * 仅对 Pending 状态有效：从 pending 队列移除并进入 deferred 列表。
      *
-     * 对 Running/Deferred 状态不会做任何事并返回 false。若调用方需要释放并发槽位，
+     * 对 Running/Deferred 状态不会做任何事并返回 `InvalidState`。若调用方需要释放并发槽位，
      * 请使用 `cancelRequest()`（或按 lane/范围使用 `cancelLaneRequests()`）。
      *
-     * @param reply 要延后的响应对象
-     * @return 是否成功将请求从 Pending 移入 deferred
+     * @param reply 非 owning reply 借用；只在本次 owner-thread 调用内使用。
+     * @return 同步接受结果；失败时不改变 reply、队列或统计状态。
      */
-    bool deferPendingRequest(QCNetworkReply *reply);
+    [[nodiscard]] CommandResult deferPendingRequest(QCNetworkReply *reply);
 
     /**
      * @brief 恢复调度请求（从 deferred 列表重新入队）
      *
      * 当前实现会保留 defer 前的原始 priority 重新入队，不做静默降级。
      *
-     * @param reply 要恢复调度的响应对象
+     * @param reply 非 owning reply 借用；只在本次 owner-thread 调用内使用。
+     * @return 同步接受结果；非 deferred、未跟踪或失败时状态保持不变。
      */
-    void undeferRequest(QCNetworkReply *reply);
+    [[nodiscard]] CommandResult undeferRequest(QCNetworkReply *reply);
 
     /**
      * @brief 取消请求
      *
      * 取消请求并从队列中移除。
      *
-     * @param reply 要取消的响应对象
+     * @param reply 非 owning reply 借用；只在本次 owner-thread 调用内使用。
+     * @return 同步接受结果；`Applied` 只表示取消已提交，不表示 reply 已完成。
      */
-    void cancelRequest(QCNetworkReply *reply);
+    [[nodiscard]] CommandResult cancelRequest(QCNetworkReply *reply);
 
     /**
      * @brief 取消所有请求
      *
      * 取消所有等待中和执行中的请求。
+     *
+     * @return 有跟踪请求被提交取消时返回 `Applied`；队列已空时返回 `NoChange`。
      */
-    void cancelAllRequests();
+    [[nodiscard]] CommandResult cancelAllRequests();
 
     /**
      * @brief 取消指定 lane 的请求
@@ -236,19 +263,26 @@ public:
      * `PendingOnly` 适合只清理排队中的控制/数据面请求，
      * `PendingAndRunning` 则会把正在执行的同 lane 请求也纳入取消。
      *
-     * @return 被取消的请求数量
+     * @param lane lane 名称；只读取本次调用，不跨事件循环保存。
+     * @param scope 取消范围。
+     * @param cancelledRequests 可选输出；命令被接受时写入已提交取消的请求数量，失败时写入 0。
+     * @return 同步接受结果；无匹配请求返回 `NoChange`。
      */
-    int cancelLaneRequests(const QString &lane, CancelLaneScope scope);
+    [[nodiscard]] CommandResult cancelLaneRequests(const QString &lane,
+                                                   CancelLaneScope scope,
+                                                   int *cancelledRequests = nullptr);
 
     /**
      * @brief 动态调整请求优先级
      *
-     * @param reply 要调整优先级的响应对象
+     * @param reply 非 owning reply 借用；只在本次 owner-thread 调用内使用。
      * @param newPriority 新的优先级
+     * @return 同步接受结果；相同优先级返回 `NoChange`，非 Pending 返回 `InvalidState`。
      *
      * @note 只能调整 pending 中的请求；不会抢占/影响已 Running 的请求，也不会触发对 Running 的隐式 cancel/pause。
      */
-    void changePriority(QCNetworkReply *reply, QCNetworkRequestPriority newPriority);
+    [[nodiscard]] CommandResult changePriority(QCNetworkReply *reply,
+                                               QCNetworkRequestPriority newPriority);
 
     /**
      * @brief 获取统计信息
@@ -271,7 +305,7 @@ public:
      */
     QList<QCNetworkReply *> runningRequests() const;
 
-signals:
+Q_SIGNALS:
     /**
      * @brief 请求已加入队列
      *
@@ -356,14 +390,14 @@ signals:
     void bandwidthThrottled(qint64 currentBytesPerSec);
 
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkRequestScheduler)
+
     friend class QCNetworkAccessManager;
     friend class QCNetworkAccessManagerPrivate;
+    friend class QCNetworkRequestSchedulerTestAccess;
 
     explicit QCNetworkRequestScheduler(QObject *parent = nullptr);
     ~QCNetworkRequestScheduler() override;
-
-    // 禁止拷贝和赋值
-    Q_DISABLE_COPY(QCNetworkRequestScheduler)
 
     struct Impl;
     QScopedPointer<Impl> m_impl;
@@ -373,12 +407,16 @@ private:
      *
      * 调度器仅负责排队、统计和启动，不再负责构造 reply。
      * lane/hostKey/priority 会在这里被快照，后续 scheduler 信号都引用这份快照。
+     *
+     * @param reply 非 owning reply 借用；只在本次 owner-thread 调用内使用。
+     * @param lane 已验证的类型化 lane；非法 lane 返回 `InvalidArgument`。
+     * @param priority 已验证的调度优先级；非法枚举返回 `InvalidArgument`。
+     * @return 同步接受结果；拒绝时 manager 会把新 reply 结束为 `InvalidRequest`。
      */
-    void scheduleReply(QCNetworkReply *reply,
-                       const QCNetworkLaneKey &lane,
-                       QCNetworkRequestPriority priority);
-    [[nodiscard]] bool applyPolicy(const QCNetworkSchedulerPolicy &policy,
-                                   QString *error = nullptr);
+    [[nodiscard]] CommandResult scheduleReply(QCNetworkReply *reply,
+                                              const QCNetworkLaneKey &lane,
+                                              QCNetworkRequestPriority priority);
+    [[nodiscard]] bool applyPolicy(const QCNetworkSchedulerPolicy &policy, QString *error = nullptr);
 
     /**
      * @brief 处理队列

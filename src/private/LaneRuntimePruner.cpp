@@ -32,25 +32,26 @@ void LaneRuntimePruner::pruneIdleTemporaryLanes(SchedulerQueues *queues) const
     }
 
     QSet<QString> activeLanes;
-    collectQueuedLanes(queues->pendingRequests, &activeLanes);
-    collectQueuedLanes(queues->deferredRequests, &activeLanes);
-    for (auto it = queues->runningLaneCount.cbegin(); it != queues->runningLaneCount.cend(); ++it) {
+    collectQueuedLanes(queues->m_pendingRequests, &activeLanes);
+    collectQueuedLanes(queues->m_deferredRequests, &activeLanes);
+    for (auto it = queues->m_runningLaneCount.cbegin(); it != queues->m_runningLaneCount.cend();
+         ++it) {
         if (it.value() > 0) {
             activeLanes.insert(it.key());
         }
     }
 
     QStringList retainedLanes;
-    retainedLanes.reserve(queues->laneOrder.size());
-    for (const QString &lane : std::as_const(queues->laneOrder)) {
-        if (queues->laneConfigs.contains(lane) || activeLanes.contains(lane)) {
+    retainedLanes.reserve(queues->m_laneOrder.size());
+    for (const QString &lane : std::as_const(queues->m_laneOrder)) {
+        if (queues->m_laneConfigs.contains(lane) || activeLanes.contains(lane)) {
             retainedLanes.append(lane);
             continue;
         }
-        queues->laneDeficit.remove(lane);
-        queues->laneLastStartedHost.remove(lane);
+        queues->m_laneDeficit.remove(lane);
+        queues->m_laneLastStartedHost.remove(lane);
     }
-    queues->laneOrder = retainedLanes;
+    queues->m_laneOrder = retainedLanes;
 }
 
 } // namespace Internal

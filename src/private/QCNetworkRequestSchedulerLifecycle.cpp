@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+#include "QCNetworkReply.h"
 #include "QCNetworkRequestScheduler.h"
-
 #include "private/QCNetworkRequestSchedulerPrivate_p.h"
 
+#include <QMutexLocker>
+#include <QPointer>
 #include <QThread>
 #include <QTimer>
+
+#include <utility>
 
 namespace {
 
@@ -44,9 +48,34 @@ QCNetworkRequestScheduler::QCNetworkRequestScheduler(QObject *parent)
             &QCNetworkRequestScheduler::updateBandwidthStats);
 }
 
+/// 析构期只清空内部调度状态并投递 reply 取消，不发射调度器业务信号。
 QCNetworkRequestScheduler::~QCNetworkRequestScheduler()
 {
-    cancelAllRequests();
+    Internal::assertSchedulerOwnerThread(this,
+                                         "QCNetworkRequestScheduler::~QCNetworkRequestScheduler");
+
+    QList<QPointer<QCNetworkReply>> replies;
+    {
+        QMutexLocker locker(&m_impl->mutex);
+        const QList<Internal::ReplyKey> keys = m_impl->replyStates.keys();
+        replies.reserve(keys.size());
+        for (Internal::ReplyKey key : keys) {
+            const Internal::FinalizeResult result
+                = m_impl->finalizeReplyLocked(key, Internal::FinalizeTrigger::ExplicitCancel);
+            if (result.wasTracked) {
+                replies.append(Internal::replyFromKey(key));
+            }
+        }
+
+        m_impl->bytesTransferredInWindow = 0;
+        m_impl->queues.resetRuntimeState();
+    }
+
+    for (const auto &reply : std::as_const(replies)) {
+        if (reply) {
+            Internal::invokeReplyCancel(reply.data());
+        }
+    }
 }
 
 } // namespace QCurl

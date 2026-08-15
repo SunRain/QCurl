@@ -6,12 +6,13 @@
 #ifndef QCNETWORKACCESSMANAGER_H
 #define QCNETWORKACCESSMANAGER_H
 
-#include "QCGlobal.h"
 #include "QCCookie.h"
 #include "QCCookieAsyncResult.h"
+#include "QCGlobal.h"
 #include "QCNetworkHttpMethod.h"
 #include "QCNetworkLaneCancelResult.h"
 #include "QCNetworkLaneKey.h"
+#include "QCNetworkLogger.h"
 #include "QCNetworkSchedulerPolicy.h"
 
 #include <QByteArray>
@@ -35,7 +36,6 @@ class QCNetworkAccessManagerPrivate;
 class QCNetworkDownloadToDeviceJob;
 class QCNetworkRequestScheduler;
 class QCNetworkCache;
-class QCNetworkLogger;
 class QCNetworkMiddleware;
 class ShareHandleConfigData;
 class HstsAltSvcCacheConfigData;
@@ -45,6 +45,13 @@ class HstsAltSvcCacheConfigData;
  *
  * manager 保存 cookies、cache、中间件、日志和调度器等共享配置。返回的 reply 遵循
  * QObject 生命周期规则，调用方通常连接信号后通过 deleteLater() 释放。
+ *
+ * @note 错误生命周期：manager 不保存可查询的“最近一次错误”。同步请求工厂返回非空 reply
+ * 只表示请求已接纳，传输结果以该 reply 的终态为准；cookie Future 的完成值是对应调用的
+ * 唯一权威结果。
+ * @note QObject 借用合同：manager 返回的 reply 由其 QObject parent tree 管理；cache、
+ * middleware 等外部服务指针均为可空 non-owning 借用，由调用方保活。所有裸 QObject 指针
+ * 只能在其 affinity thread 判空和调用，对象销毁后立即失效。
  */
 class QCURL_EXPORT QCNetworkAccessManager : public QObject
 {
@@ -60,7 +67,7 @@ public:
         NotOpen   = 0x0,
         ReadOnly  = 0x1,
         WriteOnly = 0x2,
-        ReadWrite = ReadOnly | WriteOnly
+        ReadWrite = ReadOnly | WriteOnly,
     };
 
     /// 返回当前共享 cookie 文件路径；为空表示未配置。
@@ -74,9 +81,9 @@ public:
                            CookieFileModeFlag flag = CookieFileModeFlag::ReadWrite);
 
     /// 导入 cookies 到当前 manager 的 cookie store（仅在 shareCookies 开启时可用）。
-    bool importCookies(const QList<QCCookie> &cookies,
-                       const QUrl &originUrl = QUrl(),
-                       QString *error        = nullptr);
+    [[nodiscard]] bool importCookies(const QList<QCCookie> &cookies,
+                                     const QUrl &originUrl = QUrl(),
+                                     QString *error        = nullptr);
 
     /**
      * @brief 导出当前 manager 的 cookies（仅在 shareCookies 开启时可用）。
@@ -84,21 +91,21 @@ public:
      * @param error 可选错误输出；返回空值时写入失败原因。
      * @return 空值表示导出失败；空列表表示导出成功但没有匹配 cookie。
      */
-    [[nodiscard]] std::optional<QList<QCCookie>> exportCookies(
-        const QUrl &filterUrl = QUrl(), QString *error = nullptr) const;
+    [[nodiscard]] std::optional<QList<QCCookie>> exportCookies(const QUrl &filterUrl = QUrl(),
+                                                               QString *error = nullptr) const;
 
     /// 清空当前 manager 的 cookie store（仅在 shareCookies 开启时可用）。
-    bool clearAllCookies(QString *error = nullptr);
+    [[nodiscard]] bool clearAllCookies(QString *error = nullptr);
 
-    /// 在 manager owner thread 异步导入 cookies，并通过 signal 与 QFuture 返回同一结果。
+    /// 在 manager owner thread 异步导入 cookies，并返回唯一的结构化完成结果。
     [[nodiscard]] QFuture<QCCookieOperationResult> importCookiesAsync(
         const QList<QCCookie> &cookies, const QUrl &originUrl = QUrl());
 
-    /// 在 manager owner thread 异步导出 cookies，并通过 signal 与 QFuture 返回同一结果。
+    /// 在 manager owner thread 异步导出 cookies，并返回唯一的结构化完成结果。
     [[nodiscard]] QFuture<QCCookieExportResult> exportCookiesAsync(
         const QUrl &filterUrl = QUrl()) const;
 
-    /// 在 manager owner thread 异步清空 cookies，并通过 signal 与 QFuture 返回同一结果。
+    /// 在 manager owner thread 异步清空 cookies，并返回唯一的结构化完成结果。
     [[nodiscard]] QFuture<QCCookieOperationResult> clearAllCookiesAsync();
 
     /**
@@ -262,11 +269,20 @@ public:
                                       QByteArrayView method,
                                       const QByteArray &data);
 
-    /// 设置日志记录器（manager 不持有所有权）。
-    void setLogger(QCNetworkLogger *logger);
+    /**
+     * @brief 设置当前日志记录器句柄。
+     * @param logger 可为空的 opaque 句柄；manager 保存一份值拷贝。
+     *
+     * 已创建 reply 保留创建时捕获的独立 handle snapshot，后续替换或清空 manager
+     * 的 logger 不会改变这些 reply 的日志目标。
+     */
+    void setLogger(const QCNetworkLoggerHandle &logger);
 
-    /// 获取当前日志记录器。
-    QCNetworkLogger *logger() const;
+    /**
+     * @brief 返回当前日志记录器句柄。
+     * @return 可复制的 opaque 句柄；句柄内 `get()` 的借用只在至少一个同控制块句柄存活时有效。
+     */
+    [[nodiscard]] QCNetworkLoggerHandle logger() const;
 
     /**
      * @brief 启用/关闭 libcurl verbose/debug trace（强制脱敏）
@@ -292,7 +308,6 @@ public:
 
     /// 获取当前中间件列表。
     QList<QCNetworkMiddleware *> middlewares() const;
-
 
     /**
      * @brief 启用/禁用请求调度器
@@ -334,8 +349,8 @@ public:
      *
      * @return 结构化结果；成功且无匹配请求时 `cancelledRequests()` 为 0。
      */
-    [[nodiscard]] QCNetworkLaneCancelResult cancelLaneRequests(
-        const QCNetworkLaneKey &lane, SchedulerCancelScope scope);
+    [[nodiscard]] QCNetworkLaneCancelResult cancelLaneRequests(const QCNetworkLaneKey &lane,
+                                                               SchedulerCancelScope scope);
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
     /// 仅供仓内测试观察 manager-owned scheduler 信号与队列状态。
@@ -357,16 +372,13 @@ public:
     QCNetworkCache *cache() const;
 
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkAccessManager)
+
     friend class QCNetworkDownloadToDeviceJob;
     friend class QCNetworkResumableDownloadJob;
 
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;
-
-Q_SIGNALS:
-    void cookiesImported(const QCurl::QCCookieOperationResult &result);
-    void cookiesExported(const QCurl::QCCookieExportResult &result);
-    void cookiesCleared(const QCurl::QCCookieOperationResult &result);
 };
 
 } // namespace QCurl

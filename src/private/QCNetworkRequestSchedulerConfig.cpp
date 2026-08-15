@@ -82,8 +82,7 @@ bool QCNetworkRequestScheduler::applyPolicy(const QCNetworkSchedulerPolicy &poli
             if (!hasLaneConfig) {
                 return false;
             }
-            m_impl->queues.setLaneConfig(
-                lane.name(), schedulerLaneConfigFromPolicy(laneConfig));
+            m_impl->queues.setLaneConfig(lane.name(), schedulerLaneConfigFromPolicy(laneConfig));
         }
     }
 

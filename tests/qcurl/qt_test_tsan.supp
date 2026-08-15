@@ -1,0 +1,4 @@
+# QtTest 6.11.1 的已结束 watchdog 会与测试日志器关闭过程发生竞争。
+race:QPlainTestLogger::stopLogging
+# addr2line 后端将同一竞争稳定归因到日志输出基类。
+race:QAbstractTestLogger::outputString

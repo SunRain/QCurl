@@ -65,7 +65,7 @@ public:
         QTimer::singleShot(8000, this, &SchedulerDemo::finish);
     }
 
-private slots:
+private Q_SLOTS:
     void demo1_PriorityOrdering()
     {
         qInfo() << "\n--- 演示 1：优先级排序 ---";

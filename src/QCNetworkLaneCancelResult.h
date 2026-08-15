@@ -19,7 +19,12 @@ namespace QCurl {
 
 class QCNetworkLaneCancelResultData;
 
-/** manager-level lane 取消操作的结构化结果。 */
+/**
+ * @brief manager-level lane 取消操作的结构化结果。
+ *
+ * @note 错误生命周期：结果构造后不再变化。成功时 `error()` 为空且取消数量非负；失败时
+ * `status()` 是权威分类、取消数量为零，`error()` 只提供诊断文本。
+ */
 class QCURL_EXPORT QCNetworkLaneCancelResult
 {
 public:

@@ -48,8 +48,8 @@ ReplyOutcome captureReplyOutcome(QCNetworkReply *reply)
         return outcome;
     }
 
-    outcome.cancelled = reply->state() == ReplyState::Cancelled
-                        || reply->error() == NetworkError::OperationCancelled;
+    outcome.cancelled     = reply->state() == ReplyState::Cancelled
+                            || reply->error() == NetworkError::OperationCancelled;
     outcome.bytesReceived = reply->bytesReceived();
     return outcome;
 }
@@ -169,8 +169,9 @@ bool SchedulerQueues::takeQueuedRequest(QList<QueuedRequest> &requests,
                                         ReplyKey key,
                                         QueuedRequest *out)
 {
-    const int index = findQueuedRequestIndex(
-        requests, [key](const QueuedRequest &request) { return request.key == key; });
+    const int index = findQueuedRequestIndex(requests, [key](const QueuedRequest &request) {
+        return request.key == key;
+    });
     if (index < 0) {
         return false;
     }
@@ -184,30 +185,30 @@ bool SchedulerQueues::takeQueuedRequest(QList<QueuedRequest> &requests,
 
 void SchedulerQueues::ensureLane(const QString &lane)
 {
-    if (!laneOrder.contains(lane)) {
-        laneOrder.append(lane);
+    if (!m_laneOrder.contains(lane)) {
+        m_laneOrder.append(lane);
     }
-    if (!laneDeficit.contains(lane)) {
-        laneDeficit.insert(lane, 0);
+    if (!m_laneDeficit.contains(lane)) {
+        m_laneDeficit.insert(lane, 0);
     }
 }
 
 void SchedulerQueues::clearLaneConfigs()
 {
-    laneConfigs.clear();
+    m_laneConfigs.clear();
     resetRuntimeState();
 }
 
 void SchedulerQueues::setLaneConfig(const QString &lane,
                                     const QCNetworkRequestScheduler::LaneConfig &config)
 {
-    laneConfigs.insert(lane, config);
+    m_laneConfigs.insert(lane, config);
     ensureLane(lane);
 }
 
 QCNetworkRequestScheduler::LaneConfig SchedulerQueues::laneConfigFor(const QString &lane) const
 {
-    return laneConfigs.value(lane, QCNetworkRequestScheduler::LaneConfig{});
+    return m_laneConfigs.value(lane, QCNetworkRequestScheduler::LaneConfig{});
 }
 
 int SchedulerQueues::selectNextIndex(const QCNetworkRequestScheduler::Config &config)
@@ -217,60 +218,72 @@ int SchedulerQueues::selectNextIndex(const QCNetworkRequestScheduler::Config &co
     if (!nextRequestId) {
         return -1;
     }
-    return findQueuedRequestIndex(pendingRequests, [nextRequestId](const QueuedRequest &request) {
+    return findQueuedRequestIndex(m_pendingRequests, [nextRequestId](const QueuedRequest &request) {
         return request.requestId == nextRequestId;
     });
 }
 
 void SchedulerQueues::markRunning(const QueuedRequest &request)
 {
-    runningRequests.append(request.reply);
-    runningLaneCount[request.snapshot.lane]++;
-    hostConnectionCount[request.snapshot.hostKey]++;
-    incrementNestedCounter(runningLaneHostCount, request.snapshot.lane, request.snapshot.hostKey);
-    laneLastStartedHost.insert(request.snapshot.lane, request.snapshot.hostKey);
+    m_runningRequests.append(request);
+    m_runningLaneCount[request.snapshot.lane]++;
+    m_hostConnectionCount[request.snapshot.hostKey]++;
+    incrementNestedCounter(m_runningLaneHostCount, request.snapshot.lane, request.snapshot.hostKey);
+    m_laneLastStartedHost.insert(request.snapshot.lane, request.snapshot.hostKey);
 }
 
-bool SchedulerQueues::removeRunning(QCNetworkReply *reply, const ReplySnapshot &snapshot)
+QList<QCNetworkReply *> SchedulerQueues::runningRequests() const
 {
-    if (!runningRequests.removeOne(reply)) {
+    QList<QCNetworkReply *> replies;
+    replies.reserve(m_runningRequests.size());
+    for (const auto &request : m_runningRequests) {
+        if (request.reply) {
+            replies.append(request.reply);
+        }
+    }
+    return replies;
+}
+
+bool SchedulerQueues::removeRunning(ReplyKey key, const ReplySnapshot &snapshot)
+{
+    if (!takeQueuedRequest(m_runningRequests, key)) {
         return false;
     }
 
-    runningLaneCount[snapshot.lane]--;
-    if (runningLaneCount.value(snapshot.lane, 0) <= 0) {
-        runningLaneCount.remove(snapshot.lane);
+    m_runningLaneCount[snapshot.lane]--;
+    if (m_runningLaneCount.value(snapshot.lane, 0) <= 0) {
+        m_runningLaneCount.remove(snapshot.lane);
     }
 
-    hostConnectionCount[snapshot.hostKey]--;
-    if (hostConnectionCount.value(snapshot.hostKey, 0) <= 0) {
-        hostConnectionCount.remove(snapshot.hostKey);
+    m_hostConnectionCount[snapshot.hostKey]--;
+    if (m_hostConnectionCount.value(snapshot.hostKey, 0) <= 0) {
+        m_hostConnectionCount.remove(snapshot.hostKey);
     }
 
-    decrementNestedCounter(runningLaneHostCount, snapshot.lane, snapshot.hostKey);
+    decrementNestedCounter(m_runningLaneHostCount, snapshot.lane, snapshot.hostKey);
     return true;
 }
 
 void SchedulerQueues::resetRuntimeState()
 {
     QStringList configuredLaneOrder;
-    configuredLaneOrder.reserve(laneOrder.size());
-    for (const QString &lane : std::as_const(laneOrder)) {
-        if (!laneConfigs.contains(lane) || configuredLaneOrder.contains(lane)) {
+    configuredLaneOrder.reserve(m_laneOrder.size());
+    for (const QString &lane : std::as_const(m_laneOrder)) {
+        if (!m_laneConfigs.contains(lane) || configuredLaneOrder.contains(lane)) {
             continue;
         }
         configuredLaneOrder.append(lane);
     }
 
-    laneOrder = configuredLaneOrder;
-    laneDeficit.clear();
-    for (const QString &lane : std::as_const(laneOrder)) {
-        laneDeficit.insert(lane, 0);
+    m_laneOrder = configuredLaneOrder;
+    m_laneDeficit.clear();
+    for (const QString &lane : std::as_const(m_laneOrder)) {
+        m_laneDeficit.insert(lane, 0);
     }
-    laneLastStartedHost.clear();
-    hostReservationCursor   = 0;
-    globalReservationCursor = 0;
-    bestEffortCursor        = 0;
+    m_laneLastStartedHost.clear();
+    m_hostReservationCursor   = 0;
+    m_globalReservationCursor = 0;
+    m_bestEffortCursor        = 0;
 }
 
 } // namespace Internal

@@ -20,7 +20,7 @@ Internal::SchedulerStartContext QCNetworkRequestScheduler::Impl::prepareStartCon
     Internal::SchedulerStartContext context;
     QMutexLocker locker(&mutex);
     connectProgressTracking(scheduler, reply, key);
-    context.snapshot = replySnapshots.value(key);
+    context.snapshot    = replySnapshots.value(key);
     context.startTicket = nextStartTicket++;
     startTickets.insert(key, context.startTicket);
     return context;
@@ -37,7 +37,11 @@ void QCNetworkRequestScheduler::Impl::dispatchReplyExecution(
 
     QMetaObject::invokeMethod(
         reply,
-        [safeScheduler, safeReply, snapshot = context.snapshot, key, ticket = context.startTicket]() {
+        [safeScheduler,
+         safeReply,
+         snapshot = context.snapshot,
+         key,
+         ticket = context.startTicket]() {
             if (!safeScheduler || !safeReply) {
                 return;
             }
@@ -55,7 +59,9 @@ void QCNetworkRequestScheduler::Impl::dispatchReplyExecution(
                 return;
             }
 
-            Q_EMIT safeScheduler->requestAboutToStart(safeReply.data(), snapshot.lane, snapshot.hostKey);
+            Q_EMIT safeScheduler->requestAboutToStart(safeReply.data(),
+                                                      snapshot.lane,
+                                                      snapshot.hostKey);
 
             if (!safeScheduler || !safeReply || !isStartStillValid()) {
                 return;
@@ -80,7 +86,7 @@ bool QCNetworkRequestScheduler::Impl::resetBandwidthWindow()
 {
     QMutexLocker locker(&mutex);
     bytesTransferredInWindow = 0;
-    return !queues.pendingRequests.isEmpty();
+    return queues.hasPendingRequests();
 }
 
 } // namespace QCurl

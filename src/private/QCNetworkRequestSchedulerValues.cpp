@@ -7,13 +7,14 @@
 
 namespace QCurl {
 
+/// @brief 保存请求调度器运行参数的隐式共享配置。
 class QCNetworkRequestSchedulerConfigData : public QSharedData
 {
 public:
-    int maxConcurrentRequests   = 6;
-    int maxRequestsPerHost      = 2;
+    int maxConcurrentRequests      = 6;
+    int maxRequestsPerHost         = 2;
     qint64 maxBandwidthBytesPerSec = 0;
-    bool enableThrottling       = true;
+    bool enableThrottling          = true;
 };
 
 QCNetworkRequestScheduler::Config::Config()
@@ -73,6 +74,7 @@ void QCNetworkRequestScheduler::Config::setEnableThrottling(bool enabled)
     d->enableThrottling = enabled;
 }
 
+/// @brief 保存请求调度器运行指标的隐式共享快照。
 class QCNetworkRequestSchedulerStatisticsData : public QSharedData
 {
 public:
@@ -174,6 +176,7 @@ void QCNetworkRequestScheduler::Statistics::setAvgResponseTime(double value)
     d->avgResponseTime = value;
 }
 
+/// @brief 保存单个请求调度通道的隐式共享配置。
 class QCNetworkRequestSchedulerLaneConfigData : public QSharedData
 {
 public:

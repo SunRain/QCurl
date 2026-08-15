@@ -44,11 +44,12 @@ QString defaultErrorForFailureReason(QCNetworkLaneCancelResult::FailureReason re
 
 } // namespace
 
+/// @brief 保存调度通道取消操作的隐式共享结果。
 class QCNetworkLaneCancelResultData : public QSharedData
 {
 public:
     QCNetworkLaneCancelResult::Status status = QCNetworkLaneCancelResult::Status::Success;
-    int cancelledRequests = 0;
+    int cancelledRequests                    = 0;
     QString error;
 };
 
@@ -79,7 +80,7 @@ QCNetworkLaneCancelResult QCNetworkLaneCancelResult::success(int cancelledReques
 {
     Q_ASSERT(cancelledRequests >= 0);
     QCNetworkLaneCancelResult result;
-    result.d->status = Status::Success;
+    result.d->status            = Status::Success;
     result.d->cancelledRequests = std::max(0, cancelledRequests);
     return result;
 }
@@ -89,7 +90,7 @@ QCNetworkLaneCancelResult QCNetworkLaneCancelResult::failure(FailureReason reaso
 {
     QCNetworkLaneCancelResult result;
     result.d->status = statusFromFailureReason(reason);
-    result.d->error = error.isEmpty() ? defaultErrorForFailureReason(reason) : error;
+    result.d->error  = error.isEmpty() ? defaultErrorForFailureReason(reason) : error;
     return result;
 }
 
