@@ -5,7 +5,7 @@ NetworkFeaturesDemo shows selected QCurl network capabilities on the current `1.
 ## Surface labels
 
 - HTTP/3: Core / Stable capability, depending on runtime libcurl and server support.
-- WebSocket compression: Other Extras / Preview.
+- WebSocket bounded asynchronous send/receive: Other Extras / Preview.
 - Diagnostics: Other Extras / Preview.
 
 ## Build
@@ -24,7 +24,7 @@ cmake --build build --target NetworkFeaturesDemo
 ## Demo menu
 
 1. HTTP/3 request example.
-2. WebSocket compression example.
+2. WebSocket Preview echo example with explicit buffer and close-timeout limits.
 3. Network diagnostics example.
 4. Combined run.
 
@@ -33,7 +33,7 @@ cmake --build build --target NetworkFeaturesDemo
 - Qt6 Core.
 - QCurl built with the relevant example targets.
 - HTTP/3 requires libcurl with HTTP/3 / QUIC support and a server that supports HTTP/3.
-- WebSocket compression requires WebSocket support and permessage-deflate support on the peer.
+- WebSocket requires a reachable `ws://` or `wss://` peer and remains outside the Core Stable contract.
 - Diagnostics may require network access depending on the selected probe.
 
 ## Related docs

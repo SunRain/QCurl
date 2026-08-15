@@ -4,13 +4,14 @@
  *
  * 演示 QCurl v2.17-v2.19 的新功能:
  * 1. HTTP/3 支持 (Core / Stable capability)
- * 2. WebSocket 压缩扩展 (Other Extras / Preview)
+ * 2. WebSocket 有界异步收发 (Other Extras / Preview)
  * 3. 网络诊断工具 (Other Extras / Preview)
  *
  */
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QFutureWatcher>
 #include <QTextStream>
 #include <QTimer>
 
@@ -27,7 +28,6 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 #include "QCWebSocket.h"
-#include "QCWebSocketCompressionConfig.h"
 #endif
 
 using namespace QCurl;
@@ -50,7 +50,7 @@ public:
         m_output << "========================================\n\n";
     }
 
-public slots:
+public Q_SLOTS:
     /**
      * @brief 运行所有示例
      */
@@ -58,7 +58,7 @@ public slots:
     {
         m_output << "【演示菜单】\n";
         m_output << "1. HTTP/3 请求示例\n";
-        m_output << "2. WebSocket 压缩示例\n";
+        m_output << "2. WebSocket Preview 收发示例\n";
         m_output << "3. 网络诊断示例\n";
         m_output << "4. 综合演示（依次执行上述所有示例）\n\n";
 
@@ -66,7 +66,7 @@ public slots:
         demoHttp3();
     }
 
-private slots:
+private Q_SLOTS:
     /**
      * @brief HTTP/3 请求示例
      */
@@ -154,65 +154,50 @@ private slots:
             reply->deleteLater();
 
             // 继续下一个演示
-            demoWebSocketCompression();
+            demoWebSocketPreview();
         });
     }
 
     /**
-     * @brief WebSocket 压缩示例
+     * @brief WebSocket Preview 收发示例
      */
-    void demoWebSocketCompression()
+    void demoWebSocketPreview()
     {
         m_output << "========================================\n";
-        m_output << "2. WebSocket 压缩示例\n";
+        m_output << "2. WebSocket Preview 收发示例\n";
         m_output << "========================================\n\n";
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
         m_output << "WebSocket 支持: ✅ 已启用\n\n";
 
-        // 创建 WebSocket 连接
         QUrl wsUrl("wss://echo.websocket.org");
-        // 配置压缩（RFC 7692 permessage-deflate）
-        QCWebSocketCompressionConfig compConfig = QCWebSocketCompressionConfig::defaultConfig();
         QCWebSocketOptions options;
-        options.setCompressionConfig(compConfig);
+        QString optionError;
+        if (!options.setMaxMessageBytes(8 * 1024 * 1024, &optionError)
+            || !options.setMaxPendingSendBytes(4 * 1024 * 1024, &optionError)
+            || !options.setCloseHandshakeTimeout(std::chrono::seconds{5}, &optionError)) {
+            m_output << "❌ WebSocket 配置无效: " << optionError << "\n\n";
+            demoNetworkDiagnostics();
+            return;
+        }
         QCWebSocket *socket = new QCWebSocket(wsUrl, options, this);
 
         m_output << "连接到: " << wsUrl.toString() << "\n";
-        m_output << "压缩配置:\n";
-        m_output << "  - 启用: " << (compConfig.enabled() ? "是" : "否") << "\n";
-        m_output << "  - 客户端窗口位数: " << compConfig.clientMaxWindowBits() << " (32KB)\n";
-        m_output << "  - 压缩级别: " << compConfig.compressionLevel() << "\n";
-        m_output << "  - 扩展头: " << compConfig.toExtensionHeader() << "\n\n";
+        m_output << "  - 最大消息: " << options.maxMessageBytes() << " 字节\n";
+        m_output << "  - 待发送队列: " << options.maxPendingSendBytes() << " 字节\n";
+        m_output << "  - 关闭握手超时: " << options.closeHandshakeTimeout().count() << " ms\n\n";
 
         connect(socket, &QCWebSocket::connected, this, [this, socket]() {
             m_output << "✅ WebSocket 连接成功!\n";
-
-            if (socket->isCompressionNegotiated()) {
-                m_output << "✅ 压缩协商成功!\n";
-                m_output << "协商后的配置: "
-                         << socket->options().compressionConfig().toExtensionHeader() << "\n";
-            } else {
-                m_output << "ℹ️  服务器不支持压缩或拒绝了压缩请求\n";
-            }
-
-            // 发送测试消息
-            QString testMessage = QString("测试消息 - ").repeated(50); // 重复内容以测试压缩效果
-            m_output << "\n发送测试消息 (原始大小: " << testMessage.toUtf8().size()
-                     << " 字节)...\n";
-            socket->sendTextMessage(testMessage);
+            const QString testMessage = QStringLiteral("QCurl WebSocket Preview echo");
+            m_output << "发送测试消息 (大小: " << testMessage.toUtf8().size() << " 字节)...\n";
+            static_cast<void>(socket->sendTextMessage(testMessage));
         });
 
         connect(socket, &QCWebSocket::textMessageReceived, this, [this, socket](const QString &msg) {
             m_output << "接收到回显消息 (大小: " << msg.toUtf8().size() << " 字节)\n";
-
-            if (socket->isCompressionNegotiated()) {
-                m_output << "\n压缩统计信息:\n";
-                m_output << socket->compressionStats() << "\n";
-            }
-
             m_output << "\n";
-            socket->close();
+            static_cast<void>(socket->close());
         });
 
         connect(socket, &QCWebSocket::disconnected, this, [this, socket]() {
@@ -231,7 +216,7 @@ private slots:
             demoNetworkDiagnostics();
         });
 
-        socket->open();
+        static_cast<void>(socket->open());
 #else
         m_output << "WebSocket 支持: ❌ 未启用\n";
         m_output << "（编译时未定义 QCURL_WEBSOCKET_SUPPORT）\n\n";
@@ -275,44 +260,47 @@ private slots:
             return;
         }
 
-        // 1. DNS 解析示例
-        m_output << "【DNS 解析】\n";
-        auto dnsResult = QCNetworkDiagnostics::resolveDNS("example.com", quickOptions);
-        m_output << dnsResult.toString() << "\n";
+        reportDiagnostic(QStringLiteral("DNS 解析"),
+                         QCNetworkDiagnostics::resolveDNS("example.com", quickOptions));
+        reportDiagnostic(QStringLiteral("TCP 连接测试"),
+                         QCNetworkDiagnostics::testConnection("example.com", httpPortOptions));
+        reportDiagnostic(QStringLiteral("SSL 证书检查"),
+                         QCNetworkDiagnostics::checkSSL("www.github.com", sslOptions));
+        reportDiagnostic(QStringLiteral("HTTP 探测"),
+                         QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"),
+                                                         httpOptions));
+        reportDiagnostic(QStringLiteral("综合诊断"),
+                         QCNetworkDiagnostics::diagnose(QUrl("https://www.cloudflare.com"),
+                                                        httpOptions));
+    }
 
-        // 2. TCP 连接测试示例
-        m_output << "【TCP 连接测试】\n";
-        auto connResult = QCNetworkDiagnostics::testConnection("example.com", httpPortOptions);
-        m_output << connResult.toString() << "\n";
+    void reportDiagnostic(const QString &label, QFuture<DiagResult> future)
+    {
+        ++m_pendingDiagnostics;
+        auto *watcher = new QFutureWatcher<DiagResult>(this);
+        connect(watcher, &QFutureWatcher<DiagResult>::finished, this, [this, watcher, label]() {
+            m_output << "【" << label << "】\n";
+            if (watcher->future().resultCount() == 1) {
+                m_output << watcher->future().result().toString() << "\n";
+            } else {
+                m_output << "诊断被取消且没有结果\n";
+            }
+            watcher->deleteLater();
 
-        // 3. SSL 证书检查示例
-        m_output << "【SSL 证书检查】\n";
-        auto sslResult = QCNetworkDiagnostics::checkSSL("www.github.com", sslOptions);
-        m_output << sslResult.toString() << "\n";
-
-        // 4. HTTP 探测示例
-        m_output << "【HTTP 探测】\n";
-        auto httpResult = QCNetworkDiagnostics::probeHTTP(QUrl("https://www.google.com"),
-                                                          httpOptions);
-        m_output << httpResult.toString() << "\n";
-
-        // 5. 综合诊断示例
-        m_output << "【综合诊断】\n";
-        auto diagResult = QCNetworkDiagnostics::diagnose(QUrl("https://www.cloudflare.com"),
-                                                         httpOptions);
-        m_output << diagResult.toString() << "\n";
-
-        m_output << "\n========================================\n";
-        m_output << "所有演示完成!\n";
-        m_output << "========================================\n";
-
-        // 退出应用
-        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+            if (--m_pendingDiagnostics == 0) {
+                m_output << "\n========================================\n";
+                m_output << "所有演示完成!\n";
+                m_output << "========================================\n";
+                QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+            }
+        });
+        watcher->setFuture(future);
     }
 
 private:
     QCNetworkAccessManager *m_manager;
     QTextStream m_output{stdout};
+    int m_pendingDiagnostics = 0;
 };
 
 int main(int argc, char *argv[])

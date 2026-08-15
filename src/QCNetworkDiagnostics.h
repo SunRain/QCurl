@@ -9,6 +9,7 @@
 #include "QCGlobal.h"
 
 #include <QDateTime>
+#include <QFuture>
 #include <QSharedDataPointer>
 #include <QString>
 #include <QStringList>
@@ -20,6 +21,7 @@
 namespace QCurl {
 
 class DiagResultData;
+class QCNetworkCancelToken;
 class QCNetworkDiagnosticsOptionsData;
 
 /**
@@ -27,6 +29,9 @@ class QCNetworkDiagnosticsOptionsData;
  *
  * 该类型使用 accessor-only shared-data 形式保持 ABI 友好。
  * `details()` 只承载当前实现的诊断线索，不承诺稳定 schema。
+ *
+ * @note 错误生命周期：完成后的 Future 结果是权威快照；成功结果的 `errorString()` 为空，
+ * 失败结果的文本有效。Future 完成后 operation 不再修改该结果，调用方也不应构造矛盾状态。
  */
 class QCURL_OTHER_EXTRAS_EXPORT DiagResult
 {
@@ -108,10 +113,14 @@ private:
 /**
  * @brief 网络诊断工具类
  *
- * 提供 DNS、连接、SSL、HTTP 和路由探测等同步诊断入口。
+ * 提供 DNS、连接、SSL、HTTP 和路由探测等异步诊断入口。
+ * 所有入口立即返回 `QFuture<DiagResult>`，实际工作由调用线程的 Qt 事件循环推进。
+ * 可选取消令牌在取消或析构时终止底层 lookup、socket、reply 或 process，并以
+ * `details["cancelled"] == true` 完成 Future。
  *
- * @note 大多数 API 会阻塞当前线程；其中多处实现依赖局部 `QEventLoop`
- * 或外部命令，不应在 UI 线程或低延迟线程中直接调用。
+ * @note QObject 借用合同：`cancelToken` 可为空且不被拥有；非空时必须与启动调用位于同一
+ * affinity thread，并由调用方保活到 Future 完成。token 取消或析构会终止当前步骤，完成后
+ * 诊断操作不再访问 token。
  */
 class QCURL_OTHER_EXTRAS_EXPORT QCNetworkDiagnostics
 {
@@ -123,12 +132,14 @@ public:
      *
      * @param hostname 要解析的域名
      * @param options 诊断配置，包含超时等参数
-     * @return DiagResult 解析结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 lookup
+     * @return 异步解析结果
      *
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult resolveDNS(const QString &hostname,
-                                 const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> resolveDNS(const QString &hostname,
+                                          const QCNetworkDiagnosticsOptions &options,
+                                          QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief DNS 反向解析
@@ -137,11 +148,14 @@ public:
      *
      * @param ip IP 地址（IPv4 或 IPv6）
      * @param options 诊断配置，包含超时等参数
-     * @return DiagResult 解析结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 lookup
+     * @return 异步解析结果
      *
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult reverseDNS(const QString &ip, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> reverseDNS(const QString &ip,
+                                          const QCNetworkDiagnosticsOptions &options,
+                                          QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief TCP 连接测试
@@ -150,12 +164,14 @@ public:
      *
      * @param host 主机名或 IP 地址
      * @param options 诊断配置，包含端口与超时
-     * @return DiagResult 测试结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 socket
+     * @return 异步测试结果
      *
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult testConnection(const QString &host,
-                                     const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> testConnection(const QString &host,
+                                              const QCNetworkDiagnosticsOptions &options,
+                                              QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief SSL/TLS 证书检查
@@ -164,12 +180,14 @@ public:
      *
      * @param host 主机名
      * @param options 诊断配置，包含端口与超时
-     * @return DiagResult 检查结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 socket
+     * @return 异步检查结果
      *
-     * 当前实现会进入局部事件循环等待握手完成。
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult checkSSL(const QString &host, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> checkSSL(const QString &host,
+                                        const QCNetworkDiagnosticsOptions &options,
+                                        QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief HTTP 探测
@@ -178,12 +196,14 @@ public:
      *
      * @param url 要探测的 URL
      * @param options 诊断配置，包含超时
-     * @return DiagResult 探测结果
+     * @param cancelToken 可选取消令牌；取消或析构时取消 reply
+     * @return 异步探测结果
      *
-     * 当前实现会进入局部事件循环等待 `QCNetworkReply::finished()`。
      * `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult probeHTTP(const QUrl &url, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> probeHTTP(const QUrl &url,
+                                         const QCNetworkDiagnosticsOptions &options,
+                                         QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief 综合诊断
@@ -192,10 +212,13 @@ public:
      *
      * @param url 要诊断的 URL
      * @param options 诊断配置，子步骤共享该配置中的超时参数
-     * @return DiagResult 诊断结果。`details` 当前包含子步骤结果与 `overallHealth`，
+     * @param cancelToken 可选取消令牌；取消或析构时终止当前子步骤
+     * @return 异步诊断结果。`details` 当前包含子步骤结果与 `overallHealth`，
      * 但不保证为稳定 schema。
      */
-    static DiagResult diagnose(const QUrl &url, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> diagnose(const QUrl &url,
+                                        const QCNetworkDiagnosticsOptions &options,
+                                        QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief Ping 测试（ICMP Echo）
@@ -204,12 +227,15 @@ public:
      *
      * @param host 主机名或 IP 地址
      * @param options 诊断配置，包含 ping 次数与单次超时
-     * @return DiagResult 测试结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 lookup/process
+     * @return 异步测试结果
      *
      * @note 当前实现可能依赖外部 `ping` 命令或原始套接字权限。
      * @note `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult ping(const QString &host, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> ping(const QString &host,
+                                    const QCNetworkDiagnosticsOptions &options,
+                                    QCNetworkCancelToken *cancelToken = nullptr);
 
     /**
      * @brief Traceroute 路由跟踪
@@ -218,12 +244,15 @@ public:
      *
      * @param host 主机名或 IP 地址
      * @param options 诊断配置，包含最大跳数与每跳超时
-     * @return DiagResult 测试结果
+     * @param cancelToken 可选取消令牌；取消或析构时终止 lookup/process
+     * @return 异步测试结果
      *
      * @note 当前实现可能依赖外部 `traceroute` / `tracert` 命令或原始套接字权限。
      * @note `details` 仅暴露当前实现可诊断信息，不保证为稳定 schema。
      */
-    static DiagResult traceroute(const QString &host, const QCNetworkDiagnosticsOptions &options);
+    static QFuture<DiagResult> traceroute(const QString &host,
+                                          const QCNetworkDiagnosticsOptions &options,
+                                          QCNetworkCancelToken *cancelToken = nullptr);
 
 private:
     QCNetworkDiagnostics() = delete; // 静态类，禁止实例化

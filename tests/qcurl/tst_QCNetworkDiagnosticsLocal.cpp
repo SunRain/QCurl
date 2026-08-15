@@ -6,11 +6,14 @@
  * 的可复核合同，不使用公网探测。
  */
 
+#include "QCNetworkCancelToken.h"
 #include "QCNetworkDiagnostics.h"
 #include "test_source_paths.h"
 
 #include <QByteArray>
 #include <QFile>
+#include <QFuture>
+#include <QFutureWatcher>
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QSharedPointer>
@@ -19,9 +22,17 @@
 #include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QtTest/QtTest>
 
+#include <type_traits>
+
 using namespace QCurl;
+
+static_assert(std::is_same_v<decltype(QCNetworkDiagnostics::resolveDNS(
+                                 QStringLiteral("localhost"), QCNetworkDiagnosticsOptions{})),
+                             QFuture<DiagResult>>,
+              "Diagnostics must expose QFuture<DiagResult>");
 
 namespace {
 
@@ -41,6 +52,26 @@ QCNetworkDiagnosticsOptions diagnosticsOptions(int timeoutMs, int port)
     const bool ok = options.setPort(port, &error);
     Q_ASSERT_X(ok, "diagnosticsOptions", qPrintable(error));
     return options;
+}
+
+DiagResult awaitDiagnostics(QFuture<DiagResult> future, int timeoutMs = 10000)
+{
+    QFutureWatcher<DiagResult> watcher;
+    QSignalSpy finishedSpy(&watcher, &QFutureWatcher<DiagResult>::finished);
+    watcher.setFuture(future);
+    if (!future.isFinished()) {
+        finishedSpy.wait(timeoutMs);
+    }
+
+    if (future.resultCount() == 1) {
+        return future.result();
+    }
+
+    DiagResult failure;
+    failure.setSuccess(false);
+    failure.setSummary(QStringLiteral("诊断 Future 未在 watchdog 内完成"));
+    failure.setErrorString(QStringLiteral("TestWatchdogTimeout"));
+    return failure;
 }
 
 QString diagMessage(const DiagResult &result)
@@ -70,8 +101,9 @@ QByteArray buildHttpResponse(int statusCode, const QByteArray &reason, const QBy
 class LocalHttpServer final : public QObject
 {
 public:
-    explicit LocalHttpServer(QObject *parent = nullptr)
+    explicit LocalHttpServer(int responseDelayMs = 0, QObject *parent = nullptr)
         : QObject(parent)
+        , m_responseDelayMs(responseDelayMs)
     {
         QObject::connect(&m_server, &QTcpServer::newConnection, this, [this]() {
             while (m_server.hasPendingConnections()) {
@@ -126,15 +158,16 @@ private:
                              m_lastPath = queryPos >= 0 ? rawPath.left(queryPos) : rawPath;
                              ++m_requestCount;
 
-                             const bool notFound = (m_lastPath == QByteArrayLiteral("/missing"));
-                             const QByteArray response = notFound
-                                                             ? buildHttpResponse(404,
-                                                                                 "Not Found",
-                                                                                 "missing")
-                                                             : buildHttpResponse(200, "OK", "ok");
-                             socket->write(response);
-                             socket->flush();
-                             socket->disconnectFromHost();
+                             const QByteArray path = m_lastPath;
+                             QTimer::singleShot(m_responseDelayMs, socket, [socket, path]() {
+                                 const bool notFound = path == QByteArrayLiteral("/missing");
+                                 const QByteArray response
+                                     = notFound ? buildHttpResponse(404, "Not Found", "missing")
+                                                : buildHttpResponse(200, "OK", "ok");
+                                 socket->write(response);
+                                 socket->flush();
+                                 socket->disconnectFromHost();
+                             });
                          });
         QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
     }
@@ -142,6 +175,7 @@ private:
     QTcpServer m_server;
     int m_requestCount = 0;
     QByteArray m_lastPath;
+    int m_responseDelayMs = 0;
 };
 
 class LocalTlsServer final : public QObject
@@ -257,7 +291,7 @@ class tst_QCNetworkDiagnosticsLocal : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
 
     void testResolveDNSLocalhost();
@@ -265,6 +299,13 @@ private slots:
     void testProbeHTTPLocalNotFound();
     void testDiagnoseLocalHTTP();
     void testCheckSSLLocalFixture();
+    void testHeartbeatDuringHttpProbe();
+    void testTimeoutCompletesOnce();
+    void testCancellationAndOwnerDestroyCompleteOnce();
+    void testFutureCancellationStopsOperation();
+    void testConcurrentDiagnosticsCompleteOnce();
+    void testProcessFailureCompletesOnce();
+    void testStaticAsyncSourceContract();
 
 private:
     QString m_certPath;
@@ -284,8 +325,8 @@ void tst_QCNetworkDiagnosticsLocal::initTestCase()
 
 void tst_QCNetworkDiagnosticsLocal::testResolveDNSLocalhost()
 {
-    const auto result = QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"),
-                                                         diagnosticsOptions(1000));
+    const auto result = awaitDiagnostics(
+        QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"), diagnosticsOptions(1000)));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QCOMPARE(result.details().value(QStringLiteral("hostname")).toString(),
@@ -301,8 +342,9 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalSuccess()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/health")),
-                                                        diagnosticsOptions(3000));
+    const auto result = awaitDiagnostics(
+        QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/health")),
+                                        diagnosticsOptions(3000)));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QCOMPARE(result.details().value(QStringLiteral("statusCode")).toInt(), 200);
@@ -315,8 +357,9 @@ void tst_QCNetworkDiagnosticsLocal::testProbeHTTPLocalNotFound()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/missing")),
-                                                        diagnosticsOptions(3000));
+    const auto result = awaitDiagnostics(
+        QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/missing")),
+                                        diagnosticsOptions(3000)));
 
     QVERIFY2(!result.success(), qPrintable(diagMessage(result)));
     QVERIFY2(result.summary().contains(QStringLiteral("HTTP 探测失败")),
@@ -331,8 +374,9 @@ void tst_QCNetworkDiagnosticsLocal::testDiagnoseLocalHTTP()
     LocalHttpServer server;
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::diagnose(server.url(QStringLiteral("/diagnose")),
-                                                       diagnosticsOptions(3000));
+    const auto result = awaitDiagnostics(
+        QCNetworkDiagnostics::diagnose(server.url(QStringLiteral("/diagnose")),
+                                       diagnosticsOptions(3000)));
 
     QVERIFY2(result.success(), qPrintable(diagMessage(result)));
     QCOMPARE(result.details().value(QStringLiteral("overallHealth")).toString(),
@@ -358,8 +402,9 @@ void tst_QCNetworkDiagnosticsLocal::testCheckSSLLocalFixture()
     LocalTlsServer server(m_certPath, m_keyPath);
     QVERIFY2(server.start(), qPrintable(server.errorString()));
 
-    const auto result = QCNetworkDiagnostics::checkSSL(QStringLiteral("localhost"),
-                                                       diagnosticsOptions(4000, server.port()));
+    const auto result = awaitDiagnostics(
+        QCNetworkDiagnostics::checkSSL(QStringLiteral("localhost"),
+                                       diagnosticsOptions(4000, server.port())));
 
     QVERIFY2(server.connectionCount() > 0, "本地 TLS fixture 未收到任何连接");
     QVERIFY(!result.details().value(QStringLiteral("timedOut")).toBool());
@@ -376,6 +421,133 @@ void tst_QCNetworkDiagnosticsLocal::testCheckSSLLocalFixture()
              qPrintable(diagMessage(result)));
     QVERIFY(result.details().contains(QStringLiteral("sslErrors"))
             || !result.errorString().isEmpty());
+}
+
+void tst_QCNetworkDiagnosticsLocal::testHeartbeatDuringHttpProbe()
+{
+    LocalHttpServer server(120);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
+
+    int heartbeatCount = 0;
+    QTimer heartbeat;
+    heartbeat.setInterval(5);
+    connect(&heartbeat, &QTimer::timeout, this, [&heartbeatCount]() { ++heartbeatCount; });
+    heartbeat.start();
+
+    auto future       = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/heartbeat")),
+                                                        diagnosticsOptions(1000));
+    const auto result = awaitDiagnostics(future, 3000);
+    heartbeat.stop();
+
+    QVERIFY2(result.success(), qPrintable(diagMessage(result)));
+    QVERIFY2(heartbeatCount >= 5, "异步 HTTP 诊断期间 GUI heartbeat 未持续运行");
+    QCOMPARE(future.resultCount(), 1);
+}
+
+void tst_QCNetworkDiagnosticsLocal::testTimeoutCompletesOnce()
+{
+    LocalHttpServer server(300);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
+
+    auto future       = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/timeout")),
+                                                        diagnosticsOptions(40));
+    const auto result = awaitDiagnostics(future, 2000);
+
+    QVERIFY(!result.success());
+    QVERIFY(result.details().value(QStringLiteral("timedOut")).toBool());
+    QCOMPARE(result.errorString(), QStringLiteral("Timeout"));
+    QCOMPARE(future.resultCount(), 1);
+}
+
+void tst_QCNetworkDiagnosticsLocal::testCancellationAndOwnerDestroyCompleteOnce()
+{
+    LocalHttpServer server(300);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
+
+    auto *owner       = new QObject;
+    auto *cancelToken = new QCNetworkCancelToken(owner);
+    auto future       = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/cancel")),
+                                                        diagnosticsOptions(1000),
+                                                        cancelToken);
+    delete owner;
+
+    const auto result = awaitDiagnostics(future, 2000);
+    QVERIFY(!result.success());
+    QVERIFY(result.details().value(QStringLiteral("cancelled")).toBool());
+    QCOMPARE(result.errorString(), QStringLiteral("Cancelled"));
+    QCOMPARE(future.resultCount(), 1);
+}
+
+void tst_QCNetworkDiagnosticsLocal::testFutureCancellationStopsOperation()
+{
+    LocalHttpServer server(300);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
+
+    auto future = QCNetworkDiagnostics::probeHTTP(server.url(QStringLiteral("/future-cancel")),
+                                                  diagnosticsOptions(1000));
+    future.cancel();
+
+    QFutureWatcher<DiagResult> watcher;
+    QSignalSpy finishedSpy(&watcher, &QFutureWatcher<DiagResult>::finished);
+    watcher.setFuture(future);
+    if (!future.isFinished()) {
+        QVERIFY(finishedSpy.wait(2000));
+    }
+    QVERIFY(future.isCanceled());
+    QVERIFY(future.isFinished());
+    QCOMPARE(future.resultCount(), 0);
+}
+
+void tst_QCNetworkDiagnosticsLocal::testConcurrentDiagnosticsCompleteOnce()
+{
+    QList<QFuture<DiagResult>> futures;
+    for (int index = 0; index < 8; ++index) {
+        futures.append(QCNetworkDiagnostics::resolveDNS(QStringLiteral("localhost"),
+                                                        diagnosticsOptions(1000)));
+    }
+
+    for (QFuture<DiagResult> &future : futures) {
+        const auto result = awaitDiagnostics(future, 3000);
+        QVERIFY2(result.success(), qPrintable(diagMessage(result)));
+        QCOMPARE(future.resultCount(), 1);
+    }
+}
+
+void tst_QCNetworkDiagnosticsLocal::testProcessFailureCompletesOnce()
+{
+    const QByteArray previousPath = qgetenv("PATH");
+    qputenv("PATH", QByteArrayLiteral("/definitely-missing-qcurl-diagnostics"));
+    auto future = QCNetworkDiagnostics::ping(QStringLiteral("localhost"), diagnosticsOptions(100));
+    const auto result = awaitDiagnostics(future, 3000);
+    qputenv("PATH", previousPath);
+
+    QVERIFY(!result.success());
+    QVERIFY(!result.errorString().isEmpty());
+    QCOMPARE(future.resultCount(), 1);
+}
+
+void tst_QCNetworkDiagnosticsLocal::testStaticAsyncSourceContract()
+{
+    const QStringList sourceFiles = {
+        QStringLiteral("src/QCNetworkDiagnostics.cpp"),
+        QStringLiteral("src/QCNetworkDiagnosticsConnectivity.cpp"),
+        QStringLiteral("src/QCNetworkDiagnosticsProcess.cpp"),
+        QStringLiteral("src/private/QCNetworkDiagnosticsOperation.cpp"),
+    };
+
+    QByteArray implementation;
+    for (const QString &relativePath : sourceFiles) {
+        QFile source(TestSourcePaths::sourcePath(relativePath));
+        QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+        implementation.append(source.readAll());
+    }
+
+    QVERIFY(!implementation.contains("QEventLoop"));
+    QVERIFY(!implementation.contains("waitFor"));
+    QVERIFY(!implementation.contains("QNetworkAccessManager"));
+    QVERIFY(implementation.contains("QCNetworkAccessManager"));
+    QVERIFY(implementation.contains("QHostInfo::lookupHost"));
+    QVERIFY(implementation.contains("QProcess::finished"));
 }
 
 QTEST_MAIN(tst_QCNetworkDiagnosticsLocal)

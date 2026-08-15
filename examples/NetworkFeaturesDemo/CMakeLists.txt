@@ -14,6 +14,7 @@ set(CMAKE_AUTOMOC ON)
 add_executable(NetworkFeaturesDemo
     main.cpp
 )
+qcurl_enable_qt_no_keywords(NetworkFeaturesDemo)
 
 # 链接库
 target_link_libraries(NetworkFeaturesDemo
