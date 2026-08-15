@@ -1,0 +1,517 @@
+{
+  "schemaVersion": 1,
+  "authority": "docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md",
+  "reviewScope": "QCURL_INSTALL_HEADERS plus Blocking Extras, Other Extras and Test Support",
+  "hardBreakAllowlist": [
+    "fallible.request-config",
+    "fallible.retry-policy",
+    "fallible.scheduler-commands",
+    "fallible.connection-pool-manager",
+    "fallible.default-logger",
+    "fallible.websocket-commands",
+    "ownership.logger-manager-handle",
+    "ownership.logger-reply-snapshot"
+  ],
+  "axisReviews": {
+    "fallible": {
+      "none": [
+        "QCGlobal.h",
+        "QCCookie.h",
+        "QCNetworkSslConfig.h",
+        "QCNetworkProxyConfig.h",
+        "QCNetworkTimeoutConfig.h",
+        "QCNetworkHttpMethod.h",
+        "QCNetworkHttpVersion.h",
+        "QCNetworkError.h",
+        "QCNetworkRequestPriority.h",
+        "QCNetworkLaneKey.h",
+        "QCNetworkSchedulerPolicy.h",
+        "QCNetworkCachePolicy.h",
+        "QCNetworkCacheRequestKey.h",
+        "QCNetworkLogger.h",
+        "QCNetworkMiddleware.h",
+        "QCNetworkMiddlewareExtras.h",
+        "QCNetworkTestSupport.h",
+        "QCWebSocketCommandResult.h",
+        "QCWebSocketReconnectPolicy.h",
+        "QCBlockingCookieStore.h"
+      ],
+      "documented": [],
+      "contracts": {
+        "QCurlRuntime.h": ["fallible.runtime-shutdown"],
+        "QCNetworkAccessManager.h": ["fallible.manager-reply-factories"],
+        "QCCookieAsyncResult.h": ["fallible.cookie-results"],
+        "QCNetworkRequestConfig.h": ["fallible.request-config"],
+        "QCNetworkRequest.h": ["fallible.request-validation"],
+        "QCNetworkReply.h": ["fallible.reply-terminal-state"],
+        "QCNetworkRetryPolicy.h": ["fallible.retry-policy"],
+        "QCNetworkLaneCancelResult.h": ["fallible.lane-cancel-result"],
+        "QCNetworkRequestScheduler.h": ["fallible.scheduler-commands"],
+        "QCNetworkCache.h": ["fallible.cache-results"],
+        "QCNetworkMemoryCache.h": ["fallible.memory-cache"],
+        "QCNetworkDiskCache.h": ["fallible.disk-cache"],
+        "QCMultipartFormData.h": ["fallible.multipart-form"],
+        "QCNetworkBody.h": ["fallible.body-factories"],
+        "QCNetworkMultipartBody.h": ["fallible.multipart-body-factories"],
+        "QCNetworkTransferJob.h": ["fallible.transfer-job"],
+        "QCNetworkDownloadToDeviceJob.h": ["fallible.download-job"],
+        "QCNetworkResumableDownloadJob.h": ["fallible.resumable-job"],
+        "QCNetworkDefaultLogger.h": ["fallible.default-logger"],
+        "QCNetworkCancelToken.h": ["fallible.cancel-token"],
+        "QCNetworkConnectionPoolConfig.h": ["fallible.connection-pool-config"],
+        "QCNetworkConnectionPoolManager.h": ["fallible.connection-pool-manager"],
+        "QCNetworkMockHandler.h": ["fallible.mock-handler"],
+        "QCNetworkDiagnostics.h": ["fallible.diagnostics-results"],
+        "QCWebSocket.h": ["fallible.websocket-commands"],
+        "QCWebSocketPool.h": ["fallible.websocket-pool"],
+        "QCWebSocketPoolResults.h": ["fallible.websocket-pool-results"],
+        "QCBlockingNetworkClient.h": ["fallible.blocking-client"],
+        "QCBlockingNetworkResult.h": ["fallible.blocking-result"]
+      }
+    },
+    "errorLifecycle": {
+      "none": [
+        "QCGlobal.h",
+        "QCCookie.h",
+        "QCNetworkRequestConfig.h",
+        "QCNetworkRequest.h",
+        "QCNetworkSslConfig.h",
+        "QCNetworkProxyConfig.h",
+        "QCNetworkTimeoutConfig.h",
+        "QCNetworkHttpMethod.h",
+        "QCNetworkHttpVersion.h",
+        "QCNetworkError.h",
+        "QCNetworkRetryPolicy.h",
+        "QCNetworkRequestPriority.h",
+        "QCNetworkLaneKey.h",
+        "QCNetworkSchedulerPolicy.h",
+        "QCNetworkRequestScheduler.h",
+        "QCNetworkCachePolicy.h",
+        "QCNetworkCacheRequestKey.h",
+        "QCNetworkMemoryCache.h",
+        "QCNetworkDiskCache.h",
+        "QCMultipartFormData.h",
+        "QCNetworkBody.h",
+        "QCNetworkMultipartBody.h",
+        "QCNetworkLogger.h",
+        "QCNetworkDefaultLogger.h",
+        "QCNetworkConnectionPoolConfig.h",
+        "QCNetworkMiddleware.h",
+        "QCNetworkMiddlewareExtras.h",
+        "QCNetworkMockHandler.h",
+        "QCNetworkTestSupport.h",
+        "QCWebSocketReconnectPolicy.h",
+        "QCBlockingCookieStore.h",
+        "QCWebSocketCommandResult.h"
+      ],
+      "documented": [],
+      "contracts": {
+        "QCurlRuntime.h": ["error.runtime-result"],
+        "QCNetworkAccessManager.h": ["error.manager-async-authority"],
+        "QCCookieAsyncResult.h": ["error.cookie-results"],
+        "QCNetworkReply.h": ["error.reply-lifecycle"],
+        "QCNetworkLaneCancelResult.h": ["error.lane-cancel-result"],
+        "QCNetworkCache.h": ["error.cache-results"],
+        "QCNetworkTransferJob.h": ["error.transfer-job-lifecycle"],
+        "QCNetworkDownloadToDeviceJob.h": ["error.download-job-lifecycle"],
+        "QCNetworkResumableDownloadJob.h": ["error.resumable-job-lifecycle"],
+        "QCNetworkCancelToken.h": ["error.cancel-token-result"],
+        "QCNetworkConnectionPoolManager.h": ["error.connection-pool-operation"],
+        "QCNetworkDiagnostics.h": ["error.diagnostics-result"],
+        "QCWebSocket.h": ["error.websocket-lifecycle"],
+        "QCWebSocketPool.h": ["error.websocket-pool-operation"],
+        "QCWebSocketPoolResults.h": ["error.websocket-pool-results"],
+        "QCBlockingNetworkClient.h": ["error.blocking-client-result"],
+        "QCBlockingNetworkResult.h": ["error.blocking-result"]
+      }
+    },
+    "qobjectBorrow": {
+      "none": [
+        "QCGlobal.h",
+        "QCurlRuntime.h",
+        "QCCookie.h",
+        "QCCookieAsyncResult.h",
+        "QCNetworkRequestConfig.h",
+        "QCNetworkRequest.h",
+        "QCNetworkSslConfig.h",
+        "QCNetworkProxyConfig.h",
+        "QCNetworkTimeoutConfig.h",
+        "QCNetworkHttpMethod.h",
+        "QCNetworkHttpVersion.h",
+        "QCNetworkError.h",
+        "QCNetworkRetryPolicy.h",
+        "QCNetworkRequestPriority.h",
+        "QCNetworkLaneKey.h",
+        "QCNetworkLaneCancelResult.h",
+        "QCNetworkSchedulerPolicy.h",
+        "QCNetworkCachePolicy.h",
+        "QCNetworkCacheRequestKey.h",
+        "QCMultipartFormData.h",
+        "QCNetworkLogger.h",
+        "QCNetworkDefaultLogger.h",
+        "QCNetworkConnectionPoolConfig.h",
+        "QCNetworkConnectionPoolManager.h",
+        "QCNetworkMiddlewareExtras.h",
+        "QCNetworkMockHandler.h",
+        "QCWebSocketCommandResult.h",
+        "QCWebSocketReconnectPolicy.h",
+        "QCWebSocketPoolResults.h",
+        "QCBlockingCookieStore.h",
+        "QCBlockingNetworkResult.h"
+      ],
+      "documented": [],
+      "contracts": {
+        "QCNetworkAccessManager.h": ["borrow.manager-services-and-replies"],
+        "QCNetworkReply.h": ["borrow.reply-parent-and-callback"],
+        "QCNetworkRequestScheduler.h": ["borrow.scheduler-replies"],
+        "QCNetworkCache.h": ["borrow.cache-parent"],
+        "QCNetworkMemoryCache.h": ["borrow.memory-cache-parent"],
+        "QCNetworkDiskCache.h": ["borrow.disk-cache-parent"],
+        "QCNetworkBody.h": ["borrow.body-device"],
+        "QCNetworkMultipartBody.h": ["borrow.multipart-device"],
+        "QCNetworkTransferJob.h": ["borrow.transfer-job-reply"],
+        "QCNetworkDownloadToDeviceJob.h": ["borrow.download-device"],
+        "QCNetworkResumableDownloadJob.h": ["borrow.resumable-manager"],
+        "QCNetworkCancelToken.h": ["borrow.cancel-token-replies"],
+        "QCNetworkMiddleware.h": ["borrow.middleware-objects"],
+        "QCNetworkTestSupport.h": ["borrow.test-support-objects"],
+        "QCNetworkDiagnostics.h": ["borrow.diagnostics-cancel-token"],
+        "QCWebSocket.h": ["borrow.websocket-parent"],
+        "QCWebSocketPool.h": ["borrow.websocket-lease"],
+        "QCBlockingNetworkClient.h": ["borrow.blocking-body-device"]
+      }
+    },
+    "owningSmartPointer": {
+      "none": [
+        "QCGlobal.h",
+        "QCurlRuntime.h",
+        "QCCookie.h",
+        "QCCookieAsyncResult.h",
+        "QCNetworkRequestConfig.h",
+        "QCNetworkRequest.h",
+        "QCNetworkSslConfig.h",
+        "QCNetworkProxyConfig.h",
+        "QCNetworkTimeoutConfig.h",
+        "QCNetworkHttpMethod.h",
+        "QCNetworkHttpVersion.h",
+        "QCNetworkError.h",
+        "QCNetworkRetryPolicy.h",
+        "QCNetworkRequestPriority.h",
+        "QCNetworkLaneKey.h",
+        "QCNetworkLaneCancelResult.h",
+        "QCNetworkSchedulerPolicy.h",
+        "QCNetworkRequestScheduler.h",
+        "QCNetworkCachePolicy.h",
+        "QCNetworkCache.h",
+        "QCNetworkCacheRequestKey.h",
+        "QCNetworkMemoryCache.h",
+        "QCNetworkDiskCache.h",
+        "QCMultipartFormData.h",
+        "QCNetworkBody.h",
+        "QCNetworkMultipartBody.h",
+        "QCNetworkTransferJob.h",
+        "QCNetworkDownloadToDeviceJob.h",
+        "QCNetworkResumableDownloadJob.h",
+        "QCNetworkLogger.h",
+        "QCNetworkDefaultLogger.h",
+        "QCNetworkCancelToken.h",
+        "QCNetworkConnectionPoolConfig.h",
+        "QCNetworkConnectionPoolManager.h",
+        "QCNetworkMiddleware.h",
+        "QCNetworkMiddlewareExtras.h",
+        "QCNetworkMockHandler.h",
+        "QCNetworkTestSupport.h",
+        "QCNetworkDiagnostics.h",
+        "QCWebSocketCommandResult.h",
+        "QCWebSocket.h",
+        "QCWebSocketReconnectPolicy.h",
+        "QCWebSocketPool.h",
+        "QCWebSocketPoolResults.h",
+        "QCBlockingCookieStore.h",
+        "QCBlockingNetworkClient.h",
+        "QCBlockingNetworkResult.h"
+      ],
+      "documented": [],
+      "contracts": {
+        "QCNetworkAccessManager.h": ["ownership.logger-manager-handle"],
+        "QCNetworkReply.h": ["ownership.logger-reply-snapshot"]
+      }
+    }
+  },
+  "contracts": [
+    {
+      "id": "fallible.runtime-shutdown", "category": "fallible", "header": "QCurlRuntime.h",
+      "symbol": "QCurlRuntime::beginShutdown/shutdownAndWait", "currentContract": "结构化返回 shutdown admission 与终态结果。", "targetContract": "保持现有结构化且 [[nodiscard]] 的失败路线。", "stateAndLifetime": "成功关闭为进程终态；失败或超时保持 fail-closed 状态。", "threadContract": "beginShutdown 在 owner thread，shutdownAndWait 在协调线程。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.manager-reply-factories", "category": "fallible", "header": "QCNetworkAccessManager.h",
+      "symbol": "head/get/post/put/patch/deleteResource/sendCustomRequest", "currentContract": "返回异步 QCNetworkReply 借用指针，执行失败进入 reply 终态。", "targetContract": "创建成功后返回非空 reply；传输失败由 reply 结构化状态与 finished signal 表达。", "stateAndLifetime": "工厂返回不代表 wire 成功。", "threadContract": "仅 manager owner thread 调用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.cookie-results", "category": "fallible", "header": "QCCookieAsyncResult.h",
+      "symbol": "QCCookieOperationResult/QCCookieExportResult", "currentContract": "不可变结构化 Future 结果。", "targetContract": "保持 [[nodiscard]] factory 和显式错误分类。", "stateAndLifetime": "构造后状态不变。", "threadContract": "纯值结果可跨线程复制和读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.request-config", "category": "fallible", "header": "QCNetworkRequestConfig.h",
+      "symbol": "QCNetworkRedirectConfig::setMaxRedirects and QCNetworkTransferConfig fallible setters", "currentContract": "非法输入由 void setter 清空、钳制或改写旧状态。", "targetContract": "改为 [[nodiscard]] 结构化事务结果；失败保持全部旧状态。", "stateAndLifetime": "成功才提交新配置，失败诊断属于本次调用结果。", "threadContract": "值类型由调用方同步使用，不提供共享并发写。", "disposition": "hard-break", "phase": "T6"
+    },
+    {
+      "id": "fallible.request-validation", "category": "fallible", "header": "QCNetworkRequest.h",
+      "symbol": "QCNetworkRequest value configuration", "currentContract": "请求值在执行时由 reply 完成最终校验。", "targetContract": "保持纯值 setter；执行期不可满足的输入进入 reply 结构化失败。", "stateAndLifetime": "request 本身不保存异步错误。", "threadContract": "值副本可独立跨线程传递。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.reply-terminal-state", "category": "fallible", "header": "QCNetworkReply.h",
+      "symbol": "execute/cancel/abortWithError and terminal queries", "currentContract": "命令返回 void，最终状态通过 reply 查询与 signal 表达。", "targetContract": "owner-thread 内部命令保持单终态；公共文档区分命令接受与异步完成。", "stateAndLifetime": "finished 后 error 与 errorString 固定。", "threadContract": "只在 reply owner thread 调用或读取 QObject 状态。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.retry-policy", "category": "fallible", "header": "QCNetworkRetryPolicy.h",
+      "symbol": "constructor and five validation setters", "currentContract": "bool 失败可被忽略，构造函数内部忽略 setter 失败。", "targetContract": "删除可失败构造入口，提供 [[nodiscard]] validated factory；setter 返回结构化事务结果。", "stateAndLifetime": "失败不修改旧策略。", "threadContract": "值类型由调用方同步使用。", "disposition": "hard-break", "phase": "T6"
+    },
+    {
+      "id": "fallible.lane-cancel-result", "category": "fallible", "header": "QCNetworkLaneCancelResult.h",
+      "symbol": "QCNetworkLaneCancelResult", "currentContract": "不可变结构化取消结果。", "targetContract": "保持 [[nodiscard]] factory 和稳定失败 reason。", "stateAndLifetime": "成功时 error 为空，失败时计数为零且 error 有效。", "threadContract": "纯值结果可跨线程复制和读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.scheduler-commands", "category": "fallible", "header": "QCNetworkRequestScheduler.h",
+      "symbol": "CommandResult and schedule/defer/undefer/cancel/changePriority/lane commands", "currentContract": "所有可失败调度命令均返回 [[nodiscard]] CommandResult；lane 取消通过输出参数返回已提交数量。", "targetContract": "已完成：拒绝结果不触碰 reply、队列或统计；Applied 仅表达同步接受，异步执行与完成仍由 reply 状态和 scheduler 信号表达。", "stateAndLifetime": "返回值是本次同步命令快照，不保存 reply；NoChange 表示合法幂等调用未产生状态变化。", "threadContract": "仅 scheduler owner thread；wrong-thread 同步返回 WrongThread，不排队、不捕获 reply QPointer。", "disposition": "hard-break", "phase": "T6"
+    },
+    {
+      "id": "fallible.cache-results", "category": "fallible", "header": "QCNetworkCache.h",
+      "symbol": "lookup/remove/clear", "currentContract": "lookup 和 clear 结构化，remove 使用 [[nodiscard]] bool。", "targetContract": "保持当前结果路线并补足文本有效条件。", "stateAndLifetime": "每次调用结果独立，不依赖历史 error。", "threadContract": "具体实现声明线程安全。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.memory-cache", "category": "fallible", "header": "QCNetworkMemoryCache.h",
+      "symbol": "lookup/remove/clear", "currentContract": "实现 QCNetworkCache 结果合同。", "targetContract": "保持与基类一致。", "stateAndLifetime": "结果是调用时快照。", "threadContract": "支持并发访问。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.disk-cache", "category": "fallible", "header": "QCNetworkDiskCache.h",
+      "symbol": "lookup/remove/clear", "currentContract": "实现 QCNetworkCache 结果合同。", "targetContract": "保持与基类一致并不泄露路径诊断。", "stateAndLifetime": "结果是调用时快照。", "threadContract": "支持并发访问。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.multipart-form", "category": "fallible", "header": "QCMultipartFormData.h",
+      "symbol": "addFileField(path)/setBoundary", "currentContract": "[[nodiscard]] bool 且失败保持已有字段或 boundary。", "targetContract": "保持事务语义并补充失败诊断条件。", "stateAndLifetime": "失败不改变旧值。", "threadContract": "值类型由调用方同步使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.body-factories", "category": "fallible", "header": "QCNetworkBody.h",
+      "symbol": "QCNetworkBody factories", "currentContract": "工厂以值或 optional 显式表达创建失败。", "targetContract": "保持 [[nodiscard]] 结果。", "stateAndLifetime": "成功 body 持有自身数据。", "threadContract": "纯值 body 可复制。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.multipart-body-factories", "category": "fallible", "header": "QCNetworkMultipartBody.h",
+      "symbol": "fromFormData/fromSingleFileDevice/takeDevice", "currentContract": "optional/bool 与 error 输出表达创建或转移失败。", "targetContract": "保持 [[nodiscard]]，失败不转移设备。", "stateAndLifetime": "成功 take 后原对象不再拥有设备。", "threadContract": "设备只在其 affinity thread 转移和使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.transfer-job", "category": "fallible", "header": "QCNetworkTransferJob.h",
+      "symbol": "QCNetworkTransferJob start/cancel/result", "currentContract": "异步失败由 error 与 finished 表达。", "targetContract": "文档固定单终态及 error 生命周期。", "stateAndLifetime": "每个 job 只完成一次。", "threadContract": "仅 job owner thread 操作。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.download-job", "category": "fallible", "header": "QCNetworkDownloadToDeviceJob.h",
+      "symbol": "QCNetworkDownloadToDeviceJob::start", "currentContract": "输出设备校验失败进入 job 终态。", "targetContract": "保持异步结果并明确设备失败语义。", "stateAndLifetime": "job 完成后不再写设备。", "threadContract": "job、reply 和设备同 owner thread。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.resumable-job", "category": "fallible", "header": "QCNetworkResumableDownloadJob.h",
+      "symbol": "QCNetworkResumableDownloadJob::start", "currentContract": "打开、写入或 commit 失败进入 job 终态。", "targetContract": "保持异步结果并明确目标文件事务语义。", "stateAndLifetime": "失败不发布不完整目标文件。", "threadContract": "job owner thread 完成全部文件 I/O。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.default-logger", "category": "fallible", "header": "QCNetworkDefaultLogger.h",
+      "symbol": "enableFileOutput/log/rotation", "currentContract": "已返回 [[nodiscard]] QCNetworkLogResult，区分过滤、重入排队、无效配置、打开、删除、重命名和写入失败。", "targetContract": "保持结构化日志操作结果；失败不谎报成功。", "stateAndLifetime": "每次结果只描述本次配置或输出；无效配置保持旧文件配置。", "threadContract": "logger 串行化输出；文件 I/O、Qt logging 和回调均在状态锁外执行。", "disposition": "hard-break", "phase": "T6"
+    },
+    {
+      "id": "fallible.cancel-token", "category": "fallible", "header": "QCNetworkCancelToken.h",
+      "symbol": "attach/detach/cancel/clear", "currentContract": "T2 已采用 [[nodiscard]] AttachResult/CommandResult。", "targetContract": "保持 owner-thread 结构化拒绝。", "stateAndLifetime": "失败不改变 registration。", "threadContract": "仅 token owner thread，reply 必须同 affinity。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.connection-pool-config", "category": "fallible", "header": "QCNetworkConnectionPoolConfig.h",
+      "symbol": "QCNetworkConnectionPoolConfig::isValid", "currentContract": "setter 可创建非法组合，最终由 isValid 判定。", "targetContract": "配置作为候选值，提交时由 manager 事务校验。", "stateAndLifetime": "值类型不保存历史错误。", "threadContract": "值副本可独立使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.connection-pool-manager", "category": "fallible", "header": "QCNetworkConnectionPoolManager.h",
+      "symbol": "setConfig", "currentContract": "setConfig 已返回 [[nodiscard]] UpdateResult；非法候选返回 InvalidArgument，closeIdleConnections 已删除。", "targetContract": "保持结构化事务结果，不恢复语义不实的 closeIdleConnections。", "stateAndLifetime": "失败保持旧配置和 multi 状态。", "threadContract": "配置快照线程安全；multi 应用由 owner-thread 命令合同约束。", "disposition": "hard-break", "phase": "T6",
+      "semanticAnchors": {
+        "currentContract": ["[[nodiscard]] UpdateResult", "InvalidArgument", "closeIdleConnections 已删除"],
+        "headerIncludes": ["enum class UpdateResult", "[[nodiscard]] UpdateResult setConfig(const QCNetworkConnectionPoolConfig &config);"],
+        "headerExcludes": ["closeIdleConnections("]
+      }
+    },
+    {
+      "id": "fallible.mock-handler", "category": "fallible", "header": "QCNetworkMockHandler.h",
+      "symbol": "mock lookup and captured request accessors", "currentContract": "测试匹配未命中由显式默认响应或错误值表达。", "targetContract": "保持 Test Support 范围。", "stateAndLifetime": "捕获列表由 handler 管理。", "threadContract": "只在绑定 manager owner thread 使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.diagnostics-results", "category": "fallible", "header": "QCNetworkDiagnostics.h",
+      "symbol": "QCNetworkDiagnosticsOptions setters and QFuture<DiagResult> operations", "currentContract": "配置 setter 使用 [[nodiscard]] bool；操作始终返回 Future 结果。", "targetContract": "保持事务配置并补足结果生命周期文档。", "stateAndLifetime": "每次 Future 恰好完成一次。", "threadContract": "从有事件循环的调用线程启动，cancel token 同线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.websocket-commands", "category": "fallible", "header": "QCWebSocket.h",
+      "symbol": "open/close/sendTextMessage/sendBinaryMessage/ping/pong", "currentContract": "全部命令已返回 [[nodiscard]] QCWebSocketCommandResult；acceptedBytes 只表示进入异步发送链路，非法 payload 被拒绝且不截断。", "targetContract": "保持统一同步结果，区分命令接受与异步 wire 完成；拒绝时状态不变。", "stateAndLifetime": "同步结果只属于本次 command，errorString 只表示连接生命周期错误。", "threadContract": "仅 socket owner thread。", "disposition": "hard-break", "phase": "T6",
+      "semanticAnchors": {
+        "currentContract": ["[[nodiscard]] QCWebSocketCommandResult", "acceptedBytes", "不截断"],
+        "headerIncludes": ["[[nodiscard]] QCWebSocketCommandResult open();", "[[nodiscard]] QCWebSocketCommandResult sendTextMessage(const QString &message);", "[[nodiscard]] QCWebSocketCommandResult sendBinaryMessage(const QByteArray &data);", "[[nodiscard]] QCWebSocketCommandResult ping(const QByteArray &payload = QByteArray());", "[[nodiscard]] QCWebSocketCommandResult pong(const QByteArray &payload = QByteArray());", "超过 125 字节时拒绝且不截断 payload"],
+        "headerExcludes": ["qint64 sendTextMessage(", "qint64 sendBinaryMessage("]
+      }
+    },
+    {
+      "id": "fallible.websocket-pool", "category": "fallible", "header": "QCWebSocketPool.h",
+      "symbol": "acquire/resolveLease/release/clearPool/preWarm/setConfig", "currentContract": "Future、LeaseResult 或 [[nodiscard]] bool 显式失败。", "targetContract": "保持 T3 lease 结果和事务 mutator。", "stateAndLifetime": "失败不改变 lease 或 pool。", "threadContract": "除纯值 Future 结果外均在 pool owner thread 解析。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "fallible.websocket-pool-results", "category": "fallible", "header": "QCWebSocketPoolResults.h",
+      "symbol": "QCWebSocketAcquireResult/QCWebSocketPreWarmResult", "currentContract": "纯值结构化结果。", "targetContract": "保持 status、诊断和 lease id。", "stateAndLifetime": "结果构造后不变。", "threadContract": "可跨线程复制、读取和销毁。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.blocking-client", "category": "fallible", "header": "QCBlockingNetworkClient.h",
+      "symbol": "blocking request methods", "currentContract": "全部请求返回 [[nodiscard]] QCBlockingNetworkResult。", "targetContract": "保持值结果且不返回 live reply。", "stateAndLifetime": "每个结果独立。", "threadContract": "默认拒绝 application thread；body device 只在调用线程使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "fallible.blocking-result", "category": "fallible", "header": "QCBlockingNetworkResult.h",
+      "symbol": "QCBlockingNetworkResult", "currentContract": "不可变主体加结构化失败 factory。", "targetContract": "保持 [[nodiscard]] factory 并补足错误文本条件。", "stateAndLifetime": "成功 error 为 NoError，失败 errorMessage 有效。", "threadContract": "纯值结果可跨线程传递。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.runtime-result", "category": "errorLifecycle", "header": "QCurlRuntime.h",
+      "symbol": "QCurlRuntimeResult", "currentContract": "每次 shutdown 调用返回独立状态。", "targetContract": "说明 success 时诊断为空，失败/超时诊断有效。", "stateAndLifetime": "结果构造后不变，runtime 终态另行查询。", "threadContract": "纯值读取无 QObject 访问。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.manager-async-authority", "category": "errorLifecycle", "header": "QCNetworkAccessManager.h",
+      "symbol": "request factories and cookie QFuture results", "currentContract": "reply 或 Future 是每次调用的 authoritative state。", "targetContract": "明确 manager 不保存可查询的最后错误。", "stateAndLifetime": "成功创建只代表请求被接纳。", "threadContract": "manager 与 reply 查询位于 owner thread；纯值 result 可跨线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.cookie-results", "category": "errorLifecycle", "header": "QCCookieAsyncResult.h",
+      "symbol": "errorCode/policyCode/error", "currentContract": "结果值不变。", "targetContract": "成功时 errorCode=NoError 且文本为空；失败时分类 authoritative，文本仅诊断。", "stateAndLifetime": "构造后不清除或覆盖。", "threadContract": "纯值读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.reply-lifecycle", "category": "errorLifecycle", "header": "QCNetworkReply.h",
+      "symbol": "error/errorString/finished", "currentContract": "终态错误可查询但清除点说明不完整。", "targetContract": "新执行开始清空旧错误；终态后固定；NetworkError authoritative，文本仅失败时有效。", "stateAndLifetime": "finished 后直到析构不变。", "threadContract": "仅 reply owner thread 查询。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.lane-cancel-result", "category": "errorLifecycle", "header": "QCNetworkLaneCancelResult.h",
+      "symbol": "status/error", "currentContract": "不可变结果。", "targetContract": "成功 error 为空；失败 reason authoritative，文本仅诊断。", "stateAndLifetime": "构造后不变。", "threadContract": "纯值读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.cache-results", "category": "errorLifecycle", "header": "QCNetworkCache.h",
+      "symbol": "QCNetworkCacheLookupResult/QCNetworkCacheClearResult", "currentContract": "每次调用返回值状态。", "targetContract": "明确 success/partial/failure 下 errorCode 和 errorMessage 的有效条件。", "stateAndLifetime": "结果与后续缓存操作独立。", "threadContract": "纯值结果读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.transfer-job-lifecycle", "category": "errorLifecycle", "header": "QCNetworkTransferJob.h",
+      "symbol": "job error and finished", "currentContract": "job 保存最终错误。", "targetContract": "开始时清空，首次终态设置，成功为空，finished 后固定。", "stateAndLifetime": "finished signal 与查询状态一致。", "threadContract": "owner thread 查询。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.download-job-lifecycle", "category": "errorLifecycle", "header": "QCNetworkDownloadToDeviceJob.h",
+      "symbol": "download job error", "currentContract": "继承 transfer job 状态。", "targetContract": "设备错误写入同一最终状态。", "stateAndLifetime": "finished 后固定。", "threadContract": "owner thread 查询。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.resumable-job-lifecycle", "category": "errorLifecycle", "header": "QCNetworkResumableDownloadJob.h",
+      "symbol": "resumable job error", "currentContract": "继承 transfer job 状态。", "targetContract": "resume/open/write/commit 失败写入同一最终状态。", "stateAndLifetime": "finished 后固定。", "threadContract": "owner thread 查询。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.cancel-token-result", "category": "errorLifecycle", "header": "QCNetworkCancelToken.h",
+      "symbol": "AttachResult/CommandResult", "currentContract": "T2 结果即时且结构化。", "targetContract": "保持错误 enum authoritative、诊断文本仅失败有效。", "stateAndLifetime": "每次命令独立。", "threadContract": "结果纯值，命令 owner-thread-only。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.connection-pool-operation", "category": "errorLifecycle", "header": "QCNetworkConnectionPoolManager.h",
+      "symbol": "setConfig result", "currentContract": "UpdateResult 只描述本次同步提交；Applied 表示已应用，InvalidArgument 表示候选无效，管理器不保存最近错误。", "targetContract": "保持枚举为本次操作的权威结果，不引入隐藏 last-error 状态。", "stateAndLifetime": "失败保持旧配置和 multi 状态。", "threadContract": "返回纯值。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.diagnostics-result", "category": "errorLifecycle", "header": "QCNetworkDiagnostics.h",
+      "symbol": "DiagResult::success/errorString", "currentContract": "可变值允许形成 success 与 errorString 矛盾组合。", "targetContract": "文档固定完成结果：成功文本为空，失败文本有效；Future result authoritative。", "stateAndLifetime": "Future 完成后结果不再由 operation 修改。", "threadContract": "结果纯值。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.websocket-lifecycle", "category": "errorLifecycle", "header": "QCWebSocket.h",
+      "symbol": "errorString/errorOccurred and command result", "currentContract": "命令同步拒绝只记录在 QCWebSocketCommandResult；open 开始新连接周期并清空旧错误，errorString/errorOccurred 只描述当前周期。", "targetContract": "保持命令结果与连接生命周期错误两条状态边界。", "stateAndLifetime": "成功连接周期错误文本为空；errorOccurred 对应当前连接周期。", "threadContract": "socket owner thread 查询。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.websocket-pool-operation", "category": "errorLifecycle", "header": "QCWebSocketPool.h",
+      "symbol": "LeaseResult and bool mutator error outputs", "currentContract": "每次调用即时结果。", "targetContract": "成功清空可选 error，失败稳定分类或诊断；pool 不存 last error。", "stateAndLifetime": "lease 结果受 lease generation 约束。", "threadContract": "owner thread 操作。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.websocket-pool-results", "category": "errorLifecycle", "header": "QCWebSocketPoolResults.h",
+      "symbol": "acquire/prewarm status/error", "currentContract": "不可变结果。", "targetContract": "Success 时 error 为空；失败 status authoritative 且 error 仅诊断。", "stateAndLifetime": "构造后不变。", "threadContract": "纯值读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.blocking-client-result", "category": "errorLifecycle", "header": "QCBlockingNetworkClient.h",
+      "symbol": "all request methods", "currentContract": "每次同步调用返回 QCBlockingNetworkResult。", "targetContract": "结果是唯一 authoritative state，client 不保留 last error。", "stateAndLifetime": "返回后独立于 client。", "threadContract": "结果纯值。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "error.blocking-result", "category": "errorLifecycle", "header": "QCBlockingNetworkResult.h",
+      "symbol": "error/errorMessage/statusCode", "currentContract": "不可变结果主体。", "targetContract": "成功 error=NoError 且 errorMessage 为空；失败分类 authoritative，HTTP status 可为零或服务器状态。", "stateAndLifetime": "构造后不变。", "threadContract": "纯值读取。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.manager-services-and-replies", "category": "qobjectBorrow", "header": "QCNetworkAccessManager.h",
+      "symbol": "reply returns, cache and middleware pointers, parent", "currentContract": "部分位置只说明不持有。", "targetContract": "逐项注明 nullable、non-owning、parent/manager 失效条件和 owner-thread 限制。", "stateAndLifetime": "reply 由 manager parent tree 管理；cache/middleware 由调用方保活。", "threadContract": "只在各 QObject affinity thread 判空和调用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.reply-parent-and-callback", "category": "qobjectBorrow", "header": "QCNetworkReply.h",
+      "symbol": "parent and callback-visible reply pointer", "currentContract": "QObject parent 默认可空。", "targetContract": "说明 manager/reply parent 生命周期和 middleware 回调仅当次借用。", "stateAndLifetime": "destroyed 后所有裸指针失效。", "threadContract": "reply owner thread。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.scheduler-replies", "category": "qobjectBorrow", "header": "QCNetworkRequestScheduler.h",
+      "symbol": "schedule/cancel/changePriority and pending/running reply pointers", "currentContract": "scheduler 保存 guarded 观察。", "targetContract": "返回列表与参数均 non-owning，只能在 owner thread 当次使用；reply 析构立即失效。", "stateAndLifetime": "不得跨事件循环保存裸指针。", "threadContract": "scheduler/reply owner thread。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.cache-parent", "category": "qobjectBorrow", "header": "QCNetworkCache.h",
+      "symbol": "QCNetworkCache(QObject *parent)", "currentContract": "标准可空 parent。", "targetContract": "说明 parent owning 与 affinity。", "stateAndLifetime": "parent 销毁会销毁 cache。", "threadContract": "parent 与 cache 同线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.memory-cache-parent", "category": "qobjectBorrow", "header": "QCNetworkMemoryCache.h",
+      "symbol": "QCNetworkMemoryCache(QObject *parent)", "currentContract": "标准可空 parent。", "targetContract": "继承基类 parent 合同。", "stateAndLifetime": "parent owning。", "threadContract": "构造时同线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.disk-cache-parent", "category": "qobjectBorrow", "header": "QCNetworkDiskCache.h",
+      "symbol": "QCNetworkDiskCache(QObject *parent)", "currentContract": "标准可空 parent。", "targetContract": "继承基类 parent 合同。", "stateAndLifetime": "parent owning。", "threadContract": "构造时同线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.body-device", "category": "qobjectBorrow", "header": "QCNetworkBody.h",
+      "symbol": "device-backed body factories", "currentContract": "设备借用/转移由具体 factory 表达。", "targetContract": "明确 nullable、ownership transfer 和执行结束失效条件。", "stateAndLifetime": "失败不转移，成功由 body/job 合同保活。", "threadContract": "设备 affinity thread。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.multipart-device", "category": "qobjectBorrow", "header": "QCNetworkMultipartBody.h",
+      "symbol": "fromSingleFileDevice/takeDevice", "currentContract": "输入设备指针与输出 parent 参数。", "targetContract": "明确成功转移、失败保持和 parent 销毁失效。", "stateAndLifetime": "take 成功后由返回设备 parent tree 管理。", "threadContract": "源设备、parent 与调用线程 affinity 一致。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.transfer-job-reply", "category": "qobjectBorrow", "header": "QCNetworkTransferJob.h",
+      "symbol": "setReply/reply/parent", "currentContract": "job 观察 reply。", "targetContract": "明确 nullable、non-owning、reply destroyed 失效和同线程。", "stateAndLifetime": "reply destroyed 会终止或清理 job 关联。", "threadContract": "job 与 reply owner thread 相同。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.download-device", "category": "qobjectBorrow", "header": "QCNetworkDownloadToDeviceJob.h",
+      "symbol": "output QIODevice and parent", "currentContract": "job 不拥有外部输出设备。", "targetContract": "明确设备必须存活到 finished 且同线程，销毁会失败终止。", "stateAndLifetime": "调用方保活设备。", "threadContract": "job/reply/device affinity 一致。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.resumable-manager", "category": "qobjectBorrow", "header": "QCNetworkResumableDownloadJob.h",
+      "symbol": "QCNetworkAccessManager pointer and parent", "currentContract": "job 借用 manager 发起请求。", "targetContract": "明确 non-null、non-owning、manager 必须活到 job 完成。", "stateAndLifetime": "manager 销毁使借用失效。", "threadContract": "job 与 manager owner thread 相同。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.cancel-token-replies", "category": "qobjectBorrow", "header": "QCNetworkCancelToken.h",
+      "symbol": "attach/detach reply pointers", "currentContract": "T2 使用 registration id 观察 reply。", "targetContract": "补足 nullable、同 affinity、destroyed 后自动失效。", "stateAndLifetime": "token 不拥有 reply。", "threadContract": "token/reply owner thread 相同。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.middleware-objects", "category": "qobjectBorrow", "header": "QCNetworkMiddleware.h",
+      "symbol": "manager/reply callback pointers", "currentContract": "manager 不拥有 middleware。", "targetContract": "回调 reply 只在当次调用存活；register manager 借用至 unregister/destroyed。", "stateAndLifetime": "不得跨异步边界保存裸指针。", "threadContract": "manager/reply owner thread。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.test-support-objects", "category": "qobjectBorrow", "header": "QCNetworkTestSupport.h",
+      "symbol": "setMockHandler/mockHandler", "currentContract": "Test Support 绑定 manager 与 handler 裸指针。", "targetContract": "manager 非空且 owner-thread；handler nullable/non-owning，destroyed 或替换后失效。", "stateAndLifetime": "调用方保活 handler。", "threadContract": "manager/handler affinity 一致。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.diagnostics-cancel-token", "category": "qobjectBorrow", "header": "QCNetworkDiagnostics.h",
+      "symbol": "optional QCNetworkCancelToken *", "currentContract": "可空取消令牌。", "targetContract": "明确不拥有、Future 完成前保活、同线程且析构触发取消。", "stateAndLifetime": "Future 完成后不再访问 token。", "threadContract": "启动线程与 token affinity 一致。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.websocket-parent", "category": "qobjectBorrow", "header": "QCWebSocket.h",
+      "symbol": "QCWebSocket QObject parent", "currentContract": "标准可空 parent。", "targetContract": "明确 parent owning、socket owner-thread-only。", "stateAndLifetime": "parent 销毁使 socket 指针失效。", "threadContract": "parent 与 socket 同线程。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "borrow.websocket-lease", "category": "qobjectBorrow", "header": "QCWebSocketPool.h",
+      "symbol": "resolveLease(LeaseId, QCWebSocket **)", "currentContract": "T3 已完整说明非 owning、失效和 owner thread。", "targetContract": "保持纯值 lease 到 owner-thread 临时解析。", "stateAndLifetime": "release/clear/destroy/socket destroy 立即失效。", "threadContract": "pool owner thread。", "disposition": "keep", "phase": "T5"
+    },
+    {
+      "id": "borrow.blocking-body-device", "category": "qobjectBorrow", "header": "QCBlockingNetworkClient.h",
+      "symbol": "post/put/downloadToDevice QIODevice pointers and progress userData", "currentContract": "设备和 userData 由调用方持有。", "targetContract": "明确非空条件、同步调用期间保活、调用线程 affinity 和不跨返回保存。", "stateAndLifetime": "函数返回后 client 不再访问借用。", "threadContract": "设备在调用线程使用。", "disposition": "document", "phase": "T7"
+    },
+    {
+      "id": "ownership.logger-manager-handle", "category": "owningSmartPointer", "header": "QCNetworkAccessManager.h",
+      "symbol": "setLogger/logger", "currentContract": "已使用 exported opaque QCNetworkLoggerHandle；public ABI 不出现 logger owning smart pointer。", "targetContract": "保持控制块、复制、移动、析构和最终删除位于 QCurl 库内。", "stateAndLifetime": "manager 保存当前 handle，替换不影响既有 reply snapshot。", "threadContract": "handle 是值；get()/getAs() 只返回受 handle 生命周期约束的非 owning 借用。", "disposition": "hard-break", "phase": "T6"
+    },
+    {
+      "id": "ownership.logger-reply-snapshot", "category": "owningSmartPointer", "header": "QCNetworkReply.h",
+      "symbol": "loggerSnapshot", "currentContract": "已返回 QCNetworkLoggerHandle；原 logger 由最后一个库内 handle 保活。", "targetContract": "保持 opaque handle snapshot，不恢复 owning smart pointer。", "stateAndLifetime": "reply 创建时固定 snapshot，manager 替换不改变；reply 和外部 handle 均释放后才执行库内删除。", "threadContract": "handle 可复制；get()/getAs() 返回的裸指针只在同控制块句柄存活期间借用。", "disposition": "hard-break", "phase": "T6"
+    }
+  ]
+}

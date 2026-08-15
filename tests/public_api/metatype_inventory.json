@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "initializationEntryPoint": "QCurl::initialize",
+  "registrationSources": [
+    "QCGlobal.cpp",
+    "QCNetworkRequestPriority.h"
+  ],
+  "canonicalNames": [
+    {
+      "type": "QCurl::QCCookie",
+      "canonicalName": "QCurl::QCCookie",
+      "compatibilityReason": "支持动态名称解析、QVariant/QSignalSpy 与静态包 consumer 的稳定名称。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCCookieOperationResult",
+      "canonicalName": "QCurl::QCCookieOperationResult",
+      "compatibilityReason": "支持 cookie 异步结果在反射和静态包 consumer 中使用稳定名称。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCCookieExportResult",
+      "canonicalName": "QCurl::QCCookieExportResult",
+      "compatibilityReason": "支持 cookie 导出结果在反射和静态包 consumer 中使用稳定名称。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkLaneKey",
+      "canonicalName": "QCurl::QCNetworkLaneKey",
+      "compatibilityReason": "支持 lane 值在动态名称解析、QVariant 与 staged consumer 中复用。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkSchedulerPolicy",
+      "canonicalName": "QCurl::QCNetworkSchedulerPolicy",
+      "compatibilityReason": "支持调度策略值在反射、测试探针与 staged consumer 中复用。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkSchedulerPolicy::LaneConfig",
+      "canonicalName": "QCurl::QCNetworkSchedulerPolicy::LaneConfig",
+      "compatibilityReason": "支持嵌套 lane 配置以完整限定名进行动态解析。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkSchedulerStatistics",
+      "canonicalName": "QCurl::QCNetworkSchedulerStatistics",
+      "compatibilityReason": "支持调度统计快照在 QVariant、QSignalSpy 与 staged consumer 中使用稳定名称。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkLaneCancelResult",
+      "canonicalName": "QCurl::QCNetworkLaneCancelResult",
+      "compatibilityReason": "支持 lane 取消结果在反射和 staged consumer 中使用稳定名称。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
+      "type": "QCurl::QCNetworkRequestPriority",
+      "canonicalName": "QCurl::QCNetworkRequestPriority",
+      "compatibilityReason": "支持真实 typed queued 投递、QSignalSpy 与动态名称解析使用同一稳定名称。",
+      "registrationSource": "QCNetworkRequestPriority.h",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    }
+  ]
+}

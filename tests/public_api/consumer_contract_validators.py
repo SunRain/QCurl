@@ -66,7 +66,11 @@ def validate_scheduler_core_contract_fixture(source_dir: Path) -> None:
             ".setPinnedPublicKey(",
             ".setConnectTimeout(",
             ".setTotalTimeout(",
-            ".setRetryHttpStatusErrorsForGetOnly(",
+            "QCNetworkRetryPolicy::tryCreate(",
+            "QCNetworkRetryPolicy::UpdateResult::Applied",
+            ".setRetryMethodPolicy(",
+            ".retryMethodPolicy()",
+            '"Idempotency-Key"',
             ".setHttpAuth(",
             ".httpAuth()",
             "QCurl::QCNetworkAccessManager::ShareHandleConfig shareConfig",
@@ -133,7 +137,9 @@ def validate_logger_core_contract_fixture(source_dir: Path) -> None:
             "#include <QCNetworkLogger.h>",
             "class ConsumerSmokeLogger : public QCurl::QCNetworkLogger",
             "QCurl::NetworkLogEntry entry(",
-            "manager.setLogger(&logger)",
+            "QCurl::QCNetworkLoggerHandle::createWithBorrow(&consumerLogger)",
+            "QCNetworkLogResult log(const QCurl::NetworkLogEntry &entry) override",
+            "manager.setLogger(logger)",
             "manager.logger()",
             "manager.setDebugTraceEnabled(true)",
             "manager.debugTraceEnabled()",
@@ -160,11 +166,11 @@ def validate_default_logger_core_contract_fixture(source_dir: Path) -> None:
         _fixture_source(source_dir),
         [
             "#include <QCNetworkDefaultLogger.h>",
-            "QCurl::QCNetworkDefaultLogger defaultLogger",
-            "defaultLogger.enableConsoleOutput(false)",
-            "defaultLogger.setMinLogLevel(QCurl::NetworkLogLevel::Warning)",
-            "manager.setLogger(&defaultLogger)",
-            "defaultLogger.entries()",
+            "QCurl::QCNetworkLoggerHandle::createWithBorrow(",
+            "defaultLoggerImplementation->enableConsoleOutput(false)",
+            "defaultLoggerImplementation->setMinLogLevel(QCurl::NetworkLogLevel::Warning)",
+            "manager.setLogger(defaultLogger)",
+            "defaultLoggerImplementation->entries()",
         ],
         "consumer smoke fixture is missing required DefaultLogger contract coverage",
     )
@@ -180,13 +186,33 @@ def validate_cancel_token_core_contract_fixture(source_dir: Path) -> None:
             "QCurl::QCNetworkCancelToken cancelToken",
             "QCurl::QCNetworkReply *replyToCancel",
             "QList<QCurl::QCNetworkReply *> repliesToCancel",
-            "cancelToken.attach(replyToCancel)",
-            "cancelToken.attachMultiple(repliesToCancel)",
-            "cancelToken.setAutoTimeout(0)",
-            "cancelToken.cancel()",
+            "const auto nullAttachResult   = cancelToken.attach(replyToCancel)",
+            "const auto batchAttachResults = cancelToken.attachMultiple(repliesToCancel)",
+            "const auto timeoutResult      = cancelToken.setAutoTimeout(0)",
+            "QCurl::QCNetworkCancelToken::AttachResult::NullReply",
+            "QCurl::QCNetworkCancelToken::CommandResult::NoChange",
+            "cancelToken.cancel() != QCurl::QCNetworkCancelToken::CommandResult::Applied",
             "cancelToken.isCancelled()",
         ],
         "consumer smoke fixture is missing required CancelToken contract coverage",
+    )
+
+
+def validate_reply_lifecycle_core_contract_fixture(source_dir: Path) -> None:
+    """Ensure consumers use QObject's inherited deferred-delete API."""
+
+    source = _fixture_source(source_dir)
+    _require_snippets(
+        source,
+        [
+            "QCurl::QCNetworkReply *replyForDeleteLater = nullptr;",
+            "if (replyForDeleteLater) {",
+            "replyForDeleteLater->deleteLater();",
+            "QCurl::QCNetworkReply::staticMetaObject",
+            'indexOfSlot("deleteLater()")',
+            "deleteLaterIndex >= replyMeta.methodOffset()",
+        ],
+        "consumer smoke fixture is missing inherited QObject deleteLater coverage",
     )
 
 
@@ -233,15 +259,17 @@ def validate_cache_core_contract_fixture(source_dir: Path) -> None:
         source,
         [
             "#include <QCNetworkCache.h>",
+            "#include <QCNetworkCacheRequestKey.h>",
             "#include <QCNetworkMemoryCache.h>",
             "#include <QCNetworkDiskCache.h>",
             "QCurl::QCNetworkMemoryCache memoryCache",
             "QCurl::QCNetworkCache *cacheInterface",
             "QCurl::QCNetworkCacheMetadata cacheMetadata",
+            "QCurl::QCNetworkCacheRequestKey cacheKey",
             "cacheMetadata.setUrl(request.url())",
             "cacheMetadata.setHeader(QByteArrayLiteral(\"Content-Type\")",
-            "cacheInterface->insert(request.url(), cacheBody, cacheMetadata)",
-            "cacheInterface->lookup(request.url()",
+            "cacheInterface->insert(cacheKey, cacheBody, cacheMetadata)",
+            "cacheInterface->lookup(cacheKey",
             "cacheLookup.status()",
             "cacheLookup.metadata().url()",
             "cacheLookup.body()",
@@ -269,8 +297,9 @@ def validate_cache_core_contract_fixture(source_dir: Path) -> None:
 def validate_multipart_core_contract_fixture(source_dir: Path) -> None:
     """Ensure consumer smoke keeps Multipart Core builder coverage."""
 
+    source = _fixture_source(source_dir)
     _require_snippets(
-        _fixture_source(source_dir),
+        source,
         [
             "#include <QCMultipartFormData.h>",
             "#include <QCNetworkBody.h>",
@@ -293,13 +322,16 @@ def validate_multipart_core_contract_fixture(source_dir: Path) -> None:
             "singleFileMultipart->takeDevice(&app, &multipartError)",
             "QCurl::QCNetworkDownloadToDeviceJob downloadJobTypeProbe",
             "downloadJobTypeProbe.start()",
-            "QCurl::QCNetworkResumableDownloadJob resumableJobTypeProbe",
             "resumableJobTypeProbe.start()",
             "multipartBody.contentType()",
             "multipartBody.data()",
         ],
         "consumer smoke fixture is missing required body/multipart/job contract coverage",
     )
+    if not re.search(r"QCurl::QCNetworkResumableDownloadJob\s+resumableJobTypeProbe", source):
+        raise RuntimeError(
+            "consumer smoke fixture is missing required resumable download job contract coverage"
+        )
 
 
 def validate_connection_pool_core_contract_fixture(source_dir: Path) -> None:

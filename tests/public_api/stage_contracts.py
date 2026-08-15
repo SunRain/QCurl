@@ -25,7 +25,10 @@ def install_stage(args, *, run_command: RunCommand, fail_func: FailFunc) -> int:
         shutil.rmtree(args.stage_dir)
     args.stage_dir.mkdir(parents=True, exist_ok=True)
 
-    components = args.components or ["Development", "Runtime", "BundledRuntime"]
+    all_components = bool(getattr(args, "all_components", False))
+    components = [None] if all_components else (
+        args.components or ["Development", "Runtime", "BundledRuntime"]
+    )
     try:
         for component in components:
             command = [
@@ -34,9 +37,9 @@ def install_stage(args, *, run_command: RunCommand, fail_func: FailFunc) -> int:
                 str(args.build_dir),
                 "--prefix",
                 str(args.stage_dir),
-                "--component",
-                component,
             ]
+            if component is not None:
+                command.extend(["--component", component])
             if args.config:
                 command.extend(["--config", args.config])
             run_command(command)

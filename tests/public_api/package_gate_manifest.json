@@ -1,0 +1,86 @@
+{
+  "schema": "qcurl/package-safety-gate@v1",
+  "installMode": "default-all-components",
+  "candidatePolicy": {
+    "forceDisableOption": "QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT",
+    "forceDisabledReleaseEligible": false,
+    "webSocketTests": [
+      "tst_QCWebSocket",
+      "tst_QCWebSocketPool"
+    ]
+  },
+  "runtimeTargets": {
+    "Core": {
+      "cmakeTarget": "QCurl::QCurl",
+      "installComponents": [
+        "Runtime",
+        "Development"
+      ],
+      "consumerTests": {
+        "shared": "qcurl_public_api_consumer_smoke",
+        "static": "qcurl_public_api_consumer_smoke"
+      },
+      "lifecycleTests": [
+        "tst_QCNetworkReply"
+      ],
+      "sanitizerEvidence": [
+        "asan-ubsan-lsan",
+        "tsan"
+      ]
+    },
+    "BlockingExtras": {
+      "cmakeTarget": "QCurl::BlockingExtras",
+      "installComponents": [
+        "BlockingExtrasDevelopment"
+      ],
+      "consumerTests": {
+        "shared": "qcurl_public_api_blocking_extras_consumer_smoke",
+        "static": "qcurl_public_api_blocking_extras_consumer_smoke"
+      },
+      "lifecycleTests": [
+        "tst_QCBlockingNetworkClient",
+        "tst_QCBlockingRequestConfig"
+      ],
+      "sanitizerEvidence": [
+        "asan-ubsan-lsan"
+      ]
+    },
+    "TestSupport": {
+      "cmakeTarget": "QCurl::TestSupport",
+      "installComponents": [
+        "TestSupportDevelopment"
+      ],
+      "consumerTests": {
+        "shared": "qcurl_public_api_test_support_consumer_smoke",
+        "static": "qcurl_public_api_test_support_consumer_smoke"
+      },
+      "lifecycleTests": [
+        "tst_QCNetworkMockHandler"
+      ],
+      "sanitizerEvidence": [
+        "asan-ubsan-lsan"
+      ]
+    },
+    "OtherExtras": {
+      "cmakeTarget": "QCurl::OtherExtras",
+      "installComponents": [
+        "Runtime",
+        "Development",
+        "OtherExtrasDevelopment"
+      ],
+      "consumerTests": {
+        "shared": "qcurl_public_api_other_extras_consumer_smoke",
+        "static": "qcurl_public_api_other_extras_consumer_smoke"
+      },
+      "lifecycleTests": [
+        "tst_QCNetworkDiagnostics",
+        "tst_QCWebSocket",
+        "tst_QCWebSocketPool"
+      ],
+      "sanitizerEvidence": [
+        "asan-ubsan-lsan",
+        "tsan"
+      ]
+    }
+  }
+}

@@ -18,8 +18,10 @@ from tests.public_api.consumer_contract_validators import validate_logger_core_c
 from tests.public_api.consumer_contract_validators import validate_middleware_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_multipart_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_request_config_core_contract_fixture
+from tests.public_api.consumer_contract_validators import validate_reply_lifecycle_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_scheduler_core_contract_fixture
 from tests.public_api.consumer_cookie_contracts import validate_cookie_async_result_core_contract_fixture
+from tests.public_api.metatype_inventory import validate_metatype_inventory
 
 
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
@@ -42,6 +44,7 @@ CONSUMER_FIXTURE_VALIDATORS = (
     validate_multipart_core_contract_fixture,
     validate_default_logger_core_contract_fixture,
     validate_cancel_token_core_contract_fixture,
+    validate_reply_lifecycle_core_contract_fixture,
     validate_connection_pool_core_contract_fixture,
     validate_cookie_async_result_core_contract_fixture,
     validate_middleware_core_contract_fixture,
@@ -110,6 +113,36 @@ def validate_metatype_fixture(source_dir: Path) -> None:
             "consumer metatype smoke fixture is missing required static initialization coverage: "
             + ", ".join(missing)
         )
+
+    typed_queued_snippets = [
+        "&MetatypeProbe::priorityReady",
+        "Qt::QueuedConnection",
+        "Q_EMIT probe.priorityReady(QCurl::QCNetworkRequestPriority::High)",
+        "eventLoop.exec();",
+    ]
+    missing = [snippet for snippet in typed_queued_snippets if snippet not in source]
+    if missing:
+        raise RuntimeError(
+            "consumer metatype smoke fixture is missing typed queued coverage: "
+            + ", ".join(missing)
+        )
+
+    initialize_index = source.find("QCurl::initialize();")
+    first_connection_index = source.find("QObject::connect(")
+    if initialize_index < 0 or first_connection_index < 0 or initialize_index > first_connection_index:
+        raise RuntimeError(
+            "consumer metatype smoke fixture must call QCurl::initialize() "
+            "before the first Qt connection"
+        )
+
+    public_api_root = Path(__file__).resolve().parent
+    inventory_errors = validate_metatype_inventory(
+        public_api_root / "metatype_inventory.json",
+        public_api_root.parents[1] / "src",
+        source_dir,
+    )
+    if inventory_errors:
+        raise RuntimeError("metatype inventory validation failed: " + "; ".join(inventory_errors))
 
 
 def run_metatype_consumer_smoke(args: Namespace, *, run_command: RunCommand, fail_func: FailFunc) -> int:

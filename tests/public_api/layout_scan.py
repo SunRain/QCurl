@@ -66,7 +66,7 @@ def direct_private_layout_fields(statements: list[str]) -> list[str]:
         "class ",
         "struct ",
     )
-    holder_pattern = re.compile(r"\b(?:QScopedPointer|QSharedDataPointer)\s*<")
+    holder_pattern = re.compile(r"\b(?:QScopedPointer|QSharedDataPointer|std::unique_ptr)\s*<")
     fields: list[str] = []
     for statement in statements:
         normalized = " ".join(statement.split())
@@ -275,7 +275,11 @@ def collect_layout_findings(
                     )
                 )
 
-        has_incomplete_holder = "QScopedPointer<" in body or "QSharedDataPointer<" in body
+        has_incomplete_holder = (
+            "QScopedPointer<" in body
+            or "QSharedDataPointer<" in body
+            or "std::unique_ptr<" in body
+        )
         if not has_incomplete_holder:
             continue
 
@@ -365,4 +369,3 @@ def collect_layout_findings(
             )
 
     return findings
-

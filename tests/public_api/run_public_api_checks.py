@@ -20,6 +20,7 @@ from tests.public_api.test_support_contracts import run_test_support_consumer_sm
 from tests.public_api.other_extras_contracts import check_other_extras_install as _check_other_extras_install
 from tests.public_api.other_extras_contracts import run_other_extras_consumer_smoke
 from tests.public_api.pkg_config_contracts import check_pkg_config_contract as _check_pkg_config_contract
+from tests.public_api.public_contract_inventory import validate_public_contract_inventory
 from tests.public_api.consumer_contracts import run_consumer_smoke
 from tests.public_api.consumer_contracts import run_metatype_consumer_smoke
 from tests.public_api.export_contracts import check_export_contract as _check_export_contract
@@ -46,6 +47,11 @@ def _add_public_api_install_args(parser: argparse.ArgumentParser) -> None:
     _add_common_build_args(parser)
     parser.add_argument("--stage-dir", type=Path, required=True)
     parser.add_argument("--component", action="append", dest="components")
+    parser.add_argument(
+        "--all-components",
+        action="store_true",
+        help="run the default install without a component filter",
+    )
 
 
 def _add_opt_in_smoke_args(parser: argparse.ArgumentParser, stage_arg: str) -> None:
@@ -160,6 +166,20 @@ def scan_hard_break_guards(args: argparse.Namespace) -> int:
     """Scan source/documentation surfaces for APIs removed by hard-break cleanup."""
 
     return _scan_hard_break_guards(args.repo_root, fail)
+
+
+def check_public_contract_inventory(args: argparse.Namespace) -> int:
+    """Verify four-axis classification for every installed public header."""
+
+    errors = validate_public_contract_inventory(
+        args.inventory,
+        args.surface_manifest,
+        args.source_root,
+    )
+    if errors:
+        return fail("public contract inventory is incomplete:\n" + "\n".join(errors))
+    print("[public_api] public contract inventory passed")
+    return 0
 
 
 def install_stage(args: argparse.Namespace) -> int:
@@ -291,6 +311,12 @@ def build_parser() -> argparse.ArgumentParser:
     hard_break = subparsers.add_parser("hard-break-guards")
     hard_break.add_argument("--repo-root", type=Path, required=True)
     hard_break.set_defaults(func=scan_hard_break_guards)
+
+    inventory = subparsers.add_parser("public-contract-inventory")
+    inventory.add_argument("--inventory", type=Path, required=True)
+    inventory.add_argument("--surface-manifest", type=Path, required=True)
+    inventory.add_argument("--source-root", type=Path, required=True)
+    inventory.set_defaults(func=check_public_contract_inventory)
 
     surface = subparsers.add_parser("surface-manifest")
     surface.add_argument("--surface-manifest", type=Path, required=True)

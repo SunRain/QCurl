@@ -76,7 +76,10 @@ QCURL_EXPORT void initialize();
  * - Fail：默认更安全的策略。若用户显式启用某安全能力但运行时不可用，则请求失败并返回可诊断错误。
  * - Warn：兼容性策略。若运行时不可用，则忽略该能力并输出 warning（不得包含敏感信息）。
  */
-enum class QCUnsupportedSecurityOptionPolicy { Fail, Warn };
+enum class QCUnsupportedSecurityOptionPolicy {
+    Fail,
+    Warn,
+};
 
 // 特性检查辅助函数
 constexpr bool hasWebSocketSupport() noexcept

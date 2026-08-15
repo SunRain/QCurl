@@ -113,10 +113,12 @@ def test_check_export_contract_rejects_unconditional_zlib_find_dependency(tmp_pa
     rc = public_api.check_export_contract(Namespace(stage_dir=stage))
 
     assert rc == 1
-    assert "Core static consumer must not unconditionally find ZLIB" in capsys.readouterr().err
+    output = capsys.readouterr().err
+    assert "OtherExtras export must not expose ZLIB::ZLIB" in output
+    assert "must not find_dependency(ZLIB)" in output
 
 
-def test_check_export_contract_accepts_other_extras_gated_zlib_find_dependency(tmp_path, capsys) -> None:
+def test_check_export_contract_rejects_other_extras_gated_zlib_find_dependency(tmp_path, capsys) -> None:
     stage = tmp_path / "stage"
     target_dir = stage / "lib" / "cmake" / "QCurl"
     target_dir.mkdir(parents=True)
@@ -141,5 +143,7 @@ def test_check_export_contract_accepts_other_extras_gated_zlib_find_dependency(t
 
     rc = public_api.check_export_contract(Namespace(stage_dir=stage))
 
-    assert rc == 0
-    assert "export contract passed" in capsys.readouterr().out
+    assert rc == 1
+    output = capsys.readouterr().err
+    assert "OtherExtras export must not expose ZLIB::ZLIB" in output
+    assert "must not find_dependency(ZLIB)" in output

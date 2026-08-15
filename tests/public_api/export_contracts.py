@@ -10,11 +10,6 @@ STATIC_PUBLIC_DEPENDENCIES = {
     "CURL::libcurl": "CURL",
 }
 
-STATIC_OTHER_EXTRAS_DEPENDENCIES = {
-    "ZLIB::ZLIB": "ZLIB",
-}
-
-
 def check_export_contract(stage_dir: Path, *, fail_func) -> int:
     """Verify installed export files expose only expected dependency targets."""
 
@@ -26,10 +21,6 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
     config_files = sorted(stage_dir.rglob("QCurlConfig.cmake"))
     config_content = "\n".join(path.read_text(encoding="utf-8") for path in config_files)
     zlib_find_dependency = re.search(r"find_dependency\s*\(\s*ZLIB\b", config_content)
-    unconditional_zlib_dependency = (
-        zlib_find_dependency is not None
-        and "OtherExtras" not in config_content[:zlib_find_dependency.start()]
-    )
     qtnetwork_find_dependency = re.search(
         r"find_dependency\s*\(\s*Qt6\s+REQUIRED\s+COMPONENTS\s+Network\b",
         config_content,
@@ -70,6 +61,22 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
         )
         if core_zlib_dep:
             violations.append(f"{target_file.name}: Core export must not expose ZLIB::ZLIB")
+        other_extras_properties = re.search(
+            r"set_target_properties\s*\(\s*QCurl::OtherExtras\s+PROPERTIES(?P<body>.*?)\)",
+            content,
+            re.DOTALL,
+        )
+        other_extras_zlib_dep = (
+            other_extras_properties is not None
+            and re.search(
+                r"INTERFACE_LINK_LIBRARIES[^\n]*\bZLIB::ZLIB\b",
+                other_extras_properties.group("body"),
+            )
+        )
+        if other_extras_zlib_dep:
+            violations.append(
+                f"{target_file.name}: OtherExtras export must not expose ZLIB::ZLIB"
+            )
         core_qtnetwork_dep = (
             core_properties is not None
             and re.search(
@@ -83,8 +90,8 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
             violations.append(
                 "QCurlConfig.cmake: Core consumer must not unconditionally find Qt6::Network"
             )
-        if static_export and unconditional_zlib_dependency:
-            violations.append("QCurlConfig.cmake: Core static consumer must not unconditionally find ZLIB")
+        if zlib_find_dependency:
+            violations.append("QCurlConfig.cmake: QCurl components must not find_dependency(ZLIB)")
         if static_export:
             for target, dependency in STATIC_PUBLIC_DEPENDENCIES.items():
                 if re.search(rf"\b{re.escape(target)}\b", content) and (
@@ -94,17 +101,6 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
                         f"{target_file.name}: static export depends on {target} but "
                         f"QCurlConfig.cmake does not find_dependency({dependency})"
                     )
-            for target, dependency in STATIC_OTHER_EXTRAS_DEPENDENCIES.items():
-                other_extras_dep = re.search(
-                    rf"INTERFACE_LINK_LIBRARIES[^\n]*QCurl::QCurl[^\n]*{re.escape(target)}",
-                    content,
-                )
-                if other_extras_dep and f"find_dependency({dependency}" not in config_content:
-                    violations.append(
-                        f"{target_file.name}: static OtherExtras depends on {target} but "
-                        f"QCurlConfig.cmake does not find_dependency({dependency})"
-                    )
-
     required_targets = {
         "QCurl::QCurl",
         "QCurl::BlockingExtras",

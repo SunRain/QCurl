@@ -1,32 +1,33 @@
 #include "contract_probes.h"
 
+#include <QBuffer>
+#include <QCMultipartFormData.h>
 #include <QCNetworkAccessManager.h>
+#include <QCNetworkBody.h>
 #include <QCNetworkCache.h>
 #include <QCNetworkCachePolicy.h>
+#include <QCNetworkCacheRequestKey.h>
 #include <QCNetworkCancelToken.h>
 #include <QCNetworkConnectionPoolConfig.h>
 #include <QCNetworkConnectionPoolManager.h>
+#include <QCNetworkDefaultLogger.h>
 #include <QCNetworkDiskCache.h>
 #include <QCNetworkDownloadToDeviceJob.h>
-#include <QCNetworkDefaultLogger.h>
 #include <QCNetworkHttpMethod.h>
 #include <QCNetworkLaneCancelResult.h>
 #include <QCNetworkLaneKey.h>
 #include <QCNetworkLogger.h>
 #include <QCNetworkMemoryCache.h>
 #include <QCNetworkMiddleware.h>
-#include <QCNetworkBody.h>
 #include <QCNetworkMultipartBody.h>
-#include <QCMultipartFormData.h>
 #include <QCNetworkProxyConfig.h>
-#include <QCNetworkResumableDownloadJob.h>
-#include <QCNetworkRequest.h>
 #include <QCNetworkReply.h>
+#include <QCNetworkRequest.h>
+#include <QCNetworkResumableDownloadJob.h>
 #include <QCNetworkRetryPolicy.h>
 #include <QCNetworkSchedulerPolicy.h>
 #include <QCNetworkSslConfig.h>
 #include <QCNetworkTimeoutConfig.h>
-#include <QBuffer>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QJsonObject>
@@ -35,6 +36,10 @@
 #include <QUrl>
 
 #include <chrono>
+#include <type_traits>
+
+static_assert(std::is_constructible_v<QCurl::QCNetworkRequest, const QUrl &>);
+static_assert(!std::is_convertible_v<QUrl, QCurl::QCNetworkRequest>);
 
 class ConsumerSmokeLogger : public QCurl::QCNetworkLogger
 {
@@ -42,10 +47,11 @@ public:
     int count = 0;
     QCurl::NetworkLogEntry lastEntry;
 
-    void log(const QCurl::NetworkLogEntry &entry) override
+    QCurl::QCNetworkLogResult log(const QCurl::NetworkLogEntry &entry) override
     {
         ++count;
         lastEntry = entry;
+        return {};
     }
 };
 
@@ -139,11 +145,19 @@ int main(int argc, char **argv)
         return 6;
     }
 
-    QCurl::QCNetworkRetryPolicy retryPolicy(3, std::chrono::milliseconds(250));
-    retryPolicy.setRetryHttpStatusErrorsForGetOnly(true);
+    QCurl::QCNetworkRetryPolicy retryPolicy;
+    if (QCurl::QCNetworkRetryPolicy::tryCreate(3, std::chrono::milliseconds(250), 2.0, &retryPolicy)
+            != QCurl::QCNetworkRetryPolicy::UpdateResult::Applied
+        || retryPolicy.setRetryMethodPolicy(
+               QCurl::QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey)
+               != QCurl::QCNetworkRetryPolicy::UpdateResult::Applied) {
+        return 7;
+    }
+    request.setRawHeader("Idempotency-Key", "consumer-stable-1");
     request.setRetryPolicy(retryPolicy);
     if (request.retryPolicy().maxRetries() != 3
-        || !request.retryPolicy().retryHttpStatusErrorsForGetOnly()) {
+        || request.retryPolicy().retryMethodPolicy()
+               != QCurl::QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey) {
         return 7;
     }
 
@@ -163,12 +177,21 @@ int main(int argc, char **argv)
     cacheMetadata.setExpirationDate(QDateTime::currentDateTimeUtc().addSecs(60));
     cacheMetadata.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain"));
     const QByteArray cacheBody = QByteArrayLiteral("consumer-smoke-cache");
-    cacheInterface->insert(request.url(), cacheBody, cacheMetadata);
+    QCurl::QCNetworkCacheRequestKey cacheKey(QCurl::HttpMethod::Get, request.url());
+    cacheInterface->insert(cacheKey, cacheBody, cacheMetadata);
 
-    const auto cacheLookup = cacheInterface->lookup(request.url(),
+    const auto cacheLookup = cacheInterface->lookup(cacheKey,
                                                     QCurl::QCNetworkCacheReadMode::FreshOnly);
     if (cacheLookup.status() != QCurl::QCNetworkCacheLookupStatus::FreshHit
         || cacheLookup.metadata().url() != request.url() || cacheLookup.body() != cacheBody) {
+        return 9;
+    }
+    const QCurl::QCNetworkCacheClearResult cacheClear = cacheInterface->clear();
+    if (cacheClear.status() != QCurl::QCNetworkCacheClearResult::Status::Success
+        || cacheClear.removedCount() != 1 || cacheClear.failedCount() != 0
+        || cacheClear.remainingBytes() != 0
+        || cacheClear.errorCode() != QCurl::QCNetworkCacheClearResult::ErrorCode::None
+        || !cacheClear.errorMessage().isEmpty()) {
         return 9;
     }
 
@@ -186,8 +209,7 @@ int main(int argc, char **argv)
                           QStringLiteral("text/plain"));
     if (formData.fieldCount() != 2
         || !formData.contentType().contains(QStringLiteral("----QCurlConsumerSmokeBoundary"))
-        || formData.size() <= 0
-        || !formData.toByteArray().contains(QByteArrayLiteral("payload"))) {
+        || formData.size() <= 0 || !formData.toByteArray().contains(QByteArrayLiteral("payload"))) {
         return 10;
     }
     const QCurl::QCNetworkBody jsonBody = QCurl::QCNetworkBody::fromJson(
@@ -196,22 +218,25 @@ int main(int argc, char **argv)
         QList<QPair<QString, QString>>{{QStringLiteral("name"), QStringLiteral("core value")},
                                        {QStringLiteral("name"), QStringLiteral("second value")}});
     const bool bodyOverloadValid = jsonBody.contentType() == QByteArrayLiteral("application/json")
-        && jsonBody.data().contains(QByteArrayLiteral("core"))
-        && formBody.contentType() == QByteArrayLiteral("application/x-www-form-urlencoded")
-        && formBody.data().contains(QByteArrayLiteral("core%20value"))
-        && formBody.data().contains(QByteArrayLiteral("name=second%20value"));
-    const auto multipartBody = QCurl::QCNetworkMultipartBody::fromFormData(formData);
-    QByteArray singleFileBytes = QByteArrayLiteral("single-file-payload");
+                                   && jsonBody.data().contains(QByteArrayLiteral("core"))
+                                   && formBody.contentType()
+                                          == QByteArrayLiteral("application/x-www-form-urlencoded")
+                                   && formBody.data().contains(QByteArrayLiteral("core%20value"))
+                                   && formBody.data().contains(
+                                       QByteArrayLiteral("name=second%20value"));
+    const auto multipartBody     = QCurl::QCNetworkMultipartBody::fromFormData(formData);
+    QByteArray singleFileBytes   = QByteArrayLiteral("single-file-payload");
     QBuffer singleFileDevice(&singleFileBytes);
     singleFileDevice.open(QIODevice::ReadOnly);
     QString multipartError;
-    auto singleFileMultipart = QCurl::QCNetworkMultipartBody::fromSingleFileDevice(
-        &singleFileDevice,
-        QStringLiteral("file"),
-        QStringLiteral("payload.bin"),
-        QStringLiteral("application/octet-stream"),
-        singleFileBytes.size(),
-        &multipartError);
+    auto singleFileMultipart
+        = QCurl::QCNetworkMultipartBody::fromSingleFileDevice(&singleFileDevice,
+                                                              QStringLiteral("file"),
+                                                              QStringLiteral("payload.bin"),
+                                                              QStringLiteral(
+                                                                  "application/octet-stream"),
+                                                              singleFileBytes.size(),
+                                                              &multipartError);
     if (!singleFileMultipart.has_value()) {
         return 10;
     }
@@ -225,17 +250,16 @@ int main(int argc, char **argv)
                                                              request,
                                                              &downloadProbeDevice);
     downloadJobTypeProbe.start();
-    QCurl::QCNetworkResumableDownloadJob resumableJobTypeProbe(
-        &manager,
-        request,
-        QStringLiteral("/tmp/qcurl-consumer-smoke-resumable.bin"));
+    QCurl::QCNetworkResumableDownloadJob
+        resumableJobTypeProbe(&manager,
+                              request,
+                              QStringLiteral("/tmp/qcurl-consumer-smoke-resumable.bin"));
     resumableJobTypeProbe.start();
     if (jsonBody.contentType() != QByteArrayLiteral("application/json")
         || !jsonBody.data().contains(QByteArrayLiteral("core"))
         || formBody.contentType() != QByteArrayLiteral("application/x-www-form-urlencoded")
         || !formBody.data().contains(QByteArrayLiteral("core%20value"))
-        || !formBody.data().contains(QByteArrayLiteral("name=second%20value"))
-        || !bodyOverloadValid
+        || !formBody.data().contains(QByteArrayLiteral("name=second%20value")) || !bodyOverloadValid
         || multipartBody.contentType() != formData.contentType().toUtf8()
         || multipartBody.data() != formData.toByteArray()
         || !singleFileMultipart->contentType().contains("multipart/form-data")
@@ -271,8 +295,7 @@ int main(int argc, char **argv)
     const auto savedCacheConfig = manager.hstsAltSvcCacheConfig();
     if (!savedCacheConfig.enabled()
         || savedCacheConfig.hstsFilePath() != QStringLiteral("/tmp/qcurl-consumer-hsts.txt")
-        || savedCacheConfig.altSvcFilePath()
-               != QStringLiteral("/tmp/qcurl-consumer-altsvc.txt")) {
+        || savedCacheConfig.altSvcFilePath() != QStringLiteral("/tmp/qcurl-consumer-altsvc.txt")) {
         return 13;
     }
 
@@ -295,9 +318,10 @@ int main(int argc, char **argv)
         return 15;
     }
 
-    ConsumerSmokeLogger logger;
-    manager.setLogger(&logger);
-    if (manager.logger() != &logger) {
+    ConsumerSmokeLogger *consumerLogger = nullptr;
+    auto logger = QCurl::QCNetworkLoggerHandle::createWithBorrow(&consumerLogger);
+    manager.setLogger(logger);
+    if (manager.logger() != logger) {
         return 16;
     }
 
@@ -307,11 +331,10 @@ int main(int argc, char **argv)
     }
 
     const QDateTime timestampUtc = QDateTime::currentDateTimeUtc();
-    QCurl::NetworkLogEntry entry(
-        QCurl::NetworkLogLevel::Warning,
-        QStringLiteral("ConsumerSmoke"),
-        QStringLiteral("manager logger contract"),
-        timestampUtc);
+    QCurl::NetworkLogEntry entry(QCurl::NetworkLogLevel::Warning,
+                                 QStringLiteral("ConsumerSmoke"),
+                                 QStringLiteral("manager logger contract"),
+                                 timestampUtc);
 
     if (entry.level() != QCurl::NetworkLogLevel::Warning
         || entry.category() != QStringLiteral("ConsumerSmoke")
@@ -321,40 +344,58 @@ int main(int argc, char **argv)
         return 18;
     }
 
-    logger.log(entry);
-    if (logger.count != 1 || logger.lastEntry.category() != QStringLiteral("ConsumerSmoke")
-        || logger.lastEntry.message() != QStringLiteral("manager logger contract")) {
+    if (!logger->log(entry).isSuccess()) {
+        return 19;
+    }
+    if (consumerLogger->count != 1
+        || consumerLogger->lastEntry.category() != QStringLiteral("ConsumerSmoke")
+        || consumerLogger->lastEntry.message() != QStringLiteral("manager logger contract")) {
         return 19;
     }
 
-    QCurl::QCNetworkDefaultLogger defaultLogger;
-    defaultLogger.enableConsoleOutput(false);
-    defaultLogger.setMinLogLevel(QCurl::NetworkLogLevel::Warning);
-    defaultLogger.clear();
-    manager.setLogger(&defaultLogger);
-    if (manager.logger() != &defaultLogger
-        || defaultLogger.minLogLevel() != QCurl::NetworkLogLevel::Warning) {
+    QCurl::QCNetworkDefaultLogger *defaultLoggerImplementation = nullptr;
+    auto defaultLogger = QCurl::QCNetworkLoggerHandle::createWithBorrow(
+        &defaultLoggerImplementation);
+    defaultLoggerImplementation->enableConsoleOutput(false);
+    defaultLoggerImplementation->setMinLogLevel(QCurl::NetworkLogLevel::Warning);
+    defaultLoggerImplementation->clear();
+    manager.setLogger(defaultLogger);
+    if (manager.logger() != defaultLogger
+        || defaultLoggerImplementation->minLogLevel() != QCurl::NetworkLogLevel::Warning) {
         return 20;
     }
 
-    defaultLogger.log(entry);
-    if (defaultLogger.entries().size() != 1) {
+    if (!defaultLogger->log(entry).isSuccess()
+        || defaultLoggerImplementation->entries().size() != 1) {
         return 21;
     }
 
     QCurl::QCNetworkCancelToken cancelToken;
     QCurl::QCNetworkReply *replyToCancel = nullptr;
     QList<QCurl::QCNetworkReply *> repliesToCancel;
-    cancelToken.attach(replyToCancel);
-    cancelToken.attachMultiple(repliesToCancel);
-    cancelToken.setAutoTimeout(0);
-    if (cancelToken.attachedCount() != 0 || cancelToken.isCancelled()) {
+    const auto nullAttachResult   = cancelToken.attach(replyToCancel);
+    const auto batchAttachResults = cancelToken.attachMultiple(repliesToCancel);
+    const auto timeoutResult      = cancelToken.setAutoTimeout(0);
+    if (nullAttachResult != QCurl::QCNetworkCancelToken::AttachResult::NullReply
+        || !batchAttachResults.isEmpty()
+        || timeoutResult != QCurl::QCNetworkCancelToken::CommandResult::NoChange
+        || cancelToken.attachedCount() != 0 || cancelToken.isCancelled()) {
         return 22;
     }
 
-    cancelToken.cancel();
-    if (!cancelToken.isCancelled()) {
+    if (cancelToken.cancel() != QCurl::QCNetworkCancelToken::CommandResult::Applied
+        || !cancelToken.isCancelled()) {
         return 23;
+    }
+
+    QCurl::QCNetworkReply *replyForDeleteLater = nullptr;
+    if (replyForDeleteLater) {
+        replyForDeleteLater->deleteLater();
+    }
+    const QMetaObject &replyMeta = QCurl::QCNetworkReply::staticMetaObject;
+    const int deleteLaterIndex   = replyMeta.indexOfSlot("deleteLater()");
+    if (deleteLaterIndex < 0 || deleteLaterIndex >= replyMeta.methodOffset()) {
+        return 24;
     }
 
     QCurl::QCNetworkConnectionPoolConfig poolConfig;
@@ -381,7 +422,10 @@ int main(int argc, char **argv)
     }
 
     auto *poolManager = QCurl::QCNetworkConnectionPoolManager::instance();
-    poolManager->setConfig(poolConfig);
+    if (poolManager->setConfig(poolConfig)
+        != QCurl::QCNetworkConnectionPoolManager::UpdateResult::Applied) {
+        return 25;
+    }
     const auto savedPoolConfig = poolManager->config();
     if (savedPoolConfig.maxConnectionsPerHost() != 4
         || savedPoolConfig.maxTotalConnections() != 12) {
@@ -394,7 +438,10 @@ int main(int argc, char **argv)
         || poolStats.idleConnections() < 0) {
         return 26;
     }
-    poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig());
+    if (poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig())
+        != QCurl::QCNetworkConnectionPoolManager::UpdateResult::Applied) {
+        return 27;
+    }
 
     const int cookieStatus = runCookieAsyncResultProbe();
     if (cookieStatus != 0) {
@@ -412,7 +459,7 @@ int main(int argc, char **argv)
         return 28;
     }
 
-    manager.setLogger(nullptr);
+    manager.setLogger({});
     manager.setDebugTraceEnabled(false);
     return (!cancelledPending.isSuccess() && !cancelledAll.isSuccess()) ? 0 : 29;
 }

@@ -16,6 +16,13 @@
       "rationale": "Export macros and shared API constants used by all public QCurl headers."
     },
     {
+      "path": "QCurlRuntime.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Application-owned process runtime controller for explicit fail-closed libcurl shutdown."
+    },
+    {
       "path": "QCNetworkAccessManager.h",
       "layer": "Core",
       "currentInstall": "core-default",
@@ -35,7 +42,7 @@
       "currentInstall": "core-default",
       "targetInstall": "core-default",
       "extractionTask": "T5",
-      "rationale": "Value-result payload for QCNetworkAccessManager cookie signal and QFuture async bridge."
+      "rationale": "Structured per-call QFuture result for QCNetworkAccessManager cookie operations."
     },
     {
       "path": "QCNetworkRequestConfig.h",
@@ -98,7 +105,7 @@
       "layer": "Core",
       "currentInstall": "core-default",
       "targetInstall": "core-default",
-      "rationale": "Asynchronous QObject reply surface for Core requests."
+      "rationale": "Asynchronous QObject reply surface for Core requests; deferred deletion uses the inherited QObject API without a derived wrapper symbol."
     },
     {
       "path": "QCNetworkRetryPolicy.h",
@@ -154,7 +161,14 @@
       "layer": "Core",
       "currentInstall": "core-default",
       "targetInstall": "core-default",
-      "rationale": "Core cache interface and lookup result value types."
+      "rationale": "Core structured cache interface with lookup and clear result value types."
+    },
+    {
+      "path": "QCNetworkCacheRequestKey.h",
+      "layer": "Core",
+      "currentInstall": "core-default",
+      "targetInstall": "core-default",
+      "rationale": "Structured Core cache request identity including method, Vary headers, and opaque authentication partition."
     },
     {
       "path": "QCNetworkMemoryCache.h",
@@ -224,7 +238,7 @@
       "layer": "Core",
       "currentInstall": "core-default",
       "targetInstall": "core-default",
-      "rationale": "Core default logger helper with private data."
+      "rationale": "Core default logger helper with private data and shared manager ownership."
     },
     {
       "path": "QCNetworkCancelToken.h",
@@ -286,6 +300,13 @@
       "rationale": "Diagnostics is an opt-in capability outside default Core."
     },
     {
+      "path": "QCWebSocketCommandResult.h",
+      "layer": "Other Extras",
+      "currentInstall": "conditional-extras",
+      "targetInstall": "other-extras",
+      "rationale": "WebSocket synchronous command acceptance value type belongs to the conditional WebSocket Extras surface."
+    },
+    {
       "path": "QCWebSocket.h",
       "layer": "Other Extras",
       "currentInstall": "conditional-extras",
@@ -307,11 +328,11 @@
       "rationale": "WebSocket pool belongs to the conditional WebSocket Extras surface."
     },
     {
-      "path": "QCWebSocketCompressionConfig.h",
+      "path": "QCWebSocketPoolResults.h",
       "layer": "Other Extras",
       "currentInstall": "conditional-extras",
       "targetInstall": "other-extras",
-      "rationale": "WebSocket compression config belongs to the conditional WebSocket Extras surface."
+      "rationale": "WebSocket pool Future completion value types belong to the conditional WebSocket Extras surface."
     },
     {
       "path": "QCBlockingCookieStore.h",

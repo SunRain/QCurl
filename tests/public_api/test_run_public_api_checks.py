@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from argparse import Namespace
+import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -158,6 +160,32 @@ private:
 
     assert "private-layout:direct-fields:QCNetworkExample.h:Job" not in keys
 
+
+def test_collect_layout_findings_allows_std_unique_ptr_incomplete_holder() -> None:
+    header = "QCNetworkExample.h"
+    source = "Handle::~Handle() = default;"
+    stripped = public_api.strip_comments_and_strings(
+        """
+class HandlePrivate;
+class QCURL_EXPORT Handle {
+public:
+    Handle(const Handle &other);
+    Handle(Handle &&other) noexcept;
+    ~Handle();
+    Handle &operator=(const Handle &other);
+    Handle &operator=(Handle &&other) noexcept;
+
+private:
+    std::unique_ptr<HandlePrivate> d_ptr;
+};
+"""
+    )
+
+    findings = layout_scan.collect_layout_findings(header, stripped, source)
+    keys = {item.key for item in findings}
+
+    assert "private-layout:direct-fields:QCNetworkExample.h:Handle" not in keys
+
 def test_scan_headers_fails_stale_allowlist(tmp_path, capsys) -> None:
     source_root = tmp_path / "src"
     source_root.mkdir()
@@ -259,6 +287,7 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     (src / "QCNetworkReply.h").write_text(
         "enum class ExecutionMode { Async, Sync };\n"
         "class QCNetworkReply { public: void setWriteCallback(); };\n"
+        "void deleteLater();\n"
         "using DataFunction = int;\n"
         "using SeekFunction = int;\n"
         "using ProgressFunction = int;\n",
@@ -266,6 +295,38 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     )
     (src / "QCNetworkAccessManager.h").write_text(
         "class QCNetworkAccessManager { public: void sendGet(); };\n",
+        encoding="utf-8",
+    )
+    (src / "QCNetworkRequestScheduler.h").write_text(
+        "class QCNetworkRequestScheduler { public:\n"
+        "    void scheduleReply();\n"
+        "    bool deferPendingRequest();\n"
+        "    bool undeferRequest();\n"
+        "    void cancelRequest();\n"
+        "    void cancelAllRequests();\n"
+        "    int cancelLaneRequests();\n"
+        "    bool changePriority();\n"
+        "};\n",
+        encoding="utf-8",
+    )
+    (src / "QCNetworkRequestScheduler.cpp").write_text(
+        "void legacySchedulerFallback(QCNetworkRequestScheduler *scheduler, "
+        "QCNetworkReply *reply) {\n"
+        "    QPointer<QCNetworkReply> safeReply(reply);\n"
+        "    Internal::invokeOnSchedulerOwnerThread(scheduler, "
+        "[scheduler, safeReply]() { scheduler->cancelRequest(safeReply.data()); }, "
+        "\"legacySchedulerFallback\");\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (src / "QCNetworkAccessManager_p.h").write_text(
+        "QSet<QCNetworkAsyncReply *> replyList;\n"
+        "CURLM *curlMultiHandle;\n"
+        "QTimer *timer;\n"
+        "curl_socket_t socketDescriptor;\n"
+        "QSocketNotifier *readNotifier;\n"
+        "QSocketNotifier *writeNotifier;\n"
+        "QSocketNotifier *errorNotifier;\n",
         encoding="utf-8",
     )
     qcurl_tests = tmp_path / "tests" / "qcurl"
@@ -290,6 +351,140 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
     assert "removed QCNetworkReply ProgressFunction typedef" in err
     assert "removed QCNetworkReply callback setter" in err
     assert "removed QCNetworkReply callback setter call" in err
+    assert "removed QCNetworkReply deleteLater declaration" in err
+    assert "removed QCNetworkAccessManagerPrivate replyList field" in err
+    assert "old scheduler void command result" in err
+    assert "old scheduler bool command result" in err
+    assert "old scheduler int lane cancel result" in err
+    assert "removed scheduler command wrong-thread marshal" in err
+
+
+def test_hard_break_guards_reject_legacy_release_and_pool_contracts(
+    tmp_path,
+    capsys,
+) -> None:
+    docs = tmp_path / "docs" / "dev"
+    docs.mkdir(parents=True)
+    (docs / "release-procedure.md").write_text(
+        "推荐使用三棵构建树。\n"
+        "python3 scripts/run_release_gate.py --tier full --build-dir build \\\n"
+        "  --static-build-dir build-static \\\n"
+        "  --test-build-dir build-tests\n"
+        "cmake -S . -B build-static -DBUILD_TESTING=ON \\\n"
+        "  -DQCURL_BUILD_SHARED_LIBS=OFF\n",
+        encoding="utf-8",
+    )
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "QCWebSocketPool.h").write_text(
+        "void release(QCWebSocket *socket);\n"
+        "void clearPool(const QUrl &url = QUrl());\n"
+        "void setConfig(const QCWebSocketPoolConfig &config);\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path))
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "legacy release gate build-dir option" in err
+    assert "legacy three-tree release topology" in err
+    assert "unsupported static testing command" in err
+    assert "old QCWebSocketPool void mutator contract" in err
+    assert "removed QCWebSocketPool pointer release contract" in err
+
+
+def test_hard_break_guards_do_not_join_adjacent_cmake_commands(tmp_path, capsys) -> None:
+    docs = tmp_path / "docs" / "dev"
+    docs.mkdir(parents=True)
+    (docs / "release-procedure.md").write_text(
+        "cmake -S . -B build-release-shared -DBUILD_TESTING=OFF \\\n"
+        "  -DQCURL_BUILD_SHARED_LIBS=ON\n"
+        "cmake -S . -B build-release-static -DBUILD_TESTING=OFF \\\n"
+        "  -DQCURL_BUILD_SHARED_LIBS=OFF\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path))
+
+    assert rc == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_current_release_docs_match_six_tree_static_and_pool_contracts() -> None:
+    repo = Path(__file__).resolve().parents[2]
+    release_procedure = (repo / "docs/dev/release-procedure.md").read_text(
+        encoding="utf-8"
+    )
+    build_and_test = (repo / "docs/dev/build-and-test.md").read_text(
+        encoding="utf-8"
+    )
+    pool_boundary = (repo / "docs/arch/public-header-boundary.md").read_text(
+        encoding="utf-8"
+    )
+
+    release_docs = release_procedure + build_and_test
+    for option in (
+        "--release-shared-build-dir",
+        "--release-static-build-dir",
+        "--test-shared-gcc-build-dir",
+        "--test-shared-clang-build-dir",
+        "--asan-ubsan-lsan-build-dir",
+        "--tsan-build-dir",
+    ):
+        assert option in release_docs
+    assert "--static-build-dir" not in release_docs
+    assert "--test-build-dir" not in release_docs
+    assert "QCURL_STATIC_TESTING_UNSUPPORTED：静态构建不支持测试" in build_and_test
+    assert "[[nodiscard]] LeaseResult resolveLease(LeaseId leaseId, QCWebSocket **socket) const" in pool_boundary
+    assert "[[nodiscard]] LeaseResult release(LeaseId leaseId)" in pool_boundary
+    assert "[[nodiscard]] bool clearPool(const QUrl &url = QUrl(), QString *error = nullptr)" in pool_boundary
+    assert "[[nodiscard]] bool setConfig(const QCWebSocketPoolConfig &config, QString *error = nullptr)" in pool_boundary
+
+
+def test_hard_break_guard_rejects_lossy_qmap_cache_policy_overloads(tmp_path, capsys) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "QCNetworkCache.h").write_text(
+        "QDateTime parseExpirationDate(const QMap<QByteArray, QByteArray> &headers);\n"
+        "bool isCacheable(const QMap<QByteArray, QByteArray> &headers);\n"
+        "QList<QByteArray> varyHeaderNames(const QMap<QByteArray, QByteArray> &headers);\n",
+        encoding="utf-8",
+    )
+    (src / "QCNetworkCache.cpp").write_text(
+        "QList<RawHeaderPair> rawHeadersFromMap(const QMap<QByteArray, QByteArray> &headers) { return {}; }\n"
+        "QDateTime QCNetworkCache::parseExpirationDate(const QMap<QByteArray, QByteArray> &headers) {\n"
+        "    return parseExpirationDate(rawHeadersFromMap(headers));\n"
+        "}\n"
+        "bool QCNetworkCache::isCacheable(const QMap<QByteArray, QByteArray> &headers) {\n"
+        "    return isCacheable(rawHeadersFromMap(headers));\n"
+        "}\n"
+        "QList<QByteArray> QCNetworkCache::varyHeaderNames(const QMap<QByteArray, QByteArray> &headers) {\n"
+        "    return varyHeaderNames(rawHeadersFromMap(headers));\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    qcurl_tests = tmp_path / "tests" / "qcurl"
+    qcurl_tests.mkdir(parents=True)
+    (qcurl_tests / "tst_QCNetworkCache.cpp").write_text(
+        "void test() {\n"
+        "    QMap<QByteArray, QByteArray> headers;\n"
+        "    QCNetworkCache::parseExpirationDate(headers);\n"
+        "    QCNetworkCache::isCacheable(headers);\n"
+        "    QCNetworkCache::varyHeaderNames(headers);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    rc = public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path))
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "removed QCNetworkCache QMap parseExpirationDate overload" in err
+    assert "removed QCNetworkCache QMap isCacheable overload" in err
+    assert "removed QCNetworkCache QMap varyHeaderNames overload" in err
+    assert "removed QCNetworkCache rawHeadersFromMap helper" in err
+    assert "removed QCNetworkCache QMap policy call site" in err
 
 def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsys) -> None:
     surface = tmp_path / "surface.json"
@@ -610,7 +805,7 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 1.0.0, Qt6Network >= 6.2\n"
+        "Requires: qcurl = 2.0.0, Qt6Network >= 6.2\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -634,7 +829,7 @@ def test_pkg_config_contract_rejects_core_qtnetwork(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 1.0.0, Qt6Network >= 6.2\n"
+        "Requires: qcurl = 2.0.0, Qt6Network >= 6.2\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -671,7 +866,7 @@ def test_release_metadata_scan_rejects_legacy_identity(tmp_path, capsys) -> None
 
     (tmp_path / "README.md").write_text("QCurl 3.0.0 current release\n", encoding="utf-8")
     (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
-    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 1.0.0)\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 1
     assert "forbidden legacy release identity" in capsys.readouterr().err
@@ -682,7 +877,138 @@ def test_release_metadata_scan_allows_external_protocol_versions(tmp_path, capsy
 
     (tmp_path / "README.md").write_text("HTTP/3 and Qt 6 are external versions\n", encoding="utf-8")
     (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("libcurl supports HTTP/2 and HTTP/3\n", encoding="utf-8")
-    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 1.0.0)\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 0
     assert "metadata scan passed" in capsys.readouterr().out
+
+
+def test_release_metadata_scan_ignores_generated_build_trees(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    (tmp_path / "README.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
+    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
+    for build_dir_name in ("build-clang", "build-asan-ubsan"):
+        build_dir = tmp_path / build_dir_name
+        build_dir.mkdir()
+        (build_dir / "generated.txt").write_text(
+            "third-party package version 3.0.0\n",
+            encoding="utf-8",
+        )
+
+    assert release_gate._scan_metadata(tmp_path) == 0
+    assert "metadata scan passed" in capsys.readouterr().out
+
+
+def test_release_metadata_scan_allows_published_v1_history_and_current_v2(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    docs = tmp_path / "docs" / "arch"
+    docs.mkdir(parents=True)
+    (docs / "1.0.0-release-notes.md").write_text(
+        "QCurl 1.0.0 first stable was published.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text(
+        "latest published: v1.0.0; current development candidate: v2.0.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text(
+        "QCurl 2.0.0 architecture\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "CMakeLists.txt").write_text(
+        "project(QCurl VERSION 2.0.0)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "CMakeLists.txt").write_text(
+        "set_target_properties(QCurl PROPERTIES SOVERSION 2)\n",
+        encoding="utf-8",
+    )
+
+    assert release_gate._scan_metadata(tmp_path) == 0
+    assert "metadata scan passed" in capsys.readouterr().out
+
+
+def test_release_metadata_scan_rejects_current_v1_candidate_identity(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    (tmp_path / "README.md").write_text(
+        "QCurl 1.0.0 first stable candidate; tag not created yet.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text(
+        "QCurl release identity\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "CMakeLists.txt").write_text(
+        "project(QCurl VERSION 1.0.0)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "CMakeLists.txt").write_text(
+        "set_target_properties(QCurl PROPERTIES SOVERSION 1)\n",
+        encoding="utf-8",
+    )
+
+    assert release_gate._scan_metadata(tmp_path) == 1
+    assert "current release identity" in capsys.readouterr().err
+
+
+def test_production_targets_never_enable_test_hooks() -> None:
+    """验证正式目标的编译命令不携带白盒测试宏。"""
+
+    repo_root = Path(__file__).resolve().parents[2]
+    compile_commands = repo_root / "build-test-shared-gcc" / "compile_commands.json"
+    assert compile_commands.is_file(), f"缺少编译数据库：{compile_commands}"
+
+    entries = json.loads(compile_commands.read_text(encoding="utf-8"))
+    production_markers = ("CMakeFiles/QCurl.dir/", "CMakeFiles/QCurlOtherExtras.dir/")
+    production_commands = [
+        entry["command"]
+        for entry in entries
+        if any(marker in entry.get("command", "") for marker in production_markers)
+    ]
+
+    assert production_commands, "编译数据库中没有正式 QCurl 目标"
+    polluted_commands = [
+        command for command in production_commands if "QCURL_ENABLE_TEST_HOOKS" in command
+    ]
+    assert not polluted_commands, (
+        "QCURL_ENABLE_TEST_HOOKS 不得出现在正式目标编译命令中："
+        + polluted_commands[0]
+    )
+
+
+def test_test_internals_are_non_installable() -> None:
+    """验证白盒 companion 只参与测试构建且不会进入安装脚本。"""
+
+    repo_root = Path(__file__).resolve().parents[2]
+    source = (repo_root / "src" / "CMakeLists.txt").read_text(encoding="utf-8")
+    companion_targets = ("QCurlTestInternals", "QCurlOtherExtrasTestInternals")
+
+    for target in companion_targets:
+        assert re.search(
+            rf"add_library\({target}\s+STATIC\s+EXCLUDE_FROM_ALL\b", source
+        ), f"缺少非默认构建的 companion：{target}"
+        assert not re.search(
+            rf"install\s*\([^)]*\b{target}\b", source, flags=re.DOTALL
+        ), f"companion 不得出现在 install 规则中：{target}"
+
+    build_dirs = (
+        repo_root / "build-release-shared",
+        repo_root / "build-test-shared-gcc",
+    )
+    for build_dir in build_dirs:
+        install_scripts = sorted(build_dir.rglob("cmake_install.cmake"))
+        assert install_scripts, f"缺少生成的安装脚本：{build_dir}"
+        install_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in install_scripts
+        )
+        for target in companion_targets:
+            assert target not in install_text, (
+                f"companion 不得出现在安装脚本中：{target} ({build_dir})"
+            )
