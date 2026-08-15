@@ -3,11 +3,12 @@
  * @brief QCNetworkReply request-body source 状态与 curl 回调实现。
  */
 
-#include "private/QCNetworkReplyBodySource_p.h"
-
 #include "QCCurlMultiManager.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplySignal_p.h"
+#include "private/QCNetworkReplyTransferState_p.h"
 
 #include <QIODevice>
 #include <QThread>
@@ -19,37 +20,48 @@ namespace {
 
 void setBodySourceError(ReplyBodySourceState &state, NetworkError code, const QString &message)
 {
-    state.hasErrorOverride = true;
-    state.errorOverrideCode = code;
+    state.hasErrorOverride     = true;
+    state.errorOverrideCode    = code;
     state.errorOverrideMessage = message;
 }
 
-bool sourceIsFinished(const QCNetworkReplyPrivate *reply)
+bool sourceIsFinished(const QCNetworkReplyTransferState *state)
 {
-    return !reply || reply->state == ReplyState::Cancelled || reply->state == ReplyState::Error
-        || reply->state == ReplyState::Finished;
+    return !state || state->state == ReplyState::Cancelled || state->state == ReplyState::Error
+           || state->state == ReplyState::Finished;
 }
 
-size_t pauseBodySourceSend(QCNetworkReplyPrivate *reply)
+size_t pauseBodySourceSend(QCNetworkReplyTransferState *state,
+                           const QPointer<QCNetworkReply> &observer)
 {
-    reply->internalPauseMask |= CURLPAUSE_SEND;
-    reply->appliedPauseMask |= CURLPAUSE_SEND;
-    reply->setUploadSendPaused(true);
+    state->internalPauseMask |= CURLPAUSE_SEND;
+    state->appliedPauseMask |= CURLPAUSE_SEND;
+    if (!state->uploadSendPaused) {
+        state->uploadSendPaused = true;
+        if (emitReplySignal(observer,
+                            [](QCNetworkReply *reply) {
+                                Q_EMIT reply->uploadSendPausedChanged(true);
+                            })
+            == SignalEmissionResult::Destroyed) {
+            return CURL_READFUNC_ABORT;
+        }
+    }
     return CURL_READFUNC_PAUSE;
 }
 
-size_t abortWithReadError(QCNetworkReplyPrivate *reply, QIODevice *device)
+size_t abortWithReadError(QCNetworkReplyTransferState *state, QIODevice *device)
 {
-    setBodySourceError(reply->requestBodySource,
+    setBodySourceError(state->requestBodySource,
                        NetworkError::InvalidRequest,
                        QStringLiteral("request body source: 读取失败: %1")
                            .arg(device->errorString()));
     return CURL_READFUNC_ABORT;
 }
 
-size_t handleSourceNotReady(QCNetworkReplyPrivate *reply)
+size_t handleSourceNotReady(QCNetworkReplyTransferState *state,
+                            const QPointer<QCNetworkReply> &observer)
 {
-    return pauseBodySourceSend(reply);
+    return pauseBodySourceSend(state, observer);
 }
 
 bool failBodySourcePrepare(QString *errorMessage, const QString &message)
@@ -65,17 +77,16 @@ bool validateBodySourceThreads(const QCNetworkReplyPrivate *reply,
                                QString *errorMessage)
 {
     auto *multiManager = QCCurlMultiManager::instance();
-    if (reply->q_ptr && reply->q_ptr->thread() != multiManager->thread()) {
+    if (reply->qObject() && reply->qObject()->thread() != multiManager->thread()) {
         return failBodySourcePrepare(
             errorMessage,
             QStringLiteral(
                 "request body source: Reply 线程与 MultiManager 线程不一致，无法安全流式读取"));
     }
 
-    if (reply->q_ptr && sourceDevice->thread() != reply->q_ptr->thread()) {
+    if (reply->qObject() && sourceDevice->thread() != reply->qObject()->thread()) {
         return failBodySourcePrepare(
-            errorMessage,
-            QStringLiteral("request body source: 源 QIODevice 与 Reply 不在同一线程"));
+            errorMessage, QStringLiteral("request body source: 源 QIODevice 与 Reply 不在同一线程"));
     }
 
     return true;
@@ -96,8 +107,9 @@ bool validateUnknownBodySize(const QCNetworkReplyPrivate *reply,
     if (reply->request.httpVersion() != QCNetworkHttpVersion::Http1_1) {
         return failBodySourcePrepare(
             errorMessage,
-            QStringLiteral("request body source: unknown size 的 POST chunked 仅支持 HTTP/1.1（请改为 "
-                           "Http1_1 或指定 sizeBytes）"));
+            QStringLiteral(
+                "request body source: unknown size 的 POST chunked 仅支持 HTTP/1.1（请改为 "
+                "Http1_1 或指定 sizeBytes）"));
     }
 
     return true;
@@ -122,24 +134,25 @@ void initializeBodySourceState(ReplyBodySourceState &state,
                                const RequestBody &bodySpec,
                                QIODevice *sourceDevice)
 {
-    state.device = sourceDevice;
-    state.basePos = sourceDevice->pos();
+    state.device   = sourceDevice;
+    state.basePos  = sourceDevice->pos();
     state.seekable = !sourceDevice->isSequential();
     resolveBodySourceSize(state, bodySpec, sourceDevice);
 }
 
 size_t readUnknownSizeBody(char *ptr,
                            size_t totalSize,
-                           QCNetworkReplyPrivate *reply,
+                           QCNetworkReplyTransferState *transferState,
+                           const QPointer<QCNetworkReply> &observer,
                            QIODevice *device,
                            ReplyBodySourceState &state)
 {
     const qint64 n = device->read(ptr, static_cast<qint64>(totalSize));
     if (n < 0) {
-        return abortWithReadError(reply, device);
+        return abortWithReadError(transferState, device);
     }
     if (n == 0) {
-        return device->atEnd() ? 0 : handleSourceNotReady(reply);
+        return device->atEnd() ? 0 : handleSourceNotReady(transferState, observer);
     }
 
     state.bytesRead += n;
@@ -148,7 +161,8 @@ size_t readUnknownSizeBody(char *ptr,
 
 size_t readKnownSizeBody(char *ptr,
                          size_t totalSize,
-                         QCNetworkReplyPrivate *reply,
+                         QCNetworkReplyTransferState *transferState,
+                         const QPointer<QCNetworkReply> &observer,
                          QIODevice *device,
                          ReplyBodySourceState &state)
 {
@@ -158,22 +172,22 @@ size_t readKnownSizeBody(char *ptr,
     }
 
     const qint64 want = qMin(static_cast<qint64>(totalSize), remaining);
-    const qint64 n = device->read(ptr, want);
+    const qint64 n    = device->read(ptr, want);
     if (n < 0) {
-        return abortWithReadError(reply, device);
+        return abortWithReadError(transferState, device);
     }
     if (n > 0) {
         state.bytesRead += n;
         return static_cast<size_t>(n);
     }
     if (!device->atEnd()) {
-        return handleSourceNotReady(reply);
+        return handleSourceNotReady(transferState, observer);
     }
 
-    setBodySourceError(
-        state,
-        NetworkError::InvalidRequest,
-        QStringLiteral("request body source: 数据提前结束（期望剩余 %1 bytes）").arg(remaining));
+    setBodySourceError(state,
+                       NetworkError::InvalidRequest,
+                       QStringLiteral("request body source: 数据提前结束（期望剩余 %1 bytes）")
+                           .arg(remaining));
     return CURL_READFUNC_ABORT;
 }
 
@@ -196,7 +210,8 @@ bool resolveBodySourceSeekTarget(ReplyBodySourceState &state,
                 setBodySourceError(
                     state,
                     NetworkError::InvalidRequest,
-                    QStringLiteral("request body source: unknown size 不支持 SEEK_END（无法重发 body）"));
+                    QStringLiteral(
+                        "request body source: unknown size 不支持 SEEK_END（无法重发 body）"));
                 return false;
             }
             *targetPos = state.basePos + state.sizeBytes + off;
@@ -218,17 +233,17 @@ bool bodySourceSeekTargetInRange(const ReplyBodySourceState &state, qint64 targe
 
 void resetReplyBodySource(ReplyBodySourceState &state)
 {
-    state.device = nullptr;
-    state.basePos = 0;
+    state.device    = nullptr;
+    state.basePos   = 0;
     state.sizeBytes = -1;
     state.bytesRead = 0;
-    state.seekable = false;
+    state.seekable  = false;
     clearReplyBodySourceError(state);
 }
 
 void clearReplyBodySourceError(ReplyBodySourceState &state)
 {
-    state.hasErrorOverride = false;
+    state.hasErrorOverride  = false;
     state.errorOverrideCode = NetworkError::NoError;
     state.errorOverrideMessage.clear();
 }
@@ -305,27 +320,31 @@ bool rewindReplyBodySourceForRetry(QCNetworkReplyPrivate *reply, QString *errorM
     return true;
 }
 
-size_t readReplyBodySourceCallback(char *ptr, size_t size, size_t nmemb, QCNetworkReplyPrivate *reply)
+size_t readReplyBodySourceCallback(char *ptr,
+                                   size_t size,
+                                   size_t nmemb,
+                                   QCNetworkReplyTransferState *state,
+                                   const QPointer<QCNetworkReply> &observer)
 {
-    if (!reply || !reply->q_ptr) {
+    if (!state || !observer) {
         return CURL_READFUNC_ABORT;
     }
 
-    if (reply->state == ReplyState::Cancelled || reply->state == ReplyState::Error) {
+    if (state->state == ReplyState::Cancelled || state->state == ReplyState::Error) {
         return CURL_READFUNC_ABORT;
     }
 
-    auto &state = reply->requestBodySource;
-    QIODevice *device = state.device.data();
+    auto &bodyState   = state->requestBodySource;
+    QIODevice *device = bodyState.device.data();
     if (!device) {
-        setBodySourceError(state,
+        setBodySourceError(bodyState,
                            NetworkError::InvalidRequest,
                            QStringLiteral("request body source: 源 QIODevice 在传输中被销毁"));
         return CURL_READFUNC_ABORT;
     }
 
     if (!device->isReadable()) {
-        setBodySourceError(state,
+        setBodySourceError(bodyState,
                            NetworkError::InvalidRequest,
                            QStringLiteral("request body source: 源 QIODevice 已不可读"));
         return CURL_READFUNC_ABORT;
@@ -336,50 +355,49 @@ size_t readReplyBodySourceCallback(char *ptr, size_t size, size_t nmemb, QCNetwo
         return 0;
     }
 
-    if (state.sizeBytes < 0) {
-        return readUnknownSizeBody(ptr, totalSize, reply, device, state);
+    if (bodyState.sizeBytes < 0) {
+        return readUnknownSizeBody(ptr, totalSize, state, observer, device, bodyState);
     }
-    return readKnownSizeBody(ptr, totalSize, reply, device, state);
+    return readKnownSizeBody(ptr, totalSize, state, observer, device, bodyState);
 }
 
-int seekReplyBodySourceCallback(QCNetworkReplyPrivate *reply, curl_off_t offset, int origin)
+int seekReplyBodySourceCallback(QCNetworkReplyTransferState *state, curl_off_t offset, int origin)
 {
-    if (!reply || !reply->q_ptr || sourceIsFinished(reply)) {
+    if (sourceIsFinished(state)) {
         return CURL_SEEKFUNC_FAIL;
     }
 
-    auto &state = reply->requestBodySource;
-    QIODevice *device = state.device.data();
+    auto &bodyState   = state->requestBodySource;
+    QIODevice *device = bodyState.device.data();
     if (!device) {
         return CURL_SEEKFUNC_CANTSEEK;
     }
 
-    if (!state.seekable) {
-        setBodySourceError(
-            state,
-            NetworkError::InvalidRequest,
-            QStringLiteral(
-                "request body source: 无法重发 body：源 QIODevice 不支持 seek（重定向/重试/认证协商）"));
+    if (!bodyState.seekable) {
+        setBodySourceError(bodyState,
+                           NetworkError::InvalidRequest,
+                           QStringLiteral("request body source: 无法重发 body：源 QIODevice 不支持 "
+                                          "seek（重定向/重试/认证协商）"));
         return CURL_SEEKFUNC_CANTSEEK;
     }
 
     qint64 targetPos = -1;
-    if (!resolveBodySourceSeekTarget(state, device, offset, origin, &targetPos)) {
+    if (!resolveBodySourceSeekTarget(bodyState, device, offset, origin, &targetPos)) {
         return CURL_SEEKFUNC_FAIL;
     }
 
-    if (!bodySourceSeekTargetInRange(state, targetPos)) {
+    if (!bodySourceSeekTargetInRange(bodyState, targetPos)) {
         return CURL_SEEKFUNC_FAIL;
     }
     if (!device->seek(targetPos)) {
-        setBodySourceError(
-            state,
-            NetworkError::InvalidRequest,
-            QStringLiteral("request body source: 无法重发 body：seek(%1) 失败").arg(targetPos));
+        setBodySourceError(bodyState,
+                           NetworkError::InvalidRequest,
+                           QStringLiteral("request body source: 无法重发 body：seek(%1) 失败")
+                               .arg(targetPos));
         return CURL_SEEKFUNC_FAIL;
     }
 
-    state.bytesRead = targetPos - state.basePos;
+    bodyState.bytesRead = targetPos - bodyState.basePos;
     return CURL_SEEKFUNC_OK;
 }
 

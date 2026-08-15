@@ -26,17 +26,17 @@ struct QCNetworkMockData
     QMap<QByteArray, QByteArray> headers;
     std::optional<QByteArray> rawHeaderData;
     NetworkError error = NetworkError::NoError;
-    bool isError = false;
+    bool isError       = false;
 };
 
 /// 供执行链路访问私有 consumeMock，避免把 MockData 暴露为公开 API。
 class QCNetworkMockHandlerAccess
 {
 public:
-    static bool consumeMock(QCNetworkMockHandler &handler,
-                            HttpMethod method,
-                            const QUrl &url,
-                            QCNetworkMockData &out);
+    [[nodiscard]] static bool consumeMock(QCNetworkMockHandler &handler,
+                                          HttpMethod method,
+                                          const QUrl &url,
+                                          QCNetworkMockData &out);
 };
 
 } // namespace Internal
@@ -54,8 +54,8 @@ class QCNetworkMockHandlerPrivate
 public:
     mutable QMutex mutex;
     QMap<QString, QCNetworkMockSequence> sequences;
-    int globalDelay = 0;
-    bool captureEnabled = false;
+    int globalDelay                  = 0;
+    bool captureEnabled              = false;
     int captureBodyPreviewLimitBytes = 4096;
     QList<QCNetworkCapturedRequest> capturedRequests;
 };

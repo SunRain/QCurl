@@ -197,8 +197,8 @@ bool QCNetworkMockHandler::consumeMock(HttpMethod method,
 
     const int lastIndex = static_cast<int>(seq.items.size() - 1);
     // 序列耗尽后复用最后一条，便于测试重复请求的稳定回放。
-    const int index     = std::min(seq.cursor, lastIndex);
-    out                 = seq.items.at(index);
+    const int index = std::min(seq.cursor, lastIndex);
+    out             = seq.items.at(index);
     if (seq.cursor < lastIndex) {
         seq.cursor += 1;
     }

@@ -3,11 +3,10 @@
  * @brief QCNetworkReply 传输 pause/backpressure 状态实现。
  */
 
-#include "private/QCNetworkReplyFlowControl_p.h"
-
 #include "QCCurlMultiManager.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
+#include "private/QCNetworkReplyFlowControl_p.h"
 
 #include <QDebug>
 #include <QIODevice>
@@ -23,7 +22,7 @@ namespace {
 bool replyIsTerminal(const QCNetworkReplyPrivate *reply)
 {
     return !reply || reply->state == ReplyState::Cancelled || reply->state == ReplyState::Error
-        || reply->state == ReplyState::Finished;
+           || reply->state == ReplyState::Finished;
 }
 
 int normalizePauseMask(int desiredMask)
@@ -50,21 +49,18 @@ int pauseFlagsFromMode(PauseMode mode)
     return CURLPAUSE_ALL;
 }
 
+/// 仅在 Reply QObject 的 owner thread 同步更新 easy pause 状态；线程违约时 fail-closed。
 bool pauseCurlEasy(QCNetworkReplyPrivate *reply, int flags)
 {
-    CURL *handle = reply->curlManager.handle();
-    auto *multiManager = QCCurlMultiManager::instance();
-    CURLcode result = CURLE_OK;
-
-    if (QThread::currentThread() == multiManager->thread()) {
-        result = curl_easy_pause(handle, flags);
-    } else {
-        QMetaObject::invokeMethod(
-            multiManager,
-            [handle, flags, &result]() { result = curl_easy_pause(handle, flags); },
-            Qt::BlockingQueuedConnection);
+    QCNetworkReply *const publicReply = reply ? reply->qObject() : nullptr;
+    if (!publicReply || QThread::currentThread() != publicReply->thread()) {
+        Q_ASSERT_X(publicReply && QThread::currentThread() == publicReply->thread(),
+                   "pauseCurlEasy",
+                   "reply flow control must run on the reply owner thread");
+        return false;
     }
 
+    const CURLcode result = curl_easy_pause(reply->activeCurlHandle(), flags);
     if (result == CURLE_OK) {
         return true;
     }
@@ -86,7 +82,7 @@ bool applyReplyPauseMask(QCNetworkReplyPrivate *reply, int desiredMask)
     if (!reply) {
         return false;
     }
-    if (!reply->curlManager.handle()) {
+    if (!reply->activeCurlHandle()) {
         return false;
     }
 
@@ -104,95 +100,103 @@ bool applyReplyPauseMask(QCNetworkReplyPrivate *reply, int desiredMask)
     return true;
 }
 
-void setReplyBackpressureActive(QCNetworkReplyPrivate *reply, bool active)
+SignalEmissionResult setReplyBackpressureActive(QCNetworkReplyPrivate *reply, bool active)
 {
     if (!reply || reply->backpressureLimitBytes <= 0) {
         if (reply) {
             reply->backpressureActive = false;
         }
-        return;
+        return SignalEmissionResult::Alive;
     }
     if (reply->backpressureActive == active) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
     reply->backpressureActive = active;
-    if (reply->q_ptr) {
-        emit reply->q_ptr->backpressureStateChanged(active,
-                                                    reply->bodyBuffer.byteAmount(),
-                                                    reply->backpressureLimitBytes);
-    }
+    const QPointer<QCNetworkReply> observer(reply->qObject());
+    const qint64 bufferedBytes = reply->bodyBuffer.byteAmount();
+    const qint64 limitBytes    = reply->backpressureLimitBytes;
+    return emitReplySignal(observer, [active, bufferedBytes, limitBytes](QCNetworkReply *q) {
+        Q_EMIT q->backpressureStateChanged(active, bufferedBytes, limitBytes);
+    });
 }
 
-void setReplyUploadSendPaused(QCNetworkReplyPrivate *reply, bool paused)
+SignalEmissionResult setReplyUploadSendPaused(QCNetworkReplyPrivate *reply, bool paused)
 {
     if (!reply) {
-        return;
+        return SignalEmissionResult::Alive;
     }
     if (reply->uploadSendPaused == paused) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
     reply->uploadSendPaused = paused;
-    if (reply->q_ptr) {
-        emit reply->q_ptr->uploadSendPausedChanged(paused);
-    }
+    const QPointer<QCNetworkReply> observer(reply->qObject());
+    return emitReplySignal(observer, [paused](QCNetworkReply *q) {
+        Q_EMIT q->uploadSendPausedChanged(paused);
+    });
 }
 
-void maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply)
+SignalEmissionResult maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply)
 {
     if (!reply || reply->backpressureLimitBytes <= 0) {
-        return;
+        return SignalEmissionResult::Alive;
     }
     if ((reply->internalPauseMask & CURLPAUSE_RECV) == 0 || replyIsTerminal(reply)) {
-        return;
+        return SignalEmissionResult::Alive;
     }
     if (reply->bodyBuffer.byteAmount() > reply->backpressureResumeBytes) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
-    const int oldMask = reply->appliedPauseMask;
+    const int oldMask         = reply->appliedPauseMask;
     const int oldInternalMask = reply->internalPauseMask;
     reply->internalPauseMask &= ~CURLPAUSE_RECV;
     if (!applyReplyPauseMask(reply, desiredReplyPauseMask(reply))) {
         reply->internalPauseMask = oldInternalMask;
-        return;
+        return SignalEmissionResult::Alive;
     }
 
-    setReplyBackpressureActive(reply, false);
+    if (setReplyBackpressureActive(reply, false) == SignalEmissionResult::Destroyed) {
+        return SignalEmissionResult::Destroyed;
+    }
     if ((oldMask & CURLPAUSE_RECV) && ((reply->appliedPauseMask & CURLPAUSE_RECV) == 0)) {
         QCCurlMultiManager::instance()->wakeup();
     }
+    return SignalEmissionResult::Alive;
 }
 
-void resumeReplySendFromRequestBodySourceIfNeeded(QCNetworkReplyPrivate *reply)
+SignalEmissionResult resumeReplySendFromRequestBodySourceIfNeeded(QCNetworkReplyPrivate *reply)
 {
     if (!reply) {
-        return;
+        return SignalEmissionResult::Alive;
     }
     if ((reply->internalPauseMask & CURLPAUSE_SEND) == 0 || replyIsTerminal(reply)) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
     QIODevice *device = reply->requestBodySource.device.data();
     if (!device || !device->isReadable()) {
-        return;
+        return SignalEmissionResult::Alive;
     }
     if (device->bytesAvailable() <= 0 && !device->atEnd()) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
     const int oldMask = reply->appliedPauseMask;
     reply->internalPauseMask &= ~CURLPAUSE_SEND;
     if (!applyReplyPauseMask(reply, desiredReplyPauseMask(reply))) {
         reply->internalPauseMask |= CURLPAUSE_SEND;
-        return;
+        return SignalEmissionResult::Alive;
     }
 
-    setReplyUploadSendPaused(reply, false);
+    if (setReplyUploadSendPaused(reply, false) == SignalEmissionResult::Destroyed) {
+        return SignalEmissionResult::Destroyed;
+    }
     if ((oldMask & CURLPAUSE_SEND) && ((reply->appliedPauseMask & CURLPAUSE_SEND) == 0)) {
         QCCurlMultiManager::instance()->wakeup();
     }
+    return SignalEmissionResult::Alive;
 }
 
 void scheduleReplyBackpressureResumeAfterRead(QCNetworkReply *reply,
@@ -211,22 +215,24 @@ void scheduleReplyBackpressureResumeAfterRead(QCNetworkReply *reply,
         reply,
         [safeReply, privateReply]() {
             if (safeReply) {
-                privateReply->maybeResumeRecvFromBackpressure();
+                Q_UNUSED(privateReply->maybeResumeRecvFromBackpressure());
             }
         },
         Qt::QueuedConnection);
 }
 
-void clearReplyFlowControlOnTerminalState(QCNetworkReplyPrivate *reply)
+SignalEmissionResult clearReplyFlowControlOnTerminalState(QCNetworkReplyPrivate *reply)
 {
     if (!reply) {
-        return;
+        return SignalEmissionResult::Alive;
     }
 
     reply->internalPauseMask &= ~CURLPAUSE_RECV;
     reply->internalPauseMask &= ~CURLPAUSE_SEND;
-    setReplyBackpressureActive(reply, false);
-    setReplyUploadSendPaused(reply, false);
+    if (setReplyBackpressureActive(reply, false) == SignalEmissionResult::Destroyed) {
+        return SignalEmissionResult::Destroyed;
+    }
+    return setReplyUploadSendPaused(reply, false);
 }
 
 void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateReply, PauseMode mode)
@@ -238,8 +244,8 @@ void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateRe
         return;
     }
 
-    const int flags = pauseFlagsFromMode(mode);
-    const int oldUserMask = privateReply->userPauseMask;
+    const int flags             = pauseFlagsFromMode(mode);
+    const int oldUserMask       = privateReply->userPauseMask;
     privateReply->userPauseMask = flags;
     if (!shouldDeferRecvPauseToWriteCallback(flags)
         && !applyReplyPauseMask(privateReply, desiredReplyPauseMask(privateReply))) {
@@ -247,7 +253,7 @@ void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateRe
         return;
     }
 
-    privateReply->setState(ReplyState::Paused);
+    Q_UNUSED(privateReply->setState(ReplyState::Paused));
     Q_UNUSED(reply);
 }
 
@@ -260,14 +266,16 @@ void resumeReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateR
         return;
     }
 
-    const int oldUserMask = privateReply->userPauseMask;
+    const int oldUserMask       = privateReply->userPauseMask;
     privateReply->userPauseMask = 0;
     if (!applyReplyPauseMask(privateReply, desiredReplyPauseMask(privateReply))) {
         privateReply->userPauseMask = oldUserMask;
         return;
     }
 
-    privateReply->setState(ReplyState::Running);
+    if (privateReply->setState(ReplyState::Running) == SignalEmissionResult::Destroyed) {
+        return;
+    }
     QCCurlMultiManager::instance()->wakeup();
     Q_UNUSED(reply);
 }

@@ -7,6 +7,7 @@
 #define QCNETWORKREPLYFLOWCONTROL_P_H
 
 #include "QCNetworkReply.h"
+#include "private/QCNetworkReplySignal_p.h"
 
 namespace QCurl {
 
@@ -17,13 +18,16 @@ namespace Internal {
 [[nodiscard]] int desiredReplyPauseMask(const QCNetworkReplyPrivate *reply) noexcept;
 [[nodiscard]] bool applyReplyPauseMask(QCNetworkReplyPrivate *reply, int desiredMask);
 
-void setReplyBackpressureActive(QCNetworkReplyPrivate *reply, bool active);
-void setReplyUploadSendPaused(QCNetworkReplyPrivate *reply, bool paused);
-void maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply);
-void resumeReplySendFromRequestBodySourceIfNeeded(QCNetworkReplyPrivate *reply);
+[[nodiscard]] SignalEmissionResult setReplyBackpressureActive(QCNetworkReplyPrivate *reply,
+                                                              bool active);
+[[nodiscard]] SignalEmissionResult setReplyUploadSendPaused(QCNetworkReplyPrivate *reply,
+                                                            bool paused);
+[[nodiscard]] SignalEmissionResult maybeResumeReplyRecvFromBackpressure(QCNetworkReplyPrivate *reply);
+[[nodiscard]] SignalEmissionResult resumeReplySendFromRequestBodySourceIfNeeded(
+    QCNetworkReplyPrivate *reply);
 void scheduleReplyBackpressureResumeAfterRead(QCNetworkReply *reply,
                                               QCNetworkReplyPrivate *privateReply);
-void clearReplyFlowControlOnTerminalState(QCNetworkReplyPrivate *reply);
+[[nodiscard]] SignalEmissionResult clearReplyFlowControlOnTerminalState(QCNetworkReplyPrivate *reply);
 
 void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateReply, PauseMode mode);
 void resumeReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateReply);

@@ -18,7 +18,7 @@ public:
     QByteArray customMethod;
     QList<QCNetworkCapturedRequest::RawHeaderPair> headers;
     QByteArray bodyPreview;
-    qsizetype bodySize = 0;
+    qsizetype bodySize  = 0;
     bool followLocation = true;
     // 空值表示请求未显式配置对应 timeout。
     std::optional<qint64> connectTimeoutMs;

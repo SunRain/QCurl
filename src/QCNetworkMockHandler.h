@@ -252,7 +252,9 @@ public:
     void clear();
 
 private:
-    bool consumeMock(HttpMethod method, const QUrl &url, Internal::QCNetworkMockData &out);
+    [[nodiscard]] bool consumeMock(HttpMethod method,
+                                   const QUrl &url,
+                                   Internal::QCNetworkMockData &out);
 
     static QString makeKey(HttpMethod method, const QUrl &url);
 

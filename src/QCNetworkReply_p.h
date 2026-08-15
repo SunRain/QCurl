@@ -18,10 +18,12 @@
 //
 
 #include "QCCurlHandleManager.h"
+#include "QCNetworkCache.h"
+#include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
-#include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplySignal_p.h"
+#include "private/QCNetworkReplyTransferState_p.h"
 #include "private/QCRequestPipeline_p.h"
-#include "qbytedata_p.h"
 
 #include <QElapsedTimer>
 #include <QMap>
@@ -38,6 +40,7 @@ QByteArray testCurlPlanDigest(const QCNetworkReply *reply);
 }
 
 class CurlMultiHandleProcesser; // 前向声明
+class QCCurlMultiTransferRecord;
 
 /**
  * @brief QCNetworkReply 私有实现类
@@ -50,7 +53,16 @@ class CurlMultiHandleProcesser; // 前向声明
  */
 class QCNetworkReplyPrivate
 {
+    Q_DECLARE_PUBLIC(QCNetworkReply)
+
 public:
+    /**
+     * @brief 返回公共对象的非拥有型回指。
+     *
+     * 供不属于私有类成员的 libcurl 回调读取 QObject 线程和信号边界。
+     */
+    QCNetworkReply *qObject() const noexcept { return q_ptr; }
+
     /**
      * @brief 构造函数
      *
@@ -72,175 +84,147 @@ public:
      */
     ~QCNetworkReplyPrivate();
 
-    // ==================
-    // 公共类指针（Qt Pimpl 模式）
-    // ==================
-
-    QCNetworkReply *q_ptr;
-    Q_DECLARE_PUBLIC(QCNetworkReply)
-
-    // ==================
     // 配置信息
-    // ==================
 
     QCNetworkRequest request; ///< 网络请求配置
     HttpMethod httpMethod;    ///< HTTP 方法（HEAD/GET/POST等）
-    QByteArray requestBody;   ///< 请求体数据（POST/PUT/PATCH使用）
-    Internal::NormalizedRequest normalizedRequest;
-    Internal::CurlPlan curlPlan;
+    QSharedPointer<QCNetworkReplyTransferState> transferState;
+    Internal::CurlPlan &curlPlan;
 
-    // ==================
     // Curl 管理
-    // ==================
 
-    QCCurlHandleManager curlManager;          ///< RAII curl 句柄管理器
-    CurlMultiHandleProcesser *multiProcessor; ///< 多句柄管理器（异步模式使用）
+    QCCurlHandleManager curlManager; ///< add 前以及 multi detach 后的句柄管理器
+    QCCurlMultiTransferRecord *multiTransferRecord = nullptr; ///< manager-owned active transfer
+    CurlMultiHandleProcesser *multiProcessor;                 ///< 多句柄管理器（异步模式使用）
+    bool readCallbackConfigured   = false;
+    bool debugCallbackConfigured  = false;
+    bool transferRemovalRequested = false;
 
-    // ==================
     // 数据缓冲
-    // ==================
 
-    QCByteDataBuffer bodyBuffer;      ///< 响应体缓冲区（异步模式使用）
-    QByteArray headerData;            ///< 原始响应头数据
-    QList<RawHeaderPair> finalHeaderList; ///< 最终响应头 block 的 header 列表
-    QMap<QByteArray, QByteArray> finalHeaderMap; ///< 最终响应头 block 的大小写归一化索引
-    QMap<QString, QString> headerMap; ///< 最终响应头 block 的兼容索引
+    QCByteDataBuffer &bodyBuffer;                 ///< 响应体缓冲区（异步模式使用）
+    QByteArray &cacheBodyBuffer;                  ///< 当前 attempt 的完整缓存候选 body
+    QByteArray &headerData;                       ///< 原始响应头数据
+    QList<RawHeaderPair> &finalHeaderList;        ///< 最终响应头 block 的 header 列表
+    QMap<QByteArray, QByteArray> &finalHeaderMap; ///< 最终响应头 block 的大小写归一化索引
+    QMap<QString, QString> &headerMap;            ///< 最终响应头 block 的兼容索引
 
-    // ==================
     // 状态管理
-    // ==================
 
-    ReplyState state;           ///< 当前状态（Idle/Running/Paused/Finished等）
+    ReplyState &state;          ///< 当前状态（Idle/Running/Paused/Finished等）
     NetworkError errorCode;     ///< 错误码（NetworkNoError = 0）
     QString errorMessage;       ///< 错误描述信息
-    int httpStatusCode = 0;     ///< HTTP 状态码（0 表示未知/未返回）
-    qint64 durationMs  = -1;    ///< 总耗时（毫秒，-1 表示未知/未完成）
+    int &httpStatusCode;        ///< HTTP 状态码（0 表示未知/未返回）
+    qint64 durationMs = -1;     ///< 总耗时（毫秒，-1 表示未知/未完成）
     QElapsedTimer elapsedTimer; ///< 耗时统计（跨重试/延迟）
     bool elapsedTimerStarted = false;
 
-    // ==================
     // 传输级 pause/resume mask（P2）
-    // ==================
 
-    int userPauseMask     = 0; ///< 用户显式 pause（CURLPAUSE_* mask）
-    int internalPauseMask = 0; ///< 内部流控 pause（CURLPAUSE_* mask）
-    int appliedPauseMask  = 0; ///< 最近一次已应用到 libcurl 的 mask（用于幂等）
+    int &userPauseMask;     ///< 用户显式 pause（CURLPAUSE_* mask）
+    int &internalPauseMask; ///< 内部流控 pause（CURLPAUSE_* mask）
+    int &appliedPauseMask;  ///< 最近一次已应用到 libcurl 的 mask（用于幂等）
 
-    // ==================
     // 下载 backpressure（P2）
-    // ==================
 
-    qint64 backpressureLimitBytes        = 0; ///< <=0 表示禁用
-    qint64 backpressureResumeBytes       = 0; ///< <=0 表示默认（limit/2）
-    qint64 backpressurePeakBufferedBytes = 0; ///< 生命周期内 bodyBuffer 峰值（bytes）
-    bool backpressureActive              = false;
+    qint64 &backpressureLimitBytes;        ///< <=0 表示禁用
+    qint64 &backpressureResumeBytes;       ///< <=0 表示默认（limit/2）
+    qint64 &backpressurePeakBufferedBytes; ///< 生命周期内 bodyBuffer 峰值（bytes）
+    bool &backpressureActive;
 
-    // ==================
     // 上传 source pause/resume（P2）
-    // ==================
 
-    bool uploadSendPaused = false; ///< 上传发送方向内部 pause（source not ready；仅 Async）
+    bool &uploadSendPaused; ///< 上传发送方向内部 pause（source not ready；仅 Async）
 
-    // ==================
     // 能力探测/可诊断 warning（不含敏感信息）
-    // ==================
 
     QStringList capabilityWarnings;
 
-    qint64 bytesDownloaded; ///< 已下载字节数
-    qint64 bytesUploaded;   ///< 已上传字节数
-    qint64 downloadTotal;   ///< 下载总字节数（-1 表示未知）
-    qint64 uploadTotal;     ///< 上传总字节数
+    qint64 &bytesDownloaded; ///< 已下载字节数
+    qint64 &bytesUploaded;   ///< 已上传字节数
+    qint64 &downloadTotal;   ///< 下载总字节数（-1 表示未知）
+    qint64 &uploadTotal;     ///< 上传总字节数
 
-    // ==================
     // 重试机制
-    // ==================
 
     int attemptCount;
 
-    // ==================
     // 缓存集成
-    // ==================
 
     bool fallbackToCache = false;
+    QCNetworkCacheRequestKey cacheRequestKey;
+    QCNetworkCacheLookupResult staleCacheEntry;
+    bool cacheRequestKeyInitialized = false;
+    bool cacheRevalidation          = false;
 
-    // ==================
+    // Manager service snapshots
+
+    QCNetworkLoggerHandle &logger;
+    bool &debugTraceEnabled;
+
     // Cookie 配置（从 QCNetworkAccessManager 传递）
-    // ==================
 
-    QString cookieFilePath; ///< Cookie 文件路径
-    int cookieMode;         ///< Cookie 模式标志
+    QString &cookieFilePath; ///< Cookie 文件路径
+    int &cookieMode;         ///< Cookie 模式标志
 
-    // ==================
     // HSTS/Alt-Svc cache 持久化（LC-50，可选，默认关闭）
-    // ==================
 
-    QByteArray hstsCachePathBytes;   ///< CURLOPT_HSTS 文件路径缓存
-    QByteArray altSvcCachePathBytes; ///< CURLOPT_ALTSVC 文件路径缓存
+    QByteArray &hstsCachePathBytes;   ///< CURLOPT_HSTS 文件路径缓存
+    QByteArray &altSvcCachePathBytes; ///< CURLOPT_ALTSVC 文件路径缓存
 
-    // ==================
     // 代理配置缓存（保持 QByteArray 生命周期）
-    // ==================
 
-    QByteArray proxyHostBytes;     ///< 代理主机名缓存
-    QByteArray proxyUserBytes;     ///< 代理用户名缓存
-    QByteArray proxyPasswordBytes; ///< 代理密码缓存
-    bool proxyEnvironmentDisabled = false; ///< 默认不继承 libcurl 代理环境变量
+    QByteArray &proxyHostBytes;     ///< 代理主机名缓存
+    QByteArray &proxyUserBytes;     ///< 代理用户名缓存
+    QByteArray &proxyPasswordBytes; ///< 代理密码缓存
+    bool &proxyEnvironmentDisabled; ///< 默认不继承 libcurl 代理环境变量
 
-    QByteArray httpAuthUserBytes;     ///< HTTP 认证用户名缓存
-    QByteArray httpAuthPasswordBytes; ///< HTTP 认证密码缓存
+    QByteArray &httpAuthUserBytes;     ///< HTTP 认证用户名缓存
+    QByteArray &httpAuthPasswordBytes; ///< HTTP 认证密码缓存
 
-    QByteArray refererBytes;        ///< Referer 缓存
-    QByteArray acceptEncodingBytes; ///< Accept-Encoding(由 libcurl 托管) 缓存
+    QByteArray &refererBytes;        ///< Referer 缓存
+    QByteArray &acceptEncodingBytes; ///< Accept-Encoding(由 libcurl 托管) 缓存
 
-    // ==================
     // 网络路径与 DNS 控制（M4）
-    // ==================
 
-    QByteArray interfaceBytes;            ///< CURLOPT_INTERFACE 缓存
-    QByteArray dnsServersBytes;           ///< CURLOPT_DNS_SERVERS 缓存
-    QByteArray dohUrlBytes;               ///< CURLOPT_DOH_URL 缓存
-    curl_slist *resolveSlist   = nullptr; ///< CURLOPT_RESOLVE 列表（Reply 生命周期内有效）
-    curl_slist *connectToSlist = nullptr; ///< CURLOPT_CONNECT_TO 列表（Reply 生命周期内有效）
+    QByteArray &interfaceBytes;  ///< CURLOPT_INTERFACE 缓存
+    QByteArray &dnsServersBytes; ///< CURLOPT_DNS_SERVERS 缓存
+    QByteArray &dohUrlBytes;     ///< CURLOPT_DOH_URL 缓存
+    curl_slist *&resolveSlist;   ///< CURLOPT_RESOLVE 列表（transfer state 生命周期内有效）
+    curl_slist *&connectToSlist; ///< CURLOPT_CONNECT_TO 列表（transfer state 生命周期内有效）
 
-    // ==================
     // 协议白名单（M5，安全）
-    // ==================
 
-    QByteArray allowedProtocolsBytes;         ///< CURLOPT_PROTOCOLS_STR 缓存
-    QByteArray allowedRedirectProtocolsBytes; ///< CURLOPT_REDIR_PROTOCOLS_STR 缓存
+    QByteArray &allowedProtocolsBytes;         ///< CURLOPT_PROTOCOLS_STR 缓存
+    QByteArray &allowedRedirectProtocolsBytes; ///< CURLOPT_REDIR_PROTOCOLS_STR 缓存
 
-    QByteArray sslCaCertPathBytes;        ///< CA 证书路径缓存
-    QByteArray sslClientCertPathBytes;    ///< 客户端证书路径缓存
-    QByteArray sslClientKeyPathBytes;     ///< 客户端私钥路径缓存
-    QByteArray sslClientKeyPasswordBytes; ///< 客户端私钥密码缓存
+    QByteArray &sslCaCertPathBytes;        ///< CA 证书路径缓存
+    QByteArray &sslClientCertPathBytes;    ///< 客户端证书路径缓存
+    QByteArray &sslClientKeyPathBytes;     ///< 客户端私钥路径缓存
+    QByteArray &sslClientKeyPasswordBytes; ///< 客户端私钥密码缓存
 
-    QByteArray sslPinnedPublicKeyBytes; ///< CURLOPT_PINNEDPUBLICKEY 缓存
-    QByteArray sslCipherListBytes;      ///< CURLOPT_SSL_CIPHER_LIST 缓存
-    QByteArray sslTls13CiphersBytes;    ///< CURLOPT_TLS13_CIPHERS 缓存
+    QByteArray &sslPinnedPublicKeyBytes; ///< CURLOPT_PINNEDPUBLICKEY 缓存
+    QByteArray &sslCipherListBytes;      ///< CURLOPT_SSL_CIPHER_LIST 缓存
+    QByteArray &sslTls13CiphersBytes;    ///< CURLOPT_TLS13_CIPHERS 缓存
 
-    QByteArray proxySslCaCertPathBytes;   ///< CURLOPT_PROXY_CAINFO 缓存
-    QByteArray proxySslCipherListBytes;   ///< CURLOPT_PROXY_SSL_CIPHER_LIST 缓存
-    QByteArray proxySslTls13CiphersBytes; ///< CURLOPT_PROXY_TLS13_CIPHERS 缓存
+    QByteArray &proxySslCaCertPathBytes;   ///< CURLOPT_PROXY_CAINFO 缓存
+    QByteArray &proxySslCipherListBytes;   ///< CURLOPT_PROXY_SSL_CIPHER_LIST 缓存
+    QByteArray &proxySslTls13CiphersBytes; ///< CURLOPT_PROXY_TLS13_CIPHERS 缓存
 
-    // ==================
     // 流式上传（M2）
-    // ==================
 
-    Internal::ReplyBodySourceState requestBodySource; ///< 请求体设备来源与 curl 回调状态
+    Internal::ReplyBodySourceState &requestBodySource; ///< 请求体设备来源与 curl 回调状态
     std::function<std::optional<QString>()> beforeFinishTransition;
 
-    // ==================
     // 内部方法
-    // ==================
 
     [[nodiscard]] int desiredPauseMask() const;
 
-    bool applyPauseMask(int desiredMask);
-    void setBackpressureActive(bool active);
-    void setUploadSendPaused(bool paused);
-    void maybeResumeRecvFromBackpressure();
-    void resumeSendFromRequestBodySourceIfNeeded();
+    [[nodiscard]] bool applyPauseMask(int desiredMask);
+    [[nodiscard]] Internal::SignalEmissionResult setBackpressureActive(bool active);
+    [[nodiscard]] Internal::SignalEmissionResult setUploadSendPaused(bool paused);
+    [[nodiscard]] Internal::SignalEmissionResult maybeResumeRecvFromBackpressure();
+    [[nodiscard]] Internal::SignalEmissionResult resumeSendFromRequestBodySourceIfNeeded();
 
     /**
      * @brief 配置 curl 选项
@@ -250,7 +234,10 @@ public:
      *
      * @return true 配置成功，false 失败
      */
-    bool configureCurlOptions();
+    [[nodiscard]] bool configureCurlOptions();
+
+    /// 返回当前 attempt 的 easy handle；multi 在途时句柄由 transfer record 持有。
+    [[nodiscard]] CURL *activeCurlHandle() const noexcept;
 
     /**
      * @brief 设置状态并发射信号
@@ -259,7 +246,7 @@ public:
      *
      * @param newState 新状态
      */
-    void setState(ReplyState newState);
+    [[nodiscard]] Internal::SignalEmissionResult setState(ReplyState newState);
 
     /**
      * @brief 设置错误信息
@@ -276,6 +263,9 @@ public:
      */
     void parseHeaders();
 
+    /// 返回原始响应头块中的字段，保留现有字段名并展开续行。
+    [[nodiscard]] QMap<QByteArray, QByteArray> parsedResponseHeaders() const;
+
     /**
      * @brief 异步 multi 完成入口（点对点投递到 reply 线程）
      *
@@ -284,11 +274,9 @@ public:
      *
      * @note 必须在 Reply 线程执行；调用方应保证在解锁 multi manager 后再投递回调。
      */
-    void onCurlMultiFinished(CURLcode curlCode);
+    void onCurlMultiFinished(CURLcode curlCode, long httpStatusCode);
 
-    // ==================
     // Curl 静态回调函数（C 接口）
-    // ==================
 
     /**
      * @brief 写回调（接收响应体数据）
@@ -360,13 +348,9 @@ public:
     static int curlDebugCallback(
         CURL *handle, curl_infotype type, char *data, size_t size, void *userptr);
 
-    /**
-     * @brief 生成脱敏后的 debug trace 文本
-     *
-     * 供 libcurl debug 回调与单元测试共用，确保 trace 分类与脱敏规则只有一处实现。
-     */
-    [[nodiscard]] static QString formatDebugTraceMessage(curl_infotype type,
-                                                         const QByteArray &raw);
+private:
+    /// 指向公共接口对象的非拥有型回指。
+    QCNetworkReply *q_ptr;
 };
 
 } // namespace QCurl

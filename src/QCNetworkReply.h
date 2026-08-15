@@ -8,6 +8,7 @@
 
 #include "QCNetworkError.h"
 #include "QCNetworkHttpMethod.h"
+#include "QCNetworkLogger.h"
 
 #include <QByteArray>
 #include <QList>
@@ -25,8 +26,9 @@ class QCNetworkAccessManagerPrivate;
 class QCNetworkRequest;
 
 namespace Internal {
+class QCNetworkReplyExecution;
 struct RequestBody;
-}
+} // namespace Internal
 
 // ==================
 // 前向声明
@@ -44,7 +46,7 @@ class QCNetworkReplyPrivate; ///< 私有实现类。
 enum class PauseMode {
     Recv, ///< 暂停接收（CURLPAUSE_RECV）
     Send, ///< 暂停发送（CURLPAUSE_SEND）
-    All   ///< 暂停收发（CURLPAUSE_ALL）
+    All,  ///< 暂停收发（CURLPAUSE_ALL）
 };
 
 /**
@@ -56,7 +58,7 @@ enum class ReplyState {
     Paused,    ///< 已暂停（仅异步传输级 pause/resume）
     Finished,  ///< 已完成
     Cancelled, ///< 已取消
-    Error      ///< 错误
+    Error,     ///< 错误
 };
 
 // ==================
@@ -74,6 +76,14 @@ using RawHeaderPair = QPair<QByteArray, QByteArray>;
  *
  * reply 表达 Qt 风格异步请求路径，暴露 body、header、错误状态与
  * 传输控制入口。实例只能由 `QCNetworkAccessManager` 工厂路径创建。
+ *
+ * @note 直接连接的信号处理函数可同步销毁 reply 或其 parent。销毁发生后，当前调用栈
+ * 不会补发 `finished()` 或执行后续 cache、retry、multi 副作用。
+ * @note 错误生命周期：新执行周期开始时清空旧错误；首次终态后 `error()` 是权威分类，
+ * `errorString()` 仅在失败终态有效，并与状态一起保持到析构。命令返回或信号投递不建立
+ * 独立的“最近错误”状态。
+ * @note QObject 借用合同：所有对外暴露的 reply 裸指针均为 non-owning 当次借用；reply 或
+ * 其 parent 销毁后立即失效，只能在 reply owner thread 判空、读取或调用，不得跨异步边界保存。
  */
 class QCURL_EXPORT QCNetworkReply : public QObject
 {
@@ -124,9 +134,13 @@ public:
     /// 析构 reply 并释放底层 easy handle、回调和缓存资源。
     ~QCNetworkReply() override;
 
-    // 禁止拷贝
-    QCNetworkReply(const QCNetworkReply &)            = delete;
-    QCNetworkReply &operator=(const QCNetworkReply &) = delete;
+    /**
+     * @brief 返回创建 reply 时捕获的 logger 句柄快照。
+     *
+     * middleware 可复制并持有该 snapshot，避免访问 reply 的私有实现。manager 后续替换
+     * logger 不改变该结果；`get()` 返回的非 owning 借用只在至少一个同控制块句柄存活时有效。
+     */
+    [[nodiscard]] QCNetworkLoggerHandle loggerSnapshot() const;
 
     // ==================
     // 执行控制
@@ -304,15 +318,9 @@ Q_SIGNALS:
      */
     void retryAttempt(int attemptCount, NetworkError error);
 
-    // ==================
-    // 公共槽
-    // ==================
-
-public Q_SLOTS:
-    /// 通过 Qt 事件循环延迟销毁 reply。
-    void deleteLater();
-
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkReply)
+
     class FactoryKey
     {
         friend class QCNetworkAccessManager;
@@ -344,6 +352,7 @@ private:
     // ==================
 
     friend class QCNetworkAccessManagerPrivate;
+    friend class Internal::QCNetworkReplyExecution;
 
     Q_DECLARE_PRIVATE(QCNetworkReply)
     QScopedPointer<QCNetworkReplyPrivate> d_ptr;

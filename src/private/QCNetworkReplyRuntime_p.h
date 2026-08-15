@@ -7,13 +7,13 @@
 #define QCNETWORKREPLYRUNTIME_P_H
 
 #include "QCNetworkError.h"
+#include "private/QCNetworkReplySignal_p.h"
 
 #include <QPointer>
 #include <QString>
 
-#include <curl/curl.h>
-
 #include <chrono>
+#include <curl/curl.h>
 #include <optional>
 
 namespace QCurl {
@@ -28,8 +28,14 @@ inline constexpr const char kTestCurlPlanDigestProperty[] = "_qcurl_testCurlPlan
 [[nodiscard]] bool isReplyCapabilityRelatedCurlError(CURLcode code) noexcept;
 void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &message);
 
-[[nodiscard]] std::optional<std::chrono::milliseconds> advanceReplyRetryIfNeeded(
-    QCNetworkReplyPrivate *reply, NetworkError error);
+struct ReplyRetryAdvanceResult
+{
+    SignalEmissionResult emissionResult = SignalEmissionResult::Alive;
+    std::optional<std::chrono::milliseconds> delay;
+};
+
+[[nodiscard]] ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *reply,
+                                                                NetworkError error);
 void resetReplyForRetry(QCNetworkReplyPrivate *reply, bool setIdleState);
 void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,
                              QCNetworkReplyPrivate *reply,

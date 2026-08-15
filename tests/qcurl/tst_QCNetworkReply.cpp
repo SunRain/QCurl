@@ -12,16 +12,18 @@
  * - 信号发射（finished/error/progress）
  */
 
+#include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
-#include "test_httpbin_env.h"
-#include "test_wait_utils.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
+#include "qcnetwork_mock_test_support.h"
+#include "test_httpbin_env.h"
+#include "test_source_paths.h"
+#include "test_wait_utils.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -53,7 +55,7 @@ class TestQCNetworkReply : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
@@ -84,6 +86,10 @@ private slots:
     void testAsyncMockChaosPauseResume();
     void testAsyncMockChaosCancel();
     void testAsyncMockChaosDeleteLater();
+    void testAsyncMockSynchronousDeleteDuringReadyRead();
+    void testAsyncMockSynchronousDeleteParentDuringReadyRead();
+    void testRealMultiReplyDeleteLaterDuringCallback();
+    void testPauseFlowControlOwnerThreadSourceContract();
     void testWaitedAsyncPauseResumeNoOp();
     void testAsyncTransferPauseResumeCrossThread();
     void testAsyncDownloadBackpressure();
@@ -108,6 +114,7 @@ private slots:
     void testErrorSignal();
     void testProgressSignal();
     void testStateChangedSignal();
+    void testTerminalSignalsSynchronousDeleteStopFollowUp();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -148,17 +155,17 @@ QString dciEvidenceRoot()
         return QDir(outDir).absolutePath();
     }
 
-    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
-        QStringLiteral("../test-artifacts"));
+    return QDir(QCoreApplication::applicationDirPath())
+        .absoluteFilePath(QStringLiteral("../test-artifacts"));
 }
 
 class DciEvidenceRecorder
 {
 public:
     DciEvidenceRecorder(QString caseName, QString streamSuffix = QString(), int seed = -1)
-        : m_caseName(sanitizeEvidenceToken(caseName)),
-          m_streamId(m_caseName),
-          m_seed(seed)
+        : m_caseName(sanitizeEvidenceToken(caseName))
+        , m_streamId(m_caseName)
+        , m_seed(seed)
     {
         if (!streamSuffix.isEmpty()) {
             m_streamId += QStringLiteral(":%1").arg(sanitizeEvidenceToken(streamSuffix));
@@ -211,7 +218,7 @@ public:
 private:
     QString m_caseName;
     QString m_streamId;
-    int m_seed = -1;
+    int m_seed    = -1;
     int m_nextSeq = 1;
     QList<QJsonObject> m_rows;
 };
@@ -235,7 +242,7 @@ QJsonObject timelineTransferMetrics(const QCNetworkReply *reply,
 
 int envIntOrDefault(const char *name, int fallback)
 {
-    bool ok = false;
+    bool ok         = false;
     const int value = qEnvironmentVariableIntValue(name, &ok);
     return ok ? value : fallback;
 }
@@ -280,8 +287,8 @@ QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
             return m_manager->put(request, body);
         case HttpMethod::Delete:
             return body.isEmpty()
-                ? m_manager->deleteResource(request)
-                : m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
+                       ? m_manager->deleteResource(request)
+                       : m_manager->sendCustomRequest(request, QByteArrayLiteral("DELETE"), body);
         case HttpMethod::Patch:
             return m_manager->patch(request, body);
         case HttpMethod::Custom:
@@ -314,7 +321,7 @@ void TestQCNetworkReply::restoreScheduler(const QCNetworkRequestScheduler::Confi
     auto *scheduler = m_manager->schedulerForTesting();
     Q_ASSERT(scheduler != nullptr);
 
-    scheduler->cancelAllRequests();
+    static_cast<void>(scheduler->cancelAllRequests());
     QCoreApplication::processEvents();
     scheduler->setConfigForTesting(originalConfig);
     m_manager->enableRequestScheduler(originalEnabled);
@@ -339,8 +346,9 @@ void TestQCNetworkReply::initTestCase()
     QCNetworkReply *reply = m_manager->get(request);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QVERIFY2(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 4000),
-             qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl,
-                                                          QStringLiteral("health check timed out"))));
+             qPrintable(
+                 TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl,
+                                                   QStringLiteral("health check timed out"))));
     QVERIFY2(reply->error() == NetworkError::NoError,
              qPrintable(TestEnv::httpbinUnavailableReason(m_httpbinBaseUrl, reply->errorString())));
     m_isHttpbinReachable = true;
@@ -371,9 +379,8 @@ void TestQCNetworkReply::testConstructor()
 {
     bool originalSchedulerEnabled = false;
     const auto originalConfig     = blockScheduler(originalSchedulerEnabled);
-    const auto cleanup            = qScopeGuard([&]() {
-        restoreScheduler(originalConfig, originalSchedulerEnabled);
-    });
+    const auto cleanup            = qScopeGuard(
+        [&]() { restoreScheduler(originalConfig, originalSchedulerEnabled); });
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/get")));
     auto *reply = sendManagedReply(HttpMethod::Get, request);
@@ -393,9 +400,8 @@ void TestQCNetworkReply::testConstructorWithDifferentMethods()
 {
     bool originalSchedulerEnabled = false;
     const auto originalConfig     = blockScheduler(originalSchedulerEnabled);
-    const auto cleanup            = qScopeGuard([&]() {
-        restoreScheduler(originalConfig, originalSchedulerEnabled);
-    });
+    const auto cleanup            = qScopeGuard(
+        [&]() { restoreScheduler(originalConfig, originalSchedulerEnabled); });
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/post")));
 
@@ -465,7 +471,10 @@ void TestQCNetworkReply::testWaitedAsyncPostRequest()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     QByteArray postData = "{\"test\": \"data\"}";
 
-    auto *reply = TestSupport::sendWaitedAsyncTestReply(*m_manager, request, HttpMethod::Post, postData);
+    auto *reply = TestSupport::sendWaitedAsyncTestReply(*m_manager,
+                                                        request,
+                                                        HttpMethod::Post,
+                                                        postData);
 
     QVERIFY(reply != nullptr);
     QVERIFY(reply->isFinished());
@@ -747,7 +756,8 @@ void TestQCNetworkReply::testExpect100ContinueTimeoutIgnoredOnGet()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/get").arg(port)));
     request.setConnectTimeout(std::chrono::milliseconds(2000));
     request.setTimeout(std::chrono::milliseconds(5000));
-    request.setExpect100ContinueTimeout(std::chrono::milliseconds(0));
+    QCOMPARE(request.setExpect100ContinueTimeout(std::chrono::milliseconds(0)),
+             QCNetworkConfigUpdateResult::Applied);
 
     auto *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
@@ -914,7 +924,7 @@ void TestQCNetworkReply::testStateCancellation()
 
 void TestQCNetworkReply::testAsyncMockChaosPauseResume()
 {
-    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 17);
+    const int seed          = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 17);
     const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
     const auto restoreEnv   = qScopeGuard([oldEnv]() {
         if (oldEnv.isEmpty()) {
@@ -934,7 +944,8 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
     const QByteArray payload("abcdefghijklmnopqrstuvwxyz");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
     QCurl::TestSupport::setMockHandler(*m_manager, &handler);
-    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
+    const auto resetMock = qScopeGuard(
+        [this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     auto runOnce = [&](QList<int> &chunkSizes,
                        QList<qint64> &progressValues,
@@ -966,7 +977,7 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
         QSignalSpy stateSpy(reply, &QCNetworkReply::stateChanged);
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
         bool sawFirstByte = false;
-        bool sawPause = false;
+        bool sawPause     = false;
 
         connect(reply, &QCNetworkReply::readyRead, this, [&]() {
             const auto dataOpt = reply->readAll();
@@ -983,23 +994,19 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
             recorder.addEvent(QStringLiteral("body_chunk"),
                               timelineTransferMetrics(reply, received.size(), dataOpt->size()));
         });
-        connect(reply,
-                &QCNetworkReply::stateChanged,
-                this,
-                [&](ReplyState state) {
-                    if (state == ReplyState::Paused) {
-                        sawPause = true;
-                        recorder.addEvent(QStringLiteral("pause_effective"),
-                                          timelineTransferMetrics(reply, received.size()));
-                    } else if (sawPause && state == ReplyState::Running) {
-                        recorder.addEvent(QStringLiteral("resume_req"),
-                                          timelineTransferMetrics(reply, received.size()));
-                    }
-                });
-        connect(reply,
-                &QCNetworkReply::downloadProgress,
-                this,
-                [&](qint64 bytesReceived, qint64) { progressValues.append(bytesReceived); });
+        connect(reply, &QCNetworkReply::stateChanged, this, [&](ReplyState state) {
+            if (state == ReplyState::Paused) {
+                sawPause = true;
+                recorder.addEvent(QStringLiteral("pause_effective"),
+                                  timelineTransferMetrics(reply, received.size()));
+            } else if (sawPause && state == ReplyState::Running) {
+                recorder.addEvent(QStringLiteral("resume_req"),
+                                  timelineTransferMetrics(reply, received.size()));
+            }
+        });
+        connect(reply, &QCNetworkReply::downloadProgress, this, [&](qint64 bytesReceived, qint64) {
+            progressValues.append(bytesReceived);
+        });
 
         if (!waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 2000)) {
             reply->deleteLater();
@@ -1053,12 +1060,12 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
     QVERIFY(firstChunkSizes.size() > 1);
     QCOMPARE(firstChunkSizes, secondChunkSizes);
 
-    QVERIFY(std::any_of(firstStates.cbegin(),
-                        firstStates.cend(),
-                        [](ReplyState state) { return state == ReplyState::Paused; }));
-    QVERIFY(std::any_of(secondStates.cbegin(),
-                        secondStates.cend(),
-                        [](ReplyState state) { return state == ReplyState::Paused; }));
+    QVERIFY(std::any_of(firstStates.cbegin(), firstStates.cend(), [](ReplyState state) {
+        return state == ReplyState::Paused;
+    }));
+    QVERIFY(std::any_of(secondStates.cbegin(), secondStates.cend(), [](ReplyState state) {
+        return state == ReplyState::Paused;
+    }));
 
     QVERIFY(!firstProgress.isEmpty());
     QVERIFY(!secondProgress.isEmpty());
@@ -1070,7 +1077,7 @@ void TestQCNetworkReply::testAsyncMockChaosPauseResume()
 
 void TestQCNetworkReply::testAsyncMockChaosCancel()
 {
-    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 5);
+    const int seed          = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 5);
     const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
     const auto restoreEnv   = qScopeGuard([oldEnv]() {
         if (oldEnv.isEmpty()) {
@@ -1090,7 +1097,8 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
     const QByteArray payload("cancel-me-before-finish");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
     QCurl::TestSupport::setMockHandler(*m_manager, &handler);
-    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
+    const auto resetMock = qScopeGuard(
+        [this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->get(request);
@@ -1134,10 +1142,9 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
         recorder.addEvent(QStringLiteral("body_chunk"),
                           timelineTransferMetrics(reply, received.size(), dataOpt->size()));
     });
-    connect(reply,
-            &QCNetworkReply::downloadProgress,
-            this,
-            [&](qint64 bytesReceived, qint64) { progressValues.append(bytesReceived); });
+    connect(reply, &QCNetworkReply::downloadProgress, this, [&](qint64 bytesReceived, qint64) {
+        progressValues.append(bytesReceived);
+    });
 
     QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() > 0, 1000);
     QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() > 0, 1000);
@@ -1171,7 +1178,7 @@ void TestQCNetworkReply::testAsyncMockChaosCancel()
 
 void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
 {
-    const int seed = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 23);
+    const int seed          = envIntOrDefault("QCURL_TEST_MOCK_CHAOS_SEED", 23);
     const QByteArray oldEnv = qgetenv("QCURL_TEST_MOCK_CHAOS");
     const auto restoreEnv   = qScopeGuard([oldEnv]() {
         if (oldEnv.isEmpty()) {
@@ -1182,15 +1189,15 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
     });
 
     qputenv("QCURL_TEST_MOCK_CHAOS",
-            QByteArray("seed=" + QByteArray::number(seed)
-                       + ";max_chunk_bytes=4;chunk_delay_ms=10"));
+            QByteArray("seed=" + QByteArray::number(seed) + ";max_chunk_bytes=4;chunk_delay_ms=10"));
 
     QCNetworkMockHandler handler;
     const QUrl url(QStringLiteral("http://example.com/mock/chaos/delete-later"));
     const QByteArray payload("delete-later-before-finish-payload");
     handler.mockResponse(HttpMethod::Get, url, payload, 200);
     QCurl::TestSupport::setMockHandler(*m_manager, &handler);
-    const auto resetMock = qScopeGuard([this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
+    const auto resetMock = qScopeGuard(
+        [this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
 
     QCNetworkRequest request(url);
     auto *reply = m_manager->get(request);
@@ -1256,6 +1263,177 @@ void TestQCNetworkReply::testAsyncMockChaosDeleteLater()
                       });
 }
 
+void TestQCNetworkReply::testAsyncMockSynchronousDeleteDuringReadyRead()
+{
+    QCNetworkMockHandler handler;
+    const QUrl url(QStringLiteral("http://example.com/mock/delete-on-ready-read"));
+    handler.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("payload"), 200);
+    QCurl::TestSupport::setMockHandler(*m_manager, &handler);
+    const auto resetMock = qScopeGuard(
+        [this]() { QCurl::TestSupport::setMockHandler(*m_manager, nullptr); });
+
+    QPointer<QCNetworkReply> reply(m_manager->get(QCNetworkRequest(url)));
+    QVERIFY(reply);
+
+    QStringList signals;
+    connect(reply, &QCNetworkReply::readyRead, this, [&reply, &signals]() {
+        signals.append(QStringLiteral("readyRead"));
+        delete reply.data();
+    });
+    connect(reply, &QCNetworkReply::downloadProgress, this, [&signals]() {
+        signals.append(QStringLiteral("downloadProgress"));
+    });
+    connect(reply, &QCNetworkReply::finished, this, [&signals]() {
+        signals.append(QStringLiteral("finished"));
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(reply.isNull(), 1000);
+    QCOMPARE(signals, QStringList{QStringLiteral("readyRead")});
+}
+
+void TestQCNetworkReply::testAsyncMockSynchronousDeleteParentDuringReadyRead()
+{
+    auto *manager = new QCNetworkAccessManager;
+    QPointer<QCNetworkAccessManager> safeManager(manager);
+    QCNetworkMockHandler handler;
+    const QUrl url(QStringLiteral("http://example.com/mock/delete-parent-on-ready-read"));
+    handler.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("payload"), 200);
+    QCurl::TestSupport::setMockHandler(*manager, &handler);
+
+    QPointer<QCNetworkReply> reply(manager->get(QCNetworkRequest(url)));
+    QVERIFY(reply);
+
+    QStringList signals;
+    connect(reply, &QCNetworkReply::readyRead, this, [manager, &signals]() {
+        signals.append(QStringLiteral("readyRead"));
+        delete manager;
+    });
+    connect(reply, &QCNetworkReply::downloadProgress, this, [&signals]() {
+        signals.append(QStringLiteral("downloadProgress"));
+    });
+    connect(reply, &QCNetworkReply::finished, this, [&signals]() {
+        signals.append(QStringLiteral("finished"));
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(reply.isNull(), 1000);
+    QVERIFY(safeManager.isNull());
+    QCOMPARE(signals, QStringList{QStringLiteral("readyRead")});
+}
+
+void TestQCNetworkReply::testRealMultiReplyDeleteLaterDuringCallback()
+{
+    constexpr qsizetype kPayloadSize = 64 * 1024;
+    const QByteArray payload(kPayloadSize, 'm');
+
+    QTcpServer server;
+    QVERIFY2(server.listen(QHostAddress::LocalHost, 0),
+             "Cannot bind local port for real multi lifecycle test");
+
+    QPointer<QTcpSocket> clientSocket;
+    connect(&server, &QTcpServer::newConnection, this, [&]() {
+        clientSocket = server.nextPendingConnection();
+        if (!clientSocket) {
+            return;
+        }
+
+        const QByteArray header = QByteArrayLiteral("HTTP/1.1 200 OK\r\n")
+                                  + QByteArrayLiteral("Content-Length: ")
+                                  + QByteArray::number(payload.size())
+                                  + QByteArrayLiteral("\r\nConnection: close\r\n\r\n");
+        clientSocket->write(header);
+        clientSocket->write(payload.left(1));
+        clientSocket->flush();
+
+        const QPointer<QTcpSocket> guardedSocket = clientSocket;
+        QTimer::singleShot(100, this, [guardedSocket, payload]() {
+            if (!guardedSocket) {
+                return;
+            }
+            guardedSocket->write(payload.mid(1));
+            guardedSocket->flush();
+            QTimer::singleShot(100, guardedSocket.data(), [guardedSocket]() {
+                if (guardedSocket) {
+                    guardedSocket->disconnectFromHost();
+                }
+            });
+        });
+    });
+
+    QCNetworkRequest request(QUrl(
+        QStringLiteral("http://127.0.0.1:%1/delete-during-callback").arg(server.serverPort())));
+    request.setConnectTimeout(std::chrono::milliseconds(1000));
+    request.setTimeout(std::chrono::milliseconds(5000));
+
+    QCNetworkReply *reply = m_manager->get(request);
+    QVERIFY(reply != nullptr);
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    QTRY_VERIFY_WITH_TIMEOUT(reply->property("_qcurl_transfer_record_owns_state").toBool(), 5000);
+#endif
+
+    QPointer<QCNetworkReply> guardedReply(reply);
+    QSignalSpy destroyedSpy(reply, &QObject::destroyed);
+    bool deleteIssued = false;
+    connect(reply, &QCNetworkReply::readyRead, this, [&]() {
+        if (!guardedReply || deleteIssued) {
+            return;
+        }
+        deleteIssued = true;
+        guardedReply->deleteLater();
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(deleteIssued, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(destroyedSpy.count() == 1, 5000);
+    QVERIFY(guardedReply.isNull());
+
+    // 让尾部 body 穿过原 callback 触发点，验证 multi owner 仍能完成 detach。
+    QTest::qWait(300);
+    QTRY_VERIFY_WITH_TIMEOUT(QCCurlMultiManager::instance()->runningRequestsCount() == 0, 5000);
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    QTRY_COMPARE_WITH_TIMEOUT(QCCurlMultiManager::instance()->activeRepliesCountForTest(), 0, 5000);
+#endif
+}
+
+void TestQCNetworkReply::testPauseFlowControlOwnerThreadSourceContract()
+{
+    const QString flowControlPath = QCurl::TestSourcePaths::sourcePath(
+        QStringLiteral("src/private/QCNetworkReplyFlowControl.cpp"));
+    QVERIFY2(!flowControlPath.isEmpty(), "QCurl source root is unavailable");
+
+    QFile sourceFile(flowControlPath);
+    QVERIFY2(sourceFile.open(QIODevice::ReadOnly | QIODevice::Text),
+             qPrintable(QStringLiteral("Cannot read %1").arg(flowControlPath)));
+    const QByteArray source = sourceFile.readAll();
+
+    const QByteArray signature  = "bool pauseCurlEasy(QCNetworkReplyPrivate *reply, int flags)";
+    const qsizetype helperStart = source.indexOf(signature);
+    QVERIFY2(helperStart >= 0, "pauseCurlEasy helper is missing");
+    const qsizetype helperEnd = source.indexOf("\n}\n\n} // namespace", helperStart);
+    QVERIFY2(helperEnd > helperStart, "pauseCurlEasy helper boundary is missing");
+
+    const QByteArray helper   = source.mid(helperStart, helperEnd - helperStart);
+    const qsizetype bodyStart = helper.indexOf('{');
+    QVERIFY2(bodyStart >= 0, "pauseCurlEasy helper body is missing");
+    const QByteArray body = helper.mid(bodyStart + 1).trimmed();
+    const QByteArray observerLookup
+        = "QCNetworkReply *const publicReply = reply ? reply->qObject() : nullptr;";
+    const QByteArray ownerCheck
+        = "if (!publicReply || QThread::currentThread() != publicReply->thread()) {";
+    QVERIFY2(body.startsWith(observerLookup), "pauseCurlEasy must resolve the reply QObject first");
+    QVERIFY2(body.contains(ownerCheck), "pauseCurlEasy must validate the reply owner thread");
+
+    QVERIFY(!helper.contains("BlockingQueuedConnection"));
+    QVERIFY(!helper.contains("QMetaObject::invokeMethod"));
+    QVERIFY(!helper.contains("QCCurlMultiManager::instance()"));
+    QVERIFY(!helper.contains("CURL *"));
+    QVERIFY(!helper.contains("&result"));
+
+    const qsizetype failClosedReturn = helper.indexOf("return false;");
+    const qsizetype pauseCall        = helper.indexOf("curl_easy_pause(");
+    QVERIFY2(failClosedReturn >= 0 && failClosedReturn < pauseCall,
+             "owner-thread violation must fail closed before curl_easy_pause");
+}
+
 void TestQCNetworkReply::testWaitedAsyncPauseResumeNoOp()
 {
     QVERIFY2(m_isHttpbinReachable, "httpbin preflight failed in initTestCase");
@@ -1277,10 +1455,10 @@ void TestQCNetworkReply::testWaitedAsyncPauseResumeNoOp()
 
 void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 {
-    constexpr qsizetype kPayloadSize  = 256 * 1024;
-    constexpr qsizetype kChunkSize    = 4096;
-    constexpr int kChunkIntervalMs    = 5;
-    constexpr qint64 kPauseAfterBytes = 32 * 1024;
+    constexpr qsizetype kPayloadSize   = 256 * 1024;
+    constexpr qsizetype kChunkSize     = 4096;
+    constexpr int kChunkIntervalMs     = 5;
+    constexpr qint64 kPauseAfterBytes  = 32 * 1024;
     constexpr qint64 kMaxBufferedBytes = kChunkSize * 2;
 
     const QByteArray payload(kPayloadSize, 'x');
@@ -1364,7 +1542,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
     QSignalSpy progressSpy(reply, &QCNetworkReply::downloadProgress);
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
-    qint64 bytesAtPause = -1;
+    qint64 bytesAtPause    = -1;
     int progressEventIndex = 0;
     QElapsedTimer progressTimer;
     progressTimer.start();
@@ -1383,7 +1561,7 @@ void TestQCNetworkReply::testAsyncTransferPauseResumeCrossThread()
 
     QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
 
-    const qint64 pausedBytes = reply->bytesReceived();
+    const qint64 pausedBytes    = reply->bytesReceived();
     qint64 pausedBytesAfterWait = pausedBytes;
     QVERIFY2(TestWaitUtils::waitForStableValue([reply]() { return reply->bytesReceived(); },
                                                150,
@@ -1528,8 +1706,10 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
     {
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp").arg(port)));
-        request.setBackpressureLimitBytes(kLimitBytes);
-        request.setBackpressureResumeBytes(kResumeBytes);
+        QCOMPARE(request.setBackpressureLimitBytes(kLimitBytes),
+                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(request.setBackpressureResumeBytes(kResumeBytes),
+                 QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = m_manager->get(request);
 
@@ -1607,8 +1787,10 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
     {
         QCNetworkRequest request(
             QUrl(QStringLiteral("http://127.0.0.1:%1/bp_user_pause").arg(port)));
-        request.setBackpressureLimitBytes(kLimitBytes);
-        request.setBackpressureResumeBytes(kResumeBytes);
+        QCOMPARE(request.setBackpressureLimitBytes(kLimitBytes),
+                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(request.setBackpressureResumeBytes(kResumeBytes),
+                 QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = m_manager->get(request);
         DciEvidenceRecorder recorder(QStringLiteral("testAsyncDownloadBackpressure"),
@@ -1630,22 +1812,14 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
 
         QByteArray received;
-        bool sawFirstByte = false;
-        bool sawPause = false;
+        bool sawFirstByte          = false;
+        bool sawPause              = false;
         int backpressureEventIndex = 0;
-        connect(reply,
-                &QCNetworkReply::stateChanged,
-                this,
-                [&](ReplyState state) {
-                    if (state == ReplyState::Paused) {
-                        sawPause = true;
-                        recorder.addEvent(QStringLiteral("pause_effective"),
-                                          timelineTransferMetrics(reply, received.size()));
-                    } else if (sawPause && state == ReplyState::Running) {
-                        recorder.addEvent(QStringLiteral("resume_req"),
-                                          timelineTransferMetrics(reply, received.size()));
-                    }
-                });
+        connect(reply, &QCNetworkReply::stateChanged, this, [&](ReplyState state) {
+            if (state == ReplyState::Paused) {
+                sawPause = true;
+            }
+        });
         connect(reply,
                 &QCNetworkReply::backpressureStateChanged,
                 this,
@@ -1655,7 +1829,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
                                       QJsonObject{
                                           {QStringLiteral("buffered_bytes"), bufferedBytes},
                                           {QStringLiteral("limit_bytes"), limitBytes},
-                                          {QStringLiteral("bytes_delivered_total"), reply->bytesReceived()},
+                                          {QStringLiteral("bytes_delivered_total"),
+                                           reply->bytesReceived()},
                                           {QStringLiteral("bytes_written_total"), received.size()},
                                       });
                 });
@@ -1676,6 +1851,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         QVERIFY(sawActive);
         QVERIFY(reply->isBackpressureActive());
 
+        recorder.addEvent(QStringLiteral("pause_req"),
+                          timelineTransferMetrics(reply, received.size()));
         reply->pauseTransport(PauseMode::Recv);
         QTRY_COMPARE_WITH_TIMEOUT(reply->state(), ReplyState::Paused, 3000);
 
@@ -1693,7 +1870,7 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
 
         QTRY_VERIFY_WITH_TIMEOUT(!reply->isBackpressureActive(), 3000);
 
-        const qint64 pausedBytes = reply->bytesReceived();
+        const qint64 pausedBytes    = reply->bytesReceived();
         qint64 pausedBytesAfterWait = pausedBytes;
         QVERIFY2(TestWaitUtils::waitForStableValue([reply]() { return reply->bytesReceived(); },
                                                    150,
@@ -1701,6 +1878,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
                                                    &pausedBytesAfterWait),
                  "reply->bytesReceived() did not stabilize after user pause");
         QVERIFY(pausedBytesAfterWait <= pausedBytes + static_cast<qint64>(kChunkSize * 2));
+        recorder.addEvent(QStringLiteral("pause_effective"),
+                          timelineTransferMetrics(reply, received.size()));
 
         connect(reply, &QCNetworkReply::readyRead, this, [&]() {
             const auto dataOpt = reply->readAll();
@@ -1716,6 +1895,8 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
             }
         });
 
+        recorder.addEvent(QStringLiteral("resume_req"),
+                          timelineTransferMetrics(reply, received.size()));
         reply->resumeTransport();
         QTRY_VERIFY_WITH_TIMEOUT(reply->state() == ReplyState::Running
                                      || reply->state() == ReplyState::Finished,
@@ -1760,8 +1941,10 @@ void TestQCNetworkReply::testAsyncDownloadBackpressure()
         constexpr qint64 kTinyResumeBytes = 512;
 
         QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/bp_tiny").arg(port)));
-        request.setBackpressureLimitBytes(kTinyLimitBytes);
-        request.setBackpressureResumeBytes(kTinyResumeBytes);
+        QCOMPARE(request.setBackpressureLimitBytes(kTinyLimitBytes),
+                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(request.setBackpressureResumeBytes(kTinyResumeBytes),
+                 QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = m_manager->get(request);
 
@@ -1853,13 +2036,13 @@ void TestQCNetworkReply::testAsyncStreamingUploadPauseResume()
                 return;
             }
             m_buffer.append(chunk);
-            emit readyRead();
+            Q_EMIT readyRead();
         }
 
         void markFinished()
         {
             m_finished = true;
-            emit readyRead();
+            Q_EMIT readyRead();
         }
 
         [[nodiscard]] int zeroReadCount() const { return m_zeroReads; }
@@ -2295,6 +2478,71 @@ void TestQCNetworkReply::testStateChangedSignal()
     QVERIFY(stateSpy.count() >= 1);
 
     reply->deleteLater();
+}
+
+void TestQCNetworkReply::testTerminalSignalsSynchronousDeleteStopFollowUp()
+{
+    const QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/signal-safety")));
+
+    {
+        auto *owner = new QObject;
+        QPointer<QObject> safeOwner(owner);
+        QPointer<QCNetworkReply> reply(new QCNetworkReply(QCNetworkReply::TestOnlyKey{},
+                                                          request,
+                                                          HttpMethod::Get,
+                                                          QByteArray(),
+                                                          owner));
+        QStringList signals;
+        connect(reply, &QCNetworkReply::stateChanged, this, [owner, &signals]() {
+            signals.append(QStringLiteral("stateChanged"));
+            delete owner;
+        });
+        connect(reply, &QCNetworkReply::cancelled, this, [&signals]() {
+            signals.append(QStringLiteral("cancelled"));
+        });
+        connect(reply, &QCNetworkReply::finished, this, [&signals]() {
+            signals.append(QStringLiteral("finished"));
+        });
+
+        reply->cancel();
+        QVERIFY(reply.isNull());
+        QVERIFY(safeOwner.isNull());
+        QCOMPARE(signals, QStringList{QStringLiteral("stateChanged")});
+    }
+
+    {
+        QPointer<QCNetworkReply> reply(
+            new QCNetworkReply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get));
+        QStringList signals;
+        connect(reply, qOverload<NetworkError>(&QCNetworkReply::error), this, [&reply, &signals]() {
+            signals.append(QStringLiteral("error"));
+            delete reply.data();
+        });
+        connect(reply, &QCNetworkReply::finished, this, [&signals]() {
+            signals.append(QStringLiteral("finished"));
+        });
+
+        reply->abortWithError(NetworkError::InvalidRequest);
+        QVERIFY(reply.isNull());
+        QCOMPARE(signals, QStringList{QStringLiteral("error")});
+    }
+
+    {
+        QPointer<QCNetworkReply> reply(
+            new QCNetworkReply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get));
+        QStringList signals;
+        connect(reply, &QCNetworkReply::cancelled, this, [&reply, &signals]() {
+            signals.append(QStringLiteral("cancelled"));
+            delete reply.data();
+        });
+        connect(reply, &QCNetworkReply::finished, this, [&signals]() {
+            signals.append(QStringLiteral("finished"));
+        });
+
+        reply->cancel();
+        QVERIFY(reply.isNull());
+        QCOMPARE(signals, QStringList{QStringLiteral("cancelled")});
+    }
 }
 
 QTEST_MAIN(TestQCNetworkReply)

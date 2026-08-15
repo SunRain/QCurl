@@ -3,14 +3,15 @@
  * @brief QCNetworkReply retry/capability runtime helpers.
  */
 
-#include "private/QCNetworkReplyRuntime_p.h"
-
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
+#include "private/QCNetworkReplyRuntime_p.h"
+#include "private/QCNetworkRetryDecision_p.h"
 
 #include <QDebug>
 #include <QTimer>
 
+#include <cmath>
 #include <ctime>
 #include <limits>
 
@@ -34,7 +35,8 @@ void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &m
 
 namespace {
 
-std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(const QMap<QString, QString> &headers)
+std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
+    const QMap<QString, QString> &headers)
 {
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
@@ -43,6 +45,7 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(const QMap<QS
 
         const QString raw = it.value().trimmed();
         if (raw.isEmpty()) {
+            qWarning() << "QCurl ignored empty Retry-After header";
             return std::nullopt;
         }
 
@@ -50,6 +53,11 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(const QMap<QS
         const qint64 seconds = raw.toLongLong(&ok);
         if (ok) {
             if (seconds < 0) {
+                qWarning() << "QCurl ignored negative Retry-After header";
+                return std::nullopt;
+            }
+            if (seconds > (std::numeric_limits<qint64>::max() / 1000)) {
+                qWarning() << "QCurl ignored overflowing Retry-After header";
                 return std::nullopt;
             }
             return std::chrono::milliseconds(seconds * 1000);
@@ -58,6 +66,7 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(const QMap<QS
         const QByteArray dateBytes = raw.toUtf8();
         const time_t parsed        = curl_getdate(dateBytes.constData(), nullptr);
         if (parsed < 0) {
+            qWarning() << "QCurl ignored invalid Retry-After HTTP-date";
             return std::nullopt;
         }
 
@@ -66,34 +75,38 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(const QMap<QS
             return std::chrono::milliseconds(0);
         }
 
-        const qint64 deltaSeconds = static_cast<qint64>(parsed) - static_cast<qint64>(now);
-        if (deltaSeconds > (std::numeric_limits<qint64>::max() / 1000)) {
-            return std::chrono::milliseconds(std::numeric_limits<qint64>::max());
+        const long double deltaSeconds = static_cast<long double>(parsed)
+                                         - static_cast<long double>(now);
+        if (!std::isfinite(deltaSeconds)
+            || deltaSeconds
+                   > (static_cast<long double>(std::numeric_limits<qint64>::max()) / 1000.0L)) {
+            qWarning() << "QCurl ignored overflowing Retry-After HTTP-date";
+            return std::nullopt;
         }
 
-        return std::chrono::milliseconds(deltaSeconds * 1000);
+        return std::chrono::milliseconds(static_cast<qint64>(deltaSeconds * 1000.0L));
     }
     return std::nullopt;
 }
 
 } // namespace
 
-std::optional<std::chrono::milliseconds> advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d,
-                                                                            NetworkError error)
+ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, NetworkError error)
 {
     if (!d) {
-        return std::nullopt;
+        return {};
     }
 
     const QCNetworkRetryPolicy policy = d->request.retryPolicy();
-    const bool httpGetOnlyBlocked = policy.retryHttpStatusErrorsForGetOnly() && isHttpError(error)
-                                    && (d->httpMethod != HttpMethod::Get);
-    if (httpGetOnlyBlocked) {
-        return std::nullopt;
-    }
-
-    if (!policy.shouldRetry(error, d->attemptCount)) {
-        return std::nullopt;
+    const bool bodyReplayable = !d->requestBodySource.device || d->requestBodySource.seekable;
+    const auto decision       = Internal::QCNetworkRetryDecision::evaluate(policy,
+                                                                           d->httpMethod,
+                                                                           d->request,
+                                                                           bodyReplayable,
+                                                                           error,
+                                                                           d->attemptCount);
+    if (!decision.allowed) {
+        return {};
     }
 
     std::optional<std::chrono::milliseconds> retryAfter;
@@ -105,11 +118,17 @@ std::optional<std::chrono::milliseconds> advanceReplyRetryIfNeeded(QCNetworkRepl
     const auto delay = policy.delayForAttempt(d->attemptCount, retryAfter);
 
     d->attemptCount++;
-    if (d->q_ptr) {
-        emit d->q_ptr->retryAttempt(d->attemptCount, error);
+    const int attemptCount = d->attemptCount;
+    const QPointer<QCNetworkReply> observer(d->qObject());
+    if (emitReplySignal(observer,
+                        [attemptCount, error](QCNetworkReply *reply) {
+                            Q_EMIT reply->retryAttempt(attemptCount, error);
+                        })
+        == SignalEmissionResult::Destroyed) {
+        return {SignalEmissionResult::Destroyed, std::nullopt};
     }
 
-    return delay;
+    return {SignalEmissionResult::Alive, delay};
 }
 
 void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
@@ -125,6 +144,7 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     }
 
     d->bodyBuffer.clear();
+    d->cacheBodyBuffer.clear();
     d->headerData.clear();
     d->finalHeaderList.clear();
     d->finalHeaderMap.clear();
@@ -136,8 +156,8 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
 }
 
 void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,
-                        QCNetworkReplyPrivate *d,
-                        std::chrono::milliseconds delay)
+                             QCNetworkReplyPrivate *d,
+                             std::chrono::milliseconds delay)
 {
     if (!safeReply || !d) {
         return;
@@ -157,6 +177,5 @@ void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,
         safeReply->execute();
     });
 }
-
 
 } // namespace QCurl::Internal

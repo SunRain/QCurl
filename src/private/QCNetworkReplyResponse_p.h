@@ -16,6 +16,7 @@
 namespace QCurl {
 
 class QCNetworkReplyPrivate;
+struct QCNetworkReplyTransferState;
 
 namespace Internal {
 
@@ -26,7 +27,11 @@ struct ReplyAttemptErrorInfo
 };
 
 void parseReplyHeaders(QCNetworkReplyPrivate *reply);
-size_t headerReplyCurlCallback(char *ptr, size_t size, size_t nmemb, QCNetworkReplyPrivate *reply);
+void parseReplyHeaders(QCNetworkReplyTransferState *state);
+size_t headerReplyCurlCallback(char *ptr,
+                               size_t size,
+                               size_t nmemb,
+                               QCNetworkReplyTransferState *state);
 
 [[nodiscard]] ReplyAttemptErrorInfo attemptErrorFromCurlAndHttp(QCNetworkReplyPrivate *reply,
                                                                 CURLcode curlCode,

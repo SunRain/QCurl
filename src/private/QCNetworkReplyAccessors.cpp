@@ -3,12 +3,12 @@
  * @brief QCNetworkReply public accessors and cache helpers.
  */
 
-#include "QCNetworkReply.h"
-
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
+#include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCNetworkCacheIntegration_p.h"
 #include "private/QCNetworkReplyFlowControl_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 
@@ -17,6 +17,59 @@
 #include <QTimer>
 
 namespace QCurl {
+
+namespace {
+
+[[nodiscard]] bool cacheReplayHeaderIsForbidden(const QByteArray &name)
+{
+    const QByteArray normalized = name.trimmed().toLower();
+    return normalized == QByteArrayLiteral("set-cookie")
+           || normalized == QByteArrayLiteral("set-cookie2")
+           || normalized == QByteArrayLiteral("authorization")
+           || normalized == QByteArrayLiteral("proxy-authorization");
+}
+
+[[nodiscard]] QByteArray cacheResponseHeaderBlock(const QCNetworkCacheMetadata &metadata)
+{
+    QByteArray headerBlock      = QByteArrayLiteral("HTTP/1.1 ")
+                                  + QByteArray::number(metadata.statusCode())
+                                  + QByteArrayLiteral(" Cached\r\n");
+    const auto rawHeaders       = metadata.rawHeaders();
+    const QByteArray currentAge = QByteArray::number(metadata.currentAgeSeconds());
+    bool ageWritten             = false;
+    for (const auto &[name, value] : rawHeaders) {
+        if (cacheReplayHeaderIsForbidden(name)) {
+            continue;
+        }
+        const bool isAge = QByteArrayView(name).compare(QByteArrayView("age"), Qt::CaseInsensitive)
+                           == 0;
+        headerBlock += name + QByteArrayLiteral(": ") + (isAge ? currentAge : value)
+                       + QByteArrayLiteral("\r\n");
+        ageWritten = ageWritten || isAge;
+    }
+    if (!ageWritten) {
+        headerBlock += QByteArrayLiteral("Age: ") + currentAge + QByteArrayLiteral("\r\n");
+    }
+    return headerBlock + QByteArrayLiteral("\r\n");
+}
+
+[[nodiscard]] QByteArray joinedHeaderSegments(const QList<QByteArray> &segments)
+{
+    QByteArray value;
+    for (const QByteArray &segment : segments) {
+        const QByteArray part = segment.trimmed();
+        if (part.isEmpty()) {
+            continue;
+        }
+        if (!value.isEmpty()) {
+            value.append(' ');
+        }
+        value.append(part);
+    }
+    return value;
+}
+
+} // namespace
 
 // ==================
 // 数据访问（现代 C++17 风格）
@@ -210,15 +263,6 @@ qint64 QCNetworkReply::bytesTotal() const noexcept
 }
 
 // ==================
-// 公共槽
-// ==================
-
-void QCNetworkReply::deleteLater()
-{
-    QObject::deleteLater();
-}
-
-// ==================
 // 缓存集成私有方法实现
 // ==================
 
@@ -232,27 +276,26 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
         return false;
     }
 
-    const auto mode = ignoreExpiry ? QCNetworkCacheReadMode::AllowStale
-                                   : QCNetworkCacheReadMode::FreshOnly;
-    const auto cached = cache->lookup(d->request.url(), mode);
+    const bool managerUsesCookies = manager->shareHandleConfig().shareCookies()
+                                    || !manager->cookieFilePath().isEmpty();
+    const auto key                = d->cacheRequestKeyInitialized
+                                        ? d->cacheRequestKey
+                                        : Internal::buildCacheRequestKey(d->request,
+                                                                         d->httpMethod,
+                                                                         managerUsesCookies);
+    const auto mode               = ignoreExpiry ? QCNetworkCacheReadMode::AllowStale
+                                                 : QCNetworkCacheReadMode::FreshOnly;
+    const auto cached             = cache->lookup(key, mode);
     if (!cached.hit()) {
         return false;
     }
 
-    const auto meta = cached.metadata();
-    const QByteArray data = cached.body();
+    const auto meta       = cached.metadata();
+    const QByteArray data = d->httpMethod == HttpMethod::Head ? QByteArray() : cached.body();
 
-    // 模拟网络请求行为
     d->bodyBuffer.append(data);
-    d->headerData = QByteArrayLiteral("HTTP/1.1 200 OK\r\n");
-    const auto headers = meta.headers();
-    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        d->headerData.append(it.key());
-        d->headerData.append(": ");
-        d->headerData.append(it.value());
-        d->headerData.append("\r\n");
-    }
-    d->headerData.append("\r\n");
+    d->cacheBodyBuffer = data;
+    d->headerData      = cacheResponseHeaderBlock(meta);
     d->parseHeaders();
     d->errorCode = NetworkError::NoError;
 
@@ -270,9 +313,13 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
         }
 
         if (hasBody) {
-            emit safeThis->readyRead();
+            if (Internal::emitReplySignal(safeThis,
+                                          [](QCNetworkReply *reply) { Q_EMIT reply->readyRead(); })
+                == Internal::SignalEmissionResult::Destroyed) {
+                return;
+            }
         }
-        d->setState(ReplyState::Finished);
+        Q_UNUSED(d->setState(ReplyState::Finished));
     });
 
     return true;
@@ -291,33 +338,20 @@ QByteArray Internal::testCurlPlanDigest(const QCNetworkReply *reply)
 #endif
 }
 
-QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()
+QMap<QByteArray, QByteArray> QCNetworkReplyPrivate::parsedResponseHeaders() const
 {
-    Q_D(QCNetworkReply);
-
     QMap<QByteArray, QByteArray> headers;
     auto flushCurrent = [&](const QByteArray &name, const QList<QByteArray> &segments) {
         if (name.isEmpty()) {
             return;
         }
-        QByteArray value;
-        for (const QByteArray &seg : segments) {
-            const QByteArray part = seg.trimmed();
-            if (part.isEmpty()) {
-                continue;
-            }
-            if (!value.isEmpty()) {
-                value.append(' ');
-            }
-            value.append(part);
-        }
-        headers.insert(name, value);
+        headers.insert(name, joinedHeaderSegments(segments));
     };
 
     QByteArray currentName;
     QList<QByteArray> currentSegments;
 
-    const QList<QByteArray> lines = d->headerData.split('\n');
+    const QList<QByteArray> lines = headerData.split('\n');
     for (QByteArray line : lines) {
         if (line.endsWith('\r')) {
             line.chop(1);
@@ -356,5 +390,10 @@ QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()
     return headers;
 }
 
+QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()
+{
+    Q_D(QCNetworkReply);
+    return d->parsedResponseHeaders();
+}
 
 } // namespace QCurl

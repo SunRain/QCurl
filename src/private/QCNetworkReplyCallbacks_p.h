@@ -6,11 +6,16 @@
 #ifndef QCNETWORKREPLYCALLBACKS_P_H
 #define QCNETWORKREPLYCALLBACKS_P_H
 
+#include "QCNetworkReply.h"
+
+#include <QPointer>
+#include <QString>
+
 #include <curl/curl.h>
 
 namespace QCurl {
 
-class QCNetworkReplyPrivate;
+struct QCNetworkReplyTransferState;
 
 namespace Internal {
 
@@ -23,12 +28,19 @@ public:
 
 [[nodiscard]] bool isInReplyCurlCallback() noexcept;
 
-size_t writeReplyCurlCallback(char *ptr, size_t size, size_t nmemb, QCNetworkReplyPrivate *reply);
-int progressReplyCurlCallback(QCNetworkReplyPrivate *reply,
+size_t writeReplyCurlCallback(char *ptr,
+                              size_t size,
+                              size_t nmemb,
+                              QCNetworkReplyTransferState *state,
+                              const QPointer<QCNetworkReply> &observer,
+                              CURL *handle);
+int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
+                              const QPointer<QCNetworkReply> &observer,
                               curl_off_t dltotal,
                               curl_off_t dlnow,
                               curl_off_t ultotal,
                               curl_off_t ulnow);
+[[nodiscard]] QString formatReplyDebugTraceMessage(curl_infotype type, const QByteArray &raw);
 
 } // namespace Internal
 

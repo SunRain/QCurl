@@ -19,6 +19,9 @@ namespace TestSupport {
  * @brief 为 manager 绑定测试专用 mock handler；manager 不持有 handler。
  *
  * 该入口只属于显式 Test Support 安装面，默认生产 Core 不安装本头文件。
+ *
+ * @note QObject 借用合同：manager 必须非空并在 owner thread 调用；handler 可为空且为
+ * non-owning 借用，由调用方保活。handler 被替换或销毁后，旧裸指针立即失效。
  */
 QCURL_EXPORT void setMockHandler(QCNetworkAccessManager *manager, QCNetworkMockHandler *handler);
 

@@ -20,18 +20,19 @@ class QIODevice;
 namespace QCurl {
 
 class QCNetworkReplyPrivate;
+struct QCNetworkReplyTransferState;
 
 namespace Internal {
 
 struct ReplyBodySourceState
 {
     QPointer<QIODevice> device;
-    qint64 basePos = 0;
+    qint64 basePos   = 0;
     qint64 sizeBytes = -1;
     qint64 bytesRead = 0;
-    bool seekable = false;
+    bool seekable    = false;
 
-    bool hasErrorOverride = false;
+    bool hasErrorOverride          = false;
     NetworkError errorOverrideCode = NetworkError::NoError;
     QString errorOverrideMessage;
 };
@@ -48,8 +49,12 @@ void clearReplyBodySourceError(ReplyBodySourceState &state);
 [[nodiscard]] bool rewindReplyBodySourceForRetry(QCNetworkReplyPrivate *reply,
                                                  QString *errorMessage);
 
-size_t readReplyBodySourceCallback(char *ptr, size_t size, size_t nmemb, QCNetworkReplyPrivate *reply);
-int seekReplyBodySourceCallback(QCNetworkReplyPrivate *reply, curl_off_t offset, int origin);
+size_t readReplyBodySourceCallback(char *ptr,
+                                   size_t size,
+                                   size_t nmemb,
+                                   QCNetworkReplyTransferState *state,
+                                   const QPointer<QCNetworkReply> &observer);
+int seekReplyBodySourceCallback(QCNetworkReplyTransferState *state, curl_off_t offset, int origin);
 
 } // namespace Internal
 
