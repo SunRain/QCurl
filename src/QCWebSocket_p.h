@@ -10,12 +10,14 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
-#include "QCCurlHandleManager.h"
 #include "QCNetworkSslConfig.h"
-#include "QCWebSocketCompressionConfig.h"
 #include "QCWebSocketReconnectPolicy.h"
+#include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCCurlPersistentTransferBridge_p.h"
+#include "private/QCWebSocketSendQueue_p.h"
 
 #include <QByteArray>
+#include <QPointer>
 #include <QSocketNotifier>
 #include <QTimer>
 
@@ -23,6 +25,28 @@
 #include <curl/websockets.h>
 
 namespace QCurl {
+
+namespace Internal {
+
+enum class SignalEmissionResult {
+    Alive,
+    Destroyed,
+};
+
+template<typename EmitSignal>
+[[nodiscard]] SignalEmissionResult emitWebSocketSignal(QCWebSocket *socket, EmitSignal &&emitSignal)
+{
+    const QPointer<QCWebSocket> guard(socket);
+    emitSignal(socket);
+    return guard ? SignalEmissionResult::Alive : SignalEmissionResult::Destroyed;
+}
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+/// 返回进程期 WebSocket header backing quarantine 中的对象数量。
+[[nodiscard]] Q_DECL_HIDDEN int quarantinedWebSocketHeaderBackingCountForTest() noexcept;
+#endif
+
+} // namespace Internal
 
 /**
  * @brief QCWebSocket 的私有实现类
@@ -33,6 +57,8 @@ namespace QCurl {
  */
 class QCWebSocketPrivate
 {
+    Q_DECLARE_PUBLIC(QCWebSocket)
+
 public:
     /**
      * @brief 构造函数
@@ -64,8 +90,8 @@ public:
     // libcurl 资源（RAII 管理）
     // ==================
 
-    /// RAII curl 句柄管理器（自动初始化和清理）
-    QCCurlHandleManager curlManager;
+    quintptr transferToken  = 0;
+    CURL *managedCurlHandle = nullptr; ///< non-owning；由 persistent multi transfer 保活
 
     // ==================
     // 消息处理
@@ -74,14 +100,18 @@ public:
     /// 接收消息的定时器（轮询模式，每 50ms 检查一次）
     QTimer *receiveTimer = nullptr;
 
-    /// 接收数据的临时缓冲区
-    QByteArray receiveBuffer;
-
     /// 分片消息的累积缓冲区（用于处理 CURLWS_CONT 标志）
     QByteArray fragmentBuffer;
 
+    /// 当前 frame 已经接收的字节数。
+    qint64 currentFrameBytes = 0;
+
     /// 当前分片消息类型（0=无；值为 CURLWS_TEXT / CURLWS_BINARY）
     unsigned int fragmentTypeFlags = 0;
+
+    /// 当前控制帧的独立有界缓冲，不与分片数据消息共享状态。
+    QByteArray controlFrameBuffer;
+    unsigned int controlFrameFlags = 0;
 
     // ==================
     // 自动重连状态（Other Extras / Preview）
@@ -105,6 +135,9 @@ public:
     /// 重连定时器（用于延迟重连）
     QTimer *reconnectTimer = nullptr;
 
+    /// 防止公共对象析构和 private 析构重复执行资源撤销。
+    bool destructionTeardownComplete = false;
+
     // ==================
     // SSL/TLS 配置（v2.4.1）
     // ==================
@@ -116,37 +149,21 @@ public:
     QByteArray sslKeyPasswordUtf8;
 
     // ==================
-    // 压缩配置（Other Extras / Preview）
+    // ==================
+    // 事件驱动收发（v2.4.2）
     // ==================
 
-    /// 压缩是否已协商成功
-    bool compressionNegotiated = false;
+    QSocketNotifier *socketReadNotifier  = nullptr;
+    QSocketNotifier *socketWriteNotifier = nullptr;
+    bool eventDrivenMode                 = false;
 
-    /// 发送统计：原始字节数
-    qint64 sentBytesRaw = 0;
-
-    /// 发送统计：压缩后字节数
-    qint64 sentBytesCompressed = 0;
-
-    /// 接收统计：压缩字节数
-    qint64 receivedBytesCompressed = 0;
-
-    /// 接收统计：解压后字节数
-    qint64 receivedBytesRaw = 0;
-
-    // ==================
-    // 事件驱动接收（v2.4.2）
-    // ==================
-
-    /// Socket 读事件通知器（事件驱动模式）
-    /// 当 socket 有数据可读时立即触发，延迟 <1ms
-    QSocketNotifier *socketReadNotifier = nullptr;
-
-    /// 是否启用事件驱动模式（true=QSocketNotifier, false=QTimer）
-    bool eventDrivenMode = false;
+    Internal::QCWebSocketSendQueue sendQueue;
+    bool closeFrameSent    = false;
+    bool peerCloseReceived = false;
+    QTimer *closeTimer     = nullptr;
 
     /// WebSocket 握手 header list，cleanup 时必须显式解除 CURLOPT_HTTPHEADER 绑定。
-    curl_slist *requestHeaders = nullptr;
+    Internal::CurlOptions::CurlSlistOwner requestHeaders;
 
     // ==================
     // 内部方法
@@ -158,7 +175,7 @@ public:
      *
      * 更新内部状态并发射 stateChanged() 信号。
      */
-    void setState(QCWebSocket::State newState);
+    [[nodiscard]] Internal::SignalEmissionResult setState(QCWebSocket::State newState);
 
     /**
      * @brief 处理从服务器接收的数据
@@ -166,9 +183,9 @@ public:
      * 使用 curl_ws_recv() 接收 WebSocket 帧，根据帧类型（TEXT/BINARY/PING/PONG/CLOSE）
      * 分别处理，并发射相应的信号。
      *
-     * @note 此方法由 receiveTimer 定时调用（每 50ms）
+     * @note 此方法由 socket notifier 或轮询定时器调用。
      */
-    void processIncomingData();
+    [[nodiscard]] Internal::SignalEmissionResult processIncomingData();
 
     /**
      * @brief 处理错误情况
@@ -176,7 +193,7 @@ public:
      *
      * 设置错误信息、更新状态为 Error，并发射 errorOccurred() 信号。
      */
-    void handleError(const QString &error);
+    [[nodiscard]] Internal::SignalEmissionResult handleError(const QString &error);
 
     /**
      * @brief 清理连接资源
@@ -184,12 +201,23 @@ public:
      * 停止接收定时器，清理缓冲区，设置状态为 Closed。
      * 发射 disconnected() 信号。
      */
-    void cleanupConnection();
+    [[nodiscard]] Internal::SignalEmissionResult cleanupConnection();
+
+    /// 同步撤销析构期资源；不发射业务信号、不重连，也不依赖 DeferredDelete。
+    void teardownForDestruction();
+
+    /// 返回 manager-owned connection 中的 easy handle。
+    [[nodiscard]] CURL *transportHandle() const noexcept;
+
+    /// 处理 multi 驱动的握手完成通知；token 对应的传输在 teardown 前持有 easy handle。
+    void onHandshakeFinished(quintptr token, CURLcode result, long httpStatus);
+    void resetTransport();
 
     /**
-     * @brief 清理握手 header list，并从 easy handle 上解除绑定
+     * @brief 清理握手 header list，并从 easy handle 上解除绑定。
+     * @return 已安全解除绑定或当前没有 header list 时返回 true。
      */
-    void clearRequestHeaders();
+    [[nodiscard]] bool clearRequestHeaders();
 
     /**
      * @brief 发送 WebSocket 数据帧
@@ -197,7 +225,16 @@ public:
      * @param flags WebSocket 帧标志（CURLWS_TEXT、CURLWS_BINARY 等）
      * @return 实际发送的字节数，失败返回 -1
      */
-    qint64 sendFrame(const QByteArray &data, unsigned int flags);
+    [[nodiscard]] QCWebSocketCommandResult sendFrame(const QByteArray &data, unsigned int flags);
+    [[nodiscard]] QCWebSocketCommandResult enqueueFrame(const QByteArray &data,
+                                                        unsigned int flags,
+                                                        bool closeFrame = false);
+    [[nodiscard]] Internal::SignalEmissionResult flushSendQueue();
+    [[nodiscard]] QCWebSocketCommandResult queueCloseFrame(QCWebSocket::CloseCode closeCode,
+                                                           const QByteArray &reason);
+    [[nodiscard]] QCWebSocketCommandResult queueClosePayload(const QByteArray &payload);
+    [[nodiscard]] Internal::SignalEmissionResult protocolError(QCWebSocket::CloseCode closeCode,
+                                                               const QString &message);
 
     // ==================
     // 事件驱动接收方法（v2.4.2）
@@ -220,7 +257,7 @@ public:
      *
      * @note 在连接成功后调用
      */
-    void enableEventDrivenReceive();
+    [[nodiscard]] Internal::SignalEmissionResult enableEventDrivenReceive();
 
     /**
      * @brief 降级到轮询模式（QTimer）
@@ -229,28 +266,6 @@ public:
      * 创建 QTimer 每 50ms 轮询一次。
      */
     void fallbackToPollingMode();
-
-    // ==================
-    // 压缩/解压缩辅助方法（Other Extras / Preview）
-    // ==================
-
-    /**
-     * @brief 使用 zlib deflate 压缩数据
-     *
-     * @param input 原始数据
-     * @param output 压缩后的数据（输出参数）
-     * @return true 成功，false 失败
-     */
-    bool compressData(const QByteArray &input, QByteArray &output);
-
-    /**
-     * @brief 使用 zlib inflate 解压缩数据
-     *
-     * @param input 压缩数据
-     * @param output 解压后的数据（输出参数）
-     * @return true 成功，false 失败
-     */
-    bool decompressData(const QByteArray &input, QByteArray &output);
 
     // ==================
     // 自动重连方法（Other Extras / Preview）
@@ -264,7 +279,8 @@ public:
      * - 如果应该重连，设置延迟定时器
      * - 如果不重连，发射 disconnected() 信号
      */
-    void handleDisconnection(QCWebSocket::CloseCode closeCode);
+    [[nodiscard]] Internal::SignalEmissionResult handleDisconnection(
+        QCWebSocket::CloseCode closeCode);
 
     /**
      * @brief 尝试重新连接
@@ -279,10 +295,15 @@ public:
 private:
     /// 指向公共接口对象的指针（用于 Q_DECLARE_PUBLIC 宏）
     QCWebSocket *q_ptr;
-    Q_DECLARE_PUBLIC(QCWebSocket)
 
     Q_DISABLE_COPY(QCWebSocketPrivate)
 };
+
+namespace Internal {
+
+Q_DECL_HIDDEN void scheduleWebSocketOpen(QCWebSocket *q, QCWebSocketPrivate *d);
+
+} // namespace Internal
 
 } // namespace QCurl
 

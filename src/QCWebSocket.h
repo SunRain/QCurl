@@ -7,6 +7,7 @@
 #define QCWEBSOCKET_H
 
 #include "QCGlobal.h"
+#include "QCWebSocketCommandResult.h"
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
@@ -26,12 +27,11 @@ class QCWebSocketPrivate;
 class QCWebSocketOptionsData;
 class QCWebSocketReconnectPolicy;
 class QCNetworkSslConfig;
-struct QCWebSocketCompressionConfig;
 
 /**
  * @brief WebSocket 连接配置值类型。
  *
- * 统一承载连接超时、TLS、重连、压缩和自动 Pong 配置。
+ * 统一承载连接超时、TLS、重连、缓冲上限和自动 Pong 配置。
  */
 class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketOptions
 {
@@ -54,11 +54,24 @@ public:
     [[nodiscard]] QCWebSocketReconnectPolicy reconnectPolicy() const;
     void setReconnectPolicy(const QCWebSocketReconnectPolicy &policy);
 
-    [[nodiscard]] QCWebSocketCompressionConfig compressionConfig() const;
-    void setCompressionConfig(const QCWebSocketCompressionConfig &config);
-
     [[nodiscard]] bool autoPongEnabled() const noexcept;
     void setAutoPongEnabled(bool enabled) noexcept;
+
+    [[nodiscard]] qint64 maxFrameBytes() const noexcept;
+    [[nodiscard]] bool setMaxFrameBytes(qint64 bytes, QString *error = nullptr);
+
+    [[nodiscard]] qint64 maxMessageBytes() const noexcept;
+    [[nodiscard]] bool setMaxMessageBytes(qint64 bytes, QString *error = nullptr);
+
+    [[nodiscard]] qint64 maxPendingSendBytes() const noexcept;
+    [[nodiscard]] bool setMaxPendingSendBytes(qint64 bytes, QString *error = nullptr);
+
+    [[nodiscard]] qint64 maxReceiveBufferBytes() const noexcept;
+    [[nodiscard]] bool setMaxReceiveBufferBytes(qint64 bytes, QString *error = nullptr);
+
+    [[nodiscard]] std::chrono::milliseconds closeHandshakeTimeout() const noexcept;
+    [[nodiscard]] bool setCloseHandshakeTimeout(std::chrono::milliseconds timeout,
+                                                QString *error = nullptr);
 
 private:
     QSharedDataPointer<QCWebSocketOptionsData> d;
@@ -69,13 +82,19 @@ private:
  *
  * 封装基于 libcurl 的 WebSocket 连接、消息收发和关闭握手。
  * 所有方法都要求在对象所属线程中调用。
+ *
+ * @note 错误生命周期：命令同步拒绝只记录在 `QCWebSocketCommandResult`；`open()` 开始新
+ * 连接周期并清空旧连接错误，`errorOccurred()` 与 `errorString()` 只描述当前周期。
+ * 成功连接周期的错误文本为空，socket owner thread 上的状态查询是权威来源。
+ * @note QObject 借用合同：构造参数 `parent` 可为空；非空 parent 拥有 socket，析构后所有
+ * 外部裸指针立即失效。parent 与 socket 必须位于同一 affinity thread。
  */
 class QCURL_OTHER_EXTRAS_EXPORT QCWebSocket : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     Q_PROPERTY(QUrl url READ url)
-    Q_PROPERTY(bool isValid READ isValid)
+    Q_PROPERTY(bool isValid READ isValid NOTIFY isValidChanged FINAL)
 
 public:
     /**
@@ -86,7 +105,7 @@ public:
         Connecting,  ///< 连接中
         Connected,   ///< 已连接（可以收发消息）
         Closing,     ///< 关闭中（正在执行关闭握手）
-        Closed       ///< 已关闭
+        Closed,      ///< 已关闭
     };
     Q_ENUM(State)
 
@@ -111,7 +130,7 @@ public:
         InternalError      = 1011, ///< 服务器内部错误
         ServiceRestart     = 1012, ///< 服务重启
         TryAgainLater      = 1013, ///< 稍后重试
-        TlsHandshake       = 1015  ///< TLS 握手失败（保留，不应发送）
+        TlsHandshake       = 1015, ///< TLS 握手失败（保留，不应发送）
     };
     Q_ENUM(CloseCode)
 
@@ -120,7 +139,8 @@ public:
      *
      * @param url WebSocket 服务器 URL（ws:// 或 wss://）
      * @param options WebSocket 连接配置值类型
-     * @param parent 父对象（可选）
+     * @param parent 可空的 QObject owner；parent 与 socket 必须处于同一线程，parent 析构后
+     *        socket 指针立即失效。
      */
     explicit QCWebSocket(const QUrl &url,
                          const QCWebSocketOptions &options,
@@ -142,13 +162,15 @@ public:
      *
      * 异步建立到服务器的连接。连接成功后发射 connected() 信号。
      * 如果连接失败，发射 errorOccurred() 信号。
+     * @return 同步命令接受结果；`Accepted` 只表示连接流程已启动，不表示握手完成。
+     *         wrong-thread 或状态拒绝不会改变连接状态和连接错误。
      *
      * @note 仅在 Connecting / Connected / Closing 状态下无效；Closed 状态可再次调用，
      *       用于在同一对象上重新建立连接。
      *
      * @see connected(), errorOccurred()
      */
-    void open();
+    [[nodiscard]] QCWebSocketCommandResult open();
 
     /**
      * @brief 关闭 WebSocket 连接
@@ -158,9 +180,12 @@ public:
      *
      * @param closeCode 关闭状态码（默认 Normal）
      * @param reason 关闭原因描述（可选，最大 123 字节）
+     * @return 同步命令接受结果；成功只表示关闭帧已进入发送链路。wrong-thread、状态或
+     *         close code 拒绝不会改变连接状态和连接错误。
      * @see disconnected(), CloseCode
      */
-    void close(CloseCode closeCode = CloseCode::Normal, const QString &reason = QString());
+    [[nodiscard]] QCWebSocketCommandResult close(CloseCode closeCode   = CloseCode::Normal,
+                                                 const QString &reason = QString());
 
     /**
      * @brief 中止 WebSocket 连接
@@ -180,21 +205,23 @@ public:
      * @brief 发送文本消息
      *
      * @param message 要发送的文本消息（UTF-8 编码）
-     * @return qint64 实际发送的字节数，失败返回 -1
+     * @return 同步命令接受结果；`acceptedBytes()` 是进入异步发送链路的 UTF-8 字节数，
+     *         不表示已经完成网络交付。拒绝不会改变连接状态和连接错误。
      *
      * @note 只能在 Connected 状态下发送消息
      */
-    qint64 sendTextMessage(const QString &message);
+    [[nodiscard]] QCWebSocketCommandResult sendTextMessage(const QString &message);
 
     /**
      * @brief 发送二进制消息
      *
      * @param data 要发送的二进制数据
-     * @return qint64 实际发送的字节数，失败返回 -1
+     * @return 同步命令接受结果；`acceptedBytes()` 是进入异步发送链路的字节数，
+     *         不表示已经完成网络交付。拒绝不会改变连接状态和连接错误。
      *
      * @note 只能在 Connected 状态下发送消息
      */
-    qint64 sendBinaryMessage(const QByteArray &data);
+    [[nodiscard]] QCWebSocketCommandResult sendBinaryMessage(const QByteArray &data);
 
     /**
      * @brief 发送 Ping 帧
@@ -202,12 +229,14 @@ public:
      * 用于心跳检测。服务器应该响应 Pong 帧。
      *
      * @param payload 可选的载荷数据（最大 125 字节）
+     * @return 同步命令接受结果；超过 125 字节时拒绝且不截断 payload，也不改变连接状态
+     *         和连接错误。
      *
      * @note libcurl 可能会自动处理 Pong 响应
      *
      * @see pongReceived()
      */
-    void ping(const QByteArray &payload = QByteArray());
+    [[nodiscard]] QCWebSocketCommandResult ping(const QByteArray &payload = QByteArray());
 
     /**
      * @brief 发送 Pong 帧
@@ -215,10 +244,12 @@ public:
      * 当启用 NOAUTOPONG（options().setAutoPongEnabled(false) 后 setOptions()）时，可用于手动响应服务端的 Ping。
      *
      * @param payload 可选的载荷数据（最大 125 字节）
+     * @return 同步命令接受结果；超过 125 字节时拒绝且不截断 payload，也不改变连接状态
+     *         和连接错误。
      *
      * @see pingReceived()
      */
-    void pong(const QByteArray &payload = QByteArray());
+    [[nodiscard]] QCWebSocketCommandResult pong(const QByteArray &payload = QByteArray());
 
     /**
      * @brief 返回 WebSocket 配置。
@@ -231,26 +262,6 @@ public:
      * 只能在未连接状态或 Closed 状态下调用。
      */
     [[nodiscard]] bool setOptions(const QCWebSocketOptions &options, QString *error = nullptr);
-
-    /**
-     * @brief 检查压缩是否已协商成功
-     *
-     * 只有在连接建立后才有意义。如果服务器接受了压缩扩展，
-     * 则返回 true，后续消息会自动压缩/解压缩。
-     *
-     * @return bool true 表示压缩已启用，false 表示未启用或服务器拒绝
-     */
-    [[nodiscard]] bool isCompressionNegotiated() const;
-
-    /**
-     * @brief 获取压缩统计信息
-     *
-     * 返回当前连接的压缩效果统计，包括原始/压缩大小、压缩率等。
-     *
-     * @return QString 格式化的统计字符串
-     * @note 只有在 isCompressionNegotiated() 返回 true 时才有数据
-     */
-    [[nodiscard]] QString compressionStats() const;
 
     // ==================
     // 状态查询
@@ -273,7 +284,11 @@ public:
     /**
      * @brief 获取最后一次错误的描述
      *
-     * @return QString 错误描述字符串，无错误时返回空字符串
+     * 仅表示当前连接生命周期错误：新一轮已接受的 open() 会清空旧值，后续连接或协议
+     * 错误会更新并发射 errorOccurred()。同步命令拒绝只记录在返回的
+     * QCWebSocketCommandResult 中，不会写入此状态。
+     *
+     * @return 当前连接生命周期的诊断文本；没有连接错误时返回空字符串。
      */
     [[nodiscard]] QString errorString() const;
 
@@ -309,6 +324,13 @@ Q_SIGNALS:
      * 当连接状态改变时发射此信号。
      */
     void stateChanged(State state);
+
+    /**
+     * @brief 连接有效性变化信号
+     *
+     * @param valid 新的连接有效性，仅在进入或离开 Connected 状态时变化
+     */
+    void isValidChanged(bool valid);
 
     /**
      * @brief 接收到文本消息信号
@@ -360,7 +382,8 @@ Q_SIGNALS:
      *
      * @param errorString 错误描述
      *
-     * 当发生错误时发射此信号（如连接失败、发送失败等）。
+     * 当连接、协议或异步发送链路发生错误时发射。同步命令拒绝不发射该信号，调用方应
+     * 检查 QCWebSocketCommandResult。
      */
     void errorOccurred(const QString &errorString);
 
@@ -383,10 +406,10 @@ Q_SIGNALS:
     void reconnectAttempt(int attemptCount, CloseCode closeCode);
 
 private:
+    Q_DISABLE_COPY_MOVE(QCWebSocket)
+
     Q_DECLARE_PRIVATE(QCWebSocket)
     QScopedPointer<QCWebSocketPrivate> d_ptr;
-
-    Q_DISABLE_COPY(QCWebSocket)
 };
 
 } // namespace QCurl

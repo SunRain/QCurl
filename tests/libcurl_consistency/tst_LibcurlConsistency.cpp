@@ -29,6 +29,7 @@
 #include "QCBlockingNetworkResult.h"
 #include "QCMultipartFormData.h"
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkCachePolicy.h"
 #include "QCNetworkConnectionPoolConfig.h"
 #include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkError.h"
@@ -41,10 +42,10 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "QCWebSocket.h"
-#include "QCWebSocketCompressionConfig.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
+#include "qcnetwork_retry_policy_test_helper.h"
 
 #include <QBuffer>
 #include <QByteArray>
@@ -374,7 +375,7 @@ class TestLibcurlConsistency : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testCase();
 };
 
@@ -604,7 +605,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
-        req.setMaxRedirects(10);
+        QCOMPARE(req.setMaxRedirects(10), QCNetworkConfigUpdateResult::Applied);
         req.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
         req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
@@ -854,7 +855,7 @@ void TestLibcurlConsistency::testCase()
                           requestId));
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
-        req.setMaxRedirects(1);
+        QCOMPARE(req.setMaxRedirects(1), QCNetworkConfigUpdateResult::Applied);
 
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
@@ -1302,6 +1303,7 @@ void TestLibcurlConsistency::testCase()
                                                     .arg(observeHttpPort)),
                                            requestId));
         req.setHttpVersion(httpVersion);
+        req.setCachePolicy(QCNetworkCachePolicy::OnlyNetwork);
 
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
@@ -1724,7 +1726,9 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
-            req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
+            QCOMPARE(req.setExpect100ContinueTimeout(
+                         std::chrono::milliseconds(expect100TimeoutMs)),
+                     QCNetworkConfigUpdateResult::Applied);
         }
         QCNetworkReply *reply = manager.put(req, &device, static_cast<qint64>(uploadSize));
         QVERIFY(reply);
@@ -1764,7 +1768,9 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
-            req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs));
+            QCOMPARE(req.setExpect100ContinueTimeout(
+                         std::chrono::milliseconds(expect100TimeoutMs)),
+                     QCNetworkConfigUpdateResult::Applied);
         }
 
         auto *reply = manager.put(req, body);
@@ -1994,8 +2000,10 @@ void TestLibcurlConsistency::testCase()
                                    .arg(observeHttpPort)),
                           requestId));
         req.setHttpVersion(httpVersion);
-        req.setMaxDownloadBytesPerSec(maxRecvSpeed);
-        req.setMaxUploadBytesPerSec(maxSendSpeed);
+        QCOMPARE(req.setMaxDownloadBytesPerSec(maxRecvSpeed),
+                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(req.setMaxUploadBytesPerSec(maxSendSpeed),
+                 QCNetworkConfigUpdateResult::Applied);
 
         QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
@@ -2394,8 +2402,10 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setSslConfig(QCNetworkSslConfig::insecureConfig());
         req.setHttpVersion(httpVersion);
-        req.setBackpressureLimitBytes(bpLimitBytes);
-        req.setBackpressureResumeBytes(bpResumeBytes);
+        QCOMPARE(req.setBackpressureLimitBytes(bpLimitBytes),
+                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(req.setBackpressureResumeBytes(bpResumeBytes),
+                 QCNetworkConfigUpdateResult::Applied);
 
         QFile out(QStringLiteral("download_0.data"));
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -2508,13 +2518,13 @@ void TestLibcurlConsistency::testCase()
                     return;
                 }
                 m_buffer.append(chunk);
-                emit readyRead();
+                Q_EMIT readyRead();
             }
 
             void markFinished()
             {
                 m_finished = true;
-                emit readyRead();
+                Q_EMIT readyRead();
             }
 
             [[nodiscard]] int zeroReadCount() const { return m_zeroReads; }
@@ -2903,10 +2913,8 @@ void TestLibcurlConsistency::testCase()
                                                 .arg(observeHttpPort)),
                                        requestId);
 
-        QCNetworkRetryPolicy policy;
-        policy.setMaxRetries(1);
-        policy.setInitialDelay(std::chrono::milliseconds(1));
-        policy.setMaxDelay(std::chrono::milliseconds(1));
+        const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
+            1, std::chrono::milliseconds(1), 2.0, std::chrono::milliseconds(1));
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
@@ -3161,7 +3169,8 @@ void TestLibcurlConsistency::testCase()
         cfg.setMultiMaxConcurrentStreams(1);
         cfg.setMultiMaxConnects(16);
         QVERIFY(cfg.isValid());
-        poolManager->setConfig(cfg);
+        QCOMPARE(poolManager->setConfig(cfg),
+                 QCNetworkConnectionPoolManager::UpdateResult::Applied);
         poolManager->resetStatistics();
 
         QEventLoop loop;
@@ -3562,17 +3571,17 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
         QSignalSpy pongSpy(&ws, &QCWebSocket::pongReceived);
         const int connectedTarget = connectedSpy.count() + 1;
-        ws.open();
+        static_cast<void>(ws.open());
         QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
         const int pongTarget = pongSpy.count() + 1;
-        ws.ping(payload);
+        static_cast<void>(ws.ping(payload));
         QVERIFY(waitForSpyCountAtLeast(pongSpy, pongTarget, 5000));
         const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pongPayload, payload);
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
                                pongPayload,
                                QIODevice::WriteOnly | QIODevice::Truncate));
-        ws.close();
+        static_cast<void>(ws.close());
         return;
     }
 
@@ -3584,7 +3593,7 @@ void TestLibcurlConsistency::testCase()
         QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
         QSignalSpy binSpy(&ws, &QCWebSocket::binaryMessageReceived);
         const int connectedTarget = connectedSpy.count() + 1;
-        ws.open();
+        static_cast<void>(ws.open());
         QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
 
         QByteArray received;
@@ -3602,7 +3611,7 @@ void TestLibcurlConsistency::testCase()
             }
             for (int r = 0; r < repeats; ++r) {
                 const int binTarget = binSpy.count() + 1;
-                ws.sendBinaryMessage(msg);
+                static_cast<void>(ws.sendBinaryMessage(msg));
                 QVERIFY(waitForSpyCountAtLeast(binSpy, binTarget, 5000));
                 const QByteArray echoed = binSpy.takeFirst().at(0).toByteArray();
                 QCOMPARE(echoed, msg);
@@ -3615,7 +3624,7 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
                                received,
                                QIODevice::WriteOnly | QIODevice::Truncate));
-        ws.close();
+        static_cast<void>(ws.close());
         return;
     }
 
@@ -3635,56 +3644,12 @@ void TestLibcurlConsistency::testCase()
         const int connectedTarget = connectedSpy.count() + 1;
         const int pingTarget      = pingSpy.count() + 1;
         const int closeTarget     = closeSpy.count() + 1;
-        ws.open();
+        static_cast<void>(ws.open());
         QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
         QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload.size(), 0);
-        ws.pong(pingPayload);
-
-        QVERIFY(waitForSpyCountAtLeast(closeSpy, closeTarget, 5000));
-        const QList<QVariant> closeArgs = closeSpy.takeFirst();
-        const int closeCode             = closeArgs.at(0).toInt();
-        const QString closeReason       = closeArgs.at(1).toString();
-        QCOMPARE(closeCode, static_cast<int>(QCWebSocket::CloseCode::Normal));
-        QCOMPARE(closeReason, QStringLiteral("done"));
-
-        QByteArray closePayload;
-        const int wireCloseCode = closeCode;
-        closePayload.append(static_cast<char>((wireCloseCode >> 8) & 0xFF));
-        closePayload.append(static_cast<char>(wireCloseCode & 0xFF));
-        closePayload.append(closeReason.toUtf8());
-
-        QVector<QPair<QByteArray, QByteArray>> events;
-        events.append({QByteArrayLiteral("PING"), pingPayload});
-        events.append({QByteArrayLiteral("CLOSE"), closePayload});
-        QVERIFY(writeWsEventsToFile(QStringLiteral("download_0.data"), events));
-        return;
-    }
-
-    if (caseId == QStringLiteral("ext_ws_deflate_ping")) {
-        QVERIFY(wsPort > 0);
-        const QUrl url
-            = withRequestId(QUrl(QStringLiteral("ws://localhost:%1/?scenario=lc_ping").arg(wsPort)),
-                            requestId);
-
-        QCWebSocketOptions options;
-        options.setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
-        options.setAutoPongEnabled(false);
-        QCWebSocket ws(url, options);
-        QSignalSpy connectedSpy(&ws, &QCWebSocket::connected);
-        QSignalSpy pingSpy(&ws, &QCWebSocket::pingReceived);
-        QSignalSpy closeSpy(&ws, &QCWebSocket::closeReceived);
-
-        const int connectedTarget = connectedSpy.count() + 1;
-        const int pingTarget      = pingSpy.count() + 1;
-        const int closeTarget     = closeSpy.count() + 1;
-        ws.open();
-        QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
-        QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
-        const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
-        QCOMPARE(pingPayload.size(), 0);
-        ws.pong(pingPayload);
+        static_cast<void>(ws.pong(pingPayload));
 
         QVERIFY(waitForSpyCountAtLeast(closeSpy, closeTarget, 5000));
         const QList<QVariant> closeArgs = closeSpy.takeFirst();
@@ -3729,7 +3694,7 @@ void TestLibcurlConsistency::testCase()
         const int pingTarget      = pingSpy.count() + 1;
         const int pongTarget      = pongSpy.count() + 1;
         const int closeTarget     = closeSpy.count() + 1;
-        ws.open();
+        static_cast<void>(ws.open());
         QVERIFY(waitForSpyCountAtLeast(connectedSpy, connectedTarget, 5000));
         QVERIFY(waitForSpyCountAtLeast(textSpy, textTarget, 5000));
         const QString text = textSpy.takeFirst().at(0).toString();
@@ -3742,7 +3707,7 @@ void TestLibcurlConsistency::testCase()
         QVERIFY(waitForSpyCountAtLeast(pingSpy, pingTarget, 5000));
         const QByteArray pingPayload = pingSpy.takeFirst().at(0).toByteArray();
         QCOMPARE(pingPayload, QByteArrayLiteral("ping"));
-        ws.pong(pingPayload);
+        static_cast<void>(ws.pong(pingPayload));
 
         QVERIFY(waitForSpyCountAtLeast(pongSpy, pongTarget, 5000));
         const QByteArray pongPayload = pongSpy.takeFirst().at(0).toByteArray();

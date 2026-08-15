@@ -35,14 +35,14 @@ public:
         setupInputTimer();
     }
 
-public slots:
+public Q_SLOTS:
     void start()
     {
         printWelcome();
-        m_socket->open();
+        static_cast<void>(m_socket->open());
     }
 
-private slots:
+private Q_SLOTS:
     void onConnected()
     {
         qInfo() << "✅ WebSocket 连接成功！";
@@ -113,13 +113,13 @@ private slots:
 
             if (line.toLower() == "quit") {
                 qInfo() << "👋 正在关闭连接...";
-                m_socket->close(QCWebSocket::CloseCode::Normal, "User Quit");
+                static_cast<void>(m_socket->close(QCWebSocket::CloseCode::Normal, "User Quit"));
                 return;
             }
 
             if (line == "ping") {
                 qInfo() << "🏓 发送 Ping...";
-                m_socket->ping("Ping from QCurl Demo");
+                static_cast<void>(m_socket->ping("Ping from QCurl Demo"));
                 return;
             }
 
@@ -135,11 +135,11 @@ private slots:
 
             // 发送文本消息
             qInfo() << "📤 发送消息:" << line;
-            qint64 sent = m_socket->sendTextMessage(line);
-            if (sent < 0) {
-                qWarning() << "❌ 发送失败";
+            const auto result = m_socket->sendTextMessage(line);
+            if (!result.isAccepted()) {
+                qWarning() << "❌ 发送被拒绝:" << result.error();
             } else {
-                qDebug() << "发送字节数:" << sent;
+                qDebug() << "接受字节数:" << result.acceptedBytes();
             }
         }
     }

@@ -17,7 +17,8 @@ bool apply(CURLcode code, QCWebSocketPrivate *d, const char *optionName)
     const QString message = QStringLiteral("%1 failed: %2")
                                 .arg(QString::fromLatin1(optionName),
                                      QString::fromUtf8(curl_easy_strerror(code)));
-    d->handleError(message);
+    const auto result = d->handleError(message);
+    Q_UNUSED(result);
     return false;
 }
 

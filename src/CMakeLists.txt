@@ -204,13 +204,19 @@ set(QCURL_FEATURE_HEADERS
 )
 
 set(QCURL_WEBSOCKET_PREVIEW_SOURCES
+    QCWebSocketCommandResult.cpp
     QCWebSocketOptions.cpp
     QCWebSocket.cpp
+    private/QCWebSocketLifecycle.cpp
+    private/QCWebSocketTeardown.cpp
+    private/QCWebSocketFrames.cpp
+    private/QCWebSocketFrameAssembler.cpp
+    private/QCWebSocketSendQueue.cpp
+    private/QCWebSocketReconnect.cpp
     QCWebSocketReconnectPolicy.cpp
     QCWebSocketPool.cpp                 # Other Extras / Preview: WebSocket 连接池
     QCWebSocketPoolMaintenance.cpp      # Other Extras / Preview: WebSocket 连接池维护逻辑
     QCWebSocketPoolValues.cpp           # Other Extras / Preview: WebSocket 连接池值类型
-    QCWebSocketCompressionConfig.cpp    # Other Extras / Preview: WebSocket 压缩配置
     private/QCWebSocketCloseCode.cpp
     private/QCWebSocketCurlOptions.cpp
 )
@@ -221,6 +227,7 @@ set(QCURL_WEBSOCKET_PREVIEW_SOURCES
 if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND QCURL_OTHER_EXTRAS_SOURCES ${QCURL_WEBSOCKET_PREVIEW_SOURCES})
     list(APPEND QCURL_FEATURE_HEADERS
+        QCWebSocketCommandResult.h
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h                   # Other Extras / Preview: WebSocket 连接池
@@ -230,6 +237,8 @@ if(QCURL_WEBSOCKET_SUPPORT)
         QCWebSocket_p.h
         private/QCWebSocketCloseCode_p.h
         private/QCWebSocketCurlOptions_p.h
+        private/QCWebSocketFrameAssembler_p.h
+        private/QCWebSocketSendQueue_p.h
     )
     message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + Other Extras / Preview）")
 else()

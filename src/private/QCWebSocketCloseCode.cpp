@@ -11,13 +11,6 @@ constexpr int kCustomCloseCodeEnd   = 4999;
 
 } // namespace
 
-bool isReserved(QCWebSocket::CloseCode closeCode) noexcept
-{
-    return closeCode == QCWebSocket::CloseCode::NoStatusReceived
-           || closeCode == QCWebSocket::CloseCode::AbnormalClosure
-           || closeCode == QCWebSocket::CloseCode::TlsHandshake;
-}
-
 bool isApplication(int code) noexcept
 {
     return code >= kCustomCloseCodeBegin && code <= kCustomCloseCodeEnd;
@@ -50,9 +43,27 @@ bool tryFromWire(int code, QCWebSocket::CloseCode *out) noexcept
     return false;
 }
 
+bool isValidWire(int code) noexcept
+{
+    return tryFromWire(code, nullptr) || isApplication(code);
+}
+
 int toWire(QCWebSocket::CloseCode closeCode) noexcept
 {
     return static_cast<int>(closeCode);
+}
+
+QByteArray truncateReason(const QByteArray &reason)
+{
+    if (reason.size() <= kCloseReasonMaxBytes) {
+        return reason;
+    }
+
+    qsizetype prefixSize = kCloseReasonMaxBytes;
+    while (prefixSize > 0 && (static_cast<unsigned char>(reason.at(prefixSize)) & 0xC0U) == 0x80U) {
+        --prefixSize;
+    }
+    return reason.left(prefixSize);
 }
 
 } // namespace QCurl::Internal::WebSocketCloseCode

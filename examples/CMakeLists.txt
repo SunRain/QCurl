@@ -27,8 +27,7 @@ message(STATUS "✅ 代理示例程序已启用（ProxyDemo）")
 if(QCURL_WEBSOCKET_SUPPORT)
     add_subdirectory(WebSocketDemo)
     add_subdirectory(WebSocketPoolDemo)  # Other Extras / Preview: 连接池演示
-    add_subdirectory(WebSocketCompressionDemo)  # Other Extras / Preview: 压缩演示
-    message(STATUS "✅ WebSocket 示例程序已启用（WebSocketDemo + WebSocketPoolDemo + WebSocketCompressionDemo）")
+    message(STATUS "✅ WebSocket 示例程序已启用（WebSocketDemo + WebSocketPoolDemo）")
 endif()
 
 # 实用示例程序
@@ -56,6 +55,6 @@ add_subdirectory(CancelTokenDemo)
 add_subdirectory(CanonicalRequestDemo)
 message(STATUS "示例已启用（Logger + Middleware + UnifiedPolicyMiddlewareOffline + CancelToken + CanonicalRequest）")
 
-# 综合功能演示（HTTP/3 + WebSocket 压缩 + 网络诊断）
+# 综合功能演示（HTTP/3 + WebSocket Preview + 网络诊断）
 add_subdirectory(NetworkFeaturesDemo)
 message(STATUS "网络功能综合演示已启用（NetworkFeaturesDemo）")

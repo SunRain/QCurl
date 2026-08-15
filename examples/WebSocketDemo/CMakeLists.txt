@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 创建可执行文件
 add_executable(WebSocketDemo main.cpp)
+qcurl_enable_qt_no_keywords(WebSocketDemo)
 
 # 链接库
 target_link_libraries(WebSocketDemo

@@ -22,7 +22,7 @@ class BenchmarkWebSocketEventDriven : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
 
@@ -71,7 +71,7 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
     QFETCH(int, iterations);
 
     QCWebSocket *socket = new QCWebSocket(QUrl(TEST_URL), QCWebSocketOptions{});
-    socket->open();
+    static_cast<void>(socket->open());
 
     if (!waitForConnection(socket, 10000)) {
         delete socket;
@@ -85,7 +85,7 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
         QElapsedTimer timer;
 
         timer.start();
-        socket->sendTextMessage(message);
+        static_cast<void>(socket->sendTextMessage(message));
 
         if (spy.wait(5000)) {
             qint64 latency = timer.elapsed();
@@ -111,7 +111,7 @@ void BenchmarkWebSocketEventDriven::benchmarkReceiveLatency()
         qDebug() << "  最大:" << maxLatency << "ms";
     }
 
-    socket->close();
+    static_cast<void>(socket->close());
     delete socket;
 }
 
@@ -124,7 +124,7 @@ void BenchmarkWebSocketEventDriven::benchmarkMultipleConnections()
     // 创建 10 个连接
     for (int i = 0; i < 10; ++i) {
         auto *socket = new QCWebSocket(QUrl(TEST_URL), QCWebSocketOptions{});
-        socket->open();
+        static_cast<void>(socket->open());
         sockets.append(socket);
         QTest::qWait(500);
     }

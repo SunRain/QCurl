@@ -17,10 +17,11 @@ constexpr qsizetype kCloseCodePayloadBytes       = 2;
 constexpr qsizetype kCloseReasonMaxBytes = kControlFrameMaxPayloadBytes - kCloseCodePayloadBytes;
 constexpr quint16 kCloseCodeByteShift    = 8;
 
-[[nodiscard]] bool isReserved(QCWebSocket::CloseCode closeCode) noexcept;
 [[nodiscard]] bool isApplication(int code) noexcept;
 [[nodiscard]] bool tryFromWire(int code, QCWebSocket::CloseCode *out) noexcept;
+[[nodiscard]] bool isValidWire(int code) noexcept;
 [[nodiscard]] int toWire(QCWebSocket::CloseCode closeCode) noexcept;
+[[nodiscard]] QByteArray truncateReason(const QByteArray &reason);
 
 } // namespace QCurl::Internal::WebSocketCloseCode
 

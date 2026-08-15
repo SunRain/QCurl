@@ -1,10 +1,10 @@
 #include "QCWebSocketTestServer.h"
+#include "QCWebSocket_p.h"
 #include "test_wait_utils.h"
 #include "test_websocket_evidence_utils.h"
 
 #include <QCNetworkSslConfig.h>
 #include <QCWebSocket.h>
-#include <QCWebSocketCompressionConfig.h>
 #include <QCWebSocketReconnectPolicy.h>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -18,8 +18,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaMethod>
+#include <QPointer>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -27,6 +29,10 @@
 #include <QTimer>
 #include <QUrlQuery>
 #include <QtTest>
+
+#include <algorithm>
+#include <limits>
+#include <memory>
 
 using namespace QCurl;
 
@@ -45,7 +51,7 @@ class TestQCWebSocket : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
 
@@ -54,13 +60,21 @@ private slots:
     // ========================================================================
 
     void testConnect();
+    void testDestructorTeardownIsSilent();
+    void testDeleteParentFromPublicSignal_data();
+    void testDeleteParentFromPublicSignal();
+    void testDeleteParentFromPartialPingSuppressesAutomaticPong();
+    void testOpenIsNonBlocking();
     void testConnectWss();
-    void testReuseSocketWithCompressionHeaders();
+    void testReuseSocket();
     void testReuseSocketWithSslConfig();
     void testAutoPongConfigIgnoredWhileConnected();
-    void testCompressionConfigIgnoredWhileConnected();
+    void testOptionLimitsRejectInvalidValues();
     void testConnectInvalidUrl();
     void testAutoReconnect();
+    void testCommandAdmissionRejectsInvalidStateWithoutMutation();
+    void testOpenRejectsDuplicateCommandWithoutMutation();
+    void testCommandsRejectWrongThreadWithoutMutation();
 
     // ========================================================================
     // 消息收发测试
@@ -77,9 +91,21 @@ private slots:
     // ========================================================================
 
     void testPingPong();
+    void testControlFrameCommandsRejectOversizedPayloadWithoutMutation();
+    void testSendCommandReportsQueueLimitWithoutConnectionError();
     void testCloseHandshake();
     void testFragmentedMessage();
     void testFragmentedFramesReassembly();
+    void testPartialControlFramesReassembleIndependently();
+    void testPartialPingDoesNotAutoPongWhenDisabled();
+    void testEmptyClosePayloadReports1005();
+    void testCloseReasonTruncatesAtUtf8Boundary();
+    void testInvalidUtf8ClosesWith1007();
+    void testFrameLimitClosesWith1009();
+    void testMessageLimitClosesWith1009();
+    void testReceiveBufferLimitClosesWith1009();
+    void testCloseHandshakeTimeout();
+    void testReconnectAfterRemoteClose();
     void testServerClosedWithCustomCloseCode();
     void testServerClosedWithReservedCloseCode();
     void testRejectReservedCloseCodeOnSend();
@@ -90,7 +116,26 @@ private slots:
 
     void testConnectionRefused();
     void testSslError();
+    /**
+     * @brief 验证 TLS 主错误不受 SSL 验证诊断查询失败影响。
+     */
+    void testSslVerifyInfoFailurePreservesCurlError();
     void testServerClosedConnection();
+
+    /**
+     * @brief 验证 HTTP header 解绑失败时仍保留 backing storage。
+     */
+    void testHeaderUnbindFailureRetainsBackingStorage();
+
+    /**
+     * @brief 验证析构期 header 解绑失败时 backing storage 进入进程期 quarantine。
+     */
+    void testHeaderUnbindFailureDuringTeardownQuarantinesBackingStorage();
+
+    /**
+     * @brief 验证 persistent transfer 的 header storage 只清理一次。
+     */
+    void testPersistentTransferHeaderCleanupExactlyOnce();
 
 private:
     /**
@@ -164,9 +209,11 @@ void TestQCWebSocket::testConnect()
 {
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
     QSignalSpy stateChangedSpy(&socket, &QCWebSocket::stateChanged);
+    QSignalSpy isValidChangedSpy(&socket, &QCWebSocket::isValidChanged);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     // 等待连接成功信号
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
@@ -175,13 +222,66 @@ void TestQCWebSocket::testConnect()
     QCOMPARE(connectedSpy.count(), 1);
     QCOMPARE(socket.state(), QCWebSocket::State::Connected);
     QVERIFY(socket.isValid());
+    QCOMPARE(isValidChangedSpy.count(), 1);
+    QCOMPARE(isValidChangedSpy.at(0).at(0).toBool(), true);
 
     // 检查状态变化信号
     QVERIFY(stateChangedSpy.count() >= 2); // Connecting -> Connected
 
-    socket.close();
+    static_cast<void>(socket.close());
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+    QCOMPARE(isValidChangedSpy.count(), 2);
+    QCOMPARE(isValidChangedSpy.at(1).at(0).toBool(), false);
+    QVERIFY(!socket.isValid());
 
     qDebug() << "Basic connection contract verified";
+}
+
+/// @brief 验证析构只执行内部 teardown，不发射业务信号或启动重连。
+void TestQCWebSocket::testDestructorTeardownIsSilent()
+{
+    QObject observer;
+    int stateChangedCount               = 0;
+    int isValidChangedCount             = 0;
+    int disconnectedCount               = 0;
+    int reconnectAttemptCount           = 0;
+    int stateChangedBeforeDestruction   = 0;
+    int isValidChangedBeforeDestruction = 0;
+
+    {
+        QCWebSocketOptions options;
+        options.setReconnectPolicy(QCWebSocketReconnectPolicy::standardReconnect());
+        QCWebSocket socket{QUrl(m_testServerUrl), options};
+        QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+
+        QObject::connect(&socket, &QCWebSocket::stateChanged, &observer, [&stateChangedCount]() {
+            ++stateChangedCount;
+        });
+        QObject::connect(&socket, &QCWebSocket::isValidChanged, &observer, [&isValidChangedCount]() {
+            ++isValidChangedCount;
+        });
+        QObject::connect(&socket, &QCWebSocket::disconnected, &observer, [&disconnectedCount]() {
+            ++disconnectedCount;
+        });
+        QObject::connect(&socket,
+                         &QCWebSocket::reconnectAttempt,
+                         &observer,
+                         [&reconnectAttemptCount]() { ++reconnectAttemptCount; });
+
+        static_cast<void>(socket.open());
+        QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+                 qPrintable(socket.errorString()));
+        QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+
+        stateChangedBeforeDestruction   = stateChangedCount;
+        isValidChangedBeforeDestruction = isValidChangedCount;
+    }
+
+    QCoreApplication::processEvents();
+    QCOMPARE(stateChangedCount, stateChangedBeforeDestruction);
+    QCOMPARE(isValidChangedCount, isValidChangedBeforeDestruction);
+    QCOMPARE(disconnectedCount, 0);
+    QCOMPARE(reconnectAttemptCount, 0);
 }
 
 void TestQCWebSocket::testConnectWss()
@@ -203,7 +303,7 @@ void TestQCWebSocket::testConnectWss()
     QVERIFY(socket.setOptions(options));
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 15000),
              qPrintable(QStringLiteral("无法连接本地 WSS 测试服务器，caCertPath=%1，错误=%2")
@@ -215,36 +315,251 @@ void TestQCWebSocket::testConnectWss()
         m_wssEvidenceArtifactsPath, caseId, QStringLiteral("/"), true, 1, 2000);
     QVERIFY2(handshakeError.isEmpty(), qPrintable(handshakeError));
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "WSS connection contract verified";
 }
 
-void TestQCWebSocket::testReuseSocketWithCompressionHeaders()
+void TestQCWebSocket::testOpenIsNonBlocking()
+{
+    QTcpServer stalledServer;
+    QVERIFY(stalledServer.listen(QHostAddress::LocalHost, 0));
+
+    QList<QTcpSocket *> clients;
+    QObject::connect(&stalledServer, &QTcpServer::newConnection, &stalledServer, [&]() {
+        while (stalledServer.hasPendingConnections()) {
+            clients.append(stalledServer.nextPendingConnection());
+        }
+    });
+
+    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:%1").arg(stalledServer.serverPort())),
+                       QCWebSocketOptions{}};
+    QCWebSocketOptions options = socket.options();
+    QString optionError;
+    QVERIFY(options.setConnectTimeout(std::chrono::milliseconds{500}, &optionError));
+    QVERIFY(socket.setOptions(options, &optionError));
+
+    bool timerFired = false;
+    QTimer::singleShot(100, &socket, [&timerFired]() { timerFired = true; });
+    static_cast<void>(socket.open());
+    QTest::qWait(250);
+
+    QVERIFY2(
+        timerFired,
+        "WebSocket open() blocked the owner event loop while the server withheld the handshake");
+    QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
+
+    socket.abort();
+    for (QTcpSocket *client : std::as_const(clients)) {
+        if (client) {
+            client->close();
+            client->deleteLater();
+        }
+    }
+    stalledServer.close();
+}
+
+void TestQCWebSocket::testDeleteParentFromPublicSignal_data()
+{
+    QTest::addColumn<int>("signalCase");
+    QTest::newRow("stateChanged") << 0;
+    QTest::newRow("isValidChanged") << 1;
+    QTest::newRow("connected") << 2;
+    QTest::newRow("textMessageReceived") << 3;
+    QTest::newRow("binaryMessageReceived") << 4;
+    QTest::newRow("pingReceived") << 5;
+    QTest::newRow("pongReceived") << 6;
+    QTest::newRow("closeReceived") << 7;
+    QTest::newRow("errorOccurred") << 8;
+    QTest::newRow("reconnectAttempt") << 9;
+    QTest::newRow("disconnected") << 10;
+    QTest::newRow("sslErrorsDetailed") << 11;
+}
+
+void TestQCWebSocket::testDeleteParentFromPublicSignal()
+{
+    QFETCH(int, signalCase);
+
+    const QString caseId = QStringLiteral("delete-parent-%1").arg(signalCase);
+    QUrl url(m_testEvidenceServerUrl);
+    QCWebSocketOptions options;
+    if (signalCase == 4) {
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("type"), QStringLiteral("binary"));
+        query.addQueryItem(QStringLiteral("len"), QStringLiteral("16"));
+        query.addQueryItem(QStringLiteral("parts"), QStringLiteral("2"));
+        query.addQueryItem(QStringLiteral("seed"), QStringLiteral("3"));
+        query.addQueryItem(QStringLiteral("case"), caseId);
+        url.setPath(QStringLiteral("/fragment"));
+        url.setQuery(query);
+    } else if (signalCase >= 5 && signalCase <= 7) {
+        url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                       QStringLiteral("/partial-control"),
+                                                       caseId);
+    } else if (signalCase == 8) {
+        url.setPath(QStringLiteral("/invalid-utf8"));
+    } else if (signalCase == 9) {
+        url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                       QStringLiteral("/close-once"),
+                                                       caseId);
+        QCWebSocketReconnectPolicy policy;
+        policy.setMaxRetries(1);
+        policy.setInitialDelay(std::chrono::milliseconds{10});
+        policy.setMaxDelay(std::chrono::milliseconds{10});
+        policy.setBackoffMultiplier(1.0);
+        policy.setRetriableCloseCodes({QCWebSocket::CloseCode::GoingAway});
+        options.setReconnectPolicy(policy);
+    } else if (signalCase == 10) {
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("code"), QStringLiteral("1000"));
+        query.addQueryItem(QStringLiteral("reason"), QStringLiteral("done"));
+        query.addQueryItem(QStringLiteral("case"), caseId);
+        url.setPath(QStringLiteral("/close"));
+        url.setQuery(query);
+    } else if (signalCase == 11) {
+        url = QUrl(m_testWssServerUrl);
+    }
+
+    auto *parent = new QObject;
+    auto *socket = new QCWebSocket{url, options, parent};
+    const QPointer<QObject> guardedParent(parent);
+    const auto deleteParent = [parent]() { delete parent; };
+
+    switch (signalCase) {
+        case 0:
+            QObject::connect(socket,
+                             &QCWebSocket::stateChanged,
+                             this,
+                             [deleteParent](QCWebSocket::State state) {
+                                 if (state == QCWebSocket::State::Connecting) {
+                                     deleteParent();
+                                 }
+                             });
+            break;
+        case 1:
+            QObject::connect(socket, &QCWebSocket::isValidChanged, this, [deleteParent](bool valid) {
+                if (valid) {
+                    deleteParent();
+                }
+            });
+            break;
+        case 2:
+            QObject::connect(socket, &QCWebSocket::connected, this, deleteParent);
+            break;
+        case 3:
+            QObject::connect(socket,
+                             &QCWebSocket::textMessageReceived,
+                             this,
+                             [deleteParent](const QString &) { deleteParent(); });
+            break;
+        case 4:
+            QObject::connect(socket,
+                             &QCWebSocket::binaryMessageReceived,
+                             this,
+                             [deleteParent](const QByteArray &) { deleteParent(); });
+            break;
+        case 5:
+            QObject::connect(socket,
+                             &QCWebSocket::pingReceived,
+                             this,
+                             [deleteParent](const QByteArray &) { deleteParent(); });
+            break;
+        case 6:
+            QObject::connect(socket,
+                             &QCWebSocket::pongReceived,
+                             this,
+                             [deleteParent](const QByteArray &) { deleteParent(); });
+            break;
+        case 7:
+            QObject::connect(socket,
+                             &QCWebSocket::closeReceived,
+                             this,
+                             [deleteParent](int, const QString &) { deleteParent(); });
+            break;
+        case 8:
+            QObject::connect(socket,
+                             &QCWebSocket::errorOccurred,
+                             this,
+                             [deleteParent](const QString &) { deleteParent(); });
+            break;
+        case 9:
+            QObject::connect(socket,
+                             &QCWebSocket::reconnectAttempt,
+                             this,
+                             [deleteParent](int, QCWebSocket::CloseCode) { deleteParent(); });
+            break;
+        case 10:
+            QObject::connect(socket, &QCWebSocket::disconnected, this, deleteParent);
+            break;
+        case 11:
+            QObject::connect(socket,
+                             &QCWebSocket::sslErrorsDetailed,
+                             this,
+                             [deleteParent](const QStringList &) { deleteParent(); });
+            break;
+        default:
+            QFAIL("unknown signal deletion case");
+    }
+
+    static_cast<void>(socket->open());
+    if (signalCase == 3) {
+        QTRY_COMPARE_WITH_TIMEOUT(socket->state(), QCWebSocket::State::Connected, 10000);
+        static_cast<void>(socket->sendTextMessage(QStringLiteral("delete-parent")));
+    }
+
+    QTRY_VERIFY_WITH_TIMEOUT(guardedParent.isNull(), 15000);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+}
+
+void TestQCWebSocket::testDeleteParentFromPartialPingSuppressesAutomaticPong()
+{
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    const QUrl url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                              QStringLiteral("/partial-control"),
+                                                              caseId);
+    auto *parent   = new QObject;
+    auto *socket   = new QCWebSocket{url, QCWebSocketOptions{}, parent};
+    const QPointer<QObject> guardedParent(parent);
+    QObject::connect(socket, &QCWebSocket::pingReceived, this, [parent](const QByteArray &) {
+        delete parent;
+    });
+
+    static_cast<void>(socket->open());
+    QTRY_VERIFY_WITH_TIMEOUT(guardedParent.isNull(), 10000);
+
+    const QList<QJsonObject> receivedFrames = TestWebSocketEvidenceUtils::waitFrameEventsByCase(
+        m_evidenceArtifactsPath, caseId, 1, 500, QStringLiteral("recv"));
+    const bool sentPong = std::any_of(receivedFrames.cbegin(),
+                                      receivedFrames.cend(),
+                                      [](const QJsonObject &frame) {
+                                          return frame.value(QStringLiteral("opcode")).toInt(-1)
+                                                 == 0xA;
+                                      });
+    QVERIFY(!sentPong);
+}
+
+void TestQCWebSocket::testReuseSocket()
 {
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
-    QCWebSocketOptions options = socket.options();
-    options.setCompressionConfig(QCWebSocketCompressionConfig::defaultConfig());
-    QVERIFY(socket.setOptions(options));
 
     for (int round = 0; round < 2; ++round) {
         QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
         QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
 
-        socket.open();
+        static_cast<void>(socket.open());
         QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
                  qPrintable(QStringLiteral("第 %1 次连接未成功，错误=%2")
                                 .arg(round + 1)
                                 .arg(socket.errorString())));
         QCOMPARE(socket.state(), QCWebSocket::State::Connected);
 
-        socket.close();
+        static_cast<void>(socket.close());
         QVERIFY2(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000),
                  qPrintable(QStringLiteral("第 %1 次关闭未完成").arg(round + 1)));
         QCOMPARE(socket.state(), QCWebSocket::State::Closed);
     }
 
-    qDebug() << "Compression header lifecycle survives socket reuse";
+    qDebug() << "WebSocket lifecycle survives socket reuse";
 }
 
 void TestQCWebSocket::testReuseSocketWithSslConfig()
@@ -268,14 +583,14 @@ void TestQCWebSocket::testReuseSocketWithSslConfig()
         QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
         QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
 
-        socket.open();
+        static_cast<void>(socket.open());
         QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 15000),
                  qPrintable(QStringLiteral("第 %1 次 WSS 连接未成功，ca=%2，错误=%3")
                                 .arg(round + 1)
                                 .arg(m_caCertPath, socket.errorString())));
         QCOMPARE(socket.state(), QCWebSocket::State::Connected);
 
-        socket.close();
+        static_cast<void>(socket.close());
         QVERIFY2(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000),
                  qPrintable(QStringLiteral("第 %1 次 WSS 关闭未完成").arg(round + 1)));
         QCOMPARE(socket.state(), QCWebSocket::State::Closed);
@@ -295,7 +610,7 @@ void TestQCWebSocket::testAutoPongConfigIgnoredWhileConnected()
     options.setAutoPongEnabled(true);
     QVERIFY(socket.setOptions(options));
 
-    socket.open();
+    static_cast<void>(socket.open());
     QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
     QVERIFY(socket.options().autoPongEnabled());
 
@@ -307,44 +622,45 @@ void TestQCWebSocket::testAutoPongConfigIgnoredWhileConnected()
     QVERIFY(socket.options().autoPongEnabled());
 }
 
-void TestQCWebSocket::testCompressionConfigIgnoredWhileConnected()
+void TestQCWebSocket::testOptionLimitsRejectInvalidValues()
 {
-    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:65535")), QCWebSocketOptions{}};
-
-    QCWebSocketCompressionConfig initialConfig;
-    initialConfig.setEnabled(false);
-    initialConfig.setClientMaxWindowBits(15);
-    initialConfig.setServerMaxWindowBits(15);
-    initialConfig.setClientNoContextTakeover(false);
-    initialConfig.setServerNoContextTakeover(false);
-    initialConfig.setCompressionLevel(6);
-    QCWebSocketOptions options = socket.options();
-    options.setCompressionConfig(initialConfig);
-    QVERIFY(socket.setOptions(options));
-
-    socket.open();
-    QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
-
-    QCWebSocketCompressionConfig updatedConfig = QCWebSocketCompressionConfig::defaultConfig();
-    updatedConfig.setClientMaxWindowBits(12);
-    updatedConfig.setServerMaxWindowBits(12);
-    updatedConfig.setClientNoContextTakeover(true);
-    updatedConfig.setServerNoContextTakeover(true);
-    updatedConfig.setCompressionLevel(9);
-
-    QCWebSocketOptions updatedOptions = socket.options();
-    updatedOptions.setCompressionConfig(updatedConfig);
+    QCWebSocketOptions options;
     QString error;
-    QVERIFY(!socket.setOptions(updatedOptions, &error));
-    QVERIFY(!error.isEmpty());
 
-    const QCWebSocketCompressionConfig currentConfig = socket.options().compressionConfig();
-    QVERIFY(!currentConfig.enabled());
-    QCOMPARE(currentConfig.clientMaxWindowBits(), initialConfig.clientMaxWindowBits());
-    QCOMPARE(currentConfig.serverMaxWindowBits(), initialConfig.serverMaxWindowBits());
-    QCOMPARE(currentConfig.clientNoContextTakeover(), initialConfig.clientNoContextTakeover());
-    QCOMPARE(currentConfig.serverNoContextTakeover(), initialConfig.serverNoContextTakeover());
-    QCOMPARE(currentConfig.compressionLevel(), initialConfig.compressionLevel());
+    const auto connectTimeout = options.connectTimeout();
+    QVERIFY(!options.setConnectTimeout(std::chrono::milliseconds{0}, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.connectTimeout(), connectTimeout);
+
+    const qint64 maxFrameBytes = options.maxFrameBytes();
+    error.clear();
+    QVERIFY(!options.setMaxFrameBytes(0, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.maxFrameBytes(), maxFrameBytes);
+
+    const qint64 maxMessageBytes = options.maxMessageBytes();
+    error.clear();
+    QVERIFY(!options.setMaxMessageBytes(std::numeric_limits<qint64>::max(), &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.maxMessageBytes(), maxMessageBytes);
+
+    const qint64 maxPendingSendBytes = options.maxPendingSendBytes();
+    error.clear();
+    QVERIFY(!options.setMaxPendingSendBytes(-1, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.maxPendingSendBytes(), maxPendingSendBytes);
+
+    const qint64 maxReceiveBufferBytes = options.maxReceiveBufferBytes();
+    error.clear();
+    QVERIFY(!options.setMaxReceiveBufferBytes(0, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.maxReceiveBufferBytes(), maxReceiveBufferBytes);
+
+    const auto closeTimeout = options.closeHandshakeTimeout();
+    error.clear();
+    QVERIFY(!options.setCloseHandshakeTimeout(std::chrono::milliseconds{0}, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(options.closeHandshakeTimeout(), closeTimeout);
 }
 
 void TestQCWebSocket::testConnectInvalidUrl()
@@ -353,7 +669,7 @@ void TestQCWebSocket::testConnectInvalidUrl()
                        QCWebSocketOptions{}};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     // 等待错误信号
     QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
@@ -387,7 +703,7 @@ void TestQCWebSocket::testAutoReconnect()
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
     // 尝试连接（会失败）
-    socket.open();
+    static_cast<void>(socket.open());
 
     // 等待初始连接失败
     QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 2000));
@@ -414,6 +730,94 @@ void TestQCWebSocket::testAutoReconnect()
     socket.abort();
 }
 
+/**
+ * @brief 验证未连接状态下的数据与关闭命令会被同步拒绝，且不污染连接错误。
+ */
+void TestQCWebSocket::testCommandAdmissionRejectsInvalidStateWithoutMutation()
+{
+    QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
+    const auto initialState = socket.state();
+
+    const auto textResult = socket.sendTextMessage(QStringLiteral("not-connected"));
+    QCOMPARE(textResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(textResult.acceptedBytes(), 0);
+
+    const auto binaryResult = socket.sendBinaryMessage(QByteArrayLiteral("not-connected"));
+    QCOMPARE(binaryResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(binaryResult.acceptedBytes(), 0);
+
+    const auto closeResult = socket.close();
+    QCOMPARE(closeResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(closeResult.acceptedBytes(), 0);
+
+    const auto pingResult = socket.ping();
+    QCOMPARE(pingResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(pingResult.acceptedBytes(), 0);
+
+    const auto pongResult = socket.pong();
+    QCOMPARE(pongResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(pongResult.acceptedBytes(), 0);
+
+    QCOMPARE(socket.state(), initialState);
+    QVERIFY(socket.errorString().isEmpty());
+}
+
+/**
+ * @brief 验证重复 open 命令被同步拒绝，既有连接周期保持不变。
+ */
+void TestQCWebSocket::testOpenRejectsDuplicateCommandWithoutMutation()
+{
+    QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+
+    const auto firstResult = socket.open();
+    QCOMPARE(firstResult.status(), QCWebSocketCommandResult::Status::Accepted);
+    QCOMPARE(firstResult.acceptedBytes(), 0);
+    QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
+
+    const auto duplicateResult = socket.open();
+    QCOMPARE(duplicateResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(duplicateResult.acceptedBytes(), 0);
+    QCOMPARE(socket.state(), QCWebSocket::State::Connecting);
+
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+    QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+
+    const auto connectedResult = socket.open();
+    QCOMPARE(connectedResult.status(), QCWebSocketCommandResult::Status::InvalidState);
+    QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+    QVERIFY(socket.errorString().isEmpty());
+
+    QCOMPARE(socket.close().status(), QCWebSocketCommandResult::Status::Accepted);
+}
+
+/**
+ * @brief 验证所有 WebSocket 命令在非 owner thread 同步拒绝且不修改 socket 状态。
+ */
+void TestQCWebSocket::testCommandsRejectWrongThreadWithoutMutation()
+{
+    QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
+
+    const auto results = std::async(std::launch::async, [&socket]() {
+        return QList<QCWebSocketCommandResult>{
+            socket.open(),
+            socket.close(),
+            socket.sendTextMessage(QStringLiteral("wrong-thread")),
+            socket.sendBinaryMessage(QByteArrayLiteral("wrong-thread")),
+            socket.ping(),
+            socket.pong(),
+        };
+    }).get();
+
+    for (const auto &result : results) {
+        QCOMPARE(result.status(), QCWebSocketCommandResult::Status::WrongThread);
+        QCOMPARE(result.acceptedBytes(), 0);
+    }
+    QCOMPARE(socket.state(), QCWebSocket::State::Unconnected);
+    QVERIFY(socket.errorString().isEmpty());
+}
+
 // ============================================================================
 // 消息收发测试
 // ============================================================================
@@ -423,15 +827,16 @@ void TestQCWebSocket::testSendTextMessage()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
 
     QString testMessage = QStringLiteral("Hello WebSocket!");
-    qint64 sent         = socket.sendTextMessage(testMessage);
-    QVERIFY(sent > 0);
-    qDebug() << "发送字节数:" << sent;
+    const auto sendResult = socket.sendTextMessage(testMessage);
+    QVERIFY(sendResult.isAccepted());
+    QCOMPARE(sendResult.acceptedBytes(), testMessage.toUtf8().size());
+    qDebug() << "接受字节数:" << sendResult.acceptedBytes();
 
     // 等待本地 echo 服务器回显
     QVERIFY(TestWaitUtils::waitForSpyCount(textSpy, 1, 10000));
@@ -442,7 +847,7 @@ void TestQCWebSocket::testSendTextMessage()
 
     QCOMPARE(received, testMessage);
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Text echo contract verified";
 }
@@ -452,15 +857,16 @@ void TestQCWebSocket::testSendBinaryMessage()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
 
     QByteArray testData = "Binary Data: \x01\x02\x03\x04";
-    qint64 sent         = socket.sendBinaryMessage(testData);
-    QVERIFY(sent > 0);
-    qDebug() << "发送字节数:" << sent;
+    const auto sendResult = socket.sendBinaryMessage(testData);
+    QVERIFY(sendResult.isAccepted());
+    QCOMPARE(sendResult.acceptedBytes(), testData.size());
+    qDebug() << "接受字节数:" << sendResult.acceptedBytes();
 
     // 等待 Echo 服务器回显
     QVERIFY(TestWaitUtils::waitForSpyCount(binarySpy, 1, 10000));
@@ -469,7 +875,7 @@ void TestQCWebSocket::testSendBinaryMessage()
     QByteArray received = binarySpy.first().first().toByteArray();
     QCOMPARE(received, testData);
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Binary echo contract verified";
 }
@@ -479,19 +885,19 @@ void TestQCWebSocket::testReceiveTextMessage()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
 
     const QString testMessage = QStringLiteral("Receive Test");
-    socket.sendTextMessage(testMessage);
+    static_cast<void>(socket.sendTextMessage(testMessage));
 
     QVERIFY(TestWaitUtils::waitForSpyCount(textSpy, 1, 10000));
     QCOMPARE(textSpy.count(), 1);
     QCOMPARE(textSpy.first().first().toString(), testMessage);
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Text receive path verified";
 }
@@ -501,7 +907,7 @@ void TestQCWebSocket::testReceiveBinaryMessage()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
@@ -511,7 +917,7 @@ void TestQCWebSocket::testReceiveBinaryMessage()
         QByteArray data;
         data.append(static_cast<char>(i));
         data.append("Test Binary Data");
-        socket.sendBinaryMessage(data);
+        static_cast<void>(socket.sendBinaryMessage(data));
         QVERIFY2(TestWaitUtils::waitForSpyCount(binarySpy, i + 1, 10000),
                  qPrintable(QStringLiteral("第 %1 条二进制回显未按时到达，当前累计=%2")
                                 .arg(i + 1)
@@ -520,7 +926,7 @@ void TestQCWebSocket::testReceiveBinaryMessage()
 
     QCOMPARE(binarySpy.count(), 3);
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Binary receive path verified";
 }
@@ -530,7 +936,7 @@ void TestQCWebSocket::testLargeMessage()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
@@ -543,8 +949,9 @@ void TestQCWebSocket::testLargeMessage()
     }
     qDebug() << "大消息大小:" << largeMessage.toUtf8().size() << "字节";
 
-    qint64 sent = socket.sendTextMessage(largeMessage);
-    QVERIFY(sent > 0);
+    const auto sendResult = socket.sendTextMessage(largeMessage);
+    QVERIFY(sendResult.isAccepted());
+    QCOMPARE(sendResult.acceptedBytes(), largeMessage.toUtf8().size());
 
     // 等待服务器回显（可能需要更长时间）
     QVERIFY(TestWaitUtils::waitForSpyCount(textSpy, 1, 20000));
@@ -555,7 +962,7 @@ void TestQCWebSocket::testLargeMessage()
 
     QCOMPARE(received, largeMessage);
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Large message echo verified";
 }
@@ -569,14 +976,14 @@ void TestQCWebSocket::testPingPong()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy pongSpy(&socket, &QCWebSocket::pongReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
 
     // 发送 Ping 帧
     QByteArray pingPayload = "Ping Test";
-    socket.ping(pingPayload);
+    static_cast<void>(socket.ping(pingPayload));
 
     // 等待 Pong 响应
     // 注意：有些服务器可能不发送 Pong 响应，或者 libcurl 自动处理了
@@ -587,9 +994,59 @@ void TestQCWebSocket::testPingPong()
         qDebug() << "⚠️ 未收到 Pong 响应（可能被 libcurl 自动处理）";
     }
 
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Ping/Pong path verified";
+}
+
+/**
+ * @brief 验证过大的 Ping/Pong payload 被拒绝，不截断发送且连接状态保持不变。
+ */
+void TestQCWebSocket::testControlFrameCommandsRejectOversizedPayloadWithoutMutation()
+{
+    QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QCOMPARE(socket.open().status(), QCWebSocketCommandResult::Status::Accepted);
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+
+    const QByteArray oversizedPayload(126, 'x');
+    const auto pingResult = socket.ping(oversizedPayload);
+    QCOMPARE(pingResult.status(), QCWebSocketCommandResult::Status::InvalidArgument);
+    QCOMPARE(pingResult.acceptedBytes(), 0);
+
+    const auto pongResult = socket.pong(oversizedPayload);
+    QCOMPARE(pongResult.status(), QCWebSocketCommandResult::Status::InvalidArgument);
+    QCOMPARE(pongResult.acceptedBytes(), 0);
+
+    QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+    QVERIFY(socket.errorString().isEmpty());
+    QCOMPARE(socket.close().status(), QCWebSocketCommandResult::Status::Accepted);
+}
+
+/**
+ * @brief 验证发送队列拒绝通过命令结果报告，不改变连接生命周期错误。
+ */
+void TestQCWebSocket::testSendCommandReportsQueueLimitWithoutConnectionError()
+{
+    QCWebSocketOptions options;
+    QString optionError;
+    QVERIFY(options.setMaxPendingSendBytes(1, &optionError));
+
+    QCWebSocket socket{QUrl(m_testServerUrl), options};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QCOMPARE(socket.open().status(), QCWebSocketCommandResult::Status::Accepted);
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+
+    const auto result = socket.sendBinaryMessage(QByteArrayLiteral("too-large"));
+    QCOMPARE(result.status(), QCWebSocketCommandResult::Status::QueueLimitReached);
+    QCOMPARE(result.acceptedBytes(), 0);
+    QVERIFY(!result.error().isEmpty());
+    QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+    QVERIFY(socket.errorString().isEmpty());
+
+    QCOMPARE(socket.close().status(), QCWebSocketCommandResult::Status::Accepted);
 }
 
 void TestQCWebSocket::testCloseHandshake()
@@ -597,13 +1054,13 @@ void TestQCWebSocket::testCloseHandshake()
     QCWebSocket socket{QUrl(m_testServerUrl), QCWebSocketOptions{}};
     QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(waitForSignal(&socket, QMetaMethod::fromSignal(&QCWebSocket::connected), 10000),
              qPrintable(QStringLiteral("无法连接到本地 WebSocket 测试服务器：%1")
                             .arg(socket.errorString())));
 
     // 优雅关闭
-    socket.close(QCWebSocket::CloseCode::Normal, QStringLiteral("Test Close"));
+    static_cast<void>(socket.close(QCWebSocket::CloseCode::Normal, QStringLiteral("Test Close")));
 
     // 等待断开连接信号
     QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
@@ -622,7 +1079,7 @@ void TestQCWebSocket::testFragmentedMessage()
     QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
     QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     // 验证连接
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 5000),
@@ -638,7 +1095,7 @@ void TestQCWebSocket::testFragmentedMessage()
     QString testMessage = QString::fromUtf8(largeText);
 
     textSpy.clear();
-    socket.sendTextMessage(testMessage);
+    static_cast<void>(socket.sendTextMessage(testMessage));
 
     // 等待回显消息
     QVERIFY(TestWaitUtils::waitForSpyCount(textSpy, 1, 10000));
@@ -656,7 +1113,7 @@ void TestQCWebSocket::testFragmentedMessage()
     QByteArray largeBinary(102400, 0x42); // 填充 'B' (0x42)
 
     binarySpy.clear();
-    socket.sendBinaryMessage(largeBinary);
+    static_cast<void>(socket.sendBinaryMessage(largeBinary));
 
     // 等待回显消息
     QVERIFY(TestWaitUtils::waitForSpyCount(binarySpy, 1, 15000));
@@ -674,7 +1131,7 @@ void TestQCWebSocket::testFragmentedMessage()
     QByteArray boundaryBinary(4096, 0x43); // 填充 'C' (0x43)
 
     binarySpy.clear();
-    socket.sendBinaryMessage(boundaryBinary);
+    static_cast<void>(socket.sendBinaryMessage(boundaryBinary));
 
     QVERIFY(TestWaitUtils::waitForSpyCount(binarySpy, 1, 10000));
     QCOMPARE(binarySpy.count(), 1);
@@ -691,7 +1148,7 @@ void TestQCWebSocket::testFragmentedMessage()
     textSpy.clear();
     for (int i = 0; i < 3; ++i) {
         QByteArray msg(8192, 'D' + i);
-        socket.sendTextMessage(QString::fromUtf8(msg));
+        static_cast<void>(socket.sendTextMessage(QString::fromUtf8(msg)));
     }
 
     // 等待所有消息返回（避免固定 sleep 导致 flaky）
@@ -705,7 +1162,7 @@ void TestQCWebSocket::testFragmentedMessage()
     qDebug() << "Repeated large-message echo verified, count =" << textSpy.count();
 
     // 关闭连接
-    socket.close();
+    static_cast<void>(socket.close());
 
     qDebug() << "Fragmented message integrity contract verified";
 }
@@ -764,7 +1221,7 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
     QSignalSpy binarySpy(&socket, &QCWebSocket::binaryMessageReceived);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
              qPrintable(
                  QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
@@ -811,8 +1268,324 @@ void TestQCWebSocket::testFragmentedFramesReassembly()
     }
     QCOMPARE(offset, totalLen);
 
-    socket.close();
+    static_cast<void>(socket.close());
     qDebug() << "Frame-level reassembly verified (len/sha256 + evidence log)";
+}
+
+void TestQCWebSocket::testPartialControlFramesReassembleIndependently()
+{
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    const QUrl url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                              QStringLiteral("/partial-control"),
+                                                              caseId);
+    QCWebSocket socket{url, QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
+    QSignalSpy pingSpy(&socket, &QCWebSocket::pingReceived);
+    QSignalSpy pongSpy(&socket, &QCWebSocket::pongReceived);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+
+    QCOMPARE(errorSpy.count(), 0);
+    QCOMPARE(pingSpy.count(), 1);
+    QCOMPARE(pingSpy.first().at(0).toByteArray(), QByteArrayLiteral("partial-ping"));
+    QCOMPARE(pongSpy.count(), 1);
+    QCOMPARE(pongSpy.first().at(0).toByteArray(), QByteArrayLiteral("partial-pong"));
+    QCOMPARE(textSpy.count(), 1);
+    QCOMPARE(textSpy.first().at(0).toString(), QStringLiteral("hello"));
+    QCOMPARE(closeSpy.first().at(0).toInt(), 1000);
+    QCOMPARE(closeSpy.first().at(1).toString(), QStringLiteral("partial-close"));
+
+    const QList<QJsonObject> receivedFrames = TestWebSocketEvidenceUtils::waitFrameEventsByCase(
+        m_evidenceArtifactsPath, caseId, 2, 2000, QStringLiteral("recv"));
+    const auto pongIt = std::find_if(receivedFrames.cbegin(),
+                                     receivedFrames.cend(),
+                                     [](const QJsonObject &frame) {
+                                         return frame.value(QStringLiteral("opcode")).toInt(-1)
+                                                == 0xA;
+                                     });
+    QVERIFY(pongIt != receivedFrames.cend());
+    QCOMPARE(pongIt->value(QStringLiteral("payload_len")).toInt(-1), 12);
+    QCOMPARE(pongIt->value(QStringLiteral("payload_sha256")).toString(),
+             sha256Hex(QByteArrayLiteral("partial-ping")));
+}
+
+void TestQCWebSocket::testPartialPingDoesNotAutoPongWhenDisabled()
+{
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    const QUrl url = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                              QStringLiteral("/partial-control"),
+                                                              caseId);
+    QCWebSocketOptions options;
+    options.setAutoPongEnabled(false);
+    QCWebSocket socket{url, options};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy pingSpy(&socket, &QCWebSocket::pingReceived);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+
+    QCOMPARE(errorSpy.count(), 0);
+    QCOMPARE(pingSpy.count(), 1);
+    QCOMPARE(pingSpy.first().at(0).toByteArray(), QByteArrayLiteral("partial-ping"));
+
+    const QList<QJsonObject> receivedFrames = TestWebSocketEvidenceUtils::waitFrameEventsByCase(
+        m_evidenceArtifactsPath, caseId, 1, 2000, QStringLiteral("recv"));
+    const bool sentPong = std::any_of(receivedFrames.cbegin(),
+                                      receivedFrames.cend(),
+                                      [](const QJsonObject &frame) {
+                                          return frame.value(QStringLiteral("opcode")).toInt(-1)
+                                                 == 0xA;
+                                      });
+    QVERIFY(!sentPong);
+}
+
+void TestQCWebSocket::testEmptyClosePayloadReports1005()
+{
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    const QUrl url       = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                                    QStringLiteral("/close-empty"),
+                                                                    caseId);
+    QCWebSocket socket{url, QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+
+    QCOMPARE(errorSpy.count(), 0);
+    QCOMPARE(closeSpy.count(), 1);
+    QCOMPARE(closeSpy.first().at(0).toInt(),
+             static_cast<int>(QCWebSocket::CloseCode::NoStatusReceived));
+    QVERIFY(closeSpy.first().at(1).toString().isEmpty());
+}
+
+void TestQCWebSocket::testCloseReasonTruncatesAtUtf8Boundary()
+{
+    QVERIFY2(!m_evidenceArtifactsPath.isEmpty(),
+             "Evidence server artifactsPath 为空，无法复核 close reason wire 证据。");
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    const QUrl url       = TestWebSocketEvidenceUtils::buildCaseUrl(m_testEvidenceServerUrl,
+                                                                    QStringLiteral("/echo"),
+                                                                    caseId);
+    QCWebSocket socket{url, QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(
+                 QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
+
+    const QString expectedReason(121, QLatin1Char('a'));
+    const QString oversizedReason = expectedReason + QChar(0x20AC) + QStringLiteral("tail");
+    static_cast<void>(socket.close(QCWebSocket::CloseCode::Normal, oversizedReason));
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+
+    const QList<QJsonObject> frames = TestWebSocketEvidenceUtils::waitFrameEventsByCase(
+        m_evidenceArtifactsPath, caseId, 1, 2000, QStringLiteral("recv"));
+    QVERIFY(!frames.isEmpty());
+    const QJsonObject closeFrame = frames.constLast();
+    QCOMPARE(closeFrame.value(QStringLiteral("opcode")).toInt(-1), 0x8);
+    QCOMPARE(closeFrame.value(QStringLiteral("close_code")).toInt(-1), 1000);
+    QCOMPARE(closeFrame.value(QStringLiteral("close_reason")).toString(), expectedReason);
+    QCOMPARE(closeFrame.value(QStringLiteral("payload_len")).toInt(-1), 123);
+}
+
+void TestQCWebSocket::testInvalidUtf8ClosesWith1007()
+{
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/invalid-utf8"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("case"), QString::fromLatin1(QTest::currentTestFunction()));
+    url.setQuery(query);
+
+    QCWebSocket socket{url, QCWebSocketOptions{}};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+    QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
+    QVERIFY(socket.errorString().contains(QStringLiteral("UTF-8")));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+    QCOMPARE(closeSpy.first().at(0).toInt(),
+             static_cast<int>(QCWebSocket::CloseCode::InvalidPayload));
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+    QCOMPARE(socket.state(), QCWebSocket::State::Closed);
+}
+
+void TestQCWebSocket::testFrameLimitClosesWith1009()
+{
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/payload"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("type"), QStringLiteral("binary"));
+    query.addQueryItem(QStringLiteral("len"), QStringLiteral("8"));
+    query.addQueryItem(QStringLiteral("case"), QString::fromLatin1(QTest::currentTestFunction()));
+    url.setQuery(query);
+
+    QCWebSocketOptions options;
+    QVERIFY(options.setMaxFrameBytes(4));
+    QCWebSocket socket{url, options};
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
+    QVERIFY(socket.errorString().contains(QStringLiteral("frame")));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+    QCOMPARE(closeSpy.first().at(0).toInt(),
+             static_cast<int>(QCWebSocket::CloseCode::MessageTooBig));
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+}
+
+void TestQCWebSocket::testMessageLimitClosesWith1009()
+{
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/fragment"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("type"), QStringLiteral("binary"));
+    query.addQueryItem(QStringLiteral("len"), QStringLiteral("12"));
+    query.addQueryItem(QStringLiteral("parts"), QStringLiteral("3"));
+    query.addQueryItem(QStringLiteral("case"), QString::fromLatin1(QTest::currentTestFunction()));
+    url.setQuery(query);
+
+    QCWebSocketOptions options;
+    QVERIFY(options.setMaxFrameBytes(4));
+    QVERIFY(options.setMaxMessageBytes(8));
+    QCWebSocket socket{url, options};
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
+    QVERIFY(socket.errorString().contains(QStringLiteral("message")));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+    QCOMPARE(closeSpy.first().at(0).toInt(),
+             static_cast<int>(QCWebSocket::CloseCode::MessageTooBig));
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+}
+
+void TestQCWebSocket::testReceiveBufferLimitClosesWith1009()
+{
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/fragment"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("type"), QStringLiteral("binary"));
+    query.addQueryItem(QStringLiteral("len"), QStringLiteral("12"));
+    query.addQueryItem(QStringLiteral("parts"), QStringLiteral("3"));
+    query.addQueryItem(QStringLiteral("case"), QString::fromLatin1(QTest::currentTestFunction()));
+    url.setQuery(query);
+
+    QCWebSocketOptions options;
+    QVERIFY(options.setMaxFrameBytes(4));
+    QVERIFY(options.setMaxMessageBytes(16));
+    QVERIFY(options.setMaxReceiveBufferBytes(8));
+    QCWebSocket socket{url, options};
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
+    QVERIFY(socket.errorString().contains(QStringLiteral("receive buffer")));
+    QVERIFY(TestWaitUtils::waitForSpyCount(closeSpy, 1, 10000));
+    QCOMPARE(closeSpy.first().at(0).toInt(),
+             static_cast<int>(QCWebSocket::CloseCode::MessageTooBig));
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
+}
+
+void TestQCWebSocket::testCloseHandshakeTimeout()
+{
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/ignore-close"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("case"), QString::fromLatin1(QTest::currentTestFunction()));
+    url.setQuery(query);
+
+    QCWebSocketOptions options;
+    QVERIFY(options.setCloseHandshakeTimeout(std::chrono::milliseconds{100}));
+    QCWebSocket socket{url, options};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy closeSpy(&socket, &QCWebSocket::closeReceived);
+    QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    static_cast<void>(socket.close());
+    QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 3000));
+    QVERIFY(elapsed.elapsed() >= 50);
+    QVERIFY(elapsed.elapsed() < 3000);
+    QCOMPARE(closeSpy.count(), 0);
+    QCOMPARE(socket.state(), QCWebSocket::State::Closed);
+}
+
+void TestQCWebSocket::testReconnectAfterRemoteClose()
+{
+    const QString caseId = QString::fromLatin1(QTest::currentTestFunction());
+    QUrl url(m_testEvidenceServerUrl + QStringLiteral("/close-once"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("case"), caseId);
+    url.setQuery(query);
+
+    QCWebSocketReconnectPolicy reconnectPolicy;
+    reconnectPolicy.setMaxRetries(1);
+    reconnectPolicy.setInitialDelay(std::chrono::milliseconds{50});
+    reconnectPolicy.setMaxDelay(std::chrono::milliseconds{50});
+    reconnectPolicy.setBackoffMultiplier(1.0);
+    reconnectPolicy.setRetriableCloseCodes({QCWebSocket::CloseCode::GoingAway});
+
+    QCWebSocketOptions options;
+    options.setReconnectPolicy(reconnectPolicy);
+    QCWebSocket socket{url, options};
+    QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
+    QSignalSpy reconnectSpy(&socket, &QCWebSocket::reconnectAttempt);
+    QSignalSpy textSpy(&socket, &QCWebSocket::textMessageReceived);
+    bool reconnectStartedFromUnconnected = false;
+    QObject::connect(&socket,
+                     &QCWebSocket::reconnectAttempt,
+                     &socket,
+                     [&socket, &reconnectStartedFromUnconnected]() {
+                         reconnectStartedFromUnconnected = socket.state()
+                                                           == QCWebSocket::State::Unconnected;
+                     });
+
+    static_cast<void>(socket.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
+             qPrintable(socket.errorString()));
+    QVERIFY(TestWaitUtils::waitForSpyCount(reconnectSpy, 1, 10000));
+    QVERIFY(reconnectStartedFromUnconnected);
+    QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 2, 10000),
+             qPrintable(socket.errorString()));
+
+    const QString message = QStringLiteral("reconnected-echo");
+    const auto sendResult = socket.sendTextMessage(message);
+    QVERIFY(sendResult.isAccepted());
+    QCOMPARE(sendResult.acceptedBytes(), message.toUtf8().size());
+    QVERIFY(TestWaitUtils::waitForSpyCount(textSpy, 1, 10000));
+    QCOMPARE(textSpy.first().at(0).toString(), message);
+
+    static_cast<void>(socket.close());
 }
 
 // ============================================================================
@@ -831,7 +1604,7 @@ void TestQCWebSocket::testConnectionRefused()
     QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:%1").arg(port)), QCWebSocketOptions{}};
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     // 等待错误信号
     QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
@@ -851,7 +1624,7 @@ void TestQCWebSocket::testSslError()
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
     QSignalSpy sslErrorSpy(&socket, &QCWebSocket::sslErrorsDetailed);
 
-    socket.open();
+    static_cast<void>(socket.open());
 
     QVERIFY2(TestWaitUtils::waitForSpyCount(errorSpy, 1, 15000),
              qPrintable(
@@ -882,7 +1655,7 @@ void TestQCWebSocket::testSslError()
 
     QSignalSpy connectedSpy(&socket2, &QCWebSocket::connected);
 
-    socket2.open();
+    static_cast<void>(socket2.open());
 
     // 等待连接（可能需要较长时间）
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 15000),
@@ -891,9 +1664,48 @@ void TestQCWebSocket::testSslError()
 
     qDebug() << "Connection succeeded after CA configuration";
     QCOMPARE(connectedSpy.count(), 1);
-    socket2.close();
+    static_cast<void>(socket2.close());
 
     qDebug() << "TLS validation path verified";
+}
+
+void TestQCWebSocket::testSslVerifyInfoFailurePreservesCurlError()
+{
+    QCWebSocket baseline{QUrl(m_testWssServerUrl), QCWebSocketOptions{}};
+    QSignalSpy baselineErrorSpy(&baseline, &QCWebSocket::errorOccurred);
+    static_cast<void>(baseline.open());
+    QVERIFY2(TestWaitUtils::waitForSpyCount(baselineErrorSpy, 1, 15000),
+             qPrintable(QStringLiteral("基线 TLS 失败未发生：%1").arg(baseline.errorString())));
+    const QString expectedCurlError = baseline.errorString();
+    QVERIFY(!expectedCurlError.isEmpty());
+
+    const QByteArray previousFailure = qgetenv("QCURL_TEST_FORCE_GETINFO_ERROR");
+    const auto restoreFailure        = qScopeGuard([previousFailure]() {
+        if (previousFailure.isEmpty()) {
+            qunsetenv("QCURL_TEST_FORCE_GETINFO_ERROR");
+        } else {
+            qputenv("QCURL_TEST_FORCE_GETINFO_ERROR", previousFailure);
+        }
+    });
+    Q_UNUSED(restoreFailure);
+    qputenv("QCURL_TEST_FORCE_GETINFO_ERROR", "CURLINFO_SSL_VERIFYRESULT");
+
+    QCWebSocket socket{QUrl(m_testWssServerUrl), QCWebSocketOptions{}};
+    QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
+    QSignalSpy sslErrorSpy(&socket, &QCWebSocket::sslErrorsDetailed);
+    static_cast<void>(socket.open());
+
+    QVERIFY2(TestWaitUtils::waitForSpyCount(errorSpy, 1, 15000),
+             qPrintable(QStringLiteral("注入 getinfo 失败后未发生 TLS 错误：%1")
+                            .arg(socket.errorString())));
+    QCOMPARE(socket.errorString(), expectedCurlError);
+    QVERIFY(!sslErrorSpy.isEmpty());
+
+    const QStringList diagnostics = sslErrorSpy.first().at(0).toStringList();
+    QVERIFY(diagnostics.contains(QStringLiteral("SSL 验证详细诊断不可用")));
+    for (const QString &diagnostic : diagnostics) {
+        QVERIFY(!diagnostic.contains(QStringLiteral("SSL 验证结果码:")));
+    }
 }
 
 void TestQCWebSocket::testServerClosedConnection()
@@ -915,7 +1727,7 @@ void TestQCWebSocket::testServerClosedConnection()
     QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
              qPrintable(
                  QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
@@ -967,7 +1779,7 @@ void TestQCWebSocket::testServerClosedWithCustomCloseCode()
     QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
     QSignalSpy reconnectSpy(&socket, &QCWebSocket::reconnectAttempt);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
              qPrintable(
                  QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
@@ -1002,14 +1814,17 @@ void TestQCWebSocket::testServerClosedWithReservedCloseCode()
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
     QSignalSpy disconnectedSpy(&socket, &QCWebSocket::disconnected);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
              qPrintable(
                  QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
 
     QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 10000));
     QCOMPARE(closeSpy.count(), 0);
-    QVERIFY(socket.errorString().contains(QStringLiteral("1006")));
+    const QString observedError = errorSpy.first().at(0).toString();
+    QVERIFY2(observedError.contains(QStringLiteral("1006")),
+             qPrintable(QStringLiteral("未观察到保留 close code 诊断，signal=%1 current=%2")
+                            .arg(observedError, socket.errorString())));
     QVERIFY(TestWaitUtils::waitForSpyCount(disconnectedSpy, 1, 10000));
     QCOMPARE(socket.state(), QCWebSocket::State::Closed);
 }
@@ -1020,17 +1835,120 @@ void TestQCWebSocket::testRejectReservedCloseCodeOnSend()
     QSignalSpy connectedSpy(&socket, &QCWebSocket::connected);
     QSignalSpy errorSpy(&socket, &QCWebSocket::errorOccurred);
 
-    socket.open();
+    static_cast<void>(socket.open());
     QVERIFY2(TestWaitUtils::waitForSpyCount(connectedSpy, 1, 10000),
              qPrintable(
                  QStringLiteral("Evidence server connect failed: %1").arg(socket.errorString())));
 
-    socket.close(QCWebSocket::CloseCode::AbnormalClosure, QStringLiteral("reserved"));
-
-    QVERIFY(TestWaitUtils::waitForSpyCount(errorSpy, 1, 1000));
-    QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+    const QList<int> invalidCodes{-1, 0, 999, 1004, 1005, 1006, 1015, 1016, 2999, 5000, 65535};
+    for (const int code : invalidCodes) {
+        const auto result = socket.close(static_cast<QCWebSocket::CloseCode>(code),
+                                         QStringLiteral("invalid"));
+        QCOMPARE(result.status(), QCWebSocketCommandResult::Status::InvalidArgument);
+        QCOMPARE(result.acceptedBytes(), 0);
+        QVERIFY2(result.error().contains(QString::number(code)),
+                 qPrintable(QStringLiteral("close code %1 缺少结果诊断").arg(code)));
+        QCOMPARE(socket.state(), QCWebSocket::State::Connected);
+        QVERIFY(socket.errorString().isEmpty());
+    }
+    QCOMPARE(errorSpy.count(), 0);
 
     socket.abort();
+}
+
+void TestQCWebSocket::testHeaderUnbindFailureRetainsBackingStorage()
+{
+    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:1")), QCWebSocketOptions{}};
+    QCWebSocketPrivate privateData(&socket);
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curlHandle(curl_easy_init(),
+                                                                   &curl_easy_cleanup);
+    QVERIFY(curlHandle != nullptr);
+
+    std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>
+        headers(curl_slist_append(nullptr, "X-QCurl-Test: retained"), &curl_slist_free_all);
+    QVERIFY(headers != nullptr);
+    QCOMPARE(curl_easy_setopt(curlHandle.get(), CURLOPT_HTTPHEADER, headers.get()), CURLE_OK);
+
+    privateData.managedCurlHandle = curlHandle.get();
+    privateData.requestHeaders.reset(headers.release());
+
+    const QByteArray previousFailure = qgetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+    const auto restoreFailure        = qScopeGuard([previousFailure]() {
+        if (previousFailure.isEmpty()) {
+            qunsetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+        } else {
+            qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", previousFailure);
+        }
+    });
+    Q_UNUSED(restoreFailure);
+    qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", "CURLOPT_HTTPHEADER");
+
+    QVERIFY(!privateData.clearRequestHeaders());
+    QVERIFY(privateData.requestHeaders.get() != nullptr);
+
+    qunsetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+    QVERIFY(privateData.clearRequestHeaders());
+    QVERIFY(privateData.requestHeaders.get() == nullptr);
+}
+
+void TestQCWebSocket::testHeaderUnbindFailureDuringTeardownQuarantinesBackingStorage()
+{
+    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:1")), QCWebSocketOptions{}};
+    QCWebSocketPrivate privateData(&socket);
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curlHandle(curl_easy_init(),
+                                                                   &curl_easy_cleanup);
+    QVERIFY(curlHandle != nullptr);
+
+    std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>
+        headers(curl_slist_append(nullptr, "X-QCurl-Test: quarantine"), &curl_slist_free_all);
+    QVERIFY(headers != nullptr);
+    QCOMPARE(curl_easy_setopt(curlHandle.get(), CURLOPT_HTTPHEADER, headers.get()), CURLE_OK);
+
+    privateData.managedCurlHandle = curlHandle.get();
+    privateData.requestHeaders.reset(headers.release());
+    const int initialCount = Internal::quarantinedWebSocketHeaderBackingCountForTest();
+
+    const QByteArray previousFailure = qgetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+    const auto restoreFailure        = qScopeGuard([previousFailure]() {
+        if (previousFailure.isEmpty()) {
+            qunsetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+        } else {
+            qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", previousFailure);
+        }
+    });
+    Q_UNUSED(restoreFailure);
+    qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", "CURLOPT_HTTPHEADER");
+
+    privateData.teardownForDestruction();
+
+    QVERIFY(privateData.requestHeaders.get() == nullptr);
+    QCOMPARE(Internal::quarantinedWebSocketHeaderBackingCountForTest(), initialCount + 1);
+}
+
+void TestQCWebSocket::testPersistentTransferHeaderCleanupExactlyOnce()
+{
+    QCWebSocket socket{QUrl(QStringLiteral("ws://127.0.0.1:1")), QCWebSocketOptions{}};
+    QCWebSocketPrivate privateData(&socket);
+
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curlHandle(curl_easy_init(),
+                                                                   &curl_easy_cleanup);
+    QVERIFY(curlHandle != nullptr);
+
+    std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>
+        headers(curl_slist_append(nullptr, "X-QCurl-Test: once"), &curl_slist_free_all);
+    QVERIFY(headers != nullptr);
+    QCOMPARE(curl_easy_setopt(curlHandle.get(), CURLOPT_HTTPHEADER, headers.get()), CURLE_OK);
+
+    privateData.managedCurlHandle = curlHandle.get();
+    privateData.requestHeaders.reset(headers.release());
+
+    QVERIFY(privateData.clearRequestHeaders());
+    QVERIFY(privateData.requestHeaders.get() == nullptr);
+
+    QVERIFY(privateData.clearRequestHeaders());
+    QVERIFY(privateData.requestHeaders.get() == nullptr);
 }
 
 // ============================================================================

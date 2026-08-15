@@ -26,6 +26,14 @@
  *   服务端握手后主动发送“分片消息”（FIN=0 + continuation），证明 fragmentation 真实发生。
  * - /close?code=1001&reason=bye&case=xxx
  *   服务端握手后主动发送 close(code/reason) 并断开，证明 server-initiated close 可观测。
+ * - /invalid-utf8
+ *   服务端发送非法 UTF-8 文本消息，客户端应以 1007 关闭。
+ * - /ignore-close
+ *   服务端记录但不响应客户端 close，用于验证有界关闭超时。
+ * - /close-once?case=xxx
+ *   同一 case 第一次连接由服务端关闭，第二次连接进入 echo。
+ * - /?pong=match|delay|wrong|none|disconnect&delay_ms=2500&case=xxx
+ *   收到 client Ping 后按固定模式响应，用于证明连接池 keepalive deadline。
  */
 
 const crypto = require('crypto');
@@ -353,6 +361,7 @@ function main() {
   }
 
   let nextConnId = 1;
+  const closeOnceCounts = new Map();
   const handledSockets = new WeakSet();
 
   const handleAcceptedSocket = (socket, sourceEvent) => {
@@ -401,6 +410,18 @@ function main() {
       recordFrame('send', opcode, fin, framePayload, extra);
     };
 
+    const sendFrameInTransportChunks = (opcode, payload, done) => {
+      const framePayload = Buffer.isBuffer(payload) ? payload : Buffer.from(payload || '');
+      const wireFrame = buildWsFrame(opcode, framePayload, true);
+      const splitAt = Math.max(1, Math.min(wireFrame.length - 1, 3));
+      socket.write(wireFrame.subarray(0, splitAt));
+      setTimeout(() => {
+        socket.write(wireFrame.subarray(splitAt));
+        recordFrame('send', opcode, true, framePayload, { transport_chunks: 2 });
+        if (done) done();
+      }, 25);
+    };
+
     const closeWithCode = (code, reason) => {
       if (closeSent) {
         return;
@@ -441,7 +462,75 @@ function main() {
       }
 
       if (frame.opcode === 0x9) {
-        sendFrame(0xA, frame.payload, true);
+        const params = targetInfo.params || {};
+        const hasPongMode = Object.prototype.hasOwnProperty.call(params, 'pong');
+        const pongMode = hasPongMode ? String(params.pong) : 'match';
+        const knownPongModes = new Set(['match', 'delay', 'wrong', 'none', 'disconnect']);
+        if (!knownPongModes.has(pongMode)) {
+          safeJsonlAppend(artifactsStream, {
+            ts: new Date().toISOString(),
+            event: 'scenario_error',
+            connId,
+            case: caseId,
+            error: 'unknown_pong_mode',
+            pong: pongMode,
+          });
+          closeWithCode(1008, `unknown_pong_mode:${pongMode}`);
+          return;
+        }
+
+        if (pongMode === 'match') {
+          sendFrame(0xA, frame.payload, true, { scenario: 'keepalive_match' });
+          return;
+        }
+
+        if (pongMode === 'delay') {
+          const delayMs = Number.parseInt(String((targetInfo.params || {}).delay_ms || ''), 10);
+          if (delayMs !== 2500) {
+            safeJsonlAppend(artifactsStream, {
+              ts: new Date().toISOString(),
+              event: 'scenario_error',
+              connId,
+              case: caseId,
+              error: 'invalid_keepalive_delay',
+              delay_ms: delayMs,
+            });
+            closeWithCode(1008, 'invalid_keepalive_delay');
+            return;
+          }
+          setTimeout(() => {
+            if (!socket.destroyed && !closeSent) {
+              sendFrame(0xA, frame.payload, true, { scenario: 'keepalive_delay' });
+            }
+          }, delayMs);
+          return;
+        }
+
+        if (pongMode === 'wrong') {
+          sendFrame(0xA,
+                    Buffer.concat([frame.payload, Buffer.from('-wrong', 'utf8')]),
+                    true,
+                    { scenario: 'keepalive_wrong' });
+          return;
+        }
+
+        if (pongMode === 'none') {
+          safeJsonlAppend(artifactsStream, {
+            ts: new Date().toISOString(),
+            event: 'scenario_keepalive_no_pong',
+            connId,
+            case: caseId,
+          });
+          return;
+        }
+
+        safeJsonlAppend(artifactsStream, {
+          ts: new Date().toISOString(),
+          event: 'scenario_keepalive_disconnect',
+          connId,
+          case: caseId,
+        });
+        socket.destroy();
         return;
       }
 
@@ -451,6 +540,17 @@ function main() {
 
       if (frame.opcode === 0x8) {
         const parsedClose = parseClosePayload(frame.payload);
+        if (targetInfo && targetInfo.pathname === '/ignore-close') {
+          safeJsonlAppend(artifactsStream, {
+            ts: new Date().toISOString(),
+            event: 'scenario_close_ignored',
+            connId,
+            case: caseId,
+            close_code: parsedClose.code,
+            close_reason: parsedClose.reason,
+          });
+          return;
+        }
         if (!closeSent) {
           closeSent = true;
           const payload = buildClosePayload(parsedClose.code, parsedClose.reason);
@@ -524,9 +624,7 @@ function main() {
     const onData = (chunk) => {
       buf = Buffer.concat([buf, chunk]);
       if (handshakeDone) {
-        if (targetInfo && (targetInfo.pathname === '/' || targetInfo.pathname === '/echo')) {
-          flushWsFrames();
-        }
+        flushWsFrames();
         return;
       }
 
@@ -628,6 +726,79 @@ function main() {
             connId,
             case: caseId,
           });
+          return;
+        }
+
+        if (targetInfo.pathname === '/payload') {
+          const type = String(targetInfo.params.type || 'binary');
+          const totalLen = Math.max(1, Math.min(1024 * 1024, Number.parseInt(String(targetInfo.params.len || '4096'), 10) || 4096));
+          const opcode = (type === 'text') ? 0x1 : 0x2;
+          const payload = Buffer.alloc(totalLen, type === 'text' ? 0x61 : 0x5a);
+          sendFrame(opcode, payload, true);
+          return;
+        }
+
+        if (targetInfo.pathname === '/invalid-utf8') {
+          sendFrame(0x1, Buffer.from([0xc3, 0x28]), true, {
+            scenario: 'invalid_utf8',
+          });
+          return;
+        }
+
+        if (targetInfo.pathname === '/partial-control') {
+          sendFrame(0x1, Buffer.from('hel', 'utf8'), false);
+          setTimeout(() => {
+            sendFrameInTransportChunks(0x9, Buffer.from('partial-ping', 'utf8'), () => {
+              sendFrameInTransportChunks(0xA, Buffer.from('partial-pong', 'utf8'), () => {
+                sendFrame(0x0, Buffer.from('lo', 'utf8'), true);
+                closeSent = true;
+                sendFrameInTransportChunks(0x8,
+                  buildClosePayload(1000, 'partial-close'));
+              });
+            });
+          }, 25);
+          return;
+        }
+
+        if (targetInfo.pathname === '/close-empty') {
+          closeSent = true;
+          sendFrame(0x8, Buffer.alloc(0), true, {
+            close_code: 1005,
+            close_reason: '',
+          });
+          setTimeout(() => {
+            try { socket.end(); } catch (e) { /* ignore */ }
+            try { socket.destroy(); } catch (e) { /* ignore */ }
+          }, 50);
+          return;
+        }
+
+        if (targetInfo.pathname === '/ignore-close') {
+          safeJsonlAppend(artifactsStream, {
+            ts: new Date().toISOString(),
+            event: 'scenario_ignore_close_ready',
+            connId,
+            case: caseId,
+          });
+          flushWsFrames();
+          return;
+        }
+
+        if (targetInfo.pathname === '/close-once') {
+          const count = closeOnceCounts.get(caseId) || 0;
+          closeOnceCounts.set(caseId, count + 1);
+          if (count === 0) {
+            closeWithCode(1001, 'reconnect');
+            return;
+          }
+          safeJsonlAppend(artifactsStream, {
+            ts: new Date().toISOString(),
+            event: 'scenario_close_once_echo_ready',
+            connId,
+            case: caseId,
+            attempt: count + 1,
+          });
+          flushWsFrames();
           return;
         }
 
