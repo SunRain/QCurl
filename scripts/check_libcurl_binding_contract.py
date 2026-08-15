@@ -7,7 +7,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from check_deprecated_curl_apis import strip_comments_and_strings
+try:
+    from .check_deprecated_curl_apis import strip_comments_and_strings
+except ImportError:  # pragma: no cover - 仅支持直接执行脚本时的导入路径
+    from check_deprecated_curl_apis import strip_comments_and_strings
 
 
 SOURCE_SUFFIXES = {
@@ -25,7 +28,9 @@ SOURCE_SUFFIXES = {
 
 EASY_INIT_TOKEN = "curl_easy_init"
 NOSIGNAL_TOKEN = "CURLOPT_NOSIGNAL"
-GLOBAL_INIT_TOKEN = "CurlGlobalConstructor::instance"
+RUNTIME_LEASE_TOKEN = "RuntimeLease"
+RUNTIME_ADMISSION_TOKEN = "acquireRuntimeLease"
+RUNTIME_VALIDATION_TOKEN = "runtimeLease.isValid"
 QT_NETWORK_MANAGER_TOKEN = "QNetworkAccessManager"
 HANDLE_MANAGER_PATH = Path("src/QCCurlHandleManager.cpp")
 
@@ -72,14 +77,20 @@ def collect_forbidden_token_violations(source_root: Path, token: str) -> list[st
 
 
 def check_handle_manager_order(source_root: Path) -> list[str]:
-    """Validate global init and common defaults order inside QCCurlHandleManager."""
+    """Validate runtime admission and common defaults order in the handle manager."""
     path = source_root.parent / HANDLE_MANAGER_PATH
     if not path.exists():
         return [f"{HANDLE_MANAGER_PATH}: missing handle manager source"]
 
-    global_init_lines = line_occurrences(path, GLOBAL_INIT_TOKEN)
     easy_init_lines = line_occurrences(path, EASY_INIT_TOKEN)
     nosignal_lines = line_occurrences(path, NOSIGNAL_TOKEN)
+    lease_lines = line_occurrences(path, RUNTIME_LEASE_TOKEN)
+    admission_lines = line_occurrences(path, RUNTIME_ADMISSION_TOKEN)
+    validation_lines = line_occurrences(path, RUNTIME_VALIDATION_TOKEN)
+    constructor_lines = line_occurrences(path, "QCCurlHandleManager::QCCurlHandleManager")
+    destructor_lines = line_occurrences(path, "QCCurlHandleManager::~QCCurlHandleManager")
+    helper_parameter_lines = line_occurrences(path, "createEasyHandle(const Internal::RuntimeLease")
+    helper_call_lines = line_occurrences(path, "m_curlHandle = createEasyHandle")
     diagnostics: list[str] = []
 
     if len(easy_init_lines) != 1:
@@ -92,17 +103,36 @@ def check_handle_manager_order(source_root: Path) -> list[str]:
             f"{HANDLE_MANAGER_PATH}: expected exactly one {NOSIGNAL_TOKEN}, "
             f"found {len(nosignal_lines)}"
         )
-    if not global_init_lines:
-        diagnostics.append(f"{HANDLE_MANAGER_PATH}: missing {GLOBAL_INIT_TOKEN}")
+    if not lease_lines or not helper_parameter_lines:
+        diagnostics.append(f"{HANDLE_MANAGER_PATH}: createEasyHandle must accept a runtime lease parameter")
+    if not admission_lines:
+        diagnostics.append(f"{HANDLE_MANAGER_PATH}: missing {RUNTIME_ADMISSION_TOKEN}")
+    if not validation_lines:
+        diagnostics.append(f"{HANDLE_MANAGER_PATH}: missing {RUNTIME_VALIDATION_TOKEN}")
 
     if diagnostics or not easy_init_lines:
         return diagnostics
 
     easy_init_line = easy_init_lines[0]
-    if min(global_init_lines, default=sys.maxsize) > easy_init_line:
-        diagnostics.append(
-            f"{HANDLE_MANAGER_PATH}: {GLOBAL_INIT_TOKEN} must precede {EASY_INIT_TOKEN}"
-        )
+    if validation_lines[0] > easy_init_line:
+        diagnostics.append(f"{HANDLE_MANAGER_PATH}: {RUNTIME_VALIDATION_TOKEN} must precede {EASY_INIT_TOKEN}")
+    if constructor_lines and destructor_lines and helper_call_lines:
+        constructor_start = constructor_lines[0]
+        constructor_end = destructor_lines[0]
+        constructor_admissions = [
+            line for line in admission_lines if constructor_start < line < constructor_end
+        ]
+        constructor_calls = [
+            line for line in helper_call_lines if constructor_start < line < constructor_end
+        ]
+        if not constructor_admissions:
+            diagnostics.append(
+                f"{HANDLE_MANAGER_PATH}: {RUNTIME_ADMISSION_TOKEN} must be acquired in the constructor"
+            )
+        elif constructor_calls and constructor_admissions[0] > constructor_calls[0]:
+            diagnostics.append(
+                f"{HANDLE_MANAGER_PATH}: {RUNTIME_ADMISSION_TOKEN} must precede handle creation"
+            )
     if nosignal_lines and nosignal_lines[0] < easy_init_line:
         diagnostics.append(f"{HANDLE_MANAGER_PATH}: {NOSIGNAL_TOKEN} must follow handle creation")
 
@@ -134,7 +164,10 @@ def main(argv: list[str]) -> int:
             print(violation, file=sys.stderr)
         return 1
 
-    print("[libcurl_binding_contract_guard] ok: easy handle creation and NOSIGNAL are centralized")
+    print(
+        "[libcurl_binding_contract_guard] ok: runtime admission, easy handle creation, "
+        "and NOSIGNAL are centralized"
+    )
     return 0
 
 

@@ -6,7 +6,10 @@
 #ifndef QCCURLHANDLEMANAGER_H
 #define QCCURLHANDLEMANAGER_H
 
+#include "private/QCurlRuntimeState_p.h"
+
 #include <QString>
+#include <QtGlobal>
 
 #include <curl/curl.h>
 
@@ -63,7 +66,7 @@ public:
      *
      * 失败时保留已有 header list，不会覆盖为 `nullptr`。
      */
-    void appendHeader(const QString &header);
+    [[nodiscard]] bool appendHeader(const QString &header);
 
     /**
      * @brief 检查句柄是否有效
@@ -72,9 +75,14 @@ public:
      */
     [[nodiscard]] bool isValid() const noexcept { return m_curlHandle != nullptr; }
 
+    /// 返回句柄创建失败诊断；全局初始化失败时与所有入口保持一致。
+    [[nodiscard]] QString initializationError() const { return m_initializationError; }
+
 private:
-    CURL *m_curlHandle       = nullptr; ///< curl easy handle
-    curl_slist *m_headerList = nullptr; ///< HTTP header 列表
+    Internal::RuntimeLease m_runtimeLease; ///< 覆盖 easy/header 对象图的进程运行时 lease。
+    CURL *m_curlHandle       = nullptr;    ///< curl easy handle
+    curl_slist *m_headerList = nullptr;    ///< HTTP header 列表
+    QString m_initializationError;         ///< easy/global 初始化失败诊断
 };
 
 } // namespace QCurl

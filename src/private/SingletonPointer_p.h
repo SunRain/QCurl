@@ -17,7 +17,11 @@
  * 采用 qCallOnce + 原子状态实现一次性初始化，仅供内部单例辅助使用。
  */
 namespace CallOnce {
-enum ECallOnce { CO_Request, CO_InProgress, CO_Finished };
+enum ECallOnce {
+    CO_Request,
+    CO_InProgress,
+    CO_Finished,
+};
 
 Q_GLOBAL_STATIC(QThreadStorage<QBasicAtomicInt>, once_flag)
 } // namespace CallOnce

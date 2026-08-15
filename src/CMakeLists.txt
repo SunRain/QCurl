@@ -1,8 +1,10 @@
 # QCurl 库源文件配置
 
 set(QCURL_CORE_SOURCES
-    CurlGlobalConstructor.cpp
     QCGlobal.cpp
+    QCurlRuntime.cpp
+    private/QCurlRuntimeLease.cpp
+    private/QCurlRuntimeState.cpp
     QCCookie.cpp
     QCCookieAsyncResult.cpp
     QCNetworkAccessManager.cpp
@@ -23,7 +25,8 @@ set(QCURL_CORE_SOURCES
 )
 
 set(QCURL_CORE_HEADERS
-    private/CurlGlobalConstructor_p.h
+    QCurlRuntime.h
+    private/QCurlRuntimeState_p.h
     QCBlockingCookieStore.h
     QCCookie.h
     QCCookieAsyncResult.h
@@ -255,6 +258,7 @@ endforeach()
 # - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入默认安装面
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
+    QCurlRuntime.h
     QCCookie.h
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
