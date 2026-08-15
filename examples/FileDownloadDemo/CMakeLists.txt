@@ -16,6 +16,7 @@ add_executable(FileDownloadDemo
     DownloadManager.h
     DownloadManager.cpp
 )
+qcurl_enable_qt_no_keywords(FileDownloadDemo)
 
 # 链接库
 target_link_libraries(FileDownloadDemo

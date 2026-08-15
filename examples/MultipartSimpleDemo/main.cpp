@@ -139,7 +139,9 @@ int main(int argc, char *argv[])
 
         QCMultipartFormData formData2;
         formData2.addTextField("name", "snapshot-test");
-        formData2.addFileField("bigfile", tempFilePath, "application/octet-stream");
+        if (!formData2.addFileField("bigfile", tempFilePath, "application/octet-stream")) {
+            qWarning() << "添加快照文件失败:" << tempFilePath;
+        }
         QFile::remove(tempFilePath);
 
         QByteArray encoded = formData2.toByteArray();

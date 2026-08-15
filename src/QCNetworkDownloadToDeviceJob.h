@@ -24,6 +24,11 @@ class QCNetworkRequest;
  *
  * 构造函数不启动网络请求。start() 会异步排队执行校验与请求启动，因此无效输入通过任务信号
  * 报告，而不是在构造期间同步失败。
+ *
+ * @note 错误生命周期：设备校验、打开或写入错误进入基类的唯一失败终态；成功时错误为空，
+ * `finished()` 后状态固定，任务不会继续写入设备。
+ * @note QObject 借用合同：`manager` 与 `device` 必须非空，均为 non-owning 借用；调用方须保活
+ * 到任务完成。job、reply、manager 与 device 必须处于同一 owner thread，借用对象销毁后失效。
  */
 class QCURL_EXPORT QCNetworkDownloadToDeviceJob final : public QCNetworkTransferJob
 {
@@ -31,7 +36,6 @@ class QCURL_EXPORT QCNetworkDownloadToDeviceJob final : public QCNetworkTransfer
 
 public:
     ~QCNetworkDownloadToDeviceJob() override;
-    Q_DISABLE_COPY_MOVE(QCNetworkDownloadToDeviceJob)
 
     /**
      * @brief 基于完整请求创建下载任务。
@@ -67,6 +71,8 @@ public:
     void start();
 
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkDownloadToDeviceJob)
+
     /// 在 start() 之后执行校验、reply 创建和信号连接。
     void doStart();
 

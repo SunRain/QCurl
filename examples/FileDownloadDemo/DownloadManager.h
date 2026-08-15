@@ -48,7 +48,7 @@ public:
 
     QList<DownloadTask *> allTasks() const { return m_allTasks; }
 
-signals:
+Q_SIGNALS:
     void taskAdded(DownloadTask *task);
     void taskRemoved(DownloadTask *task);
     void taskStarted(DownloadTask *task);
@@ -56,7 +56,7 @@ signals:
     void taskFailed(DownloadTask *task);
     void queueChanged();
 
-private slots:
+private Q_SLOTS:
     void onTaskStateChanged(DownloadTask::State newState);
     void onTaskFinished();
     void onTaskError(const QString &errorString);

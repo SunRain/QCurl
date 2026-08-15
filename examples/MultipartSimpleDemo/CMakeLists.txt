@@ -17,6 +17,7 @@ set(SOURCES
 
 # 创建可执行文件
 add_executable(MultipartSimpleDemo ${SOURCES})
+qcurl_enable_qt_no_keywords(MultipartSimpleDemo)
 
 # 链接库
 target_link_libraries(MultipartSimpleDemo

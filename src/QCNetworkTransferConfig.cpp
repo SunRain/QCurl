@@ -28,6 +28,7 @@ QStringList normalizedStringList(const QStringList &values)
 
 } // namespace
 
+/// @brief 保存请求传输限制与协议策略的隐式共享配置。
 class QCNetworkTransferConfigData : public QSharedData
 {
 public:
@@ -35,7 +36,7 @@ public:
     QStringList acceptedEncodings;
     std::optional<qint64> maxDownloadBytesPerSec;
     std::optional<qint64> maxUploadBytesPerSec;
-    qint64 backpressureLimitBytes = 0;
+    qint64 backpressureLimitBytes  = 0;
     qint64 backpressureResumeBytes = 0;
     std::optional<std::chrono::milliseconds> expect100ContinueTimeout;
     std::optional<QCNetworkIpResolve> ipResolve;
@@ -81,7 +82,7 @@ QStringList QCNetworkTransferConfig::acceptedEncodings() const
 
 void QCNetworkTransferConfig::setAcceptedEncodings(const QStringList &encodings)
 {
-    d->acceptedEncodings = normalizedStringList(encodings);
+    d->acceptedEncodings        = normalizedStringList(encodings);
     d->autoDecompressionEnabled = !d->acceptedEncodings.isEmpty();
 }
 
@@ -90,15 +91,13 @@ std::optional<qint64> QCNetworkTransferConfig::maxDownloadBytesPerSec() const
     return d->maxDownloadBytesPerSec;
 }
 
-void QCNetworkTransferConfig::setMaxDownloadBytesPerSec(qint64 bytesPerSec)
+QCNetworkConfigUpdateResult QCNetworkTransferConfig::setMaxDownloadBytesPerSec(qint64 bytesPerSec)
 {
     if (bytesPerSec < 0) {
-        qWarning() << "QCNetworkTransferConfig: maxDownloadBytesPerSec must be >= 0, got"
-                   << bytesPerSec << "(ignored)";
-        d->maxDownloadBytesPerSec.reset();
-        return;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     d->maxDownloadBytesPerSec = bytesPerSec > 0 ? std::optional<qint64>(bytesPerSec) : std::nullopt;
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 std::optional<qint64> QCNetworkTransferConfig::maxUploadBytesPerSec() const
@@ -106,15 +105,13 @@ std::optional<qint64> QCNetworkTransferConfig::maxUploadBytesPerSec() const
     return d->maxUploadBytesPerSec;
 }
 
-void QCNetworkTransferConfig::setMaxUploadBytesPerSec(qint64 bytesPerSec)
+QCNetworkConfigUpdateResult QCNetworkTransferConfig::setMaxUploadBytesPerSec(qint64 bytesPerSec)
 {
     if (bytesPerSec < 0) {
-        qWarning() << "QCNetworkTransferConfig: maxUploadBytesPerSec must be >= 0, got"
-                   << bytesPerSec << "(ignored)";
-        d->maxUploadBytesPerSec.reset();
-        return;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     d->maxUploadBytesPerSec = bytesPerSec > 0 ? std::optional<qint64>(bytesPerSec) : std::nullopt;
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 qint64 QCNetworkTransferConfig::backpressureLimitBytes() const noexcept
@@ -122,12 +119,14 @@ qint64 QCNetworkTransferConfig::backpressureLimitBytes() const noexcept
     return d->backpressureLimitBytes;
 }
 
-void QCNetworkTransferConfig::setBackpressureLimitBytes(qint64 bytes)
+QCNetworkConfigUpdateResult QCNetworkTransferConfig::setBackpressureLimitBytes(qint64 bytes)
 {
     if (bytes < 0) {
-        qWarning() << "QCNetworkTransferConfig: backpressureLimitBytes must be >= 0, got"
-                   << bytes << "(ignored)";
-        bytes = 0;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
+    }
+    if (bytes > 0 && d->backpressureResumeBytes > 0
+        && d->backpressureResumeBytes >= bytes) {
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     if (bytes > 0 && bytes < 16 * 1024) {
         qWarning() << "QCNetworkTransferConfig: backpressureLimitBytes is very small:" << bytes
@@ -137,6 +136,7 @@ void QCNetworkTransferConfig::setBackpressureLimitBytes(qint64 bytes)
     if (bytes <= 0) {
         d->backpressureResumeBytes = 0;
     }
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 qint64 QCNetworkTransferConfig::backpressureResumeBytes() const noexcept
@@ -144,21 +144,17 @@ qint64 QCNetworkTransferConfig::backpressureResumeBytes() const noexcept
     return d->backpressureResumeBytes;
 }
 
-void QCNetworkTransferConfig::setBackpressureResumeBytes(qint64 bytes)
+QCNetworkConfigUpdateResult QCNetworkTransferConfig::setBackpressureResumeBytes(qint64 bytes)
 {
     if (bytes < 0) {
-        qWarning() << "QCNetworkTransferConfig: backpressureResumeBytes must be >= 0, got"
-                   << bytes << "(ignored)";
-        bytes = 0;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     const qint64 limit = d->backpressureLimitBytes;
     if (limit > 0 && bytes > 0 && bytes >= limit) {
-        qWarning()
-            << "QCNetworkTransferConfig: backpressureResumeBytes must be < backpressureLimitBytes,"
-            << "got" << bytes << "(limit=" << limit << "; use default limit/2)";
-        bytes = 0;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     d->backpressureResumeBytes = bytes;
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 std::optional<std::chrono::milliseconds> QCNetworkTransferConfig::expect100ContinueTimeout() const
@@ -166,15 +162,14 @@ std::optional<std::chrono::milliseconds> QCNetworkTransferConfig::expect100Conti
     return d->expect100ContinueTimeout;
 }
 
-void QCNetworkTransferConfig::setExpect100ContinueTimeout(std::chrono::milliseconds timeout)
+QCNetworkConfigUpdateResult QCNetworkTransferConfig::setExpect100ContinueTimeout(
+    std::chrono::milliseconds timeout)
 {
     if (timeout.count() < 0) {
-        qWarning() << "QCNetworkTransferConfig: expect100ContinueTimeout must be >= 0, got"
-                   << timeout.count() << "(ignored)";
-        d->expect100ContinueTimeout.reset();
-        return;
+        return QCNetworkConfigUpdateResult::InvalidArgument;
     }
     d->expect100ContinueTimeout = timeout;
+    return QCNetworkConfigUpdateResult::Applied;
 }
 
 std::optional<QCNetworkIpResolve> QCNetworkTransferConfig::ipResolve() const
@@ -185,7 +180,7 @@ std::optional<QCNetworkIpResolve> QCNetworkTransferConfig::ipResolve() const
 void QCNetworkTransferConfig::setIpResolve(QCNetworkIpResolve resolve)
 {
     d->ipResolve = resolve == QCNetworkIpResolve::Any ? std::nullopt
-                                                       : std::optional<QCNetworkIpResolve>(resolve);
+                                                      : std::optional<QCNetworkIpResolve>(resolve);
 }
 
 std::optional<QStringList> QCNetworkTransferConfig::allowedProtocols() const

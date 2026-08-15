@@ -7,12 +7,17 @@
 
 namespace QCurl {
 
+/**
+ * @brief 保存传输任务的底层回复和一次性终态。
+ *
+ * reply 仅通过 QPointer 观察；finished 一旦置位，后续完成或失败通知将被忽略。
+ */
 class QCNetworkTransferJobPrivate
 {
 public:
-    QPointer<QCNetworkReply> reply;
-    bool finished         = false;
-    NetworkError error    = NetworkError::NoError;
+    QPointer<QCNetworkReply> reply; ///< 仅观察 manager 持有的底层回复。
+    bool finished      = false;     ///< 一次性终态门闩，阻止重复通知。
+    NetworkError error = NetworkError::NoError;
     QString errorString;
 };
 
@@ -74,8 +79,8 @@ void QCNetworkTransferJob::fail(NetworkError errorCode, const QString &message)
     d->finished    = true;
     d->error       = errorCode;
     d->errorString = message;
-    emit failed(errorCode, message);
-    emit finished();
+    Q_EMIT failed(errorCode, message);
+    Q_EMIT finished();
 }
 
 void QCNetworkTransferJob::finish()
@@ -88,7 +93,7 @@ void QCNetworkTransferJob::finish()
     d->finished = true;
     d->error    = NetworkError::NoError;
     d->errorString.clear();
-    emit finished();
+    Q_EMIT finished();
 }
 
 void QCNetworkTransferJob::finishFromReply(QCNetworkReply *reply)

@@ -24,6 +24,11 @@ class QCNetworkTransferJobPrivate;
  * 不启动网络、不读写目标、不创建 reply。每个任务只发出一次 finished()；失败时先发出
  * failed()，再发出 finished()。底层 reply 仍由调用方按 Qt 生命周期在合适线程
  * deleteLater()。
+ *
+ * @note 错误生命周期：任务开始时没有错误；首次终态确定 `error()` 与 `errorString()`，
+ * 成功时分别为 `NoError` 和空字符串，失败时错误码为权威分类。`finished()` 发出后状态固定。
+ * @note QObject 借用合同：`reply()` 返回可空、non-owning 借用；reply 销毁会使借用失效并
+ * 触发任务清理。job、reply 与可选 parent 必须处于同一 owner thread。
  */
 class QCURL_EXPORT QCNetworkTransferJob : public QObject
 {
@@ -76,6 +81,8 @@ protected:
     void failBecauseReplyDestroyed();
 
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkTransferJob)
+
     Q_DECLARE_PRIVATE(QCNetworkTransferJob)
     QScopedPointer<QCNetworkTransferJobPrivate> d_ptr;
 };

@@ -52,14 +52,14 @@ public:
     void resume(); ///< 恢复下载
     void cancel(); ///< 取消下载
 
-signals:
+Q_SIGNALS:
     void stateChanged(DownloadTask::State newState);
     void progressChanged(qint64 bytesReceived, qint64 bytesTotal, double percentage);
     void speedChanged(double bytesPerSecond);
     void finished();
     void error(const QString &errorString);
 
-private slots:
+private Q_SLOTS:
     void onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
     void onFinished();
     void onError(QCurl::NetworkError errorCode);

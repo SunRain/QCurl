@@ -16,13 +16,18 @@
 
 namespace QCurl {
 
+/**
+ * @brief 保存下载到设备任务的借用对象和延迟启动状态。
+ *
+ * manager 与 device 均通过 QPointer 观察；实际启动排入任务对象所属线程的事件循环。
+ */
 class QCNetworkDownloadToDeviceJobPrivate
 {
 public:
-    QPointer<QCNetworkAccessManager> manager;
+    QPointer<QCNetworkAccessManager> manager; ///< 仅观察调用方持有的 manager。
     QCNetworkRequest request;
-    QPointer<QIODevice> device;
-    bool startRequested = false;
+    QPointer<QIODevice> device;  ///< 仅观察调用方持有的目标设备。
+    bool startRequested = false; ///< 防止重复排入事件循环。
 };
 
 namespace {
@@ -49,6 +54,11 @@ QString invalidDeviceMessage()
 QString noEventLoopMessage()
 {
     return QStringLiteral("QCNetworkDownloadToDeviceJob: owner 线程缺少 Qt 事件循环，无法排队启动");
+}
+
+QString deviceDestroyedMessage()
+{
+    return QStringLiteral("QCNetworkDownloadToDeviceJob: 目标 QIODevice 在传输中被销毁");
 }
 
 } // namespace
@@ -146,22 +156,27 @@ void QCNetworkDownloadToDeviceJob::doStart()
     }
 
     QPointer<QIODevice> safeDevice(device);
-    QObject::connect(device, &QObject::destroyed, networkReply, [networkReply]() {
-        networkReply
-            ->abortWithError(NetworkError::InvalidRequest,
-                             QStringLiteral(
-                                 "QCNetworkDownloadToDeviceJob: 目标 QIODevice 在传输中被销毁"));
+    QPointer<QCNetworkReply> safeReply(networkReply);
+    QPointer<QCNetworkDownloadToDeviceJob> safeJob(this);
+    QObject::connect(device, &QObject::destroyed, networkReply, [safeReply, safeJob]() {
+        const QString message = deviceDestroyedMessage();
+        // Commit the job-level result before reply teardown can make the generic
+        // reply-destroyed observer report OperationCancelled.
+        if (safeJob) {
+            safeJob->fail(NetworkError::InvalidRequest, message);
+        }
+        if (safeReply) {
+            safeReply->abortWithError(NetworkError::InvalidRequest, message);
+        }
     });
 
     QObject::connect(networkReply,
                      &QCNetworkReply::downloadProgress,
                      this,
-                     [this](qint64 received, qint64 total) { emit progress(received, total); });
+                     [this](qint64 received, qint64 total) { Q_EMIT progress(received, total); });
     QObject::connect(networkReply, &QCNetworkReply::readyRead, this, [networkReply, safeDevice]() {
         if (!safeDevice) {
-            networkReply->abortWithError(
-                NetworkError::InvalidRequest,
-                QStringLiteral("QCNetworkDownloadToDeviceJob: 目标 QIODevice 在传输中被销毁"));
+            networkReply->abortWithError(NetworkError::InvalidRequest, deviceDestroyedMessage());
             return;
         }
         if (!safeDevice->isWritable()) {

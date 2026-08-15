@@ -9,6 +9,7 @@
 
 namespace QCurl {
 
+/// @brief 保存 QCNetworkBody 的隐式共享请求体数据。
 class QCNetworkBodyData : public QSharedData
 {
 public:

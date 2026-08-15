@@ -102,7 +102,7 @@ void DownloadTask::setState(State newState)
 {
     if (m_state != newState) {
         m_state = newState;
-        emit stateChanged(m_state);
+        Q_EMIT stateChanged(m_state);
     }
 }
 
@@ -172,7 +172,7 @@ void DownloadTask::startDownloadInternal(qint64 rangeStart)
 
     if (!m_file->open(mode)) {
         m_errorString = QStringLiteral("无法打开文件: %1").arg(m_file->errorString());
-        emit error(m_errorString);
+        Q_EMIT error(m_errorString);
         setState(State::Failed);
         delete m_file;
         m_file = nullptr;
@@ -213,7 +213,7 @@ void DownloadTask::onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
     // 更新下载速度
     updateDownloadSpeed();
 
-    emit progressChanged(m_bytesReceived, m_bytesTotal, progress());
+    Q_EMIT progressChanged(m_bytesReceived, m_bytesTotal, progress());
 }
 
 void DownloadTask::onFinished()
@@ -222,7 +222,7 @@ void DownloadTask::onFinished()
 
     if (m_state == State::Downloading) {
         setState(State::Completed);
-        emit finished();
+        Q_EMIT finished();
     }
 
     if (m_reply) {
@@ -240,7 +240,7 @@ void DownloadTask::onError(QCurl::NetworkError errorCode)
     cleanup();
     setState(State::Failed);
 
-    emit error(m_errorString);
+    Q_EMIT error(m_errorString);
 
     if (m_reply) {
         m_reply->deleteLater();
@@ -256,7 +256,7 @@ void DownloadTask::updateDownloadSpeed()
         double seconds         = elapsed / 1000.0;
         m_downloadSpeed        = bytesDownloaded / seconds;
 
-        emit speedChanged(m_downloadSpeed);
+        Q_EMIT speedChanged(m_downloadSpeed);
 
         m_lastBytesReceived = m_bytesReceived;
         m_speedTimer.restart();

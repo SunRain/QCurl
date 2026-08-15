@@ -26,8 +26,13 @@ class QCNetworkMultipartBodyPrivate;
 /**
  * @brief 持有已准备好的 multipart/form-data 请求体。
  *
- * 请求体可持有完整内存编码结果，也可持有为单文件字段生成的流式 QIODevice。流式设备
- * 通过 takeDevice() 转移给发送路径，类型自身不暴露内部存储布局。
+ * 请求体可持有完整内存编码结果，也可持有单文件字段的纯值元数据和借用 source observer。
+ * 流式 wrapper 仅在 takeDevice() 的 owner thread 内创建并转移，movable 请求体自身不拥有
+ * 具有 thread affinity 的 QObject。
+ *
+ * @note QObject 借用合同：source device 必须非空，由调用方保活且不转移所有权；
+ * source 析构或 affinity 变化会使借用失效。`takeDevice()` 成功后 wrapper 由非空 parent
+ * 的 QObject tree 拥有；parent 为空时由调用方在源设备线程负责销毁。
  */
 class QCURL_EXPORT QCNetworkMultipartBody final
 {
@@ -57,22 +62,22 @@ public:
      * @param error 可选错误输出；返回空值时写入构造失败原因。
      * @return 构造成功的请求体；源设备不可用时返回空值。
      *
-     * 返回对象只持有生成的包装设备，不接管源 `device` 所有权。调用方必须保证源设备在请求
-     * 结束前保持存活、可读、可 seek，且 thread affinity 不变。包装设备发送时仍会按
-     * QIODevice 线程规则拒绝跨线程读取。
+     * 本函数必须在源 `device` 的 owner thread 调用。返回对象只通过 QPointer 借用源设备，
+     * 不创建包装设备也不接管源设备所有权。调用方必须保证源设备在 takeDevice() 和请求结束前
+     * 保持存活、可读、可 seek，且 thread affinity 不变；提前析构或 affinity 改变会被确定性拒绝。
      */
     [[nodiscard]] static std::optional<QCNetworkMultipartBody> fromSingleFileDevice(
         QIODevice *device,
         QAnyStringView fieldName,
         QAnyStringView fileName,
-        QAnyStringView mimeType = {},
+        QAnyStringView mimeType         = {},
         std::optional<qint64> sizeBytes = std::nullopt,
-        QString *error = nullptr);
+        QString *error                  = nullptr);
 
     /// 返回非流式 multipart 请求体的内存载荷。
     [[nodiscard]] QByteArray data() const;
 
-    /// 返回生成的流式设备；内存请求体返回 nullptr。
+    /// 兼容查询入口；流式描述在 takeDevice() 内直接创建并转移 wrapper，因此返回 nullptr。
     [[nodiscard]] QIODevice *device() const noexcept;
 
     /// 返回包含 boundary 参数的 multipart Content-Type。
@@ -83,20 +88,20 @@ public:
 
     /**
      * @brief 转移生成的流式包装设备所有权。
-     * @param parent 可选 QObject parent；非空时必须与包装设备处于同一线程。
-     * @return 已转移所有权的包装设备；无流式设备或 parent 线程不匹配时返回 nullptr。
+     * @param parent 可选 QObject parent；非空时必须与源设备处于同一线程。
+     * @return 已转移所有权的包装设备；无流式描述或 owner-thread 校验失败时返回 nullptr。
      *
-     * 返回值是 QCurl 生成的 wrapper device，不是调用方传入的 source device。传入 parent 后，
-     * wrapper device 会挂接到该 parent；parent 为空时调用方负责在 wrapper 所在线程销毁，
-     * 跨线程销毁应使用 deleteLater() 且目标线程需要事件循环。
+     * 本函数必须在源设备的 owner thread 调用。返回值是 QCurl 生成的 wrapper device，不是调用方
+     * 传入的 source device。非空 parent 通过构造函数立即取得 wrapper 所有权；parent 为空时，
+     * 调用方负责在源设备线程完成后续 parent 移交或销毁。
      */
     [[nodiscard]] QIODevice *takeDevice(QObject *parent = nullptr);
 
     /**
      * @brief 转移生成的流式包装设备所有权，并返回可诊断错误。
-     * @param parent 可选 QObject parent；非空时必须与包装设备处于同一线程。
+     * @param parent 可选 QObject parent；非空时必须与源设备处于同一线程。
      * @param error 可选错误输出；返回 nullptr 时写入失败原因。
-     * @return 已转移所有权的包装设备；失败时返回 nullptr。
+     * @return 已转移所有权的包装设备；source 已失效或 owner-thread 校验失败时返回 nullptr。
      */
     [[nodiscard]] QIODevice *takeDevice(QObject *parent, QString *error);
 

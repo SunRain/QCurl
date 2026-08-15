@@ -163,11 +163,11 @@ void QCMultipartFormData::addFileField(const QString &fieldName,
                                        const QString &mimeType)
 {
     QCMultipartField field;
-    field.name       = fieldName;
-    field.fileName   = fileName;
-    field.fileData   = fileData;
-    field.mimeType   = mimeType.isEmpty() ? QStringLiteral("application/octet-stream") : mimeType;
-    field.isFile     = true;
+    field.name     = fieldName;
+    field.fileName = fileName;
+    field.fileData = fileData;
+    field.mimeType = mimeType.isEmpty() ? QStringLiteral("application/octet-stream") : mimeType;
+    field.isFile   = true;
 
     d->fields.append(field);
     d->dirty = true;

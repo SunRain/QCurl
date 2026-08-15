@@ -22,6 +22,11 @@ class QCNetworkResumableDownloadJobPrivate;
  *
  * 调用 start() 后，当 `overwrite` 为 false 且目标文件已存在时，任务会发送 `Range: bytes=N-`。只有服务端
  * 返回匹配本地大小的 206 Content-Range 时才追加写入；范围不匹配会失败，避免污染目标文件。
+ *
+ * @note 错误生命周期：resume 校验、文件打开、写入或提交失败进入基类的唯一失败终态；
+ * 成功时错误为空，`finished()` 后状态固定。失败不会发布未完整提交的新目标文件。
+ * @note QObject 借用合同：`manager` 必须非空且由调用方保活到任务完成；job 不拥有 manager。
+ * job、manager 与 reply 必须处于同一 owner thread，manager 销毁后借用立即失效。
  */
 class QCURL_EXPORT QCNetworkResumableDownloadJob final : public QCNetworkTransferJob
 {
@@ -29,7 +34,6 @@ class QCURL_EXPORT QCNetworkResumableDownloadJob final : public QCNetworkTransfe
 
 public:
     ~QCNetworkResumableDownloadJob() override;
-    Q_DISABLE_COPY_MOVE(QCNetworkResumableDownloadJob)
 
     /**
      * @brief 基于完整请求创建断点续传下载任务。
@@ -42,7 +46,7 @@ public:
     explicit QCNetworkResumableDownloadJob(QCNetworkAccessManager *manager,
                                            const QCNetworkRequest &request,
                                            const QString &savePath,
-                                           bool overwrite = false,
+                                           bool overwrite  = false,
                                            QObject *parent = nullptr);
 
     /**
@@ -56,7 +60,7 @@ public:
     explicit QCNetworkResumableDownloadJob(QCNetworkAccessManager *manager,
                                            const QUrl &url,
                                            const QString &savePath,
-                                           bool overwrite = false,
+                                           bool overwrite  = false,
                                            QObject *parent = nullptr);
 
     /**
@@ -76,8 +80,16 @@ public:
     [[nodiscard]] qint64 existingSize() const noexcept;
 
 private:
+    Q_DISABLE_COPY_MOVE(QCNetworkResumableDownloadJob)
+
     /// 在 start() 之后执行校验、Range 计算、reply 创建和信号连接。
     void doStart();
+
+    /**
+     * @brief 在 job owner thread 提交或取消唯一 writer 后传播 reply 终态。
+     * @param reply 当前任务关联的非 owning reply 借用。
+     */
+    void handleReplyFinished(QCNetworkReply *reply);
 
     Q_DECLARE_PRIVATE(QCNetworkResumableDownloadJob)
     QScopedPointer<QCNetworkResumableDownloadJobPrivate> d_ptr;

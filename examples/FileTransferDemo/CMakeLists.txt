@@ -12,6 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core)
 add_executable(FileTransferDemo
     main.cpp
 )
+qcurl_enable_qt_no_keywords(FileTransferDemo)
 
 target_link_libraries(FileTransferDemo
     PRIVATE

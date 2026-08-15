@@ -32,14 +32,14 @@ DownloadTask *DownloadManager::addDownload(const QUrl &url, const QString &saveP
     connect(task, &DownloadTask::error, this, &DownloadManager::onTaskError);
 
     m_allTasks.append(task);
-    emit taskAdded(task);
+    Q_EMIT taskAdded(task);
 
     // 如果有空闲槽位,立即开始下载;否则加入队列
     if (m_runningTasks.size() < m_maxConcurrentDownloads) {
         startTask(task);
     } else {
         m_queuedTasks.enqueue(task);
-        emit queueChanged();
+        Q_EMIT queueChanged();
     }
 
     return task;
@@ -56,7 +56,7 @@ void DownloadManager::removeTask(DownloadTask *task)
     m_runningTasks.removeOne(task);
     m_queuedTasks.removeOne(task);
 
-    emit taskRemoved(task);
+    Q_EMIT taskRemoved(task);
 
     // 删除任务
     task->cancel();
@@ -94,7 +94,7 @@ void DownloadManager::clearAll()
     m_runningTasks.clear();
     m_queuedTasks.clear();
 
-    emit queueChanged();
+    Q_EMIT queueChanged();
 }
 
 void DownloadManager::pauseAll()
@@ -116,7 +116,7 @@ void DownloadManager::resumeAll()
             }
         }
     }
-    emit queueChanged();
+    Q_EMIT queueChanged();
 }
 
 void DownloadManager::cancelAll()
@@ -127,7 +127,7 @@ void DownloadManager::cancelAll()
 
     m_runningTasks.clear();
     m_queuedTasks.clear();
-    emit queueChanged();
+    Q_EMIT queueChanged();
 }
 
 int DownloadManager::completedCount() const
@@ -164,15 +164,15 @@ void DownloadManager::onTaskStateChanged(DownloadTask::State newState)
         if (!m_runningTasks.contains(task)) {
             m_runningTasks.append(task);
             m_queuedTasks.removeOne(task);
-            emit taskStarted(task);
-            emit queueChanged();
+            Q_EMIT taskStarted(task);
+            Q_EMIT queueChanged();
         }
     } else if (newState == DownloadTask::State::Completed || newState == DownloadTask::State::Failed
                || newState == DownloadTask::State::Cancelled) {
         // 任务结束
         m_runningTasks.removeOne(task);
         m_queuedTasks.removeOne(task);
-        emit queueChanged();
+        Q_EMIT queueChanged();
 
         // 处理队列中的下一个任务
         processQueue();
@@ -183,7 +183,7 @@ void DownloadManager::onTaskFinished()
 {
     auto *task = qobject_cast<DownloadTask *>(sender());
     if (task) {
-        emit taskCompleted(task);
+        Q_EMIT taskCompleted(task);
     }
 }
 
@@ -192,7 +192,7 @@ void DownloadManager::onTaskError(const QString &errorString)
     auto *task = qobject_cast<DownloadTask *>(sender());
     if (task) {
         qWarning() << "Task failed:" << task->url() << "-" << errorString;
-        emit taskFailed(task);
+        Q_EMIT taskFailed(task);
     }
 }
 

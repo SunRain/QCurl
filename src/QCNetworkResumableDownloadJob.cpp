@@ -15,6 +15,8 @@
 #include <QTimer>
 #include <QVariant>
 
+#include <memory>
+
 namespace QCurl {
 namespace {
 
@@ -26,15 +28,21 @@ QString noEventLoopMessage()
 
 } // namespace
 
+/**
+ * @brief 保存断点续传任务的目标、策略和延迟启动状态。
+ *
+ * manager 仅被观察；启动与 reply 信号处理均依赖任务对象所属线程的事件循环。
+ */
 class QCNetworkResumableDownloadJobPrivate
 {
 public:
-    QPointer<QCNetworkAccessManager> manager;
+    QPointer<QCNetworkAccessManager> manager; ///< 仅观察调用方持有的 manager。
     QCNetworkRequest request;
     QString savePath;
     bool overwrite      = false;
-    bool startRequested = false;
-    qint64 existingSize = 0;
+    bool startRequested = false; ///< 防止重复排入事件循环。
+    qint64 existingSize = 0;     ///< 发起 Range 请求前记录的本地文件长度。
+    std::unique_ptr<Internal::ResumableDownloadWriter> writer;
 };
 
 QCNetworkResumableDownloadJob::QCNetworkResumableDownloadJob(QCNetworkAccessManager *manager,
@@ -118,47 +126,40 @@ void QCNetworkResumableDownloadJob::doStart()
                                                                     Internal::makeEmptyRequestBody(),
                                                                     QByteArray(),
                                                                     middlewaresSnapshot);
-    setReply(networkReply);
     if (!networkReply) {
         fail(NetworkError::InvalidRequest,
              QStringLiteral("QCNetworkResumableDownloadJob: 无法创建 reply"));
         return;
     }
 
+    d->writer = std::make_unique<Internal::ResumableDownloadWriter>(d->savePath,
+                                                                    d->existingSize,
+                                                                    hadExistingFile);
+    QObject::connect(networkReply, &QObject::destroyed, this, [this]() {
+        Q_D(QCNetworkResumableDownloadJob);
+        d->writer.reset();
+    });
+    setReply(networkReply);
+
     networkReply->setProperty("_qcurl_resumable_existing_size",
                               QVariant::fromValue(d->existingSize));
 
-    auto context = Internal::makeResumableDownloadWriteContext(d->savePath);
-
-    const QString targetPath  = d->savePath;
-    const qint64 existingSize = d->existingSize;
     QObject::connect(networkReply,
                      &QCNetworkReply::downloadProgress,
                      this,
-                     [this](qint64 received, qint64 total) { emit progress(received, total); });
-    QObject::connect(networkReply,
-                     &QCNetworkReply::readyRead,
-                     this,
-                     [networkReply, context, targetPath, existingSize, hadExistingFile]() {
-                         Internal::writeResumableDownloadChunk(networkReply,
-                                                               context,
-                                                               targetPath,
-                                                               existingSize,
-                                                               hadExistingFile);
-                     });
-    QObject::connect(networkReply,
-                     &QCNetworkReply::finished,
-                     this,
-                     [this, networkReply, context, targetPath, existingSize, hadExistingFile]() {
-                         if (const auto commitError = Internal::commitResumableDownloadIfNeeded(
-                                 networkReply, context, targetPath, existingSize, hadExistingFile);
-                             commitError.has_value()) {
-                             fail(NetworkError::InvalidRequest, commitError.value());
-                             return;
-                         }
-
-                         finishFromReply(networkReply);
-                     });
+                     [this](qint64 received, qint64 total) { Q_EMIT progress(received, total); });
+    QObject::connect(networkReply, &QCNetworkReply::readyRead, this, [this, networkReply]() {
+        Q_D(QCNetworkResumableDownloadJob);
+        if (!d->writer || isFinished()) {
+            return;
+        }
+        if (const auto error = d->writer->writeChunk(networkReply); error.has_value()) {
+            networkReply->abortWithError(NetworkError::InvalidRequest, error.value());
+        }
+    });
+    QObject::connect(networkReply, &QCNetworkReply::finished, this, [this, networkReply]() {
+        handleReplyFinished(networkReply);
+    });
     if (networkReply->isFinished()) {
         // 保留构造后再连接信号也能收到终态的使用合同。
         QPointer<QCNetworkReply> safeReply(networkReply);
@@ -168,7 +169,7 @@ void QCNetworkResumableDownloadJob::doStart()
                 if (isFinished() || !safeReply) {
                     return;
                 }
-                finishFromReply(safeReply.data());
+                handleReplyFinished(safeReply.data());
             },
             Qt::QueuedConnection);
     }
@@ -176,7 +177,35 @@ void QCNetworkResumableDownloadJob::doStart()
     managerPrivate->startPreparedReply(networkReply, preparedRequest);
 }
 
-QCNetworkResumableDownloadJob::~QCNetworkResumableDownloadJob() = default;
+QCNetworkResumableDownloadJob::~QCNetworkResumableDownloadJob()
+{
+    Q_D(QCNetworkResumableDownloadJob);
+    Q_ASSERT(QThread::currentThread() == thread());
+    if (auto *networkReply = reply()) {
+        QObject::disconnect(networkReply, nullptr, this, nullptr);
+    }
+    d->writer.reset();
+}
+
+void QCNetworkResumableDownloadJob::handleReplyFinished(QCNetworkReply *networkReply)
+{
+    Q_D(QCNetworkResumableDownloadJob);
+    if (isFinished()) {
+        d->writer.reset();
+        return;
+    }
+
+    std::optional<QString> commitError;
+    if (d->writer) {
+        commitError = d->writer->commitIfNeeded(networkReply);
+    }
+    d->writer.reset();
+    if (commitError.has_value()) {
+        fail(NetworkError::InvalidRequest, commitError.value());
+        return;
+    }
+    finishFromReply(networkReply);
+}
 
 QString QCNetworkResumableDownloadJob::savePath() const
 {

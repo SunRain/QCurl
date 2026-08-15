@@ -49,10 +49,9 @@ QStringList QCNetworkRequest::acceptedEncodings() const
     return d.constData()->transferConfig.acceptedEncodings();
 }
 
-QCNetworkRequest &QCNetworkRequest::setMaxDownloadBytesPerSec(qint64 bytesPerSec)
+QCNetworkConfigUpdateResult QCNetworkRequest::setMaxDownloadBytesPerSec(qint64 bytesPerSec)
 {
-    d.data()->transferConfig.setMaxDownloadBytesPerSec(bytesPerSec);
-    return *this;
+    return d.data()->transferConfig.setMaxDownloadBytesPerSec(bytesPerSec);
 }
 
 std::optional<qint64> QCNetworkRequest::maxDownloadBytesPerSec() const
@@ -60,10 +59,9 @@ std::optional<qint64> QCNetworkRequest::maxDownloadBytesPerSec() const
     return d.constData()->transferConfig.maxDownloadBytesPerSec();
 }
 
-QCNetworkRequest &QCNetworkRequest::setMaxUploadBytesPerSec(qint64 bytesPerSec)
+QCNetworkConfigUpdateResult QCNetworkRequest::setMaxUploadBytesPerSec(qint64 bytesPerSec)
 {
-    d.data()->transferConfig.setMaxUploadBytesPerSec(bytesPerSec);
-    return *this;
+    return d.data()->transferConfig.setMaxUploadBytesPerSec(bytesPerSec);
 }
 
 std::optional<qint64> QCNetworkRequest::maxUploadBytesPerSec() const
@@ -71,10 +69,9 @@ std::optional<qint64> QCNetworkRequest::maxUploadBytesPerSec() const
     return d.constData()->transferConfig.maxUploadBytesPerSec();
 }
 
-QCNetworkRequest &QCNetworkRequest::setBackpressureLimitBytes(qint64 bytes)
+QCNetworkConfigUpdateResult QCNetworkRequest::setBackpressureLimitBytes(qint64 bytes)
 {
-    d.data()->transferConfig.setBackpressureLimitBytes(bytes);
-    return *this;
+    return d.data()->transferConfig.setBackpressureLimitBytes(bytes);
 }
 
 qint64 QCNetworkRequest::backpressureLimitBytes() const noexcept
@@ -82,10 +79,9 @@ qint64 QCNetworkRequest::backpressureLimitBytes() const noexcept
     return d.constData()->transferConfig.backpressureLimitBytes();
 }
 
-QCNetworkRequest &QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
+QCNetworkConfigUpdateResult QCNetworkRequest::setBackpressureResumeBytes(qint64 bytes)
 {
-    d.data()->transferConfig.setBackpressureResumeBytes(bytes);
-    return *this;
+    return d.data()->transferConfig.setBackpressureResumeBytes(bytes);
 }
 
 qint64 QCNetworkRequest::backpressureResumeBytes() const noexcept
@@ -93,10 +89,10 @@ qint64 QCNetworkRequest::backpressureResumeBytes() const noexcept
     return d.constData()->transferConfig.backpressureResumeBytes();
 }
 
-QCNetworkRequest &QCNetworkRequest::setExpect100ContinueTimeout(std::chrono::milliseconds timeout)
+QCNetworkConfigUpdateResult QCNetworkRequest::setExpect100ContinueTimeout(
+    std::chrono::milliseconds timeout)
 {
-    d.data()->transferConfig.setExpect100ContinueTimeout(timeout);
-    return *this;
+    return d.data()->transferConfig.setExpect100ContinueTimeout(timeout);
 }
 
 std::optional<std::chrono::milliseconds> QCNetworkRequest::expect100ContinueTimeout() const

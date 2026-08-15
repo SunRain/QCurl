@@ -64,7 +64,7 @@ public:
         showMenu();
     }
 
-private slots:
+private Q_SLOTS:
     void setupSignals()
     {
         // 任务添加信号

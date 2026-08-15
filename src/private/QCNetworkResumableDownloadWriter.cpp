@@ -1,24 +1,30 @@
+#include "QCNetworkReply.h"
 #include "private/QCNetworkResumableDownloadWriter_p.h"
 
-#include "QCNetworkError.h"
-#include "QCNetworkReply.h"
-
-#include <QFile>
 #include <QIODevice>
-#include <QSaveFile>
+#include <QThread>
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+#include <atomic>
+#endif
 
 namespace QCurl::Internal {
 namespace {
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+std::atomic<int> s_activeWriterCount{0};
+std::atomic<QThread *> s_lastWriterDestructionThread{nullptr};
+#endif
+
 std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValue)
 {
     const QByteArray trimmed = headerValue.trimmed();
-    const QByteArray prefix = QByteArrayLiteral("bytes */");
+    const QByteArray prefix  = QByteArrayLiteral("bytes */");
     if (!trimmed.startsWith(prefix)) {
         return std::nullopt;
     }
 
-    bool ok = false;
+    bool ok                = false;
     const qint64 totalSize = trimmed.mid(prefix.size()).toLongLong(&ok);
     if (!ok || totalSize < 0) {
         return std::nullopt;
@@ -26,32 +32,33 @@ std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValu
     return totalSize;
 }
 
+/// 表示解析后的 HTTP Content-Range 字节区间。
 struct ContentRangeInfo
 {
     qint64 start = -1;
-    qint64 end = -1;
+    qint64 end   = -1;
     qint64 total = -1;
 };
 
 std::optional<ContentRangeInfo> parseContentRangeBytesSpec(const QByteArray &headerValue)
 {
     const QByteArray trimmed = headerValue.trimmed();
-    const QByteArray prefix = QByteArrayLiteral("bytes ");
+    const QByteArray prefix  = QByteArrayLiteral("bytes ");
     if (!trimmed.startsWith(prefix)) {
         return std::nullopt;
     }
 
-    const int dashPos = trimmed.indexOf('-', prefix.size());
+    const int dashPos  = trimmed.indexOf('-', prefix.size());
     const int slashPos = trimmed.indexOf('/', prefix.size());
     if (dashPos < 0 || slashPos < 0 || dashPos >= slashPos) {
         return std::nullopt;
     }
 
-    bool startOk = false;
-    bool endOk = false;
-    bool totalOk = false;
+    bool startOk       = false;
+    bool endOk         = false;
+    bool totalOk       = false;
     const qint64 start = trimmed.mid(prefix.size(), dashPos - prefix.size()).toLongLong(&startOk);
-    const qint64 end = trimmed.mid(dashPos + 1, slashPos - dashPos - 1).toLongLong(&endOk);
+    const qint64 end   = trimmed.mid(dashPos + 1, slashPos - dashPos - 1).toLongLong(&endOk);
     const qint64 total = trimmed.mid(slashPos + 1).toLongLong(&totalOk);
     if (!startOk || !endOk || !totalOk || start < 0 || end < start || total < 0) {
         return std::nullopt;
@@ -60,189 +67,172 @@ std::optional<ContentRangeInfo> parseContentRangeBytesSpec(const QByteArray &hea
     return ContentRangeInfo{start, end, total};
 }
 
-bool isAlreadyComplete(QCNetworkReply *reply, qint64 existingSize)
+} // namespace
+
+ResumableDownloadWriter::ResumableDownloadWriter(QString savePath,
+                                                 const qint64 existingSize,
+                                                 const bool hadExistingFile)
+    : m_savePath(std::move(savePath))
+    , m_existingSize(existingSize)
+    , m_hadExistingFile(hadExistingFile)
+    , m_ownerThread(QThread::currentThread())
+    , m_file(m_savePath)
+    , m_overwriteFile(m_savePath)
 {
-    return reply && existingSize > 0 && reply->httpStatusCode() == 416
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    s_activeWriterCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+}
+
+ResumableDownloadWriter::~ResumableDownloadWriter()
+{
+    assertOwnerThread();
+    closeTargets();
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    s_lastWriterDestructionThread.store(QThread::currentThread(), std::memory_order_relaxed);
+    s_activeWriterCount.fetch_sub(1, std::memory_order_relaxed);
+#endif
+}
+
+bool ResumableDownloadWriter::isAlreadyComplete(QCNetworkReply *reply) const
+{
+    return reply && m_existingSize > 0 && reply->httpStatusCode() == 416
            && parseContentRangeCompleteSize(reply->rawHeader(QByteArrayLiteral("Content-Range")))
-                  .value_or(-1)
-                  == existingSize;
+                      .value_or(-1)
+                  == m_existingSize;
 }
 
-void closeTargets(const QSharedPointer<ResumableDownloadWriteContext> &context)
+std::optional<QString> ResumableDownloadWriter::decideWriteMode(QCNetworkReply *reply)
 {
-    if (context->appendFile && context->appendFile->isOpen()) {
-        context->appendFile->close();
-    }
-    if (context->directFile && context->directFile->isOpen()) {
-        context->directFile->close();
-    }
-    if (context->overwriteFile && context->overwriteFile->isOpen()) {
-        context->overwriteFile->cancelWriting();
-    }
-}
-
-QIODevice *activeTarget(const QSharedPointer<ResumableDownloadWriteContext> &context)
-{
-    if (context->appendMode) {
-        return context->appendFile.data();
-    }
-    if (context->safeOverwriteMode) {
-        return context->overwriteFile.data();
-    }
-    return context->directFile.data();
-}
-
-std::optional<QString> decideWriteMode(QCNetworkReply *reply,
-                                       const QSharedPointer<ResumableDownloadWriteContext> &context,
-                                       const QString &savePath,
-                                       qint64 existingSize,
-                                       bool hadExistingFile)
-{
-    if (isAlreadyComplete(reply, existingSize)) {
-        context->modeDecided = true;
+    if (isAlreadyComplete(reply)) {
+        m_modeDecided = true;
         return std::nullopt;
     }
 
-    const auto contentRange =
-        parseContentRangeBytesSpec(reply->rawHeader(QByteArrayLiteral("Content-Range")));
-    context->appendMode = existingSize > 0 && reply->httpStatusCode() == 206
-                          && contentRange.has_value() && contentRange->start == existingSize;
-    if (reply->httpStatusCode() == 206 && !context->appendMode) {
-        return QStringLiteral(
-                   "QCNetworkResumableDownloadJob: 206 响应的 Content-Range.start 与本地文件大小不匹配: %1")
-            .arg(savePath);
+    const auto contentRange = parseContentRangeBytesSpec(
+        reply->rawHeader(QByteArrayLiteral("Content-Range")));
+    m_appendMode = m_existingSize > 0 && reply->httpStatusCode() == 206 && contentRange.has_value()
+                   && contentRange->start == m_existingSize;
+    if (reply->httpStatusCode() == 206 && !m_appendMode) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: 206 响应的 Content-Range.start "
+                              "与本地文件大小不匹配: %1")
+            .arg(m_savePath);
     }
-    context->safeOverwriteMode = !context->appendMode && hadExistingFile;
-    context->modeDecided = true;
+    m_safeOverwriteMode = !m_appendMode && m_hadExistingFile;
+    m_modeDecided       = true;
     return std::nullopt;
 }
 
-std::optional<QString> ensureWriteTarget(QCNetworkReply *reply,
-                                         const QSharedPointer<ResumableDownloadWriteContext> &context,
-                                         const QString &savePath,
-                                         qint64 existingSize,
-                                         bool hadExistingFile)
+std::optional<QString> ResumableDownloadWriter::ensureWriteTarget(QCNetworkReply *reply)
 {
-    if (!context->modeDecided) {
-        if (const auto error = decideWriteMode(
-                reply, context, savePath, existingSize, hadExistingFile);
-            error.has_value()) {
+    if (!m_modeDecided) {
+        if (const auto error = decideWriteMode(reply); error.has_value()) {
             return error;
         }
     }
-    if (isAlreadyComplete(reply, existingSize)) {
+    if (isAlreadyComplete(reply)) {
         return std::nullopt;
     }
-    if (context->appendMode && !context->appendFile->isOpen()
-        && !context->appendFile->open(QIODevice::Append)) {
+    if (m_appendMode && !m_file.isOpen() && !m_file.open(QIODevice::Append)) {
         return QStringLiteral("QCNetworkResumableDownloadJob: 无法以追加模式打开目标文件: %1")
-            .arg(context->appendFile->fileName());
+            .arg(m_file.fileName());
     }
-    if (context->safeOverwriteMode) {
-        if (!context->overwriteFile) {
-            context->overwriteFile = QSharedPointer<QSaveFile>::create(savePath);
-        }
-        if (!context->overwriteFile->isOpen()
-            && !context->overwriteFile->open(QIODevice::WriteOnly)) {
-            return QStringLiteral(
-                       "QCNetworkResumableDownloadJob: 无法以安全覆盖模式打开目标文件: %1")
-                .arg(savePath);
-        }
-    } else if (!context->appendMode && !context->directFile->isOpen()
-               && !context->directFile->open(QIODevice::WriteOnly)) {
-        return QStringLiteral("QCNetworkResumableDownloadJob: 无法创建目标文件: %1")
-            .arg(savePath);
+    if (m_safeOverwriteMode && !m_overwriteFile.isOpen()
+        && !m_overwriteFile.open(QIODevice::WriteOnly)) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: 无法以安全覆盖模式打开目标文件: %1")
+            .arg(m_savePath);
+    }
+    if (!m_appendMode && !m_safeOverwriteMode && !m_file.isOpen()
+        && !m_file.open(QIODevice::WriteOnly)) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: 无法创建目标文件: %1").arg(m_savePath);
     }
     return std::nullopt;
 }
 
-} // namespace
-
-QSharedPointer<ResumableDownloadWriteContext> makeResumableDownloadWriteContext(
-    const QString &savePath)
+QIODevice *ResumableDownloadWriter::activeTarget() noexcept
 {
-    auto context = QSharedPointer<ResumableDownloadWriteContext>::create();
-    context->appendFile = QSharedPointer<QFile>::create(savePath);
-    context->directFile = QSharedPointer<QFile>::create(savePath);
-    return context;
+    return m_safeOverwriteMode ? static_cast<QIODevice *>(&m_overwriteFile)
+                               : static_cast<QIODevice *>(&m_file);
 }
 
-void writeResumableDownloadChunk(QCNetworkReply *reply,
-                                 const QSharedPointer<ResumableDownloadWriteContext> &context,
-                                 const QString &savePath,
-                                 qint64 existingSize,
-                                 bool hadExistingFile)
+void ResumableDownloadWriter::closeTargets()
 {
-    if (const auto error =
-            ensureWriteTarget(reply, context, savePath, existingSize, hadExistingFile);
-        error.has_value()) {
-        context->writeFailed = true;
-        closeTargets(context);
-        reply->abortWithError(NetworkError::InvalidRequest, error.value());
-        return;
+    if (m_file.isOpen()) {
+        m_file.close();
+    }
+    if (m_overwriteFile.isOpen()) {
+        m_overwriteFile.cancelWriting();
+    }
+}
+
+void ResumableDownloadWriter::assertOwnerThread() const
+{
+    Q_ASSERT(QThread::currentThread() == m_ownerThread);
+}
+
+std::optional<QString> ResumableDownloadWriter::writeChunk(QCNetworkReply *reply)
+{
+    assertOwnerThread();
+    if (const auto error = ensureWriteTarget(reply); error.has_value()) {
+        closeTargets();
+        return error;
     }
 
-    QIODevice *target = activeTarget(context);
+    QIODevice *target = activeTarget();
     if (!target || !target->isWritable()) {
-        context->writeFailed = true;
-        closeTargets(context);
-        reply->abortWithError(
-            NetworkError::InvalidRequest,
-            QStringLiteral("QCNetworkResumableDownloadJob: 目标文件不可写: %1").arg(savePath));
-        return;
+        closeTargets();
+        return QStringLiteral("QCNetworkResumableDownloadJob: 目标文件不可写: %1").arg(m_savePath);
     }
 
     const auto data = reply->readAll();
     if (!data.has_value() || data->isEmpty()) {
-        return;
+        return std::nullopt;
     }
 
     const QByteArray &chunk = data.value();
     if (target->write(chunk) != chunk.size()) {
-        context->writeFailed = true;
-        closeTargets(context);
-        reply->abortWithError(
-            NetworkError::InvalidRequest,
-            QStringLiteral("QCNetworkResumableDownloadJob: 写入目标文件失败: %1").arg(savePath));
+        closeTargets();
+        return QStringLiteral("QCNetworkResumableDownloadJob: 写入目标文件失败: %1").arg(m_savePath);
     }
+    return std::nullopt;
 }
 
-std::optional<QString> commitResumableDownloadIfNeeded(
-    QCNetworkReply *reply,
-    const QSharedPointer<ResumableDownloadWriteContext> &context,
-    const QString &savePath,
-    qint64 existingSize,
-    bool hadExistingFile)
+std::optional<QString> ResumableDownloadWriter::commitIfNeeded(QCNetworkReply *reply)
 {
-    if (isAlreadyComplete(reply, existingSize)) {
+    assertOwnerThread();
+    if (isAlreadyComplete(reply)) {
         return std::nullopt;
     }
     if (reply->error() != NetworkError::NoError) {
-        closeTargets(context);
+        closeTargets();
         return std::nullopt;
     }
-    if (const auto error =
-            ensureWriteTarget(reply, context, savePath, existingSize, hadExistingFile);
-        error.has_value()) {
-        context->writeFailed = true;
-        closeTargets(context);
+    if (const auto error = ensureWriteTarget(reply); error.has_value()) {
+        closeTargets();
         return error;
     }
-    if (context->appendFile && context->appendFile->isOpen()) {
-        context->appendFile->close();
+    if (m_file.isOpen()) {
+        m_file.close();
     }
-    if (context->directFile && context->directFile->isOpen()) {
-        context->directFile->close();
-    }
-    if (!context->safeOverwriteMode || !context->overwriteFile
-        || !context->overwriteFile->isOpen()) {
+    if (!m_safeOverwriteMode || !m_overwriteFile.isOpen()) {
         return std::nullopt;
     }
-    if (context->overwriteFile->commit()) {
+    if (m_overwriteFile.commit()) {
         return std::nullopt;
     }
-    context->writeFailed = true;
-    return QStringLiteral("QCNetworkResumableDownloadJob: 覆盖写入提交失败: %1").arg(savePath);
+    return QStringLiteral("QCNetworkResumableDownloadJob: 覆盖写入提交失败: %1").arg(m_savePath);
 }
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+int ResumableDownloadWriter::activeInstanceCountForTesting() noexcept
+{
+    return s_activeWriterCount.load(std::memory_order_relaxed);
+}
+
+QThread *ResumableDownloadWriter::lastDestructionThreadForTesting() noexcept
+{
+    return s_lastWriterDestructionThread.load(std::memory_order_relaxed);
+}
+#endif
 
 } // namespace QCurl::Internal

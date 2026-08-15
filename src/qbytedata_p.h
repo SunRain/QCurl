@@ -70,15 +70,15 @@ namespace QCurl {
 class QCByteDataBuffer
 {
 private:
-    QList<QByteArray> buffers;
-    qint64 bufferCompleteSize;
-    qint64 firstPos;
+    QList<QByteArray> m_buffers;
+    qint64 m_bufferCompleteSize;
+    qint64 m_firstPos;
 
 public:
     /// 构造一个空的字节缓冲区。
     QCByteDataBuffer()
-        : bufferCompleteSize(0)
-        , firstPos(0)
+        : m_bufferCompleteSize(0)
+        , m_firstPos(0)
     {}
 
     /// 清空所有片段并释放当前缓冲状态。
@@ -93,9 +93,9 @@ public:
     /// 在需要时压缩首块，确保 `firstPos` 回到 0。
     inline void squeezeFirst()
     {
-        if (!buffers.isEmpty() && firstPos > 0) {
-            popFront(buffers.first(), firstPos);
-            firstPos = 0;
+        if (!m_buffers.isEmpty() && m_firstPos > 0) {
+            popFront(m_buffers.first(), m_firstPos);
+            m_firstPos = 0;
         }
     }
 
@@ -105,11 +105,11 @@ public:
             return;
         }
 
-        buffers.append(other.buffers);
-        bufferCompleteSize += other.byteAmount();
+        m_buffers.append(other.m_buffers);
+        m_bufferCompleteSize += other.byteAmount();
 
-        if (other.firstPos > 0) {
-            popFront(buffers[bufferCount() - other.bufferCount()], other.firstPos);
+        if (other.m_firstPos > 0) {
+            popFront(m_buffers[bufferCount() - other.bufferCount()], other.m_firstPos);
         }
     }
 
@@ -119,8 +119,8 @@ public:
             return;
         }
 
-        buffers.append(bd);
-        bufferCompleteSize += bd.size();
+        m_buffers.append(bd);
+        m_bufferCompleteSize += bd.size();
     }
 
     inline void prepend(const QByteArray &bd)
@@ -131,16 +131,16 @@ public:
 
         squeezeFirst();
 
-        buffers.prepend(bd);
-        bufferCompleteSize += bd.size();
+        m_buffers.prepend(bd);
+        m_bufferCompleteSize += bd.size();
     }
 
     /// 取出首个数据块；适合零散读取场景。
     inline QByteArray read()
     {
         squeezeFirst();
-        bufferCompleteSize -= buffers.first().size();
-        return buffers.takeFirst();
+        m_bufferCompleteSize -= m_buffers.first().size();
+        return m_buffers.takeFirst();
     }
 
     /// 读取全部数据；可能触发额外的分配与拷贝。
@@ -164,21 +164,21 @@ public:
         char *writeDst        = dst;
 
         while (amount > 0) {
-            const QByteArray &first = buffers.first();
-            qint64 firstSize        = first.size() - firstPos;
+            const QByteArray &first = m_buffers.first();
+            qint64 firstSize        = first.size() - m_firstPos;
             if (amount >= firstSize) {
                 // 整块消费，避免保留额外片段状态。
-                bufferCompleteSize -= firstSize;
+                m_bufferCompleteSize -= firstSize;
                 amount -= firstSize;
-                memcpy(writeDst, first.constData() + firstPos, firstSize);
+                memcpy(writeDst, first.constData() + m_firstPos, firstSize);
                 writeDst += firstSize;
-                firstPos = 0;
-                buffers.takeFirst();
+                m_firstPos = 0;
+                m_buffers.takeFirst();
             } else {
                 // 仅消费首块前缀，保留剩余数据供后续读取。
-                bufferCompleteSize -= amount;
-                memcpy(writeDst, first.constData() + firstPos, amount);
-                firstPos += amount;
+                m_bufferCompleteSize -= amount;
+                memcpy(writeDst, first.constData() + m_firstPos, amount);
+                m_firstPos += amount;
                 amount = 0;
             }
         }
@@ -195,25 +195,25 @@ public:
 
     inline void clear()
     {
-        buffers.clear();
-        bufferCompleteSize = 0;
-        firstPos           = 0;
+        m_buffers.clear();
+        m_bufferCompleteSize = 0;
+        m_firstPos           = 0;
     }
 
     /// 返回所有片段合计的字节数。
-    inline qint64 byteAmount() const { return bufferCompleteSize; }
+    inline qint64 byteAmount() const { return m_bufferCompleteSize; }
 
     /// 返回当前片段数量。
-    inline qint64 bufferCount() const { return buffers.length(); }
+    inline qint64 bufferCount() const { return m_buffers.length(); }
 
     inline bool isEmpty() const { return byteAmount() == 0; }
 
     inline qint64 sizeNextBlock() const
     {
-        if (buffers.isEmpty()) {
+        if (m_buffers.isEmpty()) {
             return 0;
         }
-        return buffers.first().size() - firstPos;
+        return m_buffers.first().size() - m_firstPos;
     }
 
     inline QByteArray &operator[](int i)
@@ -222,20 +222,20 @@ public:
             squeezeFirst();
         }
 
-        return buffers[i];
+        return m_buffers[i];
     }
 
     inline bool canReadLine() const
     {
         int i = 0;
-        if (i < buffers.length()) {
-            if (buffers.at(i).indexOf('\n', firstPos) != -1) {
+        if (i < m_buffers.length()) {
+            if (m_buffers.at(i).indexOf('\n', m_firstPos) != -1) {
                 return true;
             }
             ++i;
 
-            for (; i < buffers.length(); i++) {
-                if (buffers.at(i).contains('\n')) {
+            for (; i < m_buffers.length(); i++) {
+                if (m_buffers.at(i).contains('\n')) {
                     return true;
                 }
             }

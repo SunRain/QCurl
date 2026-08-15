@@ -29,6 +29,9 @@ class QCNetworkBodyData;
  *
  * QCNetworkBody 使用 Qt 隐式共享：拷贝成本低，未来修改操作会按 QSharedDataPointer
  * 写时分离。对象不保存外部 view；只读共享实例可跨线程传递，并发写入不属于本类型合同。
+ *
+ * @note QObject 借用合同：本值类型不保存 QObject 裸指针；需要设备载荷时，具体请求入口必须
+ * 明确设备的可空性、所有权和 affinity，失败不发生隐式所有权转移。
  */
 class QCURL_EXPORT QCNetworkBody final
 {

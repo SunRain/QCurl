@@ -126,7 +126,7 @@ class tst_QCNetworkDownloadToDeviceJob : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanup();
 
@@ -153,7 +153,7 @@ void tst_QCNetworkDownloadToDeviceJob::initTestCase()
 
 void tst_QCNetworkDownloadToDeviceJob::cleanup()
 {
-    QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests();
+    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
 }
 
 void tst_QCNetworkDownloadToDeviceJob::constructorDoesNotStartRequest()

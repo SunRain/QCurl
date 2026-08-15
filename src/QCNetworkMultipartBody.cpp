@@ -3,21 +3,37 @@
 #include "QCMultipartFormData.h"
 #include "private/QCSingleFileMultipartBodyDevice.h"
 
-#include <QObject>
 #include <QIODevice>
+#include <QObject>
+#include <QPointer>
+#include <QThread>
 
 #include <memory>
 
 namespace QCurl {
 
+/**
+ * @brief 保存 multipart 请求体的内存数据或单文件流式描述。
+ *
+ * 流式描述只借用 sourceDevice；实际 wrapper 在 takeDevice() 的 owner thread 内创建并立即
+ * 转移，避免 movable value object 持有具有 thread affinity 的 QObject。
+ */
 class QCNetworkMultipartBodyPrivate
 {
 public:
     QByteArray data;
-    std::unique_ptr<QIODevice> device;
     QByteArray contentType;
-    std::optional<qint64> sizeBytes;
-    bool deviceTaken = false;
+    std::optional<qint64> sizeBytes;  ///< 空值表示无法预先确定请求体长度。
+    QPointer<QIODevice> sourceDevice; ///< 借用源设备，不延长其生命周期。
+    QString boundary;
+    QString fieldName;
+    QString fileName;
+    QString mimeType;
+    QThread *sourceThread  = nullptr;
+    qint64 sourceBasePos   = 0;
+    qint64 sourceSizeBytes = 0;
+    bool streaming         = false;
+    bool deviceTaken       = false; ///< 防止同一描述重复创建 wrapper。
 };
 
 namespace {
@@ -30,33 +46,32 @@ void setError(QString *error, const QString &message)
 }
 
 std::optional<qint64> resolveSingleFileSize(QIODevice *device,
+                                            qint64 sourceBasePos,
                                             std::optional<qint64> sizeBytes,
                                             QString *error)
 {
     if (device->isSequential()) {
         setError(error,
-                 QStringLiteral("QCNetworkMultipartBody: 单文件 multipart 要求已知长度且设备可 seek"));
+                 QStringLiteral(
+                     "QCNetworkMultipartBody: 单文件 multipart 要求已知长度且设备可 seek"));
         return std::nullopt;
     }
 
     if (sizeBytes.has_value()) {
         if (sizeBytes.value() < 0) {
-            setError(error,
-                     QStringLiteral("QCNetworkMultipartBody: sizeBytes 不能为负数"));
+            setError(error, QStringLiteral("QCNetworkMultipartBody: sizeBytes 不能为负数"));
             return std::nullopt;
         }
         return sizeBytes;
     }
 
-    const qint64 basePos = device->pos();
     const qint64 totalSize = device->size();
-    if (basePos < 0 || totalSize < 0 || totalSize < basePos) {
-        setError(error,
-                 QStringLiteral("QCNetworkMultipartBody: 无法从源 QIODevice 推导剩余长度"));
+    if (totalSize < 0 || totalSize < sourceBasePos) {
+        setError(error, QStringLiteral("QCNetworkMultipartBody: 无法从源 QIODevice 推导剩余长度"));
         return std::nullopt;
     }
 
-    return totalSize - basePos;
+    return totalSize - sourceBasePos;
 }
 
 } // namespace
@@ -71,10 +86,10 @@ QCNetworkMultipartBody::QCNetworkMultipartBody(QCNetworkMultipartBodyPrivate *d)
 
 QCNetworkMultipartBody::QCNetworkMultipartBody(QCNetworkMultipartBody &&other) noexcept
 {
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
     d_ptr.swap(other.d_ptr);
-QT_WARNING_POP
+    QT_WARNING_POP
 }
 
 QCNetworkMultipartBody::~QCNetworkMultipartBody() = default;
@@ -86,10 +101,10 @@ QCNetworkMultipartBody &QCNetworkMultipartBody::operator=(QCNetworkMultipartBody
     }
 
     d_ptr.reset();
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_DEPRECATED
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
     d_ptr.swap(other.d_ptr);
-QT_WARNING_POP
+    QT_WARNING_POP
     return *this;
 }
 
@@ -114,27 +129,48 @@ std::optional<QCNetworkMultipartBody> QCNetworkMultipartBody::fromSingleFileDevi
         setError(error, QStringLiteral("QCNetworkMultipartBody: 源 QIODevice 为空"));
         return std::nullopt;
     }
+    QThread *const sourceThread = device->thread();
+    if (QThread::currentThread() != sourceThread) {
+        setError(error,
+                 QStringLiteral("QCNetworkMultipartBody: 必须在源 QIODevice 的当前线程创建描述"));
+        return std::nullopt;
+    }
     if (!device->isReadable()) {
         setError(error, QStringLiteral("QCNetworkMultipartBody: 源 QIODevice 不可读"));
         return std::nullopt;
     }
 
-    const auto resolvedSize = resolveSingleFileSize(device, sizeBytes, error);
+    const qint64 sourceBasePos = device->pos();
+    if (sourceBasePos < 0) {
+        setError(error, QStringLiteral("QCNetworkMultipartBody: 无法获取源 QIODevice 的当前位置"));
+        return std::nullopt;
+    }
+
+    const auto resolvedSize = resolveSingleFileSize(device, sourceBasePos, sizeBytes, error);
     if (!resolvedSize.has_value()) {
         return std::nullopt;
     }
 
     QCMultipartFormData formData;
-    auto data = std::make_unique<QCNetworkMultipartBodyPrivate>();
-    data->contentType = formData.contentType().toUtf8();
-    data->device = std::make_unique<Internal::QCSingleFileMultipartBodyDevice>(
-        formData.boundary(),
-        fieldName.toString(),
-        device,
-        fileName.toString(),
-        mimeType.isEmpty() ? QStringLiteral("application/octet-stream") : mimeType.toString(),
-        resolvedSize.value());
-    data->sizeBytes = data->device->size();
+    auto data              = std::make_unique<QCNetworkMultipartBodyPrivate>();
+    data->contentType      = formData.contentType().toUtf8();
+    data->sourceDevice     = device;
+    data->boundary         = formData.boundary();
+    data->fieldName        = fieldName.toString();
+    data->fileName         = fileName.toString();
+    data->mimeType         = mimeType.isEmpty() ? QStringLiteral("application/octet-stream")
+                                                : mimeType.toString();
+    data->sourceThread     = sourceThread;
+    data->sourceBasePos    = sourceBasePos;
+    data->sourceSizeBytes  = resolvedSize.value();
+    const auto encodedSize = Internal::QCSingleFileMultipartBodyDevice::encodedSize(
+        data->boundary, data->fieldName, data->fileName, data->mimeType, data->sourceSizeBytes);
+    if (!encodedSize.has_value()) {
+        setError(error, QStringLiteral("QCNetworkMultipartBody: multipart 总长度超出 qint64 范围"));
+        return std::nullopt;
+    }
+    data->sizeBytes = encodedSize.value();
+    data->streaming = true;
 
     return QCNetworkMultipartBody(data.release());
 }
@@ -149,10 +185,7 @@ QByteArray QCNetworkMultipartBody::data() const
 
 QIODevice *QCNetworkMultipartBody::device() const noexcept
 {
-    if (!d_ptr) {
-        return nullptr;
-    }
-    return d_ptr->device.get();
+    return nullptr;
 }
 
 QByteArray QCNetworkMultipartBody::contentType() const
@@ -178,7 +211,7 @@ QIODevice *QCNetworkMultipartBody::takeDevice(QObject *parent)
 
 QIODevice *QCNetworkMultipartBody::takeDevice(QObject *parent, QString *error)
 {
-    if (!d_ptr || !d_ptr->device) {
+    if (!d_ptr || !d_ptr->streaming || d_ptr->deviceTaken) {
         if (!d_ptr) {
             setError(error, QStringLiteral("QCNetworkMultipartBody: 请求体为空"));
         } else if (d_ptr->deviceTaken) {
@@ -189,14 +222,37 @@ QIODevice *QCNetworkMultipartBody::takeDevice(QObject *parent, QString *error)
         return nullptr;
     }
 
-    QIODevice *device = d_ptr->device.get();
-    if (parent && parent->thread() != device->thread()) {
-        setError(error, QStringLiteral("QCNetworkMultipartBody: parent 与流式设备不在同一线程"));
+    if (QThread::currentThread() != d_ptr->sourceThread) {
+        setError(error,
+                 QStringLiteral("QCNetworkMultipartBody: 必须在源 QIODevice 的当前线程转移设备"));
         return nullptr;
     }
-    device = d_ptr->device.release();
+    if (!d_ptr->sourceDevice) {
+        setError(error, QStringLiteral("QCNetworkMultipartBody: 源 QIODevice 已析构"));
+        return nullptr;
+    }
+    if (d_ptr->sourceDevice->thread() != d_ptr->sourceThread) {
+        setError(error,
+                 QStringLiteral("QCNetworkMultipartBody: 源 QIODevice 的 thread affinity 已改变"));
+        return nullptr;
+    }
+    if (parent && parent->thread() != d_ptr->sourceThread) {
+        setError(error,
+                 QStringLiteral("QCNetworkMultipartBody: parent 与源 QIODevice 不在同一线程"));
+        return nullptr;
+    }
+
+    auto *device       = new Internal::QCSingleFileMultipartBodyDevice(d_ptr->boundary,
+                                                                       d_ptr->fieldName,
+                                                                       d_ptr->sourceDevice,
+                                                                       d_ptr->fileName,
+                                                                       d_ptr->mimeType,
+                                                                       d_ptr->sourceSizeBytes,
+                                                                       d_ptr->sourceBasePos,
+                                                                       d_ptr->sourceThread,
+                                                                       parent);
     d_ptr->deviceTaken = true;
-    device->setParent(parent);
+    d_ptr->sourceDevice.clear();
     return device;
 }
 

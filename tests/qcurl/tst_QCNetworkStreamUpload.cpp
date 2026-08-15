@@ -423,7 +423,7 @@ class TestQCNetworkStreamUpload : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testSeekablePutEchoAndOwnershipPreserved();
     void testSeekablePostEchoAndOwnershipPreserved();
 
@@ -647,7 +647,17 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
-    request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
+    QCNetworkRetryPolicy policy;
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1,
+                                             std::chrono::milliseconds(1),
+                                             2.0,
+                                             &policy),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
+    QCOMPARE(policy.setRetryMethodPolicy(
+                 QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
+    request.setRawHeader(QByteArrayLiteral("Idempotency-Key"), QByteArrayLiteral("stream-1"));
+    request.setRetryPolicy(policy);
     QCNetworkReply *reply = manager.put(request, &device, payload.size());
     QVERIFY(reply);
 
@@ -667,7 +677,17 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
-    request.setRetryPolicy(QCNetworkRetryPolicy(1, std::chrono::milliseconds(1)));
+    QCNetworkRetryPolicy policy;
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1,
+                                             std::chrono::milliseconds(1),
+                                             2.0,
+                                             &policy),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
+    QCOMPARE(policy.setRetryMethodPolicy(
+                 QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
+             QCNetworkRetryPolicy::UpdateResult::Applied);
+    request.setRawHeader(QByteArrayLiteral("Idempotency-Key"), QByteArrayLiteral("seek-fail-1"));
+    request.setRetryPolicy(policy);
     request.setConnectTimeout(std::chrono::milliseconds(1000));
     request.setTimeout(std::chrono::milliseconds(5000));
 

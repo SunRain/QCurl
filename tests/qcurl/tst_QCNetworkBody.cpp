@@ -38,7 +38,7 @@ class TestQCNetworkBody : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void testJsonBodyUsesCompactEncodingAndContentType();
     void testFormBodyEncodesFieldsAndContentType();
     void testFormBodyPreservesDuplicateFieldsAndInputOrder();
