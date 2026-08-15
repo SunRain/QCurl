@@ -5,10 +5,78 @@
 
 #include <QDebug>
 #include <QEventLoop>
+#include <QFutureWatcher>
 #include <QThread>
 #include <QTimer>
 
 using namespace QCurl;
+
+namespace {
+
+/**
+ * @brief 连接池 owner thread 中一次已解析的活动借用。
+ *
+ * socket 仅用于当前 owner-thread 调用链；leaseId 是归还连接的唯一凭据。
+ */
+struct AcquiredSocket
+{
+    QCWebSocket *socket              = nullptr;
+    QCWebSocketPool::LeaseId leaseId = 0;
+};
+
+template<typename Result>
+Result awaitFuture(QFuture<Result> future, int timeout = 15000)
+{
+    QFutureWatcher<Result> watcher;
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&watcher, &QFutureWatcher<Result>::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    watcher.setFuture(future);
+    timer.start(timeout);
+    if (!future.isFinished()) {
+        loop.exec();
+    }
+    return future.isFinished() ? future.result() : Result{};
+}
+
+/**
+ * @brief 获取纯值 lease，并在连接池 owner thread 解析临时借用指针。
+ * @param pool 连接池实例。
+ * @param url 目标 WebSocket URL。
+ * @return 成功时同时包含借用指针和非零 lease id；失败时返回空值。
+ */
+AcquiredSocket acquireSocket(QCWebSocketPool &pool, const QUrl &url)
+{
+    const auto result = awaitFuture(pool.acquire(url));
+    if (!result.isSuccess()) {
+        qWarning() << "获取连接失败:" << result.error();
+        return {};
+    }
+
+    QCWebSocket *socket = nullptr;
+    if (pool.resolveLease(result.leaseId(), &socket) != QCWebSocketPool::LeaseResult::Success) {
+        static_cast<void>(pool.release(result.leaseId()));
+        qWarning() << "解析连接 lease 失败";
+        return {};
+    }
+    return {socket, result.leaseId()};
+}
+
+/**
+ * @brief 按 lease id 归还连接并报告同步归还失败。
+ * @param pool 连接池实例。
+ * @param acquired 当前活动借用；函数不依赖其中的裸指针归还连接。
+ */
+void releaseSocket(QCWebSocketPool &pool, const AcquiredSocket &acquired)
+{
+    if (pool.release(acquired.leaseId) != QCWebSocketPool::LeaseResult::Success) {
+        qWarning() << "连接归还失败";
+    }
+}
+
+} // namespace
 
 PoolDemo::PoolDemo(QObject *parent)
     : QObject(parent)
@@ -62,7 +130,8 @@ void PoolDemo::demoBasicUsage()
 
     // 第一次获取
     qDebug() << "2. 第一次获取连接...";
-    auto *socket1 = pool.acquire(url);
+    const auto acquired1 = acquireSocket(pool, url);
+    auto *socket1        = acquired1.socket;
     if (!socket1) {
         qWarning() << "❌ 获取连接失败";
         return;
@@ -70,7 +139,7 @@ void PoolDemo::demoBasicUsage()
 
     if (!waitForConnection(socket1, 10000)) {
         qWarning() << "❌ 连接超时";
-        pool.release(socket1);
+        releaseSocket(pool, acquired1);
         return;
     }
 
@@ -80,13 +149,13 @@ void PoolDemo::demoBasicUsage()
     // 发送消息
     qDebug() << "";
     qDebug() << "3. 发送测试消息...";
-    socket1->sendTextMessage("Hello from WebSocket Pool!");
+    static_cast<void>(socket1->sendTextMessage("Hello from WebSocket Pool!"));
     QThread::msleep(500);
 
     // 归还连接
     qDebug() << "";
     qDebug() << "4. 归还连接到池中...";
-    pool.release(socket1);
+    releaseSocket(pool, acquired1);
     qDebug() << "   ✅ 连接已归还（未关闭）";
 
     // 查看统计
@@ -101,7 +170,8 @@ void PoolDemo::demoBasicUsage()
     // 再次获取（应复用）
     qDebug() << "";
     qDebug() << "6. 再次获取连接（应复用）...";
-    auto *socket2 = pool.acquire(url);
+    const auto acquired2 = acquireSocket(pool, url);
+    auto *socket2        = acquired2.socket;
     if (!socket2) {
         qWarning() << "❌ 获取连接失败";
         return;
@@ -119,7 +189,7 @@ void PoolDemo::demoBasicUsage()
     qDebug() << "   - 未命中次数:" << stats.missCount();
     qDebug() << "   - 命中率:" << stats.hitRate() << "%";
 
-    pool.release(socket2);
+    releaseSocket(pool, acquired2);
 
     qDebug() << "";
     qDebug() << "✅ 基本使用演示完成！";
@@ -136,7 +206,11 @@ void PoolDemo::demoPreWarm()
     qDebug() << "";
 
     qDebug() << "1. 开始预热 5 个连接...";
-    pool.preWarm(url, 5);
+    const auto preWarmResult = awaitFuture(pool.preWarm(url, 5));
+    if (!preWarmResult.isSuccess()) {
+        qWarning() << "预热失败:" << preWarmResult.error();
+        return;
+    }
 
     qDebug() << "2. 等待连接建立（3 秒）...";
     QThread::sleep(3);
@@ -150,11 +224,12 @@ void PoolDemo::demoPreWarm()
 
     qDebug() << "";
     qDebug() << "4. 获取连接（应直接从池中获取）...";
-    auto *socket = pool.acquire(url);
+    const auto acquired = acquireSocket(pool, url);
+    auto *socket        = acquired.socket;
     if (socket) {
         qDebug() << "   ✅ 立即获取到连接！";
         qDebug() << "   - 状态:" << static_cast<int>(socket->state());
-        pool.release(socket);
+        releaseSocket(pool, acquired);
     }
 
     stats = pool.statistics(url);
@@ -178,7 +253,8 @@ void PoolDemo::demoStatistics()
 
     qDebug() << "1. 执行 10 次获取-释放操作:";
     for (int i = 0; i < 10; ++i) {
-        auto *socket = pool.acquire(url);
+        const auto acquired = acquireSocket(pool, url);
+        auto *socket        = acquired.socket;
         if (!socket) {
             qWarning() << "   第" << (i + 1) << "次获取失败";
             continue;
@@ -186,13 +262,13 @@ void PoolDemo::demoStatistics()
 
         if (i == 0 && !waitForConnection(socket, 10000)) {
             qWarning() << "   第一次连接超时";
-            pool.release(socket);
+            releaseSocket(pool, acquired);
             break;
         }
 
         qDebug() << "   操作" << (i + 1) << "- socket:" << static_cast<const void *>(socket);
         QThread::msleep(100);
-        pool.release(socket);
+        releaseSocket(pool, acquired);
     }
 
     qDebug() << "";
@@ -224,11 +300,12 @@ void PoolDemo::demoMultipleUrls()
     qDebug() << "";
 
     qDebug() << "1. 获取 URL1 的连接...";
-    auto *socket1 = pool.acquire(url1);
+    const auto acquired1 = acquireSocket(pool, url1);
+    auto *socket1        = acquired1.socket;
     if (!socket1 || !waitForConnection(socket1, 10000)) {
         qWarning() << "❌ URL1 连接失败";
         if (socket1) {
-            pool.release(socket1);
+            releaseSocket(pool, acquired1);
         }
         return;
     }
@@ -236,13 +313,14 @@ void PoolDemo::demoMultipleUrls()
 
     qDebug() << "";
     qDebug() << "2. 获取 URL2 的连接...";
-    auto *socket2 = pool.acquire(url2);
+    const auto acquired2 = acquireSocket(pool, url2);
+    auto *socket2        = acquired2.socket;
     if (!socket2 || !waitForConnection(socket2, 10000)) {
         qWarning() << "❌ URL2 连接失败";
         if (socket2) {
-            pool.release(socket2);
+            releaseSocket(pool, acquired2);
         }
-        pool.release(socket1);
+        releaseSocket(pool, acquired1);
         return;
     }
     qDebug() << "   ✅ URL2 连接成功";
@@ -269,10 +347,11 @@ void PoolDemo::demoMultipleUrls()
     qDebug() << "6. 全局统计（所有 URL）:";
     auto globalStats = pool.statistics();
     qDebug() << "   - 全局总连接数:" << globalStats.totalConnections();
-    qDebug() << "   - 应等于 URL1 + URL2:" << (stats1.totalConnections() + stats2.totalConnections());
+    qDebug() << "   - 应等于 URL1 + URL2:"
+             << (stats1.totalConnections() + stats2.totalConnections());
 
-    pool.release(socket1);
-    pool.release(socket2);
+    releaseSocket(pool, acquired1);
+    releaseSocket(pool, acquired2);
 
     qDebug() << "";
     qDebug() << "✅ 多 URL 管理演示完成！";

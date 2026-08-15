@@ -6,10 +6,78 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFutureWatcher>
 #include <QThread>
 #include <QTimer>
 
 using namespace QCurl;
+
+namespace {
+
+/**
+ * @brief 连接池 owner thread 中一次已解析的活动借用。
+ *
+ * socket 仅用于当前 owner-thread 调用链；leaseId 是归还连接的唯一凭据。
+ */
+struct AcquiredSocket
+{
+    QCWebSocket *socket              = nullptr;
+    QCWebSocketPool::LeaseId leaseId = 0;
+};
+
+template<typename Result>
+Result awaitFuture(QFuture<Result> future, int timeout = 15000)
+{
+    QFutureWatcher<Result> watcher;
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&watcher, &QFutureWatcher<Result>::finished, &loop, &QEventLoop::quit);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    watcher.setFuture(future);
+    timer.start(timeout);
+    if (!future.isFinished()) {
+        loop.exec();
+    }
+    return future.isFinished() ? future.result() : Result{};
+}
+
+/**
+ * @brief 获取纯值 lease，并在连接池 owner thread 解析临时借用指针。
+ * @param pool 连接池实例。
+ * @param url 目标 WebSocket URL。
+ * @return 成功时同时包含借用指针和非零 lease id；失败时返回空值。
+ */
+AcquiredSocket acquireSocket(QCWebSocketPool &pool, const QUrl &url)
+{
+    const auto result = awaitFuture(pool.acquire(url));
+    if (!result.isSuccess()) {
+        qWarning() << "获取连接失败:" << result.error();
+        return {};
+    }
+
+    QCWebSocket *socket = nullptr;
+    if (pool.resolveLease(result.leaseId(), &socket) != QCWebSocketPool::LeaseResult::Success) {
+        static_cast<void>(pool.release(result.leaseId()));
+        qWarning() << "解析连接 lease 失败";
+        return {};
+    }
+    return {socket, result.leaseId()};
+}
+
+/**
+ * @brief 按 lease id 归还连接并报告同步归还失败。
+ * @param pool 连接池实例。
+ * @param acquired 当前活动借用；函数不依赖其中的裸指针归还连接。
+ */
+void releaseSocket(QCWebSocketPool &pool, const AcquiredSocket &acquired)
+{
+    if (pool.release(acquired.leaseId) != QCWebSocketPool::LeaseResult::Success) {
+        qWarning() << "连接归还失败";
+    }
+}
+
+} // namespace
 
 PerformanceTest::PerformanceTest(QObject *parent)
     : QObject(parent)
@@ -94,14 +162,14 @@ void PerformanceTest::testConnectionTime()
         timer.start();
 
         QCWebSocket socket(url, QCWebSocketOptions{});
-        socket.open();
+        static_cast<void>(socket.open());
 
         if (waitForConnection(&socket, 10000)) {
             qint64 elapsed = timer.elapsed();
             timeWithoutPool += elapsed;
             successWithout++;
             qDebug() << "   第" << (i + 1) << "次:" << elapsed << "ms";
-            socket.close();
+            static_cast<void>(socket.close());
             QThread::msleep(500); // 等待关闭
         } else {
             qWarning() << "   第" << (i + 1) << "次: 连接超时";
@@ -124,8 +192,11 @@ void PerformanceTest::testConnectionTime()
 
     // 预热 1 个连接
     qDebug() << "   预热连接中...";
-    pool.preWarm(url, 1);
-    QThread::sleep(2);
+    const auto preWarmResult = awaitFuture(pool.preWarm(url, 1));
+    if (!preWarmResult.isSuccess()) {
+        qWarning() << "预热失败:" << preWarmResult.error();
+        return;
+    }
 
     qint64 timeWithPool = 0;
     int successWith     = 0;
@@ -134,18 +205,19 @@ void PerformanceTest::testConnectionTime()
         QElapsedTimer timer;
         timer.start();
 
-        auto *socket = pool.acquire(url);
+        const auto acquired = acquireSocket(pool, url);
+        auto *socket        = acquired.socket;
         if (socket && socket->state() == QCWebSocket::State::Connected) {
             qint64 elapsed = timer.elapsed();
             timeWithPool += elapsed;
             successWith++;
             qDebug() << "   第" << (i + 1) << "次:" << elapsed << "ms（复用）";
-            pool.release(socket);
+            releaseSocket(pool, acquired);
             QThread::msleep(100);
         } else {
             qWarning() << "   第" << (i + 1) << "次: 获取连接失败";
             if (socket) {
-                pool.release(socket);
+                releaseSocket(pool, acquired);
             }
         }
     }
@@ -185,12 +257,12 @@ void PerformanceTest::testThroughput()
     int sentWithout = 0;
     for (int i = 0; i < messageCount; ++i) {
         QCWebSocket socket(url, QCWebSocketOptions{});
-        socket.open();
+        static_cast<void>(socket.open());
 
         if (waitForConnection(&socket, 10000)) {
-            socket.sendTextMessage("test message " + QString::number(i));
+            static_cast<void>(socket.sendTextMessage("test message " + QString::number(i)));
             sentWithout++;
-            socket.close();
+            static_cast<void>(socket.close());
             QThread::msleep(200);
         } else {
             qWarning() << "   第" << (i + 1) << "条消息发送失败";
@@ -214,24 +286,28 @@ void PerformanceTest::testThroughput()
 
     // 预热连接
     qDebug() << "   预热连接中...";
-    pool.preWarm(url, 1);
-    QThread::sleep(2);
+    const auto preWarmResult = awaitFuture(pool.preWarm(url, 1));
+    if (!preWarmResult.isSuccess()) {
+        qWarning() << "预热失败:" << preWarmResult.error();
+        return;
+    }
 
     QElapsedTimer timer2;
     timer2.start();
 
     int sentWith = 0;
     for (int i = 0; i < messageCount; ++i) {
-        auto *socket = pool.acquire(url);
+        const auto acquired = acquireSocket(pool, url);
+        auto *socket        = acquired.socket;
         if (socket && socket->state() == QCWebSocket::State::Connected) {
-            socket->sendTextMessage("test message " + QString::number(i));
+            static_cast<void>(socket->sendTextMessage("test message " + QString::number(i)));
             sentWith++;
-            pool.release(socket);
+            releaseSocket(pool, acquired);
             QThread::msleep(50);
         } else {
             qWarning() << "   第" << (i + 1) << "条消息发送失败";
             if (socket) {
-                pool.release(socket);
+                releaseSocket(pool, acquired);
             }
         }
     }

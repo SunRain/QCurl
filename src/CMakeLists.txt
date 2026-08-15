@@ -215,6 +215,7 @@ set(QCURL_WEBSOCKET_PREVIEW_SOURCES
     private/QCWebSocketReconnect.cpp
     QCWebSocketReconnectPolicy.cpp
     QCWebSocketPool.cpp                 # Other Extras / Preview: WebSocket 连接池
+    QCWebSocketPoolMutators.cpp         # Other Extras / Preview: WebSocket 连接池同步变更
     QCWebSocketPoolMaintenance.cpp      # Other Extras / Preview: WebSocket 连接池维护逻辑
     QCWebSocketPoolValues.cpp           # Other Extras / Preview: WebSocket 连接池值类型
     private/QCWebSocketCloseCode.cpp
@@ -231,7 +232,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h                   # Other Extras / Preview: WebSocket 连接池
-        QCWebSocketCompressionConfig.h      # Other Extras / Preview: WebSocket 压缩配置
+        QCWebSocketPoolResults.h
     )
     list(APPEND QCURL_FEATURE_HEADERS
         QCWebSocket_p.h
@@ -340,16 +341,18 @@ set(QCURL_INSTALL_HEADERS_OTHER_EXTRAS
 
 if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND QCURL_INSTALL_HEADERS_EXTRAS
+        QCWebSocketCommandResult.h
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h
-        QCWebSocketCompressionConfig.h
+        QCWebSocketPoolResults.h
     )
     list(APPEND QCURL_INSTALL_HEADERS_OTHER_EXTRAS
+        QCWebSocketCommandResult.h
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
         QCWebSocketPool.h
-        QCWebSocketCompressionConfig.h
+        QCWebSocketPoolResults.h
     )
 endif()
 

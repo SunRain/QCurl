@@ -2,9 +2,133 @@
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
+#include "private/QCWebSocketPoolPrivate_p.h"
+
 #include <QSharedData>
+#include <QThread>
 
 namespace QCurl {
+
+/// WebSocket 连接池 acquire 操作的隐式共享结果存储。
+class QCWebSocketAcquireResultData : public QSharedData
+{
+public:
+    QCWebSocketAcquireResult::Status status   = QCWebSocketAcquireResult::Status::Cancelled;
+    QCWebSocketAcquireResult::LeaseId leaseId = 0;
+    QString error;
+};
+
+/// WebSocket 连接池预热操作的隐式共享结果存储。
+class QCWebSocketPreWarmResultData : public QSharedData
+{
+public:
+    QCWebSocketPreWarmResult::Status status = QCWebSocketPreWarmResult::Status::Cancelled;
+    int requested                           = 0;
+    int warmed                              = 0;
+    QString error;
+};
+
+QCWebSocketAcquireResult::QCWebSocketAcquireResult()
+    : d(new QCWebSocketAcquireResultData)
+{}
+
+QCWebSocketAcquireResult::QCWebSocketAcquireResult(const QCWebSocketAcquireResult &other) = default;
+QCWebSocketAcquireResult::QCWebSocketAcquireResult(
+    QCWebSocketAcquireResult &&other) noexcept        = default;
+QCWebSocketAcquireResult::~QCWebSocketAcquireResult() = default;
+QCWebSocketAcquireResult &QCWebSocketAcquireResult::operator=(
+    const QCWebSocketAcquireResult &other) = default;
+QCWebSocketAcquireResult &QCWebSocketAcquireResult::operator=(
+    QCWebSocketAcquireResult &&other) noexcept = default;
+
+QCWebSocketAcquireResult QCWebSocketAcquireResult::success(const LeaseId leaseId)
+{
+    QCWebSocketAcquireResult result;
+    result.d->status  = Status::Success;
+    result.d->leaseId = leaseId;
+    return result;
+}
+
+QCWebSocketAcquireResult QCWebSocketAcquireResult::failure(Status status, const QString &error)
+{
+    QCWebSocketAcquireResult result;
+    result.d->status = status;
+    result.d->error  = error;
+    return result;
+}
+
+QCWebSocketAcquireResult::Status QCWebSocketAcquireResult::status() const noexcept
+{
+    return d->status;
+}
+QCWebSocketAcquireResult::LeaseId QCWebSocketAcquireResult::leaseId() const noexcept
+{
+    return d->leaseId;
+}
+QString QCWebSocketAcquireResult::error() const
+{
+    return d->error;
+}
+bool QCWebSocketAcquireResult::isSuccess() const noexcept
+{
+    return d->status == Status::Success;
+}
+
+QCWebSocketPreWarmResult::QCWebSocketPreWarmResult()
+    : d(new QCWebSocketPreWarmResultData)
+{}
+
+QCWebSocketPreWarmResult::QCWebSocketPreWarmResult(const QCWebSocketPreWarmResult &other) = default;
+QCWebSocketPreWarmResult::QCWebSocketPreWarmResult(
+    QCWebSocketPreWarmResult &&other) noexcept        = default;
+QCWebSocketPreWarmResult::~QCWebSocketPreWarmResult() = default;
+QCWebSocketPreWarmResult &QCWebSocketPreWarmResult::operator=(
+    const QCWebSocketPreWarmResult &other) = default;
+QCWebSocketPreWarmResult &QCWebSocketPreWarmResult::operator=(
+    QCWebSocketPreWarmResult &&other) noexcept = default;
+
+QCWebSocketPreWarmResult QCWebSocketPreWarmResult::success(int requested, int warmed)
+{
+    QCWebSocketPreWarmResult result;
+    result.d->status    = Status::Success;
+    result.d->requested = requested;
+    result.d->warmed    = warmed;
+    return result;
+}
+
+QCWebSocketPreWarmResult QCWebSocketPreWarmResult::failure(Status status,
+                                                           int requested,
+                                                           int warmed,
+                                                           const QString &error)
+{
+    QCWebSocketPreWarmResult result;
+    result.d->status    = status;
+    result.d->requested = requested;
+    result.d->warmed    = warmed;
+    result.d->error     = error;
+    return result;
+}
+
+QCWebSocketPreWarmResult::Status QCWebSocketPreWarmResult::status() const noexcept
+{
+    return d->status;
+}
+int QCWebSocketPreWarmResult::requestedCount() const noexcept
+{
+    return d->requested;
+}
+int QCWebSocketPreWarmResult::warmedCount() const noexcept
+{
+    return d->warmed;
+}
+QString QCWebSocketPreWarmResult::error() const
+{
+    return d->error;
+}
+bool QCWebSocketPreWarmResult::isSuccess() const noexcept
+{
+    return d->status == Status::Success;
+}
 
 namespace {
 
@@ -210,6 +334,62 @@ double QCWebSocketPoolStats::hitRate() const noexcept
 void QCWebSocketPoolStats::setHitRate(double value) noexcept
 {
     d->hitRate = value;
+}
+
+int QCWebSocketPool::totalConnectionCount() const
+{
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying) {
+        return 0;
+    }
+    int count = 0;
+    for (const auto &pool : d_ptr->pools) {
+        for (const auto &conn : pool) {
+            count += conn.socket ? 1 : 0;
+        }
+    }
+    return count;
+}
+
+QCWebSocketPoolStats QCWebSocketPool::statistics(const QUrl &url) const
+{
+    QCWebSocketPoolStats stats;
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying
+        || QThread::currentThread() != thread()) {
+        return stats;
+    }
+    const auto addPool = [&stats](const QList<QCWebSocketPoolPrivate::PooledConnection> &pool) {
+        for (const auto &conn : pool) {
+            if (!conn.socket) {
+                continue;
+            }
+            stats.setTotalConnections(stats.totalConnections() + 1);
+            if (conn.inUse) {
+                stats.setActiveConnections(stats.activeConnections() + 1);
+            } else {
+                stats.setIdleConnections(stats.idleConnections() + 1);
+            }
+        }
+    };
+    if (url.isEmpty()) {
+        for (const auto &pool : d_ptr->pools) {
+            addPool(pool);
+        }
+        for (const int count : d_ptr->hitCounts) {
+            stats.setHitCount(stats.hitCount() + count);
+        }
+        for (const int count : d_ptr->missCounts) {
+            stats.setMissCount(stats.missCount() + count);
+        }
+    } else {
+        addPool(d_ptr->pools.value(url));
+        stats.setHitCount(d_ptr->hitCounts.value(url));
+        stats.setMissCount(d_ptr->missCounts.value(url));
+    }
+    const int totalRequests = stats.hitCount() + stats.missCount();
+    if (totalRequests > 0) {
+        stats.setHitRate(static_cast<double>(stats.hitCount()) / totalRequests * 100.0);
+    }
+    return stats;
 }
 
 } // namespace QCurl

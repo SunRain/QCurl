@@ -22,6 +22,7 @@ set(HEADERS
 
 # 创建可执行文件
 add_executable(WebSocketPoolDemo ${SOURCES} ${HEADERS})
+qcurl_enable_qt_no_keywords(WebSocketPoolDemo)
 
 # 链接库
 target_link_libraries(WebSocketPoolDemo

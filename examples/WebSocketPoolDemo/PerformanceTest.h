@@ -24,7 +24,7 @@ public:
     explicit PerformanceTest(QObject *parent = nullptr);
     ~PerformanceTest();
 
-public slots:
+public Q_SLOTS:
     /**
      * @brief 测试 1：连接建立时间对比
      * 

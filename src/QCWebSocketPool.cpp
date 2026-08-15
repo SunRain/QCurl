@@ -6,38 +6,47 @@
 #include "private/QCWebSocketPoolPrivate_p.h"
 
 #include <QDateTime>
-#include <QDebug>
-#include <QMutexLocker>
+#include <QMetaObject>
+#include <QPointer>
+#include <QPromise>
+#include <QThread>
 #include <QTimer>
 
 namespace QCurl {
 
-// ==================
-// 构造函数和析构函数
-// ==================
+namespace {
+
+template<typename Result>
+QFuture<Result> finishedFuture(const Result &result)
+{
+    QPromise<Result> promise;
+    promise.start();
+    promise.addResult(result);
+    promise.finish();
+    return promise.future();
+}
+
+} // namespace
 
 QCWebSocketPool::QCWebSocketPool(const QCWebSocketPoolConfig &config, QObject *parent)
     : QObject(parent)
     , d_ptr(new QCWebSocketPoolPrivate)
 {
-    d_ptr->config = config;
-
-    // 创建清理定时器（每 60 秒检查一次空闲连接）
-    d_ptr->cleanupTimer = new QTimer(this);
+    const auto validation = QCWebSocketPoolPrivate::validateConfig(config);
+    d_ptr->config         = validation.valid ? config : QCWebSocketPoolConfig();
+    d_ptr->cleanupTimer   = new QTimer(this);
     connect(d_ptr->cleanupTimer, &QTimer::timeout, this, &QCWebSocketPool::onCleanupTimer);
-    d_ptr->cleanupTimer->start(60000); // 60 秒
+    d_ptr->cleanupTimer->start(60000);
 
-    // 创建心跳定时器
     if (d_ptr->config.enableKeepAlive()) {
         d_ptr->keepAliveTimer = new QTimer(this);
         connect(d_ptr->keepAliveTimer, &QTimer::timeout, this, &QCWebSocketPool::onKeepAliveTimer);
-        d_ptr->keepAliveTimer->start(d_ptr->config.keepAliveInterval() * 1000);
+        const auto interval = QCWebSocketPoolPrivate::keepAliveIntervalMilliseconds(
+            d_ptr->config.keepAliveInterval());
+        if (interval.has_value()) {
+            d_ptr->keepAliveTimer->start(interval.value());
+        }
     }
-
-    qDebug() << "QCWebSocketPool: 连接池已创建，配置:"
-             << "maxPoolSize=" << d_ptr->config.maxPoolSize()
-             << "maxIdleTime=" << d_ptr->config.maxIdleTime()
-             << "s";
 }
 
 QCWebSocketPool::QCWebSocketPool(QObject *parent)
@@ -46,263 +55,201 @@ QCWebSocketPool::QCWebSocketPool(QObject *parent)
 
 QCWebSocketPool::~QCWebSocketPool()
 {
-    clearPool(); // 清理所有连接
-    qDebug() << "QCWebSocketPool: 连接池已销毁";
-}
-
-// ==================
-// 核心 API 实现
-// ==================
-
-QCWebSocket *QCWebSocketPool::acquire(const QUrl &url)
-{
-    QMutexLocker locker(&d_ptr->mutex);
-
-    // 1. 查找池中可用连接（优先复用）
-    if (d_ptr->pools.contains(url)) {
-        auto &pool = d_ptr->pools[url];
+    d_ptr->lifecycleState = QCWebSocketPoolPrivate::LifecycleState::Destroying;
+    for (auto &pool : d_ptr->pools) {
         for (auto &conn : pool) {
-            if (!conn.inUse && conn.socket->state() == QCWebSocket::State::Connected) {
-                conn.inUse        = true;
-                conn.lastUsedTime = QDateTime::currentDateTime();
-                conn.reuseCount++;
-
-                d_ptr->hitCounts[url]++;
-                qDebug() << "QCWebSocketPool: 复用连接" << url.toString()
-                         << "复用次数:" << conn.reuseCount;
-
-                emit connectionReused(url);
-                return conn.socket;
+            if (conn.acquirePromise) {
+                conn.acquirePromise->addResult(
+                    QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::PoolDestroyed,
+                                                      QStringLiteral("pool destroyed")));
+                conn.acquirePromise->finish();
+                conn.acquirePromise.reset();
             }
         }
     }
-
-    // 2. 无可用连接，检查是否可以创建新连接
-    if (!canCreateConnection(url)) {
-        qWarning() << "QCWebSocketPool: 达到连接数限制，无法创建新连接" << url.toString();
-        emit poolLimitReached(url);
-        return nullptr;
+    d_ptr->clearConnections(this, QUrl());
+    for (auto &operation : d_ptr->preWarmOperations) {
+        if (!operation->finished) {
+            operation->finished = true;
+            operation->promise->addResult(
+                QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::PoolDestroyed,
+                                                  operation->requested,
+                                                  operation->warmed,
+                                                  QStringLiteral("pool destroyed")));
+            operation->promise->finish();
+        }
     }
-
-    // 3. 创建新连接
-    QCWebSocket *socket = createNewConnection(url);
-    if (!socket) {
-        qWarning() << "QCWebSocketPool: 创建连接失败" << url.toString();
-        return nullptr;
-    }
-
-    // 4. 添加到池中
-    QCWebSocketPoolPrivate::PooledConnection conn;
-    conn.socket       = socket;
-    conn.lastUsedTime = QDateTime::currentDateTime();
-    conn.createdTime  = QDateTime::currentDateTime();
-    conn.inUse        = true;
-    conn.reuseCount   = 0;
-
-    d_ptr->pools[url].append(conn);
-    d_ptr->socketToUrl[socket] = url;
-    d_ptr->missCounts[url]++;
-
-    qDebug() << "QCWebSocketPool: 创建新连接" << url.toString()
-             << "当前池大小:" << d_ptr->pools[url].size();
-
-    emit connectionCreated(url);
-    return socket;
 }
 
-void QCWebSocketPool::release(QCWebSocket *socket)
+QFuture<QCWebSocketAcquireResult> QCWebSocketPool::acquire(const QUrl &url)
 {
-    QMutexLocker locker(&d_ptr->mutex);
-
-    if (!socket) {
-        qWarning() << "QCWebSocketPool: 尝试释放空指针";
-        return;
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying) {
+        return finishedFuture(
+            QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::PoolDestroyed,
+                                              QStringLiteral("pool is destroying")));
+    }
+    if (QThread::currentThread() != thread()) {
+        return finishedFuture(QCWebSocketAcquireResult::failure(
+            QCWebSocketAcquireResult::Status::WrongThread,
+            QStringLiteral("QCWebSocketPool::acquire requires the owner thread")));
     }
 
-    if (!d_ptr->socketToUrl.contains(socket)) {
-        qWarning() << "QCWebSocketPool: 尝试释放未知连接";
-        return;
-    }
+    auto promise = std::make_shared<QPromise<QCWebSocketAcquireResult>>();
+    promise->start();
+    const auto future = promise->future();
 
-    QUrl url   = d_ptr->socketToUrl[socket];
     auto &pool = d_ptr->pools[url];
-
     for (auto &conn : pool) {
-        if (conn.socket == socket) {
-            if (!conn.inUse) {
-                qWarning() << "QCWebSocketPool: 连接已处于空闲状态" << url.toString();
-                return;
+        if (conn.socket && !conn.inUse && conn.socket->state() == QCWebSocket::State::Connected) {
+            const auto leaseId = d_ptr->issueLease(conn.identity);
+            if (!leaseId.has_value()) {
+                promise->addResult(QCWebSocketAcquireResult::failure(
+                    QCWebSocketAcquireResult::Status::ConnectionFailed,
+                    QStringLiteral("WebSocket lease id space exhausted")));
+                promise->finish();
+                return future;
             }
-
-            conn.inUse        = false;
+            conn.inUse        = true;
+            conn.leaseId      = leaseId.value();
             conn.lastUsedTime = QDateTime::currentDateTime();
-
-            qDebug() << "QCWebSocketPool: 归还连接" << url.toString();
-            return;
+            conn.reuseCount++;
+            d_ptr->hitCounts[url]++;
+            promise->addResult(QCWebSocketAcquireResult::success(leaseId.value()));
+            promise->finish();
+            Q_EMIT connectionReused(url);
+            return future;
         }
     }
+
+    if (!canCreateConnection(url)) {
+        promise->addResult(
+            QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::PoolLimitReached,
+                                              QStringLiteral("connection pool limit reached")));
+        promise->finish();
+        Q_EMIT poolLimitReached(url);
+        return future;
+    }
+
+    auto *socket = createNewConnection(url);
+    if (!socket) {
+        promise->addResult(
+            QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::ConnectionFailed,
+                                              QStringLiteral("unable to create WebSocket")));
+        promise->finish();
+        return future;
+    }
+    const auto leaseId = d_ptr->issueLease(socket);
+    if (!leaseId.has_value()) {
+        socket->deleteLater();
+        promise->addResult(
+            QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::ConnectionFailed,
+                                              QStringLiteral(
+                                                  "WebSocket lease id space exhausted")));
+        promise->finish();
+        return future;
+    }
+
+    QCWebSocketPoolPrivate::PooledConnection conn;
+    conn.socket         = socket;
+    conn.identity       = socket;
+    conn.lastUsedTime   = QDateTime::currentDateTime();
+    conn.createdTime    = conn.lastUsedTime;
+    conn.inUse          = true;
+    conn.leaseId        = leaseId.value();
+    conn.acquirePromise = promise;
+    pool.append(conn);
+    d_ptr->socketToUrl.insert(socket, url);
+    d_ptr->missCounts[url]++;
+    static_cast<void>(socket->open());
+    return future;
 }
 
 bool QCWebSocketPool::contains(const QUrl &url) const
 {
-    QMutexLocker locker(&d_ptr->mutex);
-    return d_ptr->pools.contains(url) && !d_ptr->pools[url].isEmpty();
-}
-
-// ==================
-// 池管理实现
-// ==================
-
-void QCWebSocketPool::clearPool(const QUrl &url)
-{
-    QMutexLocker locker(&d_ptr->mutex);
-
-    if (url.isEmpty()) {
-        // 清理所有池
-        qDebug() << "QCWebSocketPool: 清理所有连接池";
-        for (auto it = d_ptr->pools.begin(); it != d_ptr->pools.end(); ++it) {
-            for (auto &conn : it.value()) {
-                conn.socket->close();
-                conn.socket->deleteLater();
-            }
-        }
-        d_ptr->pools.clear();
-        d_ptr->socketToUrl.clear();
-        d_ptr->hitCounts.clear();
-        d_ptr->missCounts.clear();
-    } else {
-        // 清理指定 URL 的池
-        if (d_ptr->pools.contains(url)) {
-            qDebug() << "QCWebSocketPool: 清理连接池" << url.toString();
-            auto &pool = d_ptr->pools[url];
-            for (auto &conn : pool) {
-                d_ptr->socketToUrl.remove(conn.socket);
-                conn.socket->close();
-                conn.socket->deleteLater();
-                emit connectionClosed(url);
-            }
-            d_ptr->pools.remove(url);
-            d_ptr->hitCounts.remove(url);
-            d_ptr->missCounts.remove(url);
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying
+        || QThread::currentThread() != thread()) {
+        return false;
+    }
+    const auto it = d_ptr->pools.constFind(url);
+    if (it == d_ptr->pools.cend()) {
+        return false;
+    }
+    for (const auto &conn : it.value()) {
+        if (conn.socket) {
+            return true;
         }
     }
+    return false;
 }
 
-void QCWebSocketPool::preWarm(const QUrl &url, int count)
+QFuture<QCWebSocketPreWarmResult> QCWebSocketPool::preWarm(const QUrl &url, int count)
 {
-    if (count <= 0) {
-        return;
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying) {
+        return finishedFuture(
+            QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::PoolDestroyed,
+                                              count,
+                                              0,
+                                              QStringLiteral("pool is destroying")));
+    }
+    if (QThread::currentThread() != thread()) {
+        return finishedFuture(QCWebSocketPreWarmResult::failure(
+            QCWebSocketPreWarmResult::Status::WrongThread,
+            count,
+            0,
+            QStringLiteral("QCWebSocketPool::preWarm requires the owner thread")));
+    }
+    const auto validation = QCWebSocketPoolPrivate::validatePreWarmCount(count);
+    if (!validation.valid) {
+        return finishedFuture(
+            QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::InvalidArgument,
+                                              count,
+                                              0,
+                                              validation.error));
+    }
+    if (count == 0) {
+        return finishedFuture(QCWebSocketPreWarmResult::success(count, 0));
     }
 
-    qDebug() << "QCWebSocketPool: 预热连接" << url.toString() << "数量:" << count;
+    auto operation     = std::make_shared<QCWebSocketPoolPrivate::PreWarmOperation>();
+    operation->promise = std::make_shared<QPromise<QCWebSocketPreWarmResult>>();
+    operation->promise->start();
+    operation->requested = count;
+    d_ptr->preWarmOperations.append(operation);
 
-    QList<QCWebSocket *> warmedSockets;
-    warmedSockets.reserve(count);
-
+    operation->pending = count;
     for (int i = 0; i < count; ++i) {
-        auto *socket = acquire(url);
-        if (socket) {
-            warmedSockets.append(socket);
-            continue;
-        }
-
-        qWarning() << "QCWebSocketPool: 预热失败，已创建" << warmedSockets.size() << "个连接";
-        break;
+        acquire(url).then(this, [this, operation](QCWebSocketAcquireResult result) {
+            /**
+             * @brief 在当前信号回调结束后结算预热归还结果。
+             *
+             * connectionCreated() 允许同步重入清理连接池；延后一轮事件循环后，
+             * release() 能够观察到最新索引并将失败转换为 ConnectionFailed。
+             */
+            QMetaObject::invokeMethod(
+                this,
+                [this, operation, result]() mutable {
+                    if (result.isSuccess()) {
+                        if (release(result.leaseId()) != LeaseResult::Success) {
+                            result = QCWebSocketAcquireResult::failure(
+                                QCWebSocketAcquireResult::Status::ConnectionFailed,
+                                QStringLiteral("preWarm 归还连接失败"));
+                        }
+                    }
+                    d_ptr->completePreWarmAcquire(operation, result);
+                },
+                Qt::QueuedConnection);
+        });
     }
-
-    for (QCWebSocket *socket : warmedSockets) {
-        if (!socket) {
-            break;
-        }
-
-        // 延后统一归还，避免在预热循环中立刻复用同一条空闲连接。
-        release(socket);
-    }
-}
-
-void QCWebSocketPool::setConfig(const QCWebSocketPoolConfig &config)
-{
-    QMutexLocker locker(&d_ptr->mutex);
-    d_ptr->config = config;
-
-    // 更新心跳定时器
-    if (d_ptr->config.enableKeepAlive()) {
-        if (!d_ptr->keepAliveTimer) {
-            d_ptr->keepAliveTimer = new QTimer(this);
-            connect(d_ptr->keepAliveTimer,
-                    &QTimer::timeout,
-                    this,
-                    &QCWebSocketPool::onKeepAliveTimer);
-        }
-        d_ptr->keepAliveTimer->start(d_ptr->config.keepAliveInterval() * 1000);
-    } else {
-        if (d_ptr->keepAliveTimer) {
-            d_ptr->keepAliveTimer->stop();
-        }
-    }
-
-    qDebug() << "QCWebSocketPool: 配置已更新";
+    return operation->promise->future();
 }
 
 QCWebSocketPoolConfig QCWebSocketPool::config() const
 {
-    QMutexLocker locker(&d_ptr->mutex);
+    if (d_ptr->lifecycleState == QCWebSocketPoolPrivate::LifecycleState::Destroying
+        || QThread::currentThread() != thread()) {
+        return {};
+    }
     return d_ptr->config;
-}
-
-// ==================
-// 统计信息实现
-// ==================
-
-QCWebSocketPoolStats QCWebSocketPool::statistics(const QUrl &url) const
-{
-    QMutexLocker locker(&d_ptr->mutex);
-    QCWebSocketPoolStats stats;
-
-    if (url.isEmpty()) {
-        // 全局统计
-        for (const auto &pool : d_ptr->pools) {
-            for (const auto &conn : pool) {
-                stats.setTotalConnections(stats.totalConnections() + 1);
-                if (conn.inUse) {
-                    stats.setActiveConnections(stats.activeConnections() + 1);
-                } else {
-                    stats.setIdleConnections(stats.idleConnections() + 1);
-                }
-            }
-        }
-
-        for (int count : d_ptr->hitCounts) {
-            stats.setHitCount(stats.hitCount() + count);
-        }
-        for (int count : d_ptr->missCounts) {
-            stats.setMissCount(stats.missCount() + count);
-        }
-    } else {
-        // 指定 URL 的统计
-        if (d_ptr->pools.contains(url)) {
-            const auto &pool = d_ptr->pools[url];
-            for (const auto &conn : pool) {
-                stats.setTotalConnections(stats.totalConnections() + 1);
-                if (conn.inUse) {
-                    stats.setActiveConnections(stats.activeConnections() + 1);
-                } else {
-                    stats.setIdleConnections(stats.idleConnections() + 1);
-                }
-            }
-        }
-
-        stats.setHitCount(d_ptr->hitCounts.value(url, 0));
-        stats.setMissCount(d_ptr->missCounts.value(url, 0));
-    }
-
-    // 计算命中率
-    const int totalRequests = stats.hitCount() + stats.missCount();
-    if (totalRequests > 0) {
-        stats.setHitRate(static_cast<double>(stats.hitCount()) / totalRequests * 100.0);
-    }
-
-    return stats;
 }
 
 } // namespace QCurl

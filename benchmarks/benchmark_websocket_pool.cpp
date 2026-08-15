@@ -8,6 +8,7 @@
 #include "QCWebSocket.h"
 #include "QCWebSocketPool.h"
 
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -19,7 +20,7 @@ class BenchmarkWebSocketPool : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     void init();
@@ -33,8 +34,20 @@ private slots:
     void benchmarkPreWarm();
 
 private:
+    /**
+     * @brief 连接池 owner thread 中一次已解析的活动借用。
+     */
+    struct AcquiredSocket
+    {
+        QCWebSocket *socket              = nullptr;
+        QCWebSocketPool::LeaseId leaseId = 0;
+    };
+
     QCWebSocketPool *pool = nullptr;
     bool waitForConnection(QCWebSocket *socket, int timeout = 5000);
+    QCWebSocketAcquireResult awaitAcquire(const QUrl &url, int timeout = 10000);
+    AcquiredSocket acquireSocket(const QUrl &url, int timeout = 10000);
+    QCWebSocketPreWarmResult awaitPreWarm(const QUrl &url, int count, int timeout = 15000);
 };
 
 void BenchmarkWebSocketPool::initTestCase()
@@ -54,7 +67,8 @@ void BenchmarkWebSocketPool::cleanup()
 {
     // 清理连接池
     if (pool) {
-        pool->clearPool();
+        QString error;
+        QVERIFY2(pool->clearPool({}, &error), qPrintable(error));
         delete pool;
         pool = nullptr;
     }
@@ -74,6 +88,56 @@ bool BenchmarkWebSocketPool::waitForConnection(QCWebSocket *socket, int timeout)
     return spy.wait(timeout) || socket->state() == QCWebSocket::State::Connected;
 }
 
+QCWebSocketAcquireResult BenchmarkWebSocketPool::awaitAcquire(const QUrl &url, int timeout)
+{
+    auto future = pool->acquire(url);
+    QElapsedTimer timer;
+    timer.start();
+    while (!future.isFinished() && timer.elapsed() < timeout) {
+        QTest::qWait(10);
+    }
+    if (!future.isFinished()) {
+        return QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::ConnectionFailed,
+                                                 QStringLiteral("acquire timeout"));
+    }
+    return future.result();
+}
+
+BenchmarkWebSocketPool::AcquiredSocket BenchmarkWebSocketPool::acquireSocket(const QUrl &url,
+                                                                             const int timeout)
+{
+    const auto result = awaitAcquire(url, timeout);
+    if (!result.isSuccess()) {
+        return {};
+    }
+
+    QCWebSocket *socket = nullptr;
+    if (pool->resolveLease(result.leaseId(), &socket) != QCWebSocketPool::LeaseResult::Success) {
+        static_cast<void>(pool->release(result.leaseId()));
+        return {};
+    }
+    return {socket, result.leaseId()};
+}
+
+QCWebSocketPreWarmResult BenchmarkWebSocketPool::awaitPreWarm(const QUrl &url,
+                                                              int count,
+                                                              int timeout)
+{
+    auto future = pool->preWarm(url, count);
+    QElapsedTimer timer;
+    timer.start();
+    while (!future.isFinished() && timer.elapsed() < timeout) {
+        QTest::qWait(10);
+    }
+    if (!future.isFinished()) {
+        return QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::ConnectionFailed,
+                                                 count,
+                                                 0,
+                                                 QStringLiteral("preWarm timeout"));
+    }
+    return future.result();
+}
+
 void BenchmarkWebSocketPool::benchmarkAcquireWithoutPool()
 {
     QUrl url(TEST_URL);
@@ -81,10 +145,10 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithoutPool()
     QBENCHMARK
     {
         QCWebSocket socket(url, QCWebSocketOptions{});
-        socket.open();
+        static_cast<void>(socket.open());
 
         if (waitForConnection(&socket, 10000)) {
-            socket.close();
+            static_cast<void>(socket.close());
             QTest::qWait(100);
         } else {
             QSKIP("无法连接到测试服务器");
@@ -109,13 +173,14 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithPool()
 
     // 预热连接
     if (warmupCount > 0) {
-        pool->preWarm(url, warmupCount);
-        QTest::qWait(3000); // 等待连接建立
+        const auto result = awaitPreWarm(url, warmupCount);
+        QCOMPARE(result.status(), QCWebSocketPreWarmResult::Status::Success);
     }
 
     QBENCHMARK
     {
-        auto *socket = pool->acquire(url);
+        const auto acquired = acquireSocket(url);
+        auto *socket        = acquired.socket;
 
         if (!socket) {
             QSKIP("无法获取连接");
@@ -123,12 +188,12 @@ void BenchmarkWebSocketPool::benchmarkAcquireWithPool()
 
         if (socket->state() != QCWebSocket::State::Connected) {
             if (!waitForConnection(socket, 10000)) {
-                pool->release(socket);
+                QCOMPARE(pool->release(acquired.leaseId), QCWebSocketPool::LeaseResult::Success);
                 QSKIP("连接超时");
             }
         }
 
-        pool->release(socket);
+        QCOMPARE(pool->release(acquired.leaseId), QCWebSocketPool::LeaseResult::Success);
     }
 }
 
@@ -137,19 +202,20 @@ void BenchmarkWebSocketPool::benchmarkConnectionReuse()
     QUrl url(TEST_URL);
 
     // 预热 1 个连接
-    pool->preWarm(url, 1);
-    QTest::qWait(3000);
+    QCOMPARE(awaitPreWarm(url, 1).status(), QCWebSocketPreWarmResult::Status::Success);
 
     QBENCHMARK
     {
         // 获取 → 释放 → 再次获取（应复用）
-        auto *s1 = pool->acquire(url);
+        const auto acquired1 = acquireSocket(url);
+        auto *s1             = acquired1.socket;
         QVERIFY(s1 != nullptr);
-        pool->release(s1);
+        QCOMPARE(pool->release(acquired1.leaseId), QCWebSocketPool::LeaseResult::Success);
 
-        auto *s2 = pool->acquire(url);
+        const auto acquired2 = acquireSocket(url);
+        auto *s2             = acquired2.socket;
         QVERIFY(s2 == s1); // 验证复用
-        pool->release(s2);
+        QCOMPARE(pool->release(acquired2.leaseId), QCWebSocketPool::LeaseResult::Success);
     }
 }
 
@@ -160,8 +226,9 @@ void BenchmarkWebSocketPool::benchmarkPreWarm()
     QBENCHMARK
     {
         QCWebSocketPool tempPool;
-        tempPool.preWarm(url, 5);
-        QTest::qWait(3000);
+        auto future = tempPool.preWarm(url, 5);
+        QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 15000);
+        QCOMPARE(future.result().status(), QCWebSocketPreWarmResult::Status::Success);
     }
 }
 

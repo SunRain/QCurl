@@ -6,11 +6,14 @@
 #ifndef QCWEBSOCKETPOOL_H
 #define QCWEBSOCKETPOOL_H
 
-#include "QCurlConfig.h"
+#include "QCGlobal.h"
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
 
 #include "QCNetworkSslConfig.h"
+#include "QCWebSocketPoolResults.h"
+
+#include <QFuture>
 #include <QObject>
 #include <QScopedPointer>
 #include <QSharedDataPointer>
@@ -118,13 +121,32 @@ private:
  * @brief 复用和管理 `QCWebSocket` 连接
  *
  * 连接池按 URL 分组维护连接，区分 in-use 与 idle 状态，并负责清理、
- * keepalive 和连接数限制。
+ * keepalive 和连接数限制。对象及其全部状态只能在 QObject owner thread 使用；
+ * acquire()/preWarm() 的跨线程调用会返回已完成的 WrongThread 结果且没有 socket 副作用。
+ *
+ * @note 错误生命周期：每次 lease/mutator 调用返回独立结果；成功清空可选诊断，失败状态为
+ * 权威分类。pool 不保存 last-error，lease 的有效性由 pool generation 与活动记录决定。
  */
 class QCURL_OTHER_EXTRAS_EXPORT QCWebSocketPool : public QObject
 {
     Q_OBJECT
 
 public:
+    using LeaseId = QCWebSocketAcquireResult::LeaseId;
+
+    /**
+     * @brief lease 解析或归还操作的结构化结果。
+     */
+    enum class LeaseResult {
+        Success,
+        WrongThread,
+        PoolDestroyed,
+        InvalidArgument,
+        UnknownLease,
+        InactiveLease,
+    };
+    Q_ENUM(LeaseResult)
+
     /**
      * @brief 构造函数
      * @param config 连接池配置
@@ -152,24 +174,44 @@ public:
     /**
      * @brief 获取连接
      * @param url WebSocket URL
-     * @return 可用的 QCWebSocket 指针，失败返回 nullptr
+     * @return 每次调用唯一的异步完成结果
      *
      * 优先从池中复用现有连接，如果无可用连接则创建新连接。
-     * 如果达到连接数限制，返回 nullptr 并发射 poolLimitReached() 信号。
+     * 如果达到连接数限制，返回 PoolLimitReached 并发射 poolLimitReached() 信号。
      *
-     * @note 获取的连接必须通过 release() 归还，否则会导致资源泄漏
+     * @note 成功结果只携带 lease id。调用方必须在连接池 owner thread 使用
+     * resolveLease() 临时解析连接，并在使用结束后通过 release() 归还同一 lease。
      */
-    QCWebSocket *acquire(const QUrl &url);
+    [[nodiscard]] QFuture<QCWebSocketAcquireResult> acquire(const QUrl &url);
 
     /**
-     * @brief 归还连接
-     * @param socket 要归还的 WebSocket 连接
+     * @brief 在连接池 owner thread 解析活动 lease 对应的连接。
+     * @param leaseId acquire() 成功结果中的非零 lease id。
+     * @param socket 接收非 owning 借用指针；函数进入时先写入 nullptr。
+     * @return 解析结果；只有 Success 表示 `socket` 已写入有效借用指针。
      *
-     * 将连接归还到池中以供复用。连接不会被关闭，而是标记为空闲状态。
+     * 成功返回的指针由连接池拥有，仅在原 lease 保持活动、连接未被清理或销毁且
+     * 连接池仍存活期间有效。调用方不得删除、重新设置 parent 或建立 owning
+     * 智能指针；跨事件循环或可能重入的调用保存该指针时必须自行使用 QPointer。
      *
-     * @note 归还后不应再使用该连接指针，除非再次 acquire()
+     * @note 本函数及连接对象的后续操作只能在连接池 owner thread 执行。
+     * WrongThread、PoolDestroyed、InvalidArgument、UnknownLease 和 InactiveLease
+     * 均不会改变连接池状态。
      */
-    void release(QCWebSocket *socket);
+    [[nodiscard]] LeaseResult resolveLease(LeaseId leaseId, QCWebSocket **socket) const;
+
+    /**
+     * @brief 将活动 lease 对应的连接同步归还连接池。
+     * @param leaseId acquire() 成功结果中的非零 lease id。
+     * @return 结构化归还结果。
+     *
+     * 成功时连接转为空闲状态且该 lease 立即失效。重复归还、连接已清理或已销毁
+     * 返回 InactiveLease；从未由本池签发的 id 返回 UnknownLease。错误线程和销毁中
+     * 调用均失败且不改变连接池状态。
+     *
+     * @note 归还成功后，先前由 resolveLease() 返回的借用指针不得继续使用。
+     */
+    [[nodiscard]] LeaseResult release(LeaseId leaseId);
 
     /**
      * @brief 检查池中是否包含指定 URL 的连接
@@ -183,31 +225,37 @@ public:
     // ==================
 
     /**
-     * @brief 清理连接池
-     * @param url WebSocket URL，如果为空则清理所有池
+     * @brief 同步清理连接池。
+     * @param url 要清理的 WebSocket URL；空 URL 表示清理全部连接。
+     * @param error 可选的错误输出；失败时写入稳定诊断，成功时清空。
+     * @return 在 owner thread 中完成清理时返回 `true`，否则返回 `false`。
      *
-     * 关闭并删除指定 URL 的所有连接（包括活跃和空闲连接）。
-     * 如果 url 为空，清理所有池。
+     * 关闭并延迟删除指定 URL 的全部连接，包括活跃连接和空闲连接。
+     * 合法的空池清理是成功的 no-op。错误线程或销毁中的连接池会失败，
+     * 不会排队到其他线程，也不会改变连接池状态。
      */
-    void clearPool(const QUrl &url = QUrl());
+    [[nodiscard]] bool clearPool(const QUrl &url = QUrl(), QString *error = nullptr);
 
     /**
      * @brief 预热连接
      * @param url WebSocket URL
      * @param count 预建立的连接数
      *
-     * 预先建立指定数量的连接，减少首次请求的延迟。
+     * 异步预先建立指定数量的连接，减少首次请求的延迟。
      * 适用于已知即将发起大量请求的场景。
      */
-    void preWarm(const QUrl &url, int count);
+    [[nodiscard]] QFuture<QCWebSocketPreWarmResult> preWarm(const QUrl &url, int count);
 
     /**
-     * @brief 设置配置
-     * @param config 新的配置
+     * @brief 同步更新连接池配置。
+     * @param config 新配置；参数仅在本次调用期间借用，成功时复制到池内。
+     * @param error 可选的错误输出；失败时写入稳定诊断，成功时清空。
+     * @return 在 owner thread 中完成配置更新时返回 `true`，否则返回 `false`。
      *
-     * @note 修改配置不会影响已建立的连接，仅对后续操作生效
+     * 错误线程、销毁中的连接池或非法配置会失败且不改变现有配置和定时器。
+     * 调用不会排队到其他线程。配置更新只影响后续操作，不重写已建立连接的状态。
      */
-    void setConfig(const QCWebSocketPoolConfig &config);
+    [[nodiscard]] bool setConfig(const QCWebSocketPoolConfig &config, QString *error = nullptr);
 
     /**
      * @brief 获取当前配置
@@ -226,7 +274,7 @@ public:
      */
     QCWebSocketPoolStats statistics(const QUrl &url = QUrl()) const;
 
-signals:
+Q_SIGNALS:
     /**
      * @brief 创建新连接时发射
      * @param url WebSocket URL
@@ -251,23 +299,30 @@ signals:
      */
     void poolLimitReached(const QUrl &url);
 
-private slots:
+private Q_SLOTS:
     void onCleanupTimer();
     void onKeepAliveTimer();
+    void onSocketConnected();
     void onSocketDisconnected();
+    void onSocketError(const QString &error);
+    void onSocketPong(const QByteArray &payload);
+    void onSocketDestroyed(QObject *object);
 
 private:
+    Q_DISABLE_COPY_MOVE(QCWebSocketPool)
+
     QScopedPointer<QCWebSocketPoolPrivate> d_ptr;
 
     // 内部方法
     QCWebSocket *createNewConnection(const QUrl &url);
+    void failPendingAcquire(QCWebSocket *socket,
+                            QCWebSocketAcquireResult::Status status,
+                            const QString &error);
     void removeConnection(QCWebSocket *socket);
     void cleanupIdleConnections();
     void sendKeepAlive();
     bool canCreateConnection(const QUrl &url) const;
     int totalConnectionCount() const;
-
-    Q_DISABLE_COPY(QCWebSocketPool)
 };
 
 } // namespace QCurl

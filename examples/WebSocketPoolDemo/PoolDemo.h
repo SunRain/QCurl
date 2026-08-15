@@ -27,7 +27,7 @@ public:
     explicit PoolDemo(QObject *parent = nullptr);
     ~PoolDemo();
 
-public slots:
+public Q_SLOTS:
     /**
      * @brief 演示 1：基本使用
      * 
