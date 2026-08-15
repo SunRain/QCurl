@@ -53,7 +53,7 @@ enum class QCNetworkCachePolicy {
      * 如果缓存存在，返回缓存数据（忽略过期时间）。
      * 如果缓存不存在，返回错误。
      */
-    OnlyCache
+    OnlyCache,
 };
 
 } // namespace QCurl

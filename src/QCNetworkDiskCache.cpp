@@ -1,54 +1,71 @@
 #include "QCNetworkDiskCache.h"
 
-#include <algorithm>
+#include "private/QCNetworkCacheKey_p.h"
+#include "private/QCNetworkDiskCacheEntry_p.h"
 
-#include <QCryptographicHash>
+#include <QDebug>
 #include <QDir>
-#include <QDirIterator>
 #include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QStandardPaths>
 
+#include <algorithm>
+
 namespace QCurl {
 
-/// 磁盘缓存内部状态；所有文件路径和容量统计通过同一锁保护。
+/**
+ * @brief 保存磁盘缓存目录、容量统计和条目索引操作的内部状态。
+ */
 class QCNetworkDiskCachePrivate
 {
 public:
-    // 所有磁盘缓存状态均由该锁保护，包括目录、容量和文件索引。
     mutable QMutex mutex;
     QString cacheDir;
     qint64 maxSize             = 50 * 1024 * 1024;
-    // -1 表示尚未扫描磁盘，下一次读取容量时再计算。
     mutable qint64 currentSize = -1;
 
-    QString cacheKey(const QUrl &url) const
+    [[nodiscard]] QString entryPath(const QString &entryId) const
     {
-        const QByteArray hash = QCryptographicHash::hash(url.toString().toUtf8(),
-                                                         QCryptographicHash::Md5);
-        return QString::fromLatin1(hash.toHex());
+        return QDir(cacheDir).filePath(entryId + QStringLiteral(".qce"));
     }
 
-    QString dataFilePath(const QString &key) const
+    [[nodiscard]] QFileInfoList entryFiles(const QString &pattern = QStringLiteral("*.qce")) const
     {
-        return cacheDir + QStringLiteral("/") + key + QStringLiteral(".data");
+        return QDir(cacheDir).entryInfoList({pattern}, QDir::Files, QDir::Time | QDir::Reversed);
     }
 
-    QString metaFilePath(const QString &key) const
+    [[nodiscard]] QFileInfoList allCacheFiles() const
     {
-        return cacheDir + QStringLiteral("/") + key + QStringLiteral(".meta");
+        return QDir(cacheDir).entryInfoList({QStringLiteral("*.qce"),
+                                             QStringLiteral("*.data"),
+                                             QStringLiteral("*.meta")},
+                                            QDir::Files);
     }
 
-    void ensureCacheDirectory()
+    [[nodiscard]] bool ensureCacheDirectory() { return QDir().mkpath(cacheDir); }
+
+    void removeLegacyEntries()
     {
-        QDir dir;
-        if (!dir.exists(cacheDir)) {
-            dir.mkpath(cacheDir);
+        const QFileInfoList legacyFiles = QDir(cacheDir).entryInfoList({QStringLiteral("*.data"),
+                                                                        QStringLiteral("*.meta")},
+                                                                       QDir::Files);
+        for (const QFileInfo &file : legacyFiles) {
+            (void)Internal::removeDiskCacheFile(file.filePath());
         }
+    }
+
+    [[nodiscard]] std::optional<Internal::QCNetworkDiskCacheEntry> readEntry(
+        const QFileInfo &fileInfo, bool invalidateSizeOnCorruption = true) const
+    {
+        const auto entry = Internal::readDiskCacheEntry(fileInfo.filePath());
+        if (!entry.has_value()) {
+            if (invalidateSizeOnCorruption) {
+                currentSize = -1;
+            }
+        }
+        return entry;
     }
 
     void updateCacheSize() const
@@ -57,114 +74,75 @@ public:
             return;
         }
 
-        currentSize = 0;
-        QDirIterator it(cacheDir, QStringList() << QStringLiteral("*.data"), QDir::Files);
-        while (it.hasNext()) {
-            it.next();
-            currentSize += it.fileInfo().size();
+        qint64 scannedSize = 0;
+        for (const QFileInfo &file : entryFiles()) {
+            const auto entry = readEntry(file, false);
+            if (entry.has_value()) {
+                scannedSize += entry->body.size();
+            }
         }
+        currentSize = scannedSize;
     }
 
-    bool writeMetadata(const QString &key, const QCNetworkCacheMetadata &meta)
+    void removeEntryFile(const QFileInfo &fileInfo)
     {
-        QJsonObject json;
-        json[QStringLiteral("url")]            = meta.url().toString();
-        json[QStringLiteral("size")]           = meta.size();
-        json[QStringLiteral("creationDate")]   = meta.creationDate().toString(Qt::ISODate);
-        json[QStringLiteral("expirationDate")] = meta.expirationDate().toString(Qt::ISODate);
-        json[QStringLiteral("lastModified")]   = meta.lastModified().toString(Qt::ISODate);
-
-        QJsonObject headersObj;
-        const auto headers = meta.headers();
-        for (auto it = headers.constBegin(); it != headers.constEnd(); ++it) {
-            headersObj[QString::fromLatin1(it.key())] = QString::fromLatin1(it.value());
+        const auto entry  = Internal::readDiskCacheEntry(fileInfo.filePath());
+        const qint64 size = entry.has_value() ? entry->body.size() : 0;
+        if (Internal::removeDiskCacheFile(fileInfo.filePath()) && currentSize >= 0) {
+            currentSize = qMax<qint64>(0, currentSize - size);
         }
-        json[QStringLiteral("headers")] = headersObj;
-
-        QFile file(metaFilePath(key));
-        if (!file.open(QIODevice::WriteOnly)) {
-            return false;
-        }
-
-        file.write(QJsonDocument(json).toJson(QJsonDocument::Compact));
-        return true;
     }
 
-    QCNetworkCacheMetadata readMetadata(const QString &key) const
-    {
-        QFile file(metaFilePath(key));
-        if (!file.open(QIODevice::ReadOnly)) {
-            return QCNetworkCacheMetadata();
-        }
-
-        const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-        if (!doc.isObject()) {
-            return QCNetworkCacheMetadata();
-        }
-
-        const QJsonObject json = doc.object();
-        QCNetworkCacheMetadata meta;
-        meta.setUrl(QUrl(json[QStringLiteral("url")].toString()));
-        meta.setSize(json[QStringLiteral("size")].toInteger());
-        meta.setCreationDate(
-            QDateTime::fromString(json[QStringLiteral("creationDate")].toString(), Qt::ISODate));
-        meta.setExpirationDate(
-            QDateTime::fromString(json[QStringLiteral("expirationDate")].toString(), Qt::ISODate));
-        meta.setLastModified(
-            QDateTime::fromString(json[QStringLiteral("lastModified")].toString(), Qt::ISODate));
-
-        QMap<QByteArray, QByteArray> headers;
-        const QJsonObject headersObj = json[QStringLiteral("headers")].toObject();
-        for (auto it = headersObj.constBegin(); it != headersObj.constEnd(); ++it) {
-            headers[it.key().toLatin1()] = it.value().toString().toLatin1();
-        }
-        meta.setHeaders(headers);
-
-        return meta;
-    }
-
-    void evictIfNeeded(qint64 newDataSize)
+    void evictIfNeeded(qint64 additionalSize, const QString &excludedPath = {})
     {
         updateCacheSize();
-
-        if (currentSize + newDataSize <= maxSize) {
+        if (currentSize + additionalSize <= maxSize) {
             return;
         }
 
-        // 以 data 文件的最后修改时间近似 LRU 顺序，避免维护额外索引文件。
-        struct CacheFile
-        {
-            QString key;
-            QDateTime lastAccess;
-            qint64 size;
-        };
-        QList<CacheFile> files;
-
-        QDirIterator it(cacheDir, QStringList() << QStringLiteral("*.meta"), QDir::Files);
-        while (it.hasNext()) {
-            it.next();
-            QString key = it.fileInfo().baseName();
-
-            const QCNetworkCacheMetadata meta = readMetadata(key);
-            if (!meta.url().isEmpty()) {
-                QFileInfo dataInfo(dataFilePath(key));
-                files.append({key, dataInfo.lastModified(), dataInfo.size()});
+        for (const QFileInfo &file : entryFiles()) {
+            if (file.filePath() == excludedPath) {
+                continue;
             }
-        }
-
-        std::sort(files.begin(), files.end(), [](const CacheFile &a, const CacheFile &b) {
-            return a.lastAccess < b.lastAccess;
-        });
-
-        for (const CacheFile &file : files) {
-            if (currentSize + newDataSize <= maxSize) {
+            removeEntryFile(file);
+            if (currentSize + additionalSize <= maxSize) {
                 break;
             }
-
-            QFile::remove(dataFilePath(file.key));
-            QFile::remove(metaFilePath(file.key));
-            currentSize -= file.size;
         }
+    }
+
+    [[nodiscard]] std::optional<Internal::QCNetworkDiskCacheEntry> matchingEntry(
+        const QCNetworkCacheRequestKey &key, QString *matchedPath = nullptr) const
+    {
+        const QByteArray primary = Internal::cachePrimaryDigest(key);
+        const QString pattern    = QString::fromLatin1(primary.toHex()) + QStringLiteral("-*.qce");
+        std::optional<Internal::QCNetworkDiskCacheEntry> matched;
+        qint64 matchedTimestamp = std::numeric_limits<qint64>::min();
+        QDateTime matchedFileTime;
+        QString selectedPath;
+        for (const QFileInfo &file : entryFiles(pattern)) {
+            const auto entry = readEntry(file);
+            if (!entry.has_value() || entry->primaryDigest != primary
+                || !Internal::cacheVaryDimensionsAvailable(key, entry->varyHeaderNames)
+                || entry->variantDigest
+                       != Internal::cacheVariantDigest(key, entry->varyHeaderNames)) {
+                continue;
+            }
+
+            const qint64 timestamp   = Internal::cacheResponseSelectionTimestamp(entry->metadata);
+            const QDateTime fileTime = file.lastModified();
+            if (!matched.has_value() || timestamp > matchedTimestamp
+                || (timestamp == matchedTimestamp && fileTime > matchedFileTime)) {
+                matched          = entry;
+                matchedTimestamp = timestamp;
+                matchedFileTime  = fileTime;
+                selectedPath     = file.filePath();
+            }
+        }
+        if (matchedPath && matched.has_value()) {
+            *matchedPath = selectedPath;
+        }
+        return matched;
     }
 };
 
@@ -172,20 +150,25 @@ QCNetworkDiskCache::QCNetworkDiskCache(QObject *parent)
     : QCNetworkCache(parent)
     , d_ptr(new QCNetworkDiskCachePrivate)
 {
-    // 使用平台默认缓存目录，避免调用方必须先配置路径。
     d_ptr->cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
                       + QStringLiteral("/QCurl");
-    d_ptr->ensureCacheDirectory();
+    if (!d_ptr->ensureCacheDirectory()) {
+        qWarning() << "QCNetworkDiskCache: cannot create cache directory" << d_ptr->cacheDir;
+    }
+    d_ptr->removeLegacyEntries();
 }
 
-QCNetworkDiskCache::~QCNetworkDiskCache() {}
+QCNetworkDiskCache::~QCNetworkDiskCache() = default;
 
 void QCNetworkDiskCache::setCacheDirectory(const QString &path)
 {
     QMutexLocker locker(&d_ptr->mutex);
     d_ptr->cacheDir    = path;
     d_ptr->currentSize = -1;
-    d_ptr->ensureCacheDirectory();
+    if (!d_ptr->ensureCacheDirectory()) {
+        qWarning() << "QCNetworkDiskCache: cannot create cache directory" << d_ptr->cacheDir;
+    }
+    d_ptr->removeLegacyEntries();
 }
 
 QString QCNetworkDiskCache::cacheDirectory() const
@@ -194,117 +177,134 @@ QString QCNetworkDiskCache::cacheDirectory() const
     return d_ptr->cacheDir;
 }
 
-QCNetworkCacheLookupResult QCNetworkDiskCache::lookup(const QUrl &url,
+QCNetworkCacheLookupResult QCNetworkDiskCache::lookup(const QCNetworkCacheRequestKey &key,
                                                       QCNetworkCacheReadMode mode)
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    const QString key = d_ptr->cacheKey(url);
-    QCNetworkCacheMetadata meta = d_ptr->readMetadata(key);
-    if (meta.url().isEmpty()) {
+    if (key.hasAuthenticationContext() && key.cachePartitionKey().isEmpty()) {
         return {};
     }
 
-    const QString dataPath = d_ptr->dataFilePath(key);
-    QFileInfo dataInfo(dataPath);
-    if (!dataInfo.exists()) {
+    QString matchedPath;
+    const auto entry = d_ptr->matchingEntry(key, &matchedPath);
+    if (!entry.has_value()) {
         return {};
     }
 
-    const bool fresh = meta.isValid();
+    const bool fresh = entry->metadata.isValid();
     if (!fresh && mode == QCNetworkCacheReadMode::FreshOnly) {
-        // FreshOnly 将过期条目视为未命中，并同步移除磁盘残留。
-        if (QFile::remove(dataPath) && d_ptr->currentSize >= 0) {
-            d_ptr->currentSize -= dataInfo.size();
-        }
-        QFile::remove(d_ptr->metaFilePath(key));
         return {};
     }
 
-    QFile file(dataPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return {};
+    QFile matchedFile(matchedPath);
+    if (matchedFile.open(QIODevice::ReadOnly)) {
+        matchedFile.setFileTime(QDateTime::currentDateTimeUtc(), QFileDevice::FileModificationTime);
     }
 
     QCNetworkCacheLookupResult result;
     result.setStatus(fresh ? QCNetworkCacheLookupStatus::FreshHit
                            : QCNetworkCacheLookupStatus::StaleHit);
-    result.setMetadata(meta);
-    result.setBody(file.readAll());
+    result.setMetadata(entry->metadata);
+    result.setBody(entry->body);
     return result;
 }
 
-void QCNetworkDiskCache::insert(const QUrl &url,
+void QCNetworkDiskCache::insert(const QCNetworkCacheRequestKey &key,
                                 const QByteArray &data,
                                 const QCNetworkCacheMetadata &meta)
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    if (!isCacheable(meta.headers())) {
+    if (!Internal::cacheEntryMayBeStored(key, meta) || data.size() > d_ptr->maxSize
+        || !d_ptr->ensureCacheDirectory()) {
         return;
     }
 
-    QString key     = d_ptr->cacheKey(url);
-    qint64 dataSize = data.size();
+    Internal::QCNetworkDiskCacheEntry entry;
+    entry.varyHeaderNames = Internal::normalizedVaryHeaderNames(meta.varyHeaderNames());
+    entry.primaryDigest   = Internal::cachePrimaryDigest(key);
+    entry.variantDigest   = Internal::cacheVariantDigest(key, entry.varyHeaderNames);
+    entry.metadata        = meta;
+    entry.metadata.setUrl(key.normalizedUrl());
+    entry.metadata.setSize(data.size());
+    entry.metadata.setCreationDate(QDateTime::currentDateTime());
+    entry.metadata.setVaryHeaderNames(entry.varyHeaderNames);
+    entry.body = data;
 
-    // 单个响应超过容量上限时直接跳过，避免清空整个缓存仍无法写入。
-    if (dataSize > d_ptr->maxSize) {
+    const QString entryId = Internal::cacheEntryId(key, entry.varyHeaderNames);
+    const QString path    = d_ptr->entryPath(entryId);
+    const auto previous   = Internal::readDiskCacheEntry(path);
+    const qint64 oldSize  = previous.has_value() ? previous->body.size() : 0;
+    d_ptr->evictIfNeeded(qMax<qint64>(0, data.size() - oldSize), path);
+
+    if (!Internal::writeDiskCacheEntry(path, entry)) {
         return;
     }
-
-    d_ptr->ensureCacheDirectory();
-
-    d_ptr->evictIfNeeded(dataSize);
-
-    QFile dataFile(d_ptr->dataFilePath(key));
-    if (!dataFile.open(QIODevice::WriteOnly)) {
-        return;
-    }
-    dataFile.write(data);
-    dataFile.close();
-
-    QCNetworkCacheMetadata metaCopy = meta;
-    metaCopy.setSize(dataSize);
-    metaCopy.setCreationDate(QDateTime::currentDateTime());
-    d_ptr->writeMetadata(key, metaCopy);
-
-    if (d_ptr->currentSize >= 0) {
-        d_ptr->currentSize += dataSize;
-    }
+    d_ptr->updateCacheSize();
+    d_ptr->currentSize += data.size() - oldSize;
 }
 
-bool QCNetworkDiskCache::remove(const QUrl &url)
+bool QCNetworkDiskCache::remove(const QCNetworkCacheRequestKey &key)
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    QString key = d_ptr->cacheKey(url);
-    QFileInfo dataInfo(d_ptr->dataFilePath(key));
-
-    bool removed = false;
-    if (QFile::remove(d_ptr->dataFilePath(key))) {
-        removed = true;
-        if (d_ptr->currentSize >= 0) {
-            d_ptr->currentSize -= dataInfo.size();
+    d_ptr->updateCacheSize();
+    const QByteArray primary = Internal::cachePrimaryDigest(key);
+    const QString pattern    = QString::fromLatin1(primary.toHex()) + QStringLiteral("-*.qce");
+    bool removed             = false;
+    for (const QFileInfo &file : d_ptr->entryFiles(pattern)) {
+        const auto entry = d_ptr->readEntry(file);
+        if (!entry.has_value()
+            || entry->variantDigest != Internal::cacheVariantDigest(key, entry->varyHeaderNames)) {
+            continue;
         }
+        d_ptr->removeEntryFile(file);
+        removed = true;
     }
-
-    QFile::remove(d_ptr->metaFilePath(key));
     return removed;
 }
 
-void QCNetworkDiskCache::clear()
+QCNetworkCacheClearResult QCNetworkDiskCache::clear()
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    QDirIterator it(d_ptr->cacheDir,
-                    QStringList() << QStringLiteral("*.data") << QStringLiteral("*.meta"),
-                    QDir::Files);
-    while (it.hasNext()) {
-        it.next();
-        QFile::remove(it.filePath());
+    const QFileInfo directoryInfo(d_ptr->cacheDir);
+    if (directoryInfo.exists() && !directoryInfo.isDir()) {
+        return QCNetworkCacheClearResult::failure(
+            1,
+            qMax<qint64>(0, d_ptr->currentSize),
+            QCNetworkCacheClearResult::ErrorCode::CacheDirectoryUnavailable,
+            QStringLiteral("cache directory is unavailable"));
+    }
+    if (!directoryInfo.exists()) {
+        d_ptr->currentSize = 0;
+        return QCNetworkCacheClearResult::success(0, 0);
     }
 
-    d_ptr->currentSize = 0;
+    qint64 removedCount = 0;
+    qint64 failedCount  = 0;
+    for (const QFileInfo &file : d_ptr->allCacheFiles()) {
+        if (Internal::removeDiskCacheFile(file.filePath())) {
+            ++removedCount;
+        } else {
+            ++failedCount;
+        }
+    }
+
+    d_ptr->currentSize = -1;
+    d_ptr->updateCacheSize();
+    if (failedCount == 0) {
+        return QCNetworkCacheClearResult::success(removedCount, d_ptr->currentSize);
+    }
+    if (removedCount > 0) {
+        return QCNetworkCacheClearResult::partialFailure(
+            removedCount,
+            failedCount,
+            d_ptr->currentSize,
+            QCNetworkCacheClearResult::ErrorCode::EntryRemovalFailed,
+            QStringLiteral("one or more cache entries could not be removed"));
+    }
+    return QCNetworkCacheClearResult::failure(failedCount,
+                                              d_ptr->currentSize,
+                                              QCNetworkCacheClearResult::ErrorCode::EntryRemovalFailed,
+                                              QStringLiteral("cache entries could not be removed"));
 }
 
 qint64 QCNetworkDiskCache::cacheSize() const
@@ -323,8 +323,8 @@ qint64 QCNetworkDiskCache::maxCacheSize() const
 void QCNetworkDiskCache::setMaxCacheSize(qint64 size)
 {
     QMutexLocker locker(&d_ptr->mutex);
-    d_ptr->maxSize = size;
-    d_ptr->evictIfNeeded(0); // 新上限立即生效，必要时删除旧条目。
+    d_ptr->maxSize = qMax<qint64>(0, size);
+    d_ptr->evictIfNeeded(0);
 }
 
 } // namespace QCurl

@@ -1,68 +1,116 @@
 #include "QCNetworkMemoryCache.h"
 
-#include <QCache>
+#include "private/QCNetworkCacheKey_p.h"
+
+#include <QHash>
 #include <QMutex>
 #include <QMutexLocker>
-
-#include <memory>
+#include <QSharedPointer>
 
 namespace QCurl {
 
-/// 内存缓存条目，保存响应体及用于新鲜度判断的元数据。
 struct QCNetworkMemoryCacheEntry
 {
+    QByteArray primaryDigest;
+    QByteArray variantDigest;
+    QList<QByteArray> varyHeaderNames;
     QByteArray data;
     QCNetworkCacheMetadata metadata;
+    quint64 lastAccess     = 0;
+    quint64 storedSequence = 0;
 
-    qint64 size() const { return data.size(); }
+    [[nodiscard]] qint64 size() const noexcept { return data.size(); }
 };
 
-/// 内存缓存内部状态；QCache 和 currentSize 由 mutex 统一保护。
+/**
+ * @brief 保存内存缓存条目、容量统计和淘汰状态的内部 PIMPL 数据。
+ */
 class QCNetworkMemoryCachePrivate
 {
 public:
-    mutable QMutex mutex;
-    QCache<QString, QCNetworkMemoryCacheEntry> cache;
-    qint64 maxSize     = 10 * 1024 * 1024;
-    qint64 currentSize = 0;
+    using EntryPointer = QSharedPointer<QCNetworkMemoryCacheEntry>;
 
-    QString cacheKey(const QUrl &url) const
+    mutable QMutex mutex;
+    QHash<QString, EntryPointer> entries;
+    qint64 maxSize         = 10 * 1024 * 1024;
+    qint64 currentSize     = 0;
+    quint64 accessSequence = 0;
+    quint64 storeSequence  = 0;
+
+    [[nodiscard]] EntryPointer matchingEntry(const QCNetworkCacheRequestKey &key)
     {
-        return url.toString();
+        const QByteArray primary = Internal::cachePrimaryDigest(key);
+        EntryPointer matched;
+        qint64 matchedTimestamp = std::numeric_limits<qint64>::min();
+        for (const EntryPointer &entry : entries) {
+            if (entry->primaryDigest != primary
+                || !Internal::cacheVaryDimensionsAvailable(key, entry->varyHeaderNames)
+                || entry->variantDigest
+                       != Internal::cacheVariantDigest(key, entry->varyHeaderNames)) {
+                continue;
+            }
+            const qint64 timestamp = Internal::cacheResponseSelectionTimestamp(entry->metadata);
+            if (!matched || timestamp > matchedTimestamp
+                || (timestamp == matchedTimestamp
+                    && entry->storedSequence > matched->storedSequence)) {
+                matched          = entry;
+                matchedTimestamp = timestamp;
+            }
+        }
+        return matched;
+    }
+
+    void removeEntry(const QString &entryId)
+    {
+        const EntryPointer entry = entries.take(entryId);
+        if (entry) {
+            currentSize -= entry->size();
+        }
+    }
+
+    void evictIfNeeded()
+    {
+        while (currentSize > maxSize && !entries.isEmpty()) {
+            auto oldest = entries.cbegin();
+            for (auto it = entries.cbegin(); it != entries.cend(); ++it) {
+                if (it.value()->lastAccess < oldest.value()->lastAccess) {
+                    oldest = it;
+                }
+            }
+            removeEntry(oldest.key());
+        }
     }
 };
 
 QCNetworkMemoryCache::QCNetworkMemoryCache(QObject *parent)
     : QCNetworkCache(parent)
     , d_ptr(new QCNetworkMemoryCachePrivate)
-{
-    d_ptr->cache.setMaxCost(d_ptr->maxSize);
-}
+{}
 
 QCNetworkMemoryCache::~QCNetworkMemoryCache()
 {
-    clear();
+    (void)clear();
 }
 
-QCNetworkCacheLookupResult QCNetworkMemoryCache::lookup(const QUrl &url,
+QCNetworkCacheLookupResult QCNetworkMemoryCache::lookup(const QCNetworkCacheRequestKey &key,
                                                         QCNetworkCacheReadMode mode)
 {
     QMutexLocker locker(&d_ptr->mutex);
+    if (key.hasAuthenticationContext() && key.cachePartitionKey().isEmpty()) {
+        return {};
+    }
 
-    const QString key = d_ptr->cacheKey(url);
-    QCNetworkMemoryCacheEntry *entry = d_ptr->cache.object(key);
+    const auto entry = d_ptr->matchingEntry(key);
     if (!entry) {
         return {};
     }
 
     const bool fresh = entry->metadata.isValid();
     if (!fresh && mode == QCNetworkCacheReadMode::FreshOnly) {
-        // FreshOnly 不返回过期条目，同时清理它避免后续重复命中。
-        d_ptr->currentSize -= entry->size();
-        d_ptr->cache.remove(key);
         return {};
     }
 
+    entry->lastAccess = ++d_ptr->accessSequence;
     QCNetworkCacheLookupResult result;
     result.setStatus(fresh ? QCNetworkCacheLookupStatus::FreshHit
                            : QCNetworkCacheLookupStatus::StaleHit);
@@ -71,67 +119,62 @@ QCNetworkCacheLookupResult QCNetworkMemoryCache::lookup(const QUrl &url,
     return result;
 }
 
-void QCNetworkMemoryCache::insert(const QUrl &url,
+void QCNetworkMemoryCache::insert(const QCNetworkCacheRequestKey &key,
                                   const QByteArray &data,
                                   const QCNetworkCacheMetadata &meta)
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    // 检查是否可缓存
-    if (!isCacheable(meta.headers())) {
+    if (!Internal::cacheEntryMayBeStored(key, meta) || data.size() > d_ptr->maxSize) {
         return;
     }
 
-    QString key     = d_ptr->cacheKey(url);
-    qint64 dataSize = data.size();
+    const QList<QByteArray> varyNames = Internal::normalizedVaryHeaderNames(meta.varyHeaderNames());
+    const QString entryId             = Internal::cacheEntryId(key, varyNames);
+    d_ptr->removeEntry(entryId);
 
-    // 如果数据太大，不缓存
-    if (dataSize > d_ptr->maxSize) {
-        return;
-    }
-
-    // 移除旧条目（如果存在）
-    if (d_ptr->cache.contains(key)) {
-        QCNetworkMemoryCacheEntry *oldEntry = d_ptr->cache.object(key);
-        if (oldEntry) {
-            d_ptr->currentSize -= oldEntry->size();
-        }
-        d_ptr->cache.remove(key);
-    }
-
-    auto entry      = std::make_unique<QCNetworkMemoryCacheEntry>();
-    entry->data     = data;
-    entry->metadata = meta;
-    entry->metadata.setSize(dataSize);
+    auto entry             = QSharedPointer<QCNetworkMemoryCacheEntry>::create();
+    entry->primaryDigest   = Internal::cachePrimaryDigest(key);
+    entry->variantDigest   = Internal::cacheVariantDigest(key, varyNames);
+    entry->varyHeaderNames = varyNames;
+    entry->data            = data;
+    entry->metadata        = meta;
+    entry->metadata.setSize(data.size());
     entry->metadata.setCreationDate(QDateTime::currentDateTime());
+    entry->metadata.setVaryHeaderNames(varyNames);
+    entry->lastAccess     = ++d_ptr->accessSequence;
+    entry->storedSequence = ++d_ptr->storeSequence;
 
-    // 插入缓存（QCache 会自动处理 LRU 淘汰）
-    const int cost = dataSize > 0 ? static_cast<int>(dataSize) : 1;
-    if (d_ptr->cache.insert(key, entry.get(), cost)) {
-        d_ptr->currentSize += dataSize;
-        static_cast<void>(entry.release());
-    }
+    d_ptr->entries.insert(entryId, entry);
+    d_ptr->currentSize += entry->size();
+    d_ptr->evictIfNeeded();
 }
 
-bool QCNetworkMemoryCache::remove(const QUrl &url)
+bool QCNetworkMemoryCache::remove(const QCNetworkCacheRequestKey &key)
 {
     QMutexLocker locker(&d_ptr->mutex);
-
-    QString key = d_ptr->cacheKey(url);
-    QCNetworkMemoryCacheEntry *entry = d_ptr->cache.object(key);
-    if (entry) {
-        d_ptr->currentSize -= entry->size();
-        return d_ptr->cache.remove(key);
+    const QByteArray primary = Internal::cachePrimaryDigest(key);
+    bool removed             = false;
+    for (auto it = d_ptr->entries.begin(); it != d_ptr->entries.end();) {
+        const auto &entry = it.value();
+        if (entry->primaryDigest == primary
+            && entry->variantDigest == Internal::cacheVariantDigest(key, entry->varyHeaderNames)) {
+            d_ptr->currentSize -= entry->size();
+            it      = d_ptr->entries.erase(it);
+            removed = true;
+        } else {
+            ++it;
+        }
     }
-
-    return false;
+    return removed;
 }
 
-void QCNetworkMemoryCache::clear()
+QCNetworkCacheClearResult QCNetworkMemoryCache::clear()
 {
     QMutexLocker locker(&d_ptr->mutex);
-    d_ptr->cache.clear();
+    const qint64 removedCount = d_ptr->entries.size();
+    d_ptr->entries.clear();
     d_ptr->currentSize = 0;
+    return QCNetworkCacheClearResult::success(removedCount, 0);
 }
 
 qint64 QCNetworkMemoryCache::cacheSize() const
@@ -149,8 +192,8 @@ qint64 QCNetworkMemoryCache::maxCacheSize() const
 void QCNetworkMemoryCache::setMaxCacheSize(qint64 size)
 {
     QMutexLocker locker(&d_ptr->mutex);
-    d_ptr->maxSize = size;
-    d_ptr->cache.setMaxCost(size);
+    d_ptr->maxSize = qMax<qint64>(0, size);
+    d_ptr->evictIfNeeded();
 }
 
 } // namespace QCurl

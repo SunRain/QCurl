@@ -280,6 +280,7 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkRequestScheduler.h
     QCNetworkCachePolicy.h
     QCNetworkCache.h
+    QCNetworkCacheRequestKey.h
     QCNetworkMemoryCache.h
     QCNetworkDiskCache.h
     QCMultipartFormData.h
