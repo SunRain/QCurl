@@ -10,7 +10,8 @@ namespace QCurl {
 
 void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &config)
 {
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (m_isPoisoned.load(std::memory_order_relaxed)
+        || m_isShuttingDown.load(std::memory_order_relaxed)) {
         return;
     }
 
@@ -36,7 +37,10 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
                                 || (!newMaxConnects.has_value() && m_multiMaxConnects.has_value());
     if (clearRequested && !canRecreateMultiHandleLocked()) {
         warnDeferredMultiLimitReset();
-    } else if (clearRequested && recreateMultiHandleForLimits()) {
+    } else if (clearRequested) {
+        if (!recreateMultiHandleForLimits()) {
+            return;
+        }
         clearMultiLimitState();
     }
 
@@ -67,7 +71,7 @@ void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &
 bool QCCurlMultiManager::canRecreateMultiHandleLocked()
 {
     QMutexLocker locker(&m_mutex);
-    return m_activeReplies.isEmpty() && m_socketMap.isEmpty()
+    return m_activeTransfers.isEmpty() && m_socketMap.isEmpty()
            && (m_runningRequests.load(std::memory_order_relaxed) == 0);
 }
 

@@ -1,0 +1,2 @@
+# Permanent poison intentionally retains the unprovable libcurl ownership graph.
+leak:QCurl::QCCurlMultiManager::retainPoisonedObjectGraph

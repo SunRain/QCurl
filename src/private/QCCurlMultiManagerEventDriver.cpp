@@ -1,7 +1,7 @@
 #include "QCCurlMultiManager.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
+#include "private/QCCurlMultiManagerSocketInfo_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCurlRuntimeState_p.h"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -11,6 +11,7 @@
 #include <QTimer>
 
 #include <limits>
+#include <utility>
 
 namespace QCurl {
 
@@ -19,6 +20,12 @@ bool QCCurlMultiManager::configureMultiCallbacks(const char *context)
     if (!m_multiHandle) {
         return false;
     }
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    if (Internal::CurlOptions::shouldForceMultiFailure("callbacks")) {
+        qCritical() << context << ": Forced curl multi callback configuration failure";
+        return false;
+    }
+#endif
 
     bool ok          = true;
     auto setCallback = [&](CURLMoption option, auto value, const char *name) {
@@ -50,6 +57,13 @@ void QCCurlMultiManager::disableMultiCallbacks()
 
 bool QCCurlMultiManager::recreateMultiHandleForLimits()
 {
+    m_isReady = false;
+
+    if (!m_runtimeLease.isValid()) {
+        m_initializationError = m_runtimeLease.diagnostic();
+        return false;
+    }
+
     if (m_socketTimer) {
         m_socketTimer->stop();
     }
@@ -60,19 +74,31 @@ bool QCCurlMultiManager::recreateMultiHandleForLimits()
         m_multiHandle = nullptr;
     }
 
-    m_multiHandle = curl_multi_init();
+    m_multiHandle = Internal::CurlOptions::createMultiHandle();
     if (!m_multiHandle) {
+        m_initializationError = QStringLiteral("curl_multi_init 重新初始化失败");
         qCritical()
             << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
         return false;
     }
 
-    return configureMultiCallbacks("QCCurlMultiManager::applyLimitsConfig");
+    if (!configureMultiCallbacks("QCCurlMultiManager::applyLimitsConfig")) {
+        m_initializationError = QStringLiteral("重新配置 curl multi 回调失败");
+        disableMultiCallbacks();
+        curl_multi_cleanup(m_multiHandle);
+        m_multiHandle = nullptr;
+        return false;
+    }
+
+    m_initializationError.clear();
+    m_isReady = true;
+    return true;
 }
 
 void QCCurlMultiManager::wakeup()
 {
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (m_isPoisoned.load(std::memory_order_relaxed)
+        || m_isShuttingDown.load(std::memory_order_relaxed)) {
         return;
     }
 
@@ -95,13 +121,17 @@ void QCCurlMultiManager::wakeup()
 
 void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBitmask)
 {
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (m_isPoisoned.load(std::memory_order_relaxed)
+        || m_isShuttingDown.load(std::memory_order_relaxed) || !m_multiHandle) {
         return;
     }
 
     qDebug() << "QCCurlMultiManager::handleSocketAction: socketfd=" << socketfd
              << "events=" << eventsBitmask;
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    ++m_testSocketActionCount;
+#endif
     int runningHandles = 0;
     CURLMcode ret      = curl_multi_socket_action(m_multiHandle,
                                                   socketfd,
@@ -122,7 +152,8 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
 
 void QCCurlMultiManager::checkMultiInfo()
 {
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (m_isPoisoned.load(std::memory_order_relaxed)
+        || m_isShuttingDown.load(std::memory_order_relaxed) || !m_multiHandle) {
         return;
     }
 
@@ -133,63 +164,14 @@ void QCCurlMultiManager::checkMultiInfo()
         if (!message) {
             break;
         }
-        const auto finishedTransfer = takeFinishedTransferLocked(message);
+        auto finishedTransfer = takeFinishedTransferLocked(message);
         if (finishedTransfer.has_value()) {
-            dispatchFinishedTransfer(finishedTransfer.value());
+            dispatchFinishedTransfer(std::move(finishedTransfer.value()));
+        }
+        if (m_isPoisoned.load(std::memory_order_relaxed)) {
+            break;
         }
     } while (messagesLeft > 0);
-}
-
-std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::takeFinishedTransferLocked(
-    CURLMsg *message)
-{
-    if (!message || message->msg != CURLMSG_DONE || !message->easy_handle) {
-        return std::nullopt;
-    }
-
-    CURL *easy = message->easy_handle;
-    QMutexLocker locker(&m_mutex);
-    QPointer<QCNetworkReply> safeReply = m_activeReplies.value(easy);
-    if (!safeReply) {
-        qWarning() << "QCCurlMultiManager::checkMultiInfo: Reply object already destroyed";
-        cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::checkMultiInfo");
-        return std::nullopt;
-    }
-
-    long responseCode = 0;
-    curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &responseCode);
-
-    char *redirectUrl = nullptr;
-    curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &redirectUrl);
-
-    qDebug() << "QCCurlMultiManager::checkMultiInfo: Request finished"
-             << "Reply:" << safeReply.data() << "CURLcode:" << message->data.result
-             << "HTTP code:" << responseCode << "Redirect:" << (redirectUrl ? redirectUrl : "none");
-
-    cleanupEasyHandleLocked(easy, true, true, "QCCurlMultiManager::checkMultiInfo");
-    return FinishedTransfer{safeReply, message->data.result};
-}
-
-void QCCurlMultiManager::dispatchFinishedTransfer(const FinishedTransfer &transfer)
-{
-    if (!transfer.reply) {
-        return;
-    }
-
-    QPointer<QCNetworkReply> safeReply = transfer.reply;
-    const CURLcode curlCode            = transfer.curlCode;
-    QMetaObject::invokeMethod(
-        safeReply.data(),
-        [safeReply, curlCode]() {
-            if (safeReply) {
-                safeReply->d_func()->onCurlMultiFinished(curlCode);
-            }
-        },
-        Qt::AutoConnection);
-
-    if (safeReply) {
-        emit requestFinished(safeReply.data(), static_cast<int>(curlCode));
-    }
 }
 
 void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
@@ -226,7 +208,8 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
                                               int what,
                                               SocketInfo *socketInfo)
 {
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (m_isPoisoned.load(std::memory_order_relaxed)
+        || m_isShuttingDown.load(std::memory_order_relaxed)) {
         return 0;
     }
 
@@ -340,7 +323,8 @@ int QCCurlMultiManager::curlTimerCallback(CURLM *multi, long timeout_ms, void *u
         return -1;
     }
 
-    if (manager->m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (manager->m_isPoisoned.load(std::memory_order_relaxed)
+        || manager->m_isShuttingDown.load(std::memory_order_relaxed)) {
         return 0;
     }
 
