@@ -217,7 +217,11 @@ def register_netproof_contract(
         report_artifact="netproof_strace_report",
         evidence_artifacts=["netproof_trace_dir", "netproof_capabilities"],
         violations=list(netproof_report.get("policy_violations") or []),
-        notes=["subject=ctest_strict offline under strace trace=network"],
+        notes=[
+            "subject=ctest_strict offline under strace trace=network",
+            "socket creation is recorded; bind/listen/connect/send/recv/accept activity is fail-closed",
+            "LSan is disabled only for the ptraced subject because the sanitizer gate covers leaks separately",
+        ],
     )
     for code in netproof_report.get("policy_violations", []):
         add_policy_violation(manifest, code)

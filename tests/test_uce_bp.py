@@ -37,7 +37,7 @@ def test_validate_bp_accepts_valid_stream(tmp_path: Path) -> None:
             "bytes_delivered_total": 20000,
             "bytes_written_total": 0,
         },
-        {**_base_event(4, "pause_effective"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
+        {**_base_event(4, "pause_req"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
         {**_base_event(5, "first_byte"), "bytes_delivered_total": 20000, "bytes_written_total": 4096, "chunk_len": 0},
         {**_base_event(6, "body_chunk"), "bytes_delivered_total": 20000, "bytes_written_total": 4096, "chunk_len": 4096},
         {
@@ -47,18 +47,19 @@ def test_validate_bp_accepts_valid_stream(tmp_path: Path) -> None:
             "bytes_delivered_total": 20000,
             "bytes_written_total": 4096,
         },
-        {**_base_event(8, "resume_req"), "bytes_delivered_total": 24000, "bytes_written_total": 4096},
-        {**_base_event(9, "body_complete"), "bytes_delivered_total": 262144, "bytes_written_total": 262144, "chunk_len": 262144},
-        {**_base_event(10, "finished"), "result": "pass", "status": 200, "body_len": 262144},
+        {**_base_event(8, "pause_effective"), "bytes_delivered_total": 20000, "bytes_written_total": 4096},
+        {**_base_event(9, "resume_req"), "bytes_delivered_total": 20000, "bytes_written_total": 4096},
+        {**_base_event(10, "body_complete"), "bytes_delivered_total": 262144, "bytes_written_total": 262144, "chunk_len": 262144},
+        {**_base_event(11, "finished"), "result": "pass", "status": 200, "body_len": 262144},
     ]
     _write_jsonl(evidence_root / "dci_evidence_ok.jsonl", rows)
 
     report = validate_bp(Path("tests/uce/contracts/bp@v1.yaml"), [evidence_root])
 
     assert report["policy_violations"] == []
-    assert report["summary"]["matched_events"] == 10
+    assert report["summary"]["matched_events"] == 11
     assert report["summary"]["seq_first"] == 1
-    assert report["summary"]["seq_last"] == 10
+    assert report["summary"]["seq_last"] == 11
 
 
 def test_validate_bp_reports_missing_evidence(tmp_path: Path) -> None:
@@ -100,7 +101,7 @@ def test_validate_bp_reports_parse_errors(tmp_path: Path) -> None:
             "bytes_delivered_total": 20000,
             "bytes_written_total": 0,
         },
-        {**_base_event(4, "pause_effective"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
+        {**_base_event(4, "pause_req"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
         {
             **_base_event(5, "backpressure_off"),
             "buffered_bytes": 7000,
@@ -108,15 +109,15 @@ def test_validate_bp_reports_parse_errors(tmp_path: Path) -> None:
             "bytes_delivered_total": 20000,
             "bytes_written_total": 0,
         },
-        {**_base_event(6, "resume_req"), "bytes_delivered_total": 24000, "bytes_written_total": 0},
-        {**_base_event(7, "first_byte"), "bytes_delivered_total": 24000, "bytes_written_total": 4096, "chunk_len": 0},
-        {**_base_event(8, "body_chunk"), "bytes_delivered_total": 24000, "bytes_written_total": 4096, "chunk_len": 4096},
-        {**_base_event(9, "body_complete"), "bytes_delivered_total": 262144, "bytes_written_total": 262144, "chunk_len": 262144},
-        {**_base_event(10, "finished"), "result": "pass", "status": 200, "body_len": 262144},
+        {**_base_event(6, "pause_effective"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
+        {**_base_event(7, "resume_req"), "bytes_delivered_total": 20000, "bytes_written_total": 0},
+        {**_base_event(8, "first_byte"), "bytes_delivered_total": 24000, "bytes_written_total": 4096, "chunk_len": 0},
+        {**_base_event(9, "body_chunk"), "bytes_delivered_total": 24000, "bytes_written_total": 4096, "chunk_len": 4096},
+        {**_base_event(10, "body_complete"), "bytes_delivered_total": 262144, "bytes_written_total": 262144, "chunk_len": 262144},
+        {**_base_event(11, "finished"), "result": "pass", "status": 200, "body_len": 262144},
     ]
     _write_jsonl(evidence_root / "dci_evidence_parse_error.jsonl", rows, extra_lines=["not-json"])
 
     report = validate_bp(Path("tests/uce/contracts/bp@v1.yaml"), [evidence_root])
 
     assert "bp_evidence_parse_error" in report["policy_violations"]
-

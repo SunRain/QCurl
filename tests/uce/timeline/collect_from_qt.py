@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from tests.uce.timeline.common import load_json
 from tests.uce.timeline.common import stream_identity
 from tests.uce.timeline.common import write_json
 from tests.uce.timeline.common import write_jsonl
+from tests.uce.timeline.parser import json_document_parse_error
 
 
 def _collect_qcurl_payloads(result: dict[str, Any], artifacts_root: Path, events: list[dict[str, Any]]) -> None:
@@ -25,8 +27,8 @@ def _collect_qcurl_payloads(result: dict[str, Any], artifacts_root: Path, events
     for artifact_path in sorted(artifacts_root.rglob("qcurl.json")):
         try:
             payload = load_json(artifact_path)
-        except Exception as exc:
-            result["errors"].append(f"{artifact_path}: {exc}")
+        except (UnicodeDecodeError, JSONDecodeError, OSError) as error:
+            result["errors"].append(json_document_parse_error(artifact_path, error, relative_to=artifacts_root))
             continue
         case_id, stream_id = stream_identity(artifacts_root, artifact_path, "qcurl")
         stream_events: list[dict[str, Any]] = []
@@ -53,7 +55,9 @@ def _collect_websocket_evidence(result: dict[str, Any], qt_artifacts_root: Path,
         return
 
     for jsonl_path in sorted(qt_artifacts_root.rglob("ws_evidence_*.jsonl")):
-        rows = iter_jsonl(jsonl_path)
+        parsed = iter_jsonl(jsonl_path, relative_to=qt_artifacts_root)
+        result["errors"].extend(parsed.errors)
+        rows = parsed.values
         if not rows:
             continue
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -129,13 +133,16 @@ def _collect_dci_evidence(
     seen_paths: set[Path] = set()
     for root in search_roots:
         if not root.exists():
+            result["missing_roots"].append(str(root))
             continue
         for jsonl_path in sorted(root.rglob("dci_evidence_*.jsonl")):
             if jsonl_path in seen_paths:
                 continue
             seen_paths.add(jsonl_path)
 
-            rows = iter_jsonl(jsonl_path)
+            parsed = iter_jsonl(jsonl_path, relative_to=root)
+            result["errors"].extend(parsed.errors)
+            rows = parsed.values
             if not rows:
                 continue
 
@@ -155,7 +162,9 @@ def _collect_dci_evidence(
             for _, case_rows in grouped.items():
                 case_rows.sort(key=lambda item: int(item.get("seq") or 0))
                 case_id = str(case_rows[0].get("case") or "").strip()
-                stream_id = str(case_rows[0].get("stream") or "").strip() or f"dci:{jsonl_path.stem}:{case_id}"
+                raw_stream_id = str(case_rows[0].get("stream") or "").strip() or case_id
+                source_id = jsonl_path.relative_to(root).with_suffix("").as_posix()
+                stream_id = f"dci:{source_id}:{raw_stream_id}"
                 seq = 1
                 for row in case_rows:
                     event_name = str(row.get("event") or "").strip()
@@ -184,13 +193,19 @@ def _collect_dci_evidence(
             result["source_files"].append(str(jsonl_path))
 
 
-def collect_from_qt(artifacts_root: Path, qt_artifacts_root: Path | None = None) -> dict[str, Any]:
+def collect_from_qt(
+    artifacts_root: Path,
+    qt_artifacts_root: Path | None = None,
+    *,
+    dci_evidence_roots: list[Path] | None = None,
+) -> dict[str, Any]:
     """Collect normalized timeline events for Qt/qcurl providers."""
 
     result: dict[str, Any] = {
         "provider": "qt",
         "artifacts_root": str(artifacts_root),
         "qt_artifacts_root": str(qt_artifacts_root) if qt_artifacts_root else "",
+        "dci_evidence_roots": [str(path) for path in dci_evidence_roots or []],
         "stream_count": 0,
         "event_count": 0,
         "source_files": [],
@@ -203,9 +218,12 @@ def collect_from_qt(artifacts_root: Path, qt_artifacts_root: Path | None = None)
     _collect_qcurl_payloads(result, artifacts_root, events)
     if qt_artifacts_root is not None:
         _collect_websocket_evidence(result, qt_artifacts_root, events)
-    search_roots = [artifacts_root]
-    if qt_artifacts_root is not None:
-        search_roots.append(qt_artifacts_root)
+    if dci_evidence_roots is not None:
+        search_roots = dci_evidence_roots
+    else:
+        search_roots = [artifacts_root]
+        if qt_artifacts_root is not None:
+            search_roots.append(qt_artifacts_root)
     _collect_dci_evidence(result, search_roots, events)
 
     result["events"] = events
@@ -233,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         report_payload = {key: value for key, value in result.items() if key != "events"}
         write_json(Path(args.report), report_payload)
-    return 0
+    return 0 if not result["errors"] else 3
 
 
 if __name__ == "__main__":

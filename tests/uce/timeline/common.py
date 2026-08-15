@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from typing import Iterable
 
+from tests.uce.timeline.parser import iter_jsonl as iter_jsonl
+
 
 TIMELINE_EVENT_SCHEMA = "qcurl-uce/timeline-event@v1"
 
@@ -37,24 +39,6 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def iter_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Load a JSONL file and ignore malformed lines."""
-
-    rows: list[dict[str, Any]] = []
-    if not path.exists():
-        return rows
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not raw.strip():
-            continue
-        try:
-            value = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
 
 
 def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
@@ -119,7 +103,7 @@ def add_payload_events(
     """Normalize a baseline/qcurl artifact payload into timeline events."""
 
     seq = 1
-    finished_seen = False
+    pending_finished: dict[str, Any] | None = None
 
     def emit(event: str, **extra: Any) -> None:
         nonlocal seq
@@ -134,6 +118,11 @@ def add_payload_events(
             seq=seq,
             **extra,
         )
+
+    def defer_finished(**extra: Any) -> None:
+        nonlocal pending_finished
+        if pending_finished is None:
+            pending_finished = extra
 
     request = payload.get("request")
     if isinstance(request, dict):
@@ -162,29 +151,36 @@ def add_payload_events(
         for raw_event in strict.get("events") or []:
             if not isinstance(raw_event, dict):
                 continue
+            raw_event_type = str(raw_event.get("type") or "")
+            event_name = _EVENT_NAME_MAP.get(raw_event_type, raw_event_type)
+            event_details = {
+                "raw_event_type": raw_event.get("type"),
+                "raw_seq": raw_event.get("seq"),
+                "t_us": raw_event.get("t_us"),
+                "bytes_delivered_total": raw_event.get("bytes_delivered_total"),
+                "bytes_written_total": raw_event.get("bytes_written_total"),
+            }
+            if event_name == "finished":
+                defer_finished(**event_details)
+                continue
             emit(
-                _EVENT_NAME_MAP.get(str(raw_event.get("type") or ""), str(raw_event.get("type") or "")),
-                raw_event_type=raw_event.get("type"),
-                raw_seq=raw_event.get("seq"),
-                t_us=raw_event.get("t_us"),
-                bytes_delivered_total=raw_event.get("bytes_delivered_total"),
-                bytes_written_total=raw_event.get("bytes_written_total"),
+                event_name,
+                **event_details,
             )
-            if str(raw_event.get("type") or "") == "finished":
-                finished_seen = True
 
     pause_resume = payload.get("pause_resume")
     if isinstance(pause_resume, dict):
         for raw_name in pause_resume.get("event_seq") or []:
             event_name = _EVENT_NAME_MAP.get(str(raw_name), str(raw_name))
-            emit(
-                event_name,
-                pause_offset=pause_resume.get("pause_offset"),
-                pause_count=pause_resume.get("pause_count"),
-                resume_count=pause_resume.get("resume_count"),
-            )
+            event_details = {
+                "pause_offset": pause_resume.get("pause_offset"),
+                "pause_count": pause_resume.get("pause_count"),
+                "resume_count": pause_resume.get("resume_count"),
+            }
             if event_name == "finished":
-                finished_seen = True
+                defer_finished(**event_details)
+                continue
+            emit(event_name, **event_details)
 
     backpressure = payload.get("backpressure_contract")
     if isinstance(backpressure, dict):
@@ -205,9 +201,8 @@ def add_payload_events(
                 zero_read_count=upload_pause_resume.get("zero_read_count"),
             )
         result = upload_pause_resume.get("result") or {}
-        if isinstance(result, dict) and int(result.get("qcurl_error") or 0) == 0 and not finished_seen:
-            emit("finished", result="pass", payload_size=upload_pause_resume.get("payload_size"))
-            finished_seen = True
+        if isinstance(result, dict) and int(result.get("qcurl_error") or 0) == 0:
+            defer_finished(result="pass", payload_size=upload_pause_resume.get("payload_size"))
 
     progress_summary = payload.get("progress_summary")
     if isinstance(progress_summary, dict):
@@ -233,11 +228,11 @@ def add_payload_events(
                 bytes_written_total=body_len,
                 download_now=body_len,
             )
-        if not finished_seen:
-            emit(
-                "finished",
-                result="pass",
-                status=response.get("status"),
-                body_len=response.get("body_len"),
-            )
+        defer_finished(
+            result="pass",
+            status=response.get("status"),
+            body_len=response.get("body_len"),
+        )
 
+    if pending_finished is not None:
+        emit("finished", **pending_finished)

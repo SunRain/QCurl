@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from tests.uce.timeline.common import load_json
 from tests.uce.timeline.common import stream_identity
 from tests.uce.timeline.common import write_json
 from tests.uce.timeline.common import write_jsonl
+from tests.uce.timeline.parser import json_document_parse_error
 
 
 def collect_from_lc(artifacts_root: Path) -> dict[str, Any]:
@@ -34,8 +36,8 @@ def collect_from_lc(artifacts_root: Path) -> dict[str, Any]:
     for artifact_path in sorted(artifacts_root.rglob("baseline.json")):
         try:
             payload = load_json(artifact_path)
-        except Exception as exc:
-            result["errors"].append(f"{artifact_path}: {exc}")
+        except (UnicodeDecodeError, JSONDecodeError, OSError) as error:
+            result["errors"].append(json_document_parse_error(artifact_path, error, relative_to=artifacts_root))
             continue
         case_id, stream_id = stream_identity(artifacts_root, artifact_path, "baseline")
         stream_events: list[dict[str, Any]] = []
@@ -72,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         report_payload = {key: value for key, value in result.items() if key != "events"}
         write_json(Path(args.report), report_payload)
-    return 0
+    return 0 if not result["errors"] else 3
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@
     "tls_boundary"
   ],
   "required_runners": [
-    "baseline",
+    "libcurl",
     "qcurl"
   ],
   "kinds": {

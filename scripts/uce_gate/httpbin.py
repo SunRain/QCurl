@@ -142,8 +142,10 @@ def run_httpbin_gate(
     build_dir: Path,
     evidence_dir: Path,
     manifest: dict[str, Any],
+    *,
+    stop_after_gate: bool = True,
 ) -> tuple[dict[str, str], list[GateResult], list[str]]:
-    """Start httpbin, run the env gate when available, and stop httpbin."""
+    """Start httpbin, run the env gate, and optionally keep the fixture alive."""
 
     httpbin_dir = evidence_dir / "httpbin"
     env_file = httpbin_dir / "httpbin.env"
@@ -167,11 +169,25 @@ def run_httpbin_gate(
         violations.append("env_preflight_httpbin_url_missing")
         _write_httpbin_unavailable(httpbin_dir, manifest)
 
-    stop_result = _stop_httpbin(
+    if stop_after_gate:
+        stop_result = stop_httpbin_gate(repo_root, evidence_dir, manifest, env_values)
+        results.append(stop_result)
+        if stop_result.returncode != 0:
+            violations.append("env_preflight_httpbin_stop_failed")
+    return env_values, results, violations
+
+
+def stop_httpbin_gate(
+    repo_root: Path,
+    evidence_dir: Path,
+    manifest: dict[str, Any],
+    env_values: dict[str, str],
+) -> GateResult:
+    """Stop the httpbin fixture started for the current UCE run."""
+
+    return _stop_httpbin(
         repo_root,
         env_values.get("QCURL_HTTPBIN_CONTAINER_NAME", ""),
         evidence_dir / "logs" / "httpbin_stop.log",
         manifest,
     )
-    results.append(stop_result)
-    return env_values, results, violations

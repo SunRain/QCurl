@@ -3,6 +3,15 @@
   "schema_version": 1,
   "contract_id": "timeline@v1",
   "timeline_event_schema": "qcurl-uce/timeline-event@v1",
+  "providers": [
+    "libcurl_consistency",
+    "qt"
+  ],
+  "identity_fields": [
+    "provider",
+    "stream_id",
+    "seq"
+  ],
   "events": {
     "request_headers": {
       "phase": "headers",

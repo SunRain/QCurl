@@ -74,6 +74,32 @@ def _validate_entry(entry: dict[str, Any]) -> list[dict[str, str]]:
             violations.append({"id": "content_length_present", "message": "chunked upload should not set content-length"})
         if int(hes.get("body_len") or 0) <= 0:
             violations.append({"id": "chunked_body_len_invalid", "message": "uploaded body len must be > 0"})
+    elif kind == "blocking_extras_sized_upload":
+        if str(hes.get("transfer_encoding") or "").strip():
+            violations.append(
+                {
+                    "id": "sized_upload_transfer_encoding_present",
+                    "message": "sized upload should not set transfer-encoding",
+                }
+            )
+        try:
+            content_length = int(str(hes.get("content_length") or "0"))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0:
+            violations.append(
+                {
+                    "id": "sized_upload_content_length_invalid",
+                    "message": "sized upload content-length must be > 0",
+                }
+            )
+        if int(hes.get("body_len") or 0) <= 0:
+            violations.append(
+                {
+                    "id": "sized_upload_body_len_invalid",
+                    "message": "sized upload response body len must be > 0",
+                }
+            )
     else:
         violations.append({"id": "hes_kind_unknown", "message": f"unknown hes kind: {kind}"})
 

@@ -16,7 +16,7 @@ def test_validate_hes_passes_for_pr_minimal_kinds(tmp_path: Path) -> None:
     _write_json(
         artifacts_root / "p1_accept_encoding" / "case_a" / "baseline.json",
         {
-            "runner": "baseline",
+            "runner": "libcurl",
             "hes": {
                 "kind": "accept_encoding",
                 "request_accept_encoding": "gzip",
@@ -40,7 +40,7 @@ def test_validate_hes_passes_for_pr_minimal_kinds(tmp_path: Path) -> None:
     _write_json(
         artifacts_root / "p1_resp_headers" / "case_b" / "baseline.json",
         {
-            "runner": "baseline",
+            "runner": "libcurl",
             "hes": {
                 "kind": "raw_headers",
                 "headers_raw_lines": ["Set-Cookie: a=1", "Set-Cookie: b=2", "X-Dupe: A", "X-Dupe: B"],
@@ -72,7 +72,7 @@ def test_validate_hes_reports_missing_runner_kind_coverage(tmp_path: Path) -> No
     _write_json(
         artifacts_root / "p1_accept_encoding" / "case_a" / "baseline.json",
         {
-            "runner": "baseline",
+            "runner": "libcurl",
             "hes": {
                 "kind": "accept_encoding",
                 "request_accept_encoding": "gzip",

@@ -20,45 +20,42 @@ from tests.uce.hes.validate import validate_hes
 from tests.uce.timeline.collect_from_lc import collect_from_lc
 from tests.uce.timeline.collect_from_qt import collect_from_qt
 from tests.uce.timeline.common import write_jsonl as write_timeline_jsonl
+from tests.uce.timeline.parser import merge_timeline_parse_errors
 from tests.uce.timeline.validate import validate_timelines
 
 
-def run_timeline_contract(
+def _collect_timeline_evidence(
     repo_root: Path,
     build_dir: Path,
-    evidence_dir: Path,
-    manifest: dict[str, Any],
-    *,
-    tier: str,
-) -> list[str]:
-    """Collect and validate timeline evidence."""
-
-    timeline_dir = evidence_dir / "timeline"
-    safe_mkdir(timeline_dir)
-
-    contract_src = repo_root / "tests" / "uce" / "contracts" / "timeline@v1.yaml"
-    contract_dst = timeline_dir / "timeline@v1.yaml"
-    shutil.copy2(contract_src, contract_dst)
-
+    timeline_dir: Path,
+    run_id: str,
+) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
     lc_artifacts_root = repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
     qt_artifacts_root = build_dir / "test-artifacts"
+    current_run_roots = [
+        qt_artifacts_root / "dci" / run_id,
+        qt_artifacts_root / "bp" / run_id,
+    ]
     lc_collection = collect_from_lc(lc_artifacts_root)
-    qt_collection = collect_from_qt(lc_artifacts_root, qt_artifacts_root)
+    qt_collection = collect_from_qt(
+        lc_artifacts_root,
+        dci_evidence_roots=current_run_roots,
+    )
 
     lc_timeline_path = timeline_dir / "libcurl_consistency.timeline.jsonl"
     qt_timeline_path = timeline_dir / "qt.timeline.jsonl"
     write_timeline_jsonl(lc_timeline_path, lc_collection["events"])
     write_timeline_jsonl(qt_timeline_path, qt_collection["events"])
+    return lc_timeline_path, qt_timeline_path, lc_collection, qt_collection
 
-    required_providers = timeline_required_providers(tier)
-    report = validate_timelines(contract_dst, [lc_timeline_path, qt_timeline_path], required_providers)
-    report["collections"] = {
-        "libcurl_consistency": {key: value for key, value in lc_collection.items() if key != "events"},
-        "qt": {key: value for key, value in qt_collection.items() if key != "events"},
-    }
-    report_path = timeline_dir / "report.json"
-    write_json(report_path, report)
 
+def _register_timeline_result(
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+    report_path: Path,
+    required_providers: set[str],
+    tier: str,
+) -> None:
     add_artifact(manifest, artifact_id="timeline_contract", path="timeline/timeline@v1.yaml", kind="contract", required=True, media_type="application/yaml")
     add_artifact(manifest, artifact_id="timeline_report", path="timeline/report.json", kind="report", required=True, media_type="application/json")
     add_artifact(manifest, artifact_id="timeline_qt_jsonl", path="timeline/qt.timeline.jsonl", kind="evidence", required=True, media_type="application/x-ndjson")
@@ -86,7 +83,87 @@ def run_timeline_contract(
         violations=report["policy_violations"],
         notes=[f"required providers: {', '.join(sorted(required_providers))}"],
     )
+
+
+def run_timeline_contract(
+    repo_root: Path,
+    build_dir: Path,
+    evidence_dir: Path,
+    manifest: dict[str, Any],
+    *,
+    tier: str,
+    run_id: str,
+) -> list[str]:
+    """Collect and validate timeline evidence."""
+
+    timeline_dir = evidence_dir / "timeline"
+    safe_mkdir(timeline_dir)
+
+    contract_src = repo_root / "tests" / "uce" / "contracts" / "timeline@v1.yaml"
+    contract_dst = timeline_dir / "timeline@v1.yaml"
+    shutil.copy2(contract_src, contract_dst)
+
+    lc_timeline_path, qt_timeline_path, lc_collection, qt_collection = _collect_timeline_evidence(
+        repo_root,
+        build_dir,
+        timeline_dir,
+        run_id,
+    )
+
+    required_providers = timeline_required_providers(tier)
+    report = validate_timelines(contract_dst, [lc_timeline_path, qt_timeline_path], required_providers)
+    merge_timeline_parse_errors(
+        report,
+        list(lc_collection.get("errors", [])) + list(qt_collection.get("errors", [])),
+    )
+    report["collections"] = {
+        "libcurl_consistency": {key: value for key, value in lc_collection.items() if key != "events"},
+        "qt": {key: value for key, value in qt_collection.items() if key != "events"},
+    }
+    report_path = timeline_dir / "report.json"
+    write_json(report_path, report)
+
+    _register_timeline_result(manifest, report, report_path, required_providers, tier)
     return list(report["policy_violations"])
+
+
+def _register_ctbp_result(
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+    report_path: Path,
+) -> None:
+    required_runners = ctbp_required_runners()
+    required_kinds = ctbp_required_kinds()
+    add_artifact(manifest, artifact_id="ctbp_contract", path="ctbp/ctbp@v1.yaml", kind="contract", required=True, media_type="application/yaml")
+    add_artifact(manifest, artifact_id="ctbp_evidence", path="ctbp/evidence.json", kind="evidence", required=True, media_type="application/json")
+    add_artifact(manifest, artifact_id="ctbp_report", path="ctbp/report.json", kind="report", required=True, media_type="application/json")
+    add_result(
+        manifest,
+        result_id="ctbp_contract",
+        kind="validator",
+        result="pass" if not report["policy_violations"] else "fail",
+        log_file=str(report_path),
+        details={
+            "required_runners": sorted(required_runners),
+            "required_kinds": sorted(required_kinds),
+            "entry_count": report["summary"]["entry_count"],
+            "failed_entries": report["summary"]["failed_entries"],
+        },
+    )
+    add_contract(
+        manifest,
+        contract_id="ctbp@v1",
+        provider="uce_ctbp_validator",
+        result="pass" if not report["policy_violations"] else "fail",
+        required=True,
+        report_artifact="ctbp_report",
+        evidence_artifacts=["ctbp_contract", "ctbp_evidence"],
+        violations=report["policy_violations"],
+        notes=[
+            f"required runners: {', '.join(sorted(required_runners))}",
+            f"required kinds: {', '.join(sorted(required_kinds))}",
+        ],
+    )
 
 
 def run_ctbp_contract(
@@ -119,36 +196,7 @@ def run_ctbp_contract(
 
     report_path = ctbp_dir / "report.json"
     write_json(report_path, report)
-    add_artifact(manifest, artifact_id="ctbp_contract", path="ctbp/ctbp@v1.yaml", kind="contract", required=True, media_type="application/yaml")
-    add_artifact(manifest, artifact_id="ctbp_evidence", path="ctbp/evidence.json", kind="evidence", required=True, media_type="application/json")
-    add_artifact(manifest, artifact_id="ctbp_report", path="ctbp/report.json", kind="report", required=True, media_type="application/json")
-    add_result(
-        manifest,
-        result_id="ctbp_contract",
-        kind="validator",
-        result="pass" if not report["policy_violations"] else "fail",
-        log_file=str(report_path),
-        details={
-            "required_runners": sorted(ctbp_required_runners()),
-            "required_kinds": sorted(ctbp_required_kinds()),
-            "entry_count": report["summary"]["entry_count"],
-            "failed_entries": report["summary"]["failed_entries"],
-        },
-    )
-    add_contract(
-        manifest,
-        contract_id="ctbp@v1",
-        provider="uce_ctbp_validator",
-        result="pass" if not report["policy_violations"] else "fail",
-        required=True,
-        report_artifact="ctbp_report",
-        evidence_artifacts=["ctbp_contract", "ctbp_evidence"],
-        violations=report["policy_violations"],
-        notes=[
-            f"required runners: {', '.join(sorted(ctbp_required_runners()))}",
-            f"required kinds: {', '.join(sorted(ctbp_required_kinds()))}",
-        ],
-    )
+    _register_ctbp_result(manifest, report, report_path)
     return list(report["policy_violations"])
 
 

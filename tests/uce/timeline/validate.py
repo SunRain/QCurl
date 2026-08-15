@@ -7,6 +7,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tests.uce.timeline.parser import TIMELINE_PARSE_POLICY
+from tests.uce.timeline.parser import load_timeline_events
+from tests.uce.timeline.parser import validate_event_contract
 from tests.uce.timeline.common import utc_now_iso
 from tests.uce.timeline.common import write_json
 
@@ -41,26 +44,6 @@ def _load_contract(contract_path: Path) -> dict[str, Any]:
     """
 
     return json.loads(contract_path.read_text(encoding="utf-8"))
-
-
-def _load_events(timeline_paths: list[Path]) -> list[dict[str, Any]]:
-    """Load timeline events from JSONL files."""
-
-    events: list[dict[str, Any]] = []
-    for path in timeline_paths:
-        if not path.exists():
-            continue
-        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if not raw.strip():
-                continue
-            try:
-                event = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                event["_timeline_path"] = str(path)
-                events.append(event)
-    return events
 
 
 def _validate_stream(events: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -213,22 +196,22 @@ def validate_timelines(contract_path: Path, timeline_paths: list[Path], required
     """Validate timeline JSONL files and return a structured report."""
 
     contract = _load_contract(contract_path)
-    raw_events = _load_events(timeline_paths)
+    loaded = load_timeline_events(timeline_paths)
+    raw_events = loaded.events
+    valid_events, contract_errors = validate_event_contract(raw_events, contract)
+    report_violations = [*loaded.errors, *contract_errors]
 
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     provider_streams: dict[str, set[str]] = {}
-    for event in raw_events:
+    for event in valid_events:
         stream_id = str(event.get("stream_id") or "")
         provider = str(event.get("provider") or "")
-        if not stream_id or not provider:
-            continue
-        grouped.setdefault(stream_id, []).append(event)
+        grouped.setdefault((provider, stream_id), []).append(event)
         provider_streams.setdefault(provider, set()).add(stream_id)
 
     stream_reports: list[dict[str, Any]] = []
-    for stream_id in sorted(grouped):
-        stream_events = sorted(grouped[stream_id], key=lambda item: (int(item.get("seq") or 0), item.get("event") or ""))
-        provider = str(stream_events[0].get("provider") or "")
+    for provider, stream_id in sorted(grouped):
+        stream_events = sorted(grouped[(provider, stream_id)], key=lambda item: int(item.get("seq") or 0))
         case_id = str(stream_events[0].get("case_id") or "")
         source_kind = str(stream_events[0].get("source_kind") or "")
         violations = _validate_stream(stream_events)
@@ -244,8 +227,9 @@ def validate_timelines(contract_path: Path, timeline_paths: list[Path], required
             }
         )
 
-    report_violations: list[dict[str, Any]] = []
     policy_codes: list[str] = []
+    if report_violations:
+        policy_codes.append(TIMELINE_PARSE_POLICY)
     for provider in sorted(required_providers):
         if provider_streams.get(provider):
             continue
@@ -283,6 +267,9 @@ def validate_timelines(contract_path: Path, timeline_paths: list[Path], required
             "stream_count": len(stream_reports),
             "event_count": len(raw_events),
             "failed_streams": len(failed_streams),
+            "parse_errors": sum(
+                1 for violation in report_violations if violation.get("code") == TIMELINE_PARSE_POLICY
+            ),
         },
         "provider_summary": provider_summary,
         "streams": stream_reports,

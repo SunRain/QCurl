@@ -78,7 +78,7 @@ def test_validate_ctbp_accepts_complete_coverage(tmp_path: Path) -> None:
 
     _write_artifact(
         artifacts_root / "p0_conn" / "p0_connection_reuse_keepalive_http_1.1" / "baseline.json",
-        runner="baseline",
+        runner="libcurl",
         ctbp=_connection_ctbp(),
         response={"status": 200, "http_version": "http/1.1", "headers": {}, "body_len": 0, "body_sha256": ""},
     )
@@ -90,7 +90,7 @@ def test_validate_ctbp_accepts_complete_coverage(tmp_path: Path) -> None:
     )
     _write_artifact(
         artifacts_root / "p2_tls" / "lc_tls_verify_success" / "baseline.json",
-        runner="baseline",
+        runner="libcurl",
         ctbp=_tls_ctbp(expected_result="pass"),
         response={"status": 200, "http_version": "http/1.1", "headers": {}, "body_len": 0, "body_sha256": ""},
     )
@@ -105,7 +105,7 @@ def test_validate_ctbp_accepts_complete_coverage(tmp_path: Path) -> None:
 
     assert report["policy_violations"] == []
     assert report["summary"]["entry_count"] == 4
-    assert report["runner_summary"]["baseline"]["kinds"] == ["connection_reuse", "tls_boundary"]
+    assert report["runner_summary"]["libcurl"]["kinds"] == ["connection_reuse", "tls_boundary"]
     assert report["runner_summary"]["qcurl"]["kinds"] == ["connection_reuse", "tls_boundary"]
 
 
@@ -114,7 +114,7 @@ def test_validate_ctbp_reports_missing_runner_kind_pairs(tmp_path: Path) -> None
 
     _write_artifact(
         artifacts_root / "p0_conn" / "p0_connection_reuse_keepalive_http_1.1" / "baseline.json",
-        runner="baseline",
+        runner="libcurl",
         ctbp=_connection_ctbp(),
         response={"status": 200, "http_version": "http/1.1", "headers": {}, "body_len": 0, "body_sha256": ""},
     )
@@ -124,7 +124,7 @@ def test_validate_ctbp_reports_missing_runner_kind_pairs(tmp_path: Path) -> None
     assert report["policy_violations"] == ["ctbp_evidence_missing"]
     missing_pairs = {(item["runner"], item["kind"]) for item in report["violations"]}
     assert ("qcurl", "connection_reuse") in missing_pairs
-    assert ("baseline", "tls_boundary") in missing_pairs
+    assert ("libcurl", "tls_boundary") in missing_pairs
     assert ("qcurl", "tls_boundary") in missing_pairs
 
 
@@ -136,7 +136,7 @@ def test_validate_ctbp_detects_contract_failures(tmp_path: Path) -> None:
     invalid_connection["conn_seq"] = [1, 1, 1]
     _write_artifact(
         artifacts_root / "p0_conn" / "p0_connection_reuse_keepalive_http_1.1" / "baseline.json",
-        runner="baseline",
+        runner="libcurl",
         ctbp=invalid_connection,
         response={"status": 200, "http_version": "http/1.1", "headers": {}, "body_len": 0, "body_sha256": ""},
     )
@@ -150,7 +150,7 @@ def test_validate_ctbp_detects_contract_failures(tmp_path: Path) -> None:
     tls_error = _tls_ctbp(expected_result="tls_error")
     _write_artifact(
         artifacts_root / "p2_tls" / "lc_tls_verify_fail_no_ca" / "baseline.json",
-        runner="baseline",
+        runner="libcurl",
         ctbp=tls_error,
         response={"status": 0, "http_version": "tls", "headers": {}, "body_len": 0, "body_sha256": ""},
         error_kind="tls",

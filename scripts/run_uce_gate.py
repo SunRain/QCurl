@@ -22,6 +22,7 @@ from scripts.uce.redaction_gate import scan_paths
 from scripts.uce_gate.contracts import run_ctbp_contract as _run_ctbp_contract
 from scripts.uce_gate.contracts import run_hes_contract as _run_hes_contract
 from scripts.uce_gate.contracts import run_timeline_contract as _run_timeline_contract
+from scripts.uce_gate.dci_contract import run_dci_seed_suite as _run_dci_seed_suite
 from scripts.uce_gate.evidence import create_gate_manifest
 from scripts.uce_gate.evidence import load_json_if_exists
 from scripts.uce_gate.evidence import package_evidence_bundle
@@ -43,7 +44,6 @@ from scripts.uce_gate.planner import dci_seed_matrix
 from scripts.uce_gate.planner import timeline_required_providers
 from scripts.uce_gate.planner import validate_required_artifacts
 from scripts.uce_gate.qt_contracts import run_bp_contract as _run_bp_contract
-from scripts.uce_gate.qt_contracts import run_dci_seed_suite as _run_dci_seed_suite
 from scripts.uce_gate.runtime import GateResult
 from scripts.uce_gate.runtime import best_effort_copy_glob as _best_effort_copy_glob
 from scripts.uce_gate.runtime import best_effort_copytree as _best_effort_copytree

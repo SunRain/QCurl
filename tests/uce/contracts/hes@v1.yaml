@@ -3,7 +3,7 @@
   "schema_version": 1,
   "contract_id": "hes@v1",
   "required_runners": [
-    "baseline",
+    "libcurl",
     "qcurl"
   ],
   "tiers": {
@@ -18,7 +18,7 @@
         "accept_encoding",
         "raw_headers",
         "expect_100_continue",
-        "chunked_upload"
+        "blocking_extras_sized_upload"
       ]
     },
     "soak": {
@@ -26,7 +26,7 @@
         "accept_encoding",
         "raw_headers",
         "expect_100_continue",
-        "chunked_upload"
+        "blocking_extras_sized_upload"
       ]
     }
   }

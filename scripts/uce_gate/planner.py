@@ -45,7 +45,7 @@ def timeline_required_providers(tier: str) -> set[str]:
 def ctbp_required_runners() -> set[str]:
     """Return runners that must provide CTBP evidence."""
 
-    return {"baseline", "qcurl"}
+    return {"libcurl", "qcurl"}
 
 
 def ctbp_required_kinds() -> set[str]:

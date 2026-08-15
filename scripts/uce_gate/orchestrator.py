@@ -16,6 +16,7 @@ from scripts.uce.redaction_gate import scan_paths
 from scripts.uce_gate.contracts import run_ctbp_contract
 from scripts.uce_gate.contracts import run_hes_contract
 from scripts.uce_gate.contracts import run_timeline_contract
+from scripts.uce_gate.dci_contract import run_dci_seed_suite
 from scripts.uce_gate.evidence import EvidenceLayout
 from scripts.uce_gate.evidence import create_gate_manifest
 from scripts.uce_gate.evidence import load_json_if_exists
@@ -29,10 +30,10 @@ from scripts.uce_gate.execute import run_libcurl_consistency_gates
 from scripts.uce_gate.execute import run_netproof_gate
 from scripts.uce_gate.execute import run_offline_ctest_gate
 from scripts.uce_gate.httpbin import run_httpbin_gate
+from scripts.uce_gate.httpbin import stop_httpbin_gate
 from scripts.uce_gate.planner import build_tier_plan
 from scripts.uce_gate.planner import validate_required_artifacts
 from scripts.uce_gate.qt_contracts import run_bp_contract
-from scripts.uce_gate.qt_contracts import run_dci_seed_suite
 from scripts.uce_gate.runtime import GateResult
 from scripts.uce_gate.runtime import best_effort_copy_glob
 from scripts.uce_gate.runtime import best_effort_copytree
@@ -81,7 +82,13 @@ def _run_required_gates(
     tier_plan = build_tier_plan(tier)
 
     if any(item.requires_httpbin for item in tier_plan):
-        httpbin_env, env_results, env_violations = run_httpbin_gate(repo_root, build_dir, layout.evidence_dir, manifest)
+        httpbin_env, env_results, env_violations = run_httpbin_gate(
+            repo_root,
+            build_dir,
+            layout.evidence_dir,
+            manifest,
+            stop_after_gate=False,
+        )
         results.extend(env_results)
         for code in env_violations:
             add_policy_violation(manifest, code)
@@ -98,13 +105,30 @@ def _run_nightly_gates(
     manifest: dict[str, Any],
     tier: str,
     run_id: str,
+    runtime_env: dict[str, str],
 ) -> list[GateResult]:
     if tier not in {"nightly", "soak"}:
         return []
 
     results: list[GateResult] = []
-    dci_results, dci_violations = run_dci_seed_suite(repo_root, build_dir, layout.evidence_dir, manifest, tier=tier, run_id=run_id)
-    bp_results, bp_violations = run_bp_contract(repo_root, build_dir, layout.evidence_dir, manifest, tier=tier, run_id=run_id)
+    dci_results, dci_violations = run_dci_seed_suite(
+        repo_root,
+        build_dir,
+        layout.evidence_dir,
+        manifest,
+        tier=tier,
+        run_id=run_id,
+        runtime_env=runtime_env,
+    )
+    bp_results, bp_violations = run_bp_contract(
+        repo_root,
+        build_dir,
+        layout.evidence_dir,
+        manifest,
+        tier=tier,
+        run_id=run_id,
+        runtime_env=runtime_env,
+    )
     results.extend(dci_results)
     results.extend(bp_results)
     for gate_result in dci_results + bp_results:
@@ -148,8 +172,16 @@ def _run_contract_validators(
     layout: EvidenceLayout,
     manifest: dict[str, Any],
     tier: str,
+    run_id: str,
 ) -> None:
-    validators = run_timeline_contract(repo_root, build_dir, layout.evidence_dir, manifest, tier=tier)
+    validators = run_timeline_contract(
+        repo_root,
+        build_dir,
+        layout.evidence_dir,
+        manifest,
+        tier=tier,
+        run_id=run_id,
+    )
     if tier in {"nightly", "soak"}:
         validators.extend(run_ctbp_contract(repo_root, layout.evidence_dir, manifest))
     validators.extend(run_hes_contract(repo_root, layout.evidence_dir, manifest, tier=tier))
@@ -181,6 +213,71 @@ def _write_validated_state(layout: EvidenceLayout, manifest: dict[str, Any], tie
     return missing_required
 
 
+def _run_gate_workload(
+    *,
+    repo_root: Path,
+    build_dir: Path,
+    layout: EvidenceLayout,
+    manifest: dict[str, Any],
+    tier: str,
+    run_id: str,
+) -> None:
+    needs_httpbin = any(item.requires_httpbin for item in build_tier_plan(tier))
+    httpbin_env: dict[str, str] = {}
+    try:
+        _, httpbin_env = _run_required_gates(
+            repo_root=repo_root,
+            build_dir=build_dir,
+            layout=layout,
+            manifest=manifest,
+            tier=tier,
+        )
+        _run_nightly_gates(
+            repo_root=repo_root,
+            build_dir=build_dir,
+            layout=layout,
+            manifest=manifest,
+            tier=tier,
+            run_id=run_id,
+            runtime_env=httpbin_env,
+        )
+    finally:
+        if needs_httpbin:
+            stop_result = stop_httpbin_gate(
+                repo_root,
+                layout.evidence_dir,
+                manifest,
+                httpbin_env,
+            )
+            if stop_result.returncode != 0:
+                add_policy_violation(manifest, "env_preflight_httpbin_stop_failed")
+
+
+def _finalize_gate_evidence(
+    *,
+    repo_root: Path,
+    build_dir: Path,
+    layout: EvidenceLayout,
+    manifest: dict[str, Any],
+    tier: str,
+    run_id: str,
+) -> None:
+    _copy_optional_evidence(repo_root, build_dir, layout, manifest)
+    _run_contract_validators(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        layout=layout,
+        manifest=manifest,
+        tier=tier,
+        run_id=run_id,
+    )
+    write_manifest_and_policy_report(layout=layout, manifest=manifest, tier=tier)
+    _run_redaction_gate(layout, manifest)
+    _write_validated_state(layout, manifest, tier)
+    package_evidence_bundle(layout, manifest)
+    _write_validated_state(layout, manifest, tier)
+
+
 def run_uce_gate(
     *,
     repo_root: Path,
@@ -203,15 +300,21 @@ def run_uce_gate(
     )
 
     _write_versions_and_capabilities(repo_root=repo_root, layout=layout, manifest=manifest, tier=tier)
-    _run_required_gates(repo_root=repo_root, build_dir=build_dir, layout=layout, manifest=manifest, tier=tier)
-    _run_nightly_gates(repo_root=repo_root, build_dir=build_dir, layout=layout, manifest=manifest, tier=tier, run_id=run_id)
-    _copy_optional_evidence(repo_root, build_dir, layout, manifest)
-    _run_contract_validators(repo_root=repo_root, build_dir=build_dir, layout=layout, manifest=manifest, tier=tier)
-    write_manifest_and_policy_report(layout=layout, manifest=manifest, tier=tier)
-
-    _run_redaction_gate(layout, manifest)
-    _write_validated_state(layout, manifest, tier)
-    package_evidence_bundle(layout, manifest)
-    _write_validated_state(layout, manifest, tier)
+    _run_gate_workload(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        layout=layout,
+        manifest=manifest,
+        tier=tier,
+        run_id=run_id,
+    )
+    _finalize_gate_evidence(
+        repo_root=repo_root,
+        build_dir=build_dir,
+        layout=layout,
+        manifest=manifest,
+        tier=tier,
+        run_id=run_id,
+    )
 
     return 0 if manifest["result"] == "pass" else 3
