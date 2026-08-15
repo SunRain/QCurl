@@ -69,6 +69,13 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyResponse.cpp
     private/QCNetworkReplyRuntime.cpp
     private/QCNetworkReplyCurlOptions.cpp
+    private/QCNetworkReplyCurlBaseOptions.cpp
+    private/QCNetworkReplyCurlMethodOptions.cpp
+    private/QCNetworkReplyCurlProxyOptions.cpp
+    private/QCNetworkReplyCurlProxyTlsOptions.cpp
+    private/QCNetworkReplyCurlHttpOptions.cpp
+    private/QCNetworkReplyCurlTlsOptions.cpp
+    private/QCNetworkReplyCurlRuntimeOptions.cpp
     private/QCNetworkReplyExecution.cpp
     private/QCNetworkReplyState.cpp
     private/QCNetworkReplyControls.cpp
@@ -139,6 +146,7 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkReplyFlowControl_p.h
     private/QCNetworkReplyResponse_p.h
     private/QCNetworkReplyRuntime_p.h
+    private/QCNetworkReplyCurlOptions_p.h
     private/QCNetworkRequestSchedulerQueue_p.h
     private/QCNetworkRequestSchedulerDispatch_p.h
     private/QCNetworkRequestSchedulerPrivate_p.h
