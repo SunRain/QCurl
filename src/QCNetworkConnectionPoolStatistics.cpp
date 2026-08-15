@@ -11,11 +11,11 @@ namespace QCurl {
 class QCNetworkConnectionPoolStatisticsData : public QSharedData
 {
 public:
-    qint64 totalRequests = 0;
+    qint64 totalRequests     = 0;
     qint64 reusedConnections = 0;
-    double reuseRate = 0.0;
-    int activeConnections = 0;
-    int idleConnections = 0;
+    double reuseRate         = 0.0;
+    int activeConnections    = 0;
+    int idleConnections      = 0;
 };
 
 QCNetworkConnectionPoolStatistics::QCNetworkConnectionPoolStatistics()
@@ -42,11 +42,11 @@ QCNetworkConnectionPoolStatistics::QCNetworkConnectionPoolStatistics(qint64 tota
                                                                      int idleConnections)
     : d(new QCNetworkConnectionPoolStatisticsData)
 {
-    d->totalRequests = totalRequests;
+    d->totalRequests     = totalRequests;
     d->reusedConnections = reusedConnections;
-    d->reuseRate = totalRequests > 0 ? (reusedConnections * 100.0) / totalRequests : 0.0;
+    d->reuseRate         = totalRequests > 0 ? (reusedConnections * 100.0) / totalRequests : 0.0;
     d->activeConnections = activeConnections;
-    d->idleConnections = idleConnections;
+    d->idleConnections   = idleConnections;
 }
 
 qint64 QCNetworkConnectionPoolStatistics::totalRequests() const

@@ -33,10 +33,8 @@ public:
     QCNetworkConnectionPoolStatistics(QCNetworkConnectionPoolStatistics &&other) noexcept;
     ~QCNetworkConnectionPoolStatistics();
 
-    QCNetworkConnectionPoolStatistics &operator=(
-        const QCNetworkConnectionPoolStatistics &other);
-    QCNetworkConnectionPoolStatistics &operator=(
-        QCNetworkConnectionPoolStatistics &&other) noexcept;
+    QCNetworkConnectionPoolStatistics &operator=(const QCNetworkConnectionPoolStatistics &other);
+    QCNetworkConnectionPoolStatistics &operator=(QCNetworkConnectionPoolStatistics &&other) noexcept;
 
     /// 自进程启动或上次 resetStatistics() 以来完成的请求数。
     [[nodiscard]] qint64 totalRequests() const;
@@ -60,10 +58,26 @@ private:
     friend class QCNetworkConnectionPoolManager;
 };
 
-/// 基于 libcurl 连接缓存提供统一配置和统计的全局管理器。
+/**
+ * @brief 基于 libcurl 连接缓存提供统一配置和统计的全局管理器。
+ *
+ * @note 错误生命周期：`setConfig()` 的返回枚举只描述本次同步提交；成功没有诊断文本，
+ * 失败保持旧配置和 multi 状态。管理器不保存可查询的“最近一次错误”。
+ */
 class QCURL_EXPORT QCNetworkConnectionPoolManager
 {
 public:
+    /**
+     * @brief 表示一次连接池配置提交的同步结果。
+     *
+     * `Applied` 表示合法配置已写入线程安全快照；`InvalidArgument` 表示候选配置无效，
+     * 原配置与 multi 状态保持不变。
+     */
+    enum class UpdateResult {
+        Applied,
+        InvalidArgument,
+    };
+
     /**
      * @brief 获取全局单例
      *
@@ -79,11 +93,13 @@ public:
      * 新配置将应用到后续创建的所有 curl handle。
      *
      * @param config 连接池配置
+     * @return 合法候选返回 `Applied`；非法候选返回 `InvalidArgument`，既有配置快照和
+     *         libcurl multi 状态保持不变。
      *
      * @note 线程安全
-     * @note 不影响已存在的连接
+     * @note 提交是同步的；已存在连接不会被主动关闭，后续 handle 才读取新快照。
      */
-    void setConfig(const QCNetworkConnectionPoolConfig &config);
+    [[nodiscard]] UpdateResult setConfig(const QCNetworkConnectionPoolConfig &config);
 
     /**
      * @brief 获取当前配置
@@ -111,16 +127,6 @@ public:
      * @note 线程安全
      */
     void resetStatistics();
-
-    /**
-     * @brief 关闭所有空闲连接
-     *
-     * 立即关闭连接池中所有空闲的连接，释放资源。
-     * 不影响正在使用的连接。
-     *
-     * @note 当前实现依赖 libcurl 空闲超时机制，不强制重建 multi handle。
-     */
-    void closeIdleConnections();
 
 private:
     friend class Internal::QCNetworkConnectionPoolManagerInternal;

@@ -25,7 +25,7 @@ class TestConnectionPool : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
 
@@ -37,6 +37,7 @@ private slots:
     void testConfigSharedDataDetachesOnWrite();
     void testConfigPresets();
     void testInvalidConfig();
+    void testManagerRejectsInvalidConfigTransactionally();
 
     // 统计测试
     void testStatistics();
@@ -99,7 +100,8 @@ void TestConnectionPool::testCustomConfig()
     QVERIFY(config.isValid());
 
     // 应用配置
-    poolManager->setConfig(config);
+    QCOMPARE(poolManager->setConfig(config),
+             QCNetworkConnectionPoolManager::UpdateResult::Applied);
 
     // 验证配置已保存
     auto savedConfig = poolManager->config();
@@ -109,7 +111,8 @@ void TestConnectionPool::testCustomConfig()
     QVERIFY(!savedConfig.multiplexingEnabled());
 
     // 恢复默认配置
-    poolManager->setConfig(QCNetworkConnectionPoolConfig());
+    QCOMPARE(poolManager->setConfig(QCNetworkConnectionPoolConfig()),
+             QCNetworkConnectionPoolManager::UpdateResult::Applied);
 
     qDebug() << "Custom config test passed";
 }
@@ -241,6 +244,25 @@ void TestConnectionPool::testInvalidConfig()
     QVERIFY(config.isValid());
 
     qDebug() << "Invalid config test passed";
+}
+
+void TestConnectionPool::testManagerRejectsInvalidConfigTransactionally()
+{
+    auto *poolManager = QCNetworkConnectionPoolManager::instance();
+    const QCNetworkConnectionPoolConfig original = poolManager->config();
+
+    QCNetworkConnectionPoolConfig invalid = original;
+    invalid.setMaxConnectionsPerHost(0);
+    QVERIFY(!invalid.isValid());
+
+    QCOMPARE(poolManager->setConfig(invalid),
+             QCNetworkConnectionPoolManager::UpdateResult::InvalidArgument);
+    const QCNetworkConnectionPoolConfig current = poolManager->config();
+    QCOMPARE(current.maxConnectionsPerHost(), original.maxConnectionsPerHost());
+    QCOMPARE(current.maxTotalConnections(), original.maxTotalConnections());
+
+    QCOMPARE(poolManager->setConfig(original),
+             QCNetworkConnectionPoolManager::UpdateResult::Applied);
 }
 
 // ============================================================================

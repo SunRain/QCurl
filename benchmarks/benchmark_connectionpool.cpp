@@ -25,7 +25,7 @@ class BenchmarkConnectionPool : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
     
@@ -115,7 +115,8 @@ void BenchmarkConnectionPool::benchmarkDefaultConfig()
 {
     // 使用默认配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
-    poolManager->setConfig(QCNetworkConnectionPoolConfig());
+    Q_ASSERT(poolManager->setConfig(QCNetworkConnectionPoolConfig())
+             == QCNetworkConnectionPoolManager::UpdateResult::Applied);
 
     auto config = poolManager->config();
     qDebug() << "Config:";
@@ -132,7 +133,8 @@ void BenchmarkConnectionPool::benchmarkConservativeConfig()
 {
     // 使用保守配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
-    poolManager->setConfig(QCNetworkConnectionPoolConfig::conservative());
+    Q_ASSERT(poolManager->setConfig(QCNetworkConnectionPoolConfig::conservative())
+             == QCNetworkConnectionPoolManager::UpdateResult::Applied);
 
     auto config = poolManager->config();
     qDebug() << "Config:";
@@ -149,7 +151,8 @@ void BenchmarkConnectionPool::benchmarkAggressiveConfig()
 {
     // 使用激进配置
     auto *poolManager = QCNetworkConnectionPoolManager::instance();
-    poolManager->setConfig(QCNetworkConnectionPoolConfig::aggressive());
+    Q_ASSERT(poolManager->setConfig(QCNetworkConnectionPoolConfig::aggressive())
+             == QCNetworkConnectionPoolManager::UpdateResult::Applied);
 
     auto config = poolManager->config();
     qDebug() << "Config:";

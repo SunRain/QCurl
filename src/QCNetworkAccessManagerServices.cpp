@@ -1,5 +1,4 @@
 #include "QCNetworkAccessManager.h"
-
 #include "QCNetworkAccessManager_p.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkLogger.h"
@@ -42,16 +41,16 @@ void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
 QCNetworkCache *QCNetworkAccessManager::cache() const
 {
     Q_D(const QCNetworkAccessManager);
-    return d->cache;
+    return d->cache.data();
 }
 
-void QCNetworkAccessManager::setLogger(QCNetworkLogger *logger)
+void QCNetworkAccessManager::setLogger(const QCNetworkLoggerHandle &logger)
 {
     Q_D(QCNetworkAccessManager);
     d->logger = logger;
 }
 
-QCNetworkLogger *QCNetworkAccessManager::logger() const
+QCNetworkLoggerHandle QCNetworkAccessManager::logger() const
 {
     Q_D(const QCNetworkAccessManager);
     return d->logger;

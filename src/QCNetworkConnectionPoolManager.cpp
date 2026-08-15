@@ -37,10 +37,10 @@ void logCurlOptionFailure(CURLcode code, const char *optionName)
 class QCNetworkConnectionPoolManagerPrivate
 {
 public:
-    mutable QMutex mutex;
-    QCNetworkConnectionPoolConfig config;
-    qint64 totalRequests     = 0;
-    qint64 reusedConnections = 0;
+    mutable QMutex mutex;                 ///< 保护配置快照和全部统计字段。
+    QCNetworkConnectionPoolConfig config; ///< 当前应用于新请求的连接池配置。
+    qint64 totalRequests     = 0;         ///< 已完成统计归档的请求数。
+    qint64 reusedConnections = 0;         ///< 确认复用已有连接的请求数。
     QHash<QString, int> activeConnectionsPerHost;
 };
 
@@ -71,11 +71,11 @@ QCNetworkConnectionPoolManager::~QCNetworkConnectionPoolManager()
     }
 }
 
-void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConfig &config)
+QCNetworkConnectionPoolManager::UpdateResult QCNetworkConnectionPoolManager::setConfig(
+    const QCNetworkConnectionPoolConfig &config)
 {
     if (!config.isValid()) {
-        qWarning() << "QCNetworkConnectionPoolManager::setConfig: Invalid config, ignored";
-        return;
+        return UpdateResult::InvalidArgument;
     }
 
     bool multiLimitsChanged = false;
@@ -105,6 +105,7 @@ void QCNetworkConnectionPoolManager::setConfig(const QCNetworkConnectionPoolConf
     if (multiLimitsChanged) {
         QCCurlMultiManager::instance()->applyLimitsConfig(config);
     }
+    return UpdateResult::Applied;
 }
 
 QCNetworkConnectionPoolConfig QCNetworkConnectionPoolManager::config() const
@@ -240,21 +241,6 @@ void QCNetworkConnectionPoolManager::resetStatistics()
     d_ptr->totalRequests     = 0;
     d_ptr->reusedConnections = 0;
     d_ptr->activeConnectionsPerHost.clear();
-}
-
-void QCNetworkConnectionPoolManager::closeIdleConnections()
-{
-    qDebug() << "QCNetworkConnectionPoolManager: Closing idle connections";
-
-    // libcurl 没有直接的 API 关闭连接池中的空闲连接
-    // 这里只是提供接口，实际上连接会在超时后自动关闭
-
-    // 可以通过触发 curl_multi_cleanup + curl_multi_init 来清空连接池
-    // 但这需要访问 QCCurlMultiManager，超出了本管理器的职责范围
-
-    qWarning() << "QCNetworkConnectionPoolManager::closeIdleConnections: "
-               << "Idle connections will be closed automatically after timeout ("
-               << d_ptr->config.maxIdleTime() << "seconds)";
 }
 
 } // namespace QCurl
