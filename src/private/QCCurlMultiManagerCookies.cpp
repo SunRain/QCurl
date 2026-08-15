@@ -1,371 +1,279 @@
-#include "QCCurlMultiManager.h"
 #include "QCCurlHandleManager.h"
+#include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
+#include "private/QCCookieStoreCodec_p.h"
+#include "private/QCCurlRequiredOptionAdapter_p.h"
 
-#include <QByteArrayView>
-#include <QDateTime>
+#include <QDebug>
 #include <QMutexLocker>
-#include <QTimeZone>
 
-#include <ctime>
 namespace QCurl {
 
 namespace {
 
-enum class NetscapeCookieField : qsizetype {
-    Domain            = 0,
-    IncludeSubdomains = 1,
-    Path              = 2,
-    Secure            = 3,
-    Expires           = 4,
-    Name              = 5,
-    Value             = 6,
-    Count             = 7,
-};
+using Internal::CookieOptionAdapter;
+using Internal::CookieOptionStage;
+using Internal::CookieStoreResult;
+using Internal::CookieStoreStatus;
+using Internal::RequiredOptionResult;
 
-constexpr QByteArrayView kHttpOnlyPrefix{"#HttpOnly_"};
-constexpr QByteArrayView kCookieJarTrueValue{"TRUE"};
-
-[[nodiscard]] qsizetype cookieFieldIndex(NetscapeCookieField field)
+CookieStoreResult failure(CookieStoreStatus status,
+                          const QString &policyCode,
+                          const QString &message)
 {
-    return static_cast<qsizetype>(field);
+    CookieStoreResult result;
+    result.status     = status;
+    result.policyCode = policyCode;
+    result.message    = message;
+    return result;
 }
 
-bool isCapabilityRelatedCurlError(CURLcode code)
+CookieStoreResult optionFailure(CookieStoreStatus status,
+                                const QString &policyCode,
+                                const RequiredOptionResult &option)
 {
-    return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
+    CookieStoreResult result;
+    result.status     = status;
+    result.curlCode   = option.curlCode;
+    result.shareCode  = option.shareCode;
+    result.optionName = option.optionName;
+    result.policyCode = policyCode;
+    result.message    = option.message;
+    return result;
 }
 
-bool domainMatchesHost(const QString &cookieDomain, const QString &host)
+CookieStoreResult reported(CookieStoreResult result)
 {
-    if (cookieDomain.isEmpty() || host.isEmpty()) {
-        return false;
+    if (!result.isSuccess()) {
+        qWarning().noquote() << "QCurl cookie store:" << result.policyCode << result.message;
     }
-
-    QString normalized = cookieDomain;
-    if (normalized.startsWith(QStringLiteral("#HttpOnly_"))) {
-        normalized = normalized.mid(QStringLiteral("#HttpOnly_").size());
-    }
-    const bool includeSubdomains = normalized.startsWith(QLatin1Char('.'));
-    if (includeSubdomains) {
-        normalized = normalized.mid(1);
-    }
-
-    if (normalized.isEmpty()) {
-        return false;
-    }
-
-    if (host.compare(normalized, Qt::CaseInsensitive) == 0) {
-        return true;
-    }
-
-    if (!includeSubdomains) {
-        return false;
-    }
-
-    if (host.size() <= normalized.size()) {
-        return false;
-    }
-
-    if (!host.endsWith(normalized, Qt::CaseInsensitive)) {
-        return false;
-    }
-
-    const int idx = host.size() - normalized.size() - 1;
-    return idx >= 0 && host.at(idx) == QLatin1Char('.');
+    return result;
 }
 
-bool pathMatchesUrl(const QString &cookiePath, const QString &urlPath)
+CookieStoreResult applied(QList<QCCookie> cookies = {})
 {
-    const QString p = cookiePath.isEmpty() ? QStringLiteral("/") : cookiePath;
-    const QString u = urlPath.isEmpty() ? QStringLiteral("/") : urlPath;
-    if (!u.startsWith(p)) {
-        return false;
-    }
-
-    if (u.size() == p.size()) {
-        return true;
-    }
-
-    if (p.endsWith(QLatin1Char('/'))) {
-        return true;
-    }
-
-    return u.at(p.size()) == QLatin1Char('/');
+    CookieStoreResult result;
+    result.status     = CookieStoreStatus::Applied;
+    result.policyCode = QStringLiteral("cookie.applied");
+    result.cookies    = std::move(cookies);
+    return result;
 }
 
-std::optional<QCCookie> parseCurlCookieLine(const QByteArray &line)
+CookieStoreResult configureCookieHandle(CURL *easy, CURLSH *share, CookieOptionAdapter *adapter)
 {
-    if (line.isEmpty()) {
-        return std::nullopt;
+    RequiredOptionResult option = adapter->setEasy(easy,
+                                                   CURLOPT_SHARE,
+                                                   "CURLOPT_SHARE",
+                                                   CookieOptionStage::Setup,
+                                                   share);
+    if (!option.isSuccess()) {
+        return optionFailure(CookieStoreStatus::RejectedBeforeMutation,
+                             QStringLiteral("cookie.required_option_failed"),
+                             option);
     }
+    option = adapter->setEasy(easy,
+                              CURLOPT_COOKIEFILE,
+                              "CURLOPT_COOKIEFILE",
+                              CookieOptionStage::Setup,
+                              "");
+    return option.isSuccess() ? applied()
+                              : optionFailure(CookieStoreStatus::RejectedBeforeMutation,
+                                              QStringLiteral("cookie.required_option_failed"),
+                                              option);
+}
 
-    const QList<QByteArray> parts = line.split('\t');
-    if (parts.size() < cookieFieldIndex(NetscapeCookieField::Count)) {
-        return std::nullopt;
+CookieStoreResult snapshotCookies(CURL *easy,
+                                  CookieOptionAdapter *adapter,
+                                  QList<QByteArray> *snapshot)
+{
+    curl_slist *list                  = nullptr;
+    const RequiredOptionResult option = adapter->getCookieList(easy,
+                                                               CookieOptionStage::Snapshot,
+                                                               &list);
+    if (!option.isSuccess()) {
+        curl_slist_free_all(list);
+        return optionFailure(CookieStoreStatus::RejectedBeforeMutation,
+                             QStringLiteral("cookie.snapshot_failed"),
+                             option);
     }
-
-    QByteArray domainBytes = parts.at(cookieFieldIndex(NetscapeCookieField::Domain));
-    const QByteArray includeSubdomainsBytes = parts.at(
-        cookieFieldIndex(NetscapeCookieField::IncludeSubdomains));
-    const bool includeSubdomains = includeSubdomainsBytes.trimmed().toUpper()
-                                   == kCookieJarTrueValue;
-    bool httpOnly                = false;
-    if (domainBytes.startsWith(kHttpOnlyPrefix)) {
-        httpOnly    = true;
-        domainBytes = domainBytes.mid(kHttpOnlyPrefix.size());
-    }
-
-    const QByteArray pathBytes    = parts.at(cookieFieldIndex(NetscapeCookieField::Path));
-    const QByteArray secureBytes  = parts.at(cookieFieldIndex(NetscapeCookieField::Secure));
-    const QByteArray expiresBytes = parts.at(cookieFieldIndex(NetscapeCookieField::Expires));
-    const QByteArray nameBytes    = parts.at(cookieFieldIndex(NetscapeCookieField::Name));
-    const QByteArray valueBytes   = parts.at(cookieFieldIndex(NetscapeCookieField::Value));
-
-    QCCookie cookie(nameBytes, valueBytes);
-    QString domain = QString::fromUtf8(domainBytes);
-    if (includeSubdomains) {
-        if (!domain.startsWith(QLatin1Char('.'))) {
-            domain.prepend(QLatin1Char('.'));
+    for (const curl_slist *entry = list; entry; entry = entry->next) {
+        if (entry->data) {
+            snapshot->append(QByteArray(entry->data));
         }
-        cookie.setHostOnly(false);
-    } else {
-        if (domain.startsWith(QLatin1Char('.'))) {
-            domain.remove(0, 1);
-        }
-        cookie.setHostOnly(true);
     }
-    cookie.setDomain(domain);
-    cookie.setPath(QString::fromUtf8(pathBytes));
-    cookie.setSecure(secureBytes.trimmed().toUpper() == kCookieJarTrueValue);
-    cookie.setHttpOnly(httpOnly);
+    curl_slist_free_all(list);
+    return applied();
+}
 
-    bool ok            = false;
-    const qint64 epoch = expiresBytes.trimmed().toLongLong(&ok);
-    if (ok && epoch > 0) {
-        cookie.setExpirationDate(QDateTime::fromSecsSinceEpoch(epoch, QTimeZone::utc()));
+RequiredOptionResult restoreSnapshot(CURL *easy,
+                                     const QList<QByteArray> &snapshot,
+                                     CookieOptionAdapter *adapter)
+{
+    RequiredOptionResult option = adapter->setEasy(easy,
+                                                   CURLOPT_COOKIELIST,
+                                                   "CURLOPT_COOKIELIST",
+                                                   CookieOptionStage::Rollback,
+                                                   "ALL");
+    if (!option.isSuccess()) {
+        return option;
     }
-    return cookie;
+    for (const QByteArray &line : snapshot) {
+        option = adapter->setEasy(easy,
+                                  CURLOPT_COOKIELIST,
+                                  "CURLOPT_COOKIELIST",
+                                  CookieOptionStage::Rollback,
+                                  line.constData());
+        if (!option.isSuccess()) {
+            return option;
+        }
+    }
+    return adapter->setEasy(easy,
+                            CURLOPT_COOKIELIST,
+                            "CURLOPT_COOKIELIST",
+                            CookieOptionStage::Rollback,
+                            "FLUSH");
+}
+
+CookieStoreResult applyCookieLines(CURL *easy,
+                                   const QList<QByteArray> &lines,
+                                   const QList<QByteArray> &snapshot,
+                                   CookieOptionAdapter *adapter,
+                                   bool *storePoisoned)
+{
+    for (const QByteArray &line : lines) {
+        const RequiredOptionResult option = adapter->setEasy(easy,
+                                                             CURLOPT_COOKIELIST,
+                                                             "CURLOPT_COOKIELIST",
+                                                             CookieOptionStage::Apply,
+                                                             line.constData());
+        if (option.isSuccess()) {
+            continue;
+        }
+        const RequiredOptionResult rollback = restoreSnapshot(easy, snapshot, adapter);
+        if (!rollback.isSuccess()) {
+            *storePoisoned = true;
+            return optionFailure(CookieStoreStatus::StorePoisoned,
+                                 QStringLiteral("cookie.rollback_failed"),
+                                 rollback);
+        }
+        return optionFailure(CookieStoreStatus::RolledBack,
+                             QStringLiteral("cookie.apply_failed_rolled_back"),
+                             option);
+    }
+    return applied();
+}
+
+CookieStoreResult persistCookies(CURL *easy, CookieOptionAdapter *adapter)
+{
+    const RequiredOptionResult option = adapter->setEasy(easy,
+                                                         CURLOPT_COOKIELIST,
+                                                         "CURLOPT_COOKIELIST",
+                                                         CookieOptionStage::Persist,
+                                                         "FLUSH");
+    return option.isSuccess() ? applied()
+                              : optionFailure(CookieStoreStatus::PersistenceFailed,
+                                              QStringLiteral("cookie.persistence_failed"),
+                                              option);
 }
 
 } // namespace
 
-bool QCCurlMultiManager::importCookiesForManager(const QCNetworkAccessManager *manager,
-                                                 const QList<QCCookie> &cookies,
-                                                 const QUrl &originUrl,
-                                                 QString *error)
+Internal::CookieStoreResult QCCurlMultiManager::importCookiesForManager(
+    const QCNetworkAccessManager *manager, const QList<QCCookie> &cookies, const QUrl &originUrl)
 {
     if (!manager) {
-        if (error) {
-            *error = QStringLiteral("manager 为空");
-        }
-        return false;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.invalid_manager"),
+                                QStringLiteral("manager 为空")));
     }
-
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        if (error) {
-            *error = QStringLiteral("importCookies 需要启用 ShareHandleConfig.shareCookies");
-        }
-        return false;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.share_disabled"),
+                                QStringLiteral("cookie share 未启用")));
+    }
+
+    QList<QByteArray> lines;
+    CookieStoreResult result = Internal::prepareCookieImport(cookies, originUrl, &lines);
+    if (!result.isSuccess()) {
+        return reported(std::move(result));
     }
 
     QMutexLocker locker(&m_mutex);
-    ShareContext *context = prepareCookieContextLocked(manager, desired, error);
+    ShareContext *context = prepareCookieContextLocked(manager, desired, &result);
     if (!context) {
-        return false;
+        return reported(std::move(result));
     }
-
-    QCCurlHandleManager easyHandle;
-    CURL *easy = easyHandle.handle();
+    QCCurlHandleManager handle;
+    CURL *easy = handle.handle();
     if (!easy) {
-        if (error) {
-            *error = QStringLiteral("curl_easy_init 失败");
-        }
-        return false;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.handle_init_failed"),
+                                QStringLiteral("curl easy handle 初始化失败")));
     }
 
-    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
-    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
-
-    for (const QCCookie &raw : cookies) {
-        QCCookie c = raw;
-        if (c.domain().isEmpty() && !originUrl.host().isEmpty()) {
-            c.setDomain(originUrl.host());
-            c.setHostOnly(true);
-        }
-        if (c.path().isEmpty()) {
-            c.setPath(QStringLiteral("/"));
-        }
-
-        if (c.domain().isEmpty()) {
-            continue;
-        }
-
-        const QByteArray domainBytes = c.domain().toUtf8();
-        const QByteArray pathBytes   = c.path().toUtf8();
-
-        const bool includeSubdomains            = !c.isHostOnly() || domainBytes.startsWith('.');
-        const QByteArray includeSubdomainsBytes = includeSubdomains ? QByteArray("TRUE")
-                                                                    : QByteArray("FALSE");
-        const QByteArray secureBytes = c.isSecure() ? QByteArray("TRUE") : QByteArray("FALSE");
-
-        qint64 expiresEpoch = 0;
-        if (c.expirationDate().isValid()) {
-            expiresEpoch = c.expirationDate().toSecsSinceEpoch();
-            if (expiresEpoch < 0) {
-                expiresEpoch = 0;
-            }
-        }
-
-        QByteArray cookieLineDomain = domainBytes;
-        if (c.isHttpOnly()) {
-            cookieLineDomain = QByteArray("#HttpOnly_") + cookieLineDomain;
-        }
-
-        const QByteArray cookieLine = cookieLineDomain + '\t' + includeSubdomainsBytes + '\t'
-                                      + pathBytes + '\t' + secureBytes + '\t'
-                                      + QByteArray::number(expiresEpoch) + '\t' + c.name() + '\t'
-                                      + c.value();
-
-        const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, cookieLine.constData());
-        if (rc != CURLE_OK) {
-            if (error) {
-                *error = QStringLiteral("导入 cookie 失败（%1）")
-                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-            }
-            return false;
-        }
+    CookieOptionAdapter adapter;
+    result = configureCookieHandle(easy, context->share, &adapter);
+    if (!result.isSuccess()) {
+        return reported(std::move(result));
     }
-
-    static_cast<void>(curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH"));
-    return true;
+    QList<QByteArray> snapshot;
+    result = snapshotCookies(easy, &adapter, &snapshot);
+    if (!result.isSuccess()) {
+        return reported(std::move(result));
+    }
+    result = applyCookieLines(easy, lines, snapshot, &adapter, &context->cookieStorePoisoned);
+    if (!result.isSuccess()) {
+        return reported(std::move(result));
+    }
+    return reported(persistCookies(easy, &adapter));
 }
 
-std::optional<QList<QCCookie>> QCCurlMultiManager::exportCookiesForManager(
-    const QCNetworkAccessManager *manager, const QUrl &filterUrl, QString *error)
+Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
+    const QCNetworkAccessManager *manager)
 {
     if (!manager) {
-        if (error) {
-            *error = QStringLiteral("manager 为空");
-        }
-        return std::nullopt;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.invalid_manager"),
+                                QStringLiteral("manager 为空")));
     }
-
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        if (error) {
-            *error = QStringLiteral("exportCookies 需要启用 ShareHandleConfig.shareCookies");
-        }
-        return std::nullopt;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.share_disabled"),
+                                QStringLiteral("cookie share 未启用")));
     }
 
     QMutexLocker locker(&m_mutex);
-    ShareContext *context = prepareCookieContextLocked(manager, desired, error);
+    CookieStoreResult result;
+    ShareContext *context = prepareCookieContextLocked(manager, desired, &result);
     if (!context) {
-        return std::nullopt;
+        return reported(std::move(result));
     }
-
-    QCCurlHandleManager easyHandle;
-    CURL *easy = easyHandle.handle();
+    QCCurlHandleManager handle;
+    CURL *easy = handle.handle();
     if (!easy) {
-        if (error) {
-            *error = QStringLiteral("curl_easy_init 失败");
-        }
-        return std::nullopt;
+        return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
+                                QStringLiteral("cookie.handle_init_failed"),
+                                QStringLiteral("curl easy handle 初始化失败")));
     }
 
-    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
-    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
-
-    struct curl_slist *cookieList = nullptr;
-    const CURLcode getInfoRc      = curl_easy_getinfo(easy, CURLINFO_COOKIELIST, &cookieList);
-    if (getInfoRc != CURLE_OK) {
-        if (error) {
-            *error = QStringLiteral("读取 cookie 列表失败（%1）")
-                         .arg(QString::fromUtf8(curl_easy_strerror(getInfoRc)));
-        }
-        return std::nullopt;
+    CookieOptionAdapter adapter;
+    result = configureCookieHandle(easy, context->share, &adapter);
+    if (!result.isSuccess()) {
+        return reported(std::move(result));
     }
-
-    QList<QCCookie> out;
-    const QString host    = filterUrl.host();
-    const QString urlPath = filterUrl.path();
-    for (auto *it = cookieList; it; it = it->next) {
-        if (!it->data) {
-            continue;
-        }
-        const QByteArray line = QByteArray(it->data);
-        auto parsed           = parseCurlCookieLine(line);
-        if (!parsed.has_value()) {
-            continue;
-        }
-        if (!host.isEmpty()) {
-            if (!domainMatchesHost(parsed->domain(), host)) {
-                continue;
-            }
-            if (!pathMatchesUrl(parsed->path(), urlPath)) {
-                continue;
-            }
-        }
-        out.append(*parsed);
+    const RequiredOptionResult clear = adapter.setEasy(easy,
+                                                       CURLOPT_COOKIELIST,
+                                                       "CURLOPT_COOKIELIST",
+                                                       CookieOptionStage::Clear,
+                                                       "ALL");
+    if (!clear.isSuccess()) {
+        return reported(optionFailure(CookieStoreStatus::RejectedBeforeMutation,
+                                      QStringLiteral("cookie.clear_failed"),
+                                      clear));
     }
-
-    curl_slist_free_all(cookieList);
-    return out;
-}
-
-bool QCCurlMultiManager::clearAllCookiesForManager(const QCNetworkAccessManager *manager,
-                                                   QString *error)
-{
-    if (!manager) {
-        if (error) {
-            *error = QStringLiteral("manager 为空");
-        }
-        return false;
-    }
-
-    const ShareConfig desired = toShareConfig(manager);
-    if (!desired.cookies) {
-        if (error) {
-            *error = QStringLiteral("clearAllCookies 需要启用 ShareHandleConfig.shareCookies");
-        }
-        return false;
-    }
-
-    QMutexLocker locker(&m_mutex);
-    ShareContext *context = prepareCookieContextLocked(manager, desired, error);
-    if (!context) {
-        return false;
-    }
-
-    QCCurlHandleManager easyHandle;
-    CURL *easy = easyHandle.handle();
-    if (!easy) {
-        if (error) {
-            *error = QStringLiteral("curl_easy_init 失败");
-        }
-        return false;
-    }
-
-    curl_easy_setopt(easy, CURLOPT_SHARE, context->share);
-    curl_easy_setopt(easy, CURLOPT_COOKIEFILE, "");
-
-    const CURLcode rc = curl_easy_setopt(easy, CURLOPT_COOKIELIST, "ALL");
-    if (rc != CURLE_OK) {
-        if (error) {
-            if (isCapabilityRelatedCurlError(rc)) {
-                *error = QStringLiteral("libcurl 不支持 CURLOPT_COOKIELIST（%1）")
-                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-            } else {
-                *error = QStringLiteral("清空 cookies 失败（%1）")
-                             .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-            }
-        }
-        return false;
-    }
-    static_cast<void>(curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH"));
-    return true;
+    return reported(persistCookies(easy, &adapter));
 }
 
 } // namespace QCurl

@@ -13,7 +13,7 @@ public:
     QString domain;
     QString path;
     QDateTime expirationDate;
-    bool secure = false;
+    bool secure   = false;
     bool httpOnly = false;
     bool hostOnly = true;
 };
@@ -26,7 +26,7 @@ QCCookie::QCCookie()
 QCCookie::QCCookie(const QByteArray &name, const QByteArray &value)
     : d(new QCCookieData)
 {
-    d->name = name;
+    d->name  = name;
     d->value = value;
 }
 
