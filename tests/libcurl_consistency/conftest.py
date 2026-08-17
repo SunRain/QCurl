@@ -517,6 +517,74 @@ def lc_http_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
             if proc:
                 proc.terminate()
 
+
+@pytest.fixture(scope="function")
+def lc_https_proxy(env: Env) -> Generator[Dict[str, object], None, None]:
+    """启动启用 TLS 和 Basic 认证的本地 HTTPS proxy。"""
+
+    ca_dir = _REPO_ROOT / "curl" / "tests" / "http" / "gen" / "ca"
+    ca_cert = ca_dir / "ca.pem"
+    cert = ca_dir / "proxy.http.curl.se.rsa2048.cert.pem"
+    key = ca_dir / "proxy.http.curl.se.rsa2048.pkey.pem"
+    if not (ca_cert.exists() and cert.exists() and key.exists()):
+        pytest.skip("HTTPS proxy 证书/CA 不存在")
+
+    run_dir = Path(env.gen_dir) / f"lc_https_proxy_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_proxy_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "proxy_requests.jsonl"
+    username = "lcuser"
+    password = "lcpass"
+
+    proc = None
+    proxy_port = 0
+    with open(run_dir / "stderr", "w") as cerr:
+        def startup(ports: Dict[str, int]) -> bool:
+            nonlocal proc, proxy_port
+            proxy_port = int(ports["proxy"])
+            log_file.write_text("", encoding="utf-8")
+            args = [
+                sys.executable,
+                str(cmd),
+                "--port",
+                str(proxy_port),
+                "--log-file",
+                str(log_file),
+                "--username",
+                username,
+                "--password",
+                password,
+                "--tls-cert",
+                str(cert),
+                "--tls-key",
+                str(key),
+                "--tls-min",
+                "tls1.2",
+                "--tls-max",
+                "tls1.2",
+            ]
+            proc = subprocess.Popen(args=args, cwd=str(run_dir), stderr=cerr, stdout=cerr)
+            if _check_tcp_alive(proxy_port, Env.SERVER_TIMEOUT):
+                return True
+            proc.terminate()
+            proc = None
+            return False
+
+        ok = alloc_ports_and_do({"proxy": socket.SOCK_STREAM}, startup, env.gen_root, max_tries=3)
+        if not ok or proc is None:
+            pytest.skip("HTTPS proxy 未能启动")
+        try:
+            yield {
+                "port": proxy_port,
+                "log_file": str(log_file),
+                "username": username,
+                "password": password,
+                "ca_cert": str(ca_cert),
+                "cert": str(cert),
+            }
+        finally:
+            proc.terminate()
+
 @pytest.fixture(scope="function")
 def lc_httpd_cache_headers(env: Env, httpd) -> Generator[Dict[str, object], None, None]:
     """
@@ -806,11 +874,57 @@ def lc_observe_http_pair(env: Env) -> Generator[Dict[str, object], None, None]:
 
 
 @pytest.fixture(scope="function")
-def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
-    """
-    启动最小 HTTPS 观测服务端（自签 CA + localhost 证书），用于 TLS 校验一致性。
-    - 证书与 CA 复用 curl testenv 生成物（避免引入 openssl 生成过程）
-    """
+def lc_observe_http_ipv6(env: Env) -> Generator[Dict[str, object], None, None]:
+    """在 IPv6 loopback 上启动 HTTP 观测服务；不支持时由 capability planner 排除。"""
+
+    run_dir = Path(env.gen_dir) / f"lc_observe_http_ipv6_{uuid.uuid4().hex[:8]}"
+    cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_observe_server.py"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "observe_http_ipv6.jsonl"
+
+    picker = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    picker.bind(("::1", 0))
+    port = int(picker.getsockname()[1])
+    picker.close()
+
+    with open(run_dir / "stderr", "w") as cerr:
+        args = [
+            sys.executable,
+            str(cmd),
+            "--port",
+            str(port),
+            "--log-file",
+            str(log_file),
+            "--bind-host",
+            "::1",
+        ]
+        proc = subprocess.Popen(args=args, cwd=str(run_dir), stderr=cerr, stdout=cerr)
+        deadline = time.time() + Env.SERVER_TIMEOUT
+        alive = False
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("::1", port), timeout=0.2):
+                    alive = True
+                    break
+            except OSError:
+                time.sleep(0.05)
+        if not alive:
+            proc.terminate()
+            pytest.fail("capability planner 启用了 IPv6 case，但本机 ::1 服务无法启动")
+        try:
+            yield {"port": port, "log_file": str(log_file)}
+        finally:
+            proc.terminate()
+
+
+def _observe_https_server(
+    env: Env,
+    *,
+    client_auth: bool = False,
+    tls_min: str = "",
+    tls_max: str = "",
+) -> Generator[Dict[str, object], None, None]:
+    """启动带指定 TLS 合同的本地观测服务，并在退出时释放进程。"""
     ca_dir = _REPO_ROOT / "curl" / "tests" / "http" / "gen" / "ca"
     ca_cert = ca_dir / "ca.pem"
     cert = ca_dir / "one.http.curl.se.rsa2048.cert.pem"
@@ -818,10 +932,53 @@ def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
     if not (ca_cert.exists() and cert.exists() and key.exists()):
         pytest.skip("TLS 观测服务端证书/CA 不存在（需要先跑一次 curl testenv 生成 ca/）")
 
+    client_ca = None
+    client_cert_source = None
+    client_intermediate = None
+    client_key = None
+    client_key_encrypted = None
+    client_key_password = uuid.uuid4().hex
+    if client_auth:
+        client_ca = ca_cert
+        client_cert_source = ca_dir / "clientsX" / "user1.rsa2048.cert.pem"
+        client_intermediate = ca_dir / "clientsX.rsa2048.cert.pem"
+        client_key = ca_dir / "clientsX" / "user1.rsa2048.pkey.pem"
+        if not all(
+            path.exists()
+            for path in (client_ca, client_cert_source, client_intermediate, client_key)
+        ):
+            pytest.skip("mTLS 客户端证书未生成（需要先跑一次 curl testenv 生成 clientsX）")
+
     run_dir = Path(env.gen_dir) / f"lc_observe_https_{uuid.uuid4().hex[:8]}"
     cmd = _REPO_ROOT / "tests" / "libcurl_consistency" / "http_observe_server.py"
     run_dir.mkdir(parents=True, exist_ok=True)
     log_file = run_dir / "observe_https.jsonl"
+    client_cert = None
+    if client_cert_source is not None and client_intermediate is not None:
+        client_cert = run_dir / "client-chain.pem"
+        client_cert.write_bytes(client_cert_source.read_bytes() + client_intermediate.read_bytes())
+    if client_key is not None:
+        client_key_encrypted = run_dir / "client-encrypted-key.pem"
+        try:
+            subprocess.run(
+                [
+                    "openssl",
+                    "rsa",
+                    "-in",
+                    str(client_key),
+                    "-aes256",
+                    "-passout",
+                    f"pass:{client_key_password}",
+                    "-out",
+                    str(client_key_encrypted),
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            pytest.fail(f"生成加密 mTLS 客户端私钥失败: {exc}")
 
     proc = None
     https_port = 0
@@ -842,6 +999,12 @@ def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
                 "--tls-key",
                 str(key),
             ]
+            if client_ca is not None:
+                args.extend(["--tls-client-ca", str(client_ca), "--tls-require-client-cert"])
+            if tls_min:
+                args.extend(["--tls-min", tls_min])
+            if tls_max:
+                args.extend(["--tls-max", tls_max])
             log.info("start observe https: %s", args)
             proc = subprocess.Popen(
                 args=args,
@@ -866,10 +1029,45 @@ def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
                 "ca_cert": str(ca_cert),
                 "cert": str(cert),
                 "key": str(key),
+                "client_ca": str(client_ca) if client_ca is not None else "",
+                "client_cert": str(client_cert) if client_cert is not None else "",
+                "client_key": str(client_key) if client_key is not None else "",
+                "client_key_encrypted": str(client_key_encrypted) if client_key_encrypted is not None else "",
+                "client_key_password": client_key_password if client_key_encrypted is not None else "",
+                "tls_min": tls_min,
+                "tls_max": tls_max,
             }
         finally:
             if proc:
                 proc.terminate()
+
+
+@pytest.fixture(scope="function")
+def lc_observe_https(env: Env) -> Generator[Dict[str, object], None, None]:
+    """启动默认 HTTPS 观测服务端。"""
+
+    yield from _observe_https_server(env)
+
+
+@pytest.fixture(scope="function")
+def lc_observe_https_mtls(env: Env) -> Generator[Dict[str, object], None, None]:
+    """启动要求客户端证书的 HTTPS 观测服务端。"""
+
+    yield from _observe_https_server(env, client_auth=True)
+
+
+@pytest.fixture(scope="function")
+def lc_observe_https_tls12(env: Env) -> Generator[Dict[str, object], None, None]:
+    """启动仅允许 TLS 1.2 的 HTTPS 观测服务端。"""
+
+    yield from _observe_https_server(env, tls_min="tls1.2", tls_max="tls1.2")
+
+
+@pytest.fixture(scope="function")
+def lc_observe_https_tls13(env: Env) -> Generator[Dict[str, object], None, None]:
+    """启动最低 TLS 1.3 的 HTTPS 观测服务端。"""
+
+    yield from _observe_https_server(env, tls_min="tls1.3")
 
 @pytest.fixture(scope="session")
 def lc_logs(httpd, nghttpx):

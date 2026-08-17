@@ -4,11 +4,35 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 
 ARTIFACTS_SCHEMA = "qcurl-lc/artifacts@v1"
+_SENSITIVE_COMMAND_OPTIONS = frozenset({"--key-pass", "--pass", "--password", "--proxy-pass"})
+
+
+def redact_command_args(args: Iterable[str]) -> list[str]:
+    """保留命令结构并隐藏敏感选项的值。"""
+
+    redacted: list[str] = []
+    hide_next = False
+    for value in args:
+        if hide_next:
+            redacted.append("<REDACTED>")
+            hide_next = False
+            continue
+        if value in _SENSITIVE_COMMAND_OPTIONS:
+            redacted.append(value)
+            hide_next = True
+            continue
+        option, separator, _ = value.partition("=")
+        if separator and option in _SENSITIVE_COMMAND_OPTIONS:
+            redacted.append(f"{option}=<REDACTED>")
+            continue
+        redacted.append(value)
+    return redacted
 
 def apply_error_namespaces(payload: Dict[str, Any],
                            *,

@@ -21,6 +21,7 @@ from .artifacts import (
     artifacts_root,
     build_request_semantic,
     build_response_summary,
+    redact_command_args,
     write_json,
 )
 
@@ -98,8 +99,9 @@ def _run_standalone_baseline(env: Env,
     stdout_lines = proc.stdout.splitlines(keepends=True) if proc.stdout else []
     stderr_lines = proc.stderr.splitlines(keepends=True) if proc.stderr else []
     if proc.returncode not in allowed_exit_codes:
+        safe_args = redact_command_args(args)
         raise AssertionError(
-            f"baseline failed ({proc.returncode}): {executable} {args}\n"
+            f"baseline failed ({proc.returncode}): {executable} {safe_args}\n"
             f"{proc.stdout}\n{proc.stderr}"
         )
     return stdout_lines, stderr_lines, duration_ms, int(proc.returncode)
@@ -260,7 +262,10 @@ def run_libtest_case(
             raise FileNotFoundError(f"LocalClient not built: {client_name}")
         result = client.run(args=cmd_args)
         if result.exit_code not in allowed:
-            raise AssertionError(f"LocalClient failed ({result.exit_code}): {client_name} {cmd_args}")
+            raise AssertionError(
+                f"LocalClient failed ({result.exit_code}): {client_name} "
+                f"{redact_command_args(cmd_args)}"
+            )
         # testenv.ExecResult 的 stdout/stderr 属性是拼接后的字符串；为保持 artifacts 一致性，这里统一写为“行列表”。
         stdout_lines = result.stdout.splitlines(keepends=True) if result.stdout else []
         try:
@@ -295,7 +300,7 @@ def run_libtest_case(
         "schema": ARTIFACTS_SCHEMA,
         "runner": "libcurl",
         "client": client_name,
-        "args": cmd_args,
+        "args": redact_command_args(cmd_args),
         "baseline_executable": str(baseline_executable) if baseline_executable else None,
         "exit_code": exit_code,
         "request": req_semantic,

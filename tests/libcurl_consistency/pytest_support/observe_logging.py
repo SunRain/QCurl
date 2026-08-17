@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 import json
+import ssl
 
 from tests.libcurl_consistency.pytest_support.observe_raw_headers import auth_scheme
 from tests.libcurl_consistency.pytest_support.observe_raw_headers import cookie_header_summary
@@ -27,6 +28,21 @@ _RAW_REQUEST_HEADER_ALLOWLIST = {
     "x-qcurl-override",
     "x-qcurl-case",
 }
+_REQUEST_HEADER_NAMES = (
+    "cookie",
+    "authorization",
+    "proxy-authorization",
+    "content-length",
+    "transfer-encoding",
+    "host",
+    "expect",
+    "accept-encoding",
+    "referer",
+    "range",
+    "x-qcurl-one",
+    "x-qcurl-override",
+    "x-qcurl-case",
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +61,7 @@ class ObserveLogEntry:
     response_headers: Dict[str, str]
     body_len: int
     body_sha256: str
+    tls: Dict[str, object]
 
 
 def set_log_file(path: Path) -> None:
@@ -85,32 +102,11 @@ def append_jsonl(path: Path, payload: Dict[str, object]) -> None:
         fp.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def write_observe_log(handler: object, status: int, response_headers: Dict[str, str], request_body: bytes = b"") -> None:
-    """Write a structured observation row for a request handler."""
+def _request_header_allowlist(headers: object) -> dict[str, str]:
+    """提取允许落盘的请求头摘要。"""
 
-    if LOG_FILE is None:
-        return
-
-    path = str(getattr(handler, "path", ""))
-    q = parse_qs(urlsplit(path).query, keep_blank_values=True)
-    req_id = q.get("id", [""])[0]
-    headers = getattr(handler, "headers")
     headers_allowlist: dict[str, str] = {}
-    for name in (
-        "cookie",
-        "authorization",
-        "proxy-authorization",
-        "content-length",
-        "transfer-encoding",
-        "host",
-        "expect",
-        "accept-encoding",
-        "referer",
-        "range",
-        "x-qcurl-one",
-        "x-qcurl-override",
-        "x-qcurl-case",
-    ):
+    for name in _REQUEST_HEADER_NAMES:
         values = headers.get_all(name) if hasattr(headers, "get_all") else None
         if not values:
             continue
@@ -130,7 +126,25 @@ def write_observe_log(handler: object, status: int, response_headers: Dict[str, 
             headers_allowlist[name] = strip_query_all(raw)
         else:
             headers_allowlist[name] = raw
+    return headers_allowlist
 
+
+def write_observe_log(
+    handler: object,
+    status: int,
+    response_headers: Dict[str, str],
+    request_body: bytes = b"",
+) -> None:
+    """为请求处理器写入结构化观察记录。"""
+
+    if LOG_FILE is None:
+        return
+
+    path = str(getattr(handler, "path", ""))
+    q = parse_qs(urlsplit(path).query, keep_blank_values=True)
+    req_id = q.get("id", [""])[0]
+    headers = getattr(handler, "headers")
+    headers_allowlist = _request_header_allowlist(headers)
     raw_fields = raw_header_fields(_raw_request_header_lines(headers))
     resp_allowlist = _response_header_allowlist(response_headers)
     client_address = getattr(handler, "client_address", ("", 0))
@@ -149,8 +163,24 @@ def write_observe_log(handler: object, status: int, response_headers: Dict[str, 
         response_headers=resp_allowlist,
         body_len=len(request_body or b""),
         body_sha256=sha256_hex(request_body or b"") if request_body else "",
+        tls=_tls_summary(handler),
     )
     append_jsonl(LOG_FILE, asdict(entry))
+
+
+def _tls_summary(handler: object) -> dict[str, object]:
+    """返回服务端真实握手结果；明文连接返回空对象。"""
+
+    connection = getattr(handler, "connection", None)
+    if not isinstance(connection, ssl.SSLSocket):
+        return {}
+    cipher = connection.cipher()
+    peer_cert = connection.getpeercert()
+    return {
+        "version": str(connection.version() or ""),
+        "cipher": str(cipher[0]) if cipher else "",
+        "client_cert": bool(peer_cert),
+    }
 
 
 def _raw_request_header_lines(headers: object) -> list[str]:

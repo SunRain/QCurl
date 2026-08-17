@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -57,6 +57,7 @@ class ProxyObserved:
     method: str
     url: str  # absolute URL (HTTP proxy) or authority (CONNECT)
     headers: Dict[str, str]
+    tls: Dict[str, object] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class ObserveHttpObserved:
@@ -70,6 +71,8 @@ class ObserveHttpObserved:
     response_headers: Dict[str, str]
     body_len: int = 0
     body_sha256: str = ""
+    peer: str = ""
+    tls: Dict[str, object] = field(default_factory=dict)
 
 
 def _strip_query_id(url: str) -> str:
@@ -430,6 +433,7 @@ def proxy_observed_for_log(proxy_log: Path, *, method: str) -> ProxyObserved:
             method=want,
             url=url,
             headers=headers_allowlist,
+            tls=dict(e.get("tls") or {}),
         )
     raise AssertionError(f"proxy log 无匹配记录：method={want}, file={proxy_log}")
 
@@ -503,6 +507,8 @@ def observe_http_observed_for_id(observe_log: Path, req_id: str) -> ObserveHttpO
         response_headers=resp_headers,
         body_len=int(e.get("body_len") or 0),
         body_sha256=str(e.get("body_sha256") or ""),
+        peer=str(e.get("peer") or ""),
+        tls=dict(e.get("tls") or {}),
     )
 
 def observe_http_observed_list_for_id(observe_log: Path,
@@ -544,5 +550,7 @@ def observe_http_observed_list_for_id(observe_log: Path,
             response_headers=resp_headers,
             body_len=int(e.get("body_len") or 0),
             body_sha256=str(e.get("body_sha256") or ""),
+            peer=str(e.get("peer") or ""),
+            tls=dict(e.get("tls") or {}),
         ))
     return out

@@ -40,6 +40,21 @@ struct Args
     std::string cookieFile;
     std::string cookieJar;
     std::string caInfo;
+    std::string clientCert;
+    std::string clientKey;
+    std::string clientKeyPassword;
+    std::string tlsMinVersion;
+    std::string cipherList;
+    std::string tls13Ciphers;
+    std::string forcedUnsupportedOption;
+    std::string ipResolve;
+    bool proxySecure     = false;
+    bool proxyVerifyPeer = true;
+    bool proxyVerifyHost = true;
+    std::string proxyCaInfo;
+    std::string proxyTlsMinVersion;
+    std::string proxyCipherList;
+    std::string proxyTls13Ciphers;
     std::string pinnedPublicKey;
     bool multipartDemo  = false;
     bool followLocation = false;
@@ -112,6 +127,97 @@ bool setHttpVersion(CURL *curl, const std::string &proto)
 #endif
     }
     return false;
+}
+
+std::optional<long> tlsMinValue(const std::string &value)
+{
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    if (value == "tls1.0") {
+        return CURL_SSLVERSION_TLSv1_0;
+    }
+    if (value == "tls1.1") {
+        return CURL_SSLVERSION_TLSv1_1;
+    }
+    if (value == "tls1.2") {
+        return CURL_SSLVERSION_TLSv1_2;
+    }
+#ifdef CURL_SSLVERSION_TLSv1_3
+    if (value == "tls1.3") {
+        return CURL_SSLVERSION_TLSv1_3;
+    }
+#endif
+    return std::nullopt;
+}
+
+bool setTlsPolicy(CURL *curl,
+                  const std::string &minimum,
+                  const std::string &cipherList,
+                  const std::string &tls13Ciphers,
+                  bool proxy,
+                  const std::string &forcedUnsupportedOption)
+{
+    const auto version = tlsMinValue(minimum);
+    if (!minimum.empty() && !version.has_value()) {
+        std::cerr << "unsupported TLS minimum version: " << minimum << "\n";
+        return false;
+    }
+    if (version.has_value()) {
+        const CURLoption option = proxy ? CURLOPT_PROXY_SSLVERSION : CURLOPT_SSLVERSION;
+        const char *optionName  = proxy ? "CURLOPT_PROXY_SSLVERSION" : "CURLOPT_SSLVERSION";
+        if (forcedUnsupportedOption == optionName) {
+            std::cerr << "forced unsupported option: " << optionName << "\n";
+            return false;
+        }
+        const CURLcode rc = curl_easy_setopt(curl, option, version.value());
+        if (rc == CURLE_UNKNOWN_OPTION || rc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported TLS minimum version option\n";
+            return false;
+        }
+        if (rc != CURLE_OK) {
+            std::cerr << "TLS minimum version option failed: " << curl_easy_strerror(rc) << "\n";
+            return false;
+        }
+    }
+
+    if (!cipherList.empty()) {
+        const CURLoption option = proxy ? CURLOPT_PROXY_SSL_CIPHER_LIST : CURLOPT_SSL_CIPHER_LIST;
+        const char *optionName  = proxy ? "CURLOPT_PROXY_SSL_CIPHER_LIST"
+                                        : "CURLOPT_SSL_CIPHER_LIST";
+        if (forcedUnsupportedOption == optionName) {
+            std::cerr << "forced unsupported option: " << optionName << "\n";
+            return false;
+        }
+        const CURLcode rc = curl_easy_setopt(curl, option, cipherList.c_str());
+        if (rc == CURLE_UNKNOWN_OPTION || rc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported TLS cipher-list option\n";
+            return false;
+        }
+        if (rc != CURLE_OK) {
+            std::cerr << "TLS cipher-list option failed: " << curl_easy_strerror(rc) << "\n";
+            return false;
+        }
+    }
+
+    if (!tls13Ciphers.empty()) {
+        const CURLoption option = proxy ? CURLOPT_PROXY_TLS13_CIPHERS : CURLOPT_TLS13_CIPHERS;
+        const char *optionName  = proxy ? "CURLOPT_PROXY_TLS13_CIPHERS" : "CURLOPT_TLS13_CIPHERS";
+        if (forcedUnsupportedOption == optionName) {
+            std::cerr << "forced unsupported option: " << optionName << "\n";
+            return false;
+        }
+        const CURLcode rc = curl_easy_setopt(curl, option, tls13Ciphers.c_str());
+        if (rc == CURLE_UNKNOWN_OPTION || rc == CURLE_NOT_BUILT_IN) {
+            std::cerr << "unsupported TLS 1.3 cipher-list option\n";
+            return false;
+        }
+        if (rc != CURLE_OK) {
+            std::cerr << "TLS 1.3 cipher-list option failed: " << curl_easy_strerror(rc) << "\n";
+            return false;
+        }
+    }
+    return true;
 }
 
 int xferInfoCallback(
@@ -370,6 +476,66 @@ std::optional<Args> parseArgs(int argc, char **argv)
             out.caInfo = argv[++i];
             continue;
         }
+        if (arg == "--cert" && i + 1 < argc) {
+            out.clientCert = argv[++i];
+            continue;
+        }
+        if (arg == "--key" && i + 1 < argc) {
+            out.clientKey = argv[++i];
+            continue;
+        }
+        if (arg == "--key-pass" && i + 1 < argc) {
+            out.clientKeyPassword = argv[++i];
+            continue;
+        }
+        if (arg == "--tls-min" && i + 1 < argc) {
+            out.tlsMinVersion = argv[++i];
+            continue;
+        }
+        if (arg == "--cipher-list" && i + 1 < argc) {
+            out.cipherList = argv[++i];
+            continue;
+        }
+        if (arg == "--tls13-ciphers" && i + 1 < argc) {
+            out.tls13Ciphers = argv[++i];
+            continue;
+        }
+        if (arg == "--force-unsupported-option" && i + 1 < argc) {
+            out.forcedUnsupportedOption = argv[++i];
+            continue;
+        }
+        if (arg == "--ip-resolve" && i + 1 < argc) {
+            out.ipResolve = argv[++i];
+            continue;
+        }
+        if (arg == "--proxy-secure") {
+            out.proxySecure = true;
+            continue;
+        }
+        if (arg == "--proxy-no-verify-peer") {
+            out.proxyVerifyPeer = false;
+            continue;
+        }
+        if (arg == "--proxy-no-verify-host") {
+            out.proxyVerifyHost = false;
+            continue;
+        }
+        if (arg == "--proxy-cainfo" && i + 1 < argc) {
+            out.proxyCaInfo = argv[++i];
+            continue;
+        }
+        if (arg == "--proxy-tls-min" && i + 1 < argc) {
+            out.proxyTlsMinVersion = argv[++i];
+            continue;
+        }
+        if (arg == "--proxy-cipher-list" && i + 1 < argc) {
+            out.proxyCipherList = argv[++i];
+            continue;
+        }
+        if (arg == "--proxy-tls13-ciphers" && i + 1 < argc) {
+            out.proxyTls13Ciphers = argv[++i];
+            continue;
+        }
         if (arg == "--pinned-public-key" && i + 1 < argc) {
             out.pinnedPublicKey = argv[++i];
             continue;
@@ -566,6 +732,13 @@ int printUsage()
         << "  [--auto-referer] [--referer <url>] [--post-redir <default|301|302|303|all>]\n"
         << "  [--accept-encoding <csv|all>] [--accept-encoding-all] [--header <Name: Value>]\n"
         << "  [--secure] [--cainfo <path>] [--pinned-public-key <sha256//...|path>]\n"
+        << "  [--cert <path> --key <path> [--key-pass <password>]]\n"
+        << "  [--tls-min <tls1.0|tls1.1|tls1.2|tls1.3>] [--cipher-list <list>]\n"
+        << "  [--tls13-ciphers <list>] [--ip-resolve <any|v4|v6>]\n"
+        << "  [--proxy-secure] [--proxy-cainfo <path>] [--proxy-tls-min <version>]\n"
+        << "  [--proxy-cipher-list <list>] [--proxy-tls13-ciphers <list>]\n"
+        << "  [--proxy-no-verify-peer] [--proxy-no-verify-host]\n"
+        << "  [--force-unsupported-option <option>]\n"
         << "  [--connect-timeout-ms <ms>] [--timeout-ms <ms>] [--expect100-timeout-ms <ms>]\n"
         << "  [--low-speed-time <s>] [--low-speed-limit <bytes_per_sec>]\n"
         << "  [--abort-after-bytes <n>]\n"
@@ -689,6 +862,45 @@ int main(int argc, char **argv)
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, args.verifyHost ? 2L : 0L);
     if (args.verifyPeer && !args.caInfo.empty()) {
         curl_easy_setopt(curl, CURLOPT_CAINFO, args.caInfo.c_str());
+    }
+    if (!args.clientCert.empty()) {
+        curl_easy_setopt(curl, CURLOPT_SSLCERT, args.clientCert.c_str());
+    }
+    if (!args.clientKey.empty()) {
+        curl_easy_setopt(curl, CURLOPT_SSLKEY, args.clientKey.c_str());
+    }
+    if (!args.clientKeyPassword.empty()) {
+        curl_easy_setopt(curl, CURLOPT_KEYPASSWD, args.clientKeyPassword.c_str());
+    }
+    if (!setTlsPolicy(curl,
+                      args.tlsMinVersion,
+                      args.cipherList,
+                      args.tls13Ciphers,
+                      false,
+                      args.forcedUnsupportedOption)) {
+        curl_easy_cleanup(curl);
+        curl_global_cleanup();
+        return 6;
+    }
+    if (!args.ipResolve.empty()) {
+        long resolve = CURL_IPRESOLVE_WHATEVER;
+        if (args.ipResolve == "v4") {
+            resolve = CURL_IPRESOLVE_V4;
+        } else if (args.ipResolve == "v6") {
+            resolve = CURL_IPRESOLVE_V6;
+        } else if (args.ipResolve != "any") {
+            std::cerr << "unsupported IP resolve mode: " << args.ipResolve << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
+        const CURLcode resolveRc = curl_easy_setopt(curl, CURLOPT_IPRESOLVE, resolve);
+        if (resolveRc != CURLE_OK) {
+            std::cerr << "IP resolve option failed: " << curl_easy_strerror(resolveRc) << "\n";
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
+        }
     }
     if (!args.pinnedPublicKey.empty()) {
 #if defined(LIBCURL_VERSION_NUM) && (LIBCURL_VERSION_NUM >= 0x072700)
@@ -1048,6 +1260,23 @@ int main(int argc, char **argv)
         }
         if (!args.proxyUser.empty() || !args.proxyPass.empty()) {
             curl_easy_setopt(curl, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+        }
+        if (args.proxySecure) {
+            curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYPEER, args.proxyVerifyPeer ? 1L : 0L);
+            curl_easy_setopt(curl, CURLOPT_PROXY_SSL_VERIFYHOST, args.proxyVerifyHost ? 2L : 0L);
+            if (!args.proxyCaInfo.empty()) {
+                curl_easy_setopt(curl, CURLOPT_PROXY_CAINFO, args.proxyCaInfo.c_str());
+            }
+        }
+        if (!setTlsPolicy(curl,
+                          args.proxyTlsMinVersion,
+                          args.proxyCipherList,
+                          args.proxyTls13Ciphers,
+                          true,
+                          args.forcedUnsupportedOption)) {
+            curl_easy_cleanup(curl);
+            curl_global_cleanup();
+            return 6;
         }
     }
 

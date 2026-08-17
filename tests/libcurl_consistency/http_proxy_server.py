@@ -16,6 +16,7 @@ import json
 import logging
 import select
 import socket
+import ssl
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -76,10 +77,20 @@ class ProxyLogEntry:
     version: str
     auth_ok: bool
     headers: Dict[str, str]
+    tls: Dict[str, object]
 
 
 class ProxyServer:
-    def __init__(self, host: str, port: int, log_file: Path, *, username: str, password: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        log_file: Path,
+        *,
+        username: str,
+        password: str,
+        tls_context: ssl.SSLContext | None = None,
+    ):
         self._host = host
         self._port = port
         self._log_file = log_file
@@ -87,6 +98,7 @@ class ProxyServer:
         self._auth_value = "Basic " + base64.b64encode(userpass).decode("ascii")
         self._sock: Optional[socket.socket] = None
         self._stop = threading.Event()
+        self._tls_context = tls_context
 
     def serve_forever(self) -> None:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -103,6 +115,13 @@ class ProxyServer:
                 continue
             except OSError:
                 break
+            if self._tls_context is not None:
+                try:
+                    conn = self._tls_context.wrap_socket(conn, server_side=True)
+                except ssl.SSLError as exc:
+                    log.debug("proxy TLS handshake failed: %s", exc)
+                    conn.close()
+                    continue
             t = threading.Thread(target=self._handle_conn, args=(conn, addr), daemon=True)
             t.start()
 
@@ -158,6 +177,7 @@ class ProxyServer:
                 version=version,
                 auth_ok=auth_ok,
                 headers=headers_allowlist,
+                tls=self._tls_summary(conn),
             ))
 
             if not auth_ok:
@@ -176,6 +196,16 @@ class ProxyServer:
                 conn.close()
             except OSError:
                 pass
+
+    @staticmethod
+    def _tls_summary(conn: socket.socket) -> dict[str, object]:
+        if not isinstance(conn, ssl.SSLSocket):
+            return {}
+        cipher = conn.cipher()
+        return {
+            "version": str(conn.version() or ""),
+            "cipher": str(cipher[0]) if cipher else "",
+        }
 
     @staticmethod
     def _read_request_head(conn: socket.socket) -> Tuple[str, Dict[str, str]]:
@@ -310,17 +340,59 @@ class ProxyServer:
                 pass
 
 
+def _tls_version(value: str) -> ssl.TLSVersion | None:
+    return {
+        "tls1.0": ssl.TLSVersion.TLSv1,
+        "tls1.1": ssl.TLSVersion.TLSv1_1,
+        "tls1.2": ssl.TLSVersion.TLSv1_2,
+        "tls1.3": ssl.TLSVersion.TLSv1_3,
+    }.get(value.strip().lower())
+
+
+def _make_tls_context(args: argparse.Namespace) -> ssl.SSLContext | None:
+    if not args.tls_cert and not args.tls_key:
+        return None
+    if not args.tls_cert or not args.tls_key:
+        raise ValueError("HTTPS proxy requires both --tls-cert and --tls-key")
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=args.tls_cert, keyfile=args.tls_key)
+    minimum = _tls_version(args.tls_min)
+    maximum = _tls_version(args.tls_max)
+    if args.tls_min and minimum is None:
+        raise ValueError(f"unsupported TLS minimum version: {args.tls_min}")
+    if args.tls_max and maximum is None:
+        raise ValueError(f"unsupported TLS maximum version: {args.tls_max}")
+    if minimum is not None:
+        context.minimum_version = minimum
+    if maximum is not None:
+        context.maximum_version = maximum
+    return context
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a minimal HTTP proxy for QCurl libcurl_consistency")
     parser.add_argument("--port", type=int, required=True, help="port to listen on")
     parser.add_argument("--log-file", type=str, required=True, help="JSONL file to write proxy observations")
     parser.add_argument("--username", type=str, default="lcuser", help="basic auth username")
     parser.add_argument("--password", type=str, default="lcpass", help="basic auth password")
+    parser.add_argument("--tls-cert", type=str, default="", help="HTTPS proxy 服务端证书")
+    parser.add_argument("--tls-key", type=str, default="", help="HTTPS proxy 服务端私钥")
+    parser.add_argument("--tls-min", type=str, default="", help="TLS 最低版本")
+    parser.add_argument("--tls-max", type=str, default="", help="TLS 最高版本")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
 
-    server = ProxyServer("localhost", args.port, Path(args.log_file), username=args.username, password=args.password)
+    tls_context = _make_tls_context(args)
+    server = ProxyServer(
+        "localhost",
+        args.port,
+        Path(args.log_file),
+        username=args.username,
+        password=args.password,
+        tls_context=tls_context,
+    )
     try:
         server.serve_forever()
     finally:

@@ -20,6 +20,14 @@
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
  * - QCURL_LC_REFERER: 显式 Referer（M1）
  * - QCURL_LC_SHARE_HANDLE: multi share handle（测试注入；默认不设置=关闭；off|dns,cookie,ssl_session）
+ * - QCURL_LC_CLIENT_CERT_PATH / QCURL_LC_CLIENT_KEY_PATH: mTLS 客户端证书与私钥
+ * - QCURL_LC_TLS_MIN_VERSION / QCURL_LC_TLS_CIPHER_LIST / QCURL_LC_TLS13_CIPHERS:
+ *   origin TLS 最低版本与密码套件策略
+ * - QCURL_LC_IP_RESOLVE: IP 族选择（any|v4|v6）
+ * - QCURL_LC_PROXY_CA_CERT_PATH / QCURL_LC_PROXY_TLS_MIN_VERSION:
+ *   HTTPS proxy 的 CA 与最低 TLS 版本
+ * - QCURL_LC_PROXY_TLS_CIPHER_LIST / QCURL_LC_PROXY_TLS13_CIPHERS:
+ *   HTTPS proxy 的 TLS 1.2/1.3 密码套件策略
  * - QCURL_LC_SOAK_DURATION_S: 长稳压测时长秒（lc_soak_parallel_get）
  * - QCURL_LC_SOAK_PARALLEL: 长稳并发数（lc_soak_parallel_get）
  * - QCURL_LC_SOAK_MAX_ERRORS: 长稳允许错误数（lc_soak_parallel_get）
@@ -88,6 +96,23 @@ QCNetworkHttpVersion toHttpVersion(const QString &proto)
         return QCNetworkHttpVersion::Http3Only;
     }
     return QCNetworkHttpVersion::HttpAny;
+}
+
+bool booleanEnvironmentValue(const QString &value, bool defaultValue)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return defaultValue;
+    }
+    if (normalized == QStringLiteral("1") || normalized == QStringLiteral("true")
+        || normalized == QStringLiteral("yes") || normalized == QStringLiteral("on")) {
+        return true;
+    }
+    if (normalized == QStringLiteral("0") || normalized == QStringLiteral("false")
+        || normalized == QStringLiteral("no") || normalized == QStringLiteral("off")) {
+        return false;
+    }
+    return defaultValue;
 }
 
 QByteArray makeUploadBody(int size)
@@ -283,6 +308,101 @@ QCBlockingNetworkClient makeBlockingClient()
     return QCBlockingNetworkClient(options);
 }
 
+/**
+ * @brief 将环境变量中的 TLS 版本名称转换为 QCurl 的最小 TLS 版本枚举。
+ * @param value 形如 `tls1.2` 或 `tls1.3` 的版本名称。
+ * @return 可识别时返回对应版本；空值或未知值返回空。
+ */
+std::optional<QCNetworkTlsVersion> tlsVersionFromEnvironment(const QString &value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return std::nullopt;
+    }
+    if (normalized == QStringLiteral("tls1.0")) {
+        return QCNetworkTlsVersion::Tls1_0;
+    }
+    if (normalized == QStringLiteral("tls1.1")) {
+        return QCNetworkTlsVersion::Tls1_1;
+    }
+    if (normalized == QStringLiteral("tls1.2")) {
+        return QCNetworkTlsVersion::Tls1_2;
+    }
+    if (normalized == QStringLiteral("tls1.3")) {
+        return QCNetworkTlsVersion::Tls1_3;
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief 应用测试环境传入的 SSL/TLS 配置。
+ * @param ssl 需要修改的请求级 SSL 配置。
+ * @param caCertPath CA 证书路径，可为空。
+ * @param clientCertPath 客户端证书路径，可为空。
+ * @param clientKeyPath 客户端私钥路径，可为空。
+ * @param clientKeyPassword 客户端私钥密码，可为空。
+ * @param tlsMinVersion 最小 TLS 版本名称，可为空。
+ * @param cipherList TLS 1.2 及更早版本密码套件列表，可为空。
+ * @param tls13Ciphers TLS 1.3 密码套件列表，可为空。
+ * @return 所有非空策略都能解析并应用时返回 true。
+ */
+bool applySslEnvironment(QCNetworkSslConfig &ssl,
+                         const QString &caCertPath,
+                         const QString &clientCertPath,
+                         const QString &clientKeyPath,
+                         const QString &clientKeyPassword,
+                         const QString &tlsMinVersion,
+                         const QString &cipherList,
+                         const QString &tls13Ciphers)
+{
+    if (!caCertPath.isEmpty()) {
+        ssl.setCaCertPath(caCertPath);
+    }
+    if (!clientCertPath.isEmpty()) {
+        ssl.setClientCertPath(clientCertPath);
+    }
+    if (!clientKeyPath.isEmpty()) {
+        ssl.setClientKeyPath(clientKeyPath);
+    }
+    if (!clientKeyPassword.isEmpty()) {
+        ssl.setClientKeyPassword(clientKeyPassword);
+    }
+    if (!tlsMinVersion.isEmpty()) {
+        const auto version = tlsVersionFromEnvironment(tlsMinVersion);
+        if (!version.has_value()) {
+            return false;
+        }
+        ssl.setMinTlsVersion(version);
+    }
+    if (!cipherList.isEmpty()) {
+        ssl.setCipherList(cipherList);
+    }
+    if (!tls13Ciphers.isEmpty()) {
+        ssl.setTls13Ciphers(tls13Ciphers);
+    }
+    return true;
+}
+
+/**
+ * @brief 将环境变量中的 IP 解析策略转换为 QCurl 枚举。
+ * @param value `v4`、`v6` 或 `any`。
+ * @return 可识别时返回对应策略，否则返回空。
+ */
+std::optional<QCNetworkIpResolve> ipResolveFromEnvironment(const QString &value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("v4")) {
+        return QCNetworkIpResolve::Ipv4;
+    }
+    if (normalized == QStringLiteral("v6")) {
+        return QCNetworkIpResolve::Ipv6;
+    }
+    if (normalized == QStringLiteral("any")) {
+        return QCNetworkIpResolve::Any;
+    }
+    return std::nullopt;
+}
+
 NetworkError httpGetToFile(QCNetworkAccessManager &manager,
                            const QUrl &url,
                            QCNetworkHttpVersion httpVersion,
@@ -393,30 +513,48 @@ void TestLibcurlConsistency::testCase()
     const QString docname = qEnvironmentVariable("QCURL_LC_DOCNAME");
     const int uploadSize  = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_UPLOAD_SIZE"));
     const bool hasExpect100TimeoutMs = qEnvironmentVariableIsSet("QCURL_LC_EXPECT100_TIMEOUT_MS");
-    const int expect100TimeoutMs  = qEnvironmentVariableIntValue("QCURL_LC_EXPECT100_TIMEOUT_MS");
-    const int abortOffset         = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_ABORT_OFFSET"));
-    const int fileSize            = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_FILE_SIZE"));
-    const int pauseOffset         = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_PAUSE_OFFSET"));
-    const QString requestId       = qEnvironmentVariable("QCURL_LC_REQ_ID");
-    const int httpPort            = qEnvironmentVariableIntValue("QCURL_LC_HTTP_PORT");
-    const QString cookiePath      = qEnvironmentVariable("QCURL_LC_COOKIE_PATH");
-    const int proxyPort           = qEnvironmentVariableIntValue("QCURL_LC_PROXY_PORT");
-    const QString proxyUser       = qEnvironmentVariable("QCURL_LC_PROXY_USER");
-    const QString proxyPass       = qEnvironmentVariable("QCURL_LC_PROXY_PASS");
-    const QString proxyTargetUrl  = qEnvironmentVariable("QCURL_LC_PROXY_TARGET_URL");
-    const int socks5Port          = qEnvironmentVariableIntValue("QCURL_LC_SOCKS5_PORT");
-    const int observeHttpPort     = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTP_PORT");
-    const int observeStatusCode   = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
-    const int observeHttpsPort    = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
-    const QString caCertPath      = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
-    const QString pinnedPublicKey = qEnvironmentVariable("QCURL_LC_PINNED_PUBLIC_KEY");
-    const QString hstsPath        = qEnvironmentVariable("QCURL_LC_HSTS_PATH");
-    const QString altSvcPath      = qEnvironmentVariable("QCURL_LC_ALTSVC_PATH");
-    const QString targetUrl       = qEnvironmentVariable("QCURL_LC_TARGET_URL");
-    const QString resumePath      = qEnvironmentVariable("QCURL_LC_RESUME_PATH");
-    const QString authUser        = qEnvironmentVariable("QCURL_LC_AUTH_USER");
-    const QString authPass        = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
-    const QString referer         = qEnvironmentVariable("QCURL_LC_REFERER");
+    const int expect100TimeoutMs = qEnvironmentVariableIntValue("QCURL_LC_EXPECT100_TIMEOUT_MS");
+    const int abortOffset        = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_ABORT_OFFSET"));
+    const int fileSize           = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_FILE_SIZE"));
+    const int pauseOffset        = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_PAUSE_OFFSET"));
+    const QString requestId      = qEnvironmentVariable("QCURL_LC_REQ_ID");
+    const int httpPort           = qEnvironmentVariableIntValue("QCURL_LC_HTTP_PORT");
+    const QString cookiePath     = qEnvironmentVariable("QCURL_LC_COOKIE_PATH");
+    const int proxyPort          = qEnvironmentVariableIntValue("QCURL_LC_PROXY_PORT");
+    const QString proxyUser      = qEnvironmentVariable("QCURL_LC_PROXY_USER");
+    const QString proxyPass      = qEnvironmentVariable("QCURL_LC_PROXY_PASS");
+    const QString proxyTargetUrl = qEnvironmentVariable("QCURL_LC_PROXY_TARGET_URL");
+    const int socks5Port         = qEnvironmentVariableIntValue("QCURL_LC_SOCKS5_PORT");
+    const int observeHttpPort    = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTP_PORT");
+    const int observeStatusCode  = qEnvironmentVariableIntValue("QCURL_LC_STATUS_CODE");
+    const int observeHttpsPort   = qEnvironmentVariableIntValue("QCURL_LC_OBSERVE_HTTPS_PORT");
+    const QString caCertPath     = qEnvironmentVariable("QCURL_LC_CA_CERT_PATH");
+    const QString clientCertPath = qEnvironmentVariable("QCURL_LC_CLIENT_CERT_PATH");
+    const QString clientKeyPath  = qEnvironmentVariable("QCURL_LC_CLIENT_KEY_PATH");
+    const QString clientKeyPassword  = qEnvironmentVariable("QCURL_LC_CLIENT_KEY_PASSWORD");
+    const QString tlsMinVersion      = qEnvironmentVariable("QCURL_LC_TLS_MIN_VERSION");
+    const QString tlsCipherList      = qEnvironmentVariable("QCURL_LC_TLS_CIPHER_LIST");
+    const QString tls13Ciphers       = qEnvironmentVariable("QCURL_LC_TLS13_CIPHERS");
+    const QString ipResolveMode      = qEnvironmentVariable("QCURL_LC_IP_RESOLVE");
+    const QString proxyHost          = qEnvironmentVariable("QCURL_LC_PROXY_HOST", "127.0.0.1");
+    const QString proxyCaCertPath    = qEnvironmentVariable("QCURL_LC_PROXY_CA_CERT_PATH");
+    const QString proxyTlsMinVersion = qEnvironmentVariable("QCURL_LC_PROXY_TLS_MIN_VERSION");
+    const QString proxyTlsCipherList = qEnvironmentVariable("QCURL_LC_PROXY_TLS_CIPHER_LIST");
+    const QString proxyTls13Ciphers  = qEnvironmentVariable("QCURL_LC_PROXY_TLS13_CIPHERS");
+    const bool proxyVerifyPeer       = booleanEnvironmentValue(qEnvironmentVariable(
+                                                                   "QCURL_LC_PROXY_VERIFY_PEER"),
+                                                               true);
+    const bool proxyVerifyHost       = booleanEnvironmentValue(qEnvironmentVariable(
+                                                                   "QCURL_LC_PROXY_VERIFY_HOST"),
+                                                               true);
+    const QString pinnedPublicKey    = qEnvironmentVariable("QCURL_LC_PINNED_PUBLIC_KEY");
+    const QString hstsPath           = qEnvironmentVariable("QCURL_LC_HSTS_PATH");
+    const QString altSvcPath         = qEnvironmentVariable("QCURL_LC_ALTSVC_PATH");
+    const QString targetUrl          = qEnvironmentVariable("QCURL_LC_TARGET_URL");
+    const QString resumePath         = qEnvironmentVariable("QCURL_LC_RESUME_PATH");
+    const QString authUser           = qEnvironmentVariable("QCURL_LC_AUTH_USER");
+    const QString authPass           = qEnvironmentVariable("QCURL_LC_AUTH_PASS");
+    const QString referer            = qEnvironmentVariable("QCURL_LC_REFERER");
     const int bpLimitBytes  = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_LIMIT_BYTES"));
     const int bpResumeBytes = qMax(0, qEnvironmentVariableIntValue("QCURL_LC_BP_RESUME_BYTES"));
     const QString connectionSummaryPath = qEnvironmentVariable("QCURL_LC_CONN_SUMMARY_PATH");
@@ -709,6 +847,114 @@ void TestLibcurlConsistency::testCase()
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_tls_policy_success")
+        || caseId == QStringLiteral("p2_tls_policy_failure")
+        || caseId == QStringLiteral("p2_tls_mtls_success")
+        || caseId == QStringLiteral("p2_tls_mtls_failure")) {
+        QVERIFY(observeHttpsPort > 0);
+
+        QCNetworkSslConfig ssl = QCNetworkSslConfig::defaultConfig();
+        QVERIFY(applySslEnvironment(ssl,
+                                    caCertPath,
+                                    clientCertPath,
+                                    clientKeyPath,
+                                    clientKeyPassword,
+                                    tlsMinVersion,
+                                    tlsCipherList,
+                                    tls13Ciphers));
+
+        QCNetworkRequest req(
+            withRequestId(QUrl(QStringLiteral("https://localhost:%1/cookie").arg(observeHttpsPort)),
+                          requestId));
+        req.setSslConfig(ssl);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
+        QVERIFY(reply);
+        const bool expectSuccess = caseId == QStringLiteral("p2_tls_policy_success")
+                                   || caseId == QStringLiteral("p2_tls_mtls_success");
+        if (expectSuccess) {
+            QCOMPARE(reply->error(), NetworkError::NoError);
+            const auto dataOpt = reply->readAll();
+            QVERIFY(dataOpt.has_value());
+            QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
+                                   *dataOpt,
+                                   QIODevice::WriteOnly | QIODevice::Truncate));
+        } else {
+            QVERIFY(reply->error() != NetworkError::NoError);
+        }
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_ip_resolve_v4")
+        || caseId == QStringLiteral("p2_ip_resolve_v6")) {
+        QVERIFY(!targetUrl.isEmpty());
+        const auto resolve = ipResolveFromEnvironment(ipResolveMode);
+        QVERIFY(resolve.has_value());
+
+        QCNetworkRequest req{QUrl(targetUrl)};
+        req.setIpResolve(resolve.value());
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
+        QVERIFY(reply);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto dataOpt = reply->readAll();
+        QVERIFY(dataOpt.has_value());
+        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
+                               *dataOpt,
+                               QIODevice::WriteOnly | QIODevice::Truncate));
+        deleteReplyLater(reply);
+        return;
+    }
+
+    if (caseId == QStringLiteral("p2_proxy_tls_success")
+        || caseId == QStringLiteral("p2_proxy_tls_failure")) {
+        QVERIFY(proxyPort > 0);
+        QVERIFY(!proxyTargetUrl.isEmpty());
+
+        QCNetworkProxyConfig::ProxyTlsConfig proxyTls;
+        proxyTls.setVerifyPeer(proxyVerifyPeer);
+        proxyTls.setVerifyHost(proxyVerifyHost);
+        proxyTls.setCaCertPath(proxyCaCertPath);
+        if (!proxyTlsMinVersion.isEmpty()) {
+            const auto version = tlsVersionFromEnvironment(proxyTlsMinVersion);
+            QVERIFY(version.has_value());
+            proxyTls.setMinTlsVersion(version);
+        }
+        proxyTls.setCipherList(proxyTlsCipherList);
+        proxyTls.setTls13Ciphers(proxyTls13Ciphers);
+        proxyTls.setUnsupportedSecurityPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
+
+        QCNetworkProxyConfig proxy;
+        proxy.setType(QCNetworkProxyConfig::ProxyType::Https);
+        proxy.setHostName(proxyHost);
+        proxy.setPort(static_cast<quint16>(proxyPort));
+        proxy.setUserName(proxyUser);
+        proxy.setPassword(proxyPass);
+        proxy.setTlsConfig(proxyTls);
+
+        QCNetworkRequest req{QUrl(proxyTargetUrl)};
+        req.setProxyConfig(proxy);
+        req.setHttpVersion(httpVersion);
+
+        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
+        QVERIFY(reply);
+        if (caseId == QStringLiteral("p2_proxy_tls_success")) {
+            QCOMPARE(reply->error(), NetworkError::NoError);
+            const auto dataOpt = reply->readAll();
+            QVERIFY(dataOpt.has_value());
+            QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
+                                   *dataOpt,
+                                   QIODevice::WriteOnly | QIODevice::Truncate));
+        } else {
+            QVERIFY(reply->error() != NetworkError::NoError);
+        }
         deleteReplyLater(reply);
         return;
     }
@@ -1726,8 +1972,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
-            QCOMPARE(req.setExpect100ContinueTimeout(
-                         std::chrono::milliseconds(expect100TimeoutMs)),
+            QCOMPARE(req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs)),
                      QCNetworkConfigUpdateResult::Applied);
         }
         QCNetworkReply *reply = manager.put(req, &device, static_cast<qint64>(uploadSize));
@@ -1768,8 +2013,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         if (hasExpect100TimeoutMs) {
             QVERIFY2(expect100TimeoutMs >= 0, "QCURL_LC_EXPECT100_TIMEOUT_MS must be >= 0");
-            QCOMPARE(req.setExpect100ContinueTimeout(
-                         std::chrono::milliseconds(expect100TimeoutMs)),
+            QCOMPARE(req.setExpect100ContinueTimeout(std::chrono::milliseconds(expect100TimeoutMs)),
                      QCNetworkConfigUpdateResult::Applied);
         }
 
@@ -2000,10 +2244,8 @@ void TestLibcurlConsistency::testCase()
                                    .arg(observeHttpPort)),
                           requestId));
         req.setHttpVersion(httpVersion);
-        QCOMPARE(req.setMaxDownloadBytesPerSec(maxRecvSpeed),
-                 QCNetworkConfigUpdateResult::Applied);
-        QCOMPARE(req.setMaxUploadBytesPerSec(maxSendSpeed),
-                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(req.setMaxDownloadBytesPerSec(maxRecvSpeed), QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(req.setMaxUploadBytesPerSec(maxSendSpeed), QCNetworkConfigUpdateResult::Applied);
 
         QCNetworkReply *reply = manager.get(req);
         QVERIFY(reply);
@@ -2379,8 +2621,7 @@ void TestLibcurlConsistency::testCase()
         QCNetworkRequest req(url);
         req.setSslConfig(QCNetworkSslConfig::insecureConfig());
         req.setHttpVersion(httpVersion);
-        QCOMPARE(req.setBackpressureLimitBytes(bpLimitBytes),
-                 QCNetworkConfigUpdateResult::Applied);
+        QCOMPARE(req.setBackpressureLimitBytes(bpLimitBytes), QCNetworkConfigUpdateResult::Applied);
         QCOMPARE(req.setBackpressureResumeBytes(bpResumeBytes),
                  QCNetworkConfigUpdateResult::Applied);
 
@@ -2890,8 +3131,11 @@ void TestLibcurlConsistency::testCase()
                                                 .arg(observeHttpPort)),
                                        requestId);
 
-        const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-            1, std::chrono::milliseconds(1), 2.0, std::chrono::milliseconds(1));
+        const QCNetworkRetryPolicy policy
+            = TestSupport::makeRetryPolicyOrFail(1,
+                                                 std::chrono::milliseconds(1),
+                                                 2.0,
+                                                 std::chrono::milliseconds(1));
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
@@ -3146,8 +3390,7 @@ void TestLibcurlConsistency::testCase()
         cfg.setMultiMaxConcurrentStreams(1);
         cfg.setMultiMaxConnects(16);
         QVERIFY(cfg.isValid());
-        QCOMPARE(poolManager->setConfig(cfg),
-                 QCNetworkConnectionPoolManager::UpdateResult::Applied);
+        QCOMPARE(poolManager->setConfig(cfg), QCNetworkConnectionPoolManager::UpdateResult::Applied);
         poolManager->resetStatistics();
 
         QEventLoop loop;
