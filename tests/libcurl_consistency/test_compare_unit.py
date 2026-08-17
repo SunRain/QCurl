@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from tests.libcurl_consistency.pytest_support.compare import compare_artifacts
+from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces
 
 
 def _payload() -> dict[str, object]:
@@ -170,3 +171,58 @@ def test_backpressure_and_upload_pause_resume_require_expected_schema(tmp_path) 
     assert not ok
     assert "qcurl backpressure_contract.schema mismatch: 'wrong'" in diffs
     assert "qcurl upload_pause_resume.zero_read_count invalid: 0" in diffs
+
+
+def test_required_fields_fail_when_both_sides_are_missing(tmp_path) -> None:
+    baseline = _payload()
+    qcurl = _payload()
+    del baseline["request"]["headers_semantic"]  # type: ignore[index]
+    del qcurl["request"]["headers_semantic"]  # type: ignore[index]
+
+    left = tmp_path / "baseline.json"
+    right = tmp_path / "qcurl.json"
+    _write(left, baseline)
+    _write(right, qcurl)
+
+    ok, diffs = compare_artifacts(
+        left,
+        right,
+        required_fields={"request.headers_semantic": dict},
+    )
+
+    assert not ok
+    assert "baseline request.headers_semantic missing" in diffs
+    assert "qcurl request.headers_semantic missing" in diffs
+
+
+def test_required_fields_reject_legacy_error_fallback_and_bad_types(tmp_path) -> None:
+    baseline = _payload()
+    qcurl = _payload()
+    baseline["error"] = {"http_status": 500}
+    qcurl["error"] = {"http_status": 500}
+    baseline["observed"] = {"error": {"http_status": 500}}
+    qcurl["observed"] = {"error": {"http_status": "500"}}
+
+    left = tmp_path / "baseline.json"
+    right = tmp_path / "qcurl.json"
+    _write(left, baseline)
+    _write(right, qcurl)
+
+    ok, diffs = compare_artifacts(
+        left,
+        right,
+        required_fields={"observed.error.http_status": int},
+    )
+
+    assert not ok
+    assert any("qcurl observed.error.http_status has invalid type" in diff for diff in diffs)
+
+
+def test_error_namespace_producer_does_not_write_legacy_payload_error() -> None:
+    payload = {}
+
+    apply_error_namespaces(payload, kind="tls", http_status=0, curlcode=35)
+
+    assert "error" not in payload
+    assert payload["observed"]["error"] == {"http_status": 0}
+    assert payload["derived"]["error"] == {"kind": "tls", "curlcode": 35}
