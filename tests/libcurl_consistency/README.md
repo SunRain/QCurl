@@ -64,7 +64,7 @@ QCURL_LC_EXT=1 python3 tests/libcurl_consistency/run_gate.py --suite all --with-
 - planner 按 manifest 决定是否纳入 feature-dependent 文件，而不是让 pytest 在运行时读取 `src/*.h` 再 `skip`
 - default gate 会在进入 pytest 之前检查 `capabilities.json`、`QCURL_QTTEST` 和 `curl/tests/libtest/libtests`；缺任一前置时直接以 gate preflight 失败结束，不再把这类问题留给 test body 的 `pytest.skip(...)`
 - 当前已纳入 manifest 选案的专题包括：`Accept-Encoding`、raw-body replay、unknown-size chunked POST、`TLS pinned public key`、raw request header、SOCKS success、302/303/308 redirect、Range boundary、ext-only HTTP/3 policy
-- `TLS pinned public key` 用例只消费固定 fixture `tests/libcurl_consistency/testdata/pinned_public_key_sha256.txt`
+- `TLS pinned public key` 用例从当前本地 testenv 证书动态派生 `sha256//...` pin；固定 pin fixture 已删除，避免证书轮换后继续产生伪一致性证据。
 
 ## 4. 产物与证据路径
 

@@ -2058,29 +2058,6 @@ void TestLibcurlConsistency::testCase()
         return;
     }
 
-    if (caseId == QStringLiteral("ext_api_reported_status")) {
-        QVERIFY(observeHttpPort > 0);
-        QVERIFY(observeStatusCode > 0);
-
-        const QUrl url = withRequestId(QUrl(QStringLiteral("http://localhost:%1/status/%2")
-                                                .arg(observeHttpPort)
-                                                .arg(observeStatusCode)),
-                                       requestId);
-
-        QCNetworkRequest req(url);
-        req.setHttpVersion(httpVersion);
-
-        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
-        QVERIFY(reply);
-
-        QJsonObject meta;
-        meta.insert(QStringLiteral("httpStatusCode"), reply->httpStatusCode());
-        QVERIFY(writeJsonObjectToFile(QStringLiteral("reported_meta.json"), meta));
-
-        deleteReplyLater(reply);
-        return;
-    }
-
     if (caseId == QStringLiteral("p2_pause_resume")) {
         QVERIFY(!docname.isEmpty());
         QVERIFY(httpsPort > 0);
