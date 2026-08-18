@@ -69,6 +69,11 @@ jobs:
             -DBUILD_BENCHMARKS=OFF \
             -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON
 
+      - name: Libcurl consistency infrastructure gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-soak -R '^qcurl_libcurl_consistency_infrastructure$' --output-on-failure
+
       - name: Build soak targets
         run: |
           set -euo pipefail

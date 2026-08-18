@@ -83,6 +83,11 @@ jobs:
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_BENCHMARKS=OFF
 
+      - name: Libcurl consistency infrastructure gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -R '^qcurl_libcurl_consistency_infrastructure$' --output-on-failure
+
       - name: Build
         run: |
           set -euo pipefail

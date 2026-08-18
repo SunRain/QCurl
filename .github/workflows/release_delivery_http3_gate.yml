@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Install system dependencies (Debian 12)
         run: |
@@ -170,9 +171,15 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DBUILD_TESTING=ON \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_BENCHMARKS=OFF \
             ${extra}
+
+      - name: Libcurl consistency infrastructure gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -R '^qcurl_libcurl_consistency_infrastructure$' --output-on-failure
 
       - name: Build local nghttpx (h3-capable) for curl testenv
         run: |
@@ -266,6 +273,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Install system dependencies (Arch snapshot)
         run: |
@@ -363,9 +371,15 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DBUILD_TESTING=ON \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_BENCHMARKS=OFF \
             ${extra}
+
+      - name: Libcurl consistency infrastructure gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -R '^qcurl_libcurl_consistency_infrastructure$' --output-on-failure
 
       - name: Build local nghttpx (h3-capable) for curl testenv
         run: |

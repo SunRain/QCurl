@@ -68,6 +68,11 @@ jobs:
             -DBUILD_BENCHMARKS=OFF \
             -DQCURL_BUILD_LIBCURL_CONSISTENCY=ON
 
+      - name: Libcurl consistency infrastructure gate
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-nightly -R '^qcurl_libcurl_consistency_infrastructure$' --output-on-failure
+
       - name: Build nightly targets
         run: |
           set -euo pipefail

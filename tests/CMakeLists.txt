@@ -37,6 +37,7 @@ add_test(
             "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_gate_execution_manifest.py"
             "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_gate_evidence_integrity.py"
             "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_capability_manifest.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_consistency_workflows.py"
             "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_contract_maps.py"
             "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_run_gate_scoping.py"
 )
