@@ -23,6 +23,8 @@ This documentation describes the latest published `QCurl 1.0.0` and the current 
 - Architecture index: `docs/arch/README.md`
 - Current engineering review: `docs/reviews/2026-08-05-qcurl-2.0.0-comprehensive-readonly-review-conclusion.md`
 - Current Qt6/C++17 source review: `docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md`
+- Current tests and libcurl consistency review: `docs/reviews/2026-08-15-qcurl-tests-libcurl-consistency-review-conclusion.md`
+- Current libcurl consistency remediation WIP review: `docs/reviews/2026-08-17-qcurl-libcurl-consistency-remediation-wip-comprehensive-readonly-review-conclusion.md`
 - Historical Qt6/libcurl lifecycle review (`a1bafb7`): `docs/reviews/2026-08-07-qcurl-qt6-libcurl-lifecycle-review-comprehensive-conclusion.md`
 - Developer docs: `docs/dev/README.md`
 - Supply-chain notes: `docs/dev/supply-chain.md`
