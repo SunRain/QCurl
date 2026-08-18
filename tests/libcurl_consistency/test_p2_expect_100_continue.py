@@ -266,7 +266,7 @@ def test_p2_expect_100_continue_417_retry_repeat_inprocess(env, lc_observe_http)
     suite = "p2_expect"
     proto = "http/1.1"
     case_id = "p2_expect_100_continue"
-    case_variant = "lc_expect_100_continue_http_1.1"
+    case_variant = "lc_expect_100_continue_repeat_http_1.1"
 
     expect100_timeout_ms = 10_000
     upload_size = 1053700

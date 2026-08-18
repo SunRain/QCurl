@@ -57,12 +57,14 @@ def forbid_local_httpbin(
     *,
     forbidden_endpoints: tuple[str, ...],
     current_file: Path,
+    additional_excluded_files: tuple[Path, ...] = (),
 ) -> list[dict[str, object]]:
     """Return code references to forbidden local httpbin endpoints."""
 
     code_suffixes = {".py", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
     try:
         skip_files = {current_file.resolve()}
+        skip_files.update(path.resolve() for path in additional_excluded_files)
     except OSError:
         skip_files = set()
     scan_targets: list[Path] = [
@@ -107,107 +109,89 @@ def forbid_local_httpbin(
     return violations
 
 
-def apply_http3_preflight_to_manifest(
+def _probe_curl_http3(
     cfg: Any,
     gate_env: dict[str, str],
-    capability_manifest: dict[str, object],
-    report: dict[str, object],
+    *,
+    require_http3_enabled: bool,
+    run_command: Any,
+) -> tuple[bool | None, list[str], list[str]]:
+    """探测 bundled curl 的 HTTP/3 能力并返回违规与告警。"""
+
+    violations: list[str] = []
+    warnings: list[str] = []
+    curl_bin = cfg.curl_build_dir / "src" / "curl"
+    if not curl_bin.exists():
+        if require_http3_enabled:
+            violations.append("missing_curl_bin")
+        warnings.append(
+            "bundled curl binary not found; planner excludes HTTP/3 policy tests until qcurl_lc_deps is built."
+        )
+        return False, violations, warnings
+    rc: subprocess.CompletedProcess[str] = run_command(
+        [str(curl_bin), "-V"], cwd=cfg.repo_root, env=gate_env, capture=True
+    )
+    out = (rc.stdout or "") + "\n" + (rc.stderr or "")
+    if out.strip():
+        sys.stderr.write(out.rstrip() + "\n")
+    if rc.returncode != 0:
+        if require_http3_enabled:
+            violations.append("curl_probe_failed")
+        warnings.append(f"failed to probe `curl -V` (rc={rc.returncode})")
+        return None, violations, warnings
+    features = next((line for line in out.splitlines() if line.startswith("Features:")), "")
+    have_http3 = any(token.upper() == "HTTP3" for token in features.split()[1:])
+    if require_http3_enabled and not have_http3:
+        violations.append("missing_curl_http3")
+    if not have_http3:
+        warnings.append(
+            "bundled curl does not report HTTP3 in `curl -V`; planner excludes HTTP/3 policy tests."
+        )
+    protocols = next((line for line in out.splitlines() if line.startswith("Protocols:")), "")
+    protocol_names = protocols.split()[1:]
+    if "ws" not in protocol_names and "wss" not in protocol_names:
+        warnings.append("bundled curl does not report ws/wss in `curl -V`; WS cases may be skipped or fail.")
+    return have_http3, violations, warnings
+
+
+def evaluate_http3_preflight(
+    cfg: Any,
+    gate_env: dict[str, str],
     *,
     require_http3_enabled: bool,
     run_command: Any,
 ) -> dict[str, object]:
-    """Record HTTP/3 preflight state and disable H3-only files when unavailable."""
+    """生成独立的 HTTP/3 环境事实与 planner 覆盖规则。"""
 
-    preflight = report.get("preflight_http3_required")
-    if not isinstance(preflight, dict):
-        preflight = {
-            "enabled": require_http3_enabled,
-            "have_h3_server": None,
-            "have_h3_curl": None,
-            "violations": [],
-        }
-        report["preflight_http3_required"] = preflight
-
-    nghttpx_h3 = cfg.qcurl_build_dir / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
-    have_h3_server = nghttpx_h3.exists()
-    preflight["have_h3_server"] = bool(have_h3_server)
-    if require_http3_enabled and not have_h3_server:
-        preflight.setdefault("violations", []).append("missing_h3_server")
-
-    if not have_h3_server:
-        report["warnings"].append(
-            "nghttpx-h3 not found; planner excludes test_ext_http3_success_h3.py. "
-            "Build target qcurl_nghttpx_h3 for HTTP/3 coverage."
-        )
-
-    curl_bin = cfg.curl_build_dir / "src" / "curl"
-    have_h3_curl: bool | None = None
-    if not curl_bin.exists():
-        have_h3_curl = False
-        preflight["have_h3_curl"] = False
-        if require_http3_enabled:
-            preflight.setdefault("violations", []).append("missing_curl_bin")
-        report["warnings"].append(
-            "bundled curl binary not found; planner excludes HTTP/3 policy tests until qcurl_lc_deps is built."
-        )
-    else:
-        rc: subprocess.CompletedProcess[str] = run_command(
-            [str(curl_bin), "-V"],
-            cwd=cfg.repo_root,
-            env=gate_env,
-            capture=True,
-        )
-        out = (rc.stdout or "") + "\n" + (rc.stderr or "")
-        if out.strip():
-            sys.stderr.write(out.rstrip() + "\n")
-        if rc.returncode != 0:
-            preflight["have_h3_curl"] = None
-            if require_http3_enabled:
-                preflight.setdefault("violations", []).append("curl_probe_failed")
-            report["warnings"].append(f"failed to probe `curl -V` (rc={rc.returncode})")
-        else:
-            features_line = next((line for line in out.splitlines() if line.startswith("Features:")), "")
-            have_h3_curl = any(
-                tok.upper() == "HTTP3" for tok in features_line.replace("Features:", "").split()
-            )
-            preflight["have_h3_curl"] = bool(have_h3_curl)
-            if require_http3_enabled and not have_h3_curl:
-                preflight.setdefault("violations", []).append("missing_curl_http3")
-            if not have_h3_curl:
-                report["warnings"].append(
-                    "bundled curl does not report HTTP3 in `curl -V`; planner excludes HTTP/3 policy tests."
-                )
-
-            protocols_line = next((line for line in out.splitlines() if line.startswith("Protocols:")), "")
-            protocols = protocols_line.replace("Protocols:", "").split()
-            ws_supported = ("ws" in protocols) or ("wss" in protocols)
-            if not ws_supported:
-                report["warnings"].append(
-                    "bundled curl does not report ws/wss in `curl -V`; WS cases may be skipped or fail."
-                )
-
-    can_run_http3_policy = bool(have_h3_server and have_h3_curl)
-    tests = capability_manifest.get("tests")
-    if not isinstance(tests, dict):
-        tests = {}
-        capability_manifest["tests"] = tests
-    entry = tests.get("test_ext_http3_success_h3.py")
-    if not isinstance(entry, dict):
-        entry = {}
-        tests["test_ext_http3_success_h3.py"] = entry
-    if not can_run_http3_policy:
-        entry["enabled"] = False
-        entry["reason"] = (
-            "HTTP/3 preflight unavailable; default with-ext gate excludes H3 success file "
-            f"(nghttpx_h3={have_h3_server}, curl_http3={preflight.get('have_h3_curl')})"
-        )
-    policy_entry = tests.get("test_ext_http3_version_policy.py")
-    if not isinstance(policy_entry, dict):
-        policy_entry = {}
-        tests["test_ext_http3_version_policy.py"] = policy_entry
-    policy_entry.setdefault("suite", "ext")
-    policy_entry.setdefault(
-        "reason",
-        "HTTP/3 request policy is ext-only; planned only by run_gate.py --with-ext.",
+    server = cfg.qcurl_build_dir / "libcurl_consistency/nghttpx-h3/bin/nghttpx"
+    have_server = server.exists()
+    violations = ["missing_h3_server"] if require_http3_enabled and not have_server else []
+    warnings = [] if have_server else [
+        "nghttpx-h3 not found; planner excludes test_ext_http3_success_h3.py. "
+        "Build target qcurl_nghttpx_h3 for HTTP/3 coverage."
+    ]
+    have_curl, curl_violations, curl_warnings = _probe_curl_http3(
+        cfg,
+        gate_env,
+        require_http3_enabled=require_http3_enabled,
+        run_command=run_command,
     )
-    return capability_manifest
+    violations.extend(curl_violations)
+    warnings.extend(curl_warnings)
+    overrides: dict[str, object] = {}
+    if not bool(have_server and have_curl):
+        overrides["test_ext_http3_success_h3.py"] = {
+            "enabled": False,
+            "reason": (
+                "HTTP/3 preflight unavailable; default with-ext gate excludes H3 success file "
+                f"(nghttpx_h3={have_server}, curl_http3={have_curl})"
+            ),
+        }
+    return {
+        "enabled": require_http3_enabled,
+        "have_h3_server": have_server,
+        "have_h3_curl": have_curl,
+        "violations": violations,
+        "warnings": warnings,
+        "planner_overrides": overrides,
+    }

@@ -26,6 +26,25 @@ add_subdirectory(public_api)
 add_subdirectory(qcurl)
 add_subdirectory(libcurl_consistency)
 
+# 该入口不得加载 curl testenv；它独立保护一致性门禁自身的解析与证据合同。
+add_test(
+    NAME qcurl_libcurl_consistency_infrastructure
+    COMMAND "${Python3_EXECUTABLE}" -m pytest --noconftest -q
+            "${CMAKE_SOURCE_DIR}/tests/libcurl_consistency/test_compare_unit.py"
+            "${CMAKE_SOURCE_DIR}/tests/libcurl_consistency/test_run_gate_unit.py"
+            "${CMAKE_SOURCE_DIR}/tests/libcurl_consistency/test_minimal_set_consistency.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_coverage_maps.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_gate_execution_manifest.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_gate_evidence_integrity.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_capability_manifest.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_contract_maps.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_run_gate_scoping.py"
+)
+set_tests_properties(qcurl_libcurl_consistency_infrastructure PROPERTIES
+    LABELS "offline;source_guard;libcurl_consistency;infrastructure"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 add_test(
     NAME qcurl_deprecated_curl_api_guard
     COMMAND "${Python3_EXECUTABLE}"

@@ -82,28 +82,20 @@ def test_redaction_scan_detects_sensitive_token(tmp_path) -> None:
     assert result["violations"]
 
 
-def test_http3_preflight_required_records_missing_toolchain(tmp_path, monkeypatch) -> None:
+def test_http3_preflight_required_records_missing_toolchain(tmp_path) -> None:
     cfg = _cfg(tmp_path)
-    manifest: dict[str, object] = {}
-    report: dict[str, object] = {
-        "warnings": [],
-        "preflight_http3_required": {"enabled": True, "violations": []},
-    }
     gate_env: dict[str, str] = {}
 
-    updated = run_gate._apply_http3_preflight_to_manifest(
+    result = run_gate._evaluate_http3_preflight(
         replace(cfg, with_ext=True),
         gate_env,
-        manifest,
-        report,
         require_http3_enabled=True,
     )
 
-    preflight = report["preflight_http3_required"]
-    assert "missing_h3_server" in preflight["violations"]
-    assert "missing_curl_bin" in preflight["violations"]
-    tests = updated["tests"]
-    assert tests["test_ext_http3_success_h3.py"]["enabled"] is False
+    assert "missing_h3_server" in result["violations"]
+    assert "missing_curl_bin" in result["violations"]
+    overrides = result["planner_overrides"]
+    assert overrides["test_ext_http3_success_h3.py"]["enabled"] is False
 
 
 def test_preflight_required_inputs_fails_before_empty_pytest_plan(tmp_path) -> None:

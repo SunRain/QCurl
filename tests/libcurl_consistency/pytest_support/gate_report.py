@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-import json
 import re
 import xml.etree.ElementTree as ET
 
@@ -28,6 +27,9 @@ def create_initial_report(
         "capability_manifest_path": str(cfg.capability_manifest),
         "junit_xml": str(cfg.junit_xml),
         "json_report": str(cfg.json_report),
+        "run_id": str(getattr(cfg, "run_id", "")),
+        "run_dir": str(getattr(cfg, "run_dir", None) or cfg.json_report.parent),
+        "artifacts_dir": str(getattr(cfg, "artifacts_dir", None) or ""),
         "qt_timeout_s": cfg.qt_timeout_s,
         "commands": [],
         "pytest_files": [],
@@ -81,15 +83,18 @@ def artifacts_dir(repo_root: Path) -> Path:
     return repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
 
 
-def redaction_scan_roots(repo_root: Path, reports_dir: Path) -> list[Path]:
-    """Return existing roots that should be scanned for sensitive values."""
+def redaction_scan_roots(
+    repo_root: Path,
+    reports_dir: Path,
+    artifacts_root: Path | None = None,
+) -> list[Path]:
+    """返回本轮报告和工件目录，避免扫描共享的历史生成目录。"""
 
     roots: list[Path] = []
-    candidate_artifacts = artifacts_dir(repo_root)
-    if candidate_artifacts.exists():
-        roots.append(candidate_artifacts)
     if reports_dir.exists():
         roots.append(reports_dir)
+    if artifacts_root and artifacts_root.exists() and artifacts_root != reports_dir:
+        roots.append(artifacts_root)
     return roots
 
 
@@ -140,210 +145,6 @@ def parse_junit_counts(junit_xml: Path) -> dict[str, object]:
     return {"exists": True, **totals}
 
 
-def postflight_artifacts_schema_check(
-    *,
-    repo_root: Path,
-    artifacts_dir: Path,
-    since_ts: float,
-    expected_schema: str,
-) -> dict[str, object]:
-    """Validate artifacts schema and required request/response fields."""
-
-    if not artifacts_dir.exists():
-        return {
-            "schema_expected": expected_schema,
-            "since_ts": float(since_ts),
-            "scanned_files": 0,
-            "violations": [],
-            "note": "artifacts dir not found",
-        }
-
-    targets: list[Path] = []
-    for name in ("baseline.json", "qcurl.json"):
-        for path in artifacts_dir.rglob(name):
-            if not path.is_file():
-                continue
-            try:
-                if float(path.stat().st_mtime) < (float(since_ts) - 1.0):
-                    continue
-            except OSError:
-                continue
-            targets.append(path)
-
-    def rel(path: Path) -> str:
-        try:
-            return str(path.relative_to(repo_root))
-        except Exception:
-            return str(path)
-
-    required_request_fields = ("method", "url", "headers", "body_len", "body_sha256")
-    required_response_fields = ("status", "http_version", "headers", "body_len", "body_sha256")
-    violations: list[dict[str, object]] = []
-
-    def add_violation(path: Path, reason: str) -> None:
-        violations.append({"file": rel(path), "reason": reason})
-
-    for path in sorted(targets):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-        except Exception as exc:
-            add_violation(path, f"invalid json: {exc}")
-            continue
-
-        schema = payload.get("schema")
-        if schema != expected_schema:
-            add_violation(path, f"schema mismatch: {schema!r} != {expected_schema!r}")
-            continue
-
-        runner = payload.get("runner")
-        if not isinstance(runner, str) or not runner:
-            add_violation(path, "runner missing or invalid")
-
-        req = payload.get("request")
-        if not isinstance(req, dict):
-            add_violation(path, "request missing or invalid")
-        else:
-            for key in required_request_fields:
-                if key not in req:
-                    add_violation(path, f"request.{key} missing")
-            if "headers" in req and not isinstance(req.get("headers"), dict):
-                add_violation(path, "request.headers not a dict")
-
-        resp = payload.get("response")
-        if not isinstance(resp, dict):
-            add_violation(path, "response missing or invalid")
-        else:
-            for key in required_response_fields:
-                if key not in resp:
-                    add_violation(path, f"response.{key} missing")
-            if "headers" in resp and not isinstance(resp.get("headers"), dict):
-                add_violation(path, "response.headers not a dict")
-
-    return {
-        "schema_expected": expected_schema,
-        "since_ts": float(since_ts),
-        "scanned_files": len(targets),
-        "violations": violations,
-    }
-
-
-def postflight_redaction_scan(
-    repo_root: Path,
-    scan_roots: list[Path],
-    *,
-    since_ts: float,
-) -> dict[str, object]:
-    """Scan gate reports/artifacts for unredacted sensitive header values."""
-
-    rules: list[dict[str, object]] = [
-        {
-            "id": "auth_basic_unredacted",
-            "desc": "Authorization: Basic 明文（应仅保留 scheme 或摘要）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"basic\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*basic\s+"),
-            ],
-        },
-        {
-            "id": "auth_bearer_unredacted",
-            "desc": "Authorization: Bearer 明文（token 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"bearer\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*bearer\s+"),
-            ],
-        },
-        {
-            "id": "auth_digest_unredacted",
-            "desc": "Authorization: Digest 明文（参数不应落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"authorization\"\s*:\s*\"digest\s+"),
-                re.compile(br"(?im)^\s*authorization:\s*digest\s+"),
-            ],
-        },
-        {
-            "id": "proxy_auth_basic_unredacted",
-            "desc": "Proxy-Authorization: Basic 明文（应仅保留 scheme 或摘要）",
-            "patterns": [
-                re.compile(br"(?i)\"proxy-authorization\"\s*:\s*\"basic\s+"),
-                re.compile(br"(?im)^\s*proxy-authorization:\s*basic\s+"),
-            ],
-        },
-        {
-            "id": "cookie_header_unredacted",
-            "desc": "Cookie 请求头明文（value 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"cookie\"\s*:\s*\"[^\r\n\"]*="),
-                re.compile(br"(?im)^\s*cookie:\s*[^\r\n]*="),
-            ],
-        },
-        {
-            "id": "set_cookie_unredacted",
-            "desc": "Set-Cookie 响应头明文（value 不得落盘）",
-            "patterns": [
-                re.compile(br"(?i)\"set-cookie\"\s*:\s*\"[^\r\n\"]*="),
-                re.compile(br"(?im)^\s*set-cookie:\s*[^\r\n]*="),
-            ],
-        },
-    ]
-
-    def should_scan_file(path: Path) -> bool:
-        if path.name in ("stderr", "stdout"):
-            return True
-        return path.suffix.lower() in (".json", ".jsonl", ".xml", ".txt", ".log")
-
-    scan_files: list[Path] = []
-    for root in scan_roots:
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            try:
-                if float(path.stat().st_mtime) < (float(since_ts) - 1.0):
-                    continue
-            except OSError:
-                continue
-            if should_scan_file(path):
-                scan_files.append(path)
-
-    def rel(path: Path) -> str:
-        try:
-            return str(path.relative_to(repo_root))
-        except Exception:
-            return str(path)
-
-    violations: list[dict[str, object]] = []
-    max_hits = 200
-    for path in sorted(scan_files):
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
-        for line_no, line in enumerate(data.splitlines(), 1):
-            for rule in rules:
-                for rx in rule["patterns"]:  # type: ignore[index]
-                    if rx.search(line):  # type: ignore[union-attr]
-                        violations.append({
-                            "rule": str(rule["id"]),
-                            "file": rel(path),
-                            "line": int(line_no),
-                        })
-                        if len(violations) >= max_hits:
-                            break
-                if len(violations) >= max_hits:
-                    break
-            if len(violations) >= max_hits:
-                break
-        if len(violations) >= max_hits:
-            break
-
-    return {
-        "scan_roots": [str(path) for path in scan_roots],
-        "since_ts": float(since_ts),
-        "scanned_files": len(scan_files),
-        "rules": [{"id": rule["id"], "desc": rule["desc"]} for rule in rules],
-        "violations": violations,
-    }
-
-
 def policy_violations_from_report(report: dict[str, object]) -> list[str]:
     """Derive gate policy violation codes from postflight report data."""
 
@@ -360,6 +161,12 @@ def policy_violations_from_report(report: dict[str, object]) -> list[str]:
         policy_violations.append("artifacts_schema")
     if (report.get("postflight_redaction_scan") or {}).get("violations"):
         policy_violations.append("redaction")
+    execution_contract = report.get("execution_contract") or {}
+    if isinstance(execution_contract, dict) and execution_contract.get("violations"):
+        policy_violations.append("execution_contract")
+    evidence_integrity = report.get("evidence_integrity") or {}
+    if isinstance(evidence_integrity, dict) and evidence_integrity.get("errors"):
+        policy_violations.append("evidence_integrity")
     preflight_http3 = report.get("preflight_http3_required") or {}
     if (
         isinstance(preflight_http3, dict)

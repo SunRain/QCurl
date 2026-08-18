@@ -62,7 +62,11 @@ def apply_error_namespaces(payload: Dict[str, Any],
 
 
 def artifacts_root(env) -> Path:
-    """默认将 artifacts 放在 testenv 的 gen_dir 下，避免污染源码树。"""
+    """返回当前 gate 隔离目录；手工运行仍使用 testenv 的生成目录。"""
+
+    scoped_root = os.environ.get("QCURL_LC_ARTIFACTS_DIR", "").strip()
+    if scoped_root:
+        return Path(scoped_root).expanduser().resolve()
     return Path(env.gen_dir) / "artifacts"
 
 
@@ -82,7 +86,29 @@ def artifact_path(root: Path, suite: str, case: str, flavor: str, ext: str = "js
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
-    """以 utf-8 写出 JSON。"""
+    """以 UTF-8 写出 JSON，并在 gate 运行中绑定 run 与 pytest nodeid。"""
+
+    run_id = os.environ.get("QCURL_LC_RUN_ID", "").strip()
+    execution_token = os.environ.get("QCURL_LC_EXECUTION_TOKEN", "").strip()
+    identity_json = os.environ.get("QCURL_LC_EVIDENCE_IDENTITY_JSON", "").strip()
+    current_test = os.environ.get("PYTEST_CURRENT_TEST", "").strip()
+    if run_id and current_test:
+        nodeid = current_test.rsplit(" (", 1)[0]
+        gate_evidence: Dict[str, Any] = {
+            "run_id": run_id,
+            "pytest_nodeid": nodeid,
+        }
+        if execution_token:
+            gate_evidence["execution_token"] = execution_token
+        if identity_json:
+            try:
+                gate_evidence["identity"] = json.loads(identity_json)
+            except json.JSONDecodeError as exc:
+                raise ValueError("QCURL_LC_EVIDENCE_IDENTITY_JSON 不是有效 JSON") from exc
+        payload = {
+            **payload,
+            "gate_evidence": gate_evidence,
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

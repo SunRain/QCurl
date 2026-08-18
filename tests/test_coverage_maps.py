@@ -4,131 +4,20 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import check_qcurl_label_matrix as label_matrix
+from tests.libcurl_consistency.pytest_support.contract_map import load_coverage_map
+from tests.libcurl_consistency.pytest_support.coverage_contract_validation import validate_coverage_map
 from tests.libcurl_consistency.pytest_support.gate_report import policy_violations_from_report
 
 
 def _load_yaml(path: str) -> dict[str, object]:
-    text = Path(path).read_text(encoding="utf-8")
     if path.endswith("libcurl_consistency/coverage-map.yaml"):
-        return _parse_libcurl_coverage_map(text)
-    return _parse_qcurl_coverage_map(text)
-
-
-def _parse_inline_list(value: str) -> list[str]:
-    assert value.startswith("[") and value.endswith("]"), value
-    inner = value[1:-1].strip()
-    if not inner:
-        return []
-    return [item.strip() for item in inner.split(",")]
-
-
-def _parse_scalar(value: str) -> object:
-    value = value.strip()
-    if value.isdigit():
-        return int(value)
-    if value.startswith("[") and value.endswith("]"):
-        return _parse_inline_list(value)
+        return load_coverage_map(Path(path))
+    value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
     return value
-
-
-def _parse_qcurl_coverage_map(text: str) -> dict[str, object]:
-    data: dict[str, object] = {"evidence_types": {}, "surfaces": {}}
-    section = ""
-    current_surface: dict[str, object] | None = None
-    current_entry: dict[str, object] | None = None
-
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if not line.startswith(" "):
-            key, _, value = stripped.partition(":")
-            if value.strip():
-                data[key] = _parse_scalar(value)
-                section = ""
-            else:
-                section = key
-            current_surface = None
-            current_entry = None
-            continue
-        if section == "evidence_types" and line.startswith("  ") and not line.startswith("    "):
-            key, _, value = stripped.partition(":")
-            data["evidence_types"][key] = value.strip()
-            continue
-        if section != "surfaces":
-            continue
-        if line.startswith("  ") and not line.startswith("    "):
-            key = stripped.removesuffix(":")
-            surfaces = data["surfaces"]
-            current_surface = {"entries": []}
-            surfaces[key] = current_surface
-            current_entry = None
-            continue
-        assert current_surface is not None
-        if line.startswith("    ") and not line.startswith("      "):
-            key, _, value = stripped.partition(":")
-            if key == "entries":
-                current_surface["entries"] = []
-            else:
-                current_surface[key] = _parse_scalar(value)
-            current_entry = None
-            continue
-        if line.startswith("      - "):
-            current_entry = {}
-            current_surface["entries"].append(current_entry)
-            item = stripped[2:].strip()
-            if ":" in item:
-                key, _, value = item.partition(":")
-                current_entry[key] = _parse_scalar(value)
-            continue
-        if current_entry is not None and line.startswith("        "):
-            key, _, value = stripped.partition(":")
-            current_entry[key] = _parse_scalar(value)
-
-    return data
-
-
-def _parse_libcurl_coverage_map(text: str) -> dict[str, object]:
-    data: dict[str, object] = {"contracts": {}, "gate_policy": {}}
-    section = ""
-    in_failure_promotions = False
-
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if not line.startswith(" "):
-            key, _, value = stripped.partition(":")
-            if value.strip():
-                data[key] = _parse_scalar(value)
-                section = ""
-            else:
-                section = key
-            in_failure_promotions = False
-            continue
-        if section == "contracts" and line.startswith("  ") and not line.startswith("    "):
-            data["contracts"][stripped.removesuffix(":")] = {}
-            in_failure_promotions = False
-            continue
-        if section != "gate_policy":
-            continue
-        if line.startswith("  ") and not line.startswith("    "):
-            key, _, value = stripped.partition(":")
-            if key == "failure_promotions":
-                data["gate_policy"][key] = []
-                in_failure_promotions = True
-            else:
-                data["gate_policy"][key] = _parse_scalar(value)
-                in_failure_promotions = False
-            continue
-        if in_failure_promotions and line.startswith("    - "):
-            data["gate_policy"]["failure_promotions"].append(stripped[2:].strip())
-
-    return data
 
 
 def _registered_labels(*cmake_paths: str) -> dict[str, set[str]]:
@@ -181,6 +70,8 @@ def _expected_gate_policy_codes() -> set[str]:
         "junit_counts": {"parse_error": "bad xml", "tests": 0, "skipped": 1},
         "postflight_artifacts_schema_check": {"violations": [{"file": "bad.json"}]},
         "postflight_redaction_scan": {"violations": [{"file": "leak.txt"}]},
+        "execution_contract": {"violations": [{"code": "planned_nodeid_missing"}]},
+        "evidence_integrity": {"valid": False, "errors": ["content hash mismatch"]},
         "preflight_http3_required": {"enabled": True, "violations": ["missing_h3_server"]},
     }
     return set(policy_violations_from_report(report))
@@ -241,6 +132,12 @@ def test_libcurl_consistency_coverage_map_lists_gate_contracts() -> None:
         "p2_error_tls_flow_control",
         "ext_opt_in",
     }
+
+
+def test_libcurl_consistency_coverage_map_has_no_structural_drift() -> None:
+    map_data = load_coverage_map(Path("tests/libcurl_consistency/coverage-map.yaml"))
+
+    assert validate_coverage_map(map_data, Path.cwd()) == []
 
 
 def test_libcurl_consistency_coverage_map_matches_gate_policy_codes() -> None:

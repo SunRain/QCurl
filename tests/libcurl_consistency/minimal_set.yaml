@@ -73,6 +73,8 @@ cases:
   # HTTP(S) 下载/上传（上游 http/testenv，本仓库已有对应 baseline 客户端）
   # ---------------------------------------------------------------------------
   - id: http_download_serial_resume
+    suite: p0
+    planner: upstream
     source:
       type: pytest
       nodeid: "curl/tests/http/test_02_download.py::TestDownload::test_02_21_lib_serial"
@@ -105,6 +107,8 @@ cases:
       - "h3 仅在 have_h3() 时执行；否则应在报告中标记 skip"
 
   - id: http_upload_put
+    suite: p0
+    planner: upstream
     source:
       type: pytest
       nodeid: "curl/tests/http/test_07_upload.py::TestUpload::test_07_15_hx_put"
@@ -132,6 +136,8 @@ cases:
       - "h3 仅在 have_h3() 时执行；否则应在报告中标记 skip"
 
   - id: http_upload_post_reuse
+    suite: p0
+    planner: upstream
     source:
       type: pytest
       nodeid: "curl/tests/http/test_07_upload.py::TestUpload::test_07_17_hx_post_reuse"
@@ -160,6 +166,8 @@ cases:
   # 请求体/Expect/重定向/Cookie（上游 data/testNNNN）
   # ---------------------------------------------------------------------------
   - id: curl_data_test1531_postfields_binary
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1531"
@@ -180,6 +188,8 @@ cases:
       - "本地 http 测试 server 可用"
 
   - id: curl_data_test357_expect_100_continue
+    suite: p2
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test357"
@@ -201,6 +211,8 @@ cases:
       - "允许约 1MB 上传"
 
   - id: curl_data_test1011_redirect_post_301_to_get
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1011"
@@ -219,6 +231,8 @@ cases:
       - 这是最小成本覆盖“重定向时方法语义”的高价值用例
 
   - id: curl_data_test1024_redirect_with_cookies_path_match
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1024"
@@ -241,6 +255,8 @@ cases:
       - "启用 cookies（COOKIEFILE/COOKIEJAR 可写）"
 
   - id: curl_data_test1903_cookiefile_reset_set_again
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1903"
@@ -264,6 +280,8 @@ cases:
   # TLS：证书校验成功/失败（上游 data/testNNNN）
   # ---------------------------------------------------------------------------
   - id: curl_data_test310_https_verify_ok
+    suite: p2
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test310"
@@ -284,6 +302,8 @@ cases:
       - "本地 https server（test-localhost.pem）与 test-ca.crt 可用"
 
   - id: curl_data_test312_https_verify_fail
+    suite: p2
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test312"
@@ -304,6 +324,8 @@ cases:
   # 代理：SOCKS（HTTP/HTTPS-proxy 上游用例不纳入，见 excluded）
   # ---------------------------------------------------------------------------
   - id: curl_data_test703_socks5_connect_fail
+    suite: p2
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test703"
@@ -321,9 +343,12 @@ cases:
       - SOCKS 代理与 HTTP 代理选项/错误码完全不同，最易出现映射错误
 
   - id: lc_socks5_success_http_1_1
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: socks5HostnameApi, reason_contains: SOCKS5}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success"
+      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success_http_1_1[socks5-socks5-127.0.0.1-1]"
     capability_gates:
       - socks5_success_proxy
       - http_observe_server
@@ -339,9 +364,12 @@ cases:
       - failure stub 只能证明错误映射，success path 才能证明代理转发语义与 origin 请求一致
 
   - id: lc_socks5_hostname_success_http_1_1
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: socks5HostnameApi, reason_contains: SOCKS5}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks5h_success"
+      nodeid: "tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success_http_1_1[socks5h-socks5h-localhost-3]"
     capability_gates:
       - socks5_success_proxy
       - http_observe_server
@@ -360,6 +388,8 @@ cases:
   # 本仓库自建：HTTP 错误重试序列（501 → 两次请求）
   # ---------------------------------------------------------------------------
   - id: lc_retry_501_sequence_http_1_1
+    suite: p2
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_retry_501_sequence_http_1_1"
@@ -385,6 +415,8 @@ cases:
   # 本仓库自建：M4 网络路径控制（RESOLVE / CONNECT_TO）
   # ---------------------------------------------------------------------------
   - id: lc_m4_resolve_override_http_1_1
+    suite: p1
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1"
@@ -406,6 +438,8 @@ cases:
       - "仅覆盖 http/1.1（观测服务端为 h1）；不引入外网 DNS 依赖"
 
   - id: lc_m4_connect_to_override_http_1_1
+    suite: p1
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1"
@@ -430,9 +464,12 @@ cases:
   # 本仓库自建：raw request header 可观测一致性
   # ---------------------------------------------------------------------------
   - id: lc_request_headers_raw_http_1_1
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: rawRequestHeaderApi, reason_contains: raw header}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_request_headers.py::test_p1_request_headers_raw_http_1_1"
+      nodeid: "tests/libcurl_consistency/test_p1_request_headers.py::test_p1_request_raw_headers_http_1_1"
     capability_gates:
       - http_observe_server
       - raw_request_header_api
@@ -452,6 +489,8 @@ cases:
   # 错误/超时/取消语义（可观测终态）
   # ---------------------------------------------------------------------------
   - id: curl_data_test29_total_timeout
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test29"
@@ -470,6 +509,8 @@ cases:
       - "该用例包含 wait 10，CI 需确保时间预算（默认仍较短）"
 
   - id: curl_data_test19_connect_to_non_listen
+    suite: p2
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test19"
@@ -486,6 +527,8 @@ cases:
       - 最小成本覆盖“连接失败”与“超时/代理失败”的可观测区分
 
   - id: curl_data_test1513_abort_by_progress_callback
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1513"
@@ -506,6 +549,8 @@ cases:
   # 本仓库自建：M5 协议白名单（fail-closed）
   # ---------------------------------------------------------------------------
   - id: lc_m5_protocols_block_http_http_1_1
+    suite: p2
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_p2_protocol_restrictions.py::test_p2_protocols_block_http_http_1_1"
@@ -528,6 +573,8 @@ cases:
       - "禁止 silent skip：能力不足应显式失败以形成证据链"
 
   - id: lc_m5_redir_protocols_block_http_http_1_1
+    suite: p2
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_p2_protocol_restrictions.py::test_p2_redir_protocols_block_http_http_1_1"
@@ -553,6 +600,8 @@ cases:
   # 本仓库自建：ext 速率限制 smoke（仅 PR gate）
   # ---------------------------------------------------------------------------
   - id: lc_ext_speed_limit_smoke_http_1_1
+    suite: ext
+    planner: coverage-map
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_ext_speed_limit_smoke.py::test_ext_speed_limit_smoke_http_1_1"
@@ -578,6 +627,8 @@ cases:
   # 方法语义：HEAD/DELETE（Basic auth 上游用例不纳入，见 excluded）
   # ---------------------------------------------------------------------------
   - id: curl_data_test1484_head_ignore_body
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test1484"
@@ -594,6 +645,8 @@ cases:
       - HEAD 被错误当 GET 的回归在封装层非常常见
 
   - id: curl_data_test13_custom_method_delete
+    suite: p1
+    planner: upstream
     source:
       type: curl_data
       path: "curl/tests/data/test13"
@@ -613,9 +666,16 @@ cases:
   # 本仓库自建：M2 流式上传前置语义探针（seekable vs non-seekable）
   # ---------------------------------------------------------------------------
   - id: lc_stream_body_redirect_307_replay
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: rawBodyDeviceApi, reason_contains: raw-body}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay"
+      nodeids:
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-False]"
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-True]"
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[PUT-False]"
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[PUT-True]"
     selection:
       parameters:
         method:
@@ -636,9 +696,14 @@ cases:
       - 307 保持 method/body，是“重发 body”语义的最小稳定触发器
 
   - id: lc_stream_body_httpauth_anysafe_digest_replay
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: rawBodyDeviceApi, reason_contains: raw-body}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay"
+      nodeids:
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay[False]"
+        - "tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay[True]"
     selection:
       parameters:
         seekable:
@@ -656,9 +721,17 @@ cases:
       - 401 challenge 是业务常见的“隐式重发 body”触发点（协商认证最相关）
 
   - id: lc_redirect_302_303_308_method_body_http_1_1
+    suite: p1
+    planner: coverage-map
+    exclusion_policy: {capability: rawBodyDeviceApi, reason_contains: raw-body}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body_http_1_1"
+      nodeids:
+        - "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_302_post_to_get-302-POST-default-inline-expected_methods0-allowed_exit_codes0]"
+        - "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_303_post_to_get-303-POST-default-inline-expected_methods1-allowed_exit_codes1]"
+        - "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_post_seekable-308-POST-all-seekable-expected_methods2-allowed_exit_codes2]"
+        - "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_put_seekable-308-PUT-all-seekable-expected_methods3-allowed_exit_codes3]"
+        - "tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_post_nonseekable-308-POST-all-nonseekable-expected_methods4-allowed_exit_codes4]"
     selection:
       parameters:
         status:
@@ -685,6 +758,9 @@ cases:
   # 本仓库自建：ext-only HTTP/3 request policy 与 Range 边界
   # ---------------------------------------------------------------------------
   - id: lc_ext_http3_fallback_and_only_failure_http_1_1
+    suite: ext
+    planner: coverage-map
+    exclusion_policy: {capability: http3Api, reason_contains: HTTP/3 request policy}
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_ext_http3_version_policy.py::test_ext_http3_fallback_and_only_failure_http_1_1"
@@ -704,6 +780,9 @@ cases:
       - fallback 与 only-failure 是 public API 行为差异，不依赖真实 H3 服务端即可稳定观测
 
   - id: lc_ext_http3_success_h3
+    suite: ext
+    planner: coverage-map
+    exclusion_policy: {capability: http3Runtime, reason_contains: HTTP/3}
     source:
       type: pytest
       nodeid: "tests/libcurl_consistency/test_ext_http3_success_h3.py::test_ext_http3_success_h3"
@@ -721,9 +800,15 @@ cases:
       - 真实 H3 success 需要独立能力门控，不能与 HTTP/1.1 fallback/only-failure 混为一个文件级排除项
 
   - id: lc_range_boundaries_http_1_1
+    suite: p2
+    planner: coverage-map
+    exclusion_policy: {capability: resumableDownloadJobApi, reason_contains: QCNetworkResumableDownloadJob}
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries_http_1_1"
+      nodeids:
+        - "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_n_dash_success-n_dash-8-206-abcdefghijklmnopqrstuvwxyzabcdef-False]"
+        - "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_complete_416-complete_416-32-416-abcdefghijklmnopqrstuvwxyzabcdef-False]"
+        - "tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_mismatch_start-mismatch_start-8-206-abcdefgh-True]"
     capability_gates:
       - http_observe_server
       - resumable_download_job_api

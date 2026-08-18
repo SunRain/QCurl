@@ -2,6 +2,194 @@ schema_version: 1
 id: qcurl-libcurl-observability-coverage-map-v1
 description: QCurl to libcurl observable contract coverage map.
 
+# planner 的唯一文件集合；suite 选择只从此表派生，不在 Python 中复制清单。
+pytest_files:
+  - {path: tests/libcurl_consistency/test_p0_consistency.py, suites: [p0, p1, p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py, suites: [p0, p1, p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_proxy.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_redirect_and_login_flow.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_redirect_policy.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_httpauth.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_accept_encoding.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_resolve_connect_to.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_upload_seek_constraints.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_empty_body.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_resp_headers.py, suites: [p0, p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_progress.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_http_methods.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_multipart_formdata.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_timeouts.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_cancel.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_postfields_binary.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_cookiejar_1903.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_request_headers.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_socks_success.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p1_redirect_302_303_308.py, suites: [p1], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_tls_verify.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_cookie_request_header.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_protocol_restrictions.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_fixed_http_errors.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_error_paths.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_socks5_proxy_fail.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_expect_100_continue.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_pause_resume.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_pause_resume_strict.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_backpressure_contract.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_share_handle.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_range_boundaries.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_tls_policy.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_ip_resolve_ipv4.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_ip_resolve_ipv6.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_p2_https_proxy_tls.py, suites: [p2], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_ext_suite.py, suites: [ext], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_ext_ws_suite.py, suites: [ext], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_ext_tls_policy_and_cache.py, suites: [ext], evidence_type: smoke}
+  - {path: tests/libcurl_consistency/test_ext_speed_limit_smoke.py, suites: [ext], evidence_type: smoke}
+  - {path: tests/libcurl_consistency/test_p2_connection_limits.py, suites: [ext], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_ext_http3_version_policy.py, suites: [ext], evidence_type: contract}
+  - {path: tests/libcurl_consistency/test_ext_http3_success_h3.py, suites: [ext], evidence_type: contract}
+
+# collect 结果必须与该静态清单完全一致；运行时不得用当前源码反向生成预期集合。
+nodeid_authority:
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_parallel_resume]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_range_resume]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_serial_resume]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[upload_post_reuse]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[upload_put]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[ws_data_small]
+  - tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[ws_pingpong_small]
+  - tests/libcurl_consistency/test_p0_connection_reuse_keepalive.py::test_p0_connection_reuse_keepalive_http_1_1
+  - tests/libcurl_consistency/test_p1_proxy.py::test_p1_proxy_basic_auth[proxy_connect_headers_1941]
+  - tests/libcurl_consistency/test_p1_proxy.py::test_p1_proxy_basic_auth[proxy_http_basic_auth]
+  - tests/libcurl_consistency/test_p1_proxy.py::test_p1_proxy_basic_auth[proxy_https_connect_basic_auth]
+  - tests/libcurl_consistency/test_p1_redirect_and_login_flow.py::test_p1_redirect_followlocation[False]
+  - tests/libcurl_consistency/test_p1_redirect_and_login_flow.py::test_p1_redirect_followlocation[True]
+  - tests/libcurl_consistency/test_p1_redirect_and_login_flow.py::test_p1_redirect_post_301_to_get
+  - tests/libcurl_consistency/test_p1_redirect_and_login_flow.py::test_p1_cookie_path_match_redirect_chain
+  - tests/libcurl_consistency/test_p1_redirect_and_login_flow.py::test_p1_login_cookie_state_flow
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_redirect_max_redirs_too_many_http_1_1
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_redirect_postredir_keep_post_301_http_1_1
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_redirect_auto_referer_http_1_1
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_referer_explicit_http_1_1
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_unrestricted_sensitive_headers_redirect[False]
+  - tests/libcurl_consistency/test_p1_redirect_policy.py::test_p1_unrestricted_sensitive_headers_redirect[True]
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_httpauth_any_basic
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_httpauth_any_basic_wrong_pass
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_httpauth_anysafe_digest
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_httpauth_anysafe_digest_wrong_pass
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_unrestricted_auth_redirect[False]
+  - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_unrestricted_auth_redirect[True]
+  - tests/libcurl_consistency/test_p1_accept_encoding.py::test_p1_accept_encoding_gzip_http_1_1
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-False]
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-True]
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[PUT-False]
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[PUT-True]
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay[False]
+  - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_httpauth_anysafe_digest_replay[True]
+  - tests/libcurl_consistency/test_p1_empty_body.py::test_p1_empty_body[p1_empty_body_200-/empty_200-200]
+  - tests/libcurl_consistency/test_p1_empty_body.py::test_p1_empty_body[p1_empty_body_204-/no_content-204]
+  - tests/libcurl_consistency/test_p1_resp_headers.py::test_p1_resp_headers_raw
+  - tests/libcurl_consistency/test_p1_resp_headers.py::test_p1_resp_headers_unfold_1940
+  - tests/libcurl_consistency/test_p1_progress.py::test_p1_progress_download_h2
+  - tests/libcurl_consistency/test_p1_progress.py::test_p1_progress_upload_h2
+  - tests/libcurl_consistency/test_p1_http_methods.py::test_p1_method_head_http_1_1
+  - tests/libcurl_consistency/test_p1_http_methods.py::test_p1_method_patch_http_1_1
+  - tests/libcurl_consistency/test_p1_http_methods.py::test_p1_method_delete_http_1_1
+  - tests/libcurl_consistency/test_p1_multipart_formdata.py::test_p1_multipart_formdata_http_1_1
+  - tests/libcurl_consistency/test_p1_timeouts.py::test_p1_timeouts[p1_timeout_delay_headers-/delay_headers/1000-baseline_args0-0]
+  - tests/libcurl_consistency/test_p1_timeouts.py::test_p1_timeouts[p1_timeout_low_speed-/stall_body/8192/5000-baseline_args1-200]
+  - tests/libcurl_consistency/test_p1_cancel.py::test_p1_cancel_after_first_chunk
+  - tests/libcurl_consistency/test_p1_postfields_binary.py::test_p1_postfields_binary[postfields_binary_1531]
+  - tests/libcurl_consistency/test_p1_cookiejar_1903.py::test_p1_cookiejar_1903
+  - tests/libcurl_consistency/test_p1_cookiejar_1903.py::test_p1_cookiejar_1920
+  - tests/libcurl_consistency/test_p1_request_headers.py::test_p1_request_raw_headers_http_1_1
+  - tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success_http_1_1[socks5-socks5-127.0.0.1-1]
+  - tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success_http_1_1[socks5h-socks5h-localhost-3]
+  - tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_302_post_to_get-302-POST-default-inline-expected_methods0-allowed_exit_codes0]
+  - tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_303_post_to_get-303-POST-default-inline-expected_methods1-allowed_exit_codes1]
+  - tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_post_seekable-308-POST-all-seekable-expected_methods2-allowed_exit_codes2]
+  - tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_put_seekable-308-PUT-all-seekable-expected_methods3-allowed_exit_codes3]
+  - tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body[p1_redirect_308_post_nonseekable-308-POST-all-nonseekable-expected_methods4-allowed_exit_codes4]
+  - tests/libcurl_consistency/test_p2_tls_verify.py::test_p2_tls_verify[success_with_ca]
+  - tests/libcurl_consistency/test_p2_tls_verify.py::test_p2_tls_verify[fail_no_ca]
+  - tests/libcurl_consistency/test_p2_tls_pinned_public_key.py::test_p2_tls_pinned_public_key[match]
+  - tests/libcurl_consistency/test_p2_tls_pinned_public_key.py::test_p2_tls_pinned_public_key[mismatch]
+  - tests/libcurl_consistency/test_p2_cookie_request_header.py::test_p2_cookie_request_header
+  - tests/libcurl_consistency/test_p2_protocol_restrictions.py::test_p2_protocols_block_http_http_1_1
+  - tests/libcurl_consistency/test_p2_protocol_restrictions.py::test_p2_redir_protocols_block_http_http_1_1
+  - tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_fixed_http_errors[404]
+  - tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_fixed_http_errors[401]
+  - tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_fixed_http_errors[503]
+  - tests/libcurl_consistency/test_p2_fixed_http_errors.py::test_p2_retry_501_sequence_http_1_1
+  - tests/libcurl_consistency/test_p2_error_paths.py::test_p2_error_connect_refused
+  - tests/libcurl_consistency/test_p2_error_paths.py::test_p2_error_url_malformat
+  - tests/libcurl_consistency/test_p2_error_paths.py::test_p2_error_proxy_407
+  - tests/libcurl_consistency/test_p2_socks5_proxy_fail.py::test_p2_socks5_proxy_connect_fail
+  - tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry
+  - tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry_repeat_inprocess
+  - tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry_inline_body
+  - tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py::test_p2_blocking_extras_raw_body_post_sized_http_1_1
+  - tests/libcurl_consistency/test_p2_pause_resume.py::test_p2_pause_resume_h2
+  - tests/libcurl_consistency/test_p2_pause_resume_strict.py::test_p2_pause_resume_strict_h2
+  - tests/libcurl_consistency/test_p2_backpressure_contract.py::test_p2_backpressure_contract_h2
+  - tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py::test_p2_upload_readfunc_pause_resume_http_1_1
+  - tests/libcurl_consistency/test_p2_share_handle.py::test_p2_share_handle_cookie_flow
+  - tests/libcurl_consistency/test_p2_share_handle.py::test_p2_share_handle_concurrency_contract
+  - tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_n_dash_success-n_dash-8-206-abcdefghijklmnopqrstuvwxyzabcdef-False]
+  - tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_complete_416-complete_416-32-416-abcdefghijklmnopqrstuvwxyzabcdef-False]
+  - tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_mismatch_start-mismatch_start-8-206-abcdefgh-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_success-lc_observe_https_mtls-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_failure-lc_observe_https_mtls-False]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_encrypted_success-lc_observe_https_mtls-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_encrypted_failure-lc_observe_https_mtls-False]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[minimum_tls13-lc_observe_https_tls13-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[minimum_tls13_against_tls12-lc_observe_https_tls12-False]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[cipher_tls12-lc_observe_https_tls12-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[cipher_tls13-lc_observe_https_tls13-True]
+  - tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[invalid_cipher-lc_observe_https-False]
+  - tests/libcurl_consistency/test_p2_ip_resolve_ipv4.py::test_p2_ip_resolve_ipv4
+  - tests/libcurl_consistency/test_p2_ip_resolve_ipv6.py::test_p2_ip_resolve_ipv6
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success]
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success_no_peer]
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success_no_host]
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_no_ca]
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_invalid_cipher]
+  - tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_unsupported_policy]
+  - tests/libcurl_consistency/test_ext_suite.py::test_ext_suite[ext_download_parallel_stress]
+  - tests/libcurl_consistency/test_ext_suite.py::test_ext_suite[ext_multi_get4_h2]
+  - tests/libcurl_consistency/test_ext_suite.py::test_ext_suite[ext_multi_get4_h3]
+  - tests/libcurl_consistency/test_ext_suite.py::test_ext_suite[multi_limits_smoke]
+  - tests/libcurl_consistency/test_ext_suite.py::test_ext_reuse_keepalive_http_1_1
+  - tests/libcurl_consistency/test_ext_ws_suite.py::test_ext_ws_suite[ext_ws_frame_types_2700]
+  - tests/libcurl_consistency/test_ext_ws_suite.py::test_ext_ws_suite[ext_ws_ping_2301]
+  - tests/libcurl_consistency/test_ext_tls_policy_and_cache.py::test_ext_tls_policy_and_cache_persistence
+  - tests/libcurl_consistency/test_ext_speed_limit_smoke.py::test_ext_speed_limit_smoke_http_1_1
+  - tests/libcurl_consistency/test_p2_connection_limits.py::test_p2_connection_limits_contract
+  - tests/libcurl_consistency/test_ext_http3_version_policy.py::test_ext_http3_fallback_and_only_failure_http_1_1
+  - tests/libcurl_consistency/test_ext_http3_success_h3.py::test_ext_http3_success_h3
+
+# 只有下列 suite/file/capability 组合可以被 planner 排除，reason 必须匹配对应能力。
+exclusion_policies:
+  - {path: tests/libcurl_consistency/test_p1_accept_encoding.py, suites: [p1], capability: acceptEncodingApi, reason_contains: accept-encoding}
+  - {path: tests/libcurl_consistency/test_p1_upload_seek_constraints.py, suites: [p1], capability: rawBodyDeviceApi, reason_contains: raw-body}
+  - {path: tests/libcurl_consistency/test_p1_request_headers.py, suites: [p1], capability: rawRequestHeaderApi, reason_contains: raw header}
+  - {path: tests/libcurl_consistency/test_p1_socks_success.py, suites: [p1], capability: socks5HostnameApi, reason_contains: SOCKS5}
+  - {path: tests/libcurl_consistency/test_p1_redirect_302_303_308.py, suites: [p1], capability: rawBodyDeviceApi, reason_contains: raw-body}
+  - {path: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py, suites: [p2], capability: tlsPinnedPublicKey, reason_contains: CURLOPT_PINNEDPUBLICKEY}
+  - {path: tests/libcurl_consistency/test_p2_range_boundaries.py, suites: [p2], capability: resumableDownloadJobApi, reason_contains: QCNetworkResumableDownloadJob}
+  - {path: tests/libcurl_consistency/test_p2_stream_upload_chunked_post.py, suites: [p2], capability: unknownSizeRawBodyPostApi, reason_contains: unknown-size POST}
+  - {path: tests/libcurl_consistency/test_p2_tls_policy.py, suites: [p2], capability: originTlsPolicy, reason_contains: origin TLS policy}
+  - {path: tests/libcurl_consistency/test_p2_ip_resolve_ipv4.py, suites: [p2], capability: ipResolveApi, reason_contains: request IP resolve}
+  - {path: tests/libcurl_consistency/test_p2_ip_resolve_ipv6.py, suites: [p2], capability: ipResolveIpv6, reason_contains: IPv6 request capability}
+  - {path: tests/libcurl_consistency/test_p2_https_proxy_tls.py, suites: [p2], capability: proxyTlsPolicy, reason_contains: HTTPS proxy TLS capability}
+  - {path: tests/libcurl_consistency/test_ext_http3_version_policy.py, suites: [ext], capability: http3Api, reason_contains: HTTP/3 request policy}
+  - {path: tests/libcurl_consistency/test_ext_http3_success_h3.py, suites: [ext], capability: http3Runtime, reason_contains: HTTP/3}
+
 evidence_types:
   contract: Required observable equality or failure semantics.
   regression: Historical edge case guard.
@@ -13,34 +201,63 @@ contracts:
     evidence_type: contract
     suite: p0
     cases:
+      - id: download_range_resume
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_range_resume]
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifact_cases:
+          p0_download/lc_range_resume_http_1.1: [request, response, response.body_len, response.body_sha256]
+          p0_download/lc_range_resume_h2: [request, response, response.body_len, response.body_sha256]
+          p0_download/lc_range_resume_h3: [request, response, response.body_len, response.body_sha256]
       - id: download_serial_resume
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_serial_resume]
         pytest: tests/libcurl_consistency/test_p0_consistency.py
-        artifacts: [request, response, body_len, body_sha256]
+        artifact_cases:
+          p0_download/test_02_21_lib_serial_http_1.1: [request, response, response.body_len, response.body_sha256]
+          p0_download/test_02_21_lib_serial_h2: [request, response, response.body_len, response.body_sha256]
+          p0_download/test_02_21_lib_serial_h3: [request, response, response.body_len, response.body_sha256]
+      - id: download_parallel_resume
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[download_parallel_resume]
+        pytest: tests/libcurl_consistency/test_p0_consistency.py
+        artifact_cases:
+          p0_download/test_02_22_lib_parallel_resume_http_1.1: [requests, responses, response.body_len, response.body_sha256]
+          p0_download/test_02_22_lib_parallel_resume_h2: [requests, responses, response.body_len, response.body_sha256]
+          p0_download/test_02_22_lib_parallel_resume_h3: [requests, responses, response.body_len, response.body_sha256]
       - id: upload_put
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[upload_put]
         pytest: tests/libcurl_consistency/test_p0_consistency.py
-        artifacts: [request, response, body_len, body_sha256]
+        artifact_cases:
+          p0_upload/test_07_15_hx_put_http_1.1: [request, response, response.body_len, response.body_sha256]
+          p0_upload/test_07_15_hx_put_h2: [request, response, response.body_len, response.body_sha256]
+          p0_upload/test_07_15_hx_put_h3: [request, response, response.body_len, response.body_sha256]
       - id: upload_post_reuse
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[upload_post_reuse]
         pytest: tests/libcurl_consistency/test_p0_consistency.py
-        artifacts: [requests, responses, body_len, body_sha256]
+        artifact_cases:
+          p0_upload/test_07_17_hx_post_reuse_http_1.1: [requests, responses, response.body_len, response.body_sha256]
+          p0_upload/test_07_17_hx_post_reuse_h2: [requests, responses, response.body_len, response.body_sha256]
+          p0_upload/test_07_17_hx_post_reuse_h3: [requests, responses, response.body_len, response.body_sha256]
 
   websocket_p0:
     evidence_type: contract
     suite: p0
     cases:
       - id: ws_pingpong_small
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[ws_pingpong_small]
         pytest: tests/libcurl_consistency/test_p0_consistency.py
-        artifacts: [baseline_ws_events, qcurl_ws_events, body_len, body_sha256]
+        required_fields: [response.body_len, response.body_sha256]
       - id: ws_data_small
+        nodeid: tests/libcurl_consistency/test_p0_consistency.py::test_p0_consistency[ws_data_small]
         pytest: tests/libcurl_consistency/test_p0_consistency.py
-        artifacts: [baseline_ws_events, qcurl_ws_events, body_len, body_sha256]
+        required_fields: [response.body_len, response.body_sha256]
 
   raw_response_headers:
     evidence_type: contract
     suite: p0
     cases:
       - id: raw_response_headers
+        nodeid: tests/libcurl_consistency/test_p1_resp_headers.py::test_p1_resp_headers_raw
         pytest: tests/libcurl_consistency/test_p1_resp_headers.py
-        artifacts: [response.headers_raw_lines, response.headers_raw_sha256]
+        required_fields: [response.headers_raw_lines, response.headers_raw_sha256]
         note: Included in p0 planning to prevent raw header evidence drift.
 
   p1_request_and_redirect_surface:
@@ -48,65 +265,198 @@ contracts:
     suite: p1
     cases:
       - id: request_headers_raw
+        nodeid: tests/libcurl_consistency/test_p1_request_headers.py::test_p1_request_raw_headers_http_1_1
         pytest: tests/libcurl_consistency/test_p1_request_headers.py
-        artifacts: [request.headers_raw_lines, request.headers_raw_sha256, request.headers_semantic]
+        required_fields: [request.headers_raw_lines, request.headers_raw_sha256, request.headers_semantic]
       - id: socks5_success
+        nodeid: tests/libcurl_consistency/test_p1_socks_success.py::test_p1_socks_success_http_1_1
         pytest: tests/libcurl_consistency/test_p1_socks_success.py
-        artifacts: [socks.atyp, socks.dst, socks.rep, response]
+        required_fields: [socks.atyp, socks.dst, socks.rep, response]
       - id: redirect_302_303_308_method_body
+        nodeid: tests/libcurl_consistency/test_p1_redirect_302_303_308.py::test_p1_redirect_302_303_308_method_body
         pytest: tests/libcurl_consistency/test_p1_redirect_302_303_308.py
-        artifacts: [requests, responses, body_sha256]
+        required_fields: [requests, responses, response.body_sha256]
       - id: cookiejar_1903
+        nodeid: tests/libcurl_consistency/test_p1_cookiejar_1903.py::test_p1_cookiejar_1903
         pytest: tests/libcurl_consistency/test_p1_cookiejar_1903.py
-        artifacts: [cookiejar.records, cookiejar.sha256]
+        required_fields: [cookiejar.records, cookiejar.sha256]
       - id: multipart_formdata
+        nodeid: tests/libcurl_consistency/test_p1_multipart_formdata.py::test_p1_multipart_formdata_http_1_1
         pytest: tests/libcurl_consistency/test_p1_multipart_formdata.py
-        artifacts: [multipart.parts]
+        required_fields: [request, response.body_len, response.body_sha256]
+      - id: postfields_binary
+        nodeid: tests/libcurl_consistency/test_p1_postfields_binary.py::test_p1_postfields_binary[postfields_binary_1531]
+        pytest: tests/libcurl_consistency/test_p1_postfields_binary.py
+        artifact_cases:
+          p1_postfields/lc_postfields_binary_1531_http_1.1: [request.body_len, request.body_sha256, response.status]
+          p1_postfields/lc_postfields_binary_1531_h2: [request.body_len, request.body_sha256, response.status]
+          p1_postfields/lc_postfields_binary_1531_h3: [request.body_len, request.body_sha256, response.status]
 
   p2_error_tls_flow_control:
     evidence_type: contract
     suite: p2
     cases:
       - id: expect_100_continue
+        nodeid: tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry
         pytest: tests/libcurl_consistency/test_p2_expect_100_continue.py
-        artifacts: [observed.error, derived.error, request.headers_raw_lines]
+        artifact_cases:
+          p2_expect/lc_expect_100_continue_http_1.1: [requests, responses, hes]
+      - id: expect_100_continue_repeat
+        nodeid: tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry_repeat_inprocess
+        pytest: tests/libcurl_consistency/test_p2_expect_100_continue.py
+        artifact_cases:
+          p2_expect/lc_expect_100_continue_repeat_http_1.1: [requests, responses, hes]
+      - id: expect_100_continue_inline
+        nodeid: tests/libcurl_consistency/test_p2_expect_100_continue.py::test_p2_expect_100_continue_417_retry_inline_body
+        pytest: tests/libcurl_consistency/test_p2_expect_100_continue.py
+        artifact_cases:
+          p2_expect/lc_expect_100_continue_inline_body_http_1.1: [requests, responses, hes]
       - id: protocol_restrictions
+        nodeid: tests/libcurl_consistency/test_p2_protocol_restrictions.py::test_p2_protocols_block_http_http_1_1
         pytest: tests/libcurl_consistency/test_p2_protocol_restrictions.py
-        artifacts: [protocol, observed.error, derived.error]
+        required_fields: [observed.error, derived.error]
       - id: tls_verify
+        nodeid: tests/libcurl_consistency/test_p2_tls_verify.py::test_p2_tls_verify
         pytest: tests/libcurl_consistency/test_p2_tls_verify.py
-        artifacts: [observed.error, derived.error]
+        required_fields: [request, response]
+      - id: tls_verify_failure
+        nodeid: tests/libcurl_consistency/test_p2_tls_verify.py::test_p2_tls_verify[fail_no_ca]
+        pytest: tests/libcurl_consistency/test_p2_tls_verify.py
+        required_fields: [observed.error, derived.error]
       - id: tls_pinned_public_key
+        nodeid: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py::test_p2_tls_pinned_public_key
         pytest: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py
-        artifacts: [observed.error, derived.error]
+        required_fields: [request, response]
+      - id: tls_pinned_public_key_failure
+        nodeid: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py::test_p2_tls_pinned_public_key[mismatch]
+        pytest: tests/libcurl_consistency/test_p2_tls_pinned_public_key.py
+        required_fields: [observed.error, derived.error]
       - id: pause_resume_strict
+        nodeid: tests/libcurl_consistency/test_p2_pause_resume_strict.py::test_p2_pause_resume_strict_h2
         pytest: tests/libcurl_consistency/test_p2_pause_resume_strict.py
-        artifacts: [pause_resume_strict.events]
+        required_fields: [pause_resume_strict.events]
       - id: backpressure_contract
+        nodeid: tests/libcurl_consistency/test_p2_backpressure_contract.py::test_p2_backpressure_contract_h2
         pytest: tests/libcurl_consistency/test_p2_backpressure_contract.py
-        artifacts: [backpressure_contract]
+        required_fields: [backpressure_contract]
       - id: upload_pause_resume
+        nodeid: tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py::test_p2_upload_readfunc_pause_resume_http_1_1
         pytest: tests/libcurl_consistency/test_p2_upload_readfunc_pause_resume.py
-        artifacts: [upload_pause_resume]
+        required_fields: [upload_pause_resume]
+      - id: share_handle_cookie_flow
+        nodeid: tests/libcurl_consistency/test_p2_share_handle.py::test_p2_share_handle_cookie_flow
+        pytest: tests/libcurl_consistency/test_p2_share_handle.py
+        artifact_cases:
+          p2_share_handle/lc_p2_share_handle_cookie_disabled: [requests, responses]
+          p2_share_handle/lc_p2_share_handle_cookie_enabled: [requests, responses]
       - id: range_boundaries
+        nodeid: tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries
         pytest: tests/libcurl_consistency/test_p2_range_boundaries.py
-        artifacts: [request.headers_raw_lines, response.status, observed.error]
+        required_fields: [request.headers.range, response.status, range]
+      - id: range_mismatch_failure
+        nodeid: tests/libcurl_consistency/test_p2_range_boundaries.py::test_p2_range_boundaries[p2_range_mismatch_start-mismatch_start-8-206-abcdefgh-True]
+        pytest: tests/libcurl_consistency/test_p2_range_boundaries.py
+        required_fields: [observed.error, derived.error]
+      - id: tls_policy_mtls_success
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_success-lc_observe_https_mtls-True]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [request, response, transport]
+      - id: tls_policy_mtls_failure
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_failure-lc_observe_https_mtls-False]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [observed.error, derived.error]
+      - id: tls_policy_mtls_encrypted_success
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_encrypted_success-lc_observe_https_mtls-True]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [request, response, transport]
+      - id: tls_policy_mtls_encrypted_failure
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[mtls_encrypted_failure-lc_observe_https_mtls-False]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [observed.error, derived.error]
+      - id: tls_policy_minimum_tls13
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[minimum_tls13-lc_observe_https_tls13-True]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [request, response, transport]
+      - id: tls_policy_minimum_tls13_against_tls12
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[minimum_tls13_against_tls12-lc_observe_https_tls12-False]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [observed.error, derived.error]
+      - id: tls_policy_cipher_tls12
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[cipher_tls12-lc_observe_https_tls12-True]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [request, response, transport]
+      - id: tls_policy_cipher_tls13
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[cipher_tls13-lc_observe_https_tls13-True]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [request, response, transport]
+      - id: tls_policy_invalid_cipher
+        nodeid: tests/libcurl_consistency/test_p2_tls_policy.py::test_p2_tls_policy[invalid_cipher-lc_observe_https-False]
+        pytest: tests/libcurl_consistency/test_p2_tls_policy.py
+        required_fields: [observed.error, derived.error]
+      - id: ip_resolve_ipv4
+        nodeid: tests/libcurl_consistency/test_p2_ip_resolve_ipv4.py::test_p2_ip_resolve_ipv4
+        pytest: tests/libcurl_consistency/test_p2_ip_resolve_ipv4.py
+        required_fields: [request, response, transport]
+      - id: ip_resolve_ipv6
+        nodeid: tests/libcurl_consistency/test_p2_ip_resolve_ipv6.py::test_p2_ip_resolve_ipv6
+        pytest: tests/libcurl_consistency/test_p2_ip_resolve_ipv6.py
+        required_fields: [request, response, transport]
+      - id: https_proxy_tls_success
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [request, response, transport]
+      - id: https_proxy_tls_success_no_peer
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success_no_peer]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [request, response, transport]
+      - id: https_proxy_tls_success_no_host
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[success_no_host]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [request, response, transport]
+      - id: https_proxy_tls_fail_no_ca
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_no_ca]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [observed.error, derived.error]
+      - id: https_proxy_tls_fail_invalid_cipher
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_invalid_cipher]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [observed.error, derived.error]
+      - id: https_proxy_tls_fail_unsupported_policy
+        nodeid: tests/libcurl_consistency/test_p2_https_proxy_tls.py::test_p2_https_proxy_tls[fail_unsupported_policy]
+        pytest: tests/libcurl_consistency/test_p2_https_proxy_tls.py
+        required_fields: [observed.error, derived.error]
 
   ext_opt_in:
     evidence_type: contract
     suite: ext
     opt_in: true
     cases:
+      - id: download_parallel_stress
+        nodeid: tests/libcurl_consistency/test_ext_suite.py::test_ext_suite[ext_download_parallel_stress]
+        pytest: tests/libcurl_consistency/test_ext_suite.py
+        artifact_cases:
+          ext_download/lc_ext_download_parallel_stress_h2: [request, response, response.body_len, response.body_sha256]
+          ext_download/lc_ext_download_parallel_stress_h3: [request, response, response.body_len, response.body_sha256]
       - id: http3_version_policy
+        nodeid: tests/libcurl_consistency/test_ext_http3_version_policy.py::test_ext_http3_fallback_and_only_failure_http_1_1
         pytest: tests/libcurl_consistency/test_ext_http3_version_policy.py
-        artifacts: [protocol, observed.error, derived.error]
+        artifact_cases:
+          ext_http3_version_policy/lc_ext_http3_fallback_to_http_1_1: [protocol.requested, protocol.observed]
+          ext_http3_version_policy/lc_ext_http3_only_failure_http_1_1: [protocol.requested, protocol.observed, observed.error, derived.error]
       - id: http3_success_h3
+        nodeid: tests/libcurl_consistency/test_ext_http3_success_h3.py::test_ext_http3_success_h3
         pytest: tests/libcurl_consistency/test_ext_http3_success_h3.py
-        artifacts: [protocol.observed, response.status]
+        required_fields: [protocol.observed, response.status]
       - id: websocket_frame_types
+        nodeid: tests/libcurl_consistency/test_ext_ws_suite.py::test_ext_ws_suite
         pytest: tests/libcurl_consistency/test_ext_ws_suite.py
-        artifacts: [ws_events]
+        required_fields: [response.body_len, response.body_sha256]
+      - id: tls_policy_cache_smoke
+        nodeid: tests/libcurl_consistency/test_ext_tls_policy_and_cache.py::test_ext_tls_policy_and_cache_persistence
+        pytest: tests/libcurl_consistency/test_ext_tls_policy_and_cache.py
+        evidence_type: smoke
       - id: speed_limit_smoke
+        nodeid: tests/libcurl_consistency/test_ext_speed_limit_smoke.py::test_ext_speed_limit_smoke_http_1_1
         pytest: tests/libcurl_consistency/test_ext_speed_limit_smoke.py
         evidence_type: smoke
 
@@ -119,4 +469,6 @@ gate_policy:
     - junit_parse_error
     - artifacts_schema
     - redaction
+    - execution_contract
+    - evidence_integrity
     - http3_required

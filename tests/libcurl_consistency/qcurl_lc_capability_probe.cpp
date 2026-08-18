@@ -1,5 +1,6 @@
 #include "CurlFeatureProbe.h"
 
+#include <QBuffer>
 #include <QCBlockingNetworkClient.h>
 #include <QCBlockingNetworkResult.h>
 #include <QCNetworkAccessManager.h>
@@ -10,8 +11,6 @@
 #include <QCNetworkRequest.h>
 #include <QCNetworkResumableDownloadJob.h>
 #include <QCNetworkSslConfig.h>
-
-#include <QBuffer>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -48,6 +47,50 @@ bool supportsPinnedPublicKey()
                                          "sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
     curl_easy_cleanup(easy);
     return rc != CURLE_UNKNOWN_OPTION && rc != CURLE_NOT_BUILT_IN;
+}
+
+/**
+ * @brief 探测 origin TLS 最低版本与 TLS 1.2/1.3 密码套件选项。
+ * @return 三类选项都能被当前 libcurl 接受时返回 true。
+ */
+bool supportsOriginTlsPolicy()
+{
+    CURL *easy = curl_easy_init();
+    if (!easy) {
+        return false;
+    }
+    const CURLcode minRc    = curl_easy_setopt(easy, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+    const CURLcode cipherRc = curl_easy_setopt(easy,
+                                               CURLOPT_SSL_CIPHER_LIST,
+                                               "ECDHE-RSA-AES256-GCM-SHA384");
+    const CURLcode tls13Rc = curl_easy_setopt(easy, CURLOPT_TLS13_CIPHERS, "TLS_AES_256_GCM_SHA384");
+    curl_easy_cleanup(easy);
+    return minRc == CURLE_OK && cipherRc == CURLE_OK && tls13Rc == CURLE_OK;
+}
+
+/**
+ * @brief 探测 HTTPS proxy 的验证、CA、最低 TLS 与密码套件选项。
+ * @return 当前 libcurl 能配置完整 proxy TLS 合同时返回 true。
+ */
+bool supportsProxyTlsPolicy()
+{
+    CURL *easy = curl_easy_init();
+    if (!easy) {
+        return false;
+    }
+    const CURLcode typeRc   = curl_easy_setopt(easy, CURLOPT_PROXYTYPE, CURLPROXY_HTTPS);
+    const CURLcode verifyRc = curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYPEER, 1L);
+    const CURLcode hostRc   = curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYHOST, 2L);
+    const CURLcode minRc = curl_easy_setopt(easy, CURLOPT_PROXY_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+    const CURLcode cipherRc = curl_easy_setopt(easy,
+                                               CURLOPT_PROXY_SSL_CIPHER_LIST,
+                                               "ECDHE-RSA-AES256-GCM-SHA384");
+    const CURLcode tls13Rc  = curl_easy_setopt(easy,
+                                               CURLOPT_PROXY_TLS13_CIPHERS,
+                                               "TLS_AES_256_GCM_SHA384");
+    curl_easy_cleanup(easy);
+    return typeRc == CURLE_OK && verifyRc == CURLE_OK && hostRc == CURLE_OK && minRc == CURLE_OK
+           && cipherRc == CURLE_OK && tls13Rc == CURLE_OK;
 }
 
 QJsonObject capabilityStatus(bool available,
@@ -89,11 +132,11 @@ QJsonObject buildManifest()
                                                             std::optional<qint64>)>(
         &QCurl::QCNetworkAccessManager::post));
     static_cast<void>(
-        static_cast<QCurl::QCBlockingNetworkResult (QCurl::QCBlockingNetworkClient::*)(
-            const QCurl::QCNetworkRequest &,
-            QIODevice *,
-            std::optional<qint64>,
-            const QCurl::QCBlockingRequestOptions &) const>(
+        static_cast<QCurl::QCBlockingNetworkResult (
+            QCurl::QCBlockingNetworkClient::*)(const QCurl::QCNetworkRequest &,
+                                               QIODevice *,
+                                               std::optional<qint64>,
+                                               const QCurl::QCBlockingRequestOptions &) const>(
             &QCurl::QCBlockingNetworkClient::post));
     QBuffer bodyProbe;
     bodyProbe.open(QIODevice::ReadOnly);
@@ -117,6 +160,7 @@ QJsonObject buildManifest()
     const bool resumableDownloadJobApi        = true;
     const bool runtimeHasHttp2                = (probe.runtimeFeatures() & CURL_VERSION_HTTP2) != 0;
     const bool runtimeHasHttp3                = (probe.runtimeFeatures() & CURL_VERSION_HTTP3) != 0;
+    const bool runtimeHasIpv6                 = (probe.runtimeFeatures() & CURL_VERSION_IPV6) != 0;
     const bool runtimeHasAltSvc  = (probe.runtimeFeatures() & CURL_VERSION_ALTSVC) != 0;
     const bool runtimeHasHsts    = (probe.runtimeFeatures() & CURL_VERSION_HSTS) != 0;
     const bool pinnedApi         = (ssl.pinnedPublicKey()
@@ -125,6 +169,30 @@ QJsonObject buildManifest()
     const bool pinnedRuntime     = supportsPinnedPublicKey();
     const bool acceptEncodingApi = request.autoDecompressionEnabled()
                                    && request.acceptedEncodings().contains(QStringLiteral("gzip"));
+    request.setIpResolve(QCurl::QCNetworkIpResolve::Ipv4);
+    const bool ipResolveApi = request.ipResolve() == QCurl::QCNetworkIpResolve::Ipv4;
+
+    QCurl::QCNetworkSslConfig tlsPolicy;
+    tlsPolicy.setClientCertPath(QStringLiteral("client.pem"));
+    tlsPolicy.setClientKeyPath(QStringLiteral("client.key"));
+    tlsPolicy.setMinTlsVersion(QCurl::QCNetworkTlsVersion::Tls1_2);
+    tlsPolicy.setCipherList(QStringLiteral("ECDHE-RSA-AES256-GCM-SHA384"));
+    tlsPolicy.setTls13Ciphers(QStringLiteral("TLS_AES_256_GCM_SHA384"));
+    const bool tlsPolicyApi = !tlsPolicy.clientCertPath().isEmpty()
+                              && tlsPolicy.minTlsVersion() == QCurl::QCNetworkTlsVersion::Tls1_2
+                              && !tlsPolicy.cipherList().isEmpty()
+                              && !tlsPolicy.tls13Ciphers().isEmpty();
+
+    QCurl::QCNetworkProxyConfig::ProxyTlsConfig proxyTlsPolicy;
+    proxyTlsPolicy.setMinTlsVersion(QCurl::QCNetworkTlsVersion::Tls1_2);
+    proxyTlsPolicy.setCipherList(QStringLiteral("ECDHE-RSA-AES256-GCM-SHA384"));
+    proxyTlsPolicy.setTls13Ciphers(QStringLiteral("TLS_AES_256_GCM_SHA384"));
+    const bool proxyTlsPolicyApi      = proxyTlsPolicy.minTlsVersion()
+                                            == QCurl::QCNetworkTlsVersion::Tls1_2
+                                        && !proxyTlsPolicy.cipherList().isEmpty()
+                                        && !proxyTlsPolicy.tls13Ciphers().isEmpty();
+    const bool originTlsPolicyRuntime = supportsOriginTlsPolicy();
+    const bool proxyTlsPolicyRuntime  = supportsProxyTlsPolicy();
 
     QJsonObject qcurl;
     qcurl.insert(QStringLiteral("acceptEncodingApi"), acceptEncodingApi);
@@ -137,6 +205,9 @@ QJsonObject buildManifest()
     qcurl.insert(QStringLiteral("socks5HostnameApi"), socks5HostnameApi);
     qcurl.insert(QStringLiteral("http3Api"), http3Api);
     qcurl.insert(QStringLiteral("resumableDownloadJobApi"), resumableDownloadJobApi);
+    qcurl.insert(QStringLiteral("ipResolveApi"), ipResolveApi);
+    qcurl.insert(QStringLiteral("tlsPolicyApi"), tlsPolicyApi);
+    qcurl.insert(QStringLiteral("proxyTlsPolicyApi"), proxyTlsPolicyApi);
 
     QJsonObject libcurl;
     libcurl.insert(QStringLiteral("compiledVersionNum"), probe.compiledVersionNum());
@@ -145,6 +216,8 @@ QJsonObject buildManifest()
     libcurl.insert(QStringLiteral("runtimeFeatures"), static_cast<qint64>(probe.runtimeFeatures()));
     libcurl.insert(QStringLiteral("runtimeSslBackend"), runtimeSslBackend());
     libcurl.insert(QStringLiteral("pinnedPublicKeyOption"), pinnedRuntime);
+    libcurl.insert(QStringLiteral("originTlsPolicyOptions"), originTlsPolicyRuntime);
+    libcurl.insert(QStringLiteral("proxyTlsPolicyOptions"), proxyTlsPolicyRuntime);
 
     QJsonObject matrix;
     matrix.insert(QStringLiteral("http2"),
@@ -196,6 +269,25 @@ QJsonObject buildManifest()
                   capabilityStatus(rawRequestHeaderApi,
                                    QStringLiteral("QCurl raw request header API is available"),
                                    QStringLiteral("QCurl raw request header API is unavailable"),
+                                   QStringLiteral("Fail")));
+    matrix.insert(QStringLiteral("ipResolveIpv6"),
+                  capabilityStatus(runtimeHasIpv6,
+                                   QStringLiteral("runtime libcurl advertises CURL_VERSION_IPV6"),
+                                   QStringLiteral("runtime libcurl does not advertise IPv6"),
+                                   QStringLiteral("Fail")));
+    matrix.insert(QStringLiteral("originTlsPolicy"),
+                  capabilityStatus(tlsPolicyApi && originTlsPolicyRuntime,
+                                   QStringLiteral(
+                                       "QCurl and libcurl origin TLS policies available"),
+                                   QStringLiteral(
+                                       "origin TLS policy API or runtime option unavailable"),
+                                   QStringLiteral("Fail")));
+    matrix.insert(QStringLiteral("proxyTlsPolicy"),
+                  capabilityStatus(proxyTlsPolicyApi && proxyTlsPolicyRuntime,
+                                   QStringLiteral(
+                                       "QCurl and libcurl HTTPS proxy TLS policies available"),
+                                   QStringLiteral(
+                                       "HTTPS proxy TLS API or runtime option unavailable"),
                                    QStringLiteral("Fail")));
 
     QJsonObject tests;
@@ -278,6 +370,37 @@ QJsonObject buildManifest()
                           ? QStringLiteral("HTTP/3 API and runtime support available")
                           : QStringLiteral("HTTP/3 runtime unavailable; default with-ext gate "
                                            "excludes H3 success file")},
+                 });
+    tests.insert(QStringLiteral("test_p2_tls_policy.py"),
+                 QJsonObject{
+                     {QStringLiteral("enabled"), tlsPolicyApi && originTlsPolicyRuntime},
+                     {QStringLiteral("reason"),
+                      (tlsPolicyApi && originTlsPolicyRuntime)
+                          ? QStringLiteral("origin mTLS and TLS policy APIs/options available")
+                          : QStringLiteral("origin TLS policy capability unavailable")},
+                 });
+    tests.insert(QStringLiteral("test_p2_ip_resolve_ipv4.py"),
+                 QJsonObject{
+                     {QStringLiteral("enabled"), ipResolveApi},
+                     {QStringLiteral("reason"),
+                      ipResolveApi ? QStringLiteral("request IP resolve API available")
+                                   : QStringLiteral("request IP resolve API unavailable")},
+                 });
+    tests.insert(QStringLiteral("test_p2_ip_resolve_ipv6.py"),
+                 QJsonObject{
+                     {QStringLiteral("enabled"), ipResolveApi && runtimeHasIpv6},
+                     {QStringLiteral("reason"),
+                      (ipResolveApi && runtimeHasIpv6)
+                          ? QStringLiteral("request IP resolve API and IPv6 runtime available")
+                          : QStringLiteral("IPv6 request capability unavailable")},
+                 });
+    tests.insert(QStringLiteral("test_p2_https_proxy_tls.py"),
+                 QJsonObject{
+                     {QStringLiteral("enabled"), proxyTlsPolicyApi && proxyTlsPolicyRuntime},
+                     {QStringLiteral("reason"),
+                      (proxyTlsPolicyApi && proxyTlsPolicyRuntime)
+                          ? QStringLiteral("HTTPS proxy TLS API and runtime options available")
+                          : QStringLiteral("HTTPS proxy TLS capability unavailable")},
                  });
 
     QJsonObject root;

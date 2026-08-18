@@ -55,6 +55,13 @@ finally:
 
 log = logging.getLogger(__name__)
 
+
+@pytest.fixture(autouse=True)
+def _record_gate_nodeid(request):
+    """把当前 pytest nodeid 写入 gate JUnit，支持精确执行集合核对。"""
+    if os.environ.get("QCURL_LC_RUN_ID", "").strip():
+        request.node.user_properties.append(("nodeid", request.node.nodeid))
+
 def _inject_upstream_curl_http_fixtures() -> None:
     """
     将 `curl/tests/http/conftest.py` 里的 fixtures/hook 注入到当前 conftest 中。
