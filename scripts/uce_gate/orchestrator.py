@@ -76,7 +76,8 @@ def _run_required_gates(
     layout: EvidenceLayout,
     manifest: dict[str, Any],
     tier: str,
-) -> tuple[list[GateResult], dict[str, str]]:
+    run_id: str,
+) -> tuple[list[GateResult], dict[str, str], list[Path]]:
     results = run_offline_ctest_gate(repo_root, build_dir, layout.evidence_dir, manifest)
     httpbin_env: dict[str, str] = {}
     tier_plan = build_tier_plan(tier)
@@ -93,8 +94,17 @@ def _run_required_gates(
         for code in env_violations:
             add_policy_violation(manifest, code)
 
-    results.extend(run_libcurl_consistency_gates(repo_root, build_dir, layout.evidence_dir, manifest, tier_plan, httpbin_env))
-    return results, httpbin_env
+    consistency_results, artifact_roots = run_libcurl_consistency_gates(
+        repo_root,
+        build_dir,
+        layout.evidence_dir,
+        manifest,
+        tier_plan,
+        httpbin_env,
+        uce_run_id=run_id,
+    )
+    results.extend(consistency_results)
+    return results, httpbin_env, artifact_roots
 
 
 def _run_nightly_gates(
@@ -173,6 +183,7 @@ def _run_contract_validators(
     manifest: dict[str, Any],
     tier: str,
     run_id: str,
+    artifact_roots: list[Path],
 ) -> None:
     validators = run_timeline_contract(
         repo_root,
@@ -181,10 +192,26 @@ def _run_contract_validators(
         manifest,
         tier=tier,
         run_id=run_id,
+        artifact_roots=artifact_roots,
     )
     if tier in {"nightly", "soak"}:
-        validators.extend(run_ctbp_contract(repo_root, layout.evidence_dir, manifest))
-    validators.extend(run_hes_contract(repo_root, layout.evidence_dir, manifest, tier=tier))
+        validators.extend(
+            run_ctbp_contract(
+                repo_root,
+                layout.evidence_dir,
+                manifest,
+                artifact_roots=artifact_roots,
+            )
+        )
+    validators.extend(
+        run_hes_contract(
+            repo_root,
+            layout.evidence_dir,
+            manifest,
+            tier=tier,
+            artifact_roots=artifact_roots,
+        )
+    )
     for code in validators:
         add_policy_violation(manifest, code)
 
@@ -221,16 +248,18 @@ def _run_gate_workload(
     manifest: dict[str, Any],
     tier: str,
     run_id: str,
-) -> None:
+) -> list[Path]:
     needs_httpbin = any(item.requires_httpbin for item in build_tier_plan(tier))
     httpbin_env: dict[str, str] = {}
+    artifact_roots: list[Path] = []
     try:
-        _, httpbin_env = _run_required_gates(
+        _, httpbin_env, artifact_roots = _run_required_gates(
             repo_root=repo_root,
             build_dir=build_dir,
             layout=layout,
             manifest=manifest,
             tier=tier,
+            run_id=run_id,
         )
         _run_nightly_gates(
             repo_root=repo_root,
@@ -251,6 +280,7 @@ def _run_gate_workload(
             )
             if stop_result.returncode != 0:
                 add_policy_violation(manifest, "env_preflight_httpbin_stop_failed")
+    return artifact_roots
 
 
 def _finalize_gate_evidence(
@@ -261,6 +291,7 @@ def _finalize_gate_evidence(
     manifest: dict[str, Any],
     tier: str,
     run_id: str,
+    artifact_roots: list[Path],
 ) -> None:
     _copy_optional_evidence(repo_root, build_dir, layout, manifest)
     _run_contract_validators(
@@ -270,6 +301,7 @@ def _finalize_gate_evidence(
         manifest=manifest,
         tier=tier,
         run_id=run_id,
+        artifact_roots=artifact_roots,
     )
     write_manifest_and_policy_report(layout=layout, manifest=manifest, tier=tier)
     _run_redaction_gate(layout, manifest)
@@ -300,7 +332,7 @@ def run_uce_gate(
     )
 
     _write_versions_and_capabilities(repo_root=repo_root, layout=layout, manifest=manifest, tier=tier)
-    _run_gate_workload(
+    artifact_roots = _run_gate_workload(
         repo_root=repo_root,
         build_dir=build_dir,
         layout=layout,
@@ -315,6 +347,7 @@ def run_uce_gate(
         manifest=manifest,
         tier=tier,
         run_id=run_id,
+        artifact_roots=artifact_roots,
     )
 
     return 0 if manifest["result"] == "pass" else 3

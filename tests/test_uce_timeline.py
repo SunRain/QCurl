@@ -304,6 +304,7 @@ def test_run_timeline_contract_uses_only_current_run_qt_evidence(tmp_path: Path,
         {},
         tier="nightly",
         run_id="current-run",
+        artifact_roots=[evidence_dir / "libcurl_consistency" / "current-run" / "artifacts"],
     )
 
     assert violations == []
@@ -351,6 +352,7 @@ def test_run_timeline_contract_merges_collector_parse_errors(tmp_path: Path, mon
         {},
         tier="pr",
         run_id="run",
+        artifact_roots=[evidence_dir / "libcurl_consistency" / "run" / "artifacts"],
     )
 
     report = json.loads((evidence_dir / "timeline" / "report.json").read_text(encoding="utf-8"))

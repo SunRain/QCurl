@@ -72,10 +72,13 @@ def run_libcurl_consistency_gates(
     manifest: dict[str, Any],
     tier_plan: list[GateSpec],
     httpbin_env: dict[str, str],
-) -> list[GateResult]:
+    *,
+    uce_run_id: str,
+) -> tuple[list[GateResult], list[Path]]:
     """Run libcurl-consistency gates from the tier plan."""
 
     results: list[GateResult] = []
+    artifact_roots: list[Path] = []
     logs_dir = evidence_dir / "logs"
     reports_dir = evidence_dir / "libcurl_consistency" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +87,7 @@ def run_libcurl_consistency_gates(
         if gate_spec.kind != "libcurl_consistency":
             continue
         suite = gate_spec.selector
+        suite_run_id = _consistency_run_id(uce_run_id, suite)
         gate_result = run_gate(
             gate_spec.gate_id,
             [
@@ -96,20 +100,40 @@ def run_libcurl_consistency_gates(
                 str(build_dir),
                 "--reports-dir",
                 str(reports_dir),
+                "--run-id",
+                suite_run_id,
             ],
             logs_dir / f"{gate_spec.gate_id}.log",
             cwd=repo_root,
             env=(os.environ.copy() | httpbin_env) if httpbin_env else None,
         )
         results.append(gate_result)
+        artifact_roots.append(reports_dir / "runs" / suite_run_id / "artifacts")
         record_gate_result(manifest, gate_result)
-        _register_libcurl_gate_artifacts(manifest, suite, gate_spec, gate_result)
-    return results
+        _register_libcurl_gate_artifacts(
+            manifest,
+            suite,
+            suite_run_id,
+            gate_spec,
+            gate_result,
+        )
+    return results, artifact_roots
+
+
+def _consistency_run_id(uce_run_id: str, suite: str) -> str:
+    """Build the create-once consistency run ID for one UCE suite."""
+
+    run_id = f"uce-{uce_run_id}-{suite}"
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    if any(character not in allowed for character in run_id):
+        raise ValueError("UCE run-id 只能包含字母、数字、连字符和下划线")
+    return run_id
 
 
 def _register_libcurl_gate_artifacts(
     manifest: dict[str, Any],
     suite: str,
+    suite_run_id: str,
     gate_spec: GateSpec,
     gate_result: GateResult,
 ) -> None:
@@ -123,7 +147,7 @@ def _register_libcurl_gate_artifacts(
     add_artifact(
         manifest,
         artifact_id=f"{suite}_gate_report",
-        path=f"libcurl_consistency/reports/gate_{suite}.json",
+        path=f"libcurl_consistency/reports/runs/{suite_run_id}/gate_{suite}.json",
         kind="report",
         required=True,
         media_type="application/json",
@@ -131,7 +155,7 @@ def _register_libcurl_gate_artifacts(
     add_artifact(
         manifest,
         artifact_id=f"{suite}_junit_report",
-        path=f"libcurl_consistency/reports/junit_{suite}.xml",
+        path=f"libcurl_consistency/reports/runs/{suite_run_id}/junit_{suite}.xml",
         kind="report",
         required=True,
         media_type="application/xml",

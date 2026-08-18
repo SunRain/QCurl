@@ -25,21 +25,31 @@ from tests.uce.timeline.validate import validate_timelines
 
 
 def _collect_timeline_evidence(
-    repo_root: Path,
     build_dir: Path,
     timeline_dir: Path,
     run_id: str,
+    artifact_roots: list[Path],
 ) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
-    lc_artifacts_root = repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
     qt_artifacts_root = build_dir / "test-artifacts"
     current_run_roots = [
         qt_artifacts_root / "dci" / run_id,
         qt_artifacts_root / "bp" / run_id,
     ]
-    lc_collection = collect_from_lc(lc_artifacts_root)
-    qt_collection = collect_from_qt(
-        lc_artifacts_root,
-        dci_evidence_roots=current_run_roots,
+    lc_collection = _merge_timeline_collections(
+        "libcurl_consistency",
+        artifact_roots,
+        [collect_from_lc(root) for root in artifact_roots],
+    )
+    qt_collection = _merge_timeline_collections(
+        "qt",
+        artifact_roots,
+        [
+            collect_from_qt(
+                root,
+                dci_evidence_roots=current_run_roots if index == 0 else [],
+            )
+            for index, root in enumerate(artifact_roots)
+        ],
     )
 
     lc_timeline_path = timeline_dir / "libcurl_consistency.timeline.jsonl"
@@ -47,6 +57,43 @@ def _collect_timeline_evidence(
     write_timeline_jsonl(lc_timeline_path, lc_collection["events"])
     write_timeline_jsonl(qt_timeline_path, qt_collection["events"])
     return lc_timeline_path, qt_timeline_path, lc_collection, qt_collection
+
+
+def _merge_timeline_collections(
+    provider: str,
+    artifact_roots: list[Path],
+    collections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Merge per-suite collectors without scanning any global artifact root."""
+
+    scoped_events: list[dict[str, Any]] = []
+    for root, collection in zip(artifact_roots, collections):
+        run_id = root.parent.name
+        for event in collection.get("events", []):
+            scoped_event = dict(event)
+            stream_id = str(scoped_event.get("stream_id") or "")
+            if stream_id:
+                scoped_event["stream_id"] = f"{run_id}:{stream_id}"
+            scoped_events.append(scoped_event)
+
+    return {
+        "provider": provider,
+        "artifact_roots": [str(root) for root in artifact_roots],
+        "stream_count": sum(int(item.get("stream_count") or 0) for item in collections),
+        "event_count": sum(int(item.get("event_count") or 0) for item in collections),
+        "source_files": [
+            str(source)
+            for item in collections
+            for source in item.get("source_files", [])
+        ],
+        "missing_roots": [
+            str(root)
+            for item in collections
+            for root in item.get("missing_roots", [])
+        ],
+        "errors": [error for item in collections for error in item.get("errors", [])],
+        "events": scoped_events,
+    }
 
 
 def _register_timeline_result(
@@ -93,6 +140,7 @@ def run_timeline_contract(
     *,
     tier: str,
     run_id: str,
+    artifact_roots: list[Path],
 ) -> list[str]:
     """Collect and validate timeline evidence."""
 
@@ -104,10 +152,10 @@ def run_timeline_contract(
     shutil.copy2(contract_src, contract_dst)
 
     lc_timeline_path, qt_timeline_path, lc_collection, qt_collection = _collect_timeline_evidence(
-        repo_root,
         build_dir,
         timeline_dir,
         run_id,
+        artifact_roots,
     )
 
     required_providers = timeline_required_providers(tier)
@@ -170,6 +218,8 @@ def run_ctbp_contract(
     repo_root: Path,
     evidence_dir: Path,
     manifest: dict[str, Any],
+    *,
+    artifact_roots: list[Path],
 ) -> list[str]:
     """Collect and validate CTBP evidence."""
 
@@ -180,8 +230,12 @@ def run_ctbp_contract(
     contract_dst = ctbp_dir / "ctbp@v1.yaml"
     shutil.copy2(contract_src, contract_dst)
 
-    lc_artifacts_root = repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
-    report = validate_ctbp(contract_dst, [lc_artifacts_root], ctbp_required_runners(), ctbp_required_kinds())
+    report = validate_ctbp(
+        contract_dst,
+        artifact_roots,
+        ctbp_required_runners(),
+        ctbp_required_kinds(),
+    )
 
     evidence_path = ctbp_dir / "evidence.json"
     write_json(
@@ -206,6 +260,7 @@ def run_hes_contract(
     manifest: dict[str, Any],
     *,
     tier: str,
+    artifact_roots: list[Path],
 ) -> list[str]:
     """Collect and validate HES evidence."""
 
@@ -216,8 +271,7 @@ def run_hes_contract(
     contract_dst = hes_dir / "hes@v1.yaml"
     shutil.copy2(contract_src, contract_dst)
 
-    artifacts_root = repo_root / "curl" / "tests" / "http" / "gen" / "artifacts"
-    report = validate_hes(contract_dst, [artifacts_root], tier)
+    report = validate_hes(contract_dst, artifact_roots, tier)
     report_path = hes_dir / "report.json"
     write_json(report_path, report)
 
