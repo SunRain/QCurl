@@ -203,8 +203,8 @@ endif()
 # - `QCurl` 仅 PUBLIC 暴露 Qt，libcurl 为 PRIVATE 依赖，因此导出的 package
 #   不应把 bundled curl target 一并暴露给下游
 #
-install(TARGETS QCurl QCurlBlockingExtras QCurlTestSupport QCurlOtherExtras
-    EXPORT QCurlTargets
+install(TARGETS QCurl
+    EXPORT QCurlCoreTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT Runtime
             NAMELINK_COMPONENT Development
@@ -212,6 +212,30 @@ install(TARGETS QCurl QCurlBlockingExtras QCurlTestSupport QCurlOtherExtras
             COMPONENT Development
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
             COMPONENT Runtime
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+)
+
+install(TARGETS QCurlBlockingExtras
+    EXPORT QCurlBlockingExtrasTargets
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+)
+
+install(TARGETS QCurlOtherExtras
+    EXPORT QCurlOtherExtrasTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT OtherExtrasRuntime
+            NAMELINK_COMPONENT OtherExtrasDevelopment
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT OtherExtrasDevelopment
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT OtherExtrasRuntime
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
+)
+
+install(TARGETS QCurlTestSupport
+    EXPORT QCurlTestSupportTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT TestSupportDevelopment
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qcurl
 )
 
@@ -228,11 +252,32 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
 endif()
 
 # 导出 CMake 配置
-install(EXPORT QCurlTargets
+install(EXPORT QCurlCoreTargets
     FILE QCurlTargets.cmake
     NAMESPACE QCurl::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
     COMPONENT Development
+)
+
+install(EXPORT QCurlBlockingExtrasTargets
+    FILE QCurlBlockingExtrasTargets.cmake
+    NAMESPACE QCurl::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+    COMPONENT BlockingExtrasDevelopment
+)
+
+install(EXPORT QCurlOtherExtrasTargets
+    FILE QCurlOtherExtrasTargets.cmake
+    NAMESPACE QCurl::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+    COMPONENT OtherExtrasDevelopment
+)
+
+install(EXPORT QCurlTestSupportTargets
+    FILE QCurlTestSupportTargets.cmake
+    NAMESPACE QCurl::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QCurl
+    COMPONENT TestSupportDevelopment
 )
 
 configure_package_config_file(

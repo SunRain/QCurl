@@ -40,7 +40,7 @@ class QCNetworkMockHandlerPrivate;
  * 这是 Core Test Support 的 accessor-only 值类型，用于离线断言
  * middleware/header/body 形态，不暴露长期 ABI 敏感的 public fields。
  */
-class QCURL_EXPORT QCNetworkCapturedRequest
+class QCURL_TEST_SUPPORT_EXPORT QCNetworkCapturedRequest
 {
 public:
     using RawHeaderPair = QPair<QByteArray, QByteArray>;
@@ -107,7 +107,7 @@ private:
  * auto *reply = manager->get(request);
  * @endcode
  */
-class QCURL_EXPORT QCNetworkMockHandler
+class QCURL_TEST_SUPPORT_EXPORT QCNetworkMockHandler
 {
 public:
     using CapturedRequest = QCNetworkCapturedRequest;

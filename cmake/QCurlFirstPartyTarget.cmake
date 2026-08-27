@@ -41,7 +41,7 @@ function(_qcurl_verify_directory _qcurl_dir _qcurl_missing_var)
         endif()
         get_target_property(_qcurl_type "${_qcurl_target}" TYPE)
         if(NOT _qcurl_type MATCHES
-           "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|INTERFACE_LIBRARY)$")
+           "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY)$")
             continue()
         endif()
         get_target_property(_qcurl_defs "${_qcurl_target}" COMPILE_DEFINITIONS)

@@ -3,9 +3,11 @@
 include(CMakeParseArguments)
 
 set(QCURL_QTTEST_CORE_TARGET QCurl)
+set(QCURL_QTTEST_BLOCKING_EXTRAS_TARGET QCurlBlockingExtras)
 set(QCURL_QTTEST_OTHER_EXTRAS_TARGET QCurlOtherExtras)
 if(TARGET QCurlTestInternals)
-    set(QCURL_QTTEST_CORE_TARGET QCurlTestInternals)
+    set(QCURL_QTTEST_CORE_TARGET QCurlTestSupportTestInternals)
+    set(QCURL_QTTEST_BLOCKING_EXTRAS_TARGET QCurlTestInternals)
     set(QCURL_QTTEST_OTHER_EXTRAS_TARGET QCurlOtherExtrasTestInternals)
 endif()
 
@@ -140,6 +142,8 @@ add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)
 target_compile_definitions(tst_CurlFeatureProbe PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_CurlGlobalInitialization tst_CurlGlobalInitialization.cpp)
 target_compile_definitions(tst_CurlGlobalInitialization PRIVATE QCURL_ENABLE_TEST_HOOKS)
+target_link_libraries(tst_CurlGlobalInitialization
+    PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 add_qcurl_test(tst_QCurlRuntime tst_QCurlRuntime.cpp)
 target_compile_definitions(tst_QCurlRuntime PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_executable(tst_QCCurlMultiDetachOwnership tst_QCCurlMultiDetachOwnership.cpp)
@@ -219,6 +223,7 @@ add_qcurl_test_with_preflight(
     tst_QCBlockingNetworkClient.cpp
     qcblocking_upload_echo_server.cpp
 )
+target_link_libraries(tst_QCBlockingNetworkClient PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 add_qcurl_test_with_preflight(
     tst_QCBlockingRequestConfig
     REQUIRE_LOCAL_PORT
@@ -226,6 +231,7 @@ add_qcurl_test_with_preflight(
     tst_QCBlockingRequestConfig.cpp
     qcblocking_upload_echo_server.cpp
 )
+target_link_libraries(tst_QCBlockingRequestConfig PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 target_compile_definitions(tst_QCBlockingRequestConfig PRIVATE
     QCURL_ENABLE_TEST_HOOKS
     QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API

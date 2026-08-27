@@ -5,6 +5,8 @@ set(QCURL_CORE_SOURCES
     QCurlRuntime.cpp
     private/QCurlRuntimeLease.cpp
     private/QCurlRuntimeState.cpp
+    private/QCBlockingHandleBridge.cpp
+    private/QCNetworkMockProvider.cpp
     QCCookie.cpp
     QCCookieAsyncResult.cpp
     QCNetworkAccessManager.cpp
@@ -116,7 +118,6 @@ endif()
 set(QCURL_ALL_SOURCES
     ${QCURL_CORE_SOURCES}
     ${QCURL_FEATURE_SOURCES}
-    ${QCURL_BLOCKING_EXTRAS_SOURCES}
 )
 set(QCURL_BLOCKING_EXTRAS_ALL_SOURCES ${QCURL_BLOCKING_EXTRAS_SOURCES})
 set(QCURL_TEST_SUPPORT_ALL_SOURCES ${QCURL_TEST_SUPPORT_SOURCES})
@@ -177,14 +178,14 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkMiddleware.h
 )
 
-# 非默认 Extras：
-# - 用于源码树示例、可选发行包或后续独立 package
-# - 不参与默认 install surface / public-api / consumer smoke 合同
+# 非默认组件头的聚合清单，仅供现有 manifest 生成逻辑使用。
+# 组件所有权以三个独立的 QCURL_INSTALL_HEADERS_* 清单为准。
 set(QCURL_INSTALL_HEADERS_EXTRAS
     QCBlockingCookieStore.h
     QCBlockingNetworkClient.h
     QCBlockingNetworkResult.h
     QCNetworkDiagnostics.h
+    QCNetworkMiddlewareExtras.h
     QCNetworkMockHandler.h
     QCNetworkTestSupport.h
 )
@@ -234,7 +235,12 @@ set(_qcurl_library_type STATIC)
 if(QCURL_BUILD_SHARED_LIBS)
     set(_qcurl_library_type SHARED)
 endif()
-add_library(QCurl ${_qcurl_library_type} ${QCURL_ALL_SOURCES} ${QCURL_CORE_HEADERS})
+add_library(QCurl ${_qcurl_library_type}
+    ${QCURL_ALL_SOURCES}
+    ${QCURL_BLOCKING_EXTRAS_ALL_SOURCES}
+    ${QCURL_CORE_HEADERS}
+    ${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}
+)
 
 # 添加库别名（用于 CMake 导出）
 add_library(QCurl::QCurl ALIAS QCurl)
@@ -242,7 +248,10 @@ add_library(QCurl::QCurl ALIAS QCurl)
 add_library(QCurlBlockingExtras INTERFACE)
 add_library(QCurl::BlockingExtras ALIAS QCurlBlockingExtras)
 
-add_library(QCurlTestSupport INTERFACE)
+add_library(QCurlTestSupport STATIC
+    ${QCURL_TEST_SUPPORT_ALL_SOURCES}
+    ${QCURL_INSTALL_HEADERS_TEST_SUPPORT}
+)
 add_library(QCurl::TestSupport ALIAS QCurlTestSupport)
 
 add_library(QCurlOtherExtras ${_qcurl_library_type}
@@ -261,7 +270,6 @@ if(QCURL_BUILD_SHARED_LIBS)
 endif()
 
 qcurl_enable_qt_no_keywords(QCurl)
-qcurl_enable_qt_no_keywords(QCurlBlockingExtras)
 qcurl_enable_qt_no_keywords(QCurlTestSupport)
 qcurl_enable_qt_no_keywords(QCurlOtherExtras)
 
@@ -279,8 +287,14 @@ set_target_properties(QCurlOtherExtras PROPERTIES
     AUTOMOC ON
     POSITION_INDEPENDENT_CODE ON
 )
-set_target_properties(QCurlBlockingExtras PROPERTIES EXPORT_NAME BlockingExtras)
-set_target_properties(QCurlTestSupport PROPERTIES EXPORT_NAME TestSupport)
+set_target_properties(QCurlBlockingExtras PROPERTIES
+    EXPORT_NAME BlockingExtras
+)
+set_target_properties(QCurlTestSupport PROPERTIES
+    AUTOMOC ON
+    EXPORT_NAME TestSupport
+    POSITION_INDEPENDENT_CODE ON
+)
 set_target_properties(QCurlOtherExtras PROPERTIES EXPORT_NAME OtherExtras)
 
 set(_qcurl_component_targets
@@ -347,15 +361,21 @@ target_include_directories(QCurl
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/private
 )
-foreach(_qcurl_target IN ITEMS QCurlBlockingExtras QCurlTestSupport)
-    target_include_directories(${_qcurl_target}
-        INTERFACE
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-            $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/src>
-            $<INSTALL_INTERFACE:include/qcurl>
-    )
-endforeach()
+target_include_directories(QCurlBlockingExtras INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/src>
+    $<INSTALL_INTERFACE:include/qcurl>
+)
+target_include_directories(QCurlTestSupport
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/src>
+        $<INSTALL_INTERFACE:include/qcurl>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/private
+)
 target_include_directories(QCurlOtherExtras
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -389,6 +409,12 @@ target_compile_definitions(QCurlOtherExtras
         QT_NO_CAST_TO_ASCII
         QT_NO_URL_CAST_FROM_STRING
 )
+target_compile_definitions(QCurlTestSupport
+    PRIVATE
+        QT_NO_CAST_FROM_ASCII
+        QT_NO_CAST_TO_ASCII
+        QT_NO_URL_CAST_FROM_STRING
+)
 
 # 特性宏定义
 if(QCURL_WEBSOCKET_SUPPORT)
@@ -407,15 +433,22 @@ endif()
 if(BUILD_TESTING AND QCURL_BUILD_SHARED_LIBS)
     add_library(QCurlTestInternals STATIC EXCLUDE_FROM_ALL
         ${QCURL_ALL_SOURCES}
+        ${QCURL_BLOCKING_EXTRAS_ALL_SOURCES}
         ${QCURL_CORE_HEADERS}
+        ${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}
     )
     add_library(QCurlOtherExtrasTestInternals STATIC EXCLUDE_FROM_ALL
         ${QCURL_OTHER_EXTRAS_ALL_SOURCES}
         ${QCURL_OTHER_EXTRAS_HEADERS}
     )
+    add_library(QCurlTestSupportTestInternals STATIC EXCLUDE_FROM_ALL
+        ${QCURL_TEST_SUPPORT_ALL_SOURCES}
+        ${QCURL_INSTALL_HEADERS_TEST_SUPPORT}
+    )
 
     foreach(_qcurl_test_internal_target IN ITEMS
             QCurlTestInternals
+            QCurlTestSupportTestInternals
             QCurlOtherExtrasTestInternals)
         qcurl_enable_qt_no_keywords(${_qcurl_test_internal_target})
         set_target_properties(${_qcurl_test_internal_target} PROPERTIES
@@ -444,6 +477,16 @@ if(BUILD_TESTING AND QCURL_BUILD_SHARED_LIBS)
     target_compile_definitions(QCurlTestInternals
         PRIVATE QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API)
 
+    target_link_libraries(QCurlTestSupportTestInternals
+        PUBLIC QCurlTestInternals)
+    target_include_directories(QCurlTestSupportTestInternals
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}
+            ${CMAKE_BINARY_DIR}/src
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/private
+    )
     target_link_libraries(QCurlOtherExtrasTestInternals
         PUBLIC
             QCurlTestInternals

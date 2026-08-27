@@ -30,7 +30,7 @@ class QCBlockingNetworkResultData;
  * @note 错误生命周期：结果构造后不再变化。成功时 `error()` 为 `NoError` 且
  * `errorMessage()` 为空；失败时错误枚举是权威分类，文本仅用于诊断，HTTP 状态码可为零。
  */
-class QCURL_EXPORT QCBlockingNetworkResult
+class QCURL_BLOCKING_EXTRAS_EXPORT QCBlockingNetworkResult
 {
 public:
     using HeaderList = QList<QPair<QByteArray, QByteArray>>;

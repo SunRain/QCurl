@@ -11,41 +11,39 @@ if(NOT @QCURL_BUILD_SHARED_LIBS@ AND NOT @QCURL_BUILD_LIBCURL_CONSISTENCY@)
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/QCurlTargets.cmake")
 
-if(TARGET QCurl::BlockingExtras AND TARGET QCurl::QCurl)
-    target_link_libraries(QCurl::BlockingExtras INTERFACE QCurl::QCurl)
-endif()
-if(TARGET QCurl::TestSupport AND TARGET QCurl::QCurl)
-    target_link_libraries(QCurl::TestSupport INTERFACE QCurl::QCurl)
-endif()
-if(TARGET QCurl::OtherExtras AND TARGET QCurl::QCurl)
-    target_link_libraries(QCurl::OtherExtras INTERFACE QCurl::QCurl)
-endif()
-
 set(QCurl_Core_FOUND TRUE)
 set(QCurl_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@/qcurl")
 set(QCurl_BLOCKING_EXTRAS_INCLUDE_DIR "${QCurl_INCLUDE_DIR}")
 set(QCurl_TEST_SUPPORT_INCLUDE_DIR "${QCurl_INCLUDE_DIR}")
 set(QCurl_OTHER_EXTRAS_INCLUDE_DIR "${QCurl_INCLUDE_DIR}")
+set(QCurl_OTHER_EXTRAS_WEBSOCKET_AVAILABLE @QCURL_WEBSOCKET_SUPPORT@)
 
 foreach(_qcurl_component IN LISTS QCurl_FIND_COMPONENTS)
     if(_qcurl_component STREQUAL "Core")
         set(QCurl_Core_FOUND TRUE)
     elseif(_qcurl_component STREQUAL "BlockingExtras")
-        if(EXISTS "${QCurl_INCLUDE_DIR}/QCBlockingNetworkClient.h"
+        include("${CMAKE_CURRENT_LIST_DIR}/QCurlBlockingExtrasTargets.cmake" OPTIONAL)
+        if(TARGET QCurl::BlockingExtras
+           AND EXISTS "${QCurl_INCLUDE_DIR}/QCBlockingNetworkClient.h"
            AND EXISTS "${QCurl_INCLUDE_DIR}/QCBlockingNetworkResult.h")
             set(QCurl_BlockingExtras_FOUND TRUE)
         else()
             set(QCurl_BlockingExtras_FOUND FALSE)
         endif()
     elseif(_qcurl_component STREQUAL "TestSupport")
-        if(EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkMockHandler.h"
+        include("${CMAKE_CURRENT_LIST_DIR}/QCurlTestSupportTargets.cmake" OPTIONAL)
+        if(TARGET QCurl::TestSupport
+           AND EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkMockHandler.h"
            AND EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkTestSupport.h")
             set(QCurl_TestSupport_FOUND TRUE)
         else()
             set(QCurl_TestSupport_FOUND FALSE)
         endif()
     elseif(_qcurl_component STREQUAL "OtherExtras")
-        if(EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkDiagnostics.h")
+        include("${CMAKE_CURRENT_LIST_DIR}/QCurlOtherExtrasTargets.cmake" OPTIONAL)
+        if(TARGET QCurl::OtherExtras
+           AND EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkDiagnostics.h"
+           AND EXISTS "${QCurl_INCLUDE_DIR}/QCNetworkMiddlewareExtras.h")
             set(QCurl_OtherExtras_FOUND TRUE)
         else()
             set(QCurl_OtherExtras_FOUND FALSE)

@@ -32,7 +32,7 @@ class QCTransferProgressData;
  *
  * 该值类型只描述当前回调时刻的上传和下载字节计数；总字节数未知时沿用 libcurl 上报值。
  */
-class QCURL_EXPORT QCTransferProgress
+class QCURL_BLOCKING_EXTRAS_EXPORT QCTransferProgress
 {
 public:
     QCTransferProgress();
@@ -78,7 +78,7 @@ private:
  */
 using QCBlockingProgressCallback = bool (*)(const QCTransferProgress &progress, void *userData);
 
-class QCURL_EXPORT QCBlockingRequestOptions
+class QCURL_BLOCKING_EXTRAS_EXPORT QCBlockingRequestOptions
 {
 public:
     QCBlockingRequestOptions();
@@ -120,7 +120,7 @@ private:
  * @note QObject 借用合同：body device 必须满足对应入口的非空条件，并由调用方在同步调用
  * 期间保活；设备只在调用线程访问，函数返回后 client 不再保存或访问该借用。
  */
-class QCURL_EXPORT QCBlockingNetworkClient
+class QCURL_BLOCKING_EXTRAS_EXPORT QCBlockingNetworkClient
 {
 public:
     using RequestOptions = QCBlockingRequestOptions;
@@ -130,7 +130,7 @@ public:
         AllowForCliOrTests,
     };
 
-    class QCURL_EXPORT Options
+    class QCURL_BLOCKING_EXTRAS_EXPORT Options
     {
     public:
         Options();

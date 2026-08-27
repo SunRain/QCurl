@@ -18,7 +18,7 @@ class QCCookieDeltaData;
 class QCCookieSnapshotData;
 
 /** Blocking request 入口使用的 cookie 快照值类型。 */
-class QCURL_EXPORT QCCookieSnapshot
+class QCURL_BLOCKING_EXTRAS_EXPORT QCCookieSnapshot
 {
 public:
     QCCookieSnapshot();
@@ -38,7 +38,7 @@ private:
 };
 
 /** Blocking response 返回的 cookie 增量值类型。 */
-class QCURL_EXPORT QCCookieDelta
+class QCURL_BLOCKING_EXTRAS_EXPORT QCCookieDelta
 {
 public:
     QCCookieDelta();

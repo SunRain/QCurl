@@ -10,9 +10,11 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     endif()
 
     set(QCURL_LC_CORE_TARGET QCurl)
+    set(QCURL_LC_BLOCKING_EXTRAS_TARGET QCurlBlockingExtras)
     set(QCURL_LC_OTHER_EXTRAS_TARGET QCurlOtherExtras)
     if(TARGET QCurlTestInternals)
         set(QCURL_LC_CORE_TARGET QCurlTestInternals)
+        set(QCURL_LC_BLOCKING_EXTRAS_TARGET QCurlTestInternals)
         set(QCURL_LC_OTHER_EXTRAS_TARGET QCurlOtherExtrasTestInternals)
     endif()
     # pytest 驱动：Qt Test 执行器（不注册为 ctest）
@@ -27,6 +29,7 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
         PRIVATE
             Qt6::Test
             ${QCURL_LC_CORE_TARGET}
+            ${QCURL_LC_BLOCKING_EXTRAS_TARGET}
             ${QCURL_LC_OTHER_EXTRAS_TARGET}
             CURL::libcurl
     )
