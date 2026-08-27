@@ -1,12 +1,10 @@
-#include "CurlFeatureProbe.h"
-#include "QCCurlHandleManager.h"
 #include "QCNetworkError.h"
+#include "private/QCBlockingHandleBridge_p.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCBlockingCurlMethodSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
 #include "private/QCBlockingResponseSink_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
-#include "private/QCNetworkProtocolPolicy_p.h"
 
 #include <QIODevice>
 
@@ -255,17 +253,17 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                qint64 abortAfterBytes = -1)
 {
     QString protocolError;
-    if (!QCNetworkProtocolPolicy::validateCoreUrl(request.url(), &protocolError)) {
+    if (!validateBlockingUrl(request.url(), &protocolError)) {
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest, protocolError);
     }
 
-    const auto availability = CurlFeatureProbe::instance().minimumRuntimeAvailability();
+    const auto availability = blockingRuntimeAvailability();
     if (!availability.supported) {
         return QCBlockingNetworkResult::failure(NetworkError::UnsupportedCapability,
                                                 availability.reason);
     }
 
-    QCCurlHandleManager curlManager;
+    QCBlockingHandleBridge curlManager;
     CURL *handle = curlManager.handle();
     if (!handle) {
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest,

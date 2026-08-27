@@ -6,8 +6,8 @@
 #include "QCNetworkRequest.h"
 #include "private/QCBlockingCurlProtocolSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
+#include "private/QCBlockingHandleBridge_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
-#include "private/QCNetworkProtocolPolicy_p.h"
 
 #include <QStringList>
 
@@ -65,9 +65,9 @@ bool configureProtocolOptions(CURL *handle,
                               RequestOptionStorage *storage)
 {
     QStringList allowedProtocols;
-    if (!QCNetworkProtocolPolicy::resolveInitialProtocols(request.allowedProtocols(),
-                                                          &allowedProtocols,
-                                                          &storage->failureMessage)) {
+    if (!resolveBlockingInitialProtocols(request.allowedProtocols(),
+                                         &allowedProtocols,
+                                         &storage->failureMessage)) {
         return false;
     }
 
@@ -81,9 +81,9 @@ bool configureProtocolOptions(CURL *handle,
     }
 
     QStringList redirectProtocols;
-    if (!QCNetworkProtocolPolicy::resolveRedirectProtocols(request.allowedRedirectProtocols(),
-                                                           &redirectProtocols,
-                                                           &storage->failureMessage)) {
+    if (!resolveBlockingRedirectProtocols(request.allowedRedirectProtocols(),
+                                          &redirectProtocols,
+                                          &storage->failureMessage)) {
         return false;
     }
 
