@@ -23,6 +23,7 @@
 #include <QtTest/QtTest>
 
 #include <memory>
+#include <thread>
 
 using namespace QCurl;
 
@@ -402,10 +403,6 @@ void TestQCNetworkFileResumableOffline::testManagerThreadMismatchFailsBeforeRepl
 
 void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously()
 {
-    ResumableSideEffectHarness harness;
-    harness.manager.enableRequestScheduler(true);
-
-    QThread noLoopThread;
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
 
@@ -415,23 +412,52 @@ void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously(
     partial.write(QByteArray(4096, 'p'));
     partial.close();
 
-    QCNetworkResumableDownloadJob job(&harness.manager,
-                                      QUrl(QStringLiteral("http://127.0.0.1:1/no-event-loop.bin")),
-                                      savePath);
-    job.moveToThread(&noLoopThread);
+    struct Outcome {
+        int failedCount     = 0;
+        int finishedCount   = 0;
+        NetworkError error  = NetworkError::NoError;
+        QString errorString;
+        bool replyIsNull    = false;
+        qint64 existingSize = -1;
+        bool noSideEffects  = false;
+    } outcome;
 
-    QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
-    QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
+    std::thread worker([&outcome, savePath]() {
+        ResumableSideEffectHarness harness;
+        harness.manager.enableRequestScheduler(true);
 
-    job.start();
+        QCNetworkResumableDownloadJob job(
+            &harness.manager,
+            QUrl(QStringLiteral("http://127.0.0.1:1/no-event-loop.bin")),
+            savePath);
+        QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
+        QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
 
-    QCOMPARE(failedSpy.count(), 1);
-    QCOMPARE(finishedSpy.count(), 1);
-    QCOMPARE(job.error(), NetworkError::InvalidRequest);
-    QVERIFY(job.errorString().contains(QStringLiteral("事件循环")));
-    QCOMPARE(job.reply(), nullptr);
-    QCOMPARE(job.existingSize(), qint64(0));
-    harness.verifyNoSideEffects();
+        job.start();
+
+        outcome.failedCount   = failedSpy.count();
+        outcome.finishedCount = finishedSpy.count();
+        outcome.error         = job.error();
+        outcome.errorString   = job.errorString();
+        outcome.replyIsNull   = job.reply() == nullptr;
+        outcome.existingSize  = job.existingSize();
+        outcome.noSideEffects = harness.middleware.requestPreSendCount == 0
+                                && harness.middleware.replyCreatedCount == 0
+                                && harness.middleware.responseReceivedCount == 0
+                                && harness.cache.lookupCount == 0
+                                && harness.cache.insertCount == 0
+                                && harness.queuedSpy.count() == 0
+                                && harness.startedSpy.count() == 0;
+    });
+    worker.join();
+
+    QCOMPARE(outcome.failedCount, 1);
+    QCOMPARE(outcome.finishedCount, 1);
+    QCOMPARE(outcome.error, NetworkError::InvalidRequest);
+    QVERIFY(outcome.errorString.contains(QStringLiteral("事件循环")));
+    QVERIFY(outcome.replyIsNull);
+    QCOMPARE(outcome.existingSize, qint64(0));
+    QVERIFY(outcome.noSideEffects);
 }
 
 void TestQCNetworkFileResumableOffline::
