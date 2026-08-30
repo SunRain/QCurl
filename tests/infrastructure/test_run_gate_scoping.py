@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
+import sys
 
 import pytest
 
 from tests.libcurl_consistency import run_gate
+from tests.libcurl_consistency.pytest_support import gate_execution
 
 
 def _args(*, reports_dir: str, run_id: str) -> argparse.Namespace:
@@ -67,6 +70,16 @@ def test_gate_environment_exports_run_identity_and_scoped_paths(tmp_path) -> Non
     assert env["QCURL_LC_CAPABILITY_MANIFEST"] == str(cfg.capability_manifest)
 
 
+def test_pytest_subprocess_uses_the_current_python_module_entrypoint() -> None:
+    assert gate_execution.pytest_command("--collect-only", "-q") == [
+        sys.executable,
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q",
+    ]
+
+
 def test_infrastructure_ctest_is_registered_without_curl_testenv() -> None:
     cmake = Path("tests/CMakeLists.txt").read_text(encoding="utf-8")
 
@@ -81,3 +94,35 @@ def test_infrastructure_ctest_is_registered_without_curl_testenv() -> None:
         "test_run_gate_scoping.py",
     ):
         assert test_file in cmake
+
+
+def test_bundled_curl_testenv_binds_project_nghttpx_before_configuration() -> None:
+    cmake = Path("CMakeLists.txt").read_text(encoding="utf-8")
+    curl_subdirectory = cmake.index('add_subdirectory(curl "${CMAKE_BINARY_DIR}/curl"')
+
+    prefix_definition = cmake.index("set(QCURL_LC_NGHTTPX_H3_PREFIX")
+    nghttpx_binary = cmake.index(
+        'set(_qcurl_lc_nghttpx_h3_bin "${QCURL_LC_NGHTTPX_H3_PREFIX}/bin/nghttpx")'
+    )
+    testenv_binding = cmake.index(
+        'set(TEST_NGHTTPX "${_qcurl_lc_nghttpx_h3_bin}" CACHE FILEPATH'
+    )
+    http_testenv_binding = cmake.index(
+        'set(HTTPD_NGHTTPX "${_qcurl_lc_nghttpx_h3_bin}" CACHE FILEPATH'
+    )
+
+    assert prefix_definition < curl_subdirectory
+    assert nghttpx_binary < curl_subdirectory
+    assert testenv_binding < curl_subdirectory
+    assert http_testenv_binding < curl_subdirectory
+
+    assert re.search(
+        r'if\(TEST_NGHTTPX STREQUAL "\$\{_qcurl_lc_nghttpx_h3_bin\}"\)\s*'
+        r'unset\(TEST_NGHTTPX CACHE\)',
+        cmake,
+    )
+    assert re.search(
+        r'if\(HTTPD_NGHTTPX STREQUAL "\$\{_qcurl_lc_nghttpx_h3_bin\}"\)\s*'
+        r'unset\(HTTPD_NGHTTPX CACHE\)',
+        cmake,
+    )

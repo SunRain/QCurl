@@ -1,10 +1,6 @@
 include(ExternalProject)
 include(ProcessorCount)
 
-option(QCURL_LC_BUILD_NGHTTPX_H3
-       "Build h3-capable nghttpx from source for libcurl_consistency"
-       ON)
-
 set(QCURL_LC_NGHTTP2_VERSION
     "1.68.0"
     CACHE STRING "nghttp2 release version used to build nghttpx")
@@ -16,10 +12,6 @@ set(QCURL_LC_NGHTTP2_SHA256
 set(QCURL_LC_NGHTTP2_ARCHIVE
     ""
     CACHE FILEPATH "Optional local nghttp2-<ver>.tar.gz archive for offline builds")
-
-set(QCURL_LC_NGHTTPX_H3_PREFIX
-    "${CMAKE_BINARY_DIR}/libcurl_consistency/nghttpx-h3"
-    CACHE PATH "Install prefix for the h3-capable nghttpx build")
 
 if(NOT QCURL_LC_BUILD_NGHTTPX_H3)
     add_custom_target(qcurl_nghttpx_h3

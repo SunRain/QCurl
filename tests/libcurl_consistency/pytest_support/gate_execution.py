@@ -68,6 +68,12 @@ class GateRunState:
     minimal_set: Dict[str, object] = field(default_factory=dict)
 
 
+def pytest_command(*arguments: str) -> List[str]:
+    """Build a pytest command that preserves the current interpreter environment."""
+
+    return [sys.executable, "-m", "pytest", *arguments]
+
+
 def _create_state(config: GateConfig) -> GateRunState:
     ensure_parent(config.junit_xml)
     assert config.artifacts_dir is not None
@@ -214,7 +220,7 @@ def _collect_planned_nodeids(
     state: GateRunState,
     coverage_map: Dict[str, object],
 ) -> List[str]:
-    command = ["pytest", "--collect-only", "-q", *state.planned_pytest_files]
+    command = pytest_command("--collect-only", "-q", *state.planned_pytest_files)
     state.report["commands"].append(command)
     result = run_command(command, cwd=config.repo_root, env=state.gate_env, capture=True)
     if result.returncode != 0:
@@ -297,14 +303,13 @@ def _collect_execution_plan(
 def _execute_pytest(config: GateConfig, state: GateRunState) -> None:
     write_python_env_snapshot(config, state.gate_env, state.report, run_command=run_command)
     write_nghttpx_version_snapshot(config, state.gate_env, state.report, run_command=run_command)
-    command = [
-        "pytest",
+    command = pytest_command(
         "-q",
         "--maxfail=1",
         "--junitxml",
         str(config.junit_xml),
         *state.planned_nodeids,
-    ]
+    )
     state.report["commands"].append(command)
     result = run_command(command, cwd=config.repo_root, env=state.gate_env, capture=True)
     state.report["pytest_returncode"] = result.returncode

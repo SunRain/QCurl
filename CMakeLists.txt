@@ -62,6 +62,32 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     set(CURL_USE_PKGCONFIG ON CACHE BOOL "Enable pkg-config to detect dependencies (for bundled curl)" FORCE)
     set(CURL_DISABLE_WEBSOCKETS OFF CACHE BOOL "Enable WebSocket support (required by libcurl_consistency)" FORCE)
 
+    option(QCURL_LC_BUILD_NGHTTPX_H3
+           "Build h3-capable nghttpx from source for libcurl_consistency"
+           ON)
+    set(QCURL_LC_NGHTTPX_H3_PREFIX
+        "${CMAKE_BINARY_DIR}/libcurl_consistency/nghttpx-h3"
+        CACHE PATH "Install prefix for the h3-capable nghttpx build")
+    set(_qcurl_lc_nghttpx_h3_bin "${QCURL_LC_NGHTTPX_H3_PREFIX}/bin/nghttpx")
+    if(QCURL_LC_BUILD_NGHTTPX_H3)
+        # curl 的两个测试入口会在配置阶段固化 nghttpx 路径，且 Python
+        # testenv 会在导入阶段立即执行该二进制。必须在添加 curl 子项目
+        # 前绑定到本项目随后构建的 H3 产物，不能保留已失效的系统路径。
+        set(TEST_NGHTTPX "${_qcurl_lc_nghttpx_h3_bin}" CACHE FILEPATH
+            "nghttpx used by bundled curl tests" FORCE)
+        set(HTTPD_NGHTTPX "${_qcurl_lc_nghttpx_h3_bin}" CACHE FILEPATH
+            "nghttpx used by bundled curl HTTP tests" FORCE)
+    else()
+        # 允许同一构建目录从项目内 H3 server 切回 curl 的正常系统探测，
+        # 但保留调用方显式指定的其它 nghttpx 路径。
+        if(TEST_NGHTTPX STREQUAL "${_qcurl_lc_nghttpx_h3_bin}")
+            unset(TEST_NGHTTPX CACHE)
+        endif()
+        if(HTTPD_NGHTTPX STREQUAL "${_qcurl_lc_nghttpx_h3_bin}")
+            unset(HTTPD_NGHTTPX CACHE)
+        endif()
+    endif()
+
     # HTTP/3 + WebSockets 约束：
     # - 目标：在依赖满足时，构建出的 bundled curl 必须具备 HTTP/3 + WebSockets 能力；
     # - 降级：当缺少依赖时，不阻断构建（h3 变体将由 gate 自动 skip，同时记录 warning）。
@@ -109,6 +135,7 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     endif()
 
     add_subdirectory(curl "${CMAKE_BINARY_DIR}/curl" EXCLUDE_FROM_ALL)
+    unset(_qcurl_lc_nghttpx_h3_bin)
 
     if(CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize=")
         if(TARGET curl)
