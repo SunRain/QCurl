@@ -11,7 +11,7 @@ from scripts import release_package_evidence
 
 def _contract() -> dict[str, object]:
     return {
-        "runtimeTargets": {
+        "deliveryTargets": {
             spec.target: {
                 "consumerTests": {
                     "shared": spec.test_name,
@@ -24,16 +24,16 @@ def _contract() -> dict[str, object]:
 
 
 def _surface_manifest() -> dict[str, object]:
-    layers = (
+    components = (
         "Core",
-        "Blocking Extras",
-        "Test Support",
-        "Other Extras",
+        "BlockingExtras",
+        "TestSupport",
+        "OtherExtras",
     )
     return {
         "headers": [
-            {"layer": layer, "path": f"{index}.h"}
-            for index, layer in enumerate(layers, start=1)
+            {"component": component, "path": f"{index}.h"}
+            for index, component in enumerate(components, start=1)
         ]
     }
 
@@ -46,10 +46,20 @@ def _write_stage(stage_dir: Path) -> None:
     library_dir = stage_dir / "lib"
     library_dir.mkdir(parents=True, exist_ok=True)
     (library_dir / "libQCurl.so").write_bytes(b"core")
+    (library_dir / "libQCurlTestSupport.a").write_bytes(b"test-support")
     (library_dir / "libQCurlOtherExtras.so").write_bytes(b"extras")
     target_dir = library_dir / "cmake" / "QCurl"
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "QCurlTargets.cmake").write_text("# fixture\n", encoding="utf-8")
+    (target_dir / "QCurlBlockingExtrasTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
+    (target_dir / "QCurlTestSupportTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
+    (target_dir / "QCurlOtherExtrasTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
 
 
 def test_install_inventory_requires_every_runtime_target(tmp_path: Path) -> None:
@@ -64,6 +74,22 @@ def test_install_inventory_requires_every_runtime_target(tmp_path: Path) -> None
         release_package_evidence._install_inventory(
             stage_dir,
             {spec.target: [] for spec in release_package_evidence.CONSUMERS},
+        )
+
+
+def test_install_inventory_rejects_blocking_runtime_library(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    library_dir = stage_dir / "lib"
+    library_dir.mkdir(parents=True)
+    (library_dir / "libQCurlBlockingExtras.so").write_bytes(b"obsolete")
+
+    with pytest.raises(
+        release_package_evidence.PackageEvidenceError,
+        match="independent runtime library",
+    ):
+        release_package_evidence._install_inventory(
+            stage_dir,
+            {spec.target: ["fixture.h"] for spec in release_package_evidence.CONSUMERS},
         )
 
 
@@ -122,9 +148,9 @@ def test_run_evidence_writes_install_and_lifecycle_reports(tmp_path: Path) -> No
 def test_run_evidence_rejects_wrong_linkage_consumer_contract(tmp_path: Path) -> None:
     contract_path = tmp_path / "contract.json"
     contract = _contract()
-    runtime_targets = contract["runtimeTargets"]
-    assert isinstance(runtime_targets, dict)
-    core = runtime_targets["Core"]
+    delivery_targets = contract["deliveryTargets"]
+    assert isinstance(delivery_targets, dict)
+    core = delivery_targets["Core"]
     assert isinstance(core, dict)
     consumers = core["consumerTests"]
     assert isinstance(consumers, dict)

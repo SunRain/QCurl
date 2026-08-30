@@ -52,11 +52,11 @@ CONSUMERS = (
     ),
 )
 
-LAYER_TARGETS = {
+COMPONENT_TARGETS = {
     "Core": "Core",
-    "Blocking Extras": "BlockingExtras",
-    "Test Support": "TestSupport",
-    "Other Extras": "OtherExtras",
+    "BlockingExtras": "BlockingExtras",
+    "TestSupport": "TestSupport",
+    "OtherExtras": "OtherExtras",
 }
 
 
@@ -111,19 +111,19 @@ def _header_manifests(surface_manifest: Path) -> dict[str, list[str]]:
     for entry in headers:
         if not isinstance(entry, dict):
             raise PackageEvidenceError("surface manifest header must be an object")
-        target = LAYER_TARGETS.get(entry.get("layer"))
+        target = COMPONENT_TARGETS.get(entry.get("component"))
         path = entry.get("path")
         if target is not None and isinstance(path, str) and path:
             manifests[target].append(path)
     if any(not paths for paths in manifests.values()):
-        raise PackageEvidenceError("surface manifest must cover every runtime target")
+        raise PackageEvidenceError("surface manifest must cover every delivery target")
     return manifests
 
 
 def _validate_consumer_contract(contract: dict[str, Any], linkage: str) -> None:
-    targets = contract.get("runtimeTargets")
+    targets = contract.get("deliveryTargets")
     if not isinstance(targets, dict):
-        raise PackageEvidenceError("package contract runtimeTargets must be an object")
+        raise PackageEvidenceError("package contract deliveryTargets must be an object")
     for spec in CONSUMERS:
         target = targets.get(spec.target)
         if not isinstance(target, dict):
@@ -144,10 +144,18 @@ def _owners_for_path(path: str, manifests: dict[str, list[str]]) -> list[str]:
         return owners or ["Package"]
     if "libQCurlOtherExtras" in name or name == "qcurl-other-extras.pc":
         return ["OtherExtras"]
+    if "libQCurlTestSupport" in name:
+        return ["TestSupport"]
     if "libQCurl" in name or name == "qcurl.pc":
         return ["Core"]
+    if name.startswith("QCurlBlockingExtrasTargets"):
+        return ["BlockingExtras"]
+    if name.startswith("QCurlTestSupportTargets"):
+        return ["TestSupport"]
+    if name.startswith("QCurlOtherExtrasTargets"):
+        return ["OtherExtras"]
     if name.startswith("QCurlTargets"):
-        return [spec.target for spec in CONSUMERS]
+        return ["Core"]
     return ["Package"]
 
 
@@ -159,22 +167,26 @@ def _install_inventory(
     target_files = {spec.target: [] for spec in CONSUMERS}
     for path in sorted(candidate for candidate in stage_dir.rglob("*") if candidate.is_file()):
         relative = path.relative_to(stage_dir).as_posix()
+        if "libQCurlBlockingExtras" in Path(relative).name:
+            raise PackageEvidenceError(
+                "BlockingExtras must not install an independent runtime library: " + relative
+            )
         owners = _owners_for_path(relative, manifests)
         files.append({"path": relative, "owners": owners})
         for owner in owners:
             if owner in target_files:
                 target_files[owner].append(relative)
     if not files:
-        raise PackageEvidenceError("default install tree is empty")
+        raise PackageEvidenceError("unfiltered install tree is empty")
     missing = [target for target, paths in target_files.items() if not paths]
     if missing:
         raise PackageEvidenceError(
-            "default install tree has no files for targets: " + ", ".join(missing)
+            "unfiltered install tree has no files for targets: " + ", ".join(missing)
         )
     return {
         "schema": "qcurl/package-install-inventory@v1",
         "files": files,
-        "runtimeTargets": {
+        "deliveryTargets": {
             target: {"files": paths} for target, paths in target_files.items()
         },
     }

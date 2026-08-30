@@ -25,7 +25,7 @@ def shared_package_steps(args: argparse.Namespace) -> list[GateStep]:
             "package_gate_contract",
             "fast",
             [args.python, PACKAGE_GATE_SCRIPT, "validate-contract", PACKAGE_GATE_MANIFEST],
-            "validate four-target consumer, lifecycle and sanitizer evidence mapping",
+            "validate four-target delivery, lifecycle and sanitizer evidence mapping",
             "release-shared",
             (),
         ),
