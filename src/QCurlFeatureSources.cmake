@@ -81,8 +81,6 @@ set(QCURL_FEATURE_SOURCES
     QCNetworkLogRedaction.cpp       # Core / Stable: 日志脱敏工具
     QCNetworkMiddleware.cpp         # Core / Stable: 中间件 base
     QCNetworkCancelToken.cpp        # Core / Stable: 取消令牌
-    QCNetworkMockHandler.cpp        # Test Support / Explicit opt-in: Mock 工具
-    QCNetworkCapturedRequest.cpp
     QCNetworkTransferJob.cpp
     QCNetworkDownloadToDeviceJob.cpp
     QCNetworkResumableDownloadJob.cpp

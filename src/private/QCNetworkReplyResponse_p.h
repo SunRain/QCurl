@@ -7,8 +7,8 @@
 #define QCNETWORKREPLYRESPONSE_P_H
 
 #include "QCNetworkError.h"
-#include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
+#include "private/QCNetworkMockProvider_p.h"
 #include "private/QCRequestPipeline_p.h"
 
 #include <curl/curl.h>

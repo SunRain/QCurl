@@ -73,8 +73,12 @@ RECORD_AUTHORIZATIONS = (
     *_entries(
         "record",
         "src/QCNetworkMockHandler_p.h",
-        "QCNetworkMockData",
         "QCNetworkMockSequence",
+    ),
+    *_entries(
+        "record",
+        "src/private/QCNetworkMockProvider_p.h",
+        "QCNetworkMockData",
     ),
     *_entries(
         "record",

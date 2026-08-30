@@ -15,6 +15,9 @@
 #include <QUrl>
 #include <QtTest>
 
+#include <cstddef>
+#include <new>
+
 using namespace QCurl;
 
 /**
@@ -42,6 +45,7 @@ private Q_SLOTS:
     void testRequestCapture();
     void testCapturedRequestAccessorsAndTimeoutClearing();
     void testCapturedRequestSharedDataDetachesOnWrite();
+    void testNullClearDoesNotPoisonReusedManagerAddress();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -206,6 +210,31 @@ void TestQCNetworkMockHandler::testGlobalDelayApplied()
 
     QVERIFY(timer.elapsed() >= 30);
     reply->deleteLater();
+}
+
+void TestQCNetworkMockHandler::testNullClearDoesNotPoisonReusedManagerAddress()
+{
+    alignas(QCNetworkAccessManager) std::byte storage[sizeof(QCNetworkAccessManager)];
+    auto createManager = [&storage]() {
+        return new (storage) QCNetworkAccessManager;
+    };
+
+    auto *first = createManager();
+    QCurl::TestSupport::setMockHandler(first, nullptr);
+    first->~QCNetworkAccessManager();
+
+    QCNetworkMockHandler handler;
+    auto *second = createManager();
+    QCurl::TestSupport::setMockHandler(second, &handler);
+    QCOMPARE(QCurl::TestSupport::mockHandler(second), &handler);
+    second->~QCNetworkAccessManager();
+
+    auto *third = createManager();
+    auto *unexpected = QCurl::TestSupport::mockHandler(third);
+    QCurl::TestSupport::setMockHandler(third, nullptr);
+    third->~QCNetworkAccessManager();
+
+    QCOMPARE(unexpected, nullptr);
 }
 
 void TestQCNetworkMockHandler::testRequestCapture()

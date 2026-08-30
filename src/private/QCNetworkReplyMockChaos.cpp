@@ -3,9 +3,9 @@
  * @brief Implements deterministic chunking, pause, and cancel mock replay hooks.
  */
 
-#include "QCNetworkMockHandler_p.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCNetworkMockProvider_p.h"
 #include "private/QCNetworkReplyMockChaos_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"

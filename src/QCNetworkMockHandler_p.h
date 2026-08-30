@@ -1,9 +1,8 @@
 #ifndef QCNETWORKMOCKHANDLER_P_H
 #define QCNETWORKMOCKHANDLER_P_H
 
-#include "QCNetworkError.h"
-#include "QCNetworkHttpMethod.h"
 #include "QCNetworkMockHandler.h"
+#include "private/QCNetworkMockProvider_p.h"
 
 #include <QByteArray>
 #include <QList>
@@ -12,22 +11,9 @@
 #include <QString>
 #include <QUrl>
 
-#include <optional>
-
 namespace QCurl {
 
 namespace Internal {
-
-/// 单条 mock 响应或错误；rawHeaderData 为空时由 headers 生成头块。
-struct QCNetworkMockData
-{
-    QByteArray response;
-    int statusCode = 200;
-    QMap<QByteArray, QByteArray> headers;
-    std::optional<QByteArray> rawHeaderData;
-    NetworkError error = NetworkError::NoError;
-    bool isError       = false;
-};
 
 /// 供执行链路访问私有 consumeMock，避免把 MockData 暴露为公开 API。
 class QCNetworkMockHandlerAccess

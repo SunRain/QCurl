@@ -15,7 +15,6 @@ set(QCURL_CORE_SOURCES
     QCNetworkAccessManagerSend.cpp
     QCNetworkAccessManagerScheduler.cpp
     QCNetworkAccessManagerServices.cpp
-    QCNetworkTestSupport.cpp
     QCNetworkHttpAuthConfig.cpp
     QCNetworkLaneKey.cpp
     QCNetworkLaneCancelResult.cpp
@@ -30,7 +29,6 @@ set(QCURL_CORE_SOURCES
 set(QCURL_CORE_HEADERS
     QCurlRuntime.h
     private/QCurlRuntimeState_p.h
-    QCBlockingCookieStore.h
     QCCookie.h
     QCCookieAsyncResult.h
     QCNetworkAccessManager.h
@@ -57,7 +55,11 @@ set(QCURL_BLOCKING_EXTRAS_SOURCES
     private/QCBlockingRequestBody.cpp
 )
 
-set(QCURL_TEST_SUPPORT_SOURCES)
+set(QCURL_TEST_SUPPORT_SOURCES
+    QCNetworkTestSupport.cpp
+    QCNetworkMockHandler.cpp
+    QCNetworkCapturedRequest.cpp
+)
 
 set(QCURL_OTHER_EXTRAS_SOURCES
     QCNetworkLogRedaction.cpp       # Other Extras 复用的隐藏脱敏实现
@@ -316,7 +318,7 @@ target_link_libraries(QCurlBlockingExtras
 )
 
 target_link_libraries(QCurlTestSupport
-    INTERFACE
+    PUBLIC
         QCurl
 )
 
