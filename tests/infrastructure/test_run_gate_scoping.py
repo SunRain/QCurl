@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import re
 import sys
@@ -43,6 +44,41 @@ def test_resolve_config_rejects_reused_run_id(tmp_path, monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="run-id 已存在"):
         run_gate._resolve_config(_args(reports_dir="evidence", run_id="run-42"))
+
+
+def test_main_publishes_successful_run_report_to_explicit_summary(
+    tmp_path, monkeypatch
+) -> None:
+    report = tmp_path / "evidence" / "runs" / "run-42" / "gate_all.json"
+    summary = tmp_path / "evidence" / "summary.json"
+    report.parent.mkdir(parents=True)
+    payload = {"run_id": "run-42", "gate_returncode": 0}
+    report.write_text(json.dumps(payload), encoding="utf-8")
+    config = argparse.Namespace(repo_root=tmp_path, json_report=report)
+
+    monkeypatch.setattr(run_gate, "_resolve_config", lambda args: config)
+    monkeypatch.setattr(run_gate, "execute_gate", lambda current: 0)
+
+    assert run_gate.main(["--summary-report", str(summary)]) == 0
+    assert json.loads(summary.read_text(encoding="utf-8")) == payload
+
+
+def test_main_does_not_replace_summary_when_gate_fails(tmp_path, monkeypatch) -> None:
+    report = tmp_path / "evidence" / "runs" / "run-42" / "gate_all.json"
+    summary = tmp_path / "evidence" / "summary.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"gate_returncode": 3}', encoding="utf-8")
+    summary.parent.mkdir(parents=True, exist_ok=True)
+    summary.write_text('{"run_id": "previous-pass"}', encoding="utf-8")
+    config = argparse.Namespace(repo_root=tmp_path, json_report=report)
+
+    monkeypatch.setattr(run_gate, "_resolve_config", lambda args: config)
+    monkeypatch.setattr(run_gate, "execute_gate", lambda current: 3)
+
+    assert run_gate.main(["--summary-report", str(summary)]) == 3
+    assert json.loads(summary.read_text(encoding="utf-8")) == {
+        "run_id": "previous-pass"
+    }
 
 
 def test_gate_environment_exports_run_identity_and_scoped_paths(tmp_path) -> None:

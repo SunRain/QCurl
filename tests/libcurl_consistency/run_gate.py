@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -84,6 +85,11 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="可复现的本轮证据 ID；默认自动生成",
     )
     parser.add_argument(
+        "--summary-report",
+        type=Path,
+        help="gate 成功后原子发布本轮 JSON 报告到指定路径",
+    )
+    parser.add_argument(
         "--qt-timeout-s",
         default="90",
         help="Qt Test 运行超时秒数（默认 90）",
@@ -103,10 +109,32 @@ def _resolve_config(args: argparse.Namespace) -> GateConfig:
     return _runtime_resolve_config(args, repo_root=_detect_repo_root())
 
 
+def _publish_summary_report(config: GateConfig, destination: Path) -> None:
+    """原子发布成功 run 的报告，不暴露部分写入内容。"""
+
+    output = destination if destination.is_absolute() else config.repo_root / destination
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(config.json_report.read_bytes())
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def main(argv: List[str]) -> int:
     """解析命令行并执行一致性 gate。"""
 
-    return execute_gate(_resolve_config(_argument_parser().parse_args(argv)))
+    args = _argument_parser().parse_args(argv)
+    config = _resolve_config(args)
+    result = execute_gate(config)
+    if result == 0 and args.summary_report is not None:
+        try:
+            _publish_summary_report(config, args.summary_report)
+        except OSError as exc:
+            print(f"failed to publish summary report: {exc}", file=sys.stderr)
+            return 2
+    return result
 
 
 if __name__ == "__main__":

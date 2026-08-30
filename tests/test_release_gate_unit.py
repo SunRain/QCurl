@@ -1170,6 +1170,10 @@ def test_full_gate_routes_release_and_test_steps_to_distinct_trees(
     assert str(release_shared) in " ".join(steps["shared_package_evidence"].command)
     assert str(release_static) in " ".join(steps["static_package_evidence"].command)
     assert str(test_shared) in " ".join(steps["full_ctest"].command)
+    assert steps["libcurl_consistency_full"].command[-2:] == [
+        "--summary-report",
+        str(test_shared / "libcurl_consistency" / "reports" / "summary.json"),
+    ]
 
     static_build_command = steps["static_build"].command
     assert static_build_command[static_build_command.index("--target") + 1 :] == [

@@ -215,7 +215,23 @@ def _full_test_steps(args: argparse.Namespace) -> list[GateStep]:
         _step(
             "libcurl_consistency_full",
             "full",
-            [args.python, "tests/libcurl_consistency/run_gate.py", "--suite", "all", "--with-ext", "--build", "--qcurl-build", str(test_gcc)],
+            [
+                args.python,
+                "tests/libcurl_consistency/run_gate.py",
+                "--suite",
+                "all",
+                "--with-ext",
+                "--build",
+                "--qcurl-build",
+                str(test_gcc),
+                "--summary-report",
+                str(
+                    test_gcc
+                    / "libcurl_consistency"
+                    / "reports"
+                    / "summary.json"
+                ),
+            ],
             "run full QCurl/libcurl observable consistency from the GCC test tree",
             "test-shared-gcc",
             ("parity_report",),
