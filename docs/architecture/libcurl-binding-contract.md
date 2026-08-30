@@ -39,6 +39,18 @@
 WebSocket 握手复用同一 multi driver，不得回退到 owner-thread `curl_easy_perform()` 或新增 worker transport。
 Core 与 Other Extras 之间只通过 opaque transfer token 传递 persistent transfer 身份；非安装的 transfer record 类型不得进入跨库导出签名或 Core 动态符号。CONNECT_ONLY easy handle 在 `curl_easy_send()` / `curl_easy_recv()` 使用期间持续留在 multi 中。
 
+### package-internal component bridge
+
+独立编译组件只允许通过以下非安装 Core bridge 链接：
+
+- Other Extras：`registerPersistentTransfer`、`removePersistentTransfer`；跨边界只传 opaque token。
+- Test Support：`installNetworkMockProvider`；跨边界只传进程期 callback table。
+
+bridge 声明必须留在 `_p.h`，不得进入 public install manifest。两个独立编译组件必须与 Core
+来自同一 QCurl package source identity；该锁步内部合同不构成 public source API 或稳定 ABI。
+Blocking Extras 实现与 Core 同库编译，其 handle/protocol helper 保持隐藏内部符号。动态符号
+门禁只接受 `scripts/qcurl_abi_symbols.py` 中逐项列出的 owner，禁止用通配 owner 掩盖新增导出。
+
 ### Core HTTP protocol boundary
 
 Core request entry points 在创建 easy handle 前只接受 `http` / `https`。异步和 Blocking Extras 都必须显式设置初始
@@ -87,19 +99,17 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 - 不用 busy wait、sleep、手写 poll 或 signal handler 修补 resolver timeout / SIGPIPE 行为。
 - 不删除或弱化 public raw accessor。
 - 不把 signed URL 整段隐藏到不可诊断；必须保留 scheme、host、path 和 query key。
-- 默认不在本合同范围内改变 public API / ABI。若 release 前确需改变公开面，必须同步更新当前 fresh baseline、release contract、用户文档和测试证据。
+- 默认不破坏 2.x Core public source API。公开 ABI 可以在 2.x 内变化，但必须保持下游重编译合同，并同步更新 release contract、用户文档和测试证据。
 
-## ABI 证据合同
+## 2.0 源码兼容与符号证据合同
 
-`QCurl 2.0.0` 是相对于已发布 v1.0.0 的 hard-break 候选。Reviewer 必须确认：
+`QCurl 2.0.0` 是相对于已发布 v1.0.0 的 hard-break 候选。2.0 不建立稳定 ABI；Reviewer 必须确认：
 
-1. candidate 阶段使用 `abi/baseline/qcurl-core-v1.abi.xml` 生成 v1-to-v2 hard-break report。
-2. 当前 v2 baseline 由当前 `libQCurl.so.2.0.0` 通过受控 promotion 生成，不能复用旧草稿产物。
-3. final 阶段只对 `abi/baseline/qcurl-core-v2.abi.xml` 执行 clean diff。
-4. `qcurl_abi_gate.py` 在生成诊断 snapshot/candidate 和正式 diff 前检查动态符号，拒绝包含
-   `QCCurlMultiTransferRecord`、`QCCurlHandleManager`、reply-private 或 jitter helper 的产物；
-   诊断命令不得写入 `abi/baseline/`，只能由经过 machine manifest 身份重放的显式 promotion
-   更新 baseline，不得先刷新 baseline 再掩盖私有类型泄漏。
+1. 文档化 Core surface 在 2.x 内保持源码兼容；公开源码破坏需要新的 major release。
+2. 下游在每次 QCurl 更新后重新编译和链接，不复用针对其他 QCurl 2.x 构建的二进制。
+3. 默认 full/final gate 使用 `abiMode=none`，不要求 `qcurl-core-v2.abi.xml` 或 ABI diff。
+4. 动态符号 allowlist 拒绝 `QCCurlMultiTransferRecord`、`QCCurlHandleManager`、reply-private 或 jitter helper 等意外实现符号，仅接受已记录的三组 package-internal bridge；该结果不代表跨版本二进制兼容。
+5. `qcurl_abi_gate.py` 的 baseline/diff/promotion 能力只服务未来稳定 ABI 项目，不能改写 2.0 的发布阻断条件。
 
 历史 libcurl binding ABI 对比材料归档在 `docs/internal/archived-release/libcurl-binding-abi-comparison-evidence.md`。
 
@@ -110,6 +120,7 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 - easy handle 来自 `QCCurlHandleManager`。
 - 成功进入 multi 后，transfer record 持有 easy handle 和 callback userdata 直到 detach 完成；reply 只作为 observer。
 - Core / Other Extras 桥接只传 opaque token，Core 动态符号不包含 transfer record 类型。
+- Other Extras 与 Test Support 只消费已记录的非安装 Core bridge；Blocking Extras helper 在 Core 内部解析，未新增 allowlist owner。
 - CONNECT_ONLY easy handle 在 WebSocket 收发期间保持注册在 multi 中。
 - Core 和 Blocking 请求入口只允许 HTTP/HTTPS，并同时设置初始与重定向协议白名单。
 - easy handle 创建前已经取得有效的 QCurl runtime lease。
@@ -124,5 +135,5 @@ signed URL marker 覆盖 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 
 - signed URL marker 命中后全部 query value 被脱敏。
 - 普通非签名 URL 的非敏感 query value 保持可诊断。
 - 修改未引入 busy wait、sleep、手写 poll 或 signal handler。
-- 修改未引入 public API / ABI 变化；若 release 前确需改变公开面，相关 baseline、合同、用户文档和测试证据已同步更新。
+- 修改未破坏 2.x Core public source API；若 ABI 发生变化，release notes 仍明确下游必须重编译，且未声称已有稳定 ABI baseline。
 - `qcurl_libcurl_binding_contract_guard`、logger redaction 用例和相关 targeted Qt Test 通过。

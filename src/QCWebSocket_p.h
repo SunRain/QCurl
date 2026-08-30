@@ -114,7 +114,7 @@ public:
     unsigned int controlFrameFlags = 0;
 
     // ==================
-    // 自动重连状态（Other Extras / Preview）
+    // 自动重连状态（Other Extras 组件，Preview 成熟度）
     // ==================
 
     /// 连接配置。
@@ -268,7 +268,7 @@ public:
     void fallbackToPollingMode();
 
     // ==================
-    // 自动重连方法（Other Extras / Preview）
+    // 自动重连方法（Other Extras 组件，Preview 成熟度）
     // ==================
 
     /**

@@ -7,10 +7,10 @@
 ## 0. 当前入口分层
 
 - `scripts/run_release_gate.py --tier fast|strict|full`
-  - RC / Stable 发布门禁入口；不调用 `git`
+  - 2.0 release-candidate 发布门禁入口；不调用 `git`
   - `fast`：`contract.json`、`public-api`、`public-api-slow`
   - `strict`：在 fast 基础上增加 QtTest skip=fail、deprecated curl API、label matrix、skip contract
-  - `full`：在 strict 基础上增加完整 CTest、libcurl consistency full gate、ABI diff、capability matrix 和 release metadata scan
+  - `full`：在 strict 基础上增加完整 CTest、libcurl consistency full gate、动态符号 allowlist、capability matrix、sanitizer、Doxygen 和 release metadata scan；默认 `abiMode=none`
 - `scripts/run_uce_gate.py --tier pr|nightly|soak`
   - UCE 统一证据入口：产出 `manifest.json`、`policy_violations.json`、专题 report、`test-artifacts/` 与 `tar.gz`
   - `pr`：最小一致性证据（offline + `libcurl_consistency p0/p1` + TLC/HES 最小 contract）
@@ -29,14 +29,14 @@
   - 脱敏扫描
   - capability manifest 选案：先产出 `build/libcurl_consistency/reports/capabilities.json`，再决定是否纳入 feature-dependent pytest 文件；其中 `capabilityMatrix` 记录 HTTP/2、HTTP/3、WebSocket、HSTS、Alt-Svc、proxy/SOCKS、TLS pinned public key 和 raw observability 的 Fail / Warn / Preview 归属
 - `scripts/qcurl_abi_gate.py`
-  - release ABI baseline / ABI diff gate
-  - 缺少 `abidw` / `abidiff`、共享库、头目录或调试信息时 fail-closed
-  - 通过 public header layout scan 不等于通过 Stable ABI gate
+  - 为未来稳定 ABI 项目保留的显式诊断工具，不属于 2.0 默认发布门禁
+  - `current` / `promotion-candidate` 被显式选择时，缺少 `abidw` / `abidiff`、共享库、头目录或调试信息仍 fail-closed
+  - 动态符号 allowlist 检查导出面污染，不等于稳定 ABI 证明
 - `public-api-slow`
-  - 覆盖 default Core staging install、export contract、Core consumer smoke
+  - 覆盖 Core-only component staging、export contract、Core consumer smoke
   - 同时覆盖 Blocking Extras / Test Support / Other Extras 的 opt-in install、default Core negative consumer 和 isolated consumer smoke
   - Blocking Extras fixture 必须覆盖 `maxInMemoryBodyBytes`、`BodyTooLarge`、`downloadToDevice()`、`bytesReceived()` 与 curl diagnostic code
-  - Core consumer fixture 必须覆盖 `QCNetworkRedirectConfig` / `QCNetworkTransferConfig`，证明 Request 配置族在默认安装面可用
+  - Core consumer fixture 必须覆盖 `QCNetworkRedirectConfig` / `QCNetworkTransferConfig`，证明 Request 配置族在 Core component 安装面可用
   - Other Extras fixture 必须覆盖 `QCNetworkDiagnostics.h` 与 `QCNetworkMiddlewareExtras.h`，并由 default Core 负向 consumer 证明其不能隐式 include
 - `QCURL_BUILD_SHARED_LIBS=OFF` static public-api gate
   - 需要在独立 `build-static` 目录重跑 `public-api` 与 `public-api-slow`

@@ -19,7 +19,7 @@ cmake --build build -j"$(nproc)"
 cmake --install build --prefix "$PWD/stage"
 ```
 
-`stage/` 是本地安装前缀，可用于验证 `find_package(QCurl CONFIG REQUIRED)` 和 `pkg-config qcurl`。需要系统级安装时再选择合适的系统 prefix，不建议在快速开始里默认使用 `sudo`。
+`stage/` 是本地安装前缀，可用于验证 `find_package(QCurl CONFIG REQUIRED)` 和 `pkg-config qcurl`。上述无 `--component` 命令会安装四个逻辑消费面及三个物理库；无组件 `find_package` 仍只加载默认 consumer target `QCurl::QCurl`。需要系统级安装时再选择合适的系统 prefix，不建议在快速开始里默认使用 `sudo`。
 
 测试运行与门禁（offline / env / libcurl_consistency / release gate）统一参考：
 
@@ -115,14 +115,18 @@ find_package(QCurl CONFIG REQUIRED COMPONENTS TestSupport)
 target_link_libraries(your_tests PRIVATE QCurl::TestSupport)
 ```
 
-### Other Extras / Preview
+### Other Extras
 
 ```cmake
 find_package(QCurl CONFIG REQUIRED COMPONENTS OtherExtras)
 target_link_libraries(your_app PRIVATE QCurl::OtherExtras)
 ```
 
-Other Extras 包含 Diagnostics、Middleware Extras、WebSocket 等非默认能力；它们可随包发布，但不属于 `2.0.0` 默认 Core Stable 承诺。
+Other Extras 包含 Diagnostics、Middleware Extras、WebSocket 等非默认能力；它们可随包发布，但不属于 `2.0.0` 默认 Core 承诺。Diagnostics 与 WebSocket 标记为 Preview，Middleware Extras 标记为 Stable；Preview 是成熟度，不是独立组件。
+
+Test Support 始终是开发静态库。Blocking Extras 是由 `QCurl::BlockingExtras` 暴露的逻辑消费面，
+实现随 Core runtime 交付，分组件安装只需 `BlockingExtrasDevelopment`；Other Extras 是独立生产
+runtime 编译库，需要对应的 Runtime 与 Development component。
 
 ## 5. Static library 初始化
 

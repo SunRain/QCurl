@@ -17,7 +17,7 @@
 
 - 创建 annotated tag、推送 tag、创建 GitHub Release。
 - 生成并上传 `SHA256SUMS`，并核对所有 release assets。
-- 上传 ABI diff report、Doxygen API docs artifact、release notes 和 gate manifest。
+- 上传 Doxygen API docs artifact、release notes 和 gate manifest。
 - 确认 release commit、tag、assets、checksum 与 CI run URL 一一对应。
 
 以下是发布工程 follow-up，不得在未落地前写成已提供能力：
@@ -32,9 +32,12 @@
 发布前确认：
 
 - 当前版本号、`PROJECT_VERSION`、shared library `SOVERSION` 与 release contract 一致。
+- 发布说明明确 2.x Core 源码兼容、ABI 非稳定，并要求下游在每次 QCurl 更新后重编译和重新链接。
 - `CHANGELOG.md` 已包含本次用户可见变更。
 - `SECURITY.md` 的支持版本范围仍准确。
-- WebSocket、Diagnostics、Other Extras 仍按 Preview / non-default surface 表述，除非已有独立稳定合同。
+- 发布面固定为 Core、Blocking Extras、Other Extras、Test Support 四个逻辑消费组件和三个物理库；Preview 是成熟度，Internal 是可见性，不得写成第五模块。
+- Diagnostics 与 WebSocket 仍标注为 Other Extras 内的 Preview API；Middleware Extras 标注为 Other Extras 内的 Stable API。
+- Test Support 只作为开发静态库交付，不得写成生产 Runtime。
 - 工作区无无关 dirty change；发布分支只包含本次 release 所需变更。
 
 ## 2. 本地/CI 验证
@@ -44,7 +47,7 @@
 
 | tree ID | 参数 | 固定能力与职责 |
 | --- | --- | --- |
-| `release-shared` | `--release-shared-build-dir` | `BUILD_TESTING=OFF`、shared；安装、导出、consumer、生命周期、符号和 ABI |
+| `release-shared` | `--release-shared-build-dir` | `BUILD_TESTING=OFF`、shared；安装、导出、consumer、生命周期和动态符号导出面 |
 | `release-static` | `--release-static-build-dir` | `BUILD_TESTING=OFF`、static；安装、导出、consumer 和生命周期 |
 | `test-shared-gcc` | `--test-shared-gcc-build-dir` | `BUILD_TESTING=ON`、GCC；QtTest、public API、libcurl consistency |
 | `test-shared-clang` | `--test-shared-clang-build-dir` | `BUILD_TESTING=ON`、Clang；交叉编译器 QtTest 和 public API |
@@ -61,7 +64,8 @@ cmake --build build-release-shared --parallel
 cmake -S . -B build-release-static -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_TESTING=OFF \
   -DQCURL_BUILD_SHARED_LIBS=OFF -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF
-cmake --build build-release-static --target QCurl QCurlOtherExtras --parallel
+cmake --build build-release-static \
+  --target QCurl QCurlOtherExtras QCurlTestSupport --parallel
 
 cmake -S . -B build-test-shared-gcc -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON -DCMAKE_CXX_COMPILER=g++
@@ -81,7 +85,7 @@ cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_CXX_FLAGS="-fsanitize=thread"
 cmake --build build-tsan --parallel
 
-python3 scripts/run_release_gate.py --tier full --abi-mode current \
+python3 scripts/run_release_gate.py --tier full --abi-mode none \
   --release-shared-build-dir build-release-shared \
   --release-static-build-dir build-release-static \
   --test-shared-gcc-build-dir build-test-shared-gcc \
@@ -94,28 +98,18 @@ git diff --check
 ```
 
 `release-shared` 和 `release-static` 的 package evidence 由
-`scripts/release_package_evidence.py` 直接执行默认安装、四个独立 consumer 和生命周期
+`scripts/release_package_evidence.py` 直接执行无过滤完整安装、四个独立 consumer 和生命周期
 报告；这两棵 `BUILD_TESTING=OFF` 树不注册 CTest。测试和 sanitizer 证据只消费表中指定的
 ON tree。候选 manifest 必须绑定同一 Linux、同一完整 commit、同一 toolchain、clean
 worktree、tree capability、规范化 command 和 regular-file digest；手工编辑结果字段不能
-授权 promotion。
+授权发布。
 
-ABI `baseline` / `snapshot` 只生成 producer tree `abi/` 下的诊断候选，不能写入受控
-`abi/baseline/`。审计通过后，才可显式执行：
-
-```bash
-python3 scripts/qcurl_abi_gate.py promote \
-  --candidate-manifest build/release/promotion-candidate-manifest.json \
-  --candidate-commit "$(git rev-parse HEAD)" \
-  --old-baseline abi/baseline/qcurl-core-v1.abi.xml \
-  --output abi/baseline/qcurl-core-v2.abi.xml
-```
-
-`promote` 会先重放 manifest 身份、required gates、producer tree、artifact digest 和
-old-to-new ABI 报告；只有该命令允许写入 `abi/baseline/`。promotion 必须作为单独的
-baseline-only commit 完成，随后重新运行 full gate，最后才允许创建 tag/release。若任一
-gate 失败，或缺少 `abidw` / `abidiff`、HTTP/3、httpbin 等前置条件，不得 promotion、tag
-或创建 GitHub Release，应记录为 release blocker。
+`--abi-mode none` 是 2.0 的默认和正式模式。它不生成 ABI baseline、snapshot 或 diff，缺少
+`abi/baseline/qcurl-core-v2.abi.xml` 也不构成 release blocker。Core allowlist 同时覆盖 Core
+与嵌入其中的 Blocking Extras 公共符号，Other Extras 保留独立 allowlist；这些检查只防止
+private symbol 泄漏，不证明二进制兼容。Test Support 是静态开发库，不存在对应动态符号
+门禁。`current`、`promotion-candidate` 和 `qcurl_abi_gate.py promote` 仅为
+`docs/roadmap/stable-abi-contract-and-baseline.md` 保留，不能用于扩大或缩小 2.0 发布声明。
 
 ## 3. 打包与 release assets
 
@@ -129,7 +123,6 @@ cmake --build build --target package
 
 - source archive（GitHub tag 自动生成，必要时补充维护者生成的 source package）。
 - CPack TGZ / DEB / RPM。
-- ABI diff report：`build/abi/qcurl-core-v1-to-v2.abidiff.txt`。
 - Doxygen HTML artifact（见 `docs/dev/api-docs.md`）。
 - release gate logs / manifest。
 - checksums：`SHA256SUMS`。
@@ -138,7 +131,7 @@ cmake --build build --target package
 生成 checksum 示例：
 
 ```bash
-sha256sum build/*.tar.gz build/*.deb build/*.rpm build/abi/qcurl-core-v1-to-v2.abidiff.txt > SHA256SUMS
+sha256sum build/*.tar.gz build/*.deb build/*.rpm > SHA256SUMS
 ```
 
 ## 4. Tag 与 GitHub Release
@@ -151,7 +144,7 @@ Tag 和 GitHub Release 是远程发布动作，不能由本地 readiness PASS �
 2. 创建带注释 tag，例如 `v2.0.0`。
 3. 推送 tag。
 4. 在 GitHub Release 中使用 `docs/arch/2.0.0-release-notes.md` 和 `CHANGELOG.md` 生成 release notes。
-5. 上传 assets、checksums、ABI report、SBOM/provenance/signature。
+5. 上传 assets、checksums、SBOM/provenance/signature。
 6. 标记是否为 latest stable release。
 
 示例命令只供维护者人工执行：
@@ -187,7 +180,7 @@ git push public v2.0.0
 - commit SHA / tag。
 - CI run URL。
 - gate 命令摘要和结果。
-- ABI baseline / diff 位置。
+- manifest 中的 `abiMode=none` 与下游重编译声明。
 - assets 清单和 sha256。
 - 已知限制和 follow-up。
 

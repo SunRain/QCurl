@@ -43,12 +43,11 @@ curl submodule、系统包和 Qt/libcurl 版本仍由维护者按 release gate �
 
 - CPack packages：TGZ / DEB / RPM。
 - `SHA256SUMS`。
-- ABI diff report。
 - Doxygen API docs artifact。
 - release gate logs / manifests。
 - SBOM / provenance / signatures（如果维护者启用对应工具）。
 
-当前 release workflow 只产出候选 packages 与 gate reports；它不会创建 GitHub Release，也不会自动生成或上传 checksum、SBOM、signature 或 provenance。正式发布前，checksum、asset 清单和 release notes 仍是 release blocker；SBOM、signature 和 provenance 在未启用前只能作为 roadmap / follow-up 描述。
+当前 release workflow 只产出候选 packages 与 gate reports；它不会创建 GitHub Release，也不会自动生成或上传 checksum、SBOM、signature 或 provenance。QCurl 2.0 使用非稳定 ABI 合同，不要求 ABI diff report。正式发布前，checksum、asset 清单和 release notes 仍是 release blocker；SBOM、signature 和 provenance 在未启用前只能作为 roadmap / follow-up 描述。
 
 在未启用签名和 provenance 前，release notes 应明确可信边界：用户至少应校验 `SHA256SUMS`，并优先从 GitHub Release 官方 assets 下载。
 

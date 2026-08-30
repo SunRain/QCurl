@@ -11,6 +11,7 @@ This directory keeps current maintainer architecture notes for the `QCurl 2.0.0`
 - `docs/arch/1.0.0-release-notes.md`
 - `docs/arch/1.0-first-stable-readiness-report.md`
 - `docs/arch/public-header-boundary.md`
+- `docs/roadmap/stable-abi-contract-and-baseline.md` - deferred stable ABI contract and baseline project; not a 2.0 release blocker.
 
 ## Maintainer reference
 

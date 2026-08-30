@@ -167,5 +167,5 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkTestSupport.h          # Test Support / Explicit opt-in: 显式 manager 绑定
     QCNetworkMockHandler_p.h        # Test Support / Explicit opt-in: Mock companion（内部）
     private/QCNetworkResumableDownloadWriter_p.h
-    QCNetworkDiagnostics.h          # Other Extras / Preview: 网络诊断工具
+    QCNetworkDiagnostics.h          # Other Extras（Preview）: 网络诊断工具
 )

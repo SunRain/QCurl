@@ -7,6 +7,7 @@
 - API 文档生成（Doxygen）：`docs/dev/api-docs.md`
 - 发布流程：`docs/dev/release-procedure.md`
 - 供应链与 CI 安全：`docs/dev/supply-chain.md`
+- 未来稳定 ABI 合同与 baseline：`docs/roadmap/stable-abi-contract-and-baseline.md`
 - 第三方许可说明：`THIRD_PARTY_NOTICES.md`
 
 ## 相关入口

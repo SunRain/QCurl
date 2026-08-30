@@ -102,7 +102,7 @@ WebSocket 的 public 配置入口集中在以下头文件注释：
 - `setOptions(...)` 必须在下一次 `open()` 前调用；`Closed` 状态可为重连前重新配置，`Connecting / Connected / Closing` 阶段会拒绝修改并保留旧值
 - `maxFrameBytes`、`maxMessageBytes`、`maxPendingSendBytes`、`maxReceiveBufferBytes` 必须为正值且不超过 256 MiB；非法设置返回 `false` 并保留旧值
 - `closeHandshakeTimeout` 必须为正值；超时后连接会执行有界 teardown
-- WebSocket 保持 Other Extras / Preview，默认关闭；握手复用现有 multi 驱动，不使用 owner-thread 阻塞传输或独立 worker transport
+- WebSocket 属于 Other Extras 组件并标记为 Preview，默认关闭；握手复用现有 multi 驱动，不使用 owner-thread 阻塞传输或独立 worker transport
 - 发送队列、frame/message/receive buffer 都有硬上限，partial send 和 `CURLE_AGAIN` 会等待后续事件继续；文本消息在交付前完成 UTF-8 校验
 - WebSocket Preview 不提供 `permessage-deflate`；底层无法表达 RSV1 时不会模拟压缩语义
 

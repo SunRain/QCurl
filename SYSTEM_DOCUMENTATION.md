@@ -1,23 +1,26 @@
 # QCurl Architecture overview
 
-This document is a maintainer-facing overview for `QCurl 1.0.0 first stable`.
+This document is a maintainer-facing overview for the current `QCurl 2.0.0` candidate.
 It is intentionally short. Public usage guidance lives in `README.md` and `docs/user/`.
 
 ## Release identity
 
-- Version: `1.0.0`
-- Shared library ABI: `SOVERSION 1`
-- Core ABI baseline: `abi/baseline/qcurl-core-v1.abi.xml`
-- Default library artifact: `libQCurl.so.1.0.0`
-- Current release narrative: first stable Core release
+- Version: `2.0.0`
+- Shared library loader namespace: `SOVERSION 2`
+- ABI contract: non-stable; every downstream update requires rebuild and relink
+- Core ABI baseline: none for 2.0
+- Default library artifact: `libQCurl.so.2.0.0`
+- Current release narrative: source-compatible Core, rebuild-required ABI
 
-## Stable scope
+## Source-compatible scope
 
-QCurl 1.0.0 stabilizes the default Core install surface.
+QCurl 2.0 stabilizes the Core component install surface at source level within 2.x.
 Core is the default `find_package(QCurl)` / `QCurl::QCurl` consumer contract.
 It covers the installed headers listed by `QCURL_INSTALL_HEADERS` plus generated `QCurlConfig.h`.
+It does not promise binary compatibility between QCurl 2.x builds. `SOVERSION 2` is the current
+loader namespace, and downstream consumers must rebuild and relink after every QCurl update.
 
-Core / Stable includes:
+Source-compatible Core includes:
 
 - `QCNetworkAccessManager`
 - `QCNetworkRequest`
@@ -31,22 +34,30 @@ Core / Stable includes:
 - logger, default logger, cancel token, and middleware base
 - connection-pool configuration and management surface
 
-## Non-default surfaces
+## Opt-in consumer surfaces
 
-Blocking Extras are package-shipped but not default Core.
-They provide synchronous value-result utilities and must remain explicit opt-in.
+QCurl has exactly four logical delivery components: Core, Blocking Extras, Other Extras, and Test Support.
+Preview is a maturity attribute and Internal is a visibility attribute; neither creates another
+target or package layer.
 
-Test Support is explicit opt-in.
-It supports tests and fixtures, not production runtime capability claims.
+- Core is the default consumer target and exports `QCurl::QCurl` from a shared/static runtime library.
+- Blocking Extras is an opt-in `INTERFACE` consumer target exported as `QCurl::BlockingExtras`;
+  its implementation and public symbols are carried by the Core runtime library.
+- Other Extras is an opt-in shared/static runtime library and exports `QCurl::OtherExtras`.
+- Test Support is an opt-in development static library and exports `QCurl::TestSupport`; it is not
+  a production runtime capability.
 
-Other Extras remain Preview.
-This includes WebSocket, Diagnostics, and Middleware Extras unless a later contract promotes them.
-Do not describe these surfaces as Core Stable in public docs.
+The physical package therefore contains three libraries: Core plus embedded Blocking Extras,
+Other Extras, and static Test Support. There is no independent `libQCurlBlockingExtras` artifact.
+
+Diagnostics and WebSocket are currently Preview APIs inside Other Extras. Middleware Extras is a
+public Stable API inside the same component. Do not describe any non-Core component as part of the
+default source-compatible Core contract.
 
 ## Main modules
 
 `src/` contains the library implementation and installed public headers.
-Private implementation details live in `_p.h` headers or `src/private/` and must not leak into the default install surface.
+Private implementation details live in `_p.h` headers or `src/private/` and must not leak into the Core component install surface.
 
 `tests/public_api/` protects install/export behavior and consumer contracts.
 It is the first place to check when changing public headers, CMake exports, or component boundaries.
@@ -58,7 +69,7 @@ Use focused tests during development and release gates for final evidence.
 It is required for full release confidence and protocol/capability evidence.
 
 `examples/` demonstrates user-facing usage.
-Examples must state whether they use Core, Blocking Extras, Test Support, or Preview surfaces.
+Examples must state their delivery component; Preview APIs must additionally state their maturity.
 
 `docs/` is split into public docs, maintainer reference, and internal history.
 Old pre-1.0 narrative belongs under `docs/internal/`.
@@ -95,7 +106,7 @@ They do not directly access the live Core cookie store.
 
 ## Public header boundary
 
-Default Core must not include private headers, test hooks, or preview-only headers.
+The Core public surface must not include private headers, test hooks, or preview-only headers.
 Installed headers should minimize transitive dependencies.
 Pimpl and shared-data value types should hide implementation details while preserving normal value semantics.
 
@@ -119,14 +130,22 @@ Core validation gates:
 ```bash
 ctest --test-dir build -L '^public-api$' --output-on-failure
 ctest --test-dir build -L '^public-api-slow$' --output-on-failure
-python3 scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static
-python3 scripts/run_release_gate.py --scan-metadata --build-dir build
+python3 scripts/run_release_gate.py --tier full --abi-mode none \
+  --release-shared-build-dir build-release-shared \
+  --release-static-build-dir build-release-static \
+  --test-shared-gcc-build-dir build-test-shared-gcc \
+  --test-shared-clang-build-dir build-test-shared-clang \
+  --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
+  --tsan-build-dir build-tsan
+python3 scripts/run_release_gate.py --scan-metadata \
+  --release-shared-build-dir build-release-shared
 git diff --check
 ```
 
 ## Documentation policy
 
-Public documentation must describe only the current `1.0.0 first stable` line.
+Public documentation must distinguish the published `1.0.0` history from the current `2.0.0`
+source-compatible, rebuild-required candidate.
 Do not reintroduce old pre-1.0 version, RC, or date-based development narrative.
 
 `CHANGELOG.md` is the public release history.

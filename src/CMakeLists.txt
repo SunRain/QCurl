@@ -63,10 +63,10 @@ set(QCURL_TEST_SUPPORT_SOURCES
 
 set(QCURL_OTHER_EXTRAS_SOURCES
     QCNetworkLogRedaction.cpp       # Other Extras 复用的隐藏脱敏实现
-    QCNetworkDiagnostics.cpp        # Other Extras / Preview: DNS 诊断工具
-    QCNetworkDiagnosticsConnectivity.cpp # Other Extras / Preview: 连接、SSL、HTTP 诊断工具
-    QCNetworkDiagnosticsProcess.cpp # Other Extras / Preview: 外部命令诊断工具
-    QCNetworkDiagnosticsValues.cpp  # Other Extras / Preview: 诊断结果值类型
+    QCNetworkDiagnostics.cpp        # Other Extras（Preview）: DNS 诊断工具
+    QCNetworkDiagnosticsConnectivity.cpp # Other Extras（Preview）: 连接、SSL、HTTP 诊断工具
+    QCNetworkDiagnosticsProcess.cpp # Other Extras（Preview）: 外部命令诊断工具
+    QCNetworkDiagnosticsValues.cpp  # Other Extras（Preview）: 诊断结果值类型
     private/QCNetworkDiagnosticsOperation.cpp # Diagnostics 异步完成状态
     QCNetworkMiddlewareExtras.cpp   # Middleware Extras opt-in 实现
 )
@@ -84,16 +84,16 @@ set(QCURL_WEBSOCKET_PREVIEW_SOURCES
     private/QCWebSocketSendQueue.cpp
     private/QCWebSocketReconnect.cpp
     QCWebSocketReconnectPolicy.cpp
-    QCWebSocketPool.cpp                 # Other Extras / Preview: WebSocket 连接池
-    QCWebSocketPoolMutators.cpp         # Other Extras / Preview: WebSocket 连接池同步变更
-    QCWebSocketPoolMaintenance.cpp      # Other Extras / Preview: WebSocket 连接池维护逻辑
-    QCWebSocketPoolValues.cpp           # Other Extras / Preview: WebSocket 连接池值类型
+    QCWebSocketPool.cpp                 # Other Extras（Preview）: WebSocket 连接池
+    QCWebSocketPoolMutators.cpp         # Other Extras（Preview）: WebSocket 连接池同步变更
+    QCWebSocketPoolMaintenance.cpp      # Other Extras（Preview）: WebSocket 连接池维护逻辑
+    QCWebSocketPoolValues.cpp           # Other Extras（Preview）: WebSocket 连接池值类型
     private/QCWebSocketCloseCode.cpp
     private/QCWebSocketCurlOptions.cpp
 )
 
 # ============================================================================
-# WebSocket 支持（Other Extras / Preview）+ 重连机制
+# WebSocket 支持（Other Extras 组件，Preview 成熟度）+ 重连机制
 # ============================================================================
 if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND QCURL_OTHER_EXTRAS_SOURCES ${QCURL_WEBSOCKET_PREVIEW_SOURCES})
@@ -101,7 +101,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
         QCWebSocketCommandResult.h
         QCWebSocket.h
         QCWebSocketReconnectPolicy.h
-        QCWebSocketPool.h                   # Other Extras / Preview: WebSocket 连接池
+        QCWebSocketPool.h                   # Other Extras（Preview）: WebSocket 连接池
         QCWebSocketPoolResults.h
     )
     list(APPEND QCURL_FEATURE_HEADERS
@@ -111,7 +111,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
         private/QCWebSocketFrameAssembler_p.h
         private/QCWebSocketSendQueue_p.h
     )
-    message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + Other Extras / Preview）")
+    message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + Other Extras（Preview））")
 else()
     message(STATUS "⏭️ WebSocket 支持未启用（需要 libcurl 7.86.0+）")
 endif()
@@ -133,13 +133,13 @@ foreach(_qcurl_header IN LISTS QCURL_FEATURE_HEADERS)
     endif()
 endforeach()
 # 默认稳定安装面（public package SSOT）只包含 Core contract：
-# - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入默认安装前缀
+# - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入 Core component 安装面
 # - `QCNetworkLogger.h` 因 `QCNetworkAccessManager` 的对外接口依赖而进入 Core
 # - `QCNetworkCachePolicy.h` 因 `QCNetworkRequest` 的对外接口依赖而进入 Core
-# - `QCNetworkDefaultLogger.h` / `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入默认安装面
-# - Cache concrete headers 完成 accessor/pimpl 重塑后作为 P2 Core 能力进入默认安装面
-# - `QCMultipartFormData.h` 完成 shared-data 重塑后作为 P2 Core builder 进入默认安装面
-# - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入默认安装面
+# - `QCNetworkDefaultLogger.h` / `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入 Core component 安装面
+# - Cache concrete headers 完成 accessor/pimpl 重塑后作为 P2 Core 能力进入 Core component 安装面
+# - `QCMultipartFormData.h` 完成 shared-data 重塑后作为 P2 Core builder 进入 Core component 安装面
+# - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入 Core component 安装面
 set(QCURL_INSTALL_HEADERS
     QCGlobal.h
     QCurlRuntime.h
@@ -322,19 +322,11 @@ target_link_libraries(QCurlTestSupport
         QCurl
 )
 
-if(NOT QCURL_BUILD_SHARED_LIBS)
-    target_link_libraries(QCurlOtherExtras
-        PUBLIC
-            QCurl
-            Qt6::Network
-    )
-else()
-    target_link_libraries(QCurlOtherExtras
-        PUBLIC
-            QCurl
-            Qt6::Network
-    )
-endif()
+target_link_libraries(QCurlOtherExtras
+    PUBLIC
+        QCurl
+        Qt6::Network
+)
 
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     target_include_directories(QCurl PRIVATE "${CMAKE_SOURCE_DIR}/curl/include")

@@ -1,6 +1,6 @@
 # QCurl
 
-> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供高性能、类型安全的 HTTP Core API 与可选 Extras / 显式 Extras / Preview。
+> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类型安全的异步 Core，以及可独立安装的 Blocking Extras、Other Extras 和 Test Support。
 
 [![Qt6](https://img.shields.io/badge/Qt-6.2+-41CD52?logo=qt)](https://www.qt.io/)
 [![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
@@ -12,24 +12,28 @@
 
 ## 2.0.0 hard-break 候选边界
 
-最新已发布版本为 `v1.0.0`，当前开发候选为 `v2.0.0`。`QCurl 2.0.0` 的稳定范围以默认安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成当前 Core API，进入默认 `find_package(QCurl)` / `QCurl::QCurl` consumer contract。shared library 与 static library 都属于候选发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起宣布 Stable。
+最新已发布版本为 `v1.0.0`，当前开发候选为 `v2.0.0`。`QCurl 2.0.0` 的源码兼容范围以 Core component 安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成当前 Core API，并进入无组件 `find_package(QCurl)` / `QCurl::QCurl` 默认 consumer contract。shared library 与 static library 都属于候选发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起进入源码兼容承诺。
 
-本节只定义当前候选合同，不证明当前工作树已经通过 release gate。当前 checkout 只有在最后一次源码变更之后重新通过 shared/static public API、ABI、完整 CTest、libcurl consistency 和 sanitizer 门禁，才可形成新的本地 readiness 证据；文档本身、历史 snapshot 或旧 QA 数字不能替代该证据。
+本节只定义当前候选合同，不证明当前工作树已经通过 release gate。当前 checkout 只有在最后一次源码变更之后重新通过 shared/static public API、动态符号 allowlist、完整 CTest、libcurl consistency 和 sanitizer 门禁，才可形成新的本地 readiness 证据；文档本身、历史 snapshot 或旧 QA 数字不能替代该证据。
 
-| 层级 | 发布含义 | 当前范围 |
+| 交付组件 | 发布含义 | 当前范围 |
 | --- | --- | --- |
-| **Core** | 默认安装；通过最终 release gate 后作为 2.0.0 维护 API / ABI | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
-| **Blocking Extras** | 显式安装，提供同步 value-result 工具；不混入默认 Core | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
-| **Test Support** | 显式安装，用于测试支持，不作为生产运行时网络栈能力表述 | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
-| **Other Extras / Preview** | 显式安装或条件安装；不属于默认 Core 稳定承诺 | Diagnostics、Middleware Extras、WebSocket |
+| **Core** | 默认 consumer target；通过最终 release gate 后作为 2.0.0 源码兼容 API，ABI 非稳定且要求下游重编译 | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
+| **Blocking Extras** | 显式 opt-in 的 `INTERFACE` consumer target；实现由 Core 物理库承载，提供同步 value-result 工具 | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
+| **Other Extras** | 显式 opt-in consumer target；不属于 Core 源码兼容承诺 | Diagnostics、Middleware Extras、WebSocket |
+| **Test Support** | 显式 opt-in 的开发静态库；不属于生产 Runtime | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
 
-除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。完整边界见 `docs/arch/public-header-boundary.md`、`docs/arch/1.0-first-stable-release-contract.md` 与 `docs/arch/1.0-first-stable-readiness-report.md`。
+`Preview` 是 API 成熟度，`Internal` 是可见性，不是额外交付组件。当前 Diagnostics 和
+WebSocket 标记为 Preview；Middleware Extras 属于 Other Extras 的公开稳定面。一个能力的
+组件归属、成熟度和可见性由 `tests/public_api/surface_manifest.json` 分别记录。
+
+除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。当前边界见 `docs/arch/2.0.0-hard-break-release-contract.md` 与 `docs/arch/public-header-boundary.md`；1.0 文档只记录已发布历史。
 
 ## 为什么选择 QCurl？
 
 | **现代化架构** | **Core HTTP** | **可选扩展** | **Qt 友好** |
 |:-------------:|:-------------:|:------------:|:-----------:|
-| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | 显式 Extras / Preview | QObject 线程归属与事件循环合同 |
+| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | 三个显式组件 + Preview 成熟度标记 | QObject 线程归属与事件循环合同 |
 
 ---
 
@@ -54,7 +58,7 @@
 - **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
 - **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
 - **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
-- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入默认安装面；通用具体 middleware 通过 Other Extras opt-in 使用
+- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入 Core component 安装面；通用具体 middleware 通过 Other Extras opt-in 使用
 - **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
 - **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `post()/put()` raw-body device overload 支持大文件
 - **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
@@ -63,7 +67,7 @@
 
 ### Blocking Extras
 
-- **同步 value-result client** - `QCBlockingNetworkClient` / `QCBlockingNetworkResult` 通过显式 `BlockingExtrasDevelopment` 安装，不随默认 Core 安装。
+- **同步 value-result client** - `QCBlockingNetworkClient` / `QCBlockingNetworkResult` 通过 `QCurl::BlockingExtras` 显式 opt-in，不进入无组件 Core consumer。
 - **受限内存响应体** - `QCBlockingRequestOptions::maxInMemoryBodyBytes()` 默认限制内存响应体；超过上限返回 `NetworkError::BodyTooLarge`。
 - **大响应下载** - 大响应使用 `QCBlockingNetworkClient::downloadToDevice()` 写入调用方提供的 `QIODevice`，`body()` 保持为空，`bytesReceived()` 记录实际接收字节数。
 - **诊断错误边界** - Blocking Extras 使用 `BodyTooLarge`、`OutputDeviceError`、`InputDeviceError`、`ReplayNotSupported` 等明确错误；curl code 只通过 `diagnosticCurlCode()` 作为辅助诊断，不作为主判断 API。
@@ -73,11 +77,11 @@
 
 - **MockHandler Test Support** - `QCNetworkMockHandler`、`QCNetworkCapturedRequest` 与 `QCNetworkTestSupport` 通过显式 `TestSupportDevelopment` 安装，供测试程序 opt-in 使用。
 
-### Other Extras / Preview
+### Other Extras
 
-- **Diagnostics 扩展诊断** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装，公开入口统一返回可取消的 `QFuture<DiagResult>`；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，HTTP 探测只使用 `QCNetworkAccessManager/QCNetworkReply`，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 稳定合同。
-- **Middleware Extras** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
-- **WebSocket** - 客户端提供有界异步收发、关闭握手和重连能力，条件进入 Other Extras；保持 Preview，默认不提供 permessage-deflate，也不属于默认 Core install surface。
+- **Diagnostics 扩展诊断（Preview）** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装，公开入口统一返回可取消的 `QFuture<DiagResult>`；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，HTTP 探测只使用 `QCNetworkAccessManager/QCNetworkReply`，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 源码兼容合同。
+- **Middleware Extras（Stable）** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
+- **WebSocket（Preview）** - 客户端提供有界异步收发、关闭握手和重连能力，条件进入 Other Extras；默认不提供 permessage-deflate，也不属于 Core consumer surface。
 
 ### 性能基准说明
 
@@ -108,11 +112,13 @@ cmake --build build -j"$(nproc)"
 cmake --install build --prefix "$PWD/stage"
 ```
 
+不带 `--component` 的 `cmake --install` 是无过滤完整安装，会部署四个逻辑消费面和三个物理库产物：`libQCurl`（含 Blocking Extras 实现）、`libQCurlOtherExtras`、静态 `libQCurlTestSupport`。这里的“默认”只指 consumer 行为：`find_package(QCurl CONFIG REQUIRED)` 只加载 `QCurl::QCurl`；非 Core 目标必须通过 `COMPONENTS` 显式请求。
+
 发布合同提示：
 
-- 2.0.0 只承诺 Core install surface。
-- Blocking Extras / Test Support / Other Extras 需要发行包显式安装对应 component，不随默认 Core 隐式安装。
-- 当前 lane-aware scheduler 已纳入 `QCurl 2.0.0 / SOVERSION 2` Core 合同；本 hard-break 发布线不提供 v1 alias、wrapper、shim 或兼容开关。
+- 2.0.0 只承诺 Core install surface 的源码兼容；下游在每次 QCurl 更新后必须重新编译和链接。
+- 使用分组件安装时，Blocking Extras 只需要 `BlockingExtrasDevelopment`，其实现随 Core Runtime 交付；Other Extras 需要 `OtherExtrasRuntime` + `OtherExtrasDevelopment`，Test Support 只需要 `TestSupportDevelopment`。
+- 当前 lane-aware scheduler 已纳入 `QCurl 2.0.0 / SOVERSION 2` Core 源码合同；`SOVERSION 2` 不代表 2.x 二进制兼容，本 hard-break 发布线不提供 v1 alias、wrapper、shim 或兼容开关。
 
 ### 代码示例
 
@@ -142,7 +148,7 @@ connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
 #### 2. WebSocket 连接（Preview）
 
 > 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
-> 它可以作为 Preview 功能使用，但不属于 2.0.0 默认 Core 承诺。
+> 它属于 Other Extras 组件并标记为 Preview，不属于 2.0.0 默认 Core 承诺。
 
 ```cpp
 #include <QCWebSocket.h>
@@ -285,7 +291,7 @@ if (!cancelResult.isSuccess()) {
 
 ## 🧪 测试与验证
 
-测试运行与门禁以 `docs/dev/build-and-test.md` 为准。发布前使用 full release gate、shared/static public-api gate、ABI gate、metadata scan 和 `git diff --check` 形成可复验结果。
+测试运行与门禁以 `docs/dev/build-and-test.md` 为准。发布前使用 `--abi-mode none` 的 full release gate、shared/static public-api gate、动态符号 allowlist、metadata scan 和 `git diff --check` 形成可复验结果。2.0 不要求 ABI baseline 或 compatibility diff。
 
 本 README 不维护固定测试数量、通过率或一次性 gate 输出；这些数字必须绑定具体 build、依赖版本、环境和日期后，放入维护者证据文档或 CI artifacts。
 
@@ -326,7 +332,7 @@ ctest --test-dir build-static -L '^public-api$' --output-on-failure
 ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
 ```
 
-Static 路径已纳入 full release gate。正式打包前仍以 `scripts/run_release_gate.py --tier full --build-dir build --static-build-dir build-static` 的最新输出为准；即使 static gate 通过，也只声明 Core static library ready，不声明 whole project static library ready。
+Static 路径已纳入 full release gate。正式打包前按 `docs/dev/release-procedure.md` 使用六棵显式构建树和 `--abi-mode none`；即使 static gate 通过，也只声明 Core static library ready，不声明 whole project static library ready。
 
 Static consumer 若只使用 `QCNetworkRequestPriority` 等头文件类型，并需要 Qt 元类型按名称可见，应在 `main()` 早期调用一次 `QCurl::initialize()`。shared consumer 通常不需要手动调用；该函数幂等，调用后不会创建网络对象或启动 scheduler。
 
