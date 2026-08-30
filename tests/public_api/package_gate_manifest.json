@@ -1,6 +1,6 @@
 {
-  "schema": "qcurl/package-safety-gate@v1",
-  "installMode": "default-all-components",
+  "schema": "qcurl/package-safety-gate@v2",
+  "installMode": "unfiltered-all-components",
   "candidatePolicy": {
     "forceDisableOption": "QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT",
     "forceDisabledReleaseEligible": false,
@@ -9,9 +9,11 @@
       "tst_QCWebSocketPool"
     ]
   },
-  "runtimeTargets": {
+  "deliveryTargets": {
     "Core": {
       "cmakeTarget": "QCurl::QCurl",
+      "artifact": "runtime-library",
+      "productionRuntime": true,
       "installComponents": [
         "Runtime",
         "Development"
@@ -30,6 +32,8 @@
     },
     "BlockingExtras": {
       "cmakeTarget": "QCurl::BlockingExtras",
+      "artifact": "interface-consumer-surface",
+      "productionRuntime": true,
       "installComponents": [
         "BlockingExtrasDevelopment"
       ],
@@ -47,6 +51,8 @@
     },
     "TestSupport": {
       "cmakeTarget": "QCurl::TestSupport",
+      "artifact": "development-static-library",
+      "productionRuntime": false,
       "installComponents": [
         "TestSupportDevelopment"
       ],
@@ -63,9 +69,10 @@
     },
     "OtherExtras": {
       "cmakeTarget": "QCurl::OtherExtras",
+      "artifact": "runtime-library",
+      "productionRuntime": true,
       "installComponents": [
-        "Runtime",
-        "Development",
+        "OtherExtrasRuntime",
         "OtherExtrasDevelopment"
       ],
       "consumerTests": {

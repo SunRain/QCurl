@@ -30,7 +30,7 @@ def _manifest_headers(manifest: dict[str, Any]) -> set[str]:
     return {
         item["path"]
         for item in manifest.get("headers", [])
-        if isinstance(item, dict) and item.get("layer") != "Internal" and "path" in item
+        if isinstance(item, dict) and item.get("visibility") != "Internal" and "path" in item
     }
 
 

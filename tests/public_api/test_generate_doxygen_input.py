@@ -31,24 +31,29 @@ def test_generate_doxygen_input_from_surface_manifest_excludes_internal_headers(
     manifest.write_text(
         """
 {
-  "schemaVersion": 1,
-  "layers": ["Core", "Other Extras", "Internal"],
+  "schemaVersion": 2,
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
-      "layer": "Core",
-      "currentInstall": "core-default",
-      "targetInstall": "core-default"
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component"
     },
     {
       "path": "QCNetworkDiagnostics.h",
-      "layer": "Other Extras",
+      "component": "OtherExtras",
+      "maturity": "Preview",
+      "visibility": "Public",
       "currentInstall": "other-extras",
       "targetInstall": "other-extras"
     },
     {
       "path": "QCNetworkReply_p.h",
-      "layer": "Internal",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Internal",
       "currentInstall": "internal",
       "targetInstall": "internal"
     }

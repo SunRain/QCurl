@@ -13,9 +13,9 @@ STATIC_PUBLIC_DEPENDENCIES = {
 def check_export_contract(stage_dir: Path, *, fail_func) -> int:
     """Verify installed export files expose only expected dependency targets."""
 
-    target_files = sorted(stage_dir.rglob("QCurlTargets*.cmake"))
+    target_files = sorted(stage_dir.rglob("QCurl*Targets*.cmake"))
     if not target_files:
-        return fail_func(f"no QCurlTargets*.cmake files found under {stage_dir}")
+        return fail_func(f"no QCurl*Targets*.cmake files found under {stage_dir}")
 
     content_by_file = {target_file: target_file.read_text(encoding="utf-8") for target_file in target_files}
     config_files = sorted(stage_dir.rglob("QCurlConfig.cmake"))
@@ -101,13 +101,16 @@ def check_export_contract(stage_dir: Path, *, fail_func) -> int:
                         f"{target_file.name}: static export depends on {target} but "
                         f"QCurlConfig.cmake does not find_dependency({dependency})"
                     )
-    required_targets = {
-        "QCurl::QCurl",
-        "QCurl::BlockingExtras",
-        "QCurl::TestSupport",
-        "QCurl::OtherExtras",
-    }
     combined_targets = "\n".join(content_by_file.values())
+    required_targets = {"QCurl::QCurl"}
+    optional_target_files = {
+        "QCurl::BlockingExtras": "QCurlBlockingExtrasTargets.cmake",
+        "QCurl::TestSupport": "QCurlTestSupportTargets.cmake",
+        "QCurl::OtherExtras": "QCurlOtherExtrasTargets.cmake",
+    }
+    for target, file_name in optional_target_files.items():
+        if any(path.name == file_name for path in content_by_file):
+            required_targets.add(target)
     for target in sorted(required_targets):
         if not re.search(rf"\badd_library\s*\(\s*{re.escape(target)}\b", combined_targets):
             violations.append(f"missing exported target: {target}")

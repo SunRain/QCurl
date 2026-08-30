@@ -491,25 +491,38 @@ def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsy
     surface.write_text(
         """
 {
-  "schemaVersion": 1,
-  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "schemaVersion": 2,
+  "components": {
+    "Core": {"cmakeTarget": "QCurl::QCurl", "artifact": "runtime-library", "defaultConsumer": true},
+    "BlockingExtras": {"cmakeTarget": "QCurl::BlockingExtras", "artifact": "interface-consumer-surface", "defaultConsumer": false},
+    "OtherExtras": {"cmakeTarget": "QCurl::OtherExtras", "artifact": "runtime-library", "defaultConsumer": false},
+    "TestSupport": {"cmakeTarget": "QCurl::TestSupport", "artifact": "development-static-library", "defaultConsumer": false}
+  },
+  "maturityLevels": ["Stable", "Preview"],
+  "visibilityLevels": ["Public", "Internal"],
+  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
-      "layer": "Core",
-      "currentInstall": "core-default",
-      "targetInstall": "core-default"
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component"
     },
     {
       "path": "QCNetworkMockHandler.h",
-      "layer": "Test Support",
+      "component": "TestSupport",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "test-support",
-      "targetInstall": "test-support",
-      "extractionTask": "T8"
+      "targetInstall": "test-support"
     },
     {
       "path": "QCNetworkDiagnostics.h",
-      "layer": "Other Extras",
+      "component": "OtherExtras",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "conditional-extras",
       "targetInstall": "other-extras"
     }
@@ -517,10 +530,11 @@ def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsy
   "plannedHeaders": [
     {
       "path": "QCBlockingNetworkClient.h",
-      "layer": "Blocking Extras",
+      "component": "BlockingExtras",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "none",
-      "targetInstall": "blocking-extras",
-      "extractionTask": "T2"
+      "targetInstall": "blocking-extras"
     }
   ],
   "symbolExtractions": []
@@ -546,18 +560,30 @@ def test_surface_manifest_accepts_installed_blocking_extras(tmp_path, capsys) ->
     surface.write_text(
         """
 {
-  "schemaVersion": 1,
-  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "schemaVersion": 2,
+  "components": {
+    "Core": {"cmakeTarget": "QCurl::QCurl", "artifact": "runtime-library", "defaultConsumer": true},
+    "BlockingExtras": {"cmakeTarget": "QCurl::BlockingExtras", "artifact": "interface-consumer-surface", "defaultConsumer": false},
+    "OtherExtras": {"cmakeTarget": "QCurl::OtherExtras", "artifact": "runtime-library", "defaultConsumer": false},
+    "TestSupport": {"cmakeTarget": "QCurl::TestSupport", "artifact": "development-static-library", "defaultConsumer": false}
+  },
+  "maturityLevels": ["Stable", "Preview"],
+  "visibilityLevels": ["Public", "Internal"],
+  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
-      "layer": "Core",
-      "currentInstall": "core-default",
-      "targetInstall": "core-default"
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component"
     },
     {
       "path": "QCBlockingNetworkClient.h",
-      "layer": "Blocking Extras",
+      "component": "BlockingExtras",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "blocking-extras",
       "targetInstall": "blocking-extras"
     }
@@ -586,25 +612,38 @@ def test_surface_manifest_rejects_mismatched_test_support_install(tmp_path, caps
     surface.write_text(
         """
 {
-  "schemaVersion": 1,
-  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "schemaVersion": 2,
+  "components": {
+    "Core": {"cmakeTarget": "QCurl::QCurl", "artifact": "runtime-library", "defaultConsumer": true},
+    "BlockingExtras": {"cmakeTarget": "QCurl::BlockingExtras", "artifact": "interface-consumer-surface", "defaultConsumer": false},
+    "OtherExtras": {"cmakeTarget": "QCurl::OtherExtras", "artifact": "runtime-library", "defaultConsumer": false},
+    "TestSupport": {"cmakeTarget": "QCurl::TestSupport", "artifact": "development-static-library", "defaultConsumer": false}
+  },
+  "maturityLevels": ["Stable", "Preview"],
+  "visibilityLevels": ["Public", "Internal"],
+  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
-      "layer": "Core",
-      "currentInstall": "core-default",
-      "targetInstall": "core-default"
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component"
     },
     {
       "path": "QCNetworkMockHandler.h",
-      "layer": "Test Support",
-      "currentInstall": "core-default",
-      "targetInstall": "test-support",
-      "extractionTask": "T8"
+      "component": "TestSupport",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "test-support"
     },
     {
       "path": "QCBlockingNetworkClient.h",
-      "layer": "Blocking Extras",
+      "component": "BlockingExtras",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "blocking-extras",
       "targetInstall": "blocking-extras"
     }
@@ -633,23 +672,34 @@ def test_surface_manifest_rejects_untracked_core_header(tmp_path, capsys) -> Non
     surface.write_text(
         """
 {
-  "schemaVersion": 1,
-  "layers": ["Core", "Blocking Extras", "Other Extras", "Test Support", "Internal"],
+  "schemaVersion": 2,
+  "components": {
+    "Core": {"cmakeTarget": "QCurl::QCurl", "artifact": "runtime-library", "defaultConsumer": true},
+    "BlockingExtras": {"cmakeTarget": "QCurl::BlockingExtras", "artifact": "interface-consumer-surface", "defaultConsumer": false},
+    "OtherExtras": {"cmakeTarget": "QCurl::OtherExtras", "artifact": "runtime-library", "defaultConsumer": false},
+    "TestSupport": {"cmakeTarget": "QCurl::TestSupport", "artifact": "development-static-library", "defaultConsumer": false}
+  },
+  "maturityLevels": ["Stable", "Preview"],
+  "visibilityLevels": ["Public", "Internal"],
+  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
-      "layer": "Core",
-      "currentInstall": "core-default",
-      "targetInstall": "core-default"
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component"
     }
   ],
   "plannedHeaders": [
     {
       "path": "QCBlockingNetworkClient.h",
-      "layer": "Blocking Extras",
+      "component": "BlockingExtras",
+      "maturity": "Stable",
+      "visibility": "Public",
       "currentInstall": "none",
-      "targetInstall": "blocking-extras",
-      "extractionTask": "T2"
+      "targetInstall": "blocking-extras"
     }
   ],
   "symbolExtractions": []
@@ -669,6 +719,90 @@ def test_surface_manifest_rejects_untracked_core_header(tmp_path, capsys) -> Non
 
     assert rc == 1
     assert "QCNetworkMockHandler.h: missing from surface manifest" in capsys.readouterr().err
+
+
+def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
+    surface = tmp_path / "surface.json"
+    surface.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "components": {
+                    "Core": {
+                        "cmakeTarget": "QCurl::QCurl",
+                        "artifact": "runtime-library",
+                        "defaultConsumer": True,
+                    },
+                    "BlockingExtras": {
+                        "cmakeTarget": "QCurl::BlockingExtras",
+                        "artifact": "interface-consumer-surface",
+                        "defaultConsumer": False,
+                    },
+                    "OtherExtras": {
+                        "cmakeTarget": "QCurl::OtherExtras",
+                        "artifact": "runtime-library",
+                        "defaultConsumer": False,
+                    },
+                    "TestSupport": {
+                        "cmakeTarget": "QCurl::TestSupport",
+                        "artifact": "development-static-library",
+                        "defaultConsumer": False,
+                    },
+                },
+                "maturityLevels": ["Stable", "Preview"],
+                "visibilityLevels": ["Public", "Internal"],
+                "compatibilityContract": {
+                    "source": "2.x-compatible",
+                    "abi": "unstable-rebuild-required",
+                },
+                "headers": [
+                    {
+                        "path": "QCNetworkAccessManager.h",
+                        "component": "Core",
+                        "maturity": "Stable",
+                        "visibility": "Public",
+                        "currentInstall": "core-component",
+                        "targetInstall": "core-component",
+                    },
+                    {
+                        "path": "QCBlockingNetworkClient.h",
+                        "component": "BlockingExtras",
+                        "maturity": "Stable",
+                        "visibility": "Public",
+                        "currentInstall": "blocking-extras",
+                        "targetInstall": "blocking-extras",
+                    },
+                    {
+                        "path": "QCNetworkMockHandler.h",
+                        "component": "TestSupport",
+                        "maturity": "Stable",
+                        "visibility": "Public",
+                        "currentInstall": "test-support",
+                        "targetInstall": "test-support",
+                    },
+                ],
+                "plannedHeaders": [],
+                "symbolExtractions": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    core = tmp_path / "core.txt"
+    core.write_text("QCNetworkAccessManager.h\n", encoding="utf-8")
+    extras = tmp_path / "extras.txt"
+    extras.write_text("QCBlockingNetworkClient.h\n", encoding="utf-8")
+
+    rc = public_api.validate_surface_manifest(
+        Namespace(surface_manifest=surface, core_manifest=core, extras_manifest=extras),
+        fail_func=public_api.fail,
+    )
+
+    assert rc == 1
+    assert (
+        "QCNetworkMockHandler.h: stable public header is absent from generated install manifests"
+        in capsys.readouterr().err
+    )
 
 def test_consumer_contract_fixture_requires_core_snippets(tmp_path) -> None:
     fixture_dir = tmp_path / "consumer"

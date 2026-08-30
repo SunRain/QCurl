@@ -15,12 +15,13 @@ def _contract_path() -> Path:
     return Path(__file__).with_name("package_gate_manifest.json")
 
 
-def test_package_gate_manifest_covers_every_exported_runtime_target() -> None:
+def test_package_gate_manifest_covers_every_exported_delivery_target() -> None:
     contract = package_gate_contracts.load_contract(_contract_path())
 
     package_gate_contracts.validate_contract(contract)
+    assert contract["installMode"] == "unfiltered-all-components"
 
-    targets = contract["runtimeTargets"]
+    targets = contract["deliveryTargets"]
     assert set(targets) == {
         "Core",
         "BlockingExtras",
@@ -73,7 +74,7 @@ def test_package_gate_accepts_default_websocket_capable_candidate(tmp_path: Path
     assert candidate.force_disabled is False
 
 
-def test_default_install_stage_omits_component_filter(tmp_path: Path) -> None:
+def test_unfiltered_install_stage_omits_component_filter(tmp_path: Path) -> None:
     commands: list[list[str]] = []
 
     def run_command(command: list[str]):
@@ -118,9 +119,22 @@ def test_install_inventory_records_every_file_and_target_owner(tmp_path: Path) -
         "QCurlConfig.h",
     ):
         (include_dir / name).write_text("// fixture\n", encoding="utf-8")
-    for name in ("libQCurl.so", "libQCurlOtherExtras.so"):
+    for name in (
+        "libQCurl.so",
+        "libQCurlTestSupport.a",
+        "libQCurlOtherExtras.so",
+    ):
         (stage_dir / "lib" / name).write_bytes(b"fixture")
     (cmake_dir / "QCurlTargets.cmake").write_text("# fixture\n", encoding="utf-8")
+    (cmake_dir / "QCurlBlockingExtrasTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
+    (cmake_dir / "QCurlTestSupportTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
+    (cmake_dir / "QCurlOtherExtrasTargets.cmake").write_text(
+        "# fixture\n", encoding="utf-8"
+    )
     (cmake_dir / "QCurlConfig.cmake").write_text("# fixture\n", encoding="utf-8")
     (pkgconfig_dir / "qcurl.pc").write_text("# fixture\n", encoding="utf-8")
     (pkgconfig_dir / "qcurl-other-extras.pc").write_text("# fixture\n", encoding="utf-8")
@@ -139,14 +153,15 @@ def test_install_inventory_records_every_file_and_target_owner(tmp_path: Path) -
         for path in stage_dir.rglob("*")
         if path.is_file()
     }
-    assert inventory["runtimeTargets"]["Core"]["files"]
-    assert inventory["runtimeTargets"]["BlockingExtras"]["files"]
-    assert inventory["runtimeTargets"]["TestSupport"]["files"]
-    assert inventory["runtimeTargets"]["OtherExtras"]["files"]
+    assert inventory["deliveryTargets"]["Core"]["files"]
+    assert inventory["deliveryTargets"]["BlockingExtras"]["files"]
+    assert inventory["deliveryTargets"]["TestSupport"]["files"]
+    assert inventory["deliveryTargets"]["OtherExtras"]["files"]
     assert all(entry["owners"] for entry in inventory["files"])
 
     encoded = json.dumps(inventory)
     assert str(stage_dir) not in encoded
+    assert not any("libQCurlBlockingExtras" in path for path in paths)
 
 
 def test_lifecycle_gate_requires_websocket_and_pool_for_capable_candidate(tmp_path: Path) -> None:
@@ -165,7 +180,7 @@ def test_lifecycle_gate_requires_websocket_and_pool_for_capable_candidate(tmp_pa
     registered = sorted(
         {
             name
-            for target in contract["runtimeTargets"].values()
+            for target in contract["deliveryTargets"].values()
             for name in target["lifecycleTests"]
         }
     )

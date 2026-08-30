@@ -17,7 +17,7 @@ def test_release_doxygen_gate_writes_html_to_bound_output(
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
         '{"headers":[{"path":"Public.h","layer":"Core",'
-        '"currentInstall":"core-default"}]}\n',
+        '"currentInstall":"core-component"}]}\n',
         encoding="utf-8",
     )
     (repo / "Doxyfile").write_text(

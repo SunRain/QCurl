@@ -12,8 +12,14 @@ from typing import Any
 from typing import Callable
 
 
-SCHEMA = "qcurl/package-safety-gate@v1"
-RUNTIME_TARGETS = ("Core", "BlockingExtras", "TestSupport", "OtherExtras")
+SCHEMA = "qcurl/package-safety-gate@v2"
+DELIVERY_TARGETS = ("Core", "BlockingExtras", "TestSupport", "OtherExtras")
+EXPECTED_ARTIFACTS = {
+    "Core": "runtime-library",
+    "BlockingExtras": "interface-consumer-surface",
+    "TestSupport": "development-static-library",
+    "OtherExtras": "runtime-library",
+}
 
 
 class PackageGateError(RuntimeError):
@@ -49,23 +55,27 @@ def _require_nonempty_string_list(target: str, field: str, value: Any) -> None:
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
-    """Validate the four-target package evidence mapping."""
+    """Validate the four-target delivery evidence mapping."""
 
     if contract.get("schema") != SCHEMA:
         raise PackageGateError(f"unsupported package gate schema: {contract.get('schema')!r}")
-    if contract.get("installMode") != "default-all-components":
-        raise PackageGateError("package gate must use the default all-components install")
+    if contract.get("installMode") != "unfiltered-all-components":
+        raise PackageGateError("package gate must use the unfiltered all-components install")
 
-    targets = contract.get("runtimeTargets")
-    if not isinstance(targets, dict) or set(targets) != set(RUNTIME_TARGETS):
+    targets = contract.get("deliveryTargets")
+    if not isinstance(targets, dict) or set(targets) != set(DELIVERY_TARGETS):
         raise PackageGateError(
-            "runtimeTargets must contain exactly Core, BlockingExtras, TestSupport and OtherExtras"
+            "deliveryTargets must contain exactly Core, BlockingExtras, TestSupport and OtherExtras"
         )
 
-    for name in RUNTIME_TARGETS:
+    for name in DELIVERY_TARGETS:
         target = targets[name]
         if not isinstance(target, dict):
-            raise PackageGateError(f"runtimeTargets.{name} must be an object")
+            raise PackageGateError(f"deliveryTargets.{name} must be an object")
+        if target.get("artifact") != EXPECTED_ARTIFACTS[name]:
+            raise PackageGateError(f"{name}.artifact does not match the delivery contract")
+        if target.get("productionRuntime") is not (name != "TestSupport"):
+            raise PackageGateError(f"{name}.productionRuntime does not match the delivery contract")
         cmake_target = target.get("cmakeTarget")
         if not isinstance(cmake_target, str) or not cmake_target.startswith("QCurl::"):
             raise PackageGateError(f"{name}.cmakeTarget must name an exported QCurl target")
@@ -154,14 +164,28 @@ def _owners_for_path(path: str, manifests: dict[str, list[str]]) -> list[str]:
         "QCurlOtherExtras."
     ):
         return ["OtherExtras"]
+    if re.search(r"(?:^|/)libQCurlBlockingExtras(?:\.|$)", path) or name.startswith(
+        "QCurlBlockingExtras."
+    ):
+        return ["BlockingExtras"]
+    if re.search(r"(?:^|/)libQCurlTestSupport(?:\.|$)", path) or name.startswith(
+        "QCurlTestSupport."
+    ):
+        return ["TestSupport"]
     if re.search(r"(?:^|/)libQCurl(?:\.|$)", path) or name.startswith("QCurl."):
         return ["Core"]
     if name == "qcurl.pc":
         return ["Core"]
     if name == "qcurl-other-extras.pc":
         return ["OtherExtras"]
+    if name.startswith("QCurlBlockingExtrasTargets"):
+        return ["BlockingExtras"]
+    if name.startswith("QCurlTestSupportTargets"):
+        return ["TestSupport"]
+    if name.startswith("QCurlOtherExtrasTargets"):
+        return ["OtherExtras"]
     if name.startswith("QCurlTargets"):
-        return list(RUNTIME_TARGETS)
+        return ["Core"]
     return ["Package"]
 
 
@@ -169,17 +193,21 @@ def build_install_inventory(
     stage_dir: Path,
     manifests: dict[str, list[str]],
 ) -> dict[str, Any]:
-    """Build a relative, exhaustive file inventory for a default install tree."""
+    """Build a relative, exhaustive file inventory for an unfiltered install tree."""
 
-    if set(manifests) != set(RUNTIME_TARGETS):
-        raise PackageGateError("header manifests must cover all four runtime targets")
+    if set(manifests) != set(DELIVERY_TARGETS):
+        raise PackageGateError("header manifests must cover all four delivery targets")
     if not stage_dir.is_dir():
-        raise PackageGateError(f"missing default install tree: {stage_dir}")
+        raise PackageGateError(f"missing unfiltered install tree: {stage_dir}")
 
     files: list[dict[str, Any]] = []
-    target_files = {name: [] for name in RUNTIME_TARGETS}
+    target_files = {name: [] for name in DELIVERY_TARGETS}
     for file_path in sorted(path for path in stage_dir.rglob("*") if path.is_file()):
         relative = file_path.relative_to(stage_dir).as_posix()
+        if re.search(r"(?:^|/)libQCurlBlockingExtras(?:\.|$)", relative):
+            raise PackageGateError(
+                "BlockingExtras must not install an independent runtime library: " + relative
+            )
         owners = _owners_for_path(relative, manifests)
         files.append({"path": relative, "owners": owners})
         for owner in owners:
@@ -187,18 +215,18 @@ def build_install_inventory(
                 target_files[owner].append(relative)
 
     if not files:
-        raise PackageGateError("default install tree is empty")
+        raise PackageGateError("unfiltered install tree is empty")
     missing_targets = [name for name, paths in target_files.items() if not paths]
     if missing_targets:
         raise PackageGateError(
-            "default install tree has no files for targets: " + ", ".join(missing_targets)
+            "unfiltered install tree has no files for targets: " + ", ".join(missing_targets)
         )
 
     return {
         "schema": "qcurl/package-install-inventory@v1",
         "files": files,
-        "runtimeTargets": {
-            name: {"files": target_files[name]} for name in RUNTIME_TARGETS
+        "deliveryTargets": {
+            name: {"files": target_files[name]} for name in DELIVERY_TARGETS
         },
     }
 
@@ -241,7 +269,7 @@ def run_lifecycle_gate(
     candidate = validate_release_candidate(build_dir)
     required = {
         test_name
-        for target in contract["runtimeTargets"].values()
+        for target in contract["deliveryTargets"].values()
         for test_name in target["lifecycleTests"]
     }
     if not candidate.websocket_enabled:
@@ -300,7 +328,7 @@ def run_lifecycle_gate(
 
 def _parse_manifest(value: str) -> tuple[str, Path]:
     target, separator, raw_path = value.partition("=")
-    if not separator or target not in RUNTIME_TARGETS or not raw_path:
+    if not separator or target not in DELIVERY_TARGETS or not raw_path:
         raise argparse.ArgumentTypeError(
             "manifest must use TARGET=PATH for Core, BlockingExtras, TestSupport or OtherExtras"
         )
@@ -352,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             if rc != 0:
                 return rc
-            print("[package_gate] four-target lifecycle gate passed")
+            print("[package_gate] four-target delivery lifecycle gate passed")
         else:
             manifests = {target: path.read_text(encoding="utf-8").splitlines() for target, path in args.manifest}
             write_install_inventory(args.stage_dir, manifests, args.output)

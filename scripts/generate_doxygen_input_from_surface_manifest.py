@@ -20,13 +20,13 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 def _is_release_api_header(entry: dict[str, Any]) -> bool:
     current_install = str(entry.get("currentInstall", "")).strip().lower()
-    layer = str(entry.get("layer", "")).strip().lower()
+    visibility = str(entry.get("visibility", "")).strip().lower()
     header = str(entry.get("path", "")).strip()
     if not header:
         return False
     if current_install in NON_PUBLIC_INSTALL_VALUES:
         return False
-    if layer == "internal":
+    if visibility == "internal":
         return False
     if header.endswith("_p.h") or "/private/" in header or header.startswith("private/"):
         return False

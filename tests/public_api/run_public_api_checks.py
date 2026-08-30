@@ -50,7 +50,7 @@ def _add_public_api_install_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--all-components",
         action="store_true",
-        help="run the default install without a component filter",
+        help="run the unfiltered install that contains all built components",
     )
 
 
