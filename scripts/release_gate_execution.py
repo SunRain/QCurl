@@ -161,6 +161,7 @@ def write_gate_manifest(
         stage=stage,
         tree_registry=registry,
     )
+    manifest["abiMode"] = args.abi_mode
     manifest["gates"]["results"] = gate_results
     manifest["gate_contract"] = gate_contracts(steps)
     if "abi_hardbreak_report" in {step.name for step in steps}:
@@ -261,6 +262,12 @@ def verify_manifest(args, repo_root: Path, steps: list[GateStep] | None = None) 
             file=sys.stderr,
         )
         return 1
+    if manifest.get("abiMode") != args.abi_mode:
+        print(
+            "[release_gate] manifest ABI mode does not match --abi-mode",
+            file=sys.stderr,
+        )
+        return 1
     capabilities = manifest.get("identity", {}).get("capabilities", {})
     recorded_registry = capabilities.get("tree_registry", {})
     current_registry = tree_registry(args)
@@ -305,6 +312,7 @@ def write_snapshot_only(args, repo_root: Path, steps: list[GateStep], authority_
         stage=args.stage,
         tree_registry=tree_registry(args),
     )
+    manifest["abiMode"] = args.abi_mode
     manifest["snapshot_kind"] = "t0"
     release_identity.write_snapshot(args.manifest, manifest)
     print(f"[release_gate] snapshot written: {args.manifest}")

@@ -43,9 +43,17 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def add_abi_arguments(parser: argparse.ArgumentParser) -> None:
-    """添加 current/promotion ABI 参数。"""
+    """添加默认非稳定 ABI 与显式诊断参数。"""
 
-    parser.add_argument("--abi-mode", choices=("current", "promotion-candidate"), default="current")
+    parser.add_argument(
+        "--abi-mode",
+        choices=("none", "current", "promotion-candidate"),
+        default="none",
+        help=(
+            "ABI compatibility mode; none is the 2.0 source-compatible, "
+            "rebuild-required release contract"
+        ),
+    )
     parser.add_argument(
         "--abi-hardbreak-baseline",
         type=Path,

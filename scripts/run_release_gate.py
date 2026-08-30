@@ -172,6 +172,7 @@ def _execute_gate(
 def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
     payload = {
         "tier": args.tier,
+        "abiMode": args.abi_mode,
         "trees": {
             tree_id: {
                 **record,
@@ -224,8 +225,9 @@ def _authority_paths(args: argparse.Namespace, repo_root: Path) -> list[Path]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "QCurl no-git release gate. fast is not a Stable release gate; "
-            "full includes ABI and capability evidence."
+            "QCurl no-git release gate. Full validates source/package, symbol, "
+            "capability, sanitizer, and documentation evidence; ABI compatibility "
+            "comparison is explicit opt-in."
         )
     )
     parser.add_argument("--tier", choices=("fast", "strict", "full"), default="fast")

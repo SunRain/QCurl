@@ -259,7 +259,7 @@ def test_release_gate_writes_promotion_manifest_binding(tmp_path: Path) -> None:
     )
 
 
-def test_release_gate_default_uses_single_current_baseline_track(
+def test_release_gate_default_skips_abi_compatibility_gate(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -289,11 +289,15 @@ def test_release_gate_default_uses_single_current_baseline_track(
     plan = json.loads(capsys.readouterr().out)
     names = [step["name"] for step in plan["steps"]]
 
-    assert "abi_current_baseline_diff" in names
+    assert plan["abiMode"] == "none"
+    assert "dynamic_symbol_allowlist" in names
+    assert "blocking_extras_dynamic_symbol_allowlist" not in names
+    assert "other_extras_dynamic_symbol_allowlist" in names
+    assert "abi_current_baseline_diff" not in names
     assert "abi_hardbreak_report" not in names
 
 
-def test_release_gate_abi_mode_is_limited_to_current_and_promotion_candidate(
+def test_release_gate_abi_mode_supports_unstable_default_and_explicit_diagnostics(
     tmp_path: Path,
 ) -> None:
     parser = run_release_gate.build_parser()
@@ -314,7 +318,8 @@ def test_release_gate_abi_mode_is_limited_to_current_and_promotion_candidate(
         str(tmp_path / "build-tsan"),
     ]
 
-    assert parser.parse_args(base_args).abi_mode == "current"
+    assert parser.parse_args(base_args).abi_mode == "none"
+    assert parser.parse_args(base_args + ["--abi-mode", "none"]).abi_mode == "none"
     assert parser.parse_args(base_args + ["--abi-mode", "current"]).abi_mode == "current"
     assert (
         parser.parse_args(base_args + ["--abi-mode", "promotion-candidate"]).abi_mode
@@ -345,7 +350,17 @@ def test_release_gate_abi_modes_have_mutually_exclusive_step_lists(
         "--tsan-build-dir",
         str(tmp_path / "build-tsan"),
     ]
-    current_result = run_release_gate.main(base_args + ["--dry-run"])
+    none_result = run_release_gate.main(base_args + ["--dry-run"])
+    assert none_result == 0
+    none_names = [
+        item["name"] for item in json.loads(capsys.readouterr().out)["steps"]
+    ]
+    assert "abi_current_baseline_diff" not in none_names
+    assert "abi_hardbreak_report" not in none_names
+
+    current_result = run_release_gate.main(
+        base_args + ["--abi-mode", "current", "--dry-run"]
+    )
     assert current_result == 0
     current_names = [
         item["name"] for item in json.loads(capsys.readouterr().out)["steps"]
@@ -401,8 +416,19 @@ def test_release_gate_abi_mode_parameters_fail_closed(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="current"):
         run_release_gate._resolve_paths(current_args, tmp_path)
 
+    none_args = parser.parse_args(
+        [
+            "--abi-mode",
+            "none",
+            "--abi-hardbreak-baseline",
+            str(tmp_path / "v1.abi.xml"),
+        ]
+    )
+    with pytest.raises(ValueError, match="none"):
+        run_release_gate._resolve_paths(none_args, tmp_path)
 
-def test_release_gate_and_abi_gate_use_v2_artifacts_and_promotion_gate(
+
+def test_release_gate_keeps_abi_tools_opt_in_and_preserves_promotion_gate(
     tmp_path: Path,
 ) -> None:
     args = run_release_gate.build_parser().parse_args(
@@ -427,11 +453,22 @@ def test_release_gate_and_abi_gate_use_v2_artifacts_and_promotion_gate(
     artifacts = dict(run_release_gate._required_artifacts(args, steps))
 
     assert artifacts["core_dynamic_symbols"].name == "qcurl-core-v2.dynamic-symbols.json"
+    assert "blocking_extras_dynamic_symbols" not in artifacts
     assert artifacts["other_extras_dynamic_symbols"].name == (
         "qcurl-other-extras-v2.dynamic-symbols.json"
     )
-    assert artifacts["abi_current_report"].name == "qcurl-core-v2.abidiff.txt"
-    assert artifacts["abi_current_snapshot"].name == "qcurl-core-v2.current.abi.xml"
+    assert "abi_current_report" not in artifacts
+    assert "abi_current_snapshot" not in artifacts
+
+    args.abi_mode = "current"
+    current_artifacts = dict(
+        run_release_gate._required_artifacts(
+            args,
+            run_release_gate._selected_steps(args),
+        )
+    )
+    assert current_artifacts["abi_current_report"].name == "qcurl-core-v2.abidiff.txt"
+    assert current_artifacts["abi_current_snapshot"].name == "qcurl-core-v2.current.abi.xml"
 
     abi_args = qcurl_abi_gate.build_parser().parse_args(["diff"])
     assert abi_args.library == Path("build/src/libQCurl.so.2.0.0")
@@ -1014,6 +1051,18 @@ def test_release_gate_writes_and_revalidates_machine_pass_manifest(
         run_release_gate.main(["--manifest", str(manifest_path), "--verify-manifest"])
         == 0
     )
+    assert (
+        run_release_gate.main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--verify-manifest",
+                "--abi-mode",
+                "current",
+            ]
+        )
+        == 1
+    )
 
 
 def _three_tree_gate_args(tmp_path: Path) -> tuple[Path, Path, Path, object]:
@@ -1121,6 +1170,15 @@ def test_full_gate_routes_release_and_test_steps_to_distinct_trees(
     assert str(release_shared) in " ".join(steps["shared_package_evidence"].command)
     assert str(release_static) in " ".join(steps["static_package_evidence"].command)
     assert str(test_shared) in " ".join(steps["full_ctest"].command)
+
+    static_build_command = steps["static_build"].command
+    assert static_build_command[static_build_command.index("--target") + 1 :] == [
+        "QCurl",
+        "QCurlOtherExtras",
+        "QCurlTestSupport",
+        "-j",
+        str(args.jobs),
+    ]
 
 
 def _six_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
@@ -1231,11 +1289,11 @@ def test_full_gate_steps_bind_producer_tree_and_required_artifacts(
         "tsan_report",
         "uce_report",
         "doxygen_report",
-        "abi_current_report",
-        "abi_current_snapshot",
         "core_dynamic_symbols",
         "other_extras_dynamic_symbols",
     }.issubset(artifact_ids)
+    assert "abi_current_report" not in artifact_ids
+    assert "abi_current_snapshot" not in artifact_ids
 
 
 def _write_tree_capability_cache(path: Path, tree_id: str) -> None:
@@ -1510,6 +1568,7 @@ def test_current_and_promotion_abi_artifacts_use_distinct_contracts(
     tmp_path: Path,
 ) -> None:
     args, trees = _six_tree_gate_args(tmp_path)
+    args.abi_mode = "current"
     run_release_gate._resolve_paths(args, tmp_path)
     current_ids = {
         artifact_id
@@ -1718,5 +1777,6 @@ def test_full_manifest_fixture_binds_every_fixed_required_artifact(
 
     assert check.valid
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    assert manifest["abiMode"] == "none"
     assert set(manifest["evidence_contract"]["artifact_ids"]) == required_ids
     assert required_ids <= set(manifest["artifacts"])

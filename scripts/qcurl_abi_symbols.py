@@ -31,8 +31,19 @@ FORBIDDEN_DYNAMIC_SYMBOL_TOKENS = (
     "jitterFraction",
     "equalJitterDelay",
 )
+INTERNAL_COMPONENT_BRIDGE_OWNERS = {
+    "OtherExtras": frozenset(
+        {
+            "registerPersistentTransfer",
+            "removePersistentTransfer",
+        }
+    ),
+    "TestSupport": frozenset({"installNetworkMockProvider"}),
+}
+CORE_DYNAMIC_SUPPORT_OWNERS = frozenset({"operator", "staticMetaObject"})
 _EXPORTED_TYPE_RE = re.compile(
-    r"\b(?:class|struct)\s+(?P<macro>QCURL_EXPORT|QCURL_OTHER_EXTRAS_EXPORT)\s+"
+    r"\b(?:class|struct)\s+(?P<macro>QCURL_EXPORT|QCURL_BLOCKING_EXTRAS_EXPORT|"
+    r"QCURL_OTHER_EXTRAS_EXPORT)\s+"
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b"
 )
 
@@ -89,22 +100,28 @@ def validate_dynamic_symbol_contract(
         )
 
 
+COMPONENT_SPECS = {
+    "core": ("Core", ("QCURL_EXPORT", "QCURL_BLOCKING_EXTRAS_EXPORT")),
+    "other-extras": ("OtherExtras", ("QCURL_OTHER_EXTRAS_EXPORT",)),
+}
+
+
 def _manifest_headers(manifest: Path, component: str) -> list[str]:
     try:
         path = resolve_existing_file(manifest, "public surface manifest")
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         raise AbiGateError(f"invalid public surface manifest: {manifest}: {exc}") from exc
-    installs = (
-        {"core-default", "blocking-extras", "test-support"}
-        if component == "core"
-        else {"other-extras", "conditional-extras"}
-    )
+    manifest_component, _ = COMPONENT_SPECS[component]
+    manifest_components = {manifest_component}
+    if component == "core":
+        manifest_components.add("BlockingExtras")
     headers = [
         item["path"]
         for item in payload.get("headers", [])
         if isinstance(item, dict)
-        and item.get("currentInstall") in installs
+        and item.get("component") in manifest_components
+        and item.get("visibility") == "Public"
         and isinstance(item.get("path"), str)
     ]
     if not headers:
@@ -131,7 +148,7 @@ def public_symbol_owners(
 ) -> set[str]:
     """从 public surface manifest 读取允许导出的符号 owner。"""
 
-    macro = "QCURL_EXPORT" if component == "core" else "QCURL_OTHER_EXTRAS_EXPORT"
+    _, macros = COMPONENT_SPECS[component]
     root = resolve_existing_dir(source_root, "source root")
     owners: set[str] = set()
     for relative in _manifest_headers(manifest, component):
@@ -140,20 +157,14 @@ def public_symbol_owners(
         owners.update(
             match.group("name")
             for match in _EXPORTED_TYPE_RE.finditer(source)
-            if match.group("macro") == macro
+            if match.group("macro") in macros
         )
-        owners.update(_exported_free_function_names(source, macro))
+        for macro in macros:
+            owners.update(_exported_free_function_names(source, macro))
     if component == "core":
-        # 这些导出自由函数是 Other Extras 使用的唯一 opaque bridge。
-        owners.update(
-            {
-                "registerPersistentTransfer",
-                "removePersistentTransfer",
-                "TestSupport",
-                "operator",
-                "staticMetaObject",
-            }
-        )
+        for bridge_owners in INTERNAL_COMPONENT_BRIDGE_OWNERS.values():
+            owners.update(bridge_owners)
+        owners.update(CORE_DYNAMIC_SUPPORT_OWNERS)
     return owners
 
 

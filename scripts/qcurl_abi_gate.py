@@ -286,7 +286,11 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_SURFACE_MANIFEST,
     )
     parser.add_argument("--source-root", type=Path, default=DEFAULT_HEADERS_DIR)
-    parser.add_argument("--component", choices=("core", "other-extras"), default="core")
+    parser.add_argument(
+        "--component",
+        choices=("core", "other-extras"),
+        default="core",
+    )
     parser.add_argument("--symbol-report", type=Path, default=DEFAULT_SYMBOL_REPORT)
 
 

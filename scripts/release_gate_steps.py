@@ -92,8 +92,18 @@ def _static_build_steps(args: argparse.Namespace) -> list[GateStep]:
         _step(
             "static_build",
             "full",
-            [args.cmake, "--build", str(build_dir), "--target", "QCurl", "QCurlOtherExtras", "-j", str(args.jobs)],
-            "build the static Core and OtherExtras release targets",
+            [
+                args.cmake,
+                "--build",
+                str(build_dir),
+                "--target",
+                "QCurl",
+                "QCurlOtherExtras",
+                "QCurlTestSupport",
+                "-j",
+                str(args.jobs),
+            ],
+            "build all static release targets",
             "release-static",
             (),
         ),
@@ -268,6 +278,8 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
 
 def _abi_steps(args: argparse.Namespace) -> list[GateStep]:
     release_shared = tree_path(args, "release-shared")
+    if args.abi_mode == "none":
+        return []
     if args.abi_mode == "current":
         return [
             _step(

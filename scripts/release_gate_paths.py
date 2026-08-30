@@ -27,11 +27,11 @@ def _validate_abi_mode(args: argparse.Namespace) -> None:
         args.abi_hardbreak_report,
         args.abi_hardbreak_current_snapshot,
     )
-    if args.abi_mode == "current" and any(
+    if args.abi_mode in {"none", "current"} and any(
         path is not None for path in hardbreak_parameters
     ):
         raise ValueError(
-            "current ABI mode rejects promotion-candidate hard-break parameters"
+            f"{args.abi_mode} ABI mode rejects promotion-candidate hard-break parameters"
         )
     if args.abi_mode == "promotion-candidate" and any(
         path is None for path in hardbreak_parameters

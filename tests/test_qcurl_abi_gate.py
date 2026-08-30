@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import qcurl_abi_gate
+from scripts import qcurl_abi_symbols
 from scripts import release_identity
 from scripts import run_release_gate
 
@@ -86,7 +87,15 @@ def test_static_export_macros_do_not_depend_on_visibility() -> None:
     )
 
 
-def test_full_release_gate_runs_symbol_allowlists_before_abi_diff(
+def test_core_allowlist_only_keeps_remaining_cross_library_bridges() -> None:
+    assert qcurl_abi_symbols.INTERNAL_COMPONENT_BRIDGE_OWNERS == {
+        "OtherExtras": frozenset(
+            {"registerPersistentTransfer", "removePersistentTransfer"}
+        ),
+        "TestSupport": frozenset({"installNetworkMockProvider"}),
+    }
+
+def test_full_release_gate_runs_symbol_allowlists_without_default_abi_diff(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -100,11 +109,13 @@ def test_full_release_gate_runs_symbol_allowlists_before_abi_diff(
         ]
     ) == 0
 
-    names = [item["name"] for item in json.loads(capsys.readouterr().out)["steps"]]
-    assert names.index("dynamic_symbol_allowlist") < names.index("abi_current_baseline_diff")
-    assert names.index("other_extras_dynamic_symbol_allowlist") < names.index(
-        "abi_current_baseline_diff"
-    )
+    plan = json.loads(capsys.readouterr().out)
+    names = [item["name"] for item in plan["steps"]]
+    assert plan["abiMode"] == "none"
+    assert "dynamic_symbol_allowlist" in names
+    assert "blocking_extras_dynamic_symbol_allowlist" not in names
+    assert "other_extras_dynamic_symbol_allowlist" in names
+    assert "abi_current_baseline_diff" not in names
 
 def test_dynamic_symbol_allowlist_rejects_unlisted_first_party_owners() -> None:
     symbols = (
@@ -636,7 +647,9 @@ def test_atomic_promotion_rechecks_target_digest(
         qcurl_abi_gate.atomic_copy_verified_snapshot(source, target, expected_digest)
 
 
-def test_full_release_manifest_requires_symbol_and_abi_artifacts(tmp_path: Path) -> None:
+def test_full_release_manifest_requires_symbols_but_not_abi_baseline_artifacts(
+    tmp_path: Path,
+) -> None:
     args = run_release_gate.build_parser().parse_args(
         [
             "--tier",
@@ -652,8 +665,18 @@ def test_full_release_manifest_requires_symbol_and_abi_artifacts(tmp_path: Path)
     assert artifacts["other_extras_dynamic_symbols"].name == (
         "qcurl-other-extras-v2.dynamic-symbols.json"
     )
-    assert artifacts["abi_current_report"].name == "qcurl-core-v2.abidiff.txt"
-    assert artifacts["abi_current_snapshot"].name == "qcurl-core-v2.current.abi.xml"
+    assert "abi_current_report" not in artifacts
+    assert "abi_current_snapshot" not in artifacts
+
+    args.abi_mode = "current"
+    current_artifacts = dict(
+        run_release_gate._required_artifacts(
+            args,
+            run_release_gate._selected_steps(args),
+        )
+    )
+    assert current_artifacts["abi_current_report"].name == "qcurl-core-v2.abidiff.txt"
+    assert current_artifacts["abi_current_snapshot"].name == "qcurl-core-v2.current.abi.xml"
 
 
 def test_core_dynamic_symbols_exclude_multi_manager_owner() -> None:
