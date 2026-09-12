@@ -4,10 +4,9 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestScheduler.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QEvent>
 #include <QSignalSpy>
@@ -18,6 +17,12 @@ using namespace QCurl;
 class tst_QCNetworkMiddlewareIntegration : public QObject
 {
     Q_OBJECT
+
+public:
+    tst_QCNetworkMiddlewareIntegration() = default;
+
+private:
+    Q_DISABLE_COPY_MOVE(tst_QCNetworkMiddlewareIntegration)
 
 private Q_SLOTS:
     void init();
@@ -45,14 +50,10 @@ void tst_QCNetworkMiddlewareIntegration::init()
     m_mockHandler.setCaptureEnabled(true);
     m_mockHandler.setCaptureBodyPreviewLimit(64);
     QCurl::TestSupport::setMockHandler(*m_manager, &m_mockHandler);
-
-    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
 }
 
 void tst_QCNetworkMiddlewareIntegration::cleanup()
 {
-    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
-
     if (m_manager) {
         m_manager->clearMiddlewares();
         QCurl::TestSupport::setMockHandler(*m_manager, nullptr);
@@ -342,7 +343,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedQObjectMiddlewareNotInvoke
     };
 
     int responseCount = 0;
-    auto *middleware = new CountingQObjectMiddleware(responseCount);
+    auto *middleware  = new CountingQObjectMiddleware(responseCount);
     m_manager->addMiddleware(middleware);
 
     m_mockHandler.setGlobalDelay(50);
@@ -423,7 +424,7 @@ void tst_QCNetworkMiddlewareIntegration::testDestroyedRawMiddlewareNotInvokedOnR
     };
 
     int responseCount = 0;
-    auto *middleware = new CountingRawMiddleware(responseCount);
+    auto *middleware  = new CountingRawMiddleware(responseCount);
     m_manager->addMiddleware(middleware);
 
     m_mockHandler.setGlobalDelay(50);

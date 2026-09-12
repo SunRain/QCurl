@@ -10,7 +10,7 @@
 # 生成的片段会从 tests/public_api/surface_manifest.json 派生 public install surface。
 
 PROJECT_NAME           = "QCurl"
-PROJECT_NUMBER         = "1.0.0"
+PROJECT_NUMBER         = "2.0.0"
 
 OUTPUT_DIRECTORY       = build
 CREATE_SUBDIRS         = NO

@@ -12,6 +12,7 @@
 #include "QCCurlHandleManager.h"
 #include "QCGlobal.h"
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkReply.h"
@@ -30,6 +31,7 @@
 #include <QMetaMethod>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSet>
 #include <QSignalSpy>
 #include <QTcpSocket>
@@ -65,6 +67,9 @@ class TestQCNetworkHttp2 : public QObject
 {
     Q_OBJECT
 
+public:
+    TestQCNetworkHttp2() = default;
+
 private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
@@ -83,8 +88,11 @@ private Q_SLOTS:
 
     // 顺序请求基线
     void testHttp2VsHttp1Performance(); // 性能对比（简化版）
+    void testSchedulerAdmissionAndStreamLimit_data();
+    void testSchedulerAdmissionAndStreamLimit();
 
 private:
+    Q_DISABLE_COPY_MOVE(TestQCNetworkHttp2)
     static constexpr const char *kJsonErrorKey = "_qcurl_test_error";
 
     QCNetworkAccessManager *m_manager = nullptr;
@@ -169,8 +177,8 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     m_localH2BaseUrl.clear();
     m_localHttp1BaseUrl.clear();
 
-    const QString scriptPath =
-        TestSourcePaths::sourcePath(QStringLiteral("tests/qcurl/http2-test-server.js"));
+    const QString scriptPath = TestSourcePaths::sourcePath(
+        QStringLiteral("tests/qcurl/http2-test-server.js"));
     if (!QFileInfo::exists(scriptPath)) {
         m_serverError = QStringLiteral(
             "未找到本地 HTTP/2 测试服务器脚本（tests/qcurl/http2-test-server.js）。");
@@ -227,8 +235,8 @@ bool TestQCNetworkHttp2::startLocalTestServer()
                     break;
                 }
 
-                m_localH2BaseUrl = QStringLiteral("https://127.0.0.1:%1")
-                                       .arg(QString::number(h2Port));
+                m_localH2BaseUrl    = QStringLiteral("https://127.0.0.1:%1")
+                                          .arg(QString::number(h2Port));
                 m_localHttp1BaseUrl = QStringLiteral("https://127.0.0.1:%1")
                                           .arg(QString::number(http1Port));
                 return true;
@@ -240,8 +248,7 @@ bool TestQCNetworkHttp2::startLocalTestServer()
     if (!outText.isEmpty()) {
         qWarning().noquote() << "Local HTTP/2 server output:\n" << outText;
         if (outputSuggestsLocalListenRestriction(outText)) {
-            m_serverError = QStringLiteral(
-                "当前执行环境禁止本地 HTTP/2 测试服务器监听 127.0.0.1");
+            m_serverError = QStringLiteral("当前执行环境禁止本地 HTTP/2 测试服务器监听 127.0.0.1");
         }
     }
 
@@ -350,8 +357,7 @@ void TestQCNetworkHttp2::initTestCase()
 
     if (m_h2BaseUrl.isEmpty() || m_http1BaseUrl.isEmpty()) {
         const bool localServerReady = startLocalTestServer();
-        const QString reason
-            = QStringLiteral("本地 HTTP/2 测试服务器不可用：%1").arg(m_serverError);
+        const QString reason = QStringLiteral("本地 HTTP/2 测试服务器不可用：%1").arg(m_serverError);
         QVERIFY2(localServerReady, qPrintable(reason));
 
         if (m_h2BaseUrl.isEmpty()) {
@@ -374,13 +380,9 @@ void TestQCNetworkHttp2::cleanupTestCase()
     m_manager = nullptr;
 }
 
-void TestQCNetworkHttp2::init()
-{
-}
+void TestQCNetworkHttp2::init() {}
 
-void TestQCNetworkHttp2::cleanup()
-{
-}
+void TestQCNetworkHttp2::cleanup() {}
 
 // ============================================================================
 // HTTP/2 功能测试
@@ -519,9 +521,9 @@ void TestQCNetworkHttp2::testHttp2HeaderCompression()
 
 void TestQCNetworkHttp2::testHttp2Downgrade()
 {
-    QVERIFY2(
-        !m_disableDowngradeTest,
-        "QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 已设置；请在 gate/planner 侧显式排除降级用例，而不是依赖 suite 内跳过。");
+    QVERIFY2(!m_disableDowngradeTest,
+             "QCURL_HTTP2_DISABLE_DOWNGRADE_TEST 已设置；请在 gate/planner "
+             "侧显式排除降级用例，而不是依赖 suite 内跳过。");
 
     QVERIFY2(
         !m_http1BaseUrl.isEmpty(),
@@ -658,7 +660,6 @@ void TestQCNetworkHttp2::testHttp2ConnectionReuse()
 
         reply->deleteLater();
     }
-
 }
 
 void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
@@ -721,6 +722,60 @@ void TestQCNetworkHttp2::testHttp2VsHttp1Performance()
     qDebug() << "顺序请求耗时对比(ms): http1=" << http1Elapsed << "http2=" << http2Elapsed;
 
     // 不强制要求 HTTP/2 更快（因为测试环境差异），只验证流程可用
+}
+
+void TestQCNetworkHttp2::testSchedulerAdmissionAndStreamLimit_data()
+{
+    QTest::addColumn<int>("streamLimit");
+    QTest::newRow("one-stream") << 1;
+    QTest::newRow("two-streams") << 2;
+}
+
+void TestQCNetworkHttp2::testSchedulerAdmissionAndStreamLimit()
+{
+    QFETCH(int, streamLimit);
+    // 使用新连接隔离各行的 HTTP/2 SETTINGS，不把复用旧连接的协商状态当作新配额。
+    QVERIFY2(startLocalTestServer(), qPrintable(m_serverError));
+    auto *pool          = QCNetworkConnectionPoolManager::instance();
+    const auto original = pool->config();
+    const auto restore  = qScopeGuard([&]() {
+        QCOMPARE(pool->setConfig(original), QCNetworkConnectionPoolManager::UpdateResult::Applied);
+    });
+    QCNetworkConnectionPoolConfig config;
+    config.setMultiMaxTotalConnections(1);
+    config.setMultiMaxHostConnections(1);
+    config.setMultiMaxConcurrentStreams(streamLimit);
+    config.setMultiplexingEnabled(true);
+    QCOMPARE(pool->setConfig(config), QCNetworkConnectionPoolManager::UpdateResult::Applied);
+    QCNetworkAccessManager manager;
+    manager.enableRequestScheduler(true);
+    auto policy = manager.schedulerPolicy();
+    policy.setMaxConcurrentRequests(3);
+    policy.setMaxRequestsPerHost(3);
+    QVERIFY(manager.setSchedulerPolicy(policy));
+    QList<QCNetworkReply *> replies;
+    for (int index = 0; index < 3; ++index) {
+        QCNetworkRequest request(QUrl(m_localH2BaseUrl + QStringLiteral("/reqinfo?delay_ms=200")));
+        request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+        request.setSslConfig(QCNetworkSslConfig::insecureConfig());
+        replies.append(manager.get(request));
+    }
+    QCOMPARE(manager.schedulerStatistics().runningRequests(), 3);
+    int peak = 0;
+    QSet<int> sessions;
+    for (auto *reply : replies) {
+        QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 5000);
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        const auto document = QJsonDocument::fromJson(reply->readAll().value_or(QByteArray()));
+        QVERIFY(document.isObject());
+        const auto object = document.object();
+        QCOMPARE(object.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+        peak = qMax(peak, object.value(QStringLiteral("activeStreams")).toInt());
+        sessions.insert(object.value(QStringLiteral("sessionId")).toInt());
+    }
+    QCOMPARE(sessions.size(), 1);
+    QVERIFY(!sessions.contains(0));
+    QCOMPARE(peak, streamLimit);
 }
 
 QTEST_MAIN(TestQCNetworkHttp2)

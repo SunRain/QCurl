@@ -7,5 +7,6 @@ class QCNetworkRequest;
 
 int runRequestConfigProbe(QCurl::QCNetworkRequest &request);
 int runCookieAsyncResultProbe();
+int runSchedulerProbe();
 
 #endif // QCURL_PUBLIC_API_CONSUMER_CONTRACT_PROBES_H

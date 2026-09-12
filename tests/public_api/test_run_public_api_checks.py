@@ -294,22 +294,19 @@ def test_hard_break_guards_reject_removed_api_shapes(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (src / "QCNetworkAccessManager.h").write_text(
-        "class QCNetworkAccessManager { public: void sendGet(); };\n",
-        encoding="utf-8",
-    )
-    (src / "QCNetworkRequestScheduler.h").write_text(
-        "class QCNetworkRequestScheduler { public:\n"
+        "class QCNetworkAccessManager { public: void sendGet();\n"
         "    void scheduleReply();\n"
-        "    bool deferPendingRequest();\n"
-        "    bool undeferRequest();\n"
-        "    void cancelRequest();\n"
+        "    bool deferScheduledRequest();\n"
+        "    bool undeferScheduledRequest();\n"
+        "    void cancelScheduledRequest();\n"
         "    void cancelAllRequests();\n"
         "    int cancelLaneRequests();\n"
-        "    bool changePriority();\n"
+        "    bool setScheduledRequestPriority();\n"
         "};\n",
         encoding="utf-8",
     )
-    (src / "QCNetworkRequestScheduler.cpp").write_text(
+    (src / "private").mkdir(exist_ok=True)
+    (src / "private" / "QCNetworkRequestScheduler.cpp").write_text(
         "void legacySchedulerFallback(QCNetworkRequestScheduler *scheduler, "
         "QCNetworkReply *reply) {\n"
         "    QPointer<QCNetworkReply> safeReply(reply);\n"

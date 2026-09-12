@@ -66,22 +66,28 @@ def test_record_scan_uses_struct_default_public_access() -> None:
     ) == ["m_value"]
 
 
-def test_unlisted_pimpl_type_is_rejected(tmp_path: Path, capsys) -> None:
+@pytest.mark.parametrize("visibility", ["", "Q_DECL_HIDDEN "])
+def test_unlisted_pimpl_type_is_rejected(
+    tmp_path: Path, capsys, visibility: str
+) -> None:
     _write_source(
         tmp_path,
         "src/Foo.cpp",
-        "class FooPrivate { public: int state = 0; };\n",
+        f"class {visibility}FooPrivate {{ public: int state = 0; }};\n",
     )
 
     assert naming.main(["--source-root", str(tmp_path)]) == 1
     assert "missing explicit authorization" in capsys.readouterr().err
 
 
-def test_shared_data_authorization_requires_a_real_holder(tmp_path: Path) -> None:
+@pytest.mark.parametrize("visibility", ["", "Q_DECL_HIDDEN "])
+def test_shared_data_authorization_requires_a_real_holder(
+    tmp_path: Path, visibility: str
+) -> None:
     _write_source(
         tmp_path,
         "src/Foo.cpp",
-        "class FooData : public QSharedData { public: int value = 0; };\n",
+        f"class {visibility}FooData : public QSharedData {{ public: int value = 0; }};\n",
     )
     authorization = naming.DirectFieldAuthorization(
         relative_path="src/Foo.cpp",
@@ -92,6 +98,57 @@ def test_shared_data_authorization_requires_a_real_holder(tmp_path: Path) -> Non
     violations = naming.validate_authorizations(tmp_path, (authorization,))
 
     assert any("shared-data holder" in violation for violation in violations)
+
+
+def test_hidden_pimpl_preserves_authorization_and_member_checks(tmp_path: Path) -> None:
+    source = """
+/// 保存 Foo 的私有状态。
+class Q_DECL_HIDDEN FooPrivate
+{
+    Q_DECLARE_PUBLIC(Foo)
+public:
+    int value = 0;
+};
+"""
+    authorization = naming.DirectFieldAuthorization(
+        relative_path="src/Foo_p.h",
+        type_name="FooPrivate",
+        kind="pimpl",
+        public_type="Foo",
+    )
+    _write_source(tmp_path, authorization.relative_path, source)
+
+    assert naming.validate_authorizations(tmp_path, (authorization,)) == []
+    assert naming.inspect_authorized_types(tmp_path, (authorization,)) == []
+
+    _write_source(
+        tmp_path, authorization.relative_path, source.replace("value", "m_value")
+    )
+    assert naming.inspect_authorized_types(tmp_path, (authorization,)) == [
+        "src/Foo_p.h:FooPrivate: public 直接字段不得使用 m_: m_value"
+    ]
+
+
+@pytest.mark.parametrize("declaration", ["class", "struct"])
+def test_hidden_record_keeps_comment_and_default_access_checks(
+    tmp_path: Path, declaration: str
+) -> None:
+    _write_source(
+        tmp_path,
+        "src/Foo.cpp",
+        f"/// 保存一次操作的数据。\n{declaration} Q_DECL_HIDDEN Snapshot {{ int m_value; }};\n",
+    )
+    authorization = naming.DirectFieldAuthorization(
+        relative_path="src/Foo.cpp", type_name="Snapshot", kind="record"
+    )
+
+    assert naming.validate_authorizations(tmp_path, (authorization,)) == []
+    expected = (
+        ["src/Foo.cpp:Snapshot: public 直接字段不得使用 m_: m_value"]
+        if declaration == "struct"
+        else []
+    )
+    assert naming.inspect_authorized_types(tmp_path, (authorization,)) == expected
 
 
 def test_shared_data_rejects_owner_specific_back_pointer(tmp_path: Path) -> None:

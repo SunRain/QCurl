@@ -23,26 +23,21 @@ public:
 
 QCNetworkSchedulerStatistics::QCNetworkSchedulerStatistics()
     : d(new QCNetworkSchedulerStatisticsData)
-{
-}
+{}
 
 QCNetworkSchedulerStatistics::QCNetworkSchedulerStatistics(
-    const QCNetworkSchedulerStatistics &other)
-    = default;
+    const QCNetworkSchedulerStatistics &other) = default;
 
 QCNetworkSchedulerStatistics::QCNetworkSchedulerStatistics(
-    QCNetworkSchedulerStatistics &&other) noexcept
-    = default;
+    QCNetworkSchedulerStatistics &&other) noexcept = default;
 
 QCNetworkSchedulerStatistics::~QCNetworkSchedulerStatistics() = default;
 
 QCNetworkSchedulerStatistics &QCNetworkSchedulerStatistics::operator=(
-    const QCNetworkSchedulerStatistics &other)
-    = default;
+    const QCNetworkSchedulerStatistics &other) = default;
 
 QCNetworkSchedulerStatistics &QCNetworkSchedulerStatistics::operator=(
-    QCNetworkSchedulerStatistics &&other) noexcept
-    = default;
+    QCNetworkSchedulerStatistics &&other) noexcept = default;
 
 int QCNetworkSchedulerStatistics::pendingRequests() const
 {
@@ -119,15 +114,13 @@ class QCNetworkSchedulerPolicyLaneConfigData : public QSharedData
 {
 public:
     int weight          = 1;
-    int quantum         = 1;
     int reservedGlobal  = 0;
     int reservedPerHost = 0;
 };
 
 QCNetworkSchedulerPolicy::LaneConfig::LaneConfig()
     : d(new QCNetworkSchedulerPolicyLaneConfigData)
-{
-}
+{}
 
 QCNetworkSchedulerPolicy::LaneConfig::LaneConfig(const LaneConfig &other) = default;
 
@@ -136,12 +129,10 @@ QCNetworkSchedulerPolicy::LaneConfig::LaneConfig(LaneConfig &&other) noexcept = 
 QCNetworkSchedulerPolicy::LaneConfig::~LaneConfig() = default;
 
 QCNetworkSchedulerPolicy::LaneConfig &QCNetworkSchedulerPolicy::LaneConfig::operator=(
-    const LaneConfig &other)
-    = default;
+    const LaneConfig &other) = default;
 
 QCNetworkSchedulerPolicy::LaneConfig &QCNetworkSchedulerPolicy::LaneConfig::operator=(
-    LaneConfig &&other) noexcept
-    = default;
+    LaneConfig &&other) noexcept = default;
 
 int QCNetworkSchedulerPolicy::LaneConfig::weight() const
 {
@@ -151,16 +142,6 @@ int QCNetworkSchedulerPolicy::LaneConfig::weight() const
 void QCNetworkSchedulerPolicy::LaneConfig::setWeight(int value)
 {
     d->weight = value;
-}
-
-int QCNetworkSchedulerPolicy::LaneConfig::quantum() const
-{
-    return d->quantum;
-}
-
-void QCNetworkSchedulerPolicy::LaneConfig::setQuantum(int value)
-{
-    d->quantum = value;
 }
 
 int QCNetworkSchedulerPolicy::LaneConfig::reservedGlobal() const
@@ -183,17 +164,21 @@ void QCNetworkSchedulerPolicy::LaneConfig::setReservedPerHost(int value)
     d->reservedPerHost = value;
 }
 
+bool QCNetworkSchedulerPolicy::LaneConfig::operator==(const LaneConfig &other) const
+{
+    return d->weight == other.d->weight && d->reservedGlobal == other.d->reservedGlobal
+           && d->reservedPerHost == other.d->reservedPerHost;
+}
+
 /// @brief 保存请求调度器的隐式共享策略配置。
 class QCNetworkSchedulerPolicyData : public QSharedData
 {
 public:
-    QCNetworkLaneKey defaultLane = QCNetworkLaneKey::defaultLane();
     QHash<QString, QCNetworkSchedulerPolicy::LaneConfig> laneConfigs;
     QList<QString> laneOrder;
-    int maxConcurrentRequests      = 6;
-    int maxRequestsPerHost         = 2;
-    qint64 maxBandwidthBytesPerSec = 0;
-    bool throttlingEnabled         = true;
+    int maxConcurrentRequests  = 6;
+    int maxRequestsPerHost     = 2;
+    qint64 admissionByteBudget = 0;
 };
 
 namespace {
@@ -211,10 +196,6 @@ bool isLaneConfigValid(const QCNetworkSchedulerPolicy::LaneConfig &config, QStri
         setError(error, QStringLiteral("lane weight must be greater than zero"));
         return false;
     }
-    if (config.quantum() <= 0) {
-        setError(error, QStringLiteral("lane quantum must be greater than zero"));
-        return false;
-    }
     if (config.reservedGlobal() < 0) {
         setError(error, QStringLiteral("lane reservedGlobal must not be negative"));
         return false;
@@ -230,37 +211,27 @@ bool isLaneConfigValid(const QCNetworkSchedulerPolicy::LaneConfig &config, QStri
 
 QCNetworkSchedulerPolicy::QCNetworkSchedulerPolicy()
     : d(new QCNetworkSchedulerPolicyData)
-{
-}
+{}
 
 QCNetworkSchedulerPolicy::QCNetworkSchedulerPolicy(const QCNetworkSchedulerPolicy &other) = default;
 
-QCNetworkSchedulerPolicy::QCNetworkSchedulerPolicy(QCNetworkSchedulerPolicy &&other) noexcept
-    = default;
+QCNetworkSchedulerPolicy::QCNetworkSchedulerPolicy(
+    QCNetworkSchedulerPolicy &&other) noexcept = default;
 
 QCNetworkSchedulerPolicy::~QCNetworkSchedulerPolicy() = default;
 
 QCNetworkSchedulerPolicy &QCNetworkSchedulerPolicy::operator=(
-    const QCNetworkSchedulerPolicy &other)
-    = default;
+    const QCNetworkSchedulerPolicy &other) = default;
 
 QCNetworkSchedulerPolicy &QCNetworkSchedulerPolicy::operator=(
-    QCNetworkSchedulerPolicy &&other) noexcept
-    = default;
+    QCNetworkSchedulerPolicy &&other) noexcept = default;
 
-QCNetworkLaneKey QCNetworkSchedulerPolicy::defaultLane() const
+bool QCNetworkSchedulerPolicy::operator==(const QCNetworkSchedulerPolicy &other) const
 {
-    return d->defaultLane;
-}
-
-void QCNetworkSchedulerPolicy::setDefaultLane(const QCNetworkLaneKey &lane)
-{
-    d->defaultLane = lane;
-}
-
-QCNetworkSchedulerPolicy::UnknownLaneMode QCNetworkSchedulerPolicy::unknownLaneMode() const noexcept
-{
-    return UnknownLaneMode::RequireRegistered;
+    return d->laneOrder == other.d->laneOrder && d->laneConfigs == other.d->laneConfigs
+           && d->maxConcurrentRequests == other.d->maxConcurrentRequests
+           && d->maxRequestsPerHost == other.d->maxRequestsPerHost
+           && d->admissionByteBudget == other.d->admissionByteBudget;
 }
 
 bool QCNetworkSchedulerPolicy::isLaneRegistered(const QCNetworkLaneKey &lane) const
@@ -314,7 +285,8 @@ bool QCNetworkSchedulerPolicy::laneConfig(const QCNetworkLaneKey &lane,
 {
     setError(error, QString());
     if (!out) {
-        setError(error, QStringLiteral("QCNetworkSchedulerPolicy::laneConfig requires output config"));
+        setError(error,
+                 QStringLiteral("QCNetworkSchedulerPolicy::laneConfig requires output config"));
         return false;
     }
     if (!lane.isValid()) {
@@ -350,34 +322,20 @@ void QCNetworkSchedulerPolicy::setMaxRequestsPerHost(int value)
     d->maxRequestsPerHost = value;
 }
 
-qint64 QCNetworkSchedulerPolicy::maxBandwidthBytesPerSec() const
+qint64 QCNetworkSchedulerPolicy::admissionByteBudget() const
 {
-    return d->maxBandwidthBytesPerSec;
+    return d->admissionByteBudget;
 }
 
-void QCNetworkSchedulerPolicy::setMaxBandwidthBytesPerSec(qint64 value)
+void QCNetworkSchedulerPolicy::setAdmissionByteBudget(qint64 value)
 {
-    d->maxBandwidthBytesPerSec = value;
-}
-
-bool QCNetworkSchedulerPolicy::throttlingEnabled() const
-{
-    return d->throttlingEnabled;
-}
-
-void QCNetworkSchedulerPolicy::setThrottlingEnabled(bool enabled)
-{
-    d->throttlingEnabled = enabled;
+    d->admissionByteBudget = value;
 }
 
 bool QCNetworkSchedulerPolicy::validate(QString *error) const
 {
     setError(error, QString());
-    if (!d->defaultLane.isValid()) {
-        setError(error, QStringLiteral("default lane must be a valid QCNetworkLaneKey"));
-        return false;
-    }
-    if (!isLaneRegistered(d->defaultLane)) {
+    if (!isLaneRegistered(QCNetworkLaneKey::defaultLane())) {
         setError(error, QStringLiteral("default lane must be registered"));
         return false;
     }
@@ -389,8 +347,8 @@ bool QCNetworkSchedulerPolicy::validate(QString *error) const
         setError(error, QStringLiteral("maxRequestsPerHost must be greater than zero"));
         return false;
     }
-    if (d->maxBandwidthBytesPerSec < 0) {
-        setError(error, QStringLiteral("maxBandwidthBytesPerSec must not be negative"));
+    if (d->admissionByteBudget < 0) {
+        setError(error, QStringLiteral("admissionByteBudget must not be negative"));
         return false;
     }
 
@@ -406,10 +364,12 @@ bool QCNetworkSchedulerPolicy::validate(QString *error) const
 QCNetworkSchedulerPolicy QCNetworkSchedulerPolicy::defaultPolicy()
 {
     QCNetworkSchedulerPolicy policy;
-    const bool defaultRegistered = policy.setLaneConfig(QCNetworkLaneKey::defaultLane(), LaneConfig{});
+    const bool defaultRegistered = policy.setLaneConfig(QCNetworkLaneKey::defaultLane(),
+                                                        LaneConfig{});
     const bool controlRegistered = policy.setLaneConfig(QCNetworkLaneKey::control(), LaneConfig{});
     const bool transferRegistered = policy.setLaneConfig(QCNetworkLaneKey::transfer(), LaneConfig{});
-    const bool backgroundRegistered = policy.setLaneConfig(QCNetworkLaneKey::background(), LaneConfig{});
+    const bool backgroundRegistered = policy.setLaneConfig(QCNetworkLaneKey::background(),
+                                                           LaneConfig{});
     Q_ASSERT(defaultRegistered);
     Q_ASSERT(controlRegistered);
     Q_ASSERT(transferRegistered);

@@ -86,6 +86,10 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
+    if (const int result = runSchedulerProbe(); result != 0) {
+        return result;
+    }
+
     QCurl::QCNetworkAccessManager manager;
     if (!nativeDiagnosticContract(manager)) {
         return 30;
@@ -102,12 +106,10 @@ int main(int argc, char **argv)
     QCurl::QCNetworkSchedulerPolicy policy = QCurl::QCNetworkSchedulerPolicy::defaultPolicy();
     policy.setMaxConcurrentRequests(6);
     policy.setMaxRequestsPerHost(2);
-    policy.setMaxBandwidthBytesPerSec(0);
-    policy.setThrottlingEnabled(false);
+    policy.setAdmissionByteBudget(0);
 
     QCurl::QCNetworkSchedulerPolicy::LaneConfig lane;
     lane.setWeight(3);
-    lane.setQuantum(1);
     lane.setReservedGlobal(1);
     lane.setReservedPerHost(1);
     QString laneConfigError;
@@ -129,7 +131,7 @@ int main(int argc, char **argv)
     if (!appliedConfig.laneConfig(QCurl::QCNetworkLaneKey::control(), &appliedLane)) {
         return 3;
     }
-    if (appliedLane.weight() < 1 || appliedLane.quantum() < 1) {
+    if (appliedLane.weight() < 1) {
         return 3;
     }
     const auto schedulerStats = manager.schedulerStatistics();

@@ -18,7 +18,7 @@
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestScheduler.h"
+#include "QCNetworkSchedulerPolicy.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
 #include "qcnetwork_mock_test_support.h"
 #include "test_httpbin_env.h"
@@ -54,6 +54,12 @@ using namespace QCurl;
 class TestQCNetworkReply : public QObject
 {
     Q_OBJECT
+
+public:
+    TestQCNetworkReply() = default;
+
+private:
+    Q_DISABLE_COPY_MOVE(TestQCNetworkReply)
 
 private Q_SLOTS:
     void initTestCase();
@@ -126,9 +132,8 @@ private:
     QCNetworkReply *sendManagedReply(HttpMethod method,
                                      const QCNetworkRequest &request,
                                      const QByteArray &body = QByteArray());
-    QCNetworkRequestScheduler::Config blockScheduler(bool &originalEnabled);
-    void restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
-                          bool originalEnabled);
+    QCNetworkSchedulerPolicy blockScheduler(bool &originalEnabled);
+    void restoreScheduler(const QCNetworkSchedulerPolicy &originalConfig, bool originalEnabled);
 };
 
 namespace {
@@ -298,32 +303,31 @@ QCNetworkReply *TestQCNetworkReply::sendManagedReply(HttpMethod method,
     }
 }
 
-QCNetworkRequestScheduler::Config TestQCNetworkReply::blockScheduler(bool &originalEnabled)
+QCNetworkSchedulerPolicy TestQCNetworkReply::blockScheduler(bool &originalEnabled)
 {
-    auto *scheduler = m_manager->schedulerForTesting();
-    Q_ASSERT(scheduler != nullptr);
-
-    originalEnabled = m_manager->isSchedulerEnabled();
-
-    QCNetworkRequestScheduler::Config originalConfig = scheduler->configForTesting();
-    QCNetworkRequestScheduler::Config blockedConfig  = originalConfig;
-    blockedConfig.setMaxConcurrentRequests(0);
-    blockedConfig.setMaxRequestsPerHost(std::max(originalConfig.maxRequestsPerHost(), 1));
-
+    originalEnabled           = m_manager->isSchedulerEnabled();
+    const auto originalPolicy = m_manager->schedulerPolicy();
+    auto blockedPolicy        = originalPolicy;
+    blockedPolicy.setMaxConcurrentRequests(1);
     m_manager->enableRequestScheduler(true);
-    scheduler->setConfigForTesting(blockedConfig);
-    return originalConfig;
+    const bool applied = m_manager->setSchedulerPolicy(blockedPolicy);
+    Q_ASSERT(applied);
+    // 使用合法配额和本地 httpbin 占位请求，不以非法零配额替代产品路径。
+    m_manager->get(QCNetworkRequest(QUrl(m_httpbinBaseUrl + QStringLiteral("/delay/10"))));
+    return originalPolicy;
 }
 
-void TestQCNetworkReply::restoreScheduler(const QCNetworkRequestScheduler::Config &originalConfig,
+void TestQCNetworkReply::restoreScheduler(const QCNetworkSchedulerPolicy &originalConfig,
                                           bool originalEnabled)
 {
-    auto *scheduler = m_manager->schedulerForTesting();
-    Q_ASSERT(scheduler != nullptr);
-
-    static_cast<void>(scheduler->cancelAllRequests());
+    for (const auto &lane : m_manager->schedulerPolicy().registeredLanes()) {
+        const auto cancelled = m_manager->cancelLaneRequests(
+            lane, QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
+        Q_ASSERT(cancelled.isSuccess());
+    }
     QCoreApplication::processEvents();
-    scheduler->setConfigForTesting(originalConfig);
+    const bool applied = m_manager->setSchedulerPolicy(originalConfig);
+    Q_ASSERT(applied);
     m_manager->enableRequestScheduler(originalEnabled);
 }
 

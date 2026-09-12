@@ -18,6 +18,7 @@ add_executable(qcurl_public_api_consumer_smoke
     main.cpp
     request_config_probe.cpp
     cookie_async_result_probe.cpp
+    scheduler_probe.cpp
 )
 target_link_libraries(qcurl_public_api_consumer_smoke
     PRIVATE

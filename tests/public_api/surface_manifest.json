@@ -207,16 +207,7 @@
       "visibility": "Public",
       "currentInstall": "core-component",
       "targetInstall": "core-component",
-      "rationale": "Core manager-level scheduler admission policy and scheduler statistics value types."
-    },
-    {
-      "path": "QCNetworkRequestScheduler.h",
-      "component": "Core",
-      "maturity": "Stable",
-      "visibility": "Public",
-      "currentInstall": "core-component",
-      "targetInstall": "core-component",
-      "rationale": "Core scheduler observation type retained for existing signal-level tests; downstream configuration workflow moved to QCNetworkSchedulerPolicy on QCNetworkAccessManager."
+      "rationale": "Core manager-level admission policy, command results and scheduler statistics value types."
     },
     {
       "path": "QCNetworkCachePolicy.h",

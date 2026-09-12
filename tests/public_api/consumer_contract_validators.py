@@ -56,7 +56,7 @@ def validate_scheduler_core_contract_fixture(source_dir: Path) -> None:
             "QCurl::QCNetworkLaneCancelResult::Status::SchedulerDisabled",
             ".setMaxConcurrentRequests(",
             ".maxConcurrentRequests()",
-            ".setThrottlingEnabled(",
+            ".setAdmissionByteBudget(",
             ".setWeight(",
             ".weight()",
             "QCNetworkProxyConfig::ProxyTlsConfig",
@@ -107,7 +107,7 @@ def validate_scheduler_core_contract_fixture(source_dir: Path) -> None:
         [
             "maxConcurrentRequests",
             "maxRequestsPerHost",
-            "maxBandwidthBytesPerSec",
+            "admissionByteBudget",
             "enableThrottling",
             "weight",
             "quantum",

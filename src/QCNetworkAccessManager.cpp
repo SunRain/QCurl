@@ -6,8 +6,8 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkRequestScheduler.h"
 #include "private/QCNetworkCacheIntegration_p.h"
+#include "private/QCNetworkRequestScheduler_p.h"
 #include "private/QCThreading_p.h"
 
 #include <QPointer>
@@ -121,14 +121,13 @@ QCNetworkAccessManager::QCNetworkAccessManager(QObject *parent)
 {
     Q_D(QCNetworkAccessManager);
     d->scheduler = new QCNetworkRequestScheduler(this);
-    QString schedulerPolicyError;
-    const bool schedulerPolicyApplied = d->scheduler->applyPolicy(d->schedulerPolicy,
-                                                                  &schedulerPolicyError);
-    Q_ASSERT_X(schedulerPolicyApplied, "QCNetworkAccessManager", qPrintable(schedulerPolicyError));
+    d->connectSchedulerSignals();
 }
 
 QCNetworkAccessManager::~QCNetworkAccessManager()
 {
+    Q_D(QCNetworkAccessManager);
+    QObject::disconnect(d->scheduler, nullptr, this, nullptr);
     clearMiddlewares();
 }
 
@@ -159,8 +158,9 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createManagedReply(
     const QList<QCNetworkMiddleware *> &middlewares)
 {
     auto *reply = createPreparedManagedReply(request, method, requestBodySource, body, middlewares);
+    QPointer<QCNetworkReply> safeReply(reply);
     startPreparedReply(reply, request);
-    return reply;
+    return safeReply.data();
 }
 
 QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
@@ -279,7 +279,7 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
                               QStringLiteral("QCNetworkAccessManager: scheduler lane is invalid"));
             return;
         }
-        if (!schedulerPolicy.isLaneRegistered(request.lane())) {
+        if (!scheduler->policy().isLaneRegistered(request.lane())) {
             queueReplyFailure(reply,
                               NetworkError::InvalidRequest,
                               QStringLiteral(
@@ -289,9 +289,10 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
         }
 
         if (scheduler) {
-            const QCNetworkRequestScheduler::CommandResult result
-                = scheduler->scheduleReply(reply, request.lane(), request.priority());
-            if (result != QCNetworkRequestScheduler::CommandResult::Applied) {
+            const SchedulerCommandResult result = scheduler->scheduleReply(reply,
+                                                                           request.lane(),
+                                                                           request.priority());
+            if (result != SchedulerCommandResult::Applied) {
                 queueReplyFailure(
                     reply,
                     NetworkError::InvalidRequest,

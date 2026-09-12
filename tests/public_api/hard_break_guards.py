@@ -119,11 +119,11 @@ SCHEDULER_PUBLIC_SURFACE_PATHS = (
 )
 
 SCHEDULER_PUBLIC_HEADER_PATHS = (
-    "src/QCNetworkRequestScheduler.h",
+    "src/QCNetworkAccessManager.h",
 )
 
 SCHEDULER_COMMAND_IMPLEMENTATION_PATHS = (
-    "src/QCNetworkRequestScheduler.cpp",
+    "src/private/QCNetworkRequestScheduler.cpp",
     "src/private/QCNetworkRequestSchedulerControl.cpp",
 )
 
@@ -259,14 +259,14 @@ SCOPED_DENY_RULES: tuple[tuple[str, re.Pattern[str], tuple[str, ...]], ...] = (
     (
         "old scheduler void command result",
         re.compile(
-            r"\bvoid\s+(?:scheduleReply|cancelRequest|cancelAllRequests)\s*\("
+            r"\bvoid\s+(?:cancelScheduledRequest)\s*\("
         ),
         SCHEDULER_PUBLIC_HEADER_PATHS,
     ),
     (
         "old scheduler bool command result",
         re.compile(
-            r"\bbool\s+(?:deferPendingRequest|undeferRequest|changePriority)\s*\("
+            r"\bbool\s+(?:deferScheduledRequest|undeferScheduledRequest|setScheduledRequestPriority)\s*\("
         ),
         SCHEDULER_PUBLIC_HEADER_PATHS,
     ),

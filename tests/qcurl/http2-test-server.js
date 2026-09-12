@@ -98,6 +98,7 @@ async function main() {
 
   let nextH2SessionId = 1;
   const h2SessionIds = new WeakMap();
+  let activeH2Requests = 0;
 
   const h2Server = http2.createSecureServer({
     key,
@@ -110,6 +111,15 @@ async function main() {
   });
 
   h2Server.on('stream', (stream, headers) => {
+    const activeStreams = ++activeH2Requests;
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        --activeH2Requests;
+      }
+    };
+    stream.once('close', release);
     const method = headers[':method'] || 'GET';
     const authority = headers[':authority'] || 'localhost';
     const rawPath = headers[':path'] || '/';
@@ -123,6 +133,7 @@ async function main() {
       httpVersion: '2.0',
       sessionId,
       streamId,
+      activeStreams,
       method,
       path: url.pathname,
       query: toQueryObject(url.searchParams),
@@ -130,6 +141,10 @@ async function main() {
     };
 
     const respondJson = (status, obj) => {
+      release();
+      if (stream.destroyed) {
+        return;
+      }
       stream.respond({
         ':status': status,
         'content-type': 'application/json',

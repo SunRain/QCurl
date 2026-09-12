@@ -294,8 +294,25 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkHttp2.cpp
 ) # HTTP/2 功能测试
 add_qcurl_test(tst_QCNetworkSchedulerPolicy tst_QCNetworkSchedulerPolicy.cpp) # lane key / scheduler policy 值类型测试
-add_qcurl_test(tst_QCNetworkScheduler tst_QCNetworkScheduler.cpp) # 请求优先级调度测试
+add_qcurl_test(tst_QCNetworkAdmissionCore tst_QCNetworkAdmissionCore.cpp)
+set_tests_properties(tst_QCNetworkAdmissionCore PROPERTIES LABELS "offline")
+add_qcurl_test(tst_QCNetworkScheduler
+    qcnetwork_scheduler_test.h
+    tst_QCNetworkScheduler.cpp
+    tst_QCNetworkSchedulerSelection.cpp
+    tst_QCNetworkSchedulerCommands.cpp
+    tst_QCNetworkSchedulerLifecycle.cpp
+    tst_QCNetworkSchedulerNotifications.cpp
+    tst_QCNetworkSchedulerPrivate.cpp
+) # 请求优先级调度测试
 target_compile_definitions(tst_QCNetworkScheduler PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test(tst_QCNetworkSchedulerContract tst_QCNetworkSchedulerContract.cpp)
+target_compile_definitions(tst_QCNetworkSchedulerContract PRIVATE QCURL_ENABLE_TEST_HOOKS)
+set_tests_properties(tst_QCNetworkSchedulerContract PROPERTIES LABELS "offline")
+add_qcurl_test_with_preflight(tst_QCNetworkSchedulerTransport
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkSchedulerTransport.cpp qcurl_http_script_server.h)
+set_tests_properties(tst_QCNetworkSchedulerTransport PROPERTIES LABELS "env;local_port")
 add_qcurl_test_with_preflight(
     tst_QCNetworkActorThreadModel
     REQUIRE_LOCAL_PORT
@@ -601,7 +618,10 @@ set(_qcurl_qttest_targets
     tst_QCNetworkHttpErrorMappingOffline
     tst_QCNetworkHttp2
     tst_QCNetworkSchedulerPolicy
+    tst_QCNetworkAdmissionCore
     tst_QCNetworkScheduler
+    tst_QCNetworkSchedulerContract
+    tst_QCNetworkSchedulerTransport
     tst_QCNetworkActorThreadModel
     tst_QCNetworkProxy
     tst_QCNetworkRequestCanonicalApi

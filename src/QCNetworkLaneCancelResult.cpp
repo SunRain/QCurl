@@ -15,14 +15,16 @@ QCNetworkLaneCancelResult::Status statusFromFailureReason(
     QCNetworkLaneCancelResult::FailureReason reason) noexcept
 {
     switch (reason) {
-    case QCNetworkLaneCancelResult::FailureReason::InvalidLane:
-        return QCNetworkLaneCancelResult::Status::InvalidLane;
-    case QCNetworkLaneCancelResult::FailureReason::UnregisteredLane:
-        return QCNetworkLaneCancelResult::Status::UnregisteredLane;
-    case QCNetworkLaneCancelResult::FailureReason::NonOwnerThread:
-        return QCNetworkLaneCancelResult::Status::NonOwnerThread;
-    case QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled:
-        return QCNetworkLaneCancelResult::Status::SchedulerDisabled;
+        case QCNetworkLaneCancelResult::FailureReason::InvalidLane:
+            return QCNetworkLaneCancelResult::Status::InvalidLane;
+        case QCNetworkLaneCancelResult::FailureReason::UnregisteredLane:
+            return QCNetworkLaneCancelResult::Status::UnregisteredLane;
+        case QCNetworkLaneCancelResult::FailureReason::NonOwnerThread:
+            return QCNetworkLaneCancelResult::Status::NonOwnerThread;
+        case QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled:
+            return QCNetworkLaneCancelResult::Status::SchedulerDisabled;
+        case QCNetworkLaneCancelResult::FailureReason::InvalidScope:
+            return QCNetworkLaneCancelResult::Status::InvalidScope;
     }
     Q_UNREACHABLE_RETURN(QCNetworkLaneCancelResult::Status::InvalidLane);
 }
@@ -30,14 +32,16 @@ QCNetworkLaneCancelResult::Status statusFromFailureReason(
 QString defaultErrorForFailureReason(QCNetworkLaneCancelResult::FailureReason reason)
 {
     switch (reason) {
-    case QCNetworkLaneCancelResult::FailureReason::InvalidLane:
-        return QStringLiteral("scheduler lane is invalid");
-    case QCNetworkLaneCancelResult::FailureReason::UnregisteredLane:
-        return QStringLiteral("scheduler lane is not registered");
-    case QCNetworkLaneCancelResult::FailureReason::NonOwnerThread:
-        return QStringLiteral("scheduler lane cancellation must run on owner thread");
-    case QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled:
-        return QStringLiteral("request scheduler is not enabled");
+        case QCNetworkLaneCancelResult::FailureReason::InvalidLane:
+            return QStringLiteral("scheduler lane is invalid");
+        case QCNetworkLaneCancelResult::FailureReason::UnregisteredLane:
+            return QStringLiteral("scheduler lane is not registered");
+        case QCNetworkLaneCancelResult::FailureReason::NonOwnerThread:
+            return QStringLiteral("scheduler lane cancellation must run on owner thread");
+        case QCNetworkLaneCancelResult::FailureReason::SchedulerDisabled:
+            return QStringLiteral("request scheduler is not enabled");
+        case QCNetworkLaneCancelResult::FailureReason::InvalidScope:
+            return QStringLiteral("scheduler lane cancellation scope is invalid");
     }
     Q_UNREACHABLE_RETURN(QStringLiteral("scheduler lane cancellation failed"));
 }
@@ -55,26 +59,21 @@ public:
 
 QCNetworkLaneCancelResult::QCNetworkLaneCancelResult()
     : d(new QCNetworkLaneCancelResultData)
-{
-}
+{}
 
 QCNetworkLaneCancelResult::QCNetworkLaneCancelResult(
-    const QCNetworkLaneCancelResult &other)
-    = default;
+    const QCNetworkLaneCancelResult &other) = default;
 
 QCNetworkLaneCancelResult::QCNetworkLaneCancelResult(
-    QCNetworkLaneCancelResult &&other) noexcept
-    = default;
+    QCNetworkLaneCancelResult &&other) noexcept = default;
 
 QCNetworkLaneCancelResult::~QCNetworkLaneCancelResult() = default;
 
 QCNetworkLaneCancelResult &QCNetworkLaneCancelResult::operator=(
-    const QCNetworkLaneCancelResult &other)
-    = default;
+    const QCNetworkLaneCancelResult &other) = default;
 
 QCNetworkLaneCancelResult &QCNetworkLaneCancelResult::operator=(
-    QCNetworkLaneCancelResult &&other) noexcept
-    = default;
+    QCNetworkLaneCancelResult &&other) noexcept = default;
 
 QCNetworkLaneCancelResult QCNetworkLaneCancelResult::success(int cancelledRequests)
 {

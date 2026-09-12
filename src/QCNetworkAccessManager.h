@@ -13,6 +13,7 @@
 #include "QCNetworkLaneCancelResult.h"
 #include "QCNetworkLaneKey.h"
 #include "QCNetworkLogger.h"
+#include "QCNetworkRequestPriority.h"
 #include "QCNetworkSchedulerPolicy.h"
 
 #include <QByteArray>
@@ -25,6 +26,8 @@
 
 #include <optional>
 
+Q_MOC_INCLUDE("QCNetworkReply.h")
+
 class QIODevice;
 
 namespace QCurl {
@@ -34,7 +37,7 @@ class QCNetworkRequest;
 class QCNetworkReply;
 class QCNetworkAccessManagerPrivate;
 class QCNetworkDownloadToDeviceJob;
-class QCNetworkRequestScheduler;
+class QCNetworkRequestSchedulerTestAccess;
 class QCNetworkCache;
 class QCNetworkMiddleware;
 class ShareHandleConfigData;
@@ -48,6 +51,7 @@ class HstsAltSvcCacheConfigData;
  * 在所属线程且有事件循环时，网络启动与快速失败都排队处理，工厂返回后连接信号即可观察
  * 终态；正常和失败 reply 均以 manager 为 parent。无事件循环或跨线程调用同步返回失败
  * 结果，跨线程拒绝的 reply 无 parent，须由调用线程释放，不依赖无法投递的排队通知。
+ * 启用调度后，入队通知可能同步销毁 reply 或 manager；发生此情况时工厂返回 nullptr。
  *
  * @note 错误生命周期：manager 不保存可查询的“最近一次错误”。同步请求工厂返回非空 reply
  * 只表示请求已接纳，传输结果以该 reply 的终态为准；cookie Future 的完成值是对应调用的
@@ -345,6 +349,21 @@ public:
 
     /// 返回当前 scheduler 统计快照；非 owner thread 调用返回空统计并告警。
     [[nodiscard]] QCNetworkSchedulerStatistics schedulerStatistics() const;
+
+    /**
+     * @brief 将本 manager 的 Pending 请求移入 Deferred；其他状态返回 InvalidState。
+     * @note QObject 借用合同：reply 不转移所有权；调用方保证其有效性。
+     * 所有单请求调度命令只在 owner thread 同步提交，拒绝分类见 SchedulerCommandResult；
+     * 不通过后台投递重试，也不改变 reply 的传输状态。重复 defer/undefer 不是 NoChange。
+     */
+    [[nodiscard]] SchedulerCommandResult deferScheduledRequest(QCNetworkReply *reply);
+    /// 将 Deferred 请求以保留的优先级重新入队；其他已跟踪状态返回 InvalidState。
+    [[nodiscard]] SchedulerCommandResult undeferScheduledRequest(QCNetworkReply *reply);
+    /// 解除调度跟踪并安排取消；Applied 不表示 finished 已送达，再次调用返回 NotTracked。
+    [[nodiscard]] SchedulerCommandResult cancelScheduledRequest(QCNetworkReply *reply);
+    /// 只改变 Pending 的调度优先级；相同值返回 NoChange，不修改请求内容或抢占传输。
+    [[nodiscard]] SchedulerCommandResult setScheduledRequestPriority(
+        QCNetworkReply *reply, QCNetworkRequestPriority priority);
     /**
      * @brief 取消指定 scheduler lane 的请求。
      *
@@ -355,14 +374,6 @@ public:
      */
     [[nodiscard]] QCNetworkLaneCancelResult cancelLaneRequests(const QCNetworkLaneKey &lane,
                                                                SchedulerCancelScope scope);
-
-#ifdef QCURL_ENABLE_TEST_HOOKS
-    /// 仅供仓内测试观察 manager-owned scheduler 信号与队列状态。
-    [[nodiscard]] QCNetworkRequestScheduler *schedulerForTesting() const;
-
-    /// 仅供仓内白盒测试注册旧 scheduler 行为测试使用的临时 lane。
-    void registerSchedulerLaneForTesting(const QCNetworkLaneKey &lane);
-#endif
 
     /**
      * @brief 设置缓存实例
@@ -375,11 +386,47 @@ public:
     /// 获取当前缓存实例。
     QCNetworkCache *cache() const;
 
+Q_SIGNALS:
+    /**
+     * @brief 初次进入 Pending 或 undefer 恢复入队时通知。
+     * @note QObject 借用合同：reply 只供存活期间在 owner thread 借用，不延长生命周期。
+     * lane、origin、priority 为事件产生时已提交的值快照，可复制保存。
+     * queued 接收者仅观察历史事件，不可假定 reply 仍有效；延后操作须在对象有效时
+     * 预先捕获 QPointer，并回 owner thread 复查。其余调度请求通知沿用此载荷合同。
+     */
+    void schedulerRequestQueued(QCNetworkReply *reply,
+                                const QCNetworkLaneKey &lane,
+                                const QString &origin,
+                                QCNetworkRequestPriority priority);
+    /// Pending 优先级实际变化时通知；不冒充再次入队，无变化时不通知。
+    void schedulerRequestPriorityChanged(QCNetworkReply *reply,
+                                         const QCNetworkLaneKey &lane,
+                                         const QString &origin,
+                                         QCNetworkRequestPriority priority);
+    /// owner-thread 同步取消窗口；取消生效后不 execute、不发 Started；queued 槽没有否决权。
+    void schedulerRequestAboutToStart(QCNetworkReply *reply,
+                                      const QCNetworkLaneKey &lane,
+                                      const QString &origin,
+                                      QCNetworkRequestPriority priority);
+    /// execute 已提交且本次启动仍有效；不表示已连接或已传输字节。
+    void schedulerRequestStarted(QCNetworkReply *reply,
+                                 const QCNetworkLaneKey &lane,
+                                 const QString &origin,
+                                 QCNetworkRequestPriority priority);
+    /// 本次调度取消已提交且最多通知一次；不表示传输清理或 finished 已完成。
+    void schedulerRequestCancelled(QCNetworkReply *reply,
+                                   const QCNetworkLaneKey &lane,
+                                   const QString &origin,
+                                   QCNetworkRequestPriority priority);
+    /// Pending 从非空变为空时通知一次；不表示 Running/Deferred 为空或所有请求完成。
+    void schedulerPendingQueueEmpty();
+
 private:
     Q_DISABLE_COPY_MOVE(QCNetworkAccessManager)
 
     friend class QCNetworkDownloadToDeviceJob;
     friend class QCNetworkResumableDownloadJob;
+    friend class QCNetworkRequestSchedulerTestAccess;
 
     Q_DECLARE_PRIVATE(QCNetworkAccessManager)
     QScopedPointer<QCNetworkAccessManagerPrivate> d_ptr;

@@ -51,7 +51,7 @@ WebSocket 标记为 Preview；Middleware Extras 属于 Other Extras 的公开稳
 - **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::head()/get()/post()/put()/patch()` 一套入口覆盖配置与发送
 - **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置；`QCNetworkRedirectConfig` 与 `QCNetworkTransferConfig` 聚合重定向和传输配置
 - **请求重试** - GET/HEAD 默认安全重试；其他方法必须显式启用幂等键门禁，并使用有界 equal-jitter 退避
-- **lane-aware 调度** - lane reservation + DRR 公平调度 + 按 lane 精准取消
+- **lane-aware 调度** - lane reservation + 按启动次数加权轮转 + 按 lane 精准取消
 - **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
 - **Cache lookup API** - 显式启用的 `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 使用包含 method、规范化 URL、Vary 请求头和认证分区的结构化请求键；`clear()` 返回删除计数、失败计数和残留容量
 - **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `post()` 发送

@@ -27,14 +27,16 @@ T6 只能修改机器清单 `hardBreakAllowlist` 中列出的合同：
 不得借 T6 扩大到其他兼容性清理。错误生命周期和 QObject borrow 合同统一在 T7 补齐；
 Scheduler/MultiManager wrong-thread fallback 的实现删除在 T8 完成。
 
-Scheduler 命令结果已统一为 `[[nodiscard]] QCNetworkRequestScheduler::CommandResult`：
+Scheduler 的正式命令入口位于 manager，返回 `[[nodiscard]] SchedulerCommandResult`：
 
-- `scheduleReply()`、`deferPendingRequest()`、`undeferRequest()`、`cancelRequest()`、
-  `cancelAllRequests()`、`cancelLaneRequests()` 与 `changePriority()` 只报告同步接受状态。
-- `Applied` 不表示 reply 已完成；执行、取消完成和最终错误仍以 reply 状态及 scheduler 信号为准。
-- `NoChange` 表示命令合法但无需改变状态；其他拒绝结果保证不改变 reply、队列或统计。
-- wrong-thread 调用同步返回 `WrongThread`，不再排队，也不捕获或读取 reply `QPointer`。
-- `cancelLaneRequests()` 通过可选输出参数返回已提交取消数量；失败和 `NoChange` 均写入 `0`。
+- `deferScheduledRequest()` / `undeferScheduledRequest()` 只在 Pending / Deferred 间转换；
+  `setScheduledRequestPriority()` 只改变 Pending；`cancelScheduledRequest()` 解除跟踪并安排取消。
+- Applied 表示本次同步提交，不表示传输完成或重入后的最终状态；NoChange 不产生变化通知。
+- 错误线程先拒绝；随后校验参数、manager 绑定、已跟踪对象亲和性和状态。其他 manager 与
+  未跟踪请求统一 NotTracked，拒绝没有请求、队列、统计或通知副作用。
+- `cancelLaneRequests()` 保留结构化计数结果，已注册空 lane 取消成功且数量为 0。
+- 入队、优先级变化、启动前、启动提交、取消及 Pending 清空通知互相独立；reply 是借用，
+  lane/origin/priority 是值快照。同步取消与 queued 观察的边界见 [用户合同](../user/lane-scheduler.md)。
 
 ## 验证
 

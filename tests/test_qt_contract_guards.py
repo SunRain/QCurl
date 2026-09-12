@@ -89,49 +89,28 @@ def test_multimanager_reply_entrypoints_are_owner_thread_only() -> None:
 
 
 def test_scheduler_owner_thread_internal_paths_do_not_marshal_qobject_pointers() -> None:
-    scheduler_functions = {
-        "src/QCNetworkRequestScheduler.cpp": ("startRequest",),
-        "src/private/QCNetworkRequestSchedulerFinalize.cpp": (
-            "onRequestFinished",
-            "onReplyDestroyed",
-        ),
-    }
-    for relative, function_names in scheduler_functions.items():
-        source = _source(relative)
-        for function_name in function_names:
-            definition = _function_definition(
-                source, f"QCNetworkRequestScheduler::{function_name}"
-            )
-            assert "invokeOnSchedulerOwnerThread" not in definition, (
-                f"{relative}: {function_name} 不得把 live QObject 排回 owner thread"
-            )
+    source = _source("src/private/QCNetworkRequestSchedulerControl.cpp")
+    definition = _function_definition(source, "QCNetworkRequestScheduler::validateCommand")
+    thread_guard = definition.find("QThread::currentThread() != thread()")
+    membership = definition.find("requestId(reply)")
+    affinity = definition.find("reply->thread()")
+    assert 0 <= thread_guard < membership < affinity
+    assert "QMetaObject::invokeMethod" not in definition
+    assert "QPointer" not in definition
 
-            owner_assert = definition.find("Internal::assertSchedulerOwnerThread")
-            thread_guard = definition.find("QThread::currentThread() != thread()")
-            payload_guard = min(
-                index
-                for index in (definition.find("if (!reply)"), definition.find("if (!obj)"))
-                if index >= 0
-            )
-            assert 0 <= thread_guard < owner_assert < payload_guard, (
-                f"{relative}: {function_name} 必须在读取 QObject 参数前建立 owner-thread invariant"
-            )
-            pre_owner = definition[:owner_assert]
-            assert not re.search(
-                r"QPointer<\s*(?:QCNetworkReply|QObject)\s*>", pre_owner
-            ), f"{relative}: {function_name} 错误线程分支不得构造 guarded pointer"
+    header = _source("src/private/QCNetworkRequestScheduler_p.h")
+    assert "void onRequestFinished(RequestId id)" in header
+    assert "void onReplyDestroyed(RequestId id)" in header
+    assert "Internal::AdmissionCore m_core" in header
 
 
 def test_scheduler_progress_tracking_uses_auto_connection() -> None:
-    source = _source("src/private/QCNetworkRequestSchedulerPrivate.cpp")
-    definition = _function_definition(
-        source, "QCNetworkRequestScheduler::Impl::connectProgressTracking"
-    )
-
+    source = _source("src/private/QCNetworkRequestSchedulerProgress.cpp")
+    definition = _function_definition(source, "QCNetworkRequestScheduler::connectProgressTracking")
     assert definition.count("Qt::AutoConnection") == 2
     assert "Qt::QueuedConnection" not in definition
     contexts = re.findall(
-        r"&QCNetworkReply::(?:downloadProgress|uploadProgress),\s*scheduler,", definition
+        r"&QCNetworkReply::(?:downloadProgress|uploadProgress),\s*this,", definition
     )
     assert len(contexts) == 2, "progress functor 必须绑定 scheduler context"
 

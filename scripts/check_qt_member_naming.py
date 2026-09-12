@@ -42,11 +42,14 @@ NOISE_PATTERN = re.compile(
     r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'",
     re.DOTALL,
 )
+TYPE_VISIBILITY_PATTERN = r"(?:Q_DECL_HIDDEN\s+)?"
 PIMPL_DEFINITION_PATTERN = re.compile(
-    r"\bclass\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*Private)\b[^;{]*\{"
+    rf"\bclass\s+{TYPE_VISIBILITY_PATTERN}"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*Private)\b[^;{]*\{"
 )
 SHARED_DATA_DEFINITION_PATTERN = re.compile(
-    r"\bclass\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*public\s+QSharedData\b[^;{]*\{"
+    rf"\bclass\s+{TYPE_VISIBILITY_PATTERN}"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*public\s+QSharedData\b[^;{]*\{"
 )
 ACCESS_LABEL_PATTERN = re.compile(r"[ \t]*(public|protected|private)\s*:")
 PREFIX_PATTERN = re.compile(r"\bm_[A-Za-z][A-Za-z0-9_]*\b")
@@ -92,7 +95,9 @@ def discover_candidates(
 
 
 def record_body(source: str, record_name: str) -> str:
-    pattern = re.compile(rf"\b(?:class|struct)\s+{re.escape(record_name)}\b[^;{{]*\{{")
+    pattern = re.compile(
+        rf"\b(?:class|struct)\s+{TYPE_VISIBILITY_PATTERN}{re.escape(record_name)}\b[^;{{]*\{{"
+    )
     match = pattern.search(strip_non_code(source))
     if not match:
         raise ValueError(f"未找到类型定义: {record_name}")
@@ -167,7 +172,7 @@ def public_member_prefixes(body: str, default_access: str = "private") -> list[s
 
 def has_chinese_doxygen_comment(source: str, record_name: str) -> bool:
     match = re.search(
-        rf"\b(?:class|struct)\s+{re.escape(record_name)}\b[^;{{]*\{{",
+        rf"\b(?:class|struct)\s+{TYPE_VISIBILITY_PATTERN}{re.escape(record_name)}\b[^;{{]*\{{",
         source,
     )
     if not match:
@@ -188,7 +193,8 @@ def has_chinese_doxygen_comment(source: str, record_name: str) -> bool:
 
 def record_default_access(source: str, record_name: str) -> str:
     match = re.search(
-        rf"\b(class|struct)\s+{re.escape(record_name)}\b", strip_non_code(source)
+        rf"\b(class|struct)\s+{TYPE_VISIBILITY_PATTERN}{re.escape(record_name)}\b",
+        strip_non_code(source),
     )
     if not match:
         raise ValueError(f"未找到类型定义: {record_name}")

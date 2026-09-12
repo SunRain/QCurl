@@ -8,11 +8,10 @@
 #include "QCNetworkError.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestPriority.h"
-#include "QCNetworkRequestScheduler.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -101,14 +100,12 @@ struct SideEffectHarness
     CountingMiddleware middleware;
     QCNetworkMockHandler mock;
     QCNetworkAccessManager manager;
-    QCNetworkRequestScheduler *scheduler = nullptr;
     QSignalSpy queuedSpy;
     QSignalSpy startedSpy;
 
     SideEffectHarness()
-        : scheduler(manager.schedulerForTesting())
-        , queuedSpy(scheduler, &QCNetworkRequestScheduler::requestQueued)
-        , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
+        : queuedSpy(&manager, &QCNetworkAccessManager::schedulerRequestQueued)
+        , startedSpy(&manager, &QCNetworkAccessManager::schedulerRequestStarted)
     {
         manager.addMiddleware(&middleware);
         QCurl::TestSupport::setMockHandler(manager, &mock);
@@ -126,9 +123,14 @@ class tst_QCNetworkDownloadToDeviceJob : public QObject
 {
     Q_OBJECT
 
+public:
+    tst_QCNetworkDownloadToDeviceJob() = default;
+
+private:
+    Q_DISABLE_COPY_MOVE(tst_QCNetworkDownloadToDeviceJob)
+
 private Q_SLOTS:
     void initTestCase();
-    void cleanup();
 
     void constructorDoesNotStartRequest();
     void startQueuesDoStartAndStartsOnlyOnce();
@@ -149,11 +151,6 @@ void tst_QCNetworkDownloadToDeviceJob::initTestCase()
 {
     qRegisterMetaType<QCNetworkReply *>("QCNetworkReply*");
     qRegisterMetaType<QCNetworkRequestPriority>("QCurl::QCNetworkRequestPriority");
-}
-
-void tst_QCNetworkDownloadToDeviceJob::cleanup()
-{
-    static_cast<void>(QCNetworkRequestScheduler::instanceForTesting()->cancelAllRequests());
 }
 
 void tst_QCNetworkDownloadToDeviceJob::constructorDoesNotStartRequest()

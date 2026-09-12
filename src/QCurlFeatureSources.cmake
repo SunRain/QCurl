@@ -26,18 +26,14 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyState.cpp
     private/QCNetworkReplyControls.cpp
     private/QCNetworkReplyAccessors.cpp
-    private/LaneRuntimePruner.cpp
-    private/LaneSchedulingPolicy.cpp
-    private/QCNetworkRequestSchedulerQueue.cpp
-    private/QCNetworkRequestSchedulerQueueAccess.cpp
-    private/QCNetworkRequestSchedulerLanePolicy.cpp
+    private/QCNetworkAdmissionCore.cpp
+    private/QCNetworkAdmissionCoreState.cpp
+    private/QCNetworkAdmissionCoreSelection.cpp
     private/QCNetworkRequestSchedulerDispatch.cpp
-    private/QCNetworkRequestSchedulerPrivate.cpp
-    private/QCNetworkRequestSchedulerValues.cpp
+    private/QCNetworkRequestSchedulerProgress.cpp
     private/QCNetworkRequestSchedulerControl.cpp
     private/QCNetworkRequestSchedulerQueries.cpp
     private/QCNetworkRequestSchedulerLifecycle.cpp
-    private/QCNetworkRequestSchedulerConfig.cpp
     private/QCNetworkRequestSchedulerFinalize.cpp
     private/QCSingleFileMultipartBodyDevice.cpp
     QCNetworkBody.cpp
@@ -63,7 +59,7 @@ set(QCURL_FEATURE_SOURCES
     private/QCCurlRequiredOptionAdapter.cpp
     private/QCCookieStoreCodec.cpp
     QCNetworkRetryPolicy.cpp
-    QCNetworkRequestScheduler.cpp   # Core / Stable: 请求优先级调度
+    private/QCNetworkRequestScheduler.cpp
     QCMultipartFormData.cpp         # Core / Stable: Multipart 表单数据
     QCNetworkCache.cpp              # Core / Stable: 缓存基类
     QCNetworkCacheRequestKey.cpp    # Core / Stable: 结构化缓存请求键
@@ -113,11 +109,7 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkRetryPolicy_p.h
     private/QCNetworkProtocolPolicy_p.h
     private/QCNetworkReplyCurlOptions_p.h
-    private/QCNetworkRequestSchedulerQueue_p.h
-    private/QCNetworkRequestSchedulerDispatch_p.h
-    private/QCNetworkRequestSchedulerPrivate_p.h
-    private/LaneRuntimePruner_p.h
-    private/LaneSchedulingPolicy_p.h
+    private/QCNetworkAdmissionCore_p.h
     private/QCSingleFileMultipartBodyDevice.h
     QCNetworkBody.h
     QCNetworkMultipartBody.h
@@ -143,7 +135,7 @@ set(QCURL_FEATURE_HEADERS
     QCCurlMultiManager.h
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h      # Core / Stable: 优先级枚举
-    QCNetworkRequestScheduler.h     # Core / Stable: 请求调度器
+    private/QCNetworkRequestScheduler_p.h
     QCMultipartFormData.h           # Core / Stable: Multipart 表单数据
     QCNetworkCachePolicy.h          # Core / Stable: 缓存策略枚举
     QCNetworkCache.h                # Core / Stable: 缓存基类

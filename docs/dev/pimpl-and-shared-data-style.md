@@ -191,9 +191,7 @@ Core install surface 中的 public / library-facing 类型已完成显式 `FooDa
 - `QCNetworkProxyConfig`：改为 `QCNetworkProxyConfigData + QSharedDataPointer`
 - `QCNetworkProxyConfig::ProxyTlsConfig`：改为 `QCNetworkProxyTlsConfigData + QSharedDataPointer`
 - `QCNetworkHttpAuthConfig`：改为 `QCNetworkHttpAuthConfigData + QSharedDataPointer`
-- `QCNetworkRequestScheduler::Config`：改为 `QCNetworkRequestSchedulerConfigData + QSharedDataPointer`
-- `QCNetworkRequestScheduler::Statistics`：改为 `QCNetworkRequestSchedulerStatisticsData + QSharedDataPointer`
-- `QCNetworkRequestScheduler::LaneConfig`：改为 `QCNetworkRequestSchedulerLaneConfigData + QSharedDataPointer`
+- `QCNetworkSchedulerPolicy` / `LaneConfig` / `QCNetworkSchedulerStatistics` 保留 public shared-data；私有 scheduler/core 不增加 ABI 包装，旧 scheduler 值类型退出。
 - `QCNetworkLogger`：改为 `NetworkLogEntryData + QSharedDataPointer` 的 accessor-only Core contract
 - `QCNetworkDefaultLogger`：改为 `QCNetworkDefaultLoggerPrivate + QScopedPointer`
 - `QCNetworkCancelToken`：改为 `QCNetworkCancelTokenPrivate + QScopedPointer`
@@ -213,9 +211,7 @@ contract。下游如果还在用 public field / aggregate 风格，需要一并�
 - `QCNetworkProxyConfig`
 - `QCNetworkProxyConfig::ProxyTlsConfig`
 - `QCNetworkHttpAuthConfig`
-- `QCNetworkRequestScheduler::Config`
-- `QCNetworkRequestScheduler::Statistics`
-- `QCNetworkRequestScheduler::LaneConfig`
+- `QCNetworkSchedulerPolicy` / `QCNetworkSchedulerStatistics`
 - `NetworkLogEntry`
 
 迁移示例：
@@ -239,9 +235,6 @@ QCNetworkProxyConfig::ProxyTlsConfig tls;
 tls.verifyPeer = true;
 proxy.setTlsConfig(std::nullopt);
 
-QCNetworkRequestScheduler::LaneConfig lane;
-lane.weight = 3;
-
 // after
 QCNetworkRetryPolicy policy;
 policy.setMaxRetries(3);
@@ -260,7 +253,7 @@ QCNetworkProxyConfig::ProxyTlsConfig tls;
 tls.setVerifyPeer(true);
 proxy.clearTlsConfig();
 
-QCNetworkRequestScheduler::LaneConfig lane;
+QCNetworkSchedulerPolicy::LaneConfig lane;
 lane.setWeight(3);
 ```
 

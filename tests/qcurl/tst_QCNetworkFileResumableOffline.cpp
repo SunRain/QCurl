@@ -8,7 +8,6 @@
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
-#include "QCNetworkRequestScheduler.h"
 #include "QCNetworkResumableDownloadJob.h"
 #include "private/QCNetworkResumableDownloadWriter_p.h"
 #include "qcnetwork_mock_test_support.h"
@@ -245,14 +244,12 @@ struct ResumableSideEffectHarness
     QCNetworkAccessManager manager;
     CountingMiddleware middleware;
     CountingCache cache;
-    QCNetworkRequestScheduler *scheduler = nullptr;
     QSignalSpy queuedSpy;
     QSignalSpy startedSpy;
 
     ResumableSideEffectHarness()
-        : scheduler(manager.schedulerForTesting())
-        , queuedSpy(scheduler, &QCNetworkRequestScheduler::requestQueued)
-        , startedSpy(scheduler, &QCNetworkRequestScheduler::requestStarted)
+        : queuedSpy(&manager, &QCNetworkAccessManager::schedulerRequestQueued)
+        , startedSpy(&manager, &QCNetworkAccessManager::schedulerRequestStarted)
     {
         manager.addMiddleware(&middleware);
         manager.setCache(&cache);
@@ -412,10 +409,11 @@ void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously(
     partial.write(QByteArray(4096, 'p'));
     partial.close();
 
-    struct Outcome {
-        int failedCount     = 0;
-        int finishedCount   = 0;
-        NetworkError error  = NetworkError::NoError;
+    struct Outcome
+    {
+        int failedCount    = 0;
+        int finishedCount  = 0;
+        NetworkError error = NetworkError::NoError;
         QString errorString;
         bool replyIsNull    = false;
         qint64 existingSize = -1;
@@ -426,10 +424,10 @@ void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously(
         ResumableSideEffectHarness harness;
         harness.manager.enableRequestScheduler(true);
 
-        QCNetworkResumableDownloadJob job(
-            &harness.manager,
-            QUrl(QStringLiteral("http://127.0.0.1:1/no-event-loop.bin")),
-            savePath);
+        QCNetworkResumableDownloadJob job(&harness.manager,
+                                          QUrl(QStringLiteral(
+                                              "http://127.0.0.1:1/no-event-loop.bin")),
+                                          savePath);
         QSignalSpy failedSpy(&job, &QCNetworkTransferJob::failed);
         QSignalSpy finishedSpy(&job, &QCNetworkTransferJob::finished);
 
@@ -444,8 +442,7 @@ void TestQCNetworkFileResumableOffline::testNoEventDispatcherFailsSynchronously(
         outcome.noSideEffects = harness.middleware.requestPreSendCount == 0
                                 && harness.middleware.replyCreatedCount == 0
                                 && harness.middleware.responseReceivedCount == 0
-                                && harness.cache.lookupCount == 0
-                                && harness.cache.insertCount == 0
+                                && harness.cache.lookupCount == 0 && harness.cache.insertCount == 0
                                 && harness.queuedSpy.count() == 0
                                 && harness.startedSpy.count() == 0;
     });

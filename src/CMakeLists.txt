@@ -14,6 +14,7 @@ set(QCURL_CORE_SOURCES
     QCNetworkAccessManagerCookies.cpp
     QCNetworkAccessManagerSend.cpp
     QCNetworkAccessManagerScheduler.cpp
+    QCNetworkAccessManagerSchedulerControl.cpp
     QCNetworkAccessManagerServices.cpp
     QCNetworkHttpAuthConfig.cpp
     QCNetworkLaneKey.cpp
@@ -162,7 +163,6 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkTypes.h
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h
-    QCNetworkRequestScheduler.h
     QCNetworkCachePolicy.h
     QCNetworkCache.h
     QCNetworkCacheRequestKey.h

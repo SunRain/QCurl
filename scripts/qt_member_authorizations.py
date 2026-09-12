@@ -126,12 +126,13 @@ RECORD_AUTHORIZATIONS = (
     ),
     *_entries(
         "record",
-        "src/private/QCNetworkRequestSchedulerQueue_p.h",
+        "src/private/QCNetworkAdmissionCore_p.h",
         "ReplySnapshot",
         "ReplyOutcome",
         "FinalizeResult",
-        "ReplyProgressState",
-        "QueuedRequest",
+        "ScheduledRequest",
+        "AdmissionStart",
+        "AdmissionChange",
     ),
 )
 
@@ -261,17 +262,12 @@ SHARED_DATA_AUTHORIZATIONS = (
         "src/QCWebSocketReconnectPolicy.cpp",
         "QCWebSocketReconnectPolicyData",
     ),
-    *_entries(
-        "shared_data",
-        "src/private/QCNetworkRequestSchedulerValues.cpp",
-        "QCNetworkRequestSchedulerConfigData",
-        "QCNetworkRequestSchedulerStatisticsData",
-        "QCNetworkRequestSchedulerLaneConfigData",
-    ),
 )
 
 DIRECT_FIELD_AUTHORIZATIONS = (
     *PIMPL_AUTHORIZATIONS,
     *RECORD_AUTHORIZATIONS,
+    *_entries("record", "src/private/QCNetworkRequestScheduler_p.h", "ReplyBinding"),
+    *_entries("record", "src/private/QCNetworkRequestSchedulerControl.cpp", "CancelledReply"),
     *SHARED_DATA_AUTHORIZATIONS,
 )

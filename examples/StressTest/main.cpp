@@ -21,7 +21,7 @@ using namespace QCurl;
 /**
  * @brief StressTest - 调度器压力测试程序
  *
- * `QCNetworkRequestScheduler` 属于 QCurl Core install surface；本示例按公开 contract 做压力验证。
+ * 调度配置与统计均使用 manager 的正式公共接口。
  *
  * 测试目标：
  * 1. 大量并发请求的稳定性（500-1000 个）
@@ -52,7 +52,7 @@ public:
         qInfo() << "  - 总请求数: 500";
         qInfo() << "  - 并发限制: 50";
         qInfo() << "  - 每主机限制: 20";
-        qInfo() << "  - 带宽限制: 10 MB/s\n";
+        qInfo() << "  - 新 admission 阈值：每秒观测 10 MiB，不限制运行中传输\n";
 
         startTime = QDateTime::currentDateTime();
         timer.start();
@@ -191,6 +191,8 @@ private Q_SLOTS:
     }
 
 private:
+    Q_DISABLE_COPY_MOVE(StressTest)
+
     void setupScheduler()
     {
         manager->enableRequestScheduler(true);
@@ -198,16 +200,16 @@ private:
         QCNetworkSchedulerPolicy policy = manager->schedulerPolicy();
         policy.setMaxConcurrentRequests(50); // 高并发
         policy.setMaxRequestsPerHost(20);
-        policy.setMaxBandwidthBytesPerSec(10 * 1024 * 1024); // 10 MB/s
-        policy.setThrottlingEnabled(true);
+        policy.setAdmissionByteBudget(
+            10 * 1024 * 1024); // 每秒观测到 10 MB 后延迟新 admission，不限制已运行传输。
         const bool policyApplied = manager->setSchedulerPolicy(policy);
         Q_ASSERT(policyApplied);
 
         qInfo() << "✓ 调度器已配置";
         qInfo() << "  - maxConcurrentRequests:" << policy.maxConcurrentRequests();
         qInfo() << "  - maxRequestsPerHost:" << policy.maxRequestsPerHost();
-        qInfo() << "  - maxBandwidthBytesPerSec:" << policy.maxBandwidthBytesPerSec() / 1024 / 1024
-                << "MB/s\n";
+        qInfo() << "  - admissionByteBudget:" << policy.admissionByteBudget() / 1024 / 1024
+                << "MB（新请求启动阈值，非聚合限速）\n";
     }
 
     void createStressRequest(int index)

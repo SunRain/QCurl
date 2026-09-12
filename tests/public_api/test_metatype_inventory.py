@@ -42,6 +42,23 @@ def test_metatype_inventory_rejects_omitted_named_registration(tmp_path: Path) -
     assert any("misses named registrations" in error for error in errors)
 
 
+def test_metatype_inventory_rejects_omitted_unnamed_registration(tmp_path: Path) -> None:
+    """无参注册也必须被 inventory 和实际安装消费者覆盖。"""
+    inventory = json.loads(
+        (REPO_ROOT / "tests/public_api/metatype_inventory.json").read_text(encoding="utf-8")
+    )
+    inventory["canonicalNames"] = [
+        entry for entry in inventory["canonicalNames"]
+        if entry["type"] != "QCurl::SchedulerCommandResult"
+    ]
+    path = tmp_path / "metatype_inventory.json"
+    path.write_text(json.dumps(inventory, ensure_ascii=False), encoding="utf-8")
+    errors = validate_metatype_inventory(
+        path, REPO_ROOT / "src", REPO_ROOT / "tests/public_api/consumer_metatype_smoke"
+    )
+    assert any("QCurl::SchedulerCommandResult=" in error for error in errors)
+
+
 def test_metatype_inventory_rejects_misattributed_registration_source(
     tmp_path: Path,
 ) -> None:

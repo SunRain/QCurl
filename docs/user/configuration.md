@@ -74,7 +74,7 @@ manager.setLogger(logger);
 
 - 调度器为**非抢占式**（non-preemptive）：优先级只影响 pending 出队顺序；已 Running 的请求不会因更高优先级到来而被中断。
 - 与 lane 相关的完整行为、推荐车道划分和配置建议，统一参考 `docs/user/lane-scheduler.md`。
-- 更细的底层定义仍以 `src/QCNetworkRequestScheduler.h` 与 `src/QCNetworkRequestPriority.h` 的注释为准。
+- 更细的底层定义仍以 `src/QCNetworkAccessManager.h` 与 `src/QCNetworkRequestPriority.h` 的注释为准。
 
 ## 3. HTTP、重试和缓存边界
 

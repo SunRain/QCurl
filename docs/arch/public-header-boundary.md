@@ -52,7 +52,7 @@ Preview API，Middleware Extras 是同一组件中的 Stable API。
 - `QCNetworkDiagnostics.h` 属于显式 Other Extras，只通过 `OtherExtrasDevelopment` 安装；Core-only component stage 不安装 diagnostics 头。
 - WebSocket 相关头当前只会在 `QCURL_WEBSOCKET_SUPPORT` 打开时进入 `QCURL_INSTALL_HEADERS_EXTRAS` / `QCURL_INSTALL_HEADERS_OTHER_EXTRAS`；它们不属于 Core component 安装面。
 - `QCURL_INSTALL_HEADERS_EXTRAS` 只是三个非默认组件头的兼容聚合清单，不表达组件所有权；所有权以三个独立的 `QCURL_INSTALL_HEADERS_*` 清单和 surface manifest 为准。源码树 examples / benchmarks 可以使用这些头；显式组件 gate 分别验证 opt-in 安装和 default Core 负向 consumer。
-- `QCNetworkLaneKey.h` 与 `QCNetworkSchedulerPolicy.h` 进入 Core component 安装面；scheduler 配置入口收敛到 `QCNetworkAccessManager::setSchedulerPolicy()`，请求 lane 使用 typed key。`QCNetworkRequestScheduler.h` 仅保留既有观察/内部测试兼容面，不再作为下游配置 workflow。
+- `QCNetworkLaneKey.h` 与 `QCNetworkSchedulerPolicy.h` 进入 Core component 安装面；scheduler 配置入口收敛到 `QCNetworkAccessManager::setSchedulerPolicy()`，请求 lane 使用 typed key。scheduler 实现与旧值类型不再安装或导出；通知、同步启动前取消和 pending 控制均通过 manager 提供。
 - 旧的 manager-level 同步发送 API 已从 Core 移除；同步 value-result API 归属 Blocking Extras。
 
 任何不在上述清单中的头文件，都不属于对下游的源码兼容承诺。
@@ -71,7 +71,7 @@ Preview API，Middleware Extras 是同一组件中的 Stable API。
 
 - `QCNetworkReply.h`：不再直接 `#include "QCNetworkRequest.h"`，改为前置声明并把完整依赖下沉到 `.cpp`，避免 reply 头成为 request 配置面的传递依赖中枢。
 - `QCNetworkReply.h` 不重复声明 `QObject::deleteLater()`；下游继续通过继承调用 `reply->deleteLater()`，派生 meta-object 和 Core 动态导出面不得出现 wrapper。
-- `QCNetworkLaneKey.h` / `QCNetworkSchedulerPolicy.h`：typed lane 和 manager-level policy 独立成轻量 Core type header；reply 创建仍统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，scheduler 队列 bookkeeping、host 计数、带宽窗口、定时器、互斥锁等实现细节留在 `.cpp`。
+- `QCNetworkLaneKey.h` / `QCNetworkSchedulerPolicy.h`：typed lane 和 manager-level policy 独立成轻量 Core type header；reply 创建仍统一收口到 `QCNetworkAccessManager::head()/get()/post()/put()/patch()`，私有 AdmissionCore 唯一持有 policy、队列、计数和轮转；Qt scheduler 仅持有绑定、启动票据、时间/进度观测与按需 timer，不使用内部互斥锁。
 - `QCWebSocketPool.h`：公开头仅暴露 owner-thread-only 连接池合同；`acquire()` / `preWarm()`
   以 `QFuture<Result>` 表达逐调用完成，跨线程调用立即返回 `WrongThread` 且不创建 socket。
   `QCWebSocketAcquireResult` 只携带纯值 `LeaseId`，不保存 QObject 指针。调用方只能在原连接池
@@ -89,7 +89,7 @@ Preview API，Middleware Extras 是同一组件中的 Stable API。
 
 - `QCNetworkLaneKey` 是轻量值类型，用于替代裸 `QString` lane public 入口。
 - `QCNetworkSchedulerPolicy` / `QCNetworkSchedulerStatistics` 使用 implicit-sharing 值类型（`QSharedDataPointer<Data>`）和 accessor API。
-- policy validation 负责 default lane、lane 注册、权重、quantum、reservation 与 scheduler admission limit 的 fail-closed 校验。
+- policy validation 负责 default lane、lane 注册、单一启动权重、reservation 与 scheduler admission limit 的 fail-closed 校验。
 - special members（析构/拷贝/移动/赋值）使用 out-of-line 定义，避免不完整类型删除与 ODR 风险。
 
 允许的后续演进方式：
@@ -100,13 +100,14 @@ Preview API，Middleware Extras 是同一组件中的 Stable API。
 ### 2.3 Scheduler 线程与 manager-level contract
 
 - `QCNetworkAccessManager` 持有 manager-owned scheduler child object。
-- 下游配置入口固定为 `setSchedulerPolicy()`；观察入口固定为 `schedulerStatistics()`；lane 取消入口固定为返回 `QCNetworkLaneCancelResult` 的 `cancelLaneRequests(QCNetworkLaneKey, SchedulerCancelScope)`。
+- 下游配置入口固定为 `setSchedulerPolicy()`；观察入口为 `schedulerStatistics()` 及 manager 调度信号；lane 取消入口固定为返回 `QCNetworkLaneCancelResult` 的 `cancelLaneRequests(QCNetworkLaneKey, SchedulerCancelScope)`。
+- 单请求控制使用 `deferScheduledRequest()`、`undeferScheduledRequest()`、`cancelScheduledRequest()`、`setScheduledRequestPriority()`，结果为 `SchedulerCommandResult`；生命周期与时序见 [用户合同](../user/lane-scheduler.md)。
 - 上述 manager-level API 必须在 manager owner thread 调用；跨线程配置请显式投递到 owner thread。
 - unknown lane 固定按 RequireRegistered fail-closed；请求使用 `QCNetworkLaneKey::fromName(name, &lane, &error)` 创建自定义 lane 后，必须先注册到 `QCNetworkSchedulerPolicy`。
 - `cancelLaneRequests()` 语义固定为：
   - `PendingOnly`：仅清 pending + deferred
   - `PendingAndRunning`：pending + deferred + running 一并取消
-  - invalid lane、未注册 lane、非 owner thread 和 scheduler 未启用均返回结构化失败，不执行取消副作用。
+  - invalid lane、未注册 lane、非法 scope、非 owner thread 和 scheduler 未启用均返回结构化失败，不执行取消副作用。
 
 ### 2.4 Core headers 源码与布局策略速查表（关键公开头）
 

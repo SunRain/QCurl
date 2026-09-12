@@ -23,6 +23,7 @@ void initialize()
         "QCurl::QCNetworkSchedulerPolicy::LaneConfig");
     qRegisterMetaType<QCNetworkSchedulerStatistics>("QCurl::QCNetworkSchedulerStatistics");
     qRegisterMetaType<QCNetworkLaneCancelResult>("QCurl::QCNetworkLaneCancelResult");
+    qRegisterMetaType<SchedulerCommandResult>();
     registerQCNetworkRequestPriorityMetaType();
 }
 

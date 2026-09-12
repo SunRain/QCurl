@@ -1,59 +1,42 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include "QCNetworkRequestScheduler.h"
+#include "QCNetworkRequestScheduler_p.h"
 
-#include "QCNetworkReply.h"
-#include "private/QCNetworkRequestSchedulerPrivate_p.h"
-
-#include <QMutexLocker>
 #include <QThread>
 
 namespace QCurl {
 
-QCNetworkRequestScheduler::Statistics QCNetworkRequestScheduler::statistics() const
+bool QCNetworkRequestScheduler::applyPolicy(const QCNetworkSchedulerPolicy &policy, QString *error)
 {
     if (QThread::currentThread() != thread()) {
-        return Internal::rejectOffOwnerThreadValue(this, Statistics{}, "QCNetworkRequestScheduler::statistics");
-    }
-    Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::statistics");
-
-    QMutexLocker locker(&m_impl->mutex);
-    return m_impl->stats;
-}
-
-QList<QCNetworkReply *> QCNetworkRequestScheduler::pendingRequests() const
-{
-    if (QThread::currentThread() != thread()) {
-        return Internal::rejectOffOwnerThreadValue(this,
-                                                  QList<QCNetworkReply *>{},
-                                                  "QCNetworkRequestScheduler::pendingRequests");
-    }
-    Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::pendingRequests");
-
-    QMutexLocker locker(&m_impl->mutex);
-
-    QList<QCNetworkReply *> result;
-    result.reserve(m_impl->queues.pendingCount());
-    for (const auto &request : m_impl->queues.pendingRequests()) {
-        if (request.reply) {
-            result.append(request.reply);
+        if (error) {
+            *error = QStringLiteral("scheduler policy requires owner thread");
         }
+        return false;
     }
-    return result;
+    const qint64 previousBudget = m_core.policy().admissionByteBudget();
+    if (!m_core.applyPolicy(policy, error)) {
+        return false;
+    }
+    if (previousBudget != m_core.policy().admissionByteBudget()) {
+        m_bytesTransferredInWindow = 0;
+        m_bandwidthWindow.restart();
+    }
+    processQueue();
+    return true;
 }
 
-QList<QCNetworkReply *> QCNetworkRequestScheduler::runningRequests() const
+QCNetworkSchedulerPolicy QCNetworkRequestScheduler::policy() const
 {
-    if (QThread::currentThread() != thread()) {
-        return Internal::rejectOffOwnerThreadValue(this,
-                                                  QList<QCNetworkReply *>{},
-                                                  "QCNetworkRequestScheduler::runningRequests");
-    }
-    Internal::assertSchedulerOwnerThread(this, "QCNetworkRequestScheduler::runningRequests");
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_core.policy();
+}
 
-    QMutexLocker locker(&m_impl->mutex);
-    return m_impl->queues.runningRequests();
+QCNetworkSchedulerStatistics QCNetworkRequestScheduler::statistics() const
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_core.statistics();
 }
 
 } // namespace QCurl

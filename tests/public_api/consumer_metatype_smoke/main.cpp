@@ -79,6 +79,8 @@ int main(int argc, char **argv)
         || !verifyType("QCurl::QCNetworkRequestPriority",
                        QMetaType::fromType<QCurl::QCNetworkRequestPriority>())
         || !verifyType("QCurl::QCNetworkLaneKey", QMetaType::fromType<QCurl::QCNetworkLaneKey>())
+        || !verifyType("QCurl::SchedulerCommandResult",
+                       QMetaType::fromType<QCurl::SchedulerCommandResult>())
         || !verifyType("QCurl::QCNetworkSchedulerPolicy",
                        QMetaType::fromType<QCurl::QCNetworkSchedulerPolicy>())
         || !verifyType("QCurl::QCNetworkSchedulerPolicy::LaneConfig",

@@ -7,6 +7,13 @@
   ],
   "canonicalNames": [
     {
+      "type": "QCurl::SchedulerCommandResult",
+      "canonicalName": "QCurl::SchedulerCommandResult",
+      "compatibilityReason": "支持 manager 调度命令结果的类型查询与 QVariant 值复制。",
+      "registrationSource": "QCGlobal.cpp",
+      "consumers": ["tests/public_api/consumer_metatype_smoke/main.cpp"]
+    },
+    {
       "type": "QCurl::QCCookie",
       "canonicalName": "QCurl::QCCookie",
       "compatibilityReason": "支持动态名称解析、QVariant/QSignalSpy 与静态包 consumer 的稳定名称。",

@@ -34,6 +34,7 @@ public:
         UnregisteredLane,
         NonOwnerThread,
         SchedulerDisabled,
+        InvalidScope,
     };
 
     enum class FailureReason {
@@ -41,6 +42,7 @@ public:
         UnregisteredLane,
         NonOwnerThread,
         SchedulerDisabled,
+        InvalidScope,
     };
 
     QCNetworkLaneCancelResult();

@@ -7,7 +7,7 @@
 #define QCNETWORKACCESSMANAGERPRIVATE_H
 
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkRequestScheduler.h"
+#include "private/QCNetworkRequestScheduler_p.h"
 #include "private/QCRequestPipeline_p.h"
 
 #include <QFuture>
@@ -24,7 +24,7 @@ class QCNetworkCache;
  *
  * 保存 access manager 的请求、调度和扩展状态。
  */
-class QCNetworkAccessManagerPrivate
+class Q_DECL_HIDDEN QCNetworkAccessManagerPrivate
 {
     Q_DECLARE_PUBLIC(QCNetworkAccessManager)
 
@@ -37,7 +37,6 @@ public:
         , cookieFilePath()
         , schedulerEnabled(false)
         , scheduler(nullptr)
-        , schedulerPolicy(QCNetworkSchedulerPolicy::defaultPolicy())
         , cache(nullptr)
         , shareHandleConfig()
         , hstsAltSvcCacheConfig()
@@ -65,12 +64,12 @@ public:
         const QByteArray &body,
         const QList<QCNetworkMiddleware *> &middlewares);
     void startPreparedReply(QCNetworkReply *reply, const QCNetworkRequest &request) const;
+    void connectSchedulerSignals();
 
     QCNetworkAccessManager::CookieFileModeFlag cookieModeFlag; ///< cookie 文件打开模式
     QString cookieFilePath;                                    ///< 共享 cookie 文件路径
     bool schedulerEnabled;                                     ///< 请求调度开关
     QCNetworkRequestScheduler *scheduler;                      ///< manager 持有的调度器子对象
-    QCNetworkSchedulerPolicy schedulerPolicy;                  ///< 当前调度 admission policy
     QPointer<QCNetworkCache> cache; ///< 外部注入的缓存实例（manager 不持有所有权）
     QCNetworkAccessManager::ShareHandleConfig shareHandleConfig;         ///< share handle 配置
     QCNetworkAccessManager::HstsAltSvcCacheConfig hstsAltSvcCacheConfig; ///< HSTS/Alt-Svc 持久化配置

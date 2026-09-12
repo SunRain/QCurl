@@ -40,14 +40,13 @@
       "documented": [],
       "contracts": {
         "QCurlRuntime.h": ["fallible.runtime-shutdown"],
-        "QCNetworkAccessManager.h": ["fallible.manager-reply-factories"],
+        "QCNetworkAccessManager.h": ["fallible.manager-reply-factories", "fallible.scheduler-commands"],
         "QCCookieAsyncResult.h": ["fallible.cookie-results"],
         "QCNetworkRequestConfig.h": ["fallible.request-config"],
         "QCNetworkRequest.h": ["fallible.request-validation"],
         "QCNetworkReply.h": ["fallible.reply-terminal-state"],
         "QCNetworkRetryPolicy.h": ["fallible.retry-policy"],
         "QCNetworkLaneCancelResult.h": ["fallible.lane-cancel-result"],
-        "QCNetworkRequestScheduler.h": ["fallible.scheduler-commands"],
         "QCNetworkCache.h": ["fallible.cache-results"],
         "QCNetworkMemoryCache.h": ["fallible.memory-cache"],
         "QCNetworkDiskCache.h": ["fallible.disk-cache"],
@@ -87,7 +86,6 @@
         "QCNetworkRequestPriority.h",
         "QCNetworkLaneKey.h",
         "QCNetworkSchedulerPolicy.h",
-        "QCNetworkRequestScheduler.h",
         "QCNetworkCachePolicy.h",
         "QCNetworkCacheRequestKey.h",
         "QCNetworkMemoryCache.h",
@@ -164,9 +162,8 @@
       ],
       "documented": [],
       "contracts": {
-        "QCNetworkAccessManager.h": ["borrow.manager-services-and-replies"],
+        "QCNetworkAccessManager.h": ["borrow.manager-services-and-replies", "borrow.scheduler-replies"],
         "QCNetworkReply.h": ["borrow.reply-parent-and-callback"],
-        "QCNetworkRequestScheduler.h": ["borrow.scheduler-replies"],
         "QCNetworkCache.h": ["borrow.cache-parent"],
         "QCNetworkMemoryCache.h": ["borrow.memory-cache-parent"],
         "QCNetworkDiskCache.h": ["borrow.disk-cache-parent"],
@@ -204,7 +201,6 @@
         "QCNetworkLaneKey.h",
         "QCNetworkLaneCancelResult.h",
         "QCNetworkSchedulerPolicy.h",
-        "QCNetworkRequestScheduler.h",
         "QCNetworkCachePolicy.h",
         "QCNetworkCache.h",
         "QCNetworkCacheRequestKey.h",
@@ -276,8 +272,8 @@
       "symbol": "QCNetworkLaneCancelResult", "currentContract": "不可变结构化取消结果。", "targetContract": "保持 [[nodiscard]] factory 和稳定失败 reason。", "stateAndLifetime": "成功时 error 为空，失败时计数为零且 error 有效。", "threadContract": "纯值结果可跨线程复制和读取。", "disposition": "document", "phase": "T7"
     },
     {
-      "id": "fallible.scheduler-commands", "category": "fallible", "header": "QCNetworkRequestScheduler.h",
-      "symbol": "CommandResult and schedule/defer/undefer/cancel/changePriority/lane commands", "currentContract": "所有可失败调度命令均返回 [[nodiscard]] CommandResult；lane 取消通过输出参数返回已提交数量。", "targetContract": "已完成：拒绝结果不触碰 reply、队列或统计；Applied 仅表达同步接受，异步执行与完成仍由 reply 状态和 scheduler 信号表达。", "stateAndLifetime": "返回值是本次同步命令快照，不保存 reply；NoChange 表示合法幂等调用未产生状态变化。", "threadContract": "仅 scheduler owner thread；wrong-thread 同步返回 WrongThread，不排队、不捕获 reply QPointer。", "disposition": "hard-break", "phase": "T6"
+      "id": "fallible.scheduler-commands", "category": "fallible", "header": "QCNetworkAccessManager.h",
+      "symbol": "SchedulerCommandResult and manager scheduled-request commands", "currentContract": "manager 单请求命令返回 [[nodiscard]] SchedulerCommandResult；整 lane 取消返回结构化计数结果。", "targetContract": "已完成：拒绝结果不触碰 reply、队列或统计；Applied 仅表达同步接受，异步执行与完成仍由 reply 状态和 scheduler 信号表达。", "stateAndLifetime": "返回值是本次同步命令快照，不保存 reply；NoChange 只表示合法且无变化；重复 defer/undefer 为 InvalidState，解除跟踪后取消为 NotTracked。", "threadContract": "仅 scheduler owner thread；wrong-thread 同步返回 WrongThread，不排队、不捕获 reply QPointer。", "disposition": "hard-break", "phase": "T6"
     },
     {
       "id": "fallible.cache-results", "category": "fallible", "header": "QCNetworkCache.h",
@@ -446,8 +442,8 @@
       "symbol": "parent and callback-visible reply pointer", "currentContract": "QObject parent 默认可空。", "targetContract": "说明 manager/reply parent 生命周期和 middleware 回调仅当次借用。", "stateAndLifetime": "destroyed 后所有裸指针失效。", "threadContract": "reply owner thread。", "disposition": "document", "phase": "T7"
     },
     {
-      "id": "borrow.scheduler-replies", "category": "qobjectBorrow", "header": "QCNetworkRequestScheduler.h",
-      "symbol": "schedule/cancel/changePriority and pending/running reply pointers", "currentContract": "scheduler 保存 guarded 观察。", "targetContract": "返回列表与参数均 non-owning，只能在 owner thread 当次使用；reply 析构立即失效。", "stateAndLifetime": "不得跨事件循环保存裸指针。", "threadContract": "scheduler/reply owner thread。", "disposition": "document", "phase": "T7"
+      "id": "borrow.scheduler-replies", "category": "qobjectBorrow", "header": "QCNetworkAccessManager.h",
+      "symbol": "scheduler notifications and scheduled-request command pointers", "currentContract": "scheduler 保存 guarded 观察。", "targetContract": "通知与参数中的 reply 均为借用；值快照可复制保存，queued 事件不授予启动否决权。", "stateAndLifetime": "延后访问应在对象有效时捕获 QPointer，并回 owner thread 复查；不延长对象生命周期。", "threadContract": "scheduler/reply owner thread。", "disposition": "document", "phase": "T7"
     },
     {
       "id": "borrow.cache-parent", "category": "qobjectBorrow", "header": "QCNetworkCache.h",

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 
-NAMED_REGISTRATION_PATTERN = re.compile(
+REGISTRATION_PATTERN = re.compile(
     r'qRegisterMetaType\s*<\s*(?P<type>[A-Za-z_][A-Za-z0-9_:]*)\s*>\s*'
-    r'\(\s*"(?P<name>[^"]+)"\s*\)',
+    r'\(\s*(?:"(?P<name>[^"]+)")?\s*\)',
     flags=re.DOTALL,
 )
 
@@ -33,15 +33,18 @@ def _qualified_type(type_name: str) -> str:
     return f"QCurl::{type_name}"
 
 
-def _named_registrations(source_path: Path, errors: list[str]) -> set[tuple[str, str]]:
+def _registrations(source_path: Path, errors: list[str]) -> set[tuple[str, str]]:
     try:
         source = source_path.read_text(encoding="utf-8")
     except OSError as exc:
         errors.append(f"cannot read metatype registration source {source_path}: {exc}")
         return set()
     return {
-        (_qualified_type(match.group("type")), match.group("name"))
-        for match in NAMED_REGISTRATION_PATTERN.finditer(source)
+        (
+            _qualified_type(match.group("type")),
+            match.group("name") or _qualified_type(match.group("type")),
+        )
+        for match in REGISTRATION_PATTERN.finditer(source)
     }
 
 
@@ -51,7 +54,7 @@ def _registration_map(
     errors: list[str],
 ) -> dict[str, set[tuple[str, str]]]:
     return {
-        relative: _named_registrations(source_root / relative, errors)
+        relative: _registrations(source_root / relative, errors)
         for relative in registration_sources
     }
 
