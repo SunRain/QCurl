@@ -9,9 +9,10 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
-from testenv import Env  # type: ignore
+if TYPE_CHECKING:
+    from testenv import Env
 
 from .artifacts import (
     ARTIFACTS_SCHEMA,

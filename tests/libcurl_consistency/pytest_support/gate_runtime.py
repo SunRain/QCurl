@@ -236,6 +236,7 @@ def gate_environment(config: GateConfig) -> Dict[str, str]:
 
     env = os.environ.copy()
     env["QCURL_QTTEST"] = str(config.qcurl_build_dir / "tests" / "tst_LibcurlConsistency")
+    env["QCURL_BUILD_DIR"] = str(config.qcurl_build_dir)
     env["CURL_BUILD_DIR"] = str(config.curl_build_dir)
     env["CURL"] = str(config.curl_build_dir / "src" / "curl")
     env["CURLINFO"] = str(config.curl_build_dir / "src" / "curlinfo")

@@ -21,39 +21,222 @@ import uuid
 
 import pytest
 
-# 将上游 http 测试目录放入 sys.path，直接复用 testenv 组件与 fixtures
+# 将上游 http 测试目录放入 sys.path，直接复用 testenv 组件与 fixtures。
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-# curl testenv 会在 import 阶段实例化 Env.CONFIG（会执行 ${TOP_PATH}/src/curlinfo）。
-# 因此必须先将 cwd 切到 out-of-source 的 `<qcurl_build>/curl/src`（默认 build/curl/src），
-# 让其推导 TOP_PATH=<qcurl_build>/curl。
-_DEFAULT_CURL_BUILD_DIR = _REPO_ROOT / "build" / "curl"
-_CURL_BUILD_DIR_FROM_ENV = Path(os.environ.get("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))).resolve()
-_CURL_BUILD_SRC_DIR = _CURL_BUILD_DIR_FROM_ENV / "src"
-_TESTENV_IMPORT_CWD = _CURL_BUILD_SRC_DIR if _CURL_BUILD_SRC_DIR.exists() else _REPO_ROOT
-os.chdir(str(_TESTENV_IMPORT_CWD))
+# 本 conftest 的管辖边界：目录级 hook 收到的是整个 session 的 items，需据此过滤。
+_LC_TEST_DIR = Path(__file__).resolve().parent
+# 纯单元测试不依赖上游 curl testenv；其余 test_*.py 才需要一致性环境。
+_UNIT_TEST_MODULES = frozenset(
+    {
+        "test_compare_unit.py",
+        "test_run_gate_unit.py",
+    }
+)
+_REQUIRED_ENVIRONMENT = (
+    "CURL_BUILD_DIR",
+    "CURL",
+    "CURLINFO",
+    "QCURL_QTTEST",
+    "QCURL_BUILD_DIR",
+    "QCURL_LC_CAPABILITY_MANIFEST",
+)
+
+
+def _consistency_environment_error() -> str | None:
+    """校验 gate 注入的固定路径，拒绝默认目录和隐式二进制发现。"""
+
+    for name in _REQUIRED_ENVIRONMENT:
+        if not os.environ.get(name, "").strip():
+            return f"缺少必需环境变量 `{name}`；请通过一致性 gate 注入显式路径"
+
+    curl_build_dir = Path(os.environ["CURL_BUILD_DIR"]).expanduser().resolve()
+    if not (curl_build_dir / "src").is_dir():
+        return f"`CURL_BUILD_DIR` 必须包含 src/ 目录: {curl_build_dir}"
+
+    qcurl_build_dir = Path(os.environ["QCURL_BUILD_DIR"]).expanduser().resolve()
+    if not qcurl_build_dir.is_dir():
+        return f"`QCURL_BUILD_DIR` 指向的目录不存在: {qcurl_build_dir}"
+
+    for name in ("CURL", "CURLINFO", "QCURL_QTTEST"):
+        path = Path(os.environ[name]).expanduser().resolve()
+        if not path.is_file():
+            return f"环境变量 `{name}` 指向的文件不存在: {path}"
+    return None
+
+
+_ENVIRONMENT_ERROR = _consistency_environment_error()
+
+
+def _is_consistency_integration_file(path: Path) -> bool:
+    """判断路径是否为本目录内需要 testenv 的测试模块。"""
+
+    return (
+        path.suffix == ".py"
+        and (path.name.startswith("test_") or path.name.endswith("_test.py"))
+        and _LC_TEST_DIR in path.parents
+        and path.name not in _UNIT_TEST_MODULES
+    )
+
+
+def _collection_requests_consistency(config) -> bool:
+    """判断 pytest 命令行是否明确包含一致性目录或其祖先。"""
+
+    raw_args = [value for value in getattr(config, "args", ()) if not str(value).startswith("-")]
+    if not raw_args:
+        # 无路径参数时 pytest 默认从仓库根目录收集，包含一致性目录。
+        return True
+
+    for raw_arg in raw_args:
+        value = str(raw_arg).split("::", 1)[0]
+        if not value:
+            continue
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        candidate = candidate.resolve()
+        if candidate.suffix == ".py":
+            if _is_consistency_integration_file(candidate):
+                return True
+            continue
+        if candidate == _LC_TEST_DIR or _LC_TEST_DIR in candidate.parents:
+            return True
+        if candidate in _LC_TEST_DIR.parents:
+            return True
+    return False
+
+
+def _missing_env_integration_files(config) -> set[Path]:
+    """返回当前 pytest 配置的缺失环境收集记录。"""
+
+    files = getattr(config, "_qcurl_missing_env_integration_files", None)
+    if files is None:
+        files = set()
+        setattr(config, "_qcurl_missing_env_integration_files", files)
+    return files
+
+
+def _gate_injected_path(name: str, placeholder: str) -> Path:
+    """读取由一致性 gate 显式注入的路径；缺失时返回仓库内占位路径。
+
+    占位路径的唯一用途是让不依赖 curl testenv 的纯单元测试仍能 import 本模块。
+    真正使用这些路径的集成测试由 `pytest_collection_modifyitems` 依据
+    `_ENVIRONMENT_ERROR` 拦截，因此占位路径不会进入任何断言。
+    占位路径固定挂在 `_REPO_ROOT` 之下，保证后续路径运算不会逃逸出仓库。
+    """
+
+    value = os.environ.get(name, "").strip()
+    if value:
+        return Path(value).expanduser().resolve()
+    return _REPO_ROOT / placeholder
+
+
+_CURL_BUILD_DIR = _gate_injected_path("CURL_BUILD_DIR", "__missing_curl_build__")
+_CURLINFO_BIN = _gate_injected_path("CURLINFO", "__missing_curlinfo__")
+_QCURL_QTTEST_BIN = _gate_injected_path("QCURL_QTTEST", "__missing_qttest__")
+# 由 gate_runtime.gate_environment() 显式注入，不再从二进制路径反推构建树位置。
+_QCURL_BUILD_DIR = _gate_injected_path("QCURL_BUILD_DIR", "__missing_qcurl_build__")
+_NGHTTPX_H3_BIN = _QCURL_BUILD_DIR / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
+
 CURL_HTTP_DIR = _REPO_ROOT / "curl" / "tests" / "http"
-if str(CURL_HTTP_DIR) not in sys.path:
-    sys.path.insert(0, str(CURL_HTTP_DIR))
-
-# 为 curl/tests/http/testenv 注入 out-of-source build 目录与二进制路径（若用户未显式设置）
-os.environ.setdefault("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))
-os.environ.setdefault("CURL", str(_DEFAULT_CURL_BUILD_DIR / "src" / "curl"))
-
 TESTENV_IMPORT_ERROR = None
-try:
-    from testenv import Env, CurlClient  # noqa: E402
-    from testenv.ports import alloc_ports_and_do  # noqa: E402
-    from testenv.env import EnvConfig  # noqa: E402
-    from testenv import Httpd, NghttpxQuic  # noqa: E402
-    import testenv.env as testenv_env  # noqa: E402
-    import testenv.nghttpx as testenv_nghttpx  # noqa: E402
-except Exception as exc:  # pragma: no cover - defensive guard for missing config/binaries
-    TESTENV_IMPORT_ERROR = exc
-finally:
-    # 将后续测试过程的 cwd 固定回 repo root，避免相对路径（QCURL_QTTEST 等）解析混乱。
-    os.chdir(str(_REPO_ROOT))
+if _ENVIRONMENT_ERROR:
+    TESTENV_IMPORT_ERROR = RuntimeError(_ENVIRONMENT_ERROR)
+else:
+    # curl testenv 在 import 阶段实例化 Env.CONFIG，因此必须先切换到显式 build/src。
+    os.chdir(str(_CURL_BUILD_DIR / "src"))
+    if str(CURL_HTTP_DIR) not in sys.path:
+        sys.path.insert(0, str(CURL_HTTP_DIR))
+    try:
+        from testenv import Env, CurlClient  # noqa: E402
+        from testenv.ports import alloc_ports_and_do  # noqa: E402
+        from testenv.env import EnvConfig  # noqa: E402
+        from testenv import Httpd, NghttpxQuic  # noqa: E402
+        import testenv.env as testenv_env  # noqa: E402
+        import testenv.nghttpx as testenv_nghttpx  # noqa: E402
+    except ImportError as exc:  # pragma: no cover - environment-specific import guard
+        TESTENV_IMPORT_ERROR = RuntimeError(f"无法导入 curl testenv: {exc}")
+    except RuntimeError as exc:  # EnvConfig 在 import 阶段报告的明确配置/二进制错误
+        TESTENV_IMPORT_ERROR = exc
+    finally:
+        # 后续测试使用仓库根目录解析 run-scoped 路径。
+        os.chdir(str(_REPO_ROOT))
 
 log = logging.getLogger(__name__)
+
+
+def pytest_configure(config):
+    """注册 testenv marker，用于区分需要 curl testenv 的集成测试与纯单元测试。"""
+    config.addinivalue_line(
+        "markers",
+        "needs_testenv: 测试需要 curl testenv 环境（httpd/nghttpx 服务器）",
+    )
+
+
+def pytest_ignore_collect(collection_path: Path, config) -> bool | None:
+    """环境缺失时在导入测试模块前阻止 testenv 依赖的文件被加载。
+
+    pytest 的目录级 ``pytest_collection_modifyitems`` 发生在模块导入之后；若只在
+    那里退出，集成测试会先因 ``from testenv`` 产生大量导入错误。这里提前忽略这些
+    模块，并由 ``pytest_collection_finish`` 统一给出单一、可读的环境错误。
+    """
+
+    if not _collection_requests_consistency(config):
+        return None
+    path = collection_path.resolve()
+    if _ENVIRONMENT_ERROR and _is_consistency_integration_file(path):
+        _missing_env_integration_files(config).add(path)
+        return True
+    return None
+
+
+def pytest_collection_finish(session) -> None:
+    """在收集完成后以单一错误报告缺失的一致性环境。"""
+
+    files = getattr(session.config, "_qcurl_missing_env_integration_files", set())
+    if files and _ENVIRONMENT_ERROR:
+        pytest.exit(
+            f"libcurl consistency 环境无效: {_ENVIRONMENT_ERROR}",
+            returncode=2,
+        )
+
+
+def pytest_collection_modifyitems(config, items):
+    """为本目录中需要 testenv 的测试项添加 marker 和 fixture 依赖，并检查环境。
+
+    pytest 会把**整个 session** 的 items 传给目录级 conftest 的该 hook，因此必须先
+    限定到本目录：否则仓库其它目录的测试会被误判为需要 curl testenv，一旦环境缺失就被
+    `pytest.exit` 连带终止（混合运行 `pytest tests/` 时整个 session 失败）。
+
+    本目录内的纯单元测试（test_compare_unit.py、test_run_gate_unit.py）同样不标记，
+    因此不受环境检查与 autouse fixture 影响。
+    """
+    del config
+
+    needs_testenv_items = []
+    for item in items:
+        item_path = Path(item.fspath).resolve()
+        # 管辖边界：只处理本目录（含子目录）的测试项
+        if _LC_TEST_DIR not in item_path.parents:
+            continue
+        if item_path.name in _UNIT_TEST_MODULES:
+            continue
+        item.add_marker(pytest.mark.needs_testenv)
+        # 为集成测试显式添加 autouse fixture 依赖
+        item.add_marker(pytest.mark.usefixtures("lc_seed_http_docs"))
+        needs_testenv_items.append(item)
+
+    # 仅当存在需要 testenv 的测试时才检查环境
+    if needs_testenv_items:
+        if _ENVIRONMENT_ERROR:
+            pytest.exit(
+                f"libcurl consistency 环境无效: {_ENVIRONMENT_ERROR}",
+                returncode=2,
+            )
+        if TESTENV_IMPORT_ERROR:
+            pytest.exit(
+                f"libcurl consistency testenv 初始化失败: {TESTENV_IMPORT_ERROR}",
+                returncode=2,
+            )
 
 
 @pytest.fixture(autouse=True)
@@ -96,16 +279,6 @@ def _inject_upstream_curl_http_fixtures() -> None:
             continue
         globals()[name] = obj
 
-# 如果 testenv 无法导入（如缺少 config.ini 或 httpd/nghttpx），跳过本模块所有测试
-if TESTENV_IMPORT_ERROR:
-    pytest.skip(f"testenv unavailable: {TESTENV_IMPORT_ERROR}", allow_module_level=True)
-
-_CURL_BUILD_DIR = Path(os.environ.get("CURL_BUILD_DIR", str(_DEFAULT_CURL_BUILD_DIR))).resolve()
-_CURLINFO_BIN = _CURL_BUILD_DIR / "src" / "curlinfo"
-_QCURL_BUILD_DIR = _CURL_BUILD_DIR.parent
-_NGHTTPX_H3_BIN = _QCURL_BUILD_DIR / "libcurl_consistency" / "nghttpx-h3" / "bin" / "nghttpx"
-
-
 def _curl_supports_http3() -> bool:
     """Return whether the bundled curl build can actually execute HTTP/3 cases."""
     return bool(Env.have_h3_curl())
@@ -117,50 +290,10 @@ def _disable_testenv_nghttpx() -> None:
     Env.CONFIG._nghttpx_version = None
     Env.CONFIG.nghttpx_with_h3 = False
 
-def _ensure_qcurl_qttest_env() -> None:
-    """
-    为 QCURL_QTTEST 提供“可用即用”的默认值，并确保为绝对路径。
-
-    背景：
-    - pytest 的 Qt 执行器会在 artifacts 子目录下以 cwd=run_dir 启动子进程；
-      若 QCURL_QTTEST 为相对路径，将导致 FileNotFoundError（相对路径不再指向 repo root）。
-    - 允许用户显式覆盖 QCURL_QTTEST；但若用户提供相对路径，将按 repo root 解析并转为绝对路径。
-    """
-    raw = os.environ.get("QCURL_QTTEST", "").strip()
-    if raw:
-        p = Path(raw).expanduser()
-        if not p.is_absolute():
-            p = (_REPO_ROOT / p).resolve()
-        else:
-            p = p.resolve()
-        os.environ["QCURL_QTTEST"] = str(p)
-        return
-
-    candidates = [
-        _QCURL_BUILD_DIR / "tests" / "tst_LibcurlConsistency",
-        _QCURL_BUILD_DIR / "tests" / "tst_LibcurlConsistency.exe",
-    ]
-    for c in candidates:
-        if c.exists():
-            os.environ["QCURL_QTTEST"] = str(c.resolve())
-            return
-
-    # 兜底：用户可能使用 build_xxx 作为构建目录（如 build_lc / build-debug），按 build*/tests 约定探测。
-    for build_dir in sorted(_REPO_ROOT.glob("build*")):
-        c = build_dir / "tests" / "tst_LibcurlConsistency"
-        if c.exists():
-            os.environ["QCURL_QTTEST"] = str(c.resolve())
-            return
-        c_exe = c.with_suffix(".exe")
-        if c_exe.exists():
-            os.environ["QCURL_QTTEST"] = str(c_exe.resolve())
-            return
-
-
 def _patch_testenv_curlinfo_path() -> None:
     """
     curl testenv 的 EnvConfig 不支持通过环境变量覆盖 curlinfo 路径，只能改模块常量。
-    这里将其指向 out-of-source 的 <qcurl_build>/curl/src/curlinfo（默认 build/curl/src/curlinfo），避免 import 时 cwd 影响。
+    这里将其指向 gate 显式注入的 CURLINFO 路径，避免 import 时 cwd 影响。
     """
     if _CURLINFO_BIN.exists():
         testenv_env.CURLINFO = str(_CURLINFO_BIN)
@@ -305,11 +438,11 @@ def _patch_nghttpx_access_log() -> None:
     testenv_nghttpx.Nghttpx.clear_logs = clear_logs_with_access_log  # type: ignore[assignment]
 
 
-_patch_testenv_curlinfo_path()
-_override_testenv_nghttpx_bin()
-_patch_httpd_access_log()
-_patch_nghttpx_access_log()
-_ensure_qcurl_qttest_env()
+if TESTENV_IMPORT_ERROR is None:
+    _patch_testenv_curlinfo_path()
+    _override_testenv_nghttpx_bin()
+    _patch_httpd_access_log()
+    _patch_nghttpx_access_log()
 
 
 @pytest.fixture(scope="session")
@@ -350,10 +483,12 @@ def env_config(pytestconfig, testrun_uid, worker_id) -> EnvConfig:
     return cfg
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def lc_seed_http_docs(env, httpd):
     """
     为一致性用例准备最小的静态资源文件（对齐上游 test_02_download.py 的 class-scope fixture）。
+
+    注意：不再是 autouse，通过 pytest_collection_modifyitems 为需要 testenv 的测试显式添加。
     """
     indir = httpd.docs_dir
     env.make_data_file(indir=indir, fname="data-1m", fsize=1024 * 1024)
@@ -1119,5 +1254,6 @@ def collect_service_logs(logs: Dict[str, Path], dest: Path) -> Dict[str, str]:
     return _collect(logs, dest)
 
 
-# 注入上游 curl http testenv 的 fixtures/hook（保留目录级作用域）
-_inject_upstream_curl_http_fixtures()
+# 注入上游 curl http testenv 的 fixtures/hook（保留目录级作用域）。
+if TESTENV_IMPORT_ERROR is None:
+    _inject_upstream_curl_http_fixtures()
