@@ -26,6 +26,10 @@ This documentation describes the latest published `QCurl 1.0.0` and the current 
 - Current Qt6/C++17 source review: `docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md`
 - Current tests and libcurl consistency review: `docs/reviews/2026-08-15-qcurl-tests-libcurl-consistency-review-conclusion.md`
 - Current libcurl consistency remediation WIP review: `docs/reviews/2026-08-17-qcurl-libcurl-consistency-remediation-wip-comprehensive-readonly-review-conclusion.md`
+- Current overdesign / compatibility-layer / workaround review (`49c2276`): `docs/reviews/2026-08-31-qcurl-overdesign-compat-workaround-readonly-review-conclusion.md`
+- **P1+P2+P3 cleanup & contract revision report**: `docs/reviews/2026-09-03-cleanup-p1-p2-p3-execution-report.md` — Executed P1-1, P1-2, P2-1, P2-2, P2-3, P3-1~P3-5 cleanup, fixed three false-green gates, removed five compatibility stubs, revised release authority handling with fail-loud + explicit declaration, verification passed
+- **P2-C/P2-B/P3 followup execution**: `docs/reviews/2026-09-03-cleanup-p1-p2-p3-followup-execution.md` — Completed P2-C (gate coverage for examples/benchmarks), P2-B (envelope failure path & exception handling), P3 (five low-risk renames & conftest cleanup), verification passed
+- **P3-6/RawHeaderPair/conftest final cleanup (historical snapshot)**: `docs/reviews/2026-09-03-cleanup-p3-6-final-execution.md` — Records the 2026-09-03 partial execution. Its P3-6 decommission conclusion is superseded by the current conditional UCE acceptance contract; fresh current-candidate evidence is still required before deletion is submit-ready.
 - Historical Qt6/libcurl lifecycle review (`a1bafb7`): `docs/reviews/2026-08-07-qcurl-qt6-libcurl-lifecycle-review-comprehensive-conclusion.md`
 - Developer docs: `docs/dev/README.md`
 - Supply-chain notes: `docs/dev/supply-chain.md`
