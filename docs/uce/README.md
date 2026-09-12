@@ -8,7 +8,8 @@ UCE 是 QCurl 面向门禁与证据链的统一入口：它不试图证明“所
 
 ### 1.1 目标
 
-- 提供单一的 UCE runner 入口，统一产出 `manifest.json`、`policy_violations`、reports、logs 与 `tar.gz` 归档。
+- 提供单一的 UCE runner 入口，统一产出 `manifest.json`、`policy_violations`、reports、logs、
+  `tar.gz` 归档和包外 archive envelope。
 - 用稳定版本化 contract 表达“哪些行为被证明了”，避免把实现细节、一次性日志和人工解释混入门禁结论。
 - 明确 PR / nightly / soak 三层职责：默认 PR 只追求快速、确定性、低噪声；高成本放大项放到 nightly / soak。
 - 所有 gate 均 fail-closed：缺失证据、未执行、跳过、脱敏失败、归档失败，都必须进入 `policy_violations`。
@@ -44,19 +45,28 @@ UCE evidence root 约定为：
 ```text
 build/evidence/uce/<run-id>/
 ├── manifest.json
+├── policy_violations.json
 ├── logs/
 ├── reports/
 ├── contracts/
 ├── artifacts/
 └── meta/
+    └── candidate_fingerprint.json
 
 build/evidence/uce/<run-id>.tar.gz
+build/evidence/uce/<run-id>.archive-envelope.json
 ```
 
 约束：
 
 - `manifest.json` 是机器判定入口。
 - `tar.gz` 是归档必需品；缺失即失败。
+- 每个 run-id 只能使用一次；已有目录、tar 或 envelope 时拒绝运行，不覆盖旧证据。
+- 包内外 manifest/policy 逐字节一致。归档新增失败时只有限次补打包失败快照，绝不
+  通过包后重写元数据把旧成功状态留在 tar 内。
+- `candidate_fingerprint` 记录 HEAD、完整 index、工作树/未跟踪内容、递归子模块与
+  唯一正式发布合同 `docs/arch/2.0.0-hard-break-release-contract.md`；本次输出不参与
+  指纹，避免自引用。本地 `.helloagents/` 不入库、不作为输入，缺少该目录不阻断 CI。
 - contract report、raw evidence、capability snapshot、脱敏扫描结果都必须能通过 manifest 反向定位。
 
 ## 4. 合同族（Contracts@v1）
@@ -125,7 +135,12 @@ build/evidence/uce/<run-id>.tar.gz
 - Netproof runner：`scripts/netproof_strace_gate.py`
 - Sanitizer runner：`scripts/run_uce_sanitizers.py`
 - UCE runner：`scripts/run_uce_gate.py`
+- 归档独立校验：`scripts/verify_uce_archive.py --evidence-root <build>/evidence/uce --run-id <run-id> --require-pass`
 - CI 入口：`.github/workflows/pr_fast_gate.yml`、`.github/workflows/uce_nightly.yml`、`.github/workflows/uce_soak.yml`
+
+三个 CI 入口在上传前逐个校验 manifest、policy、tar 和 envelope；校验与诊断上传均
+使用 `always()`。`if-no-files-found: error` 只防止整组路径无匹配，不能替代逐文件校验。
+本地校验不代表已执行 GitHub Actions 的远端持久化上传。
 
 ## 8. 维护规则
 

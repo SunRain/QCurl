@@ -84,6 +84,15 @@ jobs:
           set -euo pipefail
           python3 scripts/run_uce_gate.py --tier soak --build-dir build-soak --run-id "${{ env.UCE_RUN_ID }}"
 
+      - name: 校验 UCE soak 必需归档
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 "scripts/verify_uce_archive.py" \
+            --evidence-root "build-soak/evidence/uce" \
+            --run-id "${{ env.UCE_RUN_ID }}" \
+            --require-pass
+
       - name: Upload UCE soak evidence [required]
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,5 +102,6 @@ jobs:
             build-soak/evidence/uce/${{ env.UCE_RUN_ID }}/manifest.json
             build-soak/evidence/uce/${{ env.UCE_RUN_ID }}/policy_violations.json
             build-soak/evidence/uce/${{ env.UCE_RUN_ID }}.tar.gz
+            build-soak/evidence/uce/${{ env.UCE_RUN_ID }}.archive-envelope.json
           retention-days: 14
           if-no-files-found: error

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fnmatch import fnmatchcase
 from pathlib import Path
+import shlex
 
 import pytest
 import yaml
@@ -62,6 +63,36 @@ def test_consistency_workflow_wrappers_delegate_to_supported_gate() -> None:
 
     assert '"libcurl_consistency" / "run_gate.py"' in basic_runner
     assert '"libcurl_consistency" / "run_gate.py"' in uce_runner
+
+
+@pytest.mark.parametrize(("workflow_name", "job_name", "build_dir", "gate_entry"), _WORKFLOW_JOBS[4:])
+def test_uce_upload_always_follows_fail_closed_archive_validation(
+    workflow_name: str, job_name: str, build_dir: str, gate_entry: str,
+) -> None:
+    """预检与上传均始终执行；诊断上传不能隐藏任何必需工件或 gate 失败。"""
+
+    steps = _job(workflow_name, job_name)["steps"]
+    checks = [step for step in steps if "scripts/verify_uce_archive.py" in step.get("run", "")]
+    assert len(checks) == 1
+    check = checks[0]
+    assert check.get("if") == "always()"
+    assert not check.get("continue-on-error", False)
+    command = shlex.split(check["run"])
+    assert command[command.index("--evidence-root") + 1] == f"{build_dir}/evidence/uce"
+    assert command[command.index("--run-id") + 1] == "${{ env.UCE_RUN_ID }}"
+    assert "--require-pass" in command
+    upload = next(step for step in steps if step.get("uses") == "actions/upload-artifact@v4"
+                  and "manifest.json" in step["with"]["path"])
+    assert upload.get("if") == "always()"
+    assert not upload.get("continue-on-error", False)
+    assert upload["with"]["if-no-files-found"] == "error"
+    root = f"{build_dir}/evidence/uce/${{{{ env.UCE_RUN_ID }}}}"
+    assert set(upload["with"]["path"].splitlines()) == {
+        f"{root}/manifest.json", f"{root}/policy_violations.json",
+        f"{root}.tar.gz", f"{root}.archive-envelope.json",
+    }
+    gate = next(step for step in steps if gate_entry in step.get("run", ""))
+    assert steps.index(gate) < steps.index(check) < steps.index(upload)
 
 
 @pytest.mark.parametrize("event", ("push", "pull_request"))

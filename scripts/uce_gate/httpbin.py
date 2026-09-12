@@ -153,27 +153,32 @@ def run_httpbin_gate(
 
     results: list[GateResult] = []
     violations: list[str] = []
-    start_result = _start_httpbin(repo_root, env_file, evidence_dir / "logs" / "httpbin_start.log", manifest)
-    results.append(start_result)
-    if start_result.returncode != 0:
-        violations.append("env_preflight_httpbin_start_failed")
+    env_values: dict[str, str] = {}
+    try:
+        start_result = _start_httpbin(
+            repo_root, env_file, evidence_dir / "logs" / "httpbin_start.log", manifest
+        )
+        results.append(start_result)
+        if start_result.returncode != 0:
+            violations.append("env_preflight_httpbin_start_failed")
 
-    env_values, env_violations = _load_httpbin_env(env_file, httpbin_dir, manifest)
-    violations.extend(env_violations)
-
-    if env_values.get("QCURL_HTTPBIN_URL"):
-        env_results, gate_violations = _run_env_ctest_gates(repo_root, build_dir, evidence_dir, manifest, env_values)
-        results.extend(env_results)
-        violations.extend(gate_violations)
-    else:
-        violations.append("env_preflight_httpbin_url_missing")
-        _write_httpbin_unavailable(httpbin_dir, manifest)
-
-    if stop_after_gate:
-        stop_result = stop_httpbin_gate(repo_root, evidence_dir, manifest, env_values)
-        results.append(stop_result)
-        if stop_result.returncode != 0:
-            violations.append("env_preflight_httpbin_stop_failed")
+        env_values, env_violations = _load_httpbin_env(env_file, httpbin_dir, manifest)
+        violations.extend(env_violations)
+        if env_values.get("QCURL_HTTPBIN_URL"):
+            env_results, gate_violations = _run_env_ctest_gates(
+                repo_root, build_dir, evidence_dir, manifest, env_values
+            )
+            results.extend(env_results)
+            violations.extend(gate_violations)
+        else:
+            violations.append("env_preflight_httpbin_url_missing")
+            _write_httpbin_unavailable(httpbin_dir, manifest)
+    finally:
+        if stop_after_gate:
+            stop_result = stop_httpbin_gate(repo_root, evidence_dir, manifest, env_values)
+            results.append(stop_result)
+            if stop_result.returncode != 0:
+                violations.append("env_preflight_httpbin_stop_failed")
     return env_values, results, violations
 
 

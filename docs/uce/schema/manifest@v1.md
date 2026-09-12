@@ -32,6 +32,7 @@
 | `contracts` | `object` | 是 | contract 级结果索引 | 缺失或 required contract 无记录即失败 |
 | `policy_violations` | `array<string>` | 是 | 强口径违例码 | 非空即失败 |
 | `capabilities` | `object` | 否 | provider capability snapshot，如 netproof | required provider 缺失时必须反映到 `policy_violations` |
+| `candidate_fingerprint` | `object` | 否（nightly/acceptance 必须） | 当前 HEAD、完整 index、tracked/untracked、递归子模块及 authority 身份 | acceptance 缺失或与当前候选不匹配即失败 |
 
 ## 3. `results[]` 字段
 
@@ -84,7 +85,19 @@
 规则：
 
 - `required=true` 且 `path` 指向文件缺失，必须进入 `policy_violations`。
+- `candidate_fingerprint` 在 nightly acceptance 中必须同时作为 `meta/candidate_fingerprint.json`
+  的 required artifact 保存。指纹 schemaVersion=3，包含 `head`、`staged`、`index`、
+  `unstaged`、`untracked`、`submodules`、`authority` 和 `combined` 摘要；index 为完整
+  条目而不是 staged patch 别名，未跟踪文件包含内容与可执行位。忽略的构建/运行输出
+  不参加源代码身份，本次输出另行排除以避免自引用；authority 内容仍显式绑定。
 - `kind="evidence"` 的 artifact 必须符合 `docs/uce/schema/evidence@v1.md`。
+- `artifacts` 只登记 `evidence_dir` 内部的工件。归档包（`tar_gz`）位于 `evidence_dir`
+  之外且无法自描述，因此不作为 artifact 条目；其路径、字节数与 sha256 由包外的
+  `<run_id>.archive-envelope.json`（`qcurl-uce/archive-envelope@v1`）承载。该约定保证
+  包内外 manifest/policy 逐字节一致。失败路径同样禁止 `archive_bundle` 自引用。
+- workload/finalize 异常先记录 `gate_exception`，再写诊断；manifest/policy 独立尝试
+  写入，失败则使旧副本失效。归档新增错误触发有限次失败快照补打包，始终返回非零。
+- run-id 是只创建一次的身份；重复目录、tar 或 envelope 均拒绝覆盖。
 
 ## 5. `contracts` 字段
 

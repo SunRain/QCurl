@@ -3,15 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.run_uce_gate import build_tier_plan
-from scripts.run_uce_gate import ctbp_required_kinds
-from scripts.run_uce_gate import ctbp_required_runners
-from scripts.run_uce_gate import create_manifest
-from scripts.run_uce_gate import dci_seed_matrix
 from scripts.run_uce_gate import main
-from scripts.run_uce_gate import _run_bp_contract
-from scripts.run_uce_gate import timeline_required_providers
-from scripts.run_uce_gate import validate_required_artifacts
+from scripts.uce.manifest import create_manifest
+from scripts.uce_gate.planner import ctbp_required_kinds
+from scripts.uce_gate.planner import ctbp_required_runners
+from scripts.uce_gate.planner import build_tier_plan
+from scripts.uce_gate.planner import dci_seed_matrix
+from scripts.uce_gate.planner import timeline_required_providers
+from scripts.uce_gate.planner import validate_required_artifacts
+from scripts.uce_gate.qt_contracts import run_bp_contract
 from scripts.uce_gate.evidence import prepare_evidence_layout
 from scripts.uce_gate.evidence import resolve_evidence_layout
 from scripts.uce_gate.evidence import write_policy_report
@@ -259,7 +259,7 @@ def test_bp_contract_registers_manifest_entries(tmp_path: Path) -> None:
         tar_gz=str(tmp_path / "bundle.tar.gz"),
     )
 
-    results, violations = _run_bp_contract(
+    results, violations = run_bp_contract(
         repo_root,
         build_dir,
         evidence_dir,
