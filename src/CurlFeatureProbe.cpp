@@ -22,16 +22,16 @@ QString versionNumToString(int versionNum)
 }
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
-int forcedRuntimeVersionNum(int detectedVersionNum)
+int forcedRuntimeValue(const char *variable, int detectedValue)
 {
-    const QByteArray raw = qgetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM");
+    const QByteArray raw = qgetenv(variable);
     if (raw.trimmed().isEmpty()) {
-        return detectedVersionNum;
+        return detectedValue;
     }
 
     bool ok = false;
-    const int forcedVersionNum = QString::fromLatin1(raw.trimmed()).toInt(&ok, 0);
-    return ok ? forcedVersionNum : detectedVersionNum;
+    const int forcedValue = QString::fromLatin1(raw.trimmed()).toInt(&ok, 0);
+    return ok ? forcedValue : detectedValue;
 }
 #endif
 
@@ -66,7 +66,10 @@ void CurlFeatureProbe::refresh()
     m_runtimeFeatures      = static_cast<long>(info->features);
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
-    m_runtimeVersionNum = forcedRuntimeVersionNum(m_runtimeVersionNum);
+    m_runtimeVersionNum = forcedRuntimeValue("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM",
+                                             m_runtimeVersionNum);
+    m_runtimeFeatures   = forcedRuntimeValue("QCURL_TEST_FORCE_RUNTIME_LIBCURL_FEATURES",
+                                             info->features);
     if (m_runtimeVersionString.isEmpty()
         || m_runtimeVersionNum != static_cast<int>(info->version_num)) {
         m_runtimeVersionString = versionNumToString(m_runtimeVersionNum);

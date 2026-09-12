@@ -418,6 +418,7 @@ add_qcurl_test(tst_QCNetworkMockHandler tst_QCNetworkMockHandler.cpp) # Mock 工
 # HTTP/3 支持测试
 add_qcurl_test(tst_QCNetworkHttp3 tst_QCNetworkHttp3.cpp) # HTTP/3 功能测试
 target_compile_definitions(tst_QCNetworkHttp3 PRIVATE QCURL_ENABLE_TEST_HOOKS)
+target_link_libraries(tst_QCNetworkHttp3 PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 
 # 网络诊断工具测试
 add_qcurl_test(tst_QCNetworkDiagnostics tst_QCNetworkDiagnostics.cpp) # 网络诊断功能测试

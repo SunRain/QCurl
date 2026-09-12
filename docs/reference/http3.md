@@ -6,10 +6,12 @@
 
 - HTTP/3 是否可用取决于当前构建所链接的 libcurl 运行时能力，以及目标服务端是否支持 QUIC/HTTP/3。
 - QCurl 只负责把请求的 HTTP 版本偏好映射到 libcurl，不承诺在任意环境下都一定走到 HTTP/3。
+- 最低依赖仍为 libcurl 7.85.0。`Http3Only` 额外要求编译头文件与运行时均不低于 7.88.0，
+  且运行时包含 HTTP/3 特性；缺少 `CURL_HTTP_VERSION_3ONLY` 时明确拒绝，不改用可降级的 `Http3`。
 - `Http3` 与 `Http3Only` 的区别必须由调用方显式选择：
   - `Http3`: 优先尝试 HTTP/3；不可用时允许按 libcurl 能力与服务器协商降级。
   - `Http3Only`: 仅接受 HTTP/3；环境或服务端不满足时应直接失败，而不是静默降级。
-  - `HttpAny`: 不表达偏好，由 libcurl 自动协商。
+- `HttpAny`: 不表达偏好，由 libcurl 自动协商。
 
 ## 2. 最小用法
 
@@ -37,6 +39,8 @@ request.setHttpVersion(QCNetworkHttpVersion::Http3Only);
 
 - 是否“偏好 HTTP/3”是请求级配置，不是全局默认。
 - 如果业务允许降级，应优先使用 `Http3` 而不是 `Http3Only`。
+- 能力预检查拒绝沿用各执行器的既有错误分类：Core 返回 `InvalidRequest`，
+  Blocking Extras 返回 `UnsupportedCapability`；二者都保留明确诊断且不发送请求。
 - 如果业务把 HTTP/3 视为交付门槛，应在运行前做能力探测，并在 CI 或交付门禁中显式失败。
 - HTTP/3 不等于一定更快。首次握手、网络质量、服务器实现和 UDP 可达性都会影响结果。
 
@@ -62,7 +66,7 @@ curl --version | grep HTTP3
 
 优先检查：
 
-1. 运行时 libcurl 是否编译进 HTTP/3 支持。
+1. 编译头文件和运行时 libcurl 是否均达到 7.88.0，且运行时编译进 HTTP/3 支持。
 2. 目标服务端是否真的开放了 HTTP/3。
 3. 当前网络是否允许 UDP/443。
 

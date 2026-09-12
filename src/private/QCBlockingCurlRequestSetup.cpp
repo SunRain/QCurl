@@ -11,7 +11,9 @@
 #include "private/QCBlockingCurlProtocolSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkHttpVersion_p.h"
 
+#include <QDebug>
 #include <QStringList>
 
 #include <utility>
@@ -30,37 +32,6 @@ bool setStringOption(CURL *handle,
 bool setLongOption(CURL *handle, CURLoption option, const char *optionName, long value)
 {
     return CurlOptions::setWithTestHook(handle, option, optionName, value) == CURLE_OK;
-}
-
-long curlHttpVersion(QCNetworkHttpVersion version)
-{
-    switch (version) {
-        case QCNetworkHttpVersion::Http1_0:
-            return CURL_HTTP_VERSION_1_0;
-        case QCNetworkHttpVersion::Http1_1:
-            return CURL_HTTP_VERSION_1_1;
-        case QCNetworkHttpVersion::Http2:
-        case QCNetworkHttpVersion::Http2TLS:
-            return CURL_HTTP_VERSION_2TLS;
-        case QCNetworkHttpVersion::Http3:
-#ifdef CURL_HTTP_VERSION_3
-            return CURL_HTTP_VERSION_3;
-#else
-            return CURL_HTTP_VERSION_NONE;
-#endif
-        case QCNetworkHttpVersion::Http3Only:
-#ifdef CURL_HTTP_VERSION_3ONLY
-            return CURL_HTTP_VERSION_3ONLY;
-#elif defined(CURL_HTTP_VERSION_3)
-            return CURL_HTTP_VERSION_3;
-#else
-            return CURL_HTTP_VERSION_NONE;
-#endif
-        case QCNetworkHttpVersion::HttpAny:
-            return CURL_HTTP_VERSION_NONE;
-    }
-
-    return CURL_HTTP_VERSION_NONE;
 }
 
 long curlPostRedirectPolicy(QCNetworkPostRedirectPolicy policy)
@@ -192,10 +163,22 @@ bool appendRequestHeaders(CURL *handle,
                                              const QCNetworkRequest &request,
                                              RequestOptionStorage *storage)
 {
+    QCNetworkHttpVersion effective;
+    QString warning;
+    if (!detail::resolveHttpVersion(request.httpVersion(),
+                                    &effective,
+                                    &storage->failureMessage,
+                                    &warning)) {
+        storage->unsupportedCapability = true;
+        return false;
+    }
+    if (!warning.isEmpty()) {
+        qWarning().noquote() << warning;
+    }
     if (!setLongOption(handle,
                        CURLOPT_HTTP_VERSION,
                        "CURLOPT_HTTP_VERSION",
-                       curlHttpVersion(request.httpVersion()))) {
+                       detail::toCurlHttpVersion(effective))) {
         return failOption(storage, "CURLOPT_HTTP_VERSION");
     }
     if (Internal::CurlOptions::setSslVerifyPeer(handle, request.sslConfig().verifyPeer())
