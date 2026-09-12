@@ -6,12 +6,14 @@ import argparse
 from pathlib import Path
 
 if __package__:
+    from .release_examples_steps import examples_benchmarks_steps
     from .release_gate_model import GateStep
     from .release_package_steps import package_evidence_step
     from .release_package_steps import sanitizer_steps
     from .release_package_steps import shared_package_steps
     from .release_tree_model import tree_path
 else:
+    from release_examples_steps import examples_benchmarks_steps
     from release_gate_model import GateStep
     from release_package_steps import package_evidence_step
     from release_package_steps import sanitizer_steps
@@ -110,21 +112,13 @@ def _static_build_steps(args: argparse.Namespace) -> list[GateStep]:
     ]
 
 
-def _static_api_steps(args: argparse.Namespace) -> list[GateStep]:
+def _static_package_steps(args: argparse.Namespace) -> list[GateStep]:
+    """构造静态链接相关步骤。
+
+    静态链接的 public API 验证已被 shared_public_api 和 full_ctest 覆盖；
+    此处只保留 package evidence（install/consumer/lifecycle），它们确实读取静态构建目录。
+    """
     steps: list[GateStep] = []
-    test_gcc_value = getattr(args, "test_shared_gcc_build_dir", None)
-    if test_gcc_value is not None:
-        test_gcc = Path(test_gcc_value)
-        steps.append(
-            _step(
-            "static_public_api",
-            "strict",
-            [args.ctest, "--test-dir", str(test_gcc), "-L", "^public-api$", "--output-on-failure"],
-            "run static public API checks in the GCC test tree",
-            "test-shared-gcc",
-            (),
-            )
-        )
     release_static_value = getattr(args, "release_static_build_dir", None)
     if release_static_value is None:
         return steps
@@ -151,6 +145,7 @@ def _strict_steps(args: argparse.Namespace) -> list[GateStep]:
             "test-shared-gcc",
             (),
         ),
+        *examples_benchmarks_steps(args, test_gcc),
         _step(
             "deprecated_curl_api_guard",
             "strict",
@@ -376,12 +371,12 @@ def build_steps(args: argparse.Namespace) -> list[GateStep]:
         return [step for step in _shared_steps(args) if step.tier == "fast"]
     if args.tier == "strict":
         steps = _shared_steps(args)
-        steps.extend(_static_api_steps(args))
+        steps.extend(_static_package_steps(args))
         steps.extend(_strict_steps(args))
         return [step for step in steps if step.tier in {"fast", "strict"}]
     steps = _shared_steps(args)
     steps.extend(_static_build_steps(args))
-    steps.extend(_static_api_steps(args))
+    steps.extend(_static_package_steps(args))
     steps.extend(_strict_steps(args))
     steps.extend(_full_test_steps(args))
     steps.extend(_symbol_steps(args))

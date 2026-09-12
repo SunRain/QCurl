@@ -52,7 +52,10 @@ endif()
 add_qcurl_benchmark(benchmark_http3 benchmark_http3.cpp)
 
 # 调度器基准测试
+# 该基准使用 QCNetworkMockHandler 与 TestSupport::setMockHandler 构造确定性调度场景，
+# 因此必须显式链接 QCurlTestSupport；仅链接 QCurl 会在链接期缺失这些符号。
 add_qcurl_benchmark(benchmark_scheduler benchmark_scheduler.cpp benchmark_scheduler_helpers.h)
+target_link_libraries(benchmark_scheduler PRIVATE QCurlTestSupport)
 
 # 连接池基准测试
 add_qcurl_benchmark(benchmark_connectionpool benchmark_connectionpool.cpp)

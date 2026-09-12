@@ -1175,6 +1175,34 @@ def test_full_gate_routes_release_and_test_steps_to_distinct_trees(
     ]
 
 
+def test_examples_benchmarks_gate_uses_direct_commands(tmp_path: Path) -> None:
+    """示例与基准门禁不得通过 shell 拼接可配置路径或命令。"""
+
+    _, _, test_shared, args = _three_tree_gate_args(tmp_path)
+    run_release_gate._resolve_paths(args, tmp_path)
+    steps = {step.name: step for step in run_release_gate._selected_steps(args)}
+    gate_build = test_shared / "examples_benchmarks_gate"
+
+    assert steps["examples_benchmarks_configure"].command == [
+        args.cmake,
+        "-S",
+        ".",
+        "-B",
+        str(gate_build),
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_TESTING=OFF",
+        "-DBUILD_EXAMPLES=ON",
+        "-DBUILD_BENCHMARKS=ON",
+    ]
+    assert steps["examples_benchmarks_build"].command == [
+        args.cmake,
+        "--build",
+        str(gate_build),
+        "--parallel",
+        str(args.jobs),
+    ]
+
+
 def _six_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
     trees = {
         "release-shared": tmp_path / "release-shared",
