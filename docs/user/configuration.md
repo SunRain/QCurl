@@ -92,6 +92,23 @@ Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP me
 v4，并通过禁用 direct fallback 的 `QSaveFile` 单文件原子提交；v3/未知格式按 miss 清理。`clear()` 返回结构化状态、删除/失败
 计数和残留字节，调用方不得忽略部分失败。
 
+### 连接池配置与请求统计
+
+`QCNetworkConnectionPoolManager::setConfig()` 只提交线程安全的进程模板。每个线程的 multi
+在下一次网络请求加入前应用完整快照，不表示其他线程立即生效，也不打断已有传输。
+`multiMaxTotalConnections` / `multiMaxHostConnections` 是每线程原生连接上限，
+`multiMaxConcurrentStreams` 是每连接并发流上限，`multiMaxConnects` 是连接缓存容量；清除后
+分别恢复 libcurl 默认值 `0`、`0`、`100`、`0`，不是进程级总连接配额。
+
+`maxIdleTime` / `maxConnectionLifetime` 限制可复用连接的空闲年龄与总年龄；
+TCP keepalive 固定启用，空闲 60 秒后探测，间隔 30 秒。`multiplexingEnabled` 控制原生
+多路复用，不改写请求 HTTP 版本。无效的重复上限、HTTP/1.1 pipelining 与 warming 开关已移除。
+
+统计中的 `activeRequests()` 是进入 multi 且未结束的 Core 请求数（包含重试退避），
+`totalRequests()` 是已结束请求数（含失败、取消、销毁，不含缓存或 mock）；
+`reusedConnections()` 只统计已取得响应且可确认复用连接的请求，不提供推算的空闲连接数。
+`resetStatistics()` 清空历史累计量，但保留仍在运行的活动请求数。
+
 ## 4. WebSocket 配置
 
 WebSocket 的 public 配置入口集中在以下头文件注释：

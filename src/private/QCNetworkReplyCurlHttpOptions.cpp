@@ -62,9 +62,6 @@ namespace {
                                                     CURL *handle,
                                                     const QCNetworkRequest &request)
 {
-    Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(handle,
-                                                                          request.url().host());
-
     const QCNetworkHttpVersion requested = request.httpVersion();
     QCNetworkHttpVersion effective       = requested;
     const bool runtimeHasHttp3           = (CurlFeatureProbe::instance().runtimeFeatures()

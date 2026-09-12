@@ -93,9 +93,6 @@ Internal::SignalEmissionResult completeFinishedReply(QCNetworkReplyPrivate *repl
                                                      const QPointer<QCNetworkReply> &observer)
 {
     flushCookieJar(reply);
-    if (CURL *handle = reply->curlManager.handle()) {
-        Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(handle, false);
-    }
     Internal::storeReplyInCache(reply);
     return Internal::emitReplySignal(observer, [](QCNetworkReply *q) { Q_EMIT q->finished(); });
 }
@@ -146,6 +143,7 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
     updateElapsedTime(this, newState);
 
     if (isTerminalState(newState)) {
+        finishPoolRequest();
         if (Internal::clearReplyFlowControlOnTerminalState(this)
             == Internal::SignalEmissionResult::Destroyed) {
             return Internal::SignalEmissionResult::Destroyed;

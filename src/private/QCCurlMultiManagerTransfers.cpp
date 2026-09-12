@@ -4,6 +4,7 @@
  */
 
 #include "QCCurlMultiManager.h"
+#include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
@@ -192,6 +193,10 @@ bool QCCurlMultiManager::registerTransferRecord(
     }
 
     QString addError;
+    if (!applyLimitsConfig(QCNetworkConnectionPoolManager::instance()->config(), &addError)) {
+        setTransferError(error, addError);
+        return false;
+    }
     if (!addEasyToMultiLocked(easy, &addError)) {
         setTransferError(error, addError);
         return false;

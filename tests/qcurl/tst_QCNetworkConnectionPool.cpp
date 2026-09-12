@@ -73,14 +73,13 @@ void TestConnectionPool::testDefaultConfig()
     auto config       = poolManager->config();
 
     // 验证默认配置值
-    QCOMPARE(config.maxConnectionsPerHost(), 6);
-    QCOMPARE(config.maxTotalConnections(), 30);
+    QVERIFY(!config.multiMaxHostConnections().has_value());
+    QVERIFY(!config.multiMaxTotalConnections().has_value());
     QCOMPARE(config.maxIdleTime(), 60);
     QCOMPARE(config.maxConnectionLifetime(), 120);
     QVERIFY(config.multiplexingEnabled());
     QVERIFY(config.dnsCacheEnabled());
     QCOMPARE(config.dnsCacheTimeout(), 60);
-    QVERIFY(!config.pipeliningEnabled());
     QVERIFY(config.isValid());
 
     qDebug() << "Default config test passed";
@@ -92,8 +91,8 @@ void TestConnectionPool::testCustomConfig()
 
     // 创建自定义配置
     QCNetworkConnectionPoolConfig config;
-    config.setMaxConnectionsPerHost(10);
-    config.setMaxTotalConnections(50);
+    config.setMultiMaxHostConnections(10);
+    config.setMultiMaxTotalConnections(50);
     config.setMaxIdleTime(90);
     config.setMultiplexingEnabled(false);
 
@@ -105,8 +104,8 @@ void TestConnectionPool::testCustomConfig()
 
     // 验证配置已保存
     auto savedConfig = poolManager->config();
-    QCOMPARE(savedConfig.maxConnectionsPerHost(), 10);
-    QCOMPARE(savedConfig.maxTotalConnections(), 50);
+    QCOMPARE(savedConfig.multiMaxHostConnections().value_or(0), 10);
+    QCOMPARE(savedConfig.multiMaxTotalConnections().value_or(0), 50);
     QCOMPARE(savedConfig.maxIdleTime(), 90);
     QVERIFY(!savedConfig.multiplexingEnabled());
 
@@ -177,23 +176,16 @@ void TestConnectionPool::testConfigRejectsInvalidMultiLimits()
 void TestConnectionPool::testConfigSharedDataDetachesOnWrite()
 {
     QCNetworkConnectionPoolConfig original;
-    original.setMaxConnectionsPerHost(4);
-    original.setMaxTotalConnections(12);
     original.setMultiMaxTotalConnections(10);
     original.setMultiMaxHostConnections(5);
 
     QCNetworkConnectionPoolConfig copy = original;
-    copy.setMaxConnectionsPerHost(2);
     copy.clearMultiMaxTotalConnections();
     copy.setMultiMaxHostConnections(3);
 
-    QCOMPARE(original.maxConnectionsPerHost(), 4);
-    QCOMPARE(original.maxTotalConnections(), 12);
     QCOMPARE(original.multiMaxTotalConnections().value(), 10L);
     QCOMPARE(original.multiMaxHostConnections().value(), 5L);
 
-    QCOMPARE(copy.maxConnectionsPerHost(), 2);
-    QCOMPARE(copy.maxTotalConnections(), 12);
     QVERIFY(!copy.multiMaxTotalConnections().has_value());
     QCOMPARE(copy.multiMaxHostConnections().value(), 3L);
 }
@@ -205,20 +197,20 @@ void TestConnectionPool::testConfigPresets()
     // 测试保守配置
     auto conservative = QCNetworkConnectionPoolConfig::conservative();
     QVERIFY(conservative.isValid());
-    QCOMPARE(conservative.maxConnectionsPerHost(), 2); // 保守配置使用较小值
-    QCOMPARE(conservative.maxTotalConnections(), 10);
+    QCOMPARE(conservative.multiMaxHostConnections().value_or(0), 2); // 保守配置使用较小值
+    QCOMPARE(conservative.multiMaxTotalConnections().value_or(0), 10);
 
     // 测试激进配置
     auto aggressive = QCNetworkConnectionPoolConfig::aggressive();
     QVERIFY(aggressive.isValid());
-    QCOMPARE(aggressive.maxConnectionsPerHost(), 10);
-    QCOMPARE(aggressive.maxTotalConnections(), 100); // 激进配置使用更大值
+    QCOMPARE(aggressive.multiMaxHostConnections().value_or(0), 10);
+    QCOMPARE(aggressive.multiMaxTotalConnections().value_or(0), 100); // 激进配置使用更大值
 
     // 测试 HTTP/2 优化配置
     auto http2 = QCNetworkConnectionPoolConfig::http2Optimized();
     QVERIFY(http2.isValid());
     QVERIFY(http2.multiplexingEnabled());
-    QCOMPARE(http2.maxConnectionsPerHost(), 2); // HTTP/2 需要更少连接
+    QCOMPARE(http2.multiMaxHostConnections().value_or(0), 2); // HTTP/2 需要更少连接
 
     qDebug() << "Config presets test passed";
 }
@@ -228,14 +220,14 @@ void TestConnectionPool::testInvalidConfig()
     QCNetworkConnectionPoolConfig config;
 
     // 测试无效值
-    config.setMaxConnectionsPerHost(0); // 无效
+    config.setMultiMaxHostConnections(-1); // 无效
     QVERIFY(!config.isValid());
 
-    config.setMaxConnectionsPerHost(6);
-    config.setMaxTotalConnections(-1); // 无效
+    config.setMultiMaxHostConnections(6);
+    config.setMultiMaxTotalConnections(-1); // 无效
     QVERIFY(!config.isValid());
 
-    config.setMaxTotalConnections(30);
+    config.setMultiMaxTotalConnections(30);
     config.setMaxIdleTime(-10); // 无效
     QVERIFY(!config.isValid());
 
@@ -252,14 +244,16 @@ void TestConnectionPool::testManagerRejectsInvalidConfigTransactionally()
     const QCNetworkConnectionPoolConfig original = poolManager->config();
 
     QCNetworkConnectionPoolConfig invalid = original;
-    invalid.setMaxConnectionsPerHost(0);
+    invalid.setMultiMaxHostConnections(-1);
     QVERIFY(!invalid.isValid());
 
     QCOMPARE(poolManager->setConfig(invalid),
              QCNetworkConnectionPoolManager::UpdateResult::InvalidArgument);
     const QCNetworkConnectionPoolConfig current = poolManager->config();
-    QCOMPARE(current.maxConnectionsPerHost(), original.maxConnectionsPerHost());
-    QCOMPARE(current.maxTotalConnections(), original.maxTotalConnections());
+    QCOMPARE(current.multiMaxHostConnections().value_or(0),
+             original.multiMaxHostConnections().value_or(0));
+    QCOMPARE(current.multiMaxTotalConnections().value_or(0),
+             original.multiMaxTotalConnections().value_or(0));
 
     QCOMPARE(poolManager->setConfig(original),
              QCNetworkConnectionPoolManager::UpdateResult::Applied);
@@ -278,7 +272,7 @@ void TestConnectionPool::testStatistics()
     QCOMPARE(stats.totalRequests(), 0);
     QCOMPARE(stats.reusedConnections(), 0);
     QCOMPARE(stats.reuseRate(), 0.0);
-    QCOMPARE(stats.activeConnections(), 0);
+    QCOMPARE(stats.activeRequests(), 0);
 
     qDebug() << "Statistics test passed";
 }
@@ -365,8 +359,7 @@ void TestConnectionPool::testConnectionReuse()
     qDebug() << "  Total requests:" << stats.totalRequests();
     qDebug() << "  Reused connections:" << stats.reusedConnections();
     qDebug() << "  Reuse rate:" << stats.reuseRate() << "%";
-    qDebug() << "  Active connections:" << stats.activeConnections();
-    qDebug() << "  Idle connections:" << stats.idleConnections();
+    qDebug() << "  Active requests:" << stats.activeRequests();
 
     // 验证统计：受网络环境影响，允许部分请求失败；统计应至少覆盖“成功完成”的请求数
     QCOMPARE(stats.totalRequests(), qint64(successCount));

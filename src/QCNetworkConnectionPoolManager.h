@@ -36,22 +36,19 @@ public:
     QCNetworkConnectionPoolStatistics &operator=(const QCNetworkConnectionPoolStatistics &other);
     QCNetworkConnectionPoolStatistics &operator=(QCNetworkConnectionPoolStatistics &&other) noexcept;
 
-    /// 自进程启动或上次 resetStatistics() 以来完成的请求数。
+    /// 自进程启动或上次重置以来结束的网络请求数，含失败、取消和销毁，不含缓存/mock。
     [[nodiscard]] qint64 totalRequests() const;
     /// 复用已有连接完成的请求数。
     [[nodiscard]] qint64 reusedConnections() const;
     /// 连接复用率，单位为百分比。
     [[nodiscard]] double reuseRate() const;
-    /// 当前记录为活跃状态的连接数量。
-    [[nodiscard]] int activeConnections() const;
-    /// 按全局连接上限估算的空闲连接数量。
-    [[nodiscard]] int idleConnections() const;
+    /// 已进入 multi 且未结束的 Core 网络请求数；重试退避仍属于同一请求。
+    [[nodiscard]] int activeRequests() const;
 
 private:
     explicit QCNetworkConnectionPoolStatistics(qint64 totalRequests,
                                                qint64 reusedConnections,
-                                               int activeConnections,
-                                               int idleConnections);
+                                               int activeRequests);
 
     QSharedDataPointer<QCNetworkConnectionPoolStatisticsData> d;
 
@@ -90,14 +87,16 @@ public:
     /**
      * @brief 设置连接池配置
      *
-     * 新配置将应用到后续创建的所有 curl handle。
+     * 进程快照是新请求的配置模板，不代表所有线程的 multi 已经应用。
+     * 每个线程在下一次网络请求进入 multi 前应用最新限制；修改不主动关闭已有传输。
+     * easy 配置在新请求开始时应用，TCP keepalive 固定为启用、空闲 60 秒、间隔 30 秒。
      *
      * @param config 连接池配置
      * @return 合法候选返回 `Applied`；非法候选返回 `InvalidArgument`，既有配置快照和
      *         libcurl multi 状态保持不变。
      *
      * @note 线程安全
-     * @note 提交是同步的；已存在连接不会被主动关闭，后续 handle 才读取新快照。
+     * @note 提交快照是同步的；清除 multi 限制在下一次 admission 恢复原生默认值。
      */
     [[nodiscard]] UpdateResult setConfig(const QCNetworkConnectionPoolConfig &config);
 
@@ -122,7 +121,7 @@ public:
     /**
      * @brief 重置统计信息
      *
-     * 将所有统计计数器归零。
+     * 清零历史完成与复用计数，保留当前活动请求数量。
      *
      * @note 线程安全
      */

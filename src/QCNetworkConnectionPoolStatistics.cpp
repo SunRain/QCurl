@@ -14,8 +14,7 @@ public:
     qint64 totalRequests     = 0;
     qint64 reusedConnections = 0;
     double reuseRate         = 0.0;
-    int activeConnections    = 0;
-    int idleConnections      = 0;
+    int activeRequests       = 0;
 };
 
 QCNetworkConnectionPoolStatistics::QCNetworkConnectionPoolStatistics()
@@ -38,15 +37,13 @@ QCNetworkConnectionPoolStatistics &QCNetworkConnectionPoolStatistics::operator=(
 
 QCNetworkConnectionPoolStatistics::QCNetworkConnectionPoolStatistics(qint64 totalRequests,
                                                                      qint64 reusedConnections,
-                                                                     int activeConnections,
-                                                                     int idleConnections)
+                                                                     int activeRequests)
     : d(new QCNetworkConnectionPoolStatisticsData)
 {
     d->totalRequests     = totalRequests;
     d->reusedConnections = reusedConnections;
     d->reuseRate         = totalRequests > 0 ? (reusedConnections * 100.0) / totalRequests : 0.0;
-    d->activeConnections = activeConnections;
-    d->idleConnections   = idleConnections;
+    d->activeRequests    = activeRequests;
 }
 
 qint64 QCNetworkConnectionPoolStatistics::totalRequests() const
@@ -64,14 +61,9 @@ double QCNetworkConnectionPoolStatistics::reuseRate() const
     return d->reuseRate;
 }
 
-int QCNetworkConnectionPoolStatistics::activeConnections() const
+int QCNetworkConnectionPoolStatistics::activeRequests() const
 {
-    return d->activeConnections;
-}
-
-int QCNetworkConnectionPoolStatistics::idleConnections() const
-{
-    return d->idleConnections;
+    return d->activeRequests;
 }
 
 } // namespace QCurl

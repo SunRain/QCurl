@@ -197,14 +197,12 @@ public:
     void wakeup();
 
     /**
-     * @brief 应用 multi 级别的资源阀门配置（可安全 no-op）
+     * @brief 在 owner thread 应用原生 multi 配置，失败时拒绝本次 admission。
      *
-     * 当前阶段该接口作为“未来扩展点”保留：即使暂不设置任何 CURLMOPT_*，
-     * 也必须保证可被调用且不会崩溃/死锁。
-     *
-     * @note 线程安全：可从任意线程调用；必要时会 marshal 到管理器线程。
+     * 空配置恢复默认限制，不重建 multi、不终止已有连接。
      */
-    void applyLimitsConfig(const QCNetworkConnectionPoolConfig &config);
+    [[nodiscard]] bool applyLimitsConfig(const QCNetworkConnectionPoolConfig &config,
+                                         QString *error);
 
 Q_SIGNALS:
     /**
@@ -253,7 +251,6 @@ private:
 
     [[nodiscard]] bool configureMultiCallbacks(const char *context);
     void disableMultiCallbacks();
-    [[nodiscard]] bool recreateMultiHandleForLimits();
 
     struct AddReplyResult
     {
@@ -354,16 +351,14 @@ private:
                                                            const ShareConfig &desired,
                                                            Internal::CookieStoreResult *failure);
 
-    [[nodiscard]] bool canRecreateMultiHandleLocked();
-    void applyMultiLongOption(CURLMoption option,
-                              const char *optionName,
-                              long value,
-                              std::optional<long> &stateSlot);
+    [[nodiscard]] bool applyMultiLongOption(CURLMoption option,
+                                            const char *optionName,
+                                            long value,
+                                            std::optional<long> &stateSlot,
+                                            QString *error);
     void shutdown(bool retainPoisonedGraph);
     void unregisterRuntimeParticipant() noexcept;
     void releaseRuntimeParticipation() noexcept;
-    void clearMultiLimitState();
-    void warnDeferredMultiLimitReset() const;
 
 private:
     // ==================
@@ -400,6 +395,7 @@ private:
     std::optional<long> m_multiMaxHostConnections   = std::nullopt;
     std::optional<long> m_multiMaxConcurrentStreams = std::nullopt;
     std::optional<long> m_multiMaxConnects          = std::nullopt;
+    std::optional<long> m_multiMultiplexing         = std::nullopt;
 
     // ==================
     // Share handle（M6+，可选）：按 manager scope 隔离（默认关闭）

@@ -8,107 +8,60 @@
 
 namespace QCurl {
 
-void QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &config)
+bool QCCurlMultiManager::applyLimitsConfig(const QCNetworkConnectionPoolConfig &config,
+                                           QString *error)
 {
-    if (m_isPoisoned.load(std::memory_order_relaxed)
+    if (QThread::currentThread() != thread() || !m_multiHandle
+        || m_isPoisoned.load(std::memory_order_relaxed)
         || m_isShuttingDown.load(std::memory_order_relaxed)) {
-        return;
+        *error = QStringLiteral("multi 配置必须在可用引擎的所属线程应用");
+        return false;
     }
-
-    if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(
-            this, [this, config]() { applyLimitsConfig(config); }, Qt::QueuedConnection);
-        return;
-    }
-
-    if (!m_multiHandle) {
-        return;
-    }
-
-    const std::optional<long> newMaxTotal    = config.multiMaxTotalConnections();
-    const std::optional<long> newMaxHost     = config.multiMaxHostConnections();
-    const std::optional<long> newMaxStreams  = config.multiMaxConcurrentStreams();
-    const std::optional<long> newMaxConnects = config.multiMaxConnects();
-
-    const bool clearRequested = (!newMaxTotal.has_value() && m_multiMaxTotalConnections.has_value())
-                                || (!newMaxHost.has_value() && m_multiMaxHostConnections.has_value())
-                                || (!newMaxStreams.has_value()
-                                    && m_multiMaxConcurrentStreams.has_value())
-                                || (!newMaxConnects.has_value() && m_multiMaxConnects.has_value());
-    if (clearRequested && !canRecreateMultiHandleLocked()) {
-        warnDeferredMultiLimitReset();
-    } else if (clearRequested) {
-        if (!recreateMultiHandleForLimits()) {
-            return;
-        }
-        clearMultiLimitState();
-    }
-
-    if (newMaxTotal.has_value()) {
-        applyMultiLongOption(CURLMOPT_MAX_TOTAL_CONNECTIONS,
-                             "CURLMOPT_MAX_TOTAL_CONNECTIONS",
-                             newMaxTotal.value(),
-                             m_multiMaxTotalConnections);
-    }
-    if (newMaxHost.has_value()) {
-        applyMultiLongOption(CURLMOPT_MAX_HOST_CONNECTIONS,
-                             "CURLMOPT_MAX_HOST_CONNECTIONS",
-                             newMaxHost.value(),
-                             m_multiMaxHostConnections);
-    }
-    if (newMaxStreams.has_value()) {
-        applyMultiLongOption(CURLMOPT_MAX_CONCURRENT_STREAMS,
-                             "CURLMOPT_MAX_CONCURRENT_STREAMS",
-                             newMaxStreams.value(),
-                             m_multiMaxConcurrentStreams);
-    }
-    if (newMaxConnects.has_value()) {
-        applyMultiLongOption(
-            CURLMOPT_MAXCONNECTS, "CURLMOPT_MAXCONNECTS", newMaxConnects.value(), m_multiMaxConnects);
-    }
+    return applyMultiLongOption(CURLMOPT_MAX_TOTAL_CONNECTIONS,
+                                "CURLMOPT_MAX_TOTAL_CONNECTIONS",
+                                config.multiMaxTotalConnections().value_or(0),
+                                m_multiMaxTotalConnections,
+                                error)
+           && applyMultiLongOption(CURLMOPT_MAX_HOST_CONNECTIONS,
+                                   "CURLMOPT_MAX_HOST_CONNECTIONS",
+                                   config.multiMaxHostConnections().value_or(0),
+                                   m_multiMaxHostConnections,
+                                   error)
+           && applyMultiLongOption(CURLMOPT_MAX_CONCURRENT_STREAMS,
+                                   "CURLMOPT_MAX_CONCURRENT_STREAMS",
+                                   config.multiMaxConcurrentStreams().value_or(100),
+                                   m_multiMaxConcurrentStreams,
+                                   error)
+           && applyMultiLongOption(CURLMOPT_MAXCONNECTS,
+                                   "CURLMOPT_MAXCONNECTS",
+                                   config.multiMaxConnects().value_or(0),
+                                   m_multiMaxConnects,
+                                   error)
+           && applyMultiLongOption(CURLMOPT_PIPELINING,
+                                   "CURLMOPT_PIPELINING",
+                                   config.multiplexingEnabled() ? CURLPIPE_MULTIPLEX
+                                                                : CURLPIPE_NOTHING,
+                                   m_multiMultiplexing,
+                                   error);
 }
 
-bool QCCurlMultiManager::canRecreateMultiHandleLocked()
-{
-    QMutexLocker locker(&m_mutex);
-    return m_activeTransfers.isEmpty() && m_socketMap.isEmpty()
-           && (m_runningRequests.load(std::memory_order_relaxed) == 0);
-}
-
-void QCCurlMultiManager::applyMultiLongOption(CURLMoption option,
+bool QCCurlMultiManager::applyMultiLongOption(CURLMoption option,
                                               const char *optionName,
                                               long value,
-                                              std::optional<long> &stateSlot)
+                                              std::optional<long> &stateSlot,
+                                              QString *error)
 {
+    if (stateSlot == value) {
+        return true;
+    }
     const CURLMcode rc = curl_multi_setopt(m_multiHandle, option, value);
     if (rc == CURLM_OK) {
         stateSlot = value;
-        return;
+        return true;
     }
-
-    if (rc == CURLM_UNKNOWN_OPTION) {
-        qWarning() << "QCCurlMultiManager capability warning: libcurl 不支持" << optionName
-                   << "(" << curl_multi_strerror(rc) << ")";
-        return;
-    }
-
-    qWarning() << "QCCurlMultiManager: Failed to set" << optionName << "("
-               << curl_multi_strerror(rc) << ")";
-}
-
-void QCCurlMultiManager::clearMultiLimitState()
-{
-    m_multiMaxTotalConnections.reset();
-    m_multiMaxHostConnections.reset();
-    m_multiMaxConcurrentStreams.reset();
-    m_multiMaxConnects.reset();
-}
-
-void QCCurlMultiManager::warnDeferredMultiLimitReset() const
-{
-    qWarning() << "QCCurlMultiManager::applyLimitsConfig: Some multi limits were cleared, but "
-                  "active requests exist; cannot reset multi handle safely "
-                  "(limits keep previous values until restart)";
+    *error = QStringLiteral("multi 设置 %1 失败：%2")
+                 .arg(QString::fromLatin1(optionName), QString::fromLatin1(curl_multi_strerror(rc)));
+    return false;
 }
 
 } // namespace QCurl

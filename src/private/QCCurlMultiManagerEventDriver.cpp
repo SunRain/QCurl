@@ -55,46 +55,6 @@ void QCCurlMultiManager::disableMultiCallbacks()
     curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, nullptr);
 }
 
-bool QCCurlMultiManager::recreateMultiHandleForLimits()
-{
-    m_isReady = false;
-
-    if (!m_runtimeLease.isValid()) {
-        m_initializationError = m_runtimeLease.diagnostic();
-        return false;
-    }
-
-    if (m_socketTimer) {
-        m_socketTimer->stop();
-    }
-
-    if (m_multiHandle) {
-        disableMultiCallbacks();
-        curl_multi_cleanup(m_multiHandle);
-        m_multiHandle = nullptr;
-    }
-
-    m_multiHandle = Internal::CurlOptions::createMultiHandle();
-    if (!m_multiHandle) {
-        m_initializationError = QStringLiteral("curl_multi_init 重新初始化失败");
-        qCritical()
-            << "QCCurlMultiManager::applyLimitsConfig: Failed to reinitialize curl multi handle";
-        return false;
-    }
-
-    if (!configureMultiCallbacks("QCCurlMultiManager::applyLimitsConfig")) {
-        m_initializationError = QStringLiteral("重新配置 curl multi 回调失败");
-        disableMultiCallbacks();
-        curl_multi_cleanup(m_multiHandle);
-        m_multiHandle = nullptr;
-        return false;
-    }
-
-    m_initializationError.clear();
-    m_isReady = true;
-    return true;
-}
-
 void QCCurlMultiManager::wakeup()
 {
     if (m_isPoisoned.load(std::memory_order_relaxed)

@@ -1,6 +1,8 @@
 #include "QCCurlMultiManager.h"
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkConnectionPoolManager.h"
+#include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiManagerSocketInfo_p.h"
@@ -336,6 +338,16 @@ QCCurlMultiManager::AddReplyResult QCCurlMultiManager::tryAddReplyOnOwnerThread(
     }
 
     QString addError;
+    const auto poolConfig = QCNetworkConnectionPoolManager::instance()->config();
+    if (!applyLimitsConfig(poolConfig, &addError)
+        || !Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(easy,
+                                                                                  poolConfig,
+                                                                                  &addError)) {
+        releaseShareForEasyHandleLocked(easy);
+        replyPrivate->curlManager = record->takeHandle();
+        record->clearObserver();
+        return {false, addError};
+    }
     if (!addEasyToMultiLocked(easy, &addError)) {
         releaseShareForEasyHandleLocked(easy);
         replyPrivate->curlManager = record->takeHandle();
@@ -344,6 +356,10 @@ QCCurlMultiManager::AddReplyResult QCCurlMultiManager::tryAddReplyOnOwnerThread(
     }
 
     replyPrivate->multiTransferRecord = record.data();
+    if (!replyPrivate->poolRequestActive) {
+        replyPrivate->poolRequestActive = true;
+        Internal::QCNetworkConnectionPoolManagerInternal::recordRequestStarted();
+    }
     m_activeTransfers.insert(easy, record);
     m_runningRequests.fetch_add(1, std::memory_order_relaxed);
 #ifdef QCURL_ENABLE_TEST_HOOKS

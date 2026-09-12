@@ -399,8 +399,6 @@ int main(int argc, char **argv)
     }
 
     QCurl::QCNetworkConnectionPoolConfig poolConfig;
-    poolConfig.setMaxConnectionsPerHost(4);
-    poolConfig.setMaxTotalConnections(12);
     poolConfig.setMaxIdleTime(45);
     poolConfig.setMaxConnectionLifetime(90);
     poolConfig.setMultiplexingEnabled(true);
@@ -410,8 +408,7 @@ int main(int argc, char **argv)
     poolConfig.setMultiMaxHostConnections(2);
     poolConfig.setMultiMaxConcurrentStreams(8);
     poolConfig.setMultiMaxConnects(16);
-    if (!poolConfig.isValid() || poolConfig.maxConnectionsPerHost() != 4
-        || poolConfig.maxTotalConnections() != 12 || poolConfig.maxIdleTime() != 45
+    if (!poolConfig.isValid() || poolConfig.maxIdleTime() != 45
         || poolConfig.maxConnectionLifetime() != 90 || !poolConfig.multiplexingEnabled()
         || !poolConfig.dnsCacheEnabled() || poolConfig.dnsCacheTimeout() != 30
         || poolConfig.multiMaxTotalConnections().value_or(-1) != 6
@@ -427,15 +424,14 @@ int main(int argc, char **argv)
         return 25;
     }
     const auto savedPoolConfig = poolManager->config();
-    if (savedPoolConfig.maxConnectionsPerHost() != 4
-        || savedPoolConfig.maxTotalConnections() != 12) {
+    if (savedPoolConfig.multiMaxHostConnections().value_or(0) != 2
+        || savedPoolConfig.multiMaxTotalConnections().value_or(0) != 6) {
         return 25;
     }
 
     const auto poolStats = poolManager->statistics();
     if (poolStats.totalRequests() < 0 || poolStats.reusedConnections() < 0
-        || poolStats.reuseRate() < 0.0 || poolStats.activeConnections() < 0
-        || poolStats.idleConnections() < 0) {
+        || poolStats.reuseRate() < 0.0 || poolStats.activeRequests() < 0) {
         return 26;
     }
     if (poolManager->setConfig(QCurl::QCNetworkConnectionPoolConfig())

@@ -99,6 +99,7 @@ public:
     bool readCallbackConfigured   = false;
     bool debugCallbackConfigured  = false;
     bool transferRemovalRequested = false;
+    bool poolRequestActive        = false;
 
     // 数据缓冲
 
@@ -216,6 +217,9 @@ public:
     std::function<std::optional<QString>()> beforeFinishTransition;
 
     // 内部方法
+
+    /// 在公开终态或析构前结束网络请求统计，仅执行一次。
+    void finishPoolRequest();
 
     [[nodiscard]] int desiredPauseMask() const;
 

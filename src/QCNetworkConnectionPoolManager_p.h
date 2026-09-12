@@ -22,6 +22,12 @@
 
 #include <QString>
 
+#include <curl/curl.h>
+
+namespace QCurl {
+class QCNetworkConnectionPoolConfig;
+}
+
 namespace QCurl::Internal {
 
 /**
@@ -33,10 +39,15 @@ class QCNetworkConnectionPoolManagerInternal
 {
 public:
     /// 为内部 curl handle 应用连接池配置。
-    static void configureCurlHandle(void *handle, const QString &host);
+    [[nodiscard]] static bool configureCurlHandle(CURL *handle,
+                                                  const QCNetworkConnectionPoolConfig &config,
+                                                  QString *error);
+
+    /// 记录首次进入 multi 的 Core 网络请求；重试不重复增加。
+    static void recordRequestStarted();
 
     /// 记录一次请求完成及其连接复用结果。
-    static void recordRequestCompleted(void *handle, bool wasReused);
+    static void recordRequestCompleted(CURL *handle);
 };
 
 } // namespace QCurl::Internal

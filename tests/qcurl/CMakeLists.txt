@@ -321,6 +321,10 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkFileResumableOffline.cpp
 ) # QCNetworkResumableDownloadJob 离线门禁：416 成功语义 + start 校验/覆盖重下
 target_compile_definitions(tst_QCNetworkFileResumableOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test_with_preflight(tst_QCNetworkPoolContract
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkPoolContract.cpp qcurl_http_script_server.h)
+set_tests_properties(tst_QCNetworkPoolContract PROPERTIES LABELS "env;local_port")
 add_qcurl_test_with_preflight(tst_QCNetworkHttpSemantics
     REQUIRE_LOCAL_PORT
     SOURCES tst_QCNetworkHttpSemantics.cpp qcurl_http_script_server.h)

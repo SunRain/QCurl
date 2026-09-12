@@ -1,6 +1,7 @@
 #include "QCNetworkReply.h"
 
 #include "QCCurlMultiManager.h"
+#include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
@@ -99,6 +100,7 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
+    finishPoolRequest();
     // 如果正在运行，从多句柄管理器移除。
     // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理。
     // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理。
@@ -112,6 +114,15 @@ QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
     }
 
     multiTransferRecord = nullptr;
+}
+
+void QCNetworkReplyPrivate::finishPoolRequest()
+{
+    if (poolRequestActive) {
+        poolRequestActive = false;
+        Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(
+            state == ReplyState::Finished ? curlManager.handle() : nullptr);
+    }
 }
 
 CURL *QCNetworkReplyPrivate::activeCurlHandle() const noexcept
