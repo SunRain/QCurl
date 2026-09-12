@@ -348,6 +348,18 @@ add_qcurl_test_with_preflight(tst_QCNetworkCompletionContract
     SOURCES tst_QCNetworkCompletionContract.cpp qcurl_http_script_server.h)
 target_compile_definitions(tst_QCNetworkCompletionContract PRIVATE QCURL_ENABLE_TEST_HOOKS)
 set_tests_properties(tst_QCNetworkCompletionContract PROPERTIES LABELS "env;local_port")
+add_qcurl_test_with_preflight(tst_QCNetworkNativeDiagnostics
+    REQUIRE_LOCAL_PORT
+    SOURCES
+    tst_QCNetworkNativeDiagnostics.cpp
+    tst_QCNetworkNativeDiagnostics.h
+    tst_QCNetworkNativeDiagnosticsRetry.cpp
+    tst_QCNetworkNativeDiagnosticsState.cpp
+    qcurl_http_script_server.h
+    qcurl_tls_test_server.h)
+target_compile_definitions(tst_QCNetworkNativeDiagnostics PRIVATE QCURL_ENABLE_TEST_HOOKS)
+target_link_libraries(tst_QCNetworkNativeDiagnostics PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
+set_tests_properties(tst_QCNetworkNativeDiagnostics PROPERTIES LABELS "env;local_port")
 add_qcurl_test_with_preflight(
     tst_QCNetworkIODeviceLifetime
     REQUIRE_LOCAL_PORT
@@ -441,6 +453,7 @@ add_qcurl_test_with_preflight(
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkDiagnosticsLocal.cpp
+    qcurl_tls_test_server.h
 ) # 本地 deterministic diagnostics gate
 target_link_libraries(tst_QCNetworkDiagnosticsLocal
     PRIVATE ${QCURL_QTTEST_OTHER_EXTRAS_TARGET})
@@ -611,6 +624,7 @@ set(_qcurl_qttest_targets
     tst_QCNetworkDiagnostics
     tst_QCNetworkDiagnosticsLocal
     tst_Integration
+    tst_QCNetworkNativeDiagnostics
     tst_LargeFileDownload
 )
 if(QCURL_WEBSOCKET_SUPPORT)

@@ -258,3 +258,103 @@ void storeReplyInCache(QCNetworkReplyPrivate *reply)
 }
 
 } // namespace QCurl::Internal
+
+namespace QCurl {
+namespace {
+
+[[nodiscard]] bool cacheReplayHeaderIsForbidden(const QByteArray &name)
+{
+    const QByteArray normalized = name.trimmed().toLower();
+    return normalized == QByteArrayLiteral("set-cookie")
+           || normalized == QByteArrayLiteral("set-cookie2")
+           || normalized == QByteArrayLiteral("authorization")
+           || normalized == QByteArrayLiteral("proxy-authorization");
+}
+
+[[nodiscard]] QByteArray cacheResponseHeaderBlock(const QCNetworkCacheMetadata &metadata)
+{
+    QByteArray headerBlock      = QByteArrayLiteral("HTTP/1.1 ")
+                                  + QByteArray::number(metadata.statusCode())
+                                  + QByteArrayLiteral(" Cached\r\n");
+    const auto rawHeaders       = metadata.rawHeaders();
+    const QByteArray currentAge = QByteArray::number(metadata.currentAgeSeconds());
+    bool ageWritten             = false;
+    for (const auto &[name, value] : rawHeaders) {
+        if (cacheReplayHeaderIsForbidden(name)) {
+            continue;
+        }
+        const bool isAge = QByteArrayView(name).compare(QByteArrayView("age"), Qt::CaseInsensitive)
+                           == 0;
+        headerBlock += name + QByteArrayLiteral(": ") + (isAge ? currentAge : value)
+                       + QByteArrayLiteral("\r\n");
+        ageWritten = ageWritten || isAge;
+    }
+    if (!ageWritten) {
+        headerBlock += QByteArrayLiteral("Age: ") + currentAge + QByteArrayLiteral("\r\n");
+    }
+    return headerBlock + QByteArrayLiteral("\r\n");
+}
+
+} // namespace
+
+bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
+{
+    Q_D(QCNetworkReply);
+
+    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(parent());
+    QCNetworkCache *cache           = manager ? manager->cache() : nullptr;
+    if (!cache) {
+        return false;
+    }
+
+    const bool managerUsesCookies = manager->shareHandleConfig().shareCookies()
+                                    || !manager->cookieFilePath().isEmpty();
+    const auto key                = d->cacheRequestKeyInitialized
+                                        ? d->cacheRequestKey
+                                        : Internal::buildCacheRequestKey(d->request,
+                                                                         d->httpMethod,
+                                                                         managerUsesCookies);
+    const auto mode               = ignoreExpiry ? QCNetworkCacheReadMode::AllowStale
+                                                 : QCNetworkCacheReadMode::FreshOnly;
+    const auto cached             = cache->lookup(key, mode);
+    if (!cached.hit()) {
+        return false;
+    }
+
+    d->diagnosticCurlCode = 0;
+    const auto meta       = cached.metadata();
+    const QByteArray data = d->httpMethod == HttpMethod::Head ? QByteArray() : cached.body();
+
+    d->bodyBuffer.append(data);
+    d->cacheBodyBuffer = data;
+    d->headerData      = cacheResponseHeaderBlock(meta);
+    d->parseHeaders();
+    d->errorCode = NetworkError::NoError;
+
+    const bool hasBody = !data.isEmpty();
+    QPointer<QCNetworkReply> safeThis(this);
+    QTimer::singleShot(0, this, [safeThis, hasBody]() {
+        if (!safeThis) {
+            return;
+        }
+
+        auto *d = safeThis->d_func();
+        if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
+            || d->state == ReplyState::Finished) {
+            return;
+        }
+
+        if (hasBody) {
+            if (Internal::emitReplySignal(safeThis,
+                                          [](QCNetworkReply *reply) { Q_EMIT reply->readyRead(); })
+                == Internal::SignalEmissionResult::Destroyed) {
+                return;
+            }
+        }
+        Q_UNUSED(d->setState(ReplyState::Finished));
+    });
+
+    return true;
+}
+
+} // namespace QCurl

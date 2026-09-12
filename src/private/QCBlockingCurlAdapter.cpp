@@ -91,11 +91,9 @@ NetworkError requestBodyError(const QCBlockingRequestBodyReadState &readState)
 
 QCBlockingNetworkResult makeCurlFailure(CURLcode code, const QString &message, int httpStatus)
 {
-    auto result = QCBlockingNetworkResult::failure(fromCurlCode(static_cast<int>(code)),
-                                                   message,
-                                                   httpStatus);
-    result.setDiagnosticCurlCode(static_cast<int>(code));
-    return result;
+    return QCBlockingNetworkResult::failure(fromCurlCode(static_cast<int>(code)),
+                                            message,
+                                            httpStatus);
 }
 
 QCBlockingNetworkResult finishBlockingResult(const BlockingExecution &execution)
@@ -289,11 +287,10 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
     context.execution.bytesReceived = context.responseSink.bytesReceived;
     curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &context.execution.httpStatus);
 
-    if (context.execution.code != CURLE_OK) {
-        return curlExecutionFailure(context);
-    }
-
-    return finishBlockingResult(context.execution);
+    auto result = context.execution.code != CURLE_OK ? curlExecutionFailure(context)
+                                                     : finishBlockingResult(context.execution);
+    result.setDiagnosticCurlCode(static_cast<int>(context.execution.code));
+    return result;
 }
 
 } // namespace

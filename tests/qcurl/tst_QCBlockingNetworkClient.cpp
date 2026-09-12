@@ -17,6 +17,8 @@
 #include <QThread>
 #include <QtTest/QtTest>
 
+#include <curl/curl.h>
+
 #include <cstring>
 #include <utility>
 
@@ -359,6 +361,7 @@ void tst_QCBlockingNetworkClient::getCanBeCancelledFromProgressCallback()
         makeClient().get(makeRequest(server.url(QStringLiteral("/cancel"))), requestOptions);
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::OperationCancelled);
+    QCOMPARE(result.diagnosticCurlCode(), int(CURLE_ABORTED_BY_CALLBACK));
     QVERIFY(result.errorMessage().contains(QStringLiteral("progress callback")));
     QVERIFY(probe.calls > 0);
     QVERIFY(probe.maxBytesReceived > 0);
@@ -524,6 +527,7 @@ void tst_QCBlockingNetworkClient::downloadToDeviceRejectsZeroProgressWrite()
 
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::OutputDeviceError);
+    QCOMPARE(result.diagnosticCurlCode(), int(CURLE_WRITE_ERROR));
     QVERIFY2(result.errorMessage().contains(QStringLiteral("no progress")),
              qPrintable(result.errorMessage()));
 }
@@ -544,6 +548,7 @@ void tst_QCBlockingNetworkClient::downloadToDevicePreservesNegativeWriteDiagnost
 
     QVERIFY(!result.isSuccess());
     QCOMPARE(result.error(), NetworkError::OutputDeviceError);
+    QCOMPARE(result.diagnosticCurlCode(), int(CURLE_WRITE_ERROR));
     QVERIFY2(result.errorMessage().contains(QStringLiteral("synthetic output failure")),
              qPrintable(result.errorMessage()));
 }

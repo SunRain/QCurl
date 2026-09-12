@@ -8,6 +8,7 @@
 
 #include "QCNetworkCancelToken.h"
 #include "QCNetworkDiagnostics.h"
+#include "qcurl_tls_test_server.h"
 #include "test_source_paths.h"
 
 #include <QByteArray>
@@ -17,9 +18,6 @@
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QSharedPointer>
-#include <QSslCertificate>
-#include <QSslKey>
-#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
@@ -176,107 +174,6 @@ private:
     int m_requestCount = 0;
     QByteArray m_lastPath;
     int m_responseDelayMs = 0;
-};
-
-class LocalTlsServer final : public QObject
-{
-public:
-    LocalTlsServer(QString certPath, QString keyPath, QObject *parent = nullptr)
-        : QObject(parent)
-        , m_certPath(std::move(certPath))
-        , m_keyPath(std::move(keyPath))
-    {
-        m_server.m_owner = this;
-    }
-
-    bool start()
-    {
-        if (!loadFixture()) {
-            return false;
-        }
-        return m_server.listen(QHostAddress::LocalHost, 0);
-    }
-
-    quint16 port() const { return m_server.serverPort(); }
-    int connectionCount() const { return m_connectionCount; }
-    QString errorString() const { return m_errorString; }
-
-private:
-    class TlsTcpServer final : public QTcpServer
-    {
-    public:
-        LocalTlsServer *m_owner = nullptr;
-
-    protected:
-        void incomingConnection(qintptr socketDescriptor) override
-        {
-            if (!m_owner) {
-                QTcpServer::incomingConnection(socketDescriptor);
-                return;
-            }
-            m_owner->handleIncomingConnection(socketDescriptor);
-        }
-    };
-
-    bool loadFixture()
-    {
-        QFile certFile(m_certPath);
-        if (!certFile.open(QIODevice::ReadOnly)) {
-            m_errorString = QStringLiteral("无法读取 TLS 证书: %1").arg(m_certPath);
-            return false;
-        }
-        const QByteArray certBytes = certFile.readAll();
-        certFile.close();
-
-        QFile keyFile(m_keyPath);
-        if (!keyFile.open(QIODevice::ReadOnly)) {
-            m_errorString = QStringLiteral("无法读取 TLS 私钥: %1").arg(m_keyPath);
-            return false;
-        }
-        const QByteArray keyBytes = keyFile.readAll();
-        keyFile.close();
-
-        m_certificate = QSslCertificate(certBytes, QSsl::Pem);
-        m_privateKey  = QSslKey(keyBytes, QSsl::Rsa, QSsl::Pem);
-        if (m_certificate.isNull() || m_privateKey.isNull()) {
-            m_errorString = QStringLiteral("TLS fixture 解析失败: %1 / %2")
-                                .arg(m_certPath, m_keyPath);
-            return false;
-        }
-
-        m_errorString.clear();
-        return true;
-    }
-
-    void handleIncomingConnection(qintptr socketDescriptor)
-    {
-        auto *socket = new QSslSocket(this);
-        if (!socket->setSocketDescriptor(socketDescriptor)) {
-            m_errorString = socket->errorString();
-            socket->deleteLater();
-            return;
-        }
-
-        ++m_connectionCount;
-        socket->setLocalCertificate(m_certificate);
-        socket->setPrivateKey(m_privateKey);
-        socket->setPeerVerifyMode(QSslSocket::VerifyNone);
-
-        QObject::connect(socket, &QSslSocket::encrypted, socket, [socket]() {
-            socket->disconnectFromHost();
-        });
-        QObject::connect(socket, &QAbstractSocket::disconnected, socket, &QObject::deleteLater);
-
-        socket->startServerEncryption();
-    }
-
-    TlsTcpServer m_server;
-    QString m_certPath;
-    QString m_keyPath;
-    QSslCertificate m_certificate;
-    QSslKey m_privateKey;
-    int m_connectionCount = 0;
-    QString m_errorString;
 };
 
 QString tlsFixturePath(const QString &fileName)

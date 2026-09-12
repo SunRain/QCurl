@@ -222,6 +222,18 @@ public:
     [[nodiscard]] NetworkError error() const noexcept;
     /// 返回当前错误消息。
     [[nodiscard]] QString errorString() const;
+    /**
+     * @brief 返回与最终结果对应的 libcurl 传输返回码。
+     *
+     * 非终态返回 0；终态只保留最终尝试的实际返回码，不提供重试历史。
+     * 0 既可能表示 CURLE_OK，也可能表示没有适用的传输返回码（如缓存、模拟结果、
+     * 执行前拒绝或直接取消）；必须结合 error() 和 httpStatusCode() 判断结果。
+     * 已取得的传输返回码不会因设备错误等更具体的高层分类而丢失。
+     *
+     * @note 值在首次终态通知前确定，之后不再变化。只能在 reply 所属线程调用；
+     * 复制出的整数在 reply 销毁后仍有效，但本接口不保证跨线程访问 reply 安全。
+     */
+    [[nodiscard]] int diagnosticCurlCode() const noexcept;
     /// 返回 reply 是否已进入终态。
     [[nodiscard]] bool isFinished() const noexcept;
     /// 返回 reply 是否处于 Running。

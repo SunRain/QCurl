@@ -75,8 +75,10 @@ int main(int argc, char **argv)
     request.setTimeout(std::chrono::seconds(30));
 
     auto *reply = manager.get(request);
-    QObject::connect(reply, &QCurl::QCNetworkReply::finished, [&app, reply]() {
+    QObject::connect(reply, &QCurl::QCNetworkReply::finished, &app, [&app, reply]() {
         qDebug() << "error:" << static_cast<int>(reply->error());
+        qDebug() << "HTTP:" << reply->httpStatusCode();
+        qDebug() << "libcurl:" << reply->diagnosticCurlCode();
         if (const auto body = reply->readAll(); body.has_value()) {
             qDebug() << "bytes:" << body->size();
         }
@@ -88,6 +90,14 @@ int main(int argc, char **argv)
     return app.exec();
 }
 ```
+
+`diagnosticCurlCode()` 是最终结果对应的实际 libcurl 传输返回码，不代替高层错误或 HTTP
+状态。`0` 既可能表示 `CURLE_OK`，也可能表示没有适用的传输结果，例如缓存、模拟结果、
+执行前拒绝或直接取消；完整收到 HTTP 404 也可能返回 `0`，不能仅凭此值判断成功。
+非终态返回 `0`，重试只保留最终尝试的值；回调取消或设备错误已经取得原生码时仍保留该码。
+值在首次终态通知前确定，只能在 reply 所属线程读取；复制出的整数可在 reply 销毁后保留。
+Blocking Extras 的 `QCBlockingNetworkResult::diagnosticCurlCode()` 使用同一含义，
+但不同取消机制不保证产生相同数值。
 
 构建 consumer：
 

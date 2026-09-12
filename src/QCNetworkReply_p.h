@@ -114,6 +114,7 @@ public:
     ReplyState &state;          ///< 当前状态（Idle/Running/Paused/Finished等）
     NetworkError errorCode;     ///< 错误码（NetworkNoError = 0）
     QString errorMessage;       ///< 错误描述信息
+    int diagnosticCurlCode = 0; ///< 最终结果采用的实际传输码；未完成时不向调用方公开。
     int &httpStatusCode;        ///< HTTP 状态码（0 表示未知/未返回）
     qint64 durationMs = -1;     ///< 总耗时（毫秒，-1 表示未知/未完成）
     QElapsedTimer elapsedTimer; ///< 耗时统计（跨重试/延迟）

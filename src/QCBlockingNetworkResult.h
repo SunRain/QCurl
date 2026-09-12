@@ -62,7 +62,15 @@ public:
     [[nodiscard]] bool isSuccess() const noexcept;
     [[nodiscard]] NetworkError error() const noexcept;
     [[nodiscard]] QString errorMessage() const;
+    /**
+     * @brief 返回最终阻塞传输实际取得的 libcurl 返回码。
+     *
+     * 设备错误或回调取消采用更具体的高层分类时，仍保留实际传输返回码。
+     * 0 既可能表示 CURLE_OK，也可能表示没有执行传输；必须结合 error() 和
+     * statusCode() 判断结果，完整收到的 HTTP 错误响应也可能返回 0。
+     */
     [[nodiscard]] int diagnosticCurlCode() const noexcept;
+    /// 设置诊断用的实际传输返回码，不改变高层错误分类或 HTTP 状态。
     void setDiagnosticCurlCode(int code) noexcept;
     [[nodiscard]] int statusCode() const noexcept;
     [[nodiscard]] QByteArray body() const;

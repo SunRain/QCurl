@@ -310,6 +310,8 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
         return;
     }
 
+    // 重试恢复可能直接发出终态，必须先保留此次实际传输的返回码。
+    diagnosticCurlCode = static_cast<int>(curlCode);
     const auto info = Internal::attemptErrorFromCurlAndHttp(this, curlCode, httpStatusCode);
 
     if (info.error == NetworkError::NoError) {

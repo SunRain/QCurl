@@ -146,6 +146,7 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
         return;
     }
 
+    d->diagnosticCurlCode = 0;
     if (setIdleState) {
         d->state     = ReplyState::Idle;
         d->errorCode = NetworkError::NoError;

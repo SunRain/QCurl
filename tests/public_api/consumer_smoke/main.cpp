@@ -30,16 +30,37 @@
 #include <QCNetworkTimeoutConfig.h>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QEventLoop>
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
+#include <QTimer>
 #include <QUrl>
 
 #include <chrono>
 #include <type_traits>
+#include <utility>
 
 static_assert(std::is_constructible_v<QCurl::QCNetworkRequest, const QUrl &>);
 static_assert(!std::is_convertible_v<QUrl, QCurl::QCNetworkRequest>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const QCurl::QCNetworkReply &>().diagnosticCurlCode()),
+                   int>);
+static_assert(noexcept(std::declval<const QCurl::QCNetworkReply &>().diagnosticCurlCode()));
+
+static bool nativeDiagnosticContract(QCurl::QCNetworkAccessManager &manager)
+{
+    auto *reply = manager.get(QCurl::QCNetworkRequest(QUrl()));
+    if (reply->diagnosticCurlCode() != 0) {
+        return false;
+    }
+    QEventLoop loop;
+    QObject::connect(reply, &QCurl::QCNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(1000, &loop, &QEventLoop::quit);
+    loop.exec();
+    return reply->isFinished() && reply->error() != QCurl::NetworkError::NoError
+           && reply->diagnosticCurlCode() == 0;
+}
 
 class ConsumerSmokeLogger : public QCurl::QCNetworkLogger
 {
@@ -66,6 +87,9 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
 
     QCurl::QCNetworkAccessManager manager;
+    if (!nativeDiagnosticContract(manager)) {
+        return 30;
+    }
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
     request.setFollowLocation(true);
     request.setLane(QCurl::QCNetworkLaneKey::control());

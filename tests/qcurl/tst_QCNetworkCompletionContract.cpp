@@ -79,16 +79,19 @@ void tst_QCNetworkCompletionContract::returnedReply()
     QVERIFY(reply);
     QCOMPARE(reply->parent(), &manager);
     QVERIFY(!reply->isFinished());
+    QCOMPARE(reply->diagnosticCurlCode(), 0);
     QSignalSpy finished(reply, &QCNetworkReply::finished);
     QSignalSpy failed(reply, qOverload<NetworkError>(&QCNetworkReply::error));
     QVERIFY(finished.wait());
     QCOMPARE(finished.size(), 1);
     QCOMPARE(failed.size(), mode >= 3 ? 1 : 0);
     QCOMPARE(reply->error() == NetworkError::NoError, mode < 3);
+    QCOMPARE(reply->diagnosticCurlCode(), 0);
     reply->cancel();
     reply->execute();
     QCoreApplication::processEvents();
     QCOMPARE(finished.size(), 1);
+    QCOMPARE(reply->diagnosticCurlCode(), 0);
     if (mode == 2) {
         QCOMPARE(server.requests().size(), 1);
     }

@@ -31,6 +31,7 @@ void QCNetworkReply::cancel()
         return;
     }
 
+    d->diagnosticCurlCode = 0;
     // 从多句柄管理器移除（Running/Paused 状态）。
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         // ⚠️ cancel 可能在 libcurl 回调栈内触发（例如在 downloadProgress 槽函数中）。
@@ -88,6 +89,7 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
         return;
     }
 
+    d->diagnosticCurlCode = 0;
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
         auto *multiManager = QCCurlMultiManager::instance();
         if (d->multiTransferRecord) {
