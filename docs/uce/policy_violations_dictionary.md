@@ -56,14 +56,14 @@ last_updated: 2026-09-05
 
 | code | evidence_severity | quality_signal | 含义（触发条件） | 优先定位工件（建议） |
 |---|---|---|---|---|
-| `gate_offline_failed` | HIGH | IMPLEMENTATION | `LABELS=offline` 严格门禁失败（含 test 失败或 skipped 超限）。 | `logs/ctest_strict_offline.log`、`meta/ctest_list_offline.txt` |
-| `gate_public_api_slow_failed` | HIGH | IMPLEMENTATION | `public-api-slow` 安装/消费者契约门禁失败或没有可执行测试。 | `logs/public_api_slow.log`、`meta/ctest_list_public_api_slow.txt` |
-| `gate_capability_failed` | HIGH | IMPLEMENTATION | `capability` QtTest 严格门禁失败或发生 skipped（skip=fail）。 | `logs/capability.log`、`meta/ctest_list_capability.txt` |
+| `gate_offline_failed` | HIGH | IMPLEMENTATION | `LABELS=offline` 严格门禁失败、skipped 超限或必需目标缺少唯一 Passed 结果。 | `logs/ctest_strict_offline.log`、`meta/ctest_list_offline.json` |
+| `gate_public_api_slow_failed` | HIGH | IMPLEMENTATION | `public-api-slow` 安装/消费者契约门禁失败、空集合或必需目标未实际通过。 | `logs/public_api_slow.log`、`meta/ctest_list_public_api_slow.json` |
+| `gate_capability_failed` | HIGH | IMPLEMENTATION | `capability` QtTest 严格门禁失败、发生 skipped 或必需目标未实际通过。 | `logs/capability.log`、`meta/ctest_list_capability.json` |
 | `env_preflight_httpbin_start_failed` | CRITICAL | INFRA | httpbin 启动失败（Docker 权限/镜像/端口/健康检查失败等）。 | `logs/httpbin_start.log` |
 | `env_preflight_httpbin_env_missing` | CRITICAL | EVIDENCE | httpbin 启动命令返回成功，但未生成 `httpbin.env`（证据链断裂）。 | `logs/httpbin_start.log`、`httpbin/httpbin.env`（缺失） |
 | `env_preflight_httpbin_env_parse_error` | CRITICAL | EVIDENCE | `httpbin.env` 存在但解析失败（无法获得 `QCURL_HTTPBIN_URL` 等关键环境）。 | `httpbin/httpbin_env_parse_error.txt`、`httpbin/httpbin.env` |
 | `env_preflight_httpbin_url_missing` | CRITICAL | EVIDENCE | httpbin 已启动，但 env 缺失 `QCURL_HTTPBIN_URL`（无法运行 `LABELS=env` 证据集合）。 | `httpbin/httpbin.env` |
-| `gate_env_failed` | HIGH | MIXED | `LABELS=env` 严格门禁失败（真实执行后失败或 skipped 超限）。 | `logs/ctest_strict_env.log`、`meta/ctest_list_env.txt` |
+| `gate_env_failed` | HIGH | MIXED | `LABELS=env` 严格门禁失败、skipped 超限或必需目标缺少唯一 Passed 结果。 | `logs/ctest_strict_env.log`、`meta/ctest_list_env.json` |
 | `gate_libcurl_consistency_p0_failed` | HIGH | IMPLEMENTATION | `tests/libcurl_consistency/run_gate.py --suite p0` 失败（包含 policy checks）。 | `logs/libcurl_consistency_p0.log`、`libcurl_consistency/reports/runs/uce-<run-id>-p0/gate_p0.json`、同目录 `junit_p0.xml` |
 | `gate_libcurl_consistency_p1_failed` | HIGH | IMPLEMENTATION | `tests/libcurl_consistency/run_gate.py --suite p1` 失败（包含 policy checks）。 | `logs/libcurl_consistency_p1.log`、`libcurl_consistency/reports/runs/uce-<run-id>-p1/gate_p1.json`、同目录 `junit_p1.xml` |
 | `gate_libcurl_consistency_p2_failed` | HIGH | IMPLEMENTATION | `tests/libcurl_consistency/run_gate.py --suite p2` 失败（包含 CTBP 相关 TLS/边界专题与 policy checks）。 | `logs/libcurl_consistency_p2.log`、`libcurl_consistency/reports/runs/uce-<run-id>-p2/gate_p2.json`、同目录 `junit_p2.xml` |

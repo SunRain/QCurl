@@ -54,10 +54,10 @@
       "source": "uce",
       "evidence_severity": "HIGH",
       "quality_signal": "MIXED",
-      "meaning": "LABELS=env 严格门禁失败（真实执行后失败或 skipped 超限）。",
+      "meaning": "LABELS=env 严格门禁失败、skipped 超限或必需目标缺少唯一 Passed 结果。",
       "where_to_check": [
         "build/evidence/uce/<run-id>/logs/ctest_strict_env.log",
-        "build/evidence/uce/<run-id>/meta/ctest_list_env.txt"
+        "build/evidence/uce/<run-id>/meta/ctest_list_env.json"
       ]
     },
     "gate_exception": {
@@ -107,30 +107,30 @@
       "source": "uce",
       "evidence_severity": "HIGH",
       "quality_signal": "IMPLEMENTATION",
-      "meaning": "LABELS=offline 严格门禁失败（含 test 失败或 skipped 超限）。",
+      "meaning": "LABELS=offline 严格门禁失败、skipped 超限或必需目标缺少唯一 Passed 结果。",
       "where_to_check": [
         "build/evidence/uce/<run-id>/logs/ctest_strict_offline.log",
-        "build/evidence/uce/<run-id>/meta/ctest_list_offline.txt"
+        "build/evidence/uce/<run-id>/meta/ctest_list_offline.json"
       ]
     },
     "gate_public_api_slow_failed": {
       "source": "uce",
       "evidence_severity": "HIGH",
       "quality_signal": "IMPLEMENTATION",
-      "meaning": "public-api-slow 安装/消费者契约门禁失败或没有可执行测试。",
+      "meaning": "public-api-slow 安装/消费者契约门禁失败、空集合或必需目标未实际通过。",
       "where_to_check": [
         "build/evidence/uce/<run-id>/logs/public_api_slow.log",
-        "build/evidence/uce/<run-id>/meta/ctest_list_public_api_slow.txt"
+        "build/evidence/uce/<run-id>/meta/ctest_list_public_api_slow.json"
       ]
     },
     "gate_capability_failed": {
       "source": "uce",
       "evidence_severity": "HIGH",
       "quality_signal": "IMPLEMENTATION",
-      "meaning": "capability QtTest 严格门禁失败或发生 skipped（skip=fail）。",
+      "meaning": "capability QtTest 严格门禁失败、发生 skipped 或必需目标未实际通过。",
       "where_to_check": [
         "build/evidence/uce/<run-id>/logs/capability.log",
-        "build/evidence/uce/<run-id>/meta/ctest_list_capability.txt"
+        "build/evidence/uce/<run-id>/meta/ctest_list_capability.json"
       ]
     },
     "http3_required": {

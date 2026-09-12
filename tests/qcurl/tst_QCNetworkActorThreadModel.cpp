@@ -527,18 +527,31 @@ void tst_QCNetworkActorThreadModel::testCookieFutureManagerDestroyed()
     auto *manager = new QCNetworkAccessManager();
     enableSharedCookies(manager);
     manager->moveToThread(&actorThread);
+    connect(&actorThread, &QThread::finished, manager, &QObject::deleteLater);
     QPointer<QCNetworkAccessManager> managerGuard(manager);
+    QSemaphore entered;
+    QSemaphore release;
     const auto cleanup = qScopeGuard([&]() {
+        release.release();
         actorThread.quit();
         actorThread.wait();
     });
 
+    // 借用对象必须覆盖 async 入口调用；只让已提交的命令与后续销毁竞争。
+    QVERIFY(QMetaObject::invokeMethod(manager, [&]() {
+        entered.release();
+        release.acquire();
+    }, Qt::QueuedConnection));
+    QVERIFY(entered.tryAcquire(1, 1000));
     QVERIFY(
         QMetaObject::invokeMethod(manager, [manager]() { delete manager; }, Qt::QueuedConnection));
     auto future = manager->clearAllCookiesAsync();
+    release.release();
     future.waitForFinished();
 
-    QTRY_VERIFY_WITH_TIMEOUT(managerGuard.isNull(), 1000);
+    actorThread.quit();
+    QVERIFY(actorThread.wait(1000));
+    QVERIFY(managerGuard.isNull());
     QCOMPARE(future.resultCount(), 1);
     QCOMPARE(future.result().errorCode(), QCCookieAsyncError::ManagerDestroyed);
 }
@@ -596,8 +609,10 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
 
     auto *manager = new QCNetworkAccessManager();
     manager->moveToThread(&actorThread);
+    QPointer<QCNetworkAccessManager> managerGuard(manager);
     const auto cleanup = qScopeGuard([&]() {
-        manager->deleteLater();
+        QVERIFY(scheduleDeferredDeleteOnOwnerThread(manager));
+        QVERIFY(TestWaitUtils::waitUntil([&managerGuard]() { return managerGuard.isNull(); }, 1000));
         actorThread.quit();
         actorThread.wait();
     });
@@ -609,20 +624,34 @@ void tst_QCNetworkActorThreadModel::testRunningRequestCountDropsOnFinish()
                      .arg(server.errorString())));
 
     QCNetworkRequest request(server.url(QStringLiteral("/finish-count")));
-    QCNetworkReply *reply = getOnOwnerThread(manager, request);
+    std::atomic<int> finishedCount{0};
+    QCNetworkReply *reply = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(
+        manager,
+        [&]() {
+            reply = manager->get(request);
+            if (reply) {
+                QObject::connect(reply,
+                                 &QCNetworkReply::finished,
+                                 this,
+                                 [&finishedCount]() {
+                                     finishedCount.fetch_add(1, std::memory_order_relaxed);
+                                 },
+                                 Qt::QueuedConnection);
+            }
+        },
+        Qt::BlockingQueuedConnection));
     QVERIFY(reply != nullptr);
     QCOMPARE(reply->thread(), &actorThread);
 
-    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
     QTRY_COMPARE_WITH_TIMEOUT(runningRequestsCountOnOwnerThread(manager), 1, 1500);
-    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(finishedCount.load(std::memory_order_relaxed), 1, 2000);
     QTRY_COMPARE_WITH_TIMEOUT(runningRequestsCountOnOwnerThread(manager), 0, 1500);
 
     NetworkError error = NetworkError::Unknown;
     QMetaObject::invokeMethod(reply, [&]() { error = reply->error(); }, Qt::BlockingQueuedConnection);
     QCOMPARE(error, NetworkError::NoError);
 
-    reply->deleteLater();
     server.stop();
 }
 

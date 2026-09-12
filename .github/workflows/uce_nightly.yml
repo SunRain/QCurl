@@ -37,6 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            clang \
             cmake \
             ninja-build \
             pkg-config \
@@ -106,13 +107,56 @@ jobs:
             --output-dir build/evidence/uce-sanitizers/asan \
             --run-id "${{ env.UCE_RUN_ID }}"
 
+      - name: Prepare matching instrumented Qt for TSan
+        run: |
+          set -euo pipefail
+          ROOT="$PWD"
+          QT_VERSION="$(qmake6 -query QT_VERSION)"
+          QT_SERIES="${QT_VERSION%.*}"
+          DEPS="$ROOT/build/tsan-deps"
+          QT_TSAN_PREFIX="$DEPS/qt-$QT_VERSION"
+          SOURCE="$DEPS/src/qtbase-$QT_VERSION"
+          EVIDENCE="$ROOT/build/evidence/uce-sanitizers/tsan/$UCE_RUN_ID/qt-dependency"
+          ARCHIVE="qtbase-everywhere-src-$QT_VERSION.tar.xz"
+          URL="https://download.qt.io/archive/qt/$QT_SERIES/$QT_VERSION/submodules/$ARCHIVE"
+          mkdir -p "$SOURCE" "$DEPS/qtbase-build" "$EVIDENCE"
+          printf 'source=%s\nQt=%s\n' "$URL" "$QT_VERSION" > "$EVIDENCE/source.txt"
+          (
+            cd "$DEPS/src"
+            curl -fL "$URL" -o "$ARCHIVE"
+            curl -fL "$URL.sha256" -o "$ARCHIVE.sha256"
+            sha256sum --check "$ARCHIVE.sha256" | tee "$EVIDENCE/checksum.log"
+            cp "$ARCHIVE.sha256" "$EVIDENCE/"
+            tar -xf "$ARCHIVE" --strip-components=1 -C "$SOURCE"
+          )
+          (
+            cd "$DEPS/qtbase-build"
+            "$SOURCE/configure" -prefix "$QT_TSAN_PREFIX" -release -force-debug-info \
+              -nomake examples -nomake tests -no-gui -no-widgets -sanitize thread \
+              -- -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_LIBDIR=lib
+          ) 2>&1 | tee "$EVIDENCE/configure.log"
+          cmake --build "$DEPS/qtbase-build" --parallel 4 2>&1 | tee "$EVIDENCE/build.log"
+          cmake --install "$DEPS/qtbase-build" 2>&1 | tee "$EVIDENCE/install.log"
+          cmake -S "." -B "build-tsan" -G Ninja \
+            -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_PREFIX_PATH="$QT_TSAN_PREFIX" -DQt6_DIR="$QT_TSAN_PREFIX/lib/cmake/Qt6" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON \
+            -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread"
+
       - name: Run TSAN subset
         run: |
           set -euo pipefail
+          HTTPBIN_NAME="qcurl-tsan-$UCE_RUN_ID"
+          bash "tests/qcurl/httpbin/start_httpbin.sh" --port 0 --name "$HTTPBIN_NAME" \
+            --write-env "build/test-env/tsan-httpbin.env"
+          trap 'bash "tests/qcurl/httpbin/stop_httpbin.sh" --name "$HTTPBIN_NAME"' EXIT
+          source "build/test-env/tsan-httpbin.env"
           python3 scripts/run_uce_sanitizers.py \
             --profile tsan \
             --build-dir build-tsan \
-            --output-dir build/evidence/uce-sanitizers/tsan \
+            --output-dir "build/evidence/uce-sanitizers/tsan/$UCE_RUN_ID" \
             --run-id "${{ env.UCE_RUN_ID }}"
 
       - name: 校验 UCE nightly 必需归档

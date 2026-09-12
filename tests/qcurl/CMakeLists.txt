@@ -12,9 +12,17 @@ if(TARGET QCurlTestInternals)
 endif()
 
 set(_qcurl_sanitizer_link_options)
-if(CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize=")
+if(CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize="
+   AND NOT CMAKE_EXE_LINKER_FLAGS MATCHES "-fsanitize=thread")
     list(APPEND _qcurl_sanitizer_link_options -no-pie)
 endif()
+
+find_package(Threads REQUIRED)
+add_executable(qcurl_qt_tsan_control EXCLUDE_FROM_ALL qt_tsan_controls.cpp)
+qcurl_enable_qt_no_keywords(qcurl_qt_tsan_control)
+target_link_libraries(qcurl_qt_tsan_control PRIVATE Qt6::Core Threads::Threads)
+set_target_properties(qcurl_qt_tsan_control PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
 
 add_library(qcurl_qttest_paths INTERFACE)
 qcurl_enable_qt_no_keywords(qcurl_qttest_paths)

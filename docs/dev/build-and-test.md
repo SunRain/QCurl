@@ -371,17 +371,92 @@ nightly / soak 会额外启用：
 ```bash
 python3 scripts/run_uce_sanitizers.py --profile asan-ubsan-lsan \
   --build-dir build-asan --output-dir build/evidence/uce-sanitizers/asan
-
-python3 scripts/run_uce_sanitizers.py --profile tsan \
-  --build-dir build-tsan --output-dir build/evidence/uce-sanitizers/tsan
 ```
 
-说明：
+`asan-ubsan-lsan` 沿用独立构建与 `run_uce_gate.py --tier nightly`。普通构建与 ASan 构建
+不得指向下面的检测专用 Qt；它也不是 QCurl 消费者的新依赖。
 
-- `asan-ubsan-lsan` profile 会单独配置 sanitizer build，并调用 `run_uce_gate.py --tier nightly`
-- `asan-ubsan-lsan` 和 `tsan` 都构建四个逻辑消费面的代表性生命周期测试；`tsan` 运行
-  `tst_QCNetworkReply`、`tst_QCNetworkScheduler`、`tst_QCNetworkConnectionPool`、
-  `tst_QCWebSocket` 与 `tst_QCWebSocketPool`，不能省略 Pool 线程证据。
+#### 检测专用 Qt 与 TSan 构建
+
+只给 QCurl 加 `-fsanitize=thread` 不足以观察 Qt 的同步路径。使用与普通构建同版本的
+官方 qtbase，以同一个 Clang 构建 Qt 和 QCurl；不修改 `/usr`、不提高产品最低 Qt 版本。
+本地已准备的组合为 Clang 22.1.8、Qt 6.11.2、系统 libcurl 8.22.0。换版本后必须重新校准，
+不能沿用旧报告。下面使用宿主 Qt 的准确版本，不取浮动分支：
+
+```bash
+set -euo pipefail
+ROOT="$PWD"
+QT_VERSION="$(qmake6 -query QT_VERSION)"
+QT_SERIES="${QT_VERSION%.*}"
+DEPS="$ROOT/build/tsan-deps"
+QT_TSAN_PREFIX="$DEPS/qt-$QT_VERSION"
+SOURCE="$DEPS/src/qtbase-$QT_VERSION"
+ARCHIVE="qtbase-everywhere-src-$QT_VERSION.tar.xz"
+URL="https://download.qt.io/archive/qt/$QT_SERIES/$QT_VERSION/submodules/$ARCHIVE"
+mkdir -p "$SOURCE" "$DEPS/qtbase-build"
+(
+  cd "$DEPS/src"
+  curl -fL "$URL" -o "$ARCHIVE"
+  curl -fL "$URL.sha256" -o "$ARCHIVE.sha256"
+  sha256sum --check "$ARCHIVE.sha256"
+  tar -xf "$ARCHIVE" --strip-components=1 -C "$SOURCE"
+)
+(
+  cd "$DEPS/qtbase-build"
+  "$SOURCE/configure" -prefix "$QT_TSAN_PREFIX" -release -force-debug-info \
+    -nomake examples -nomake tests -no-gui -no-widgets -sanitize thread \
+    -- -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_LIBDIR=lib
+)
+cmake --build "$DEPS/qtbase-build" --parallel 4
+cmake --install "$DEPS/qtbase-build"
+cmake -S "." -B "build-tsan" -G Ninja \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_PREFIX_PATH="$QT_TSAN_PREFIX" -DQt6_DIR="$QT_TSAN_PREFIX/lib/cmake/Qt6" \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON \
+  -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread"
+```
+
+源码归档校验值、下载来源、Qt 配置和构建原始输出须与本轮证据一起保留。重复执行时使用
+该版本对应的独立构建树；不要在同一 Qt build 目录中混用不同版本。runner 复用已经明确
+设置的 `Qt6_DIR`，核对实际加载库、PIE、Qt 插桩配置及 Clang 版本，拒绝混入系统 Qt。
+编译器、探针和 Qt 的 Clang 数字版本必须一致；`Ubuntu` 等厂商展示前缀不参与版本判定，
+非 Clang、缺少版本或版本不一致仍失败。
+
+#### 校准与产品验收
+
+先准备第 4 节的本地 httpbin，运行命令必须继承其环境：
+
+```bash
+bash "tests/qcurl/httpbin/start_httpbin.sh" --port 0 --name "qcurl-tsan-httpbin" \
+  --write-env "build/test-env/tsan-httpbin.env"
+source "build/test-env/tsan-httpbin.env"
+python3 "scripts/run_uce_sanitizers.py" --profile tsan --build-dir "build-tsan" \
+  --output-dir "build/evidence/uce-sanitizers/tsan/$(date -u +%Y%m%dT%H%M%S%NZ)" --nproc 4
+bash "tests/qcurl/httpbin/stop_httpbin.sh" --name "qcurl-tsan-httpbin"
+```
+
+- `qcurl_qt_tsan_control` 只链接 QtCore/Threads，不链接 QCurl/QtTest，也不注册普通 CTest。
+  `std-mutex`、`qt-mutex`、`qt-wait`、`qt-queued` 必须有准确结果且零报告；
+  `deliberate-race` 必须同时返回 `66` 并定位 `deliberateRaceWrite` 的数据竞争。
+- 校准后，严格运行 Reply、ConnectionPool、ActorThreadModel、PoolContract、QCurlRuntime、
+  NativeDiagnostics、CompletionContract，以及能力启用时的 WebSocket/WebSocketPool。
+  代表集合不仅核对注册名称，还要求本次 CTest 输出中每个必需目标有唯一的 `Passed` 结果；
+  部分目标被禁用、跳过或缺失执行结果时，即使 CTest 返回 `0`，TSan 门禁仍失败。
+  该目标级检查仅属于 TSan 入口，不改变公共 `ctest_strict.py` 的其他调用方语义。
+  Scheduler 继续逐函数隔离；空集合、缺少目标函数、skip、blacklist、超时或工具异常均失败。
+- `TSAN_OPTIONS` 固定报告开关、退出码 `66` 和检测范围，不接受任意外部选项。产品只沿用
+  `qt_test_tsan.supp` 的两条精确 QtTest 日志抑制与既有 watchdog 线程退出处理；独立对照
+  不加载该抑制并开启线程泄漏报告。不得扩大抑制来消除 Qt 同步或 QCurl 共享状态报告。
+- Scheduler 保留真实退出码、目标函数 `PASS` 和完整 `Totals` 检查。合法的
+  `ThreadSanitizer: Matched ... suppressions` 统计不是错误，不因出现 `Sanitizer:` 字样
+  拒绝成功运行；真实 TSan 非零退出仍失败。独立正负对照的报告判定保持不变。
+- `report.json` 保存源码运行前后指纹、有效检测选项、环境身份和每条命令退出码；超时的
+  门禁返回码与实际被终止的进程状态分别记录。`logs/` 保存原始输出及抑制命中。
+  源码漂移、环境失败和产品失败均不能形成通过结论，失败重跑必须使用新的证据目录。
+- 未插桩 Qt 的报警不能直接定性为产品缺陷或误报。Helgrind 仅按需辅助裁决，不替代 TSan；
+  加载器崩溃或尚未执行用例的 `0 errors` 不是通过。上述本地验收不等于发布资格。
 
 ### 8.4 无过滤完整安装包安全门禁
 
