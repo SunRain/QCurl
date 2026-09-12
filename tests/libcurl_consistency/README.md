@@ -2,6 +2,10 @@
 
 本目录只回答一个问题：**在外部可观测层面，QCurl 与 libcurl 是否给出相同结果。**
 
+这里的一致性限定于相同逻辑操作、等价配置、声明支持的环境和已覆盖的专题合同，
+不要求 Qt 信号与 libcurl 回调逐次对应，也不把有限用例通过解释为所有外部行为完全等价。
+QCurl 的线程归属、对象生命周期和终态通知另由对应 QtTest 合同验证。
+
 这里只保留稳定 contract、运行入口与排查路径；维护者状态看板已移到
 `docs/internal/maintainer-backlog/libcurl-consistency.md`，专题决策仍落到 handoff 文档。
 
@@ -23,6 +27,19 @@
 
 覆盖映射文件：`tests/libcurl_consistency/coverage-map.yaml`。它按 observable
 contract 记录 suite、pytest 文件、artifact 字段和证据类型；新增专题时必须同步更新。
+
+### 1.3 观测与执行判据
+
+- `observed` 记录实际观测，`derived` 可以记录有真实断言支撑的归一化结果；不能仅由
+  用例名称或预期值推导成功。pinning mismatch 用例在 QtTest 终态核对
+  `diagnosticCurlCode() == CURLE_SSL_PINNEDPUBKEYNOTMATCH`，再归一化为 TLS 错误。
+- 不把归一化错误当作原生诊断码：直接取消可能没有适用的 CURL 完成码，诊断值为 `0`；
+  libcurl 回调取消可能返回 `42`。二者可以满足同一个高层取消合同。
+- 二进制 POST 固定用例在 HTTP/1.1、HTTP/2、HTTP/3 上核对每端恰好一条对应请求记录。
+  该约束不推广到认证、重定向或重试场景，也不构成所有请求的 exactly-once 保证。
+- QtTest runner 除真实退出码外，还要求 `TestLibcurlConsistency::testCase()` 的 PASS
+  和唯一完整 Totals（包含初始化、目标用例和清理，零 failure/skip/blacklist）。
+  枚举函数不算执行；普通诊断文本或合法 suppression 统计不会被关键词扫描误判为失败。
 
 ## 2. 测试分层
 

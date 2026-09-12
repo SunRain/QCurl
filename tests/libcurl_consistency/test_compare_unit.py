@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tests.libcurl_consistency.pytest_support.compare import compare_artifacts
 from tests.libcurl_consistency.pytest_support.artifacts import apply_error_namespaces
+from tests.libcurl_consistency.pytest_support.observed import httpd_observed_list_for_id
+from tests.libcurl_consistency.pytest_support.observed import nghttpx_observed_list_for_id
 
 
 def _payload() -> dict[str, object]:
@@ -35,6 +39,26 @@ def _payload() -> dict[str, object]:
 
 def _write(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize("proto", ["HTTP/1.1", "HTTP/2.0", "h3"])
+@pytest.mark.parametrize("count", [1, 2])
+def test_single_request_observation_rejects_extra_posts(tmp_path, proto, count) -> None:
+    access_log = tmp_path / "access.log"
+    line = f"2026-09-10T00:00:00Z|{proto}|POST|/echo?id=selected|200|-|8\n"
+    access_log.write_text(
+        line.replace("id=selected", "id=other") + line * count, encoding="utf-8"
+    )
+    observe = nghttpx_observed_list_for_id if proto == "h3" else httpd_observed_list_for_id
+
+    if count != 1:
+        with pytest.raises(AssertionError, match="got=2, expected=1"):
+            observe(access_log, "selected", expected_count=1)
+    else:
+        observed = observe(access_log, "selected", expected_count=1)
+        assert len(observed) == 1
+        assert observed[0].method == "POST"
+        assert observed[0].url == "/echo"
 
 
 def test_raw_request_header_missing_on_one_side_is_a_diff(tmp_path) -> None:

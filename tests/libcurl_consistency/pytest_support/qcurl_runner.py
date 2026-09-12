@@ -40,14 +40,17 @@ def _collect_download_files(run_dir: Path, count: int) -> List[Path]:
 
 def _parse_qttest_totals(stdout: str) -> Optional[Dict[str, int]]:
     # 示例：Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 19ms
-    for line in reversed(stdout.splitlines()):
-        m = re.match(
-            r"^Totals:\s+(?P<passed>\d+)\s+passed,\s+(?P<failed>\d+)\s+failed,\s+(?P<skipped>\d+)\s+skipped,",
-            line.strip(),
+    matches = list(
+        re.finditer(
+            r"^Totals:\s+(?P<passed>\d+)\s+passed,\s+(?P<failed>\d+)\s+failed,"
+            r"\s+(?P<skipped>\d+)\s+skipped,\s+(?P<blacklisted>\d+)\s+blacklisted\b",
+            stdout,
+            re.M,
         )
-        if m:
-            return {k: int(v) for k, v in m.groupdict().items()}
-    return None
+    )
+    if len(matches) != 1:
+        return None
+    return {key: int(value) for key, value in matches[0].groupdict().items()}
 
 def run_qt_test(
     env: Env,
@@ -105,8 +108,20 @@ def run_qt_test(
         raise RuntimeError(f"Qt Test failed ({proc.returncode}): {cmd}\n{proc.stdout}\n{proc.stderr}")
 
     totals = _parse_qttest_totals(proc.stdout or "")
-    if totals and totals.get("skipped", 0) > 0:
-        raise RuntimeError(f"Qt Test reported skipped={totals.get('skipped')}: {cmd}\n{proc.stdout}\n{proc.stderr}")
+    target_passed = re.search(
+        r"^PASS\s+: TestLibcurlConsistency::testCase\(", proc.stdout or "", re.M
+    )
+    if (
+        not totals
+        or totals["passed"] < 3
+        or not target_passed
+        or any(totals[key] for key in ("failed", "skipped", "blacklisted"))
+    ):
+        raise RuntimeError(
+            "Qt Test execution incomplete: expected testCase PASS and "
+            "complete zero-failure/skip/blacklist Totals: "
+            f"{cmd}\n{proc.stdout}\n{proc.stderr}"
+        )
 
     req_semantic = None
     if request_meta:

@@ -17,7 +17,8 @@ from tests.libcurl_consistency.pytest_support.artifacts import write_json
 from tests.libcurl_consistency.pytest_support.baseline import run_libtest_case
 from tests.libcurl_consistency.pytest_support.case_defs import P1_CASES
 from tests.libcurl_consistency.pytest_support.compare import assert_artifacts_match
-from tests.libcurl_consistency.pytest_support.observed import httpd_observed_for_id, nghttpx_observed_for_id
+from tests.libcurl_consistency.pytest_support.observed import httpd_observed_list_for_id
+from tests.libcurl_consistency.pytest_support.observed import nghttpx_observed_list_for_id
 from tests.libcurl_consistency.pytest_support.qcurl_runner import require_qcurl_qttest, run_qt_test
 from tests.libcurl_consistency.pytest_support.service_logs import collect_service_logs_for_case, should_collect_service_logs
 
@@ -100,12 +101,13 @@ def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
             except FileNotFoundError as exc:
                 raise AssertionError(f"gate preflight should have failed before pytest started: {exc}") from exc
 
+            # 本场景不含重定向、认证挑战或重试；只取首条记录会掩盖额外 POST。
             if proto == "h3":
                 access_log = Path(lc_logs["nghttpx_access_log"])
-                obs = nghttpx_observed_for_id(access_log, baseline_req_id, require_range=False)
+                obs = nghttpx_observed_list_for_id(access_log, baseline_req_id, expected_count=1)[0]
             else:
                 access_log = Path(lc_logs["httpd_access_log"])
-                obs = httpd_observed_for_id(access_log, baseline_req_id, require_range=False)
+                obs = httpd_observed_list_for_id(access_log, baseline_req_id, expected_count=1)[0]
             assert obs.http_version == proto
             baseline["payload"]["request"]["method"] = obs.method
             baseline["payload"]["request"]["url"] = obs.url
@@ -129,10 +131,10 @@ def test_p1_postfields_binary(case_id, env, lc_logs, tmp_path):
 
             if proto == "h3":
                 access_log = Path(lc_logs["nghttpx_access_log"])
-                obs = nghttpx_observed_for_id(access_log, qcurl_req_id, require_range=False)
+                obs = nghttpx_observed_list_for_id(access_log, qcurl_req_id, expected_count=1)[0]
             else:
                 access_log = Path(lc_logs["httpd_access_log"])
-                obs = httpd_observed_for_id(access_log, qcurl_req_id, require_range=False)
+                obs = httpd_observed_list_for_id(access_log, qcurl_req_id, expected_count=1)[0]
             assert obs.http_version == proto
             qcurl["payload"]["request"]["method"] = obs.method
             qcurl["payload"]["request"]["url"] = obs.url

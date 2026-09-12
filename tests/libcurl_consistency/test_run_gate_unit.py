@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
 from tests.libcurl_consistency import run_gate
+from tests.libcurl_consistency.pytest_support.qcurl_runner import run_qt_test
 
 
 def _cfg(tmp_path: Path) -> run_gate.GateConfig:
@@ -135,3 +137,65 @@ def test_http_observe_server_script_help_imports_helpers_from_repo_root() -> Non
 
     assert proc.returncode == 0
     assert "observable HTTP server" in proc.stdout
+
+
+_QT_PASSED = (
+    "PASS   : TestLibcurlConsistency::initTestCase()\n"
+    "PASS   : TestLibcurlConsistency::testCase()\n"
+    "PASS   : TestLibcurlConsistency::cleanupTestCase()\n"
+    "Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms\n"
+)
+
+
+def _run_qt_output_fixture(tmp_path, monkeypatch, output: str, returncode: int = 0):
+    monkeypatch.setenv("QCURL_LC_ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    monkeypatch.delenv("QCURL_LC_OUT_DIR", raising=False)
+    return run_qt_test(
+        env=SimpleNamespace(gen_dir=tmp_path, test_timeout=10),
+        suite="runner",
+        case="completed_case",
+        qt_executable=Path(sys.executable),
+        args=["-c", f"import sys; print({output!r}, end=''); sys.exit({returncode})"],
+        request_meta={"method": "GET", "url": "http://example.test/"},
+        response_meta={"status": 200, "http_version": "http/1.1", "body": b"ok"},
+    )
+
+
+def test_qt_runner_accepts_completed_case_with_diagnostic_statistics(tmp_path, monkeypatch) -> None:
+    output = _QT_PASSED + "ThreadSanitizer: Matched 1 suppressions (pid=123):\n"
+
+    result = _run_qt_output_fixture(tmp_path, monkeypatch, output)
+
+    payload = json.loads(result["path"].read_text(encoding="utf-8"))
+    assert payload["response"]["body_len"] == 2
+    assert payload["stdout"] == output.splitlines()
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "",
+        "testCase()\n",
+        _QT_PASSED.replace("TestLibcurlConsistency::testCase()", "OtherTest::testCase()"),
+        _QT_PASSED.replace("3 passed", "2 passed"),
+        _QT_PASSED.replace("0 failed", "1 failed"),
+        _QT_PASSED.replace("0 skipped", "1 skipped"),
+        _QT_PASSED.replace("0 blacklisted", "1 blacklisted"),
+        _QT_PASSED.replace(", 0 blacklisted", ""),
+        _QT_PASSED + "Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms\n",
+    ],
+    ids=[
+        "empty", "functions-only", "wrong-target", "incomplete-run", "failure",
+        "skip", "blacklist", "partial-totals", "duplicate-totals",
+    ],
+)
+def test_qt_runner_rejects_missing_or_incomplete_execution(tmp_path, monkeypatch, output) -> None:
+    with pytest.raises(RuntimeError):
+        _run_qt_output_fixture(tmp_path, monkeypatch, output)
+
+    assert not list((tmp_path / "artifacts").rglob("qcurl.json"))
+
+
+def test_qt_runner_preserves_nonzero_exit_even_after_pass_output(tmp_path, monkeypatch) -> None:
+    with pytest.raises(RuntimeError, match=r"Qt Test failed \(66\)"):
+        _run_qt_output_fixture(tmp_path, monkeypatch, _QT_PASSED, returncode=66)

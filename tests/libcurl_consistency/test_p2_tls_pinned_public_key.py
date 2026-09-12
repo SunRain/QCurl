@@ -168,6 +168,7 @@ def test_p2_tls_pinned_public_key(mode: str, env, lc_logs, lc_observe_https, tmp
             case_env=qcurl_env,
         )
         if mode != "match":
+            # QtTest 已核对实际 pinning 返回码；此处只记录有断言依据的归一化分类。
             apply_error_namespaces(qcurl["payload"], kind="tls", http_status=0)
         qcurl["payload"]["ctbp"] = _make_ctbp_payload(proto=proto, mode=mode)
         write_json(qcurl["path"], qcurl["payload"])

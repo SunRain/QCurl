@@ -847,6 +847,7 @@ void TestLibcurlConsistency::testCase()
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
         QVERIFY(reply);
         QVERIFY(reply->error() != NetworkError::NoError);
+        QCOMPARE(reply->diagnosticCurlCode(), int(CURLE_SSL_PINNEDPUBKEYNOTMATCH));
         deleteReplyLater(reply);
         return;
     }
