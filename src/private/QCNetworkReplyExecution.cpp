@@ -37,6 +37,11 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
         return;
     }
 
+    if (d->errorCode != NetworkError::NoError) {
+        Q_UNUSED(d->setState(ReplyState::Error));
+        return;
+    }
+
     auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
     if (completeFromCache(reply, manager) || dispatchMock(reply, manager)
         || !prepareNetwork(reply, manager)) {
@@ -46,8 +51,9 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
     if (d->setState(ReplyState::Running) == SignalEmissionResult::Destroyed) {
         return;
     }
+    qDebug() << "QCNetworkReply::execute: Started async request for"
+             << d->request.url();
     QCCurlMultiManager::instance()->addReply(reply);
-    qDebug() << "QCNetworkReply::execute: Started async request for" << d->request.url();
 }
 
 } // namespace QCurl

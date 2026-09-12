@@ -78,7 +78,9 @@ manager.setLogger(logger);
 Core 请求入口只接受 `http` 和 `https` scheme；初始请求与重定向都会使用 `http,https` 协议白名单。`file`、`ftp`、`ftps` 不属于 Core HTTP 路径。
 
 Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP method token，
-不把大小写转换当作校验。
+不把大小写转换当作校验。Core 在所属线程且有事件循环时排队启动或报告快速失败；返回后
+连接 `finished()` / `error()` 即可观察终态，reply 由 manager 持有。无事件循环、错误线程调用
+则同步返回可查询的失败结果；错误线程返回的无 parent reply 由调用线程释放。
 
 重试默认关闭（`maxRetries = 0`）。启用后，GET/HEAD 是默认允许自动重试的方法；其他 method 需要显式选择
 `QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey`，并在 immutable request snapshot 中提供稳定的

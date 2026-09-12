@@ -424,7 +424,14 @@ void TestQCNetworkRequestCanonicalFlowApi::testSendCustomRequestRejectsInvalidMe
     auto *reply = m_manager->sendCustomRequest(request, method, QByteArrayLiteral("body"));
 
     QVERIFY(reply != nullptr);
+    QCOMPARE(reply->parent(), m_manager);
+    QVERIFY(!reply->isFinished());
+    QSignalSpy finished(reply, &QCNetworkReply::finished);
+    QSignalSpy failed(reply, qOverload<NetworkError>(&QCNetworkReply::error));
+    QVERIFY(finished.wait());
     QVERIFY(reply->isFinished());
+    QCOMPARE(finished.size(), 1);
+    QCOMPARE(failed.size(), 1);
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     QVERIFY(reply->errorString().contains(QStringLiteral("HTTP method token")));
     QCOMPARE(m_mock.takeCapturedRequests().size(), 0);

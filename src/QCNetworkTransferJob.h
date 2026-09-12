@@ -43,7 +43,7 @@ public:
      */
     [[nodiscard]] QCNetworkReply *reply() const noexcept;
 
-    /// 任务已经发出终态 finished() 信号后返回 true。
+    /// 任务已锁定终态时返回 true，包括 failed()/finished() 的直接槽执行期间。
     [[nodiscard]] bool isFinished() const noexcept;
 
     /// 返回终态错误码；成功时返回 NetworkError::NoError。
@@ -53,7 +53,7 @@ public:
     [[nodiscard]] QString errorString() const;
 
 Q_SIGNALS:
-    /// 任务到达成功或失败终态时发出一次。
+    /// 任务到达终态时至多发出一次；failed() 的直接槽销毁任务后不再发出。
     void finished();
 
     /// 任务以错误终止时在 finished() 之前发出。
@@ -68,7 +68,7 @@ protected:
     /// 保存派生类在校验通过后创建的 reply。
     void setReply(QCNetworkReply *reply);
 
-    /// 标记任务失败，并依次发出 failed() 和 finished()。
+    /// 标记任务失败并发出 failed()；任务仍存活时继续发出 finished()。
     void fail(QCurl::NetworkError errorCode, const QString &message);
 
     /// 标记任务成功，并发出 finished()。

@@ -131,7 +131,7 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
     Q_Q(QCNetworkReply);
     const QPointer<QCNetworkReply> observer(q);
 
-    if (state == newState) {
+    if (state == newState || isTerminalState(state)) {
         return Internal::SignalEmissionResult::Alive;
     }
 
@@ -303,7 +303,7 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
     Q_Q(QCNetworkReply);
 
     // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
-    if (state == ReplyState::Cancelled || state == ReplyState::Error
+    if (transferRemovalRequested || state == ReplyState::Cancelled || state == ReplyState::Error
         || state == ReplyState::Finished) {
         return;
     }

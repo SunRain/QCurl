@@ -8,6 +8,7 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestScheduler.h"
 #include "private/QCNetworkCacheIntegration_p.h"
+#include "private/QCThreading_p.h"
 
 #include <QPointer>
 #include <QVariant>
@@ -17,6 +18,14 @@ namespace QCurl {
 namespace {
 
 constexpr const char kMiddlewareResponseInvokedProperty[] = "_qcurl_middleware_response_invoked";
+
+void queueReplyFailure(QCNetworkReply *reply, NetworkError error, const QString &message)
+{
+    QMetaObject::invokeMethod(
+        reply,
+        [reply, error, message]() { reply->abortWithError(error, message); },
+        Qt::QueuedConnection);
+}
 
 void runReplyCreatedMiddlewares(QCNetworkReply *reply,
                                 const QList<QCNetworkMiddleware *> &middlewares)
@@ -136,7 +145,9 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createReply(
                                      requestBodySource,
                                      body,
                                      parent);
-    applyReplyDefaults(reply);
+    if (QThread::currentThread() == q_func()->thread()) {
+        applyReplyDefaults(reply);
+    }
     return reply;
 }
 
@@ -210,16 +221,22 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createNoEventLoopErrorReply(
 QCNetworkReply *QCNetworkAccessManagerPrivate::createInvalidRequestReply(
     const QCNetworkRequest &request, HttpMethod method, const QString &message, QObject *parent)
 {
-    auto *reply = createReply(request,
-                              method,
-                              Internal::makeEmptyRequestBody(),
-                              QByteArray(),
-                              parent);
+    Q_UNUSED(parent);
+    const bool ownerThread = QThread::currentThread() == q_func()->thread();
+    auto *reply            = createReply(request,
+                                         method,
+                                         Internal::makeEmptyRequestBody(),
+                                         QByteArray(),
+                                         ownerThread ? q_func() : nullptr);
     if (!reply) {
         return nullptr;
     }
 
-    reply->abortWithError(NetworkError::InvalidRequest, message);
+    if (ownerThread && Internal::hasEventDispatcher(q_func()->thread())) {
+        queueReplyFailure(reply, NetworkError::InvalidRequest, message);
+    } else {
+        reply->abortWithError(NetworkError::InvalidRequest, message);
+    }
     return reply;
 }
 
@@ -257,17 +274,17 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
     if (schedulerEnabled) {
         // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
         if (!request.lane().isValid()) {
-            reply->abortWithError(NetworkError::InvalidRequest,
-                                  QStringLiteral(
-                                      "QCNetworkAccessManager: scheduler lane is invalid"));
+            queueReplyFailure(reply,
+                              NetworkError::InvalidRequest,
+                              QStringLiteral("QCNetworkAccessManager: scheduler lane is invalid"));
             return;
         }
         if (!schedulerPolicy.isLaneRegistered(request.lane())) {
-            reply
-                ->abortWithError(NetworkError::InvalidRequest,
-                                 QStringLiteral(
-                                     "QCNetworkAccessManager: scheduler lane is not registered: %1")
-                                     .arg(request.lane().name()));
+            queueReplyFailure(reply,
+                              NetworkError::InvalidRequest,
+                              QStringLiteral(
+                                  "QCNetworkAccessManager: scheduler lane is not registered: %1")
+                                  .arg(request.lane().name()));
             return;
         }
 
@@ -275,21 +292,23 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
             const QCNetworkRequestScheduler::CommandResult result
                 = scheduler->scheduleReply(reply, request.lane(), request.priority());
             if (result != QCNetworkRequestScheduler::CommandResult::Applied) {
-                reply->abortWithError(
+                queueReplyFailure(
+                    reply,
                     NetworkError::InvalidRequest,
                     QStringLiteral(
                         "QCNetworkAccessManager: scheduler rejected request command (%1)")
                         .arg(static_cast<int>(result)));
             }
         } else {
-            reply->abortWithError(NetworkError::InvalidRequest,
-                                  QStringLiteral(
-                                      "QCNetworkAccessManager: owner 线程无法提供请求调度器"));
+            queueReplyFailure(reply,
+                              NetworkError::InvalidRequest,
+                              QStringLiteral(
+                                  "QCNetworkAccessManager: owner 线程无法提供请求调度器"));
         }
         return;
     }
 
-    reply->execute();
+    QMetaObject::invokeMethod(reply, &QCNetworkReply::execute, Qt::QueuedConnection);
 }
 
 } // namespace QCurl

@@ -23,6 +23,7 @@ void QCNetworkReply::cancel()
     }
 
     Q_D(QCNetworkReply);
+    const QPointer<QCNetworkReply> observer(this);
 
     // 如果已经取消或已完成，不需要再操作
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
@@ -40,6 +41,9 @@ void QCNetworkReply::cancel()
             auto *record                = d->multiTransferRecord;
             d->transferRemovalRequested = true;
             multiManager->removeTransferRecord(record);
+            if (!observer) {
+                return;
+            }
         } else {
             QPointer<QCNetworkReply> safeThis(this);
             QMetaObject::invokeMethod(
@@ -77,6 +81,7 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
     }
 
     Q_D(QCNetworkReply);
+    const QPointer<QCNetworkReply> observer(this);
 
     if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
         || d->state == ReplyState::Error) {
@@ -89,6 +94,9 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
             auto *record                = d->multiTransferRecord;
             d->transferRemovalRequested = true;
             multiManager->removeTransferRecord(record);
+            if (!observer) {
+                return;
+            }
         } else {
             QPointer<QCNetworkReply> safeThis(this);
             QMetaObject::invokeMethod(

@@ -326,6 +326,11 @@ add_qcurl_test_with_preflight(tst_QCNetworkHttpSemantics
     SOURCES tst_QCNetworkHttpSemantics.cpp qcurl_http_script_server.h)
 target_link_libraries(tst_QCNetworkHttpSemantics PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 set_tests_properties(tst_QCNetworkHttpSemantics PROPERTIES LABELS "env;local_port")
+add_qcurl_test_with_preflight(tst_QCNetworkCompletionContract
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkCompletionContract.cpp qcurl_http_script_server.h)
+target_compile_definitions(tst_QCNetworkCompletionContract PRIVATE QCURL_ENABLE_TEST_HOOKS)
+set_tests_properties(tst_QCNetworkCompletionContract PROPERTIES LABELS "env;local_port")
 add_qcurl_test_with_preflight(
     tst_QCNetworkIODeviceLifetime
     REQUIRE_LOCAL_PORT

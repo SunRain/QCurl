@@ -79,8 +79,11 @@ void QCNetworkTransferJob::fail(NetworkError errorCode, const QString &message)
     d->finished    = true;
     d->error       = errorCode;
     d->errorString = message;
+    const QPointer<QCNetworkTransferJob> observer(this);
     Q_EMIT failed(errorCode, message);
-    Q_EMIT finished();
+    if (observer) {
+        Q_EMIT finished();
+    }
 }
 
 void QCNetworkTransferJob::finish()

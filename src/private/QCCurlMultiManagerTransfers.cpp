@@ -405,7 +405,7 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::detachTr
             QCNetworkReplyPrivate *target    = observer->d_func();
             target->curlManager              = transferIt.value()->takeHandle();
             target->multiTransferRecord      = nullptr;
-            target->transferRemovalRequested = false;
+            // 主动取消/中止的意图必须保留到完成分发；否则同步 detach 会抢先进入 Error。
             transfer.reply                   = observer;
         } else {
             transfer.detachedHandle = transferIt.value()->takeHandle();

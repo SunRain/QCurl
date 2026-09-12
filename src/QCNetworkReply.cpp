@@ -151,7 +151,7 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
             d->setError(NetworkError::InvalidRequest,
                         QStringLiteral("Failed to configure curl options"));
         }
-        Q_UNUSED(d->setState(ReplyState::Error));
+        // 工厂先返回对象；启动队列统一投递配置失败，调用方可以随后连接终态信号。
     }
 }
 

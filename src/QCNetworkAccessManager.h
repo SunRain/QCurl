@@ -45,6 +45,9 @@ class HstsAltSvcCacheConfigData;
  *
  * manager 保存 cookies、cache、中间件、日志和调度器等共享配置。返回的 reply 遵循
  * QObject 生命周期规则，调用方通常连接信号后通过 deleteLater() 释放。
+ * 在所属线程且有事件循环时，网络启动与快速失败都排队处理，工厂返回后连接信号即可观察
+ * 终态；正常和失败 reply 均以 manager 为 parent。无事件循环或跨线程调用同步返回失败
+ * 结果，跨线程拒绝的 reply 无 parent，须由调用线程释放，不依赖无法投递的排队通知。
  *
  * @note 错误生命周期：manager 不保存可查询的“最近一次错误”。同步请求工厂返回非空 reply
  * 只表示请求已接纳，传输结果以该 reply 的终态为准；cookie Future 的完成值是对应调用的

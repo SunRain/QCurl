@@ -55,7 +55,15 @@ void tst_CurlGlobalInitialization::forcedFailurePropagatesOneRootCause()
 
     QCNetworkAccessManager manager;
     auto *reply = manager.get(request);
+    QVERIFY(reply);
+    QCOMPARE(reply->parent(), &manager);
+    QVERIFY(!reply->isFinished());
+    QSignalSpy finished(reply, &QCNetworkReply::finished);
+    QSignalSpy failed(reply, qOverload<NetworkError>(&QCNetworkReply::error));
+    QVERIFY(finished.wait());
     QVERIFY(reply->isFinished());
+    QCOMPARE(finished.size(), 1);
+    QCOMPARE(failed.size(), 1);
     QCOMPARE(reply->errorString(), diagnostic);
     reply->deleteLater();
 }
