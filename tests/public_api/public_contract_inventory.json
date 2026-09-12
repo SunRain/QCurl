@@ -17,6 +17,7 @@
       "none": [
         "QCGlobal.h",
         "QCCookie.h",
+        "QCNetworkTypes.h",
         "QCNetworkSslConfig.h",
         "QCNetworkProxyConfig.h",
         "QCNetworkTimeoutConfig.h",
@@ -73,6 +74,7 @@
       "none": [
         "QCGlobal.h",
         "QCCookie.h",
+        "QCNetworkTypes.h",
         "QCNetworkRequestConfig.h",
         "QCNetworkRequest.h",
         "QCNetworkSslConfig.h",
@@ -130,6 +132,7 @@
         "QCGlobal.h",
         "QCurlRuntime.h",
         "QCCookie.h",
+        "QCNetworkTypes.h",
         "QCCookieAsyncResult.h",
         "QCNetworkRequestConfig.h",
         "QCNetworkRequest.h",
@@ -186,6 +189,7 @@
         "QCGlobal.h",
         "QCurlRuntime.h",
         "QCCookie.h",
+        "QCNetworkTypes.h",
         "QCCookieAsyncResult.h",
         "QCNetworkRequestConfig.h",
         "QCNetworkRequest.h",

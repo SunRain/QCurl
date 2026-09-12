@@ -1,5 +1,6 @@
 #include "QCNetworkCache.h"
 
+#include "QCNetworkTypes.h"
 #include "private/QCHttpDate_p.h"
 
 #include <QHash>
@@ -16,8 +17,6 @@ namespace QCurl {
 namespace {
 
 constexpr QLatin1StringView kMaxAgeDirectivePrefix{"max-age="};
-
-using RawHeaderPair = QCNetworkCacheMetadata::RawHeaderPair;
 
 class RawHeaderIndex
 {
@@ -168,7 +167,7 @@ class QCNetworkCacheMetadataData : public QSharedData
 public:
     QUrl url;
     QMap<QByteArray, QByteArray> headers;
-    QList<QCNetworkCacheMetadata::RawHeaderPair> rawHeaders;
+    QList<RawHeaderPair> rawHeaders;
     QDateTime expirationDate;
     QDateTime lastModified;
     QDateTime creationDate;
@@ -255,7 +254,7 @@ void QCNetworkCacheMetadata::setHeader(const QByteArray &name, const QByteArray 
     d->rawHeadersCacheSafe = QCNetworkCache::isCacheable(d->rawHeaders);
 }
 
-QList<QCNetworkCacheMetadata::RawHeaderPair> QCNetworkCacheMetadata::rawHeaders() const
+QList<RawHeaderPair> QCNetworkCacheMetadata::rawHeaders() const
 {
     return d->rawHeaders;
 }

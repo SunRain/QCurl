@@ -16,7 +16,7 @@ public:
     QUrl url;
     HttpMethod method = HttpMethod::Get;
     QByteArray customMethod;
-    QList<QCNetworkCapturedRequest::RawHeaderPair> headers;
+    QList<RawHeaderPair> headers;
     QByteArray bodyPreview;
     qsizetype bodySize  = 0;
     bool followLocation = true;
@@ -73,7 +73,7 @@ void QCNetworkCapturedRequest::setCustomMethod(const QByteArray &method)
     d->customMethod = method;
 }
 
-QList<QCNetworkCapturedRequest::RawHeaderPair> QCNetworkCapturedRequest::headers() const
+QList<RawHeaderPair> QCNetworkCapturedRequest::headers() const
 {
     return d->headers;
 }

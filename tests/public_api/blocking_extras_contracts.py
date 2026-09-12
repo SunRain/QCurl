@@ -31,7 +31,7 @@ def validate_blocking_extras_fixture(source_dir) -> None:
         "client.post(request, &body, qint64(4))",
         "client.downloadToDevice(request, &output, requestOptions)",
         "success.rawHeaders()",
-        "success.rawHeaderList()",
+        "success.headers()",
         "success.bytesReceived()",
         "success.setDiagnosticCurlCode(7)",
     ]

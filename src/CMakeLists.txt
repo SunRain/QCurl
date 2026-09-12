@@ -28,6 +28,7 @@ set(QCURL_CORE_SOURCES
 
 set(QCURL_CORE_HEADERS
     QCurlRuntime.h
+    QCNetworkTypes.h
     private/QCurlRuntimeState_p.h
     QCCookie.h
     QCCookieAsyncResult.h
@@ -158,6 +159,7 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkSchedulerPolicy.h
     QCNetworkError.h
     QCNetworkReply.h
+    QCNetworkTypes.h
     QCNetworkRetryPolicy.h
     QCNetworkRequestPriority.h
     QCNetworkRequestScheduler.h

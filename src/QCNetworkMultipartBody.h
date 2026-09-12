@@ -77,9 +77,6 @@ public:
     /// 返回非流式 multipart 请求体的内存载荷。
     [[nodiscard]] QByteArray data() const;
 
-    /// 兼容查询入口；流式描述在 takeDevice() 内直接创建并转移 wrapper，因此返回 nullptr。
-    [[nodiscard]] QIODevice *device() const noexcept;
-
     /// 返回包含 boundary 参数的 multipart Content-Type。
     [[nodiscard]] QByteArray contentType() const;
 

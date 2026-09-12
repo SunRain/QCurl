@@ -35,7 +35,6 @@ void clearParsedHeaders(QCNetworkReplyTransferState *state)
 {
     state->finalHeaderList.clear();
     state->finalHeaderMap.clear();
-    state->headerMap.clear();
 }
 
 void flushCurrentHeader(QCNetworkReplyTransferState *state,
@@ -60,7 +59,6 @@ void flushCurrentHeader(QCNetworkReplyTransferState *state,
 
     state->finalHeaderList.append(qMakePair(name, value));
     state->finalHeaderMap.insert(name.trimmed().toLower(), value);
-    state->headerMap.insert(QString::fromUtf8(name), QString::fromUtf8(value));
 }
 
 void parseStatusLine(QCNetworkReplyTransferState *state, const QByteArray &line)

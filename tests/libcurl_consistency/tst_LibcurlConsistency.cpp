@@ -3213,7 +3213,7 @@ void TestLibcurlConsistency::testCase()
 
         // 诊断型采集：尽力落盘 CONNECT 阶段 header blocks（缺失/差异不作为门禁失败条件）
         QByteArray headerData;
-        const auto headers = result.rawHeaderList();
+        const auto headers = result.headers();
         for (const auto &header : headers) {
             headerData += header.first + QByteArrayLiteral(": ") + header.second
                           + QByteArrayLiteral("\r\n");

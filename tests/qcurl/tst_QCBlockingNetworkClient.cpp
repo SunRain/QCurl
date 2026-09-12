@@ -156,7 +156,7 @@ private Q_SLOTS:
     void getRejectsBodyOverMemoryLimit();
     void getReportsProgress();
     void getCanBeCancelledFromProgressCallback();
-    void rawHeaderListPreservesDuplicateSetCookieOrder();
+    void headersPreserveDuplicateSetCookieOrder();
     void setCookieMaxAgeZeroReturnsExpiredCookieDelta();
     void setCookieMaxAgeOverridesExpiresRegardlessOfOrder();
     void setCookieExpiresGmtReturnsPersistentDelta();
@@ -364,7 +364,7 @@ void tst_QCBlockingNetworkClient::getCanBeCancelledFromProgressCallback()
     QVERIFY(probe.maxBytesReceived > 0);
 }
 
-void tst_QCBlockingNetworkClient::rawHeaderListPreservesDuplicateSetCookieOrder()
+void tst_QCBlockingNetworkClient::headersPreserveDuplicateSetCookieOrder()
 {
     UploadEchoServer::ResponsePlan plan;
     plan.extraHeaders = {
@@ -378,7 +378,7 @@ void tst_QCBlockingNetworkClient::rawHeaderListPreservesDuplicateSetCookieOrder(
     const auto result = makeClient().get(makeRequest(server.url(QStringLiteral("/cookies"))));
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
 
-    const auto headers = result.rawHeaderList();
+    const auto headers = result.headers();
     QList<QByteArray> setCookies;
     for (const auto &header : headers) {
         if (header.first.compare(QByteArrayLiteral("Set-Cookie"), Qt::CaseInsensitive) == 0) {

@@ -32,7 +32,6 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
     , headerData(transferState->headerData)
     , finalHeaderList(transferState->finalHeaderList)
     , finalHeaderMap(transferState->finalHeaderMap)
-    , headerMap(transferState->headerMap)
     , state(transferState->state)
     , errorCode(NetworkError::NoError)
     , httpStatusCode(transferState->httpStatusCode)

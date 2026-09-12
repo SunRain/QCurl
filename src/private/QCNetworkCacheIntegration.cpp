@@ -53,8 +53,6 @@ namespace {
     return value;
 }
 
-using RawHeaderPair = QCNetworkCacheMetadata::RawHeaderPair;
-
 [[nodiscard]] bool isCacheSensitiveHeader(QByteArrayView name)
 {
     return name.compare(QByteArrayView("set-cookie"), Qt::CaseInsensitive) == 0
@@ -304,7 +302,7 @@ QCNetworkCacheRequestKey buildCacheRequestKey(const QCNetworkRequest &request,
 QCNetworkCacheMetadata buildCacheMetadata(
     const QCNetworkCacheRequestKey &key,
     int statusCode,
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &rawResponseHeaders,
+    const QList<RawHeaderPair> &rawResponseHeaders,
     qint64 responseDelayMs)
 {
     const QDateTime responseTime = QDateTime::currentDateTimeUtc();
@@ -323,29 +321,6 @@ QCNetworkCacheMetadata buildCacheMetadata(
     metadata.setResponseTime(responseTime);
     metadata.setCorrectedInitialAgeSeconds(initialAge);
     metadata.setExpirationDate(cacheExpirationDate(responseHeaders, responseTime, initialAge));
-    return metadata;
-}
-
-QCNetworkCacheMetadata buildCacheMetadata(
-    const QCNetworkCacheRequestKey &key,
-    int statusCode,
-    const QMap<QByteArray, QByteArray> &responseHeaders,
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &rawResponseHeaders,
-    qint64 responseDelayMs)
-{
-    if (!rawResponseHeaders.isEmpty()) {
-        return buildCacheMetadata(key, statusCode, rawResponseHeaders, responseDelayMs);
-    }
-
-    QCNetworkCacheMetadata metadata;
-    metadata.setUrl(key.normalizedUrl());
-    metadata.setHeaders(responseHeaders);
-    metadata.setStatusCode(statusCode);
-    const QDateTime responseTime = QDateTime::currentDateTimeUtc();
-    metadata.setRequestTime(responseTime);
-    metadata.setResponseTime(responseTime);
-    metadata.setCorrectedInitialAgeSeconds(std::numeric_limits<qint64>::max());
-    metadata.setExpirationDate(responseTime);
     return metadata;
 }
 
@@ -375,9 +350,9 @@ QCNetworkRequest requestWithCacheValidators(const QCNetworkRequest &request,
     return conditioned;
 }
 
-QList<QCNetworkCacheMetadata::RawHeaderPair> mergeRevalidatedRawHeaders(
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &cachedHeaders,
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &validationHeaders)
+QList<RawHeaderPair> mergeRevalidatedRawHeaders(
+    const QList<RawHeaderPair> &cachedHeaders,
+    const QList<RawHeaderPair> &validationHeaders)
 {
     QSet<QByteArray> replacementNames;
     for (const auto &[name, value] : validationHeaders) {
@@ -387,7 +362,7 @@ QList<QCNetworkCacheMetadata::RawHeaderPair> mergeRevalidatedRawHeaders(
         }
     }
 
-    QList<QCNetworkCacheMetadata::RawHeaderPair> merged;
+    QList<RawHeaderPair> merged;
     QSet<QByteArray> emittedNames;
     const auto appendValidationGroup = [&](const QByteArray &normalizedName) {
         if (emittedNames.contains(normalizedName)) {

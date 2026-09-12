@@ -183,11 +183,6 @@ QByteArray QCNetworkMultipartBody::data() const
     return d_ptr->data;
 }
 
-QIODevice *QCNetworkMultipartBody::device() const noexcept
-{
-    return nullptr;
-}
-
 QByteArray QCNetworkMultipartBody::contentType() const
 {
     if (!d_ptr) {

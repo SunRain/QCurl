@@ -48,6 +48,15 @@
       "rationale": "Application-owned process runtime controller for explicit fail-closed libcurl shutdown."
     },
     {
+      "path": "QCNetworkTypes.h",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component",
+      "rationale": "Shared Core value aliases used by ordered raw-header APIs across the public networking surfaces."
+    },
+    {
       "path": "QCNetworkAccessManager.h",
       "component": "Core",
       "maturity": "Stable",

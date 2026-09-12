@@ -41,8 +41,7 @@ int main(int argc, char **argv)
         || success.body() != QByteArrayLiteral("ok") || success.headers().size() != 1
         || success.rawHeaders().value(QByteArrayLiteral("content-type"))
                != QByteArrayLiteral("text/plain")
-        || success.rawHeaderList().size() != 1
-        || success.rawHeaderList().constFirst().first != QByteArrayLiteral("content-type")
+        || success.headers().constFirst().first != QByteArrayLiteral("content-type")
         || success.bytesReceived() != 2) {
         return 1;
     }

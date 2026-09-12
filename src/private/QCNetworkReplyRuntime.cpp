@@ -36,14 +36,14 @@ void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &m
 namespace {
 
 std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
-    const QMap<QString, QString> &headers)
+    const QList<RawHeaderPair> &headers)
 {
-    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        if (it.key().compare(QStringLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
+    for (const RawHeaderPair &header : headers) {
+        if (header.first.compare(QByteArrayLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
             continue;
         }
 
-        const QString raw = it.value().trimmed();
+        const QString raw = QString::fromUtf8(header.second).trimmed();
         if (raw.isEmpty()) {
             qWarning() << "QCurl ignored empty Retry-After header";
             return std::nullopt;
@@ -112,7 +112,7 @@ ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, Netw
     std::optional<std::chrono::milliseconds> retryAfter;
     if (error == NetworkError::HttpTooManyRequests) {
         d->parseHeaders();
-        retryAfter = parseReplyRetryAfterDelay(d->headerMap);
+        retryAfter = parseReplyRetryAfterDelay(d->finalHeaderList);
     }
 
     const auto delay = policy.delayForAttempt(d->attemptCount, retryAfter);
@@ -148,7 +148,6 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     d->headerData.clear();
     d->finalHeaderList.clear();
     d->finalHeaderMap.clear();
-    d->headerMap.clear();
     d->bytesDownloaded = 0;
     d->bytesUploaded   = 0;
     d->downloadTotal   = -1;

@@ -119,11 +119,6 @@ QCBlockingNetworkResult::HeaderList QCBlockingNetworkResult::headers() const
     return d->headers;
 }
 
-QCBlockingNetworkResult::HeaderList QCBlockingNetworkResult::rawHeaderList() const
-{
-    return d->headers;
-}
-
 QHash<QByteArray, QByteArray> QCBlockingNetworkResult::rawHeaders() const
 {
     QHash<QByteArray, QByteArray> result;

@@ -27,29 +27,21 @@ namespace QCurl::Internal {
 [[nodiscard]] Q_DECL_HIDDEN QCNetworkCacheMetadata
 buildCacheMetadata(const QCNetworkCacheRequestKey &key,
                    int statusCode,
-                   const QList<QCNetworkCacheMetadata::RawHeaderPair> &rawResponseHeaders,
+                   const QList<RawHeaderPair> &rawResponseHeaders,
                    qint64 responseDelayMs = 0);
-
-/// 兼容旧调用方；当 rawResponseHeaders 非空时仍以原始头为准。
-[[nodiscard]] Q_DECL_HIDDEN QCNetworkCacheMetadata
-buildCacheMetadata(const QCNetworkCacheRequestKey &key,
-                   int statusCode,
-                   const QMap<QByteArray, QByteArray> &responseHeaders,
-                   const QList<QCNetworkCacheMetadata::RawHeaderPair> &rawResponseHeaders = {},
-                   qint64 responseDelayMs                                                 = 0);
 
 /// ordered raw response headers 是 cache admission 的唯一输入事实。
 [[nodiscard]] Q_DECL_HIDDEN bool responseHeadersAreCacheable(
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &rawResponseHeaders);
+    const QList<RawHeaderPair> &rawResponseHeaders);
 
 [[nodiscard]] bool cacheMetadataHasValidator(const QCNetworkCacheMetadata &metadata);
 
 [[nodiscard]] QCNetworkRequest requestWithCacheValidators(const QCNetworkRequest &request,
                                                           const QCNetworkCacheMetadata &metadata);
 
-[[nodiscard]] QList<QCNetworkCacheMetadata::RawHeaderPair> mergeRevalidatedRawHeaders(
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &cachedHeaders,
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> &validationHeaders);
+[[nodiscard]] QList<RawHeaderPair> mergeRevalidatedRawHeaders(
+    const QList<RawHeaderPair> &cachedHeaders,
+    const QList<RawHeaderPair> &validationHeaders);
 
 } // namespace QCurl::Internal
 

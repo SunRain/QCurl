@@ -1039,7 +1039,7 @@ void TestQCNetworkCache::testCustomCacheSubclassCanImplementLookupOnly()
 
 void TestQCNetworkCache::testCacheControlMaxAge()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("max-age=3600")),
     };
 
@@ -1053,7 +1053,7 @@ void TestQCNetworkCache::testCacheControlMaxAge()
 
 void TestQCNetworkCache::testCacheControlNoStore()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("no-store")),
     };
 
@@ -1062,12 +1062,12 @@ void TestQCNetworkCache::testCacheControlNoStore()
 
 void TestQCNetworkCache::testCacheControlNoCacheAndMaxAgeZeroAreStoredStale()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> noCacheHeaders{
+    const QList<RawHeaderPair> noCacheHeaders{
         qMakePair(QByteArrayLiteral("cAcHe-CoNtRoL"), QByteArrayLiteral("no-cache")),
     };
     QVERIFY(QCNetworkCache::isCacheable(noCacheHeaders));
 
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> maxAgeHeaders{
+    const QList<RawHeaderPair> maxAgeHeaders{
         qMakePair(QByteArrayLiteral("CACHE-CONTROL"), QByteArrayLiteral("public, max-age=0")),
     };
     const QDateTime expiration = QCNetworkCache::parseExpirationDate(maxAgeHeaders);
@@ -1077,7 +1077,7 @@ void TestQCNetworkCache::testCacheControlNoCacheAndMaxAgeZeroAreStoredStale()
 
 void TestQCNetworkCache::testVaryStarIsNotCacheable()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("VaRy"), QByteArrayLiteral("*")),
     };
 
@@ -1086,7 +1086,7 @@ void TestQCNetworkCache::testVaryStarIsNotCacheable()
 
 void TestQCNetworkCache::testRawCacheControlCombinesMixedCaseLines()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("public, no-store")),
         qMakePair(QByteArrayLiteral("cAcHe-CoNtRoL"), QByteArrayLiteral("max-age=3600")),
     };
@@ -1096,7 +1096,7 @@ void TestQCNetworkCache::testRawCacheControlCombinesMixedCaseLines()
 
 void TestQCNetworkCache::testRawVaryCombinesMixedCaseLines()
 {
-    QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Vary"), QByteArrayLiteral("Accept-Language")),
         qMakePair(QByteArrayLiteral("vArY"), QByteArrayLiteral("Accept-Encoding, User-Agent")),
     };
@@ -1113,7 +1113,7 @@ void TestQCNetworkCache::testRawVaryCombinesMixedCaseLines()
 
 void TestQCNetworkCache::testRawSetCookieIsNeverCacheableOrFresh()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("public, max-age=3600")),
         qMakePair(QByteArrayLiteral("Set-Cookie"), QByteArrayLiteral("a=1; HttpOnly")),
         qMakePair(QByteArrayLiteral("set-cookie"), QByteArrayLiteral("b=2; Secure")),
@@ -1128,7 +1128,7 @@ void TestQCNetworkCache::testRawSetCookieIsNeverCacheableOrFresh()
 
 void TestQCNetworkCache::testStandardHttpDateWithGmtZoneIsCacheable()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Date"), QByteArrayLiteral("Fri, 31 Jul 2026 14:47:56 GMT")),
     };
 
@@ -1138,19 +1138,19 @@ void TestQCNetworkCache::testStandardHttpDateWithGmtZoneIsCacheable()
 void TestQCNetworkCache::testConflictingOrInvalidDateAgeIsNotCacheable()
 {
     const QByteArray date = QDateTime::currentDateTimeUtc().toString(Qt::RFC2822Date).toLatin1();
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> duplicateDate{
+    const QList<RawHeaderPair> duplicateDate{
         qMakePair(QByteArrayLiteral("Date"), date),
         qMakePair(QByteArrayLiteral("dAtE"), date),
     };
     QVERIFY(!QCNetworkCache::isCacheable(duplicateDate));
 
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> duplicateAge{
+    const QList<RawHeaderPair> duplicateAge{
         qMakePair(QByteArrayLiteral("Age"), QByteArrayLiteral("1")),
         qMakePair(QByteArrayLiteral("aGe"), QByteArrayLiteral("2")),
     };
     QVERIFY(!QCNetworkCache::isCacheable(duplicateAge));
 
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> invalidAge{
+    const QList<RawHeaderPair> invalidAge{
         qMakePair(QByteArrayLiteral("Age"), QByteArrayLiteral("-1")),
     };
     QVERIFY(!QCNetworkCache::isCacheable(invalidAge));
@@ -1158,7 +1158,7 @@ void TestQCNetworkCache::testConflictingOrInvalidDateAgeIsNotCacheable()
 
 void TestQCNetworkCache::testAgeInt64MaxUsesSaturatedFreshnessArithmetic()
 {
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Cache-Control"), QByteArrayLiteral("max-age=60")),
         qMakePair(QByteArrayLiteral("Age"), QByteArray::number(std::numeric_limits<qint64>::max())),
     };
@@ -1176,7 +1176,7 @@ void TestQCNetworkCache::testAgeInt64MaxUsesSaturatedFreshnessArithmetic()
 void TestQCNetworkCache::testExpiresHeader()
 {
     const QDateTime futureDate = QDateTime::currentDateTime().addSecs(7200);
-    const QList<QCNetworkCacheMetadata::RawHeaderPair> headers{
+    const QList<RawHeaderPair> headers{
         qMakePair(QByteArrayLiteral("Expires"), futureDate.toString(Qt::RFC2822Date).toLatin1()),
     };
 

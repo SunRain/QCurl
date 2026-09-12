@@ -11,11 +11,11 @@
 
 #include "QCGlobal.h"
 #include "QCNetworkError.h"
+#include "QCNetworkTypes.h"
 
 #include <QByteArray>
 #include <QList>
 #include <QMap>
-#include <QPair>
 #include <QScopedPointer>
 #include <QSharedDataPointer>
 #include <QUrl>
@@ -37,14 +37,12 @@ class QCNetworkMockHandlerPrivate;
 /**
  * @brief 捕获到的请求快照。
  *
- * 这是 Core Test Support 的 accessor-only 值类型，用于离线断言
- * middleware/header/body 形态，不暴露长期 ABI 敏感的 public fields。
+ * 这是 Core Test Support 的 accessor-only 值类型,用于离线断言
+ * middleware/header/body 形态,不暴露长期 ABI 敏感的 public fields。
  */
 class QCURL_TEST_SUPPORT_EXPORT QCNetworkCapturedRequest
 {
 public:
-    using RawHeaderPair = QPair<QByteArray, QByteArray>;
-
     QCNetworkCapturedRequest();
     QCNetworkCapturedRequest(const QCNetworkCapturedRequest &other);
     QCNetworkCapturedRequest(QCNetworkCapturedRequest &&other) noexcept;

@@ -68,8 +68,6 @@ public:
     [[nodiscard]] QByteArray body() const;
     /// 返回 canonical 响应头列表，保留重复 header 和接收顺序。
     [[nodiscard]] HeaderList headers() const;
-    /// 返回 `headers()` 的兼容别名；新代码优先使用 `headers()`。
-    [[nodiscard]] HeaderList rawHeaderList() const;
     /// 返回便捷查找用 header map；重复 header 会按 QHash 语义折叠。
     [[nodiscard]] QHash<QByteArray, QByteArray> rawHeaders() const;
     [[nodiscard]] QCCookieDelta cookieDelta() const;

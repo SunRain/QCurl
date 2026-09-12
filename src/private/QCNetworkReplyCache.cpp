@@ -29,7 +29,7 @@ namespace {
 }
 
 [[nodiscard]] QByteArray responseHeaderBlock(
-    int statusCode, const QList<QCNetworkCacheMetadata::RawHeaderPair> &headers)
+    int statusCode, const QList<RawHeaderPair> &headers)
 {
     QByteArray block = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode)
                        + QByteArrayLiteral(" Revalidated\r\n");

@@ -107,7 +107,6 @@ public:
     QByteArray &headerData;                       ///< 原始响应头数据
     QList<RawHeaderPair> &finalHeaderList;        ///< 最终响应头 block 的 header 列表
     QMap<QByteArray, QByteArray> &finalHeaderMap; ///< 最终响应头 block 的大小写归一化索引
-    QMap<QString, QString> &headerMap;            ///< 最终响应头 block 的兼容索引
 
     // 状态管理
 
@@ -259,7 +258,7 @@ public:
     /**
      * @brief 解析响应头
      *
-     * 将原始响应头数据（headerData）解析为键值对（headerMap）。
+     * 将原始响应头数据（headerData）解析为保序列表和大小写归一化索引。
      */
     void parseHeaders();
 

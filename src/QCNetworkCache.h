@@ -8,13 +8,13 @@
 
 #include "QCGlobal.h"
 #include "QCNetworkCacheRequestKey.h"
+#include "QCNetworkTypes.h"
 
 #include <QByteArray>
 #include <QDateTime>
 #include <QList>
 #include <QMap>
 #include <QObject>
-#include <QPair>
 #include <QSharedDataPointer>
 #include <QString>
 #include <QUrl>
@@ -25,12 +25,10 @@ class QCNetworkCacheMetadataData;
 class QCNetworkCacheLookupResultData;
 class QCNetworkCacheClearResultData;
 
-/// HTTP 缓存条目的元数据，采用隐式共享以保持值传递成本可控。
+/// HTTP 缓存条目的元数据,采用隐式共享以保持值传递成本可控。
 class QCURL_EXPORT QCNetworkCacheMetadata
 {
 public:
-    using RawHeaderPair = QPair<QByteArray, QByteArray>;
-
     QCNetworkCacheMetadata();
     QCNetworkCacheMetadata(const QCNetworkCacheMetadata &other);
     QCNetworkCacheMetadata(QCNetworkCacheMetadata &&other) noexcept;
@@ -46,7 +44,7 @@ public:
     void setHeaders(const QMap<QByteArray, QByteArray> &headers);
     void setHeader(const QByteArray &name, const QByteArray &value);
 
-    /// 返回用于重建缓存响应的有序原始响应头，保留重复项与字段名大小写。
+    /// 返回用于重建缓存响应的有序原始响应头,保留重复项与字段名大小写。
     [[nodiscard]] QList<RawHeaderPair> rawHeaders() const;
     void setRawHeaders(const QList<RawHeaderPair> &headers);
 
@@ -271,15 +269,15 @@ public:
 
     /// 从有序原始响应头解析过期时间；该重载是缓存策略的权威入口。
     [[nodiscard]] static QDateTime parseExpirationDate(
-        const QList<QCNetworkCacheMetadata::RawHeaderPair> &headers);
+        const QList<RawHeaderPair> &headers);
 
     /// 检查有序原始响应头是否满足缓存安全策略。
     [[nodiscard]] static bool isCacheable(
-        const QList<QCNetworkCacheMetadata::RawHeaderPair> &headers);
+        const QList<RawHeaderPair> &headers);
 
     /// 从有序原始响应头解析 Vary；重复行按列表字段合并。
     [[nodiscard]] static QList<QByteArray> varyHeaderNames(
-        const QList<QCNetworkCacheMetadata::RawHeaderPair> &headers);
+        const QList<RawHeaderPair> &headers);
 
 private:
     Q_DISABLE_COPY_MOVE(QCNetworkCache)

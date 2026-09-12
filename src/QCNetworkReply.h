@@ -9,11 +9,11 @@
 #include "QCNetworkError.h"
 #include "QCNetworkHttpMethod.h"
 #include "QCNetworkLogger.h"
+#include "QCNetworkTypes.h"
 
 #include <QByteArray>
 #include <QList>
 #include <QObject>
-#include <QPair>
 #include <QScopedPointer>
 #include <QStringList>
 #include <QUrl>
@@ -60,12 +60,6 @@ enum class ReplyState {
     Cancelled, ///< 已取消
     Error,     ///< 错误
 };
-
-// ==================
-// 类型定义
-// ==================
-
-using RawHeaderPair = QPair<QByteArray, QByteArray>;
 
 // ==================
 // QCNetworkReply 类

@@ -41,7 +41,6 @@ struct QCNetworkReplyTransferState
     QByteArray headerData;
     QList<RawHeaderPair> finalHeaderList;
     QMap<QByteArray, QByteArray> finalHeaderMap;
-    QMap<QString, QString> headerMap;
     int httpStatusCode = 0;
 
     int userPauseMask                    = 0;

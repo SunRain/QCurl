@@ -142,7 +142,7 @@ private:
 struct ParsedHeaders
 {
     QByteArray encodedUrl;
-    QList<QCNetworkCacheMetadata::RawHeaderPair> rawHeaders;
+    QList<RawHeaderPair> rawHeaders;
 };
 
 [[nodiscard]] std::optional<ParsedHeaders> readIdentityAndHeaders(PayloadReader &reader,
