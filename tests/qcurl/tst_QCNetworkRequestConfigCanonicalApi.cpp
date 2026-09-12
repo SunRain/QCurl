@@ -65,7 +65,7 @@ private Q_SLOTS:
     void testMethodChaining();
     void testComplexConfig();
     void testSendCustomDeleteWithBody();
-    void testSendCustomRequestNoBodyAndUppercaseMethod();
+    void testSendCustomRequestNoBodyPreservesMethodCase();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -276,8 +276,7 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendCustomDeleteWithBody()
     reply2->deleteLater();
 }
 
-
-void TestQCNetworkRequestConfigCanonicalApi::testSendCustomRequestNoBodyAndUppercaseMethod()
+void TestQCNetworkRequestConfigCanonicalApi::testSendCustomRequestNoBodyPreservesMethodCase()
 {
     const QUrl url("http://example.com/no-body-custom");
     m_mock.mockResponse(HttpMethod::Custom, url, QByteArray("OK"));
@@ -292,7 +291,7 @@ void TestQCNetworkRequestConfigCanonicalApi::testSendCustomRequestNoBodyAndUpper
     const auto captured = m_mock.takeCapturedRequests();
     QCOMPARE(captured.size(), 1);
     QCOMPARE(captured.first().method(), HttpMethod::Custom);
-    QCOMPARE(captured.first().customMethod(), QByteArrayLiteral("PROPFIND"));
+    QCOMPARE(captured.first().customMethod(), QByteArrayLiteral("propfind"));
     QCOMPARE(captured.first().bodySize(), qsizetype(0));
 
     reply->deleteLater();

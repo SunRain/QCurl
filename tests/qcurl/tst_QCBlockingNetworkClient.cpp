@@ -624,7 +624,7 @@ void tst_QCBlockingNetworkClient::customDeleteWithBodySendsExplicitMethod()
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
     QCOMPARE(result.statusCode(), 200);
     QCOMPARE(result.body(), payload);
-    QCOMPARE(server.lastRequest().method, QByteArrayLiteral("DELETE"));
+    QCOMPARE(server.lastRequest().method, QByteArrayLiteral("delete"));
     QCOMPARE(server.lastRequest().body, payload);
 }
 

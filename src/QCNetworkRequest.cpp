@@ -128,7 +128,14 @@ bool QCNetworkRequest::allowUnrestrictedSensitiveHeadersOnRedirect() const
 QCNetworkRequest &QCNetworkRequest::setRawHeader(const QByteArray &headerName,
                                                  const QByteArray &headerValue)
 {
-    d.data()->rawHeaderMap.insert(headerName, headerValue);
+    auto &headers = d.data()->rawHeaderMap;
+    for (auto it = headers.begin(); it != headers.end(); ++it) {
+        if (it.key().compare(headerName, Qt::CaseInsensitive) == 0) {
+            headers.erase(it);
+            break;
+        }
+    }
+    headers.insert(headerName, headerValue);
     return *this;
 }
 
@@ -139,7 +146,13 @@ QList<QByteArray> QCNetworkRequest::rawHeaderList() const
 
 QByteArray QCNetworkRequest::rawHeader(const QByteArray &headerName) const
 {
-    return d.constData()->rawHeaderMap.value(headerName);
+    const auto &headers = d.constData()->rawHeaderMap;
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        if (it.key().compare(headerName, Qt::CaseInsensitive) == 0) {
+            return it.value();
+        }
+    }
+    return {};
 }
 
 QCNetworkRequest &QCNetworkRequest::setRange(int start, int end)

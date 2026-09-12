@@ -6,7 +6,8 @@
 
 `QCNetworkRequest` 是当前唯一的 public request 配置入口，覆盖常用请求参数配置（详见 `src/QCNetworkRequest.h`）：
 
-- Header：`setRawHeader(...)`
+- 请求头：`setRawHeader(...)` 按大小写无关字段名替换，`rawHeader(...)` 也忽略字段名大小写；
+  多次设置同名字段只保留最后一个值，不表达有序重复字段。
 - 超时：`setTimeout(...)` / `setTimeoutConfig(...)`
 - 代理：`setProxyConfig(...)`
 - TLS/SSL：`setSslConfig(...)`
@@ -75,6 +76,9 @@ manager.setLogger(logger);
 ## 3. HTTP、重试和缓存边界
 
 Core 请求入口只接受 `http` 和 `https` scheme；初始请求与重定向都会使用 `http,https` 协议白名单。`file`、`ftp`、`ftps` 不属于 Core HTTP 路径。
+
+Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP method token，
+不把大小写转换当作校验。
 
 重试默认关闭（`maxRetries = 0`）。启用后，GET/HEAD 是默认允许自动重试的方法；其他 method 需要显式选择
 `QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey`，并在 immutable request snapshot 中提供稳定的

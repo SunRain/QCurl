@@ -7,6 +7,21 @@
 
 namespace QCurl::Internal {
 
+bool QCNetworkProtocolPolicy::isValidHttpMethodToken(QByteArrayView method)
+{
+    if (method.isEmpty()) {
+        return false;
+    }
+    for (const char ch : method) {
+        const bool alphaNumeric = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                                  || (ch >= '0' && ch <= '9');
+        if (!alphaNumeric && !QByteArrayView("!#$%&'*+-.^_`|~").contains(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 QStringList QCNetworkProtocolPolicy::coreProtocols()
 {
     return {QStringLiteral("http"), QStringLiteral("https")};

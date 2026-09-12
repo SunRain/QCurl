@@ -188,10 +188,12 @@ public:
         QIODevice *body,
         std::optional<qint64> sizeBytes                = std::nullopt,
         const QCBlockingRequestOptions &requestOptions = {}) const;
+    /// 发送无请求体的自定义方法；合法 HTTP token 保持原始大小写，非法 token 返回 InvalidRequest。
     [[nodiscard]] QCBlockingNetworkResult sendCustomRequest(
         const QCNetworkRequest &request,
         QByteArrayView method,
         const QCBlockingRequestOptions &requestOptions = {}) const;
+    /// 发送带内联请求体的自定义方法；方法校验和原样发送规则与无请求体重载相同。
     [[nodiscard]] QCBlockingNetworkResult sendCustomRequest(
         const QCNetworkRequest &request,
         QByteArrayView method,

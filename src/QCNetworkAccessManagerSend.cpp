@@ -50,53 +50,6 @@ QString sendOwnerThreadErrorMessage(const char *apiName)
         .arg(QString::fromUtf8(apiName));
 }
 
-bool isHttpTokenSeparator(char ch)
-{
-    switch (ch) {
-        case '(':
-        case ')':
-        case '<':
-        case '>':
-        case '@':
-        case ',':
-        case ';':
-        case ':':
-        case '\\':
-        case '"':
-        case '/':
-        case '[':
-        case ']':
-        case '?':
-        case '=':
-        case '{':
-        case '}':
-            return true;
-        default:
-            return false;
-    }
-}
-
-bool isValidHttpToken(QByteArrayView method)
-{
-    if (method.isEmpty()) {
-        return false;
-    }
-
-    for (char ch : method) {
-        const auto byte = static_cast<unsigned char>(ch);
-        if (byte <= 0x20 || byte >= 0x7f || isHttpTokenSeparator(ch)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-QByteArray normalizedHttpMethodToken(QByteArrayView method)
-{
-    return method.toByteArray().toUpper();
-}
-
 QString invalidCustomMethodMessage(QByteArrayView method)
 {
     return QStringLiteral("QCNetworkAccessManager::sendCustomRequest: HTTP method token 无效：%1")
@@ -281,17 +234,17 @@ QCNetworkReply *QCNetworkAccessManager::patch(const QCNetworkRequest &request,
 QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest &request,
                                                           QByteArrayView method)
 {
-    if (!isValidHttpToken(method)) {
+    if (!Internal::QCNetworkProtocolPolicy::isValidHttpMethodToken(method)) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Custom,
                                                    invalidCustomMethodMessage(method),
                                                    this);
     }
 
-    const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
+    const QByteArray methodToken = method.toByteArray();
     return d_func()->dispatchManagedSendRequest(request,
                                                 HttpMethod::Custom,
-                                                Internal::makeCustomRequestBody(normalizedMethod),
+                                                Internal::makeCustomRequestBody(methodToken),
                                                 QByteArray(),
                                                 "QCNetworkAccessManager::sendCustomRequest");
 }
@@ -300,20 +253,20 @@ QCNetworkReply *QCNetworkAccessManager::sendCustomRequest(const QCNetworkRequest
                                                           QByteArrayView method,
                                                           const QByteArray &data)
 {
-    if (!isValidHttpToken(method)) {
+    if (!Internal::QCNetworkProtocolPolicy::isValidHttpMethodToken(method)) {
         return d_func()->createInvalidRequestReply(request,
                                                    HttpMethod::Custom,
                                                    invalidCustomMethodMessage(method),
                                                    this);
     }
 
-    const QByteArray normalizedMethod = normalizedHttpMethodToken(method);
-    return d_func()
-        ->dispatchManagedSendRequest(request,
-                                     HttpMethod::Custom,
-                                     Internal::makeCustomInlineRequestBody(normalizedMethod, data),
-                                     data,
-                                     "QCNetworkAccessManager::sendCustomRequest");
+    const QByteArray methodToken = method.toByteArray();
+    return d_func()->dispatchManagedSendRequest(request,
+                                                HttpMethod::Custom,
+                                                Internal::makeCustomInlineRequestBody(methodToken,
+                                                                                      data),
+                                                data,
+                                                "QCNetworkAccessManager::sendCustomRequest");
 }
 
 } // namespace QCurl

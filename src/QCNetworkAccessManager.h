@@ -254,7 +254,8 @@ public:
     /**
      * @brief 发送显式 custom HTTP 请求（异步、无请求体）。
      *
-     * method 必须是 RFC HTTP token。该入口是非标准 HTTP 语义的窄 escape hatch，
+     * method 必须是 RFC HTTP token，合法 token 按原始字节发送，不转换大小写。
+     * 该入口是非标准 HTTP 语义的窄 escape hatch，
      * 常规方法应继续使用 method-specific API。
      */
     QCNetworkReply *sendCustomRequest(const QCNetworkRequest &request, QByteArrayView method);
@@ -262,7 +263,7 @@ public:
     /**
      * @brief 发送显式 custom HTTP 请求（异步、内联请求体）。
      *
-     * method 必须是 RFC HTTP token。该入口用于显式表达 DELETE body 等少量非标准组合，
+     * method 必须是 RFC HTTP token，按原始字节发送。该入口用于显式表达 DELETE body 等少量非标准组合，
      * 不暴露 libcurl option、callback 或 replay 语义。
      */
     QCNetworkReply *sendCustomRequest(const QCNetworkRequest &request,

@@ -22,6 +22,9 @@ namespace QCurl::Internal {
 class QCNetworkProtocolPolicy final
 {
 public:
+    /// 校验 RFC HTTP token；方法大小写属于协议语义，不做归一化。
+    [[nodiscard]] static bool isValidHttpMethodToken(QByteArrayView method);
+
     [[nodiscard]] static QStringList coreProtocols();
 
     [[nodiscard]] static bool validateCoreUrl(const QUrl &url, QString *error);

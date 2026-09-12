@@ -1,6 +1,7 @@
 #include "QCBlockingNetworkClient.h"
 
 #include "private/QCBlockingCurlAdapter_p.h"
+#include "private/QCNetworkProtocolPolicy_p.h"
 
 #include <QCoreApplication>
 #include <QIODevice>
@@ -80,53 +81,6 @@ bool resolveBlockingDeviceSize(QIODevice *body,
         return false;
     }
     return true;
-}
-
-bool isHttpTokenSeparator(char ch)
-{
-    switch (ch) {
-        case '(':
-        case ')':
-        case '<':
-        case '>':
-        case '@':
-        case ',':
-        case ';':
-        case ':':
-        case '\\':
-        case '"':
-        case '/':
-        case '[':
-        case ']':
-        case '?':
-        case '=':
-        case '{':
-        case '}':
-            return true;
-        default:
-            return false;
-    }
-}
-
-bool isValidHttpToken(QByteArrayView method)
-{
-    if (method.isEmpty()) {
-        return false;
-    }
-
-    for (char ch : method) {
-        const auto byte = static_cast<unsigned char>(ch);
-        if (byte <= 0x20 || byte >= 0x7f || isHttpTokenSeparator(ch)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-QByteArray normalizedHttpMethodToken(QByteArrayView method)
-{
-    return method.toByteArray().toUpper();
 }
 
 } // namespace
@@ -345,17 +299,16 @@ QCBlockingNetworkResult QCBlockingNetworkClient::performCustom(
         return invalidBlockingRequest(
             QStringLiteral("Blocking Extras requests require explicit application-thread opt-in"));
     }
-    if (!isValidHttpToken(method)) {
+    if (!Internal::QCNetworkProtocolPolicy::isValidHttpMethodToken(method)) {
         return invalidBlockingRequest(
             QStringLiteral("Blocking Extras custom HTTP method token is invalid"));
     }
 
-    return Internal::performBlockingCustomRequest(
-        request,
-        normalizedHttpMethodToken(method),
-        Internal::makeBlockingBytesBody(body),
-        requestOptions.cookieSnapshot(),
-        requestOptions);
+    return Internal::performBlockingCustomRequest(request,
+                                                  method.toByteArray(),
+                                                  Internal::makeBlockingBytesBody(body),
+                                                  requestOptions.cookieSnapshot(),
+                                                  requestOptions);
 }
 
 bool QCBlockingNetworkClient::applicationThreadRejected() const

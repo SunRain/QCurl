@@ -75,8 +75,10 @@ public:
     QCNetworkRequest &setAllowUnrestrictedSensitiveHeadersOnRedirect(bool enabled = true);
     [[nodiscard]] bool allowUnrestrictedSensitiveHeadersOnRedirect() const;
 
+    /// 按大小写无关的字段名替换已有值；同名字段只保留最后一次设置，不追加重复字段。
     QCNetworkRequest &setRawHeader(const QByteArray &headerName, const QByteArray &headerValue);
     QList<QByteArray> rawHeaderList() const;
+    /// 按大小写无关的字段名查询；未设置时返回空数组。
     QByteArray rawHeader(const QByteArray &headerName) const;
 
     QCNetworkRequest &setRange(int start, int end);
