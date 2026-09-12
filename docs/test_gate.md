@@ -16,10 +16,15 @@
   - `pr`：最小一致性证据（offline + `libcurl_consistency p0/p1` + TLC/HES 最小 contract）
   - `nightly`：在 `pr` 基础上补齐 DCI fixed seed、CTBP、HES 扩展、BP（backpressure）与 netproof/strace
   - `soak`：沿用 nightly contract，并放大固定 seed 组与长跑时长
-- `scripts/run_basic_no_problem_gate.py`
-  - 仍保留为 historical acceptance gate；在 UCE 完整接管 acceptance 归档前继续作为并行入口
 - `tests/libcurl_consistency/run_gate.py`
   - 仍保留为专题 provider；UCE 复用其 evidence，不替换其专题 contract
+
+**迁移状态（2026-09-05）**：旧 `basic-no-problem` runner/workflow 已进入 hard-breaking 删除候选，
+但不能仅凭历史覆盖矩阵或局部测试宣称已完成替代。当前候选必须先证明 UCE nightly 承接旧
+workflow 的 push（`master`/`main`/`develop`）与 `workflow_dispatch` 触发、`public-api-slow`、
+capability QtTest（skip=fail）、offline/env/p0、异常结构化归档和 required artifact 上传；
+并完成一次绑定当前 HEAD、工作树和 index fingerprint 的 fresh E2E。证据闭合前，删除方案保持
+`NO-GO / REQUEST_CHANGES`。
 
 ## 1. 当前最强的证据来源
 

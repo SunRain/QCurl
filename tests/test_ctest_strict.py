@@ -2,7 +2,31 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import ctest_strict
+
+
+@pytest.mark.parametrize(
+    ("result_lines", "incomplete"),
+    [
+        ("1/1 Test #2: required ........... Passed 0.01 sec\n", []),
+        ("1/1 Test #2: required ...........***Not Run (Disabled) 0.00 sec\n", ["required"]),
+        ("1/1 Test #2: required ...........***Skipped 0.00 sec\n", ["required"]),
+        ("1/1 Test #2: another ............ Passed 0.01 sec\n", ["required"]),
+        ("", ["required"]),
+        ("1/1 Test #2: required ........... Passed 0.01 sec\n" * 2, ["required"]),
+    ],
+    ids=["passed", "disabled", "skipped", "wrong-target", "missing", "duplicate"],
+)
+def test_ctest_target_results_ignore_diagnostic_words(result_lines, incomplete) -> None:
+    output = (
+        "2: Skipped Disabled Sanitizer: diagnostic text\n"
+        "1/1 Test #1: not_selected .......***Skipped 0.00 sec\n"
+        + result_lines
+    )
+
+    assert ctest_strict.ctest_targets_without_unique_pass(output, ["required"]) == incomplete
 
 
 def test_ctest_args_detection_handles_common_gate_flags() -> None:

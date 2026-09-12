@@ -46,6 +46,37 @@ set_tests_properties(qcurl_libcurl_consistency_infrastructure PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
+# UCE 自身的负向合同必须在 PR/nightly 的 offline 路线上自动阻断。
+add_test(
+    NAME qcurl_uce_infrastructure
+    COMMAND "${Python3_EXECUTABLE}" -m pytest --noconftest -q
+            "${CMAKE_SOURCE_DIR}/tests/test_run_uce_gate.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_acceptance_contract.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_archive_validation.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_candidate.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_ci_repository_inputs.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_consistency_acceptance.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_ctest_gates.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_httpbin_contract.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_failure_evidence.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_manifest.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_netproof_capabilities.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_netproof_strace_gate.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_run_uce_sanitizers.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_ctbp.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_ctbp_legacy_only_negative.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_hes.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_bp.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_timeline.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_uce_redaction_gate.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_policy_violations_dictionary_scan.py"
+            "${CMAKE_SOURCE_DIR}/tests/infrastructure/test_uce_libcurl_scoping.py"
+)
+set_tests_properties(qcurl_uce_infrastructure PROPERTIES
+    LABELS "offline;source_guard;uce;infrastructure"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 add_test(
     NAME qcurl_deprecated_curl_api_guard
     COMMAND "${Python3_EXECUTABLE}"

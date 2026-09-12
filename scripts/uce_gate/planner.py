@@ -59,9 +59,20 @@ def build_tier_plan(tier: str) -> list[GateSpec]:
 
     plan = [
         GateSpec("ctest_strict_offline", "ctest", "offline", "gate_offline_failed"),
-        GateSpec("libcurl_consistency_p0", "libcurl_consistency", "p0", "gate_libcurl_consistency_p0_failed"),
-        GateSpec("libcurl_consistency_p1", "libcurl_consistency", "p1", "gate_libcurl_consistency_p1_failed"),
     ]
+    if tier in {"nightly", "soak"}:
+        plan.extend(
+            [
+                GateSpec("public_api_slow", "ctest", "public-api-slow", "gate_public_api_slow_failed"),
+                GateSpec("capability", "ctest_strict", "capability", "gate_capability_failed"),
+            ]
+        )
+    plan.extend(
+        [
+            GateSpec("libcurl_consistency_p0", "libcurl_consistency", "p0", "gate_libcurl_consistency_p0_failed"),
+            GateSpec("libcurl_consistency_p1", "libcurl_consistency", "p1", "gate_libcurl_consistency_p1_failed"),
+        ]
+    )
     if tier in {"nightly", "soak"}:
         plan.extend(
             [

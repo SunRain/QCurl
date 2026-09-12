@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 import json
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -121,19 +123,24 @@ def collect_versions(repo_root: Path) -> str:
 
 
 def parse_shell_exports(env_file: Path) -> dict[str, str]:
-    """Parse `export NAME=value` lines from a shell env file."""
+    """解析单行 export 赋值；拒绝损坏编码、非法变量名和不完整 shell 语法。"""
 
     exports: dict[str, str] = {}
-    for raw in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
-        raw = raw.strip()
-        if not raw.startswith("export "):
+    for line_number, raw in enumerate(env_file.read_text(encoding="utf-8").splitlines(), 1):
+        try:
+            lexer = shlex.shlex(raw, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = True
+            tokens = list(lexer)
+        except ValueError as exc:
+            raise ValueError(f"{env_file.name}:{line_number}: export 语法错误: {exc}") from exc
+        if not tokens:
             continue
-        _, payload = raw.split("export ", 1)
-        key, _, value = payload.partition("=")
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        exports[key.strip()] = value
+        if len(tokens) != 2 or tokens[0] != "export":
+            raise ValueError(f"{env_file.name}:{line_number}: 只允许 export NAME=value")
+        key, separator, value = tokens[1].partition("=")
+        if not separator or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) is None:
+            raise ValueError(f"{env_file.name}:{line_number}: export 赋值或变量名无效")
+        exports[key] = value
     return exports
 
 

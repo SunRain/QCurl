@@ -16,55 +16,6 @@ from scripts.uce_gate.runtime import record_gate_result
 from scripts.uce_gate.runtime import run_gate
 
 
-def run_offline_ctest_gate(
-    repo_root: Path,
-    build_dir: Path,
-    evidence_dir: Path,
-    manifest: dict[str, Any],
-) -> list[GateResult]:
-    """Run the default offline QtTest gate."""
-
-    meta_dir = evidence_dir / "meta"
-    logs_dir = evidence_dir / "logs"
-    offline_list = run_gate(
-        "ctest_list_offline",
-        ["ctest", "-N", "--no-tests=error", "-L", "offline"],
-        meta_dir / "ctest_list_offline.txt",
-        cwd=build_dir,
-    )
-    offline_gate = run_gate(
-        "ctest_strict_offline",
-        [
-            "python3",
-            str(repo_root / "scripts" / "ctest_strict.py"),
-            "--build-dir",
-            str(build_dir),
-            "--label-regex",
-            "offline",
-            "--max-skips",
-            "0",
-        ],
-        logs_dir / "ctest_strict_offline.log",
-        cwd=repo_root,
-    )
-    for result in (offline_list, offline_gate):
-        record_gate_result(manifest, result)
-
-    add_artifact(manifest, artifact_id="ctest_offline_list", path="meta/ctest_list_offline.txt", kind="report", required=True)
-    add_artifact(manifest, artifact_id="ctest_offline_log", path="logs/ctest_strict_offline.log", kind="log", required=True)
-    add_contract(
-        manifest,
-        contract_id="qtest_offline@v1",
-        provider="ctest_strict",
-        result="pass" if offline_gate.returncode == 0 else "fail",
-        required=True,
-        report_artifact="ctest_offline_log",
-    )
-    if offline_gate.returncode != 0:
-        add_policy_violation(manifest, "gate_offline_failed")
-    return [offline_list, offline_gate]
-
-
 def run_libcurl_consistency_gates(
     repo_root: Path,
     build_dir: Path,

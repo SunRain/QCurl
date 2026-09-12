@@ -34,6 +34,8 @@ def test_build_tier_plan_for_nightly_includes_env_and_p1() -> None:
 
     assert [item.gate_id for item in plan] == [
         "ctest_strict_offline",
+        "public_api_slow",
+        "capability",
         "libcurl_consistency_p0",
         "libcurl_consistency_p1",
         "ctest_strict_env",

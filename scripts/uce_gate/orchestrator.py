@@ -12,6 +12,9 @@ from scripts.uce.manifest import add_artifact
 from scripts.uce.manifest import add_policy_violation
 from scripts.uce.manifest import add_result
 from scripts.uce.manifest import set_capability
+from scripts.uce_gate.ctest_gates import run_capability_gate
+from scripts.uce_gate.ctest_gates import run_offline_ctest_gate
+from scripts.uce_gate.ctest_gates import run_public_api_slow_gate
 from scripts.uce_gate.dci_contract import run_dci_seed_suite
 from scripts.uce_gate.evidence import EvidenceLayout
 from scripts.uce_gate.evidence import create_gate_manifest
@@ -22,7 +25,6 @@ from scripts.uce_gate.evidence import resolve_evidence_layout
 from scripts.uce_gate.execute import register_netproof_contract
 from scripts.uce_gate.execute import run_libcurl_consistency_gates
 from scripts.uce_gate.execute import run_netproof_gate
-from scripts.uce_gate.execute import run_offline_ctest_gate
 from scripts.uce_gate.finalize import finalize_gate_evidence
 from scripts.uce_gate.finalize import record_gate_exception
 from scripts.uce_gate.finalize import save_failure_evidence
@@ -75,6 +77,11 @@ def _run_required_gates(
     results = run_offline_ctest_gate(repo_root, build_dir, layout.evidence_dir, manifest)
     httpbin_env: dict[str, str] = {}
     tier_plan = build_tier_plan(tier)
+
+    if any(item.gate_id == "public_api_slow" for item in tier_plan):
+        results.extend(run_public_api_slow_gate(repo_root, build_dir, layout.evidence_dir, manifest))
+    if any(item.gate_id == "capability" for item in tier_plan):
+        results.extend(run_capability_gate(repo_root, build_dir, layout.evidence_dir, manifest))
 
     if any(item.requires_httpbin for item in tier_plan):
         httpbin_env, env_results, env_violations = run_httpbin_gate(

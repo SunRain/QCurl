@@ -17,7 +17,7 @@
 | 字段 | 类型 | 必填 | 含义 | fail-closed 语义 |
 |------|------|------|------|------------------|
 | `schema_version` | `number` | 是 | manifest 版本 | 缺失或不匹配即失败 |
-| `gate_id` | `string` | 是 | runner 标识，如 `uce` / `basic-no-problem` | 缺失即失败 |
+| `gate_id` | `string` | 是 | runner 标识，当前为 `uce`（历史值 `basic-no-problem` 已废弃） | 缺失即失败 |
 | `tier` | `string` | 是 | `pr` / `nightly` / `soak` | 缺失即失败 |
 | `run_id` | `string` | 是 | evidence 运行 ID | 缺失即失败 |
 | `result` | `string` | 是 | 顶层结论：`pass` / `fail` | 仅 `pass` 允许通过 |
@@ -140,7 +140,7 @@
 
 ### 6.3 与现有字典的关系
 
-UCE 继续复用仓库内已有的 `policy_violations` 稳定字典口径，避免 `basic-no-problem`、`libcurl_consistency` 与后续 UCE provider 出现三套 code 语义。
+UCE 与 `libcurl_consistency` 共用仓库内的 `policy_violations` 稳定字典，不因入口收敛改变既有 code 语义。
 
 ## 7. `capabilities` 字段
 

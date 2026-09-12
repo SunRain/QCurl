@@ -2,6 +2,16 @@
 name: UCE Nightly
 
 on:
+  push:
+    branches: [ master, main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - '.github/workflows/**'
+      - '.gitignore'
   schedule:
     - cron: '20 17 * * *'
   workflow_dispatch:
@@ -40,7 +50,11 @@ jobs:
             apache2-dev \
             libapache2-mod-http2 \
             libevent-dev \
-            strace
+            strace \
+            libnghttp3-dev
+
+          # 默认层级不强制 HTTP/3；运行镜像提供兼容软件包时安装其依赖。
+          sudo apt-get install -y libngtcp2-dev || true
 
       - name: Install Python dependencies
         run: |

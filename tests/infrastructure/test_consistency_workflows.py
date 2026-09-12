@@ -9,7 +9,6 @@ import yaml
 
 
 _WORKFLOW_JOBS = (
-    ("basic_no_problem_gate.yml", "basic_no_problem", "build", "scripts/run_basic_no_problem_gate.py"),
     ("libcurl_consistency_ext_gate.yml", "libcurl_consistency_gate", "build", "tests/libcurl_consistency/run_gate.py"),
     ("release_delivery_http3_gate.yml", "release_debian12", "build", "tests/libcurl_consistency/run_gate.py"),
     ("release_delivery_http3_gate.yml", "release_arch_snapshot", "build", "tests/libcurl_consistency/run_gate.py"),
@@ -58,14 +57,17 @@ def test_consistency_workflow_has_complete_evidence_route(
 
 
 def test_consistency_workflow_wrappers_delegate_to_supported_gate() -> None:
-    basic_runner = Path("scripts/run_basic_no_problem_gate.py").read_text(encoding="utf-8")
+    """验证 UCE runner 委派给 libcurl_consistency provider。
+
+    注：basic_no_problem_gate 已进入由 UCE nightly 承接的条件性 hard-breaking 迁移；
+    当前候选 fresh acceptance 证据闭合前，不把删除视为已完成。
+    """
     uce_runner = Path("scripts/uce_gate/execute.py").read_text(encoding="utf-8")
 
-    assert '"libcurl_consistency" / "run_gate.py"' in basic_runner
     assert '"libcurl_consistency" / "run_gate.py"' in uce_runner
 
 
-@pytest.mark.parametrize(("workflow_name", "job_name", "build_dir", "gate_entry"), _WORKFLOW_JOBS[4:])
+@pytest.mark.parametrize(("workflow_name", "job_name", "build_dir", "gate_entry"), _WORKFLOW_JOBS[3:])
 def test_uce_upload_always_follows_fail_closed_archive_validation(
     workflow_name: str, job_name: str, build_dir: str, gate_entry: str,
 ) -> None:
@@ -93,6 +95,22 @@ def test_uce_upload_always_follows_fail_closed_archive_validation(
     }
     gate = next(step for step in steps if gate_entry in step.get("run", ""))
     assert steps.index(gate) < steps.index(check) < steps.index(upload)
+
+
+def test_nightly_preserves_full_acceptance_trigger_scope() -> None:
+    """旧 acceptance 的分支、手动触发和路径范围均由 nightly 承接。"""
+
+    workflow = yaml.load(
+        Path(".github/workflows/uce_nightly.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader,
+    )
+    triggers = workflow["on"]
+    assert "workflow_dispatch" in triggers
+    assert set(triggers["push"]["branches"]) == {"master", "main", "develop"}
+    paths = triggers["push"]["paths"]
+    assert {"CMakeLists.txt", "src/**", "tests/**", "scripts/**", "docs/**"} <= set(paths)
+    assert not any(".helloagents" in pattern for pattern in paths)
+    for workflow_name in ("basic_no_problem_gate.yml", "uce_nightly.yml", "uce_soak.yml", "pr_fast_gate.yml"):
+        assert any(fnmatchcase(f".github/workflows/{workflow_name}", pattern) for pattern in paths)
 
 
 @pytest.mark.parametrize("event", ("push", "pull_request"))

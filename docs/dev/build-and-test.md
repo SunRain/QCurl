@@ -410,24 +410,23 @@ python3 scripts/run_release_gate.py --tier full \
   `tst_QCWebSocketPool`。`QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON` 只允许作为能力矩阵
   negative variant，不能替代正式 release gate PASS。
 
-## 9. basic-no-problem 归档门禁（historical acceptance）
+## 9. basic-no-problem acceptance 迁移（条件性 hard-breaking）
 
-当需要生成一套可归档、可复核的最低验收工件时，使用：
+旧 `basic_no_problem_gate` runner/workflow 已进入删除候选，但当前删除仍受替代合同约束：
+必须先由 UCE nightly 证明旧 workflow 的触发、检查、异常和归档语义，并完成绑定当前候选的
+fresh E2E；在此之前不得提交删除。
+
+历史与当前核对资料：
+
+- 覆盖矩阵：`docs/reviews/2026-09-03-basic-no-problem-to-uce-coverage-matrix.md`
+- UCE 文档：`docs/uce/README.md`
+- 历史执行快照：`docs/reviews/2026-09-03-cleanup-p3-6-final-execution.md`
+
+当前归档门禁入口：
 
 ```bash
-python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<your-run-id>"
+python3 scripts/run_uce_gate.py --tier nightly --build-dir build --run-id "<your-run-id>"
 ```
-
-前置条件：
-
-- `LABELS=env` 所需依赖可用
-- `QCURL_BUILD_LIBCURL_CONSISTENCY=ON`
-- 允许运行 curl testenv / 本机端口绑定
-
-关键工件位于：
-
-- `build/evidence/basic-no-problem/<run-id>/manifest.json`
-- `build/evidence/basic-no-problem/<run-id>.tar.gz`
 
 ## 10. 常见失败原因
 

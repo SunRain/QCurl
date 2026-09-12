@@ -8,6 +8,7 @@ import os
 
 from scripts.uce.manifest import add_artifact
 from scripts.uce.manifest import add_contract
+from scripts.uce_gate.ctest_gates import run_env_ctest_gate
 from scripts.uce_gate.runtime import GateResult
 from scripts.uce_gate.runtime import parse_shell_exports
 from scripts.uce_gate.runtime import record_gate_result
@@ -19,7 +20,7 @@ def _register_httpbin_artifacts(manifest: dict[str, Any]) -> None:
     add_artifact(manifest, artifact_id="httpbin_start_log", path="logs/httpbin_start.log", kind="log", required=True)
     add_artifact(manifest, artifact_id="httpbin_stop_log", path="logs/httpbin_stop.log", kind="log", required=True)
     add_artifact(manifest, artifact_id="httpbin_env", path="httpbin/httpbin.env", kind="metadata", required=True)
-    add_artifact(manifest, artifact_id="ctest_env_list", path="meta/ctest_list_env.txt", kind="report", required=True)
+    add_artifact(manifest, artifact_id="ctest_env_list", path="meta/ctest_list_env.json", kind="report", required=True)
     add_artifact(manifest, artifact_id="ctest_env_log", path="logs/ctest_strict_env.log", kind="log", required=True)
     add_contract(
         manifest,
@@ -71,47 +72,14 @@ def _run_env_ctest_gates(
     manifest: dict[str, Any],
     env_values: dict[str, str],
 ) -> tuple[list[GateResult], list[str]]:
-    logs_dir = evidence_dir / "logs"
-    meta_dir = evidence_dir / "meta"
     env_for_ctest = os.environ.copy()
     env_for_ctest.update(env_values)
-
-    list_result = run_gate(
-        "ctest_list_env",
-        ["ctest", "-N", "--no-tests=error", "-L", "env"],
-        meta_dir / "ctest_list_env.txt",
-        cwd=build_dir,
-        env=env_for_ctest,
+    results = run_env_ctest_gate(
+        repo_root, build_dir, evidence_dir, manifest, env_for_ctest
     )
-    gate_result = run_gate(
-        "ctest_strict_env",
-        [
-            "python3",
-            str(repo_root / "scripts" / "ctest_strict.py"),
-            "--build-dir",
-            str(build_dir),
-            "--label-regex",
-            "env",
-            "--max-skips",
-            "0",
-        ],
-        logs_dir / "ctest_strict_env.log",
-        cwd=repo_root,
-        env=env_for_ctest,
-    )
-    for result in (list_result, gate_result):
-        record_gate_result(manifest, result)
-
-    add_contract(
-        manifest,
-        contract_id="qtest_env@v1",
-        provider="ctest_strict",
-        result="pass" if gate_result.returncode == 0 else "fail",
-        required=True,
-        report_artifact="ctest_env_log",
-    )
-    violations = [] if gate_result.returncode == 0 else ["gate_env_failed"]
-    return [list_result, gate_result], violations
+    failed = manifest["contracts"]["qtest_env@v1"]["result"] != "pass"
+    violations = ["gate_env_failed"] if failed else []
+    return results, violations
 
 
 def _write_httpbin_unavailable(httpbin_dir: Path, manifest: dict[str, Any]) -> None:

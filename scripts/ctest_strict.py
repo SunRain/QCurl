@@ -40,6 +40,21 @@ _TOTALS_RE = re.compile(
 )
 
 
+def ctest_targets_without_unique_pass(output: str, names: list[str]) -> list[str]:
+    """核对调用方指定的目标；只读取 CTest 结果行，不扫描用例日志关键词。"""
+
+    results = re.findall(
+        r"^[ \t]*\d+/\d+[ \t]+Test[ \t]+#\d+:[ \t]+(\S+)[ \t]+\.{2,}[ \t]*(\S+)",
+        output,
+        re.M,
+    )
+    return [
+        name
+        for name in names
+        if [status for target, status in results if target == name] != ["Passed"]
+    ]
+
+
 def _has_verbose_flag(args: list[str]) -> bool:
     for a in args:
         if a in ("-V", "-VV", "--verbose", "--extra-verbose"):

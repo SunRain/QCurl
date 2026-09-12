@@ -18,13 +18,14 @@
 
 - QtTest / ctest：`python3 scripts/ctest_strict.py --build-dir build`
 - 需要 env/httpbin 的集合：`python3 scripts/ctest_strict.py --build-dir build --label-regex env`
-- “基本无问题”归档 runner：`python3 scripts/run_basic_no_problem_gate.py --build-dir build --run-id "<run-id>"`
+- 当前 UCE acceptance 归档入口：`python3 scripts/run_uce_gate.py --tier nightly --build-dir build --run-id "<run-id>"`
 - 一致性 gate：`python3 tests/libcurl_consistency/run_gate.py --suite <p0|p1|all> --build`
 
 可复核工件以自动化产物为准，例如：
 
-- `build/evidence/basic-no-problem/<run-id>/manifest.json`
-- `build/evidence/basic-no-problem/<run-id>.tar.gz`
+- `build/evidence/uce/<run-id>/manifest.json`
+- `build/evidence/uce/<run-id>.tar.gz`
+- `build/evidence/uce/<run-id>.archive-envelope.json`
 - `build/libcurl_consistency/reports/gate_<suite>.json`
 - `build/libcurl_consistency/reports/junit_<suite>.xml`
 

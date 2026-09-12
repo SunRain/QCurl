@@ -25,7 +25,7 @@ UCE 是 QCurl 面向门禁与证据链的统一入口：它不试图证明“所
 | Tier | 默认定位 | 目标 | 允许成本 | 失败语义 |
 |------|----------|------|----------|----------|
 | `pr` | 默认 CI 快速门禁 | offline + `libcurl_consistency p0/p1`、TLC/HES 最小 contract、快速反馈 | 低到中 | 任一 required evidence 缺失即失败 |
-| `nightly` | 高强度回归 | DCI fixed seed、CTBP、HES 扩展、`strace` netproof、专题 contract 聚合 | 中到高 | 缺失 required provider / evidence / archive 即失败 |
+| `nightly` | push/manual acceptance 与周期回归 | offline/env/p0/p1/p2、public-api-slow、capability skip=fail、DCI/BP/CTBP/HES/TLC、netproof | 中到高 | 缺失 required provider / evidence / archive 即失败 |
 | `soak` | 长跑与稳定性放大 | nightly contract + 扩大 fixed seed 组 + 更长运行时长 | 高 | 与 nightly 一致，但允许运行时间更长 |
 
 ### 2.1 Netproof capability 口径
@@ -37,6 +37,17 @@ UCE 是 QCurl 面向门禁与证据链的统一入口：它不试图证明“所
   本地通信；INET 及类型未知的网络操作仍阻断，包括继承、复制和复用的描述符。仅创建
   套接字的能力探测独立记录，不等同于网络传输。
 
+### 2.2 必需 CTest 目标的执行判据
+
+- offline、env、capability、public-api-slow 各自以本轮标签选中的目标为必需集合，
+  使用 CTest 自带的 JSON 清单保存到 `meta/ctest_list_<label>.json`；未选中的目标不参与核对。
+- 进程退出码非零直接失败。退出码为零时，每个必需目标仍须在本次执行日志中具有唯一的
+  CTest `Passed` 结果；空集合、Disabled、Skipped、缺失或重复结果都使对应合同失败。
+- `manifest.json` 保留真实进程 `returncode`，不把判据失败伪装成子进程错误。
+  执行证据缺口写入该结果的 `details.execution_errors` 和合同 `notes`，并使用既有
+  `gate_*_failed` 策略码阻断；HTTPBin 的 env 入口传播同一合同结果。
+- 只核对 CTest 的逐目标结果行，不全局搜索日志中的 Skipped、Disabled 或 Sanitizer。
+  共享结果解析供 UCE 与 TSan 使用，不改变公共 `ctest_strict.py` 其他调用方的命令行语义。
 
 ## 3. 证据目录结构
 
@@ -116,14 +127,19 @@ build/evidence/uce/<run-id>.archive-envelope.json
 | 当前入口 | 当前角色 | UCE 关系 |
 |----------|----------|----------|
 | `.github/workflows/pr_fast_gate.yml` | 现有快速门禁，覆盖 build / public-api / `ctest_strict offline` | 在 UCE PR tier 完整接管“最小一致性证据”前继续保留 |
-| `scripts/run_basic_no_problem_gate.py` / `.github/workflows/basic_no_problem_gate.yml` | 当前最接近“可归档 acceptance evidence”的组合 gate | 是 UCE runner 的主要收敛对象，迁移前保持 legacy 角色 |
 | `tests/libcurl_consistency/run_gate.py` / `.github/workflows/libcurl_consistency_ext_gate.yml` | 当前最强的一致性专题与红线口径 | 作为 UCE provider 继续存在；UCE 包装其 evidence，不替换其专题 contract |
 
 迁移原则：
 
 - 在 UCE PR tier 未提供等价或更强证据前，不宣称 `pr_fast_gate` 已完成迁移。
-- 在 UCE runner 未稳定接管归档与 fail-closed 语义前，不下线 `basic-no-problem`。
 - 在 UCE 未吸收 ext / HTTP3 / raw evidence contract 前，不削弱 `libcurl_consistency_ext_gate` 的现有边界。
+
+**条件性迁移（2026-09-05）**：旧 `basic-no-problem` runner/workflow 的终局仍由 UCE nightly
+承接，但当前删除候选尚未达到可提交状态。UCE 路由必须保留旧 workflow 的 push
+（`master`/`main`/`develop`）与 `workflow_dispatch` 语义，并自动阻断 `public-api-slow`、
+capability QtTest（skip=fail）、offline/env/p0、workload/finalize/归档异常和 required artifact
+缺失。至少一次 fresh nightly E2E 必须绑定当前候选 fingerprint，且 manifest、policy report、
+tar 和 archive envelope 均可独立验证；完成前不得把迁移写成“已完成”。
 
 ## 7. Schema 与实现入口
 
@@ -136,6 +152,7 @@ build/evidence/uce/<run-id>.archive-envelope.json
 - Sanitizer runner：`scripts/run_uce_sanitizers.py`
 - UCE runner：`scripts/run_uce_gate.py`
 - 归档独立校验：`scripts/verify_uce_archive.py --evidence-root <build>/evidence/uce --run-id <run-id> --require-pass`
+- UCE 负向基础设施：`ctest --test-dir <build> -R '^qcurl_uce_infrastructure$' --output-on-failure`，属于所有 tier 的 offline 阻断项。
 - CI 入口：`.github/workflows/pr_fast_gate.yml`、`.github/workflows/uce_nightly.yml`、`.github/workflows/uce_soak.yml`
 
 三个 CI 入口在上传前逐个校验 manifest、policy、tar 和 envelope；校验与诊断上传均

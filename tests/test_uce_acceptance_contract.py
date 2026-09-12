@@ -8,6 +8,7 @@ import yaml
 
 from scripts.uce_gate import orchestrator
 from scripts.uce_gate import evidence
+from scripts.uce_gate import ctest_gates
 from scripts.uce_gate import httpbin
 from scripts.uce_gate.evidence import create_gate_manifest
 from scripts.uce_gate.evidence import prepare_evidence_layout
@@ -25,6 +26,15 @@ def _workflow(path: str) -> dict[str, object]:
 
 def _run_blocks(job: dict[str, object]) -> list[str]:
     return [str(step["run"]) for step in job["steps"] if "run" in step]
+
+
+def test_uce_nightly_preserves_acceptance_push_and_manual_triggers() -> None:
+    workflow = _workflow(".github/workflows/uce_nightly.yml")
+    triggers = workflow["on"]
+
+    assert "push" in triggers
+    assert triggers["push"]["branches"] == ["master", "main", "develop"]
+    assert "workflow_dispatch" in triggers
 
 
 def test_uce_nightly_uploads_archive_envelope() -> None:
@@ -65,6 +75,163 @@ def test_uce_workload_exception_is_structured_and_archived(tmp_path: Path, monke
     assert manifest["candidate_fingerprint"]["head"]
     assert (evidence_dir / "meta" / "candidate_fingerprint.json").exists()
     assert (tmp_path / "evidence" / "exception-run.tar.gz").exists()
+
+
+@pytest.mark.parametrize(
+    ("gate_id", "policy_code"),
+    [
+        ("public_api_slow", "gate_public_api_slow_failed"),
+        ("capability", "gate_capability_failed"),
+    ],
+)
+def test_acceptance_label_failure_is_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    gate_id: str,
+    policy_code: str,
+) -> None:
+    build_dir = tmp_path / "build"
+    evidence_dir = tmp_path / "evidence"
+    build_dir.mkdir()
+    evidence_dir.mkdir()
+    manifest = {
+        "policy_violations": [],
+        "results": [],
+        "artifacts": {},
+        "contracts": {},
+    }
+
+    def fake_run_gate(
+        current_id: str,
+        command: list[str],
+        log_path: Path,
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+    ) -> GateResult:
+        del command, cwd, env
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("failure\n", encoding="utf-8")
+        return GateResult(current_id, [], 1 if current_id == gate_id else 0, 0.001, log_path)
+
+    monkeypatch.setattr(ctest_gates, "run_gate", fake_run_gate)
+    runner = ctest_gates.run_public_api_slow_gate if gate_id == "public_api_slow" else ctest_gates.run_capability_gate
+
+    runner(Path(__file__).resolve().parents[1], build_dir, evidence_dir, manifest)
+
+    assert policy_code in manifest["policy_violations"]
+    assert manifest["contracts"][f"qtest_{gate_id}@v1"]["result"] == "fail"
+
+
+@pytest.mark.parametrize(
+    ("gate_id", "policy_code"),
+    [
+        ("public_api_slow", "gate_public_api_slow_failed"),
+        ("capability", "gate_capability_failed"),
+    ],
+)
+def test_acceptance_label_listing_failure_is_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    gate_id: str,
+    policy_code: str,
+) -> None:
+    build_dir = tmp_path / "build"
+    evidence_dir = tmp_path / "evidence"
+    build_dir.mkdir()
+    evidence_dir.mkdir()
+    manifest = {"policy_violations": [], "results": [], "artifacts": {}, "contracts": {}}
+
+    def fake_run_gate(
+        current_id: str,
+        command: list[str],
+        log_path: Path,
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+    ) -> GateResult:
+        del command, cwd, env
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("listing failed\n", encoding="utf-8")
+        return GateResult(current_id, [], 1 if current_id == f"{gate_id}_list" else 0, 0.001, log_path)
+
+    monkeypatch.setattr(ctest_gates, "run_gate", fake_run_gate)
+    runner = ctest_gates.run_public_api_slow_gate if gate_id == "public_api_slow" else ctest_gates.run_capability_gate
+
+    runner(Path(__file__).resolve().parents[1], build_dir, evidence_dir, manifest)
+
+    assert policy_code in manifest["policy_violations"]
+    assert manifest["contracts"][f"qtest_{gate_id}@v1"]["result"] == "fail"
+
+
+def test_httpbin_start_failure_is_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    manifest = {"policy_violations": [], "results": [], "artifacts": {}, "contracts": {}}
+
+    def fake_start(_repo_root: Path, env_file: Path, log_path: Path, _manifest: dict[str, object]) -> GateResult:
+        del _repo_root, _manifest
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("docker unavailable\n", encoding="utf-8")
+        return GateResult("httpbin_start", [], 1, 0.001, log_path)
+
+    def fake_stop(_repo_root: Path, _container: str, log_path: Path, _manifest: dict[str, object]) -> GateResult:
+        del _repo_root, _container, _manifest
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("stopped\n", encoding="utf-8")
+        return GateResult("httpbin_stop", [], 0, 0.001, log_path)
+
+    monkeypatch.setattr(httpbin, "_start_httpbin", fake_start)
+    monkeypatch.setattr(httpbin, "_stop_httpbin", fake_stop)
+
+    env_values, _results, violations = httpbin.run_httpbin_gate(
+        repo_root,
+        tmp_path / "build",
+        evidence_dir,
+        manifest,
+    )
+
+    assert env_values == {}
+    assert "env_preflight_httpbin_start_failed" in violations
+    assert "env_preflight_httpbin_env_missing" in violations
+    assert "env_preflight_httpbin_url_missing" in violations
+    assert (evidence_dir / "httpbin" / "httpbin_unavailable.txt").exists()
+
+
+def test_httpbin_env_parse_failure_is_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    manifest = {"policy_violations": [], "results": [], "artifacts": {}, "contracts": {}}
+
+    def fake_start(_repo_root: Path, env_file: Path, log_path: Path, _manifest: dict[str, object]) -> GateResult:
+        del _repo_root, _manifest
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        env_file.write_text('export QCURL_HTTPBIN_URL="http://127.0.0.1:1\n', encoding="utf-8")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("started\n", encoding="utf-8")
+        return GateResult("httpbin_start", [], 0, 0.001, log_path)
+
+    def fake_stop(_repo_root: Path, _container: str, log_path: Path, _manifest: dict[str, object]) -> GateResult:
+        del _repo_root, _container, _manifest
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("stopped\n", encoding="utf-8")
+        return GateResult("httpbin_stop", [], 0, 0.001, log_path)
+
+    monkeypatch.setattr(httpbin, "_start_httpbin", fake_start)
+    monkeypatch.setattr(httpbin, "_stop_httpbin", fake_stop)
+
+    _env_values, _results, violations = httpbin.run_httpbin_gate(
+        repo_root,
+        tmp_path / "build",
+        evidence_dir,
+        manifest,
+    )
+
+    assert "env_preflight_httpbin_env_parse_error" in violations
+    assert "env_preflight_httpbin_url_missing" in violations
+    assert (evidence_dir / "httpbin" / "httpbin_env_parse_error.txt").exists()
 
 
 def test_required_artifact_deleted_before_validation_is_fail_closed(tmp_path: Path) -> None:

@@ -64,7 +64,7 @@ Public API gate 覆盖：
 - `build/libcurl_consistency/reports/junit_<suite>.xml`。
 - `build/libcurl_consistency/reports/capabilities.json`。
 - `curl/tests/http/gen/artifacts/<suite>/<case>/...`。
-- `build/evidence/basic-no-problem/<run-id>/manifest.json` 与对应 tarball。
+- `build/evidence/uce/<run-id>/manifest.json`、对应 tarball 与包外 archive envelope（当前 UCE acceptance 归档门禁；fresh 候选证据闭合前不视为旧门禁删除证明）。
 
 ## 命令 SSOT
 
