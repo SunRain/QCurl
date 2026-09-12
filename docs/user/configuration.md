@@ -86,6 +86,11 @@ Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP me
 `QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey`，并在 immutable request snapshot 中提供稳定的
 `Idempotency-Key`。网络错误和 HTTP 状态错误共用该门禁。负数、`NaN`、无穷值以及会溢出的 setter 输入会被拒绝并保留旧值，退避使用有界 equal-jitter。
 
+响应体一旦被 `readAll()` 或通用设备下载任务消费，失败后不再透明重试；可 seek 的借用设备也
+没有回滚保证。文件下载任务只在独占 writer 能恢复本次输出时重试：失败覆盖不替换已有文件，
+追加先截回原长度；恢复失败则终止。续传 `206` 必须使用 identity 表示，范围、响应长度与最终
+文件长度一致；服务端忽略 Range 的 `200` 安全覆盖和匹配本地长度的 `416` 完成语义保持不变。
+
 缓存仍是显式 `setCache()` 注入的 Core 能力，不默认启用。缓存请求键包含 method、规范化 URL、参与 `Vary` 的请求头和
 调用方提供的 `cachePartitionKey`；带认证身份但没有分区的响应不得存储。当前稳定存储范围是 GET 200，HEAD 只更新已有 GET
 条目的元数据；`no-store` 不落盘，`no-cache` / `max-age=0` 必须先条件重验证。磁盘 entry 只接受有界 fixed-header

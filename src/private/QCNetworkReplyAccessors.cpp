@@ -91,6 +91,7 @@ std::optional<QByteArray> QCNetworkReply::readAll()
 
     // 注意：这会清空当前 reply 缓冲区。
     QByteArray out = d->bodyBuffer.readAll();
+    d->responseBodyDelivered = true;
 
     Internal::scheduleReplyBackpressureResumeAfterRead(this, d);
     return out;

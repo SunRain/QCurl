@@ -265,7 +265,9 @@ void finishReplay(const std::shared_ptr<MockChaosReplayState> &state)
     }
 
     const auto retry = advanceReplyRetryIfNeeded(state->replyPrivate, info.error);
-    if (retry.emissionResult == SignalEmissionResult::Destroyed) {
+    if (retry.emissionResult == SignalEmissionResult::Destroyed
+        || state->replyPrivate->state == ReplyState::Error
+        || state->replyPrivate->state == ReplyState::Cancelled) {
         return;
     }
     if (retry.delay.has_value()) {

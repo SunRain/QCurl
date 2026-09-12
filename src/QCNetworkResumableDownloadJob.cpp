@@ -4,6 +4,7 @@
 #include "QCNetworkAccessManager_p.h"
 #include "QCNetworkHttpMethod.h"
 #include "QCNetworkReply.h"
+#include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "private/QCNetworkResumableDownloadWriter_p.h"
 #include "private/QCRequestPipeline_p.h"
@@ -135,6 +136,11 @@ void QCNetworkResumableDownloadJob::doStart()
     d->writer = std::make_unique<Internal::ResumableDownloadWriter>(d->savePath,
                                                                     d->existingSize,
                                                                     hadExistingFile);
+    networkReply->d_func()->restoreResponseBeforeRetry = [this]() -> std::optional<QString> {
+        Q_D(QCNetworkResumableDownloadJob);
+        return d->writer ? d->writer->restoreBeforeRetry()
+                         : std::optional<QString>(QStringLiteral("下载 writer 已释放"));
+    };
     QObject::connect(networkReply, &QObject::destroyed, this, [this]() {
         Q_D(QCNetworkResumableDownloadJob);
         d->writer.reset();
@@ -182,6 +188,7 @@ QCNetworkResumableDownloadJob::~QCNetworkResumableDownloadJob()
     Q_D(QCNetworkResumableDownloadJob);
     Q_ASSERT(QThread::currentThread() == thread());
     if (auto *networkReply = reply()) {
+        networkReply->d_func()->restoreResponseBeforeRetry = nullptr;
         QObject::disconnect(networkReply, nullptr, this, nullptr);
     }
     d->writer.reset();

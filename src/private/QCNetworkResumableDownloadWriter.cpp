@@ -60,7 +60,7 @@ std::optional<ContentRangeInfo> parseContentRangeBytesSpec(const QByteArray &hea
     const qint64 start = trimmed.mid(prefix.size(), dashPos - prefix.size()).toLongLong(&startOk);
     const qint64 end   = trimmed.mid(dashPos + 1, slashPos - dashPos - 1).toLongLong(&endOk);
     const qint64 total = trimmed.mid(slashPos + 1).toLongLong(&totalOk);
-    if (!startOk || !endOk || !totalOk || start < 0 || end < start || total < 0) {
+    if (!startOk || !endOk || !totalOk || start < 0 || end < start || end >= total) {
         return std::nullopt;
     }
 
@@ -109,17 +109,52 @@ std::optional<QString> ResumableDownloadWriter::decideWriteMode(QCNetworkReply *
         return std::nullopt;
     }
 
-    const auto contentRange = parseContentRangeBytesSpec(
-        reply->rawHeader(QByteArrayLiteral("Content-Range")));
-    m_appendMode = m_existingSize > 0 && reply->httpStatusCode() == 206 && contentRange.has_value()
-                   && contentRange->start == m_existingSize;
-    if (reply->httpStatusCode() == 206 && !m_appendMode) {
-        return QStringLiteral("QCNetworkResumableDownloadJob: 206 响应的 Content-Range.start "
-                              "与本地文件大小不匹配: %1")
-            .arg(m_savePath);
+    if (reply->httpStatusCode() == 206) {
+        if (const auto error = validateRange(reply); error.has_value()) {
+            return error;
+        }
+        m_appendMode = m_existingSize > 0;
     }
     m_safeOverwriteMode = !m_appendMode && m_hadExistingFile;
     m_modeDecided       = true;
+    return std::nullopt;
+}
+
+std::optional<QString> ResumableDownloadWriter::validateRange(QCNetworkReply *reply)
+{
+    const auto range = parseContentRangeBytesSpec(
+        reply->rawHeader(QByteArrayLiteral("Content-Range")));
+    const auto encoding = reply->rawHeader(QByteArrayLiteral("Content-Encoding")).trimmed();
+    if (!range) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: Content-Range 无效: %1")
+            .arg(m_savePath);
+    }
+    if (range->start != m_existingSize) {
+        return QStringLiteral(
+                   "QCNetworkResumableDownloadJob: Content-Range.start 不匹配本地长度: %1")
+            .arg(m_savePath);
+    }
+    if (range->end != range->total - 1) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: Content-Range 未覆盖完整目标: %1")
+            .arg(m_savePath);
+    }
+    if (!encoding.isEmpty() && encoding.compare("identity", Qt::CaseInsensitive) != 0) {
+        return QStringLiteral(
+                   "QCNetworkResumableDownloadJob: 206 只支持 identity Content-Encoding: %1")
+            .arg(m_savePath);
+    }
+    m_rangeBytes            = range->end - range->start + 1;
+    m_rangeTotal            = range->total;
+    const QByteArray length = reply->rawHeader(QByteArrayLiteral("Content-Length"));
+    if (!length.isEmpty()) {
+        bool ok                    = false;
+        const qint64 contentLength = length.toLongLong(&ok);
+        if (!ok || contentLength != m_rangeBytes) {
+            return QStringLiteral(
+                       "QCNetworkResumableDownloadJob: Content-Length 与范围长度矛盾: %1")
+                .arg(m_savePath);
+        }
+    }
     return std::nullopt;
 }
 
@@ -162,6 +197,8 @@ void ResumableDownloadWriter::closeTargets()
     }
     if (m_overwriteFile.isOpen()) {
         m_overwriteFile.cancelWriting();
+        // cancelWriting 标记失败，commit 关闭并丢弃临时文件，绝不替换目标。
+        static_cast<void>(m_overwriteFile.commit());
     }
 }
 
@@ -173,6 +210,10 @@ void ResumableDownloadWriter::assertOwnerThread() const
 std::optional<QString> ResumableDownloadWriter::writeChunk(QCNetworkReply *reply)
 {
     assertOwnerThread();
+    if (reply->httpStatusCode() >= 400) {
+        static_cast<void>(reply->readAll());
+        return std::nullopt;
+    }
     if (const auto error = ensureWriteTarget(reply); error.has_value()) {
         closeTargets();
         return error;
@@ -190,10 +231,51 @@ std::optional<QString> ResumableDownloadWriter::writeChunk(QCNetworkReply *reply
     }
 
     const QByteArray &chunk = data.value();
+    if (m_rangeBytes >= 0 && chunk.size() > m_rangeBytes - m_writtenBytes) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: 响应体超过范围长度: %1")
+            .arg(m_savePath);
+    }
     if (target->write(chunk) != chunk.size()) {
-        closeTargets();
+        // 保留目标直到终态处理，追加模式仍需尝试截回原长度。
         return QStringLiteral("QCNetworkResumableDownloadJob: 写入目标文件失败: %1").arg(m_savePath);
     }
+    m_writtenBytes += chunk.size();
+    return std::nullopt;
+}
+
+std::optional<QString> ResumableDownloadWriter::restoreAppend()
+{
+    if (m_appendMode && m_file.isOpen() && (!m_file.flush() || !m_file.resize(m_existingSize))) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: 无法恢复追加前长度: %1")
+            .arg(m_savePath);
+    }
+    return std::nullopt;
+}
+
+std::optional<QString> ResumableDownloadWriter::restoreBeforeRetry()
+{
+    assertOwnerThread();
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    if (qEnvironmentVariableIsSet("QCURL_TEST_FORCE_DOWNLOAD_RESTORE_ERROR")) {
+        return QStringLiteral("QCNetworkResumableDownloadJob: forced output restore failure");
+    }
+#endif
+    if (const auto error = restoreAppend(); error.has_value()) {
+        closeTargets();
+        return error;
+    }
+    if (!m_hadExistingFile && m_file.isOpen() && (!m_file.flush() || !m_file.resize(0))) {
+        closeTargets();
+        return QStringLiteral("QCNetworkResumableDownloadJob: 无法清空失败尝试的新文件: %1")
+            .arg(m_savePath);
+    }
+    closeTargets();
+    m_modeDecided       = false;
+    m_appendMode        = false;
+    m_safeOverwriteMode = false;
+    m_writtenBytes      = 0;
+    m_rangeBytes        = -1;
+    m_rangeTotal        = -1;
     return std::nullopt;
 }
 
@@ -204,14 +286,30 @@ std::optional<QString> ResumableDownloadWriter::commitIfNeeded(QCNetworkReply *r
         return std::nullopt;
     }
     if (reply->error() != NetworkError::NoError) {
+        const auto error = restoreAppend();
         closeTargets();
-        return std::nullopt;
+        return error;
     }
     if (const auto error = ensureWriteTarget(reply); error.has_value()) {
         closeTargets();
         return error;
     }
+    if (m_rangeBytes >= 0
+        && (m_writtenBytes != m_rangeBytes || activeTarget()->size() != m_rangeTotal)) {
+        const auto error = restoreAppend();
+        closeTargets();
+        return error.value_or(
+            QStringLiteral("QCNetworkResumableDownloadJob: 续传最终长度不完整: %1").arg(m_savePath));
+    }
     if (m_file.isOpen()) {
+        if (!m_file.flush()) {
+            const auto error = restoreAppend();
+            closeTargets();
+            if (error.has_value()) {
+                return error;
+            }
+            return QStringLiteral("QCNetworkResumableDownloadJob: 文件刷新失败: %1").arg(m_savePath);
+        }
         m_file.close();
     }
     if (!m_safeOverwriteMode || !m_overwriteFile.isOpen()) {

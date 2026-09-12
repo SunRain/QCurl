@@ -21,10 +21,15 @@ class QCNetworkResumableDownloadJobPrivate;
  * @brief 以 HTTP byte-range 语义下载文件并支持断点续传。
  *
  * 调用 start() 后，当 `overwrite` 为 false 且目标文件已存在时，任务会发送 `Range: bytes=N-`。只有服务端
- * 返回匹配本地大小的 206 Content-Range 时才追加写入；范围不匹配会失败，避免污染目标文件。
+ * 返回 identity 表示且 Content-Range 起点、终点、总长与本次实际字节数都完整匹配时才成功。
+ * 响应头中可判定的矛盾在写入前拒绝；服务端忽略 Range 返回 200 时安全覆盖，匹配本地长度
+ * 的 416 表示已经完成。206 压缩表示不与解码后的文件偏移混用，直接拒绝。
+ * 重试前仅恢复该任务独占 writer 的输出：追加截回原长度，覆盖丢弃临时文件，新文件清空；
+ * 恢复失败即终止，不改变请求方法、幂等键或重试次数限制。
  *
  * @note 错误生命周期：resume 校验、文件打开、写入或提交失败进入基类的唯一失败终态；
- * 成功时错误为空，`finished()` 后状态固定。失败不会发布未完整提交的新目标文件。
+ * 成功时错误为空，`finished()` 后状态固定。失败的安全覆盖不替换原文件；新目标可能保留
+ * 未完成数据，调用方不得在失败后把它视为完整下载。
  * @note QObject 借用合同：`manager` 必须非空且由调用方保活到任务完成；job 不拥有 manager。
  * job、manager 与 reply 必须处于同一 owner thread，manager 销毁后借用立即失效。
  */

@@ -107,7 +107,7 @@ void finishMockAttempt(const QPointer<QCNetworkReply> &reply,
         return;
     }
     const auto retry = advanceReplyRetryIfNeeded(replyPrivate, info.error);
-    if (retry.emissionResult == SignalEmissionResult::Destroyed) {
+    if (retry.emissionResult == SignalEmissionResult::Destroyed || isTerminal(replyPrivate)) {
         return;
     }
     if (retry.delay.has_value()) {

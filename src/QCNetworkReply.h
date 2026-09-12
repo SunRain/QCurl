@@ -186,6 +186,8 @@ public:
      * - QByteArray()：已到终态且 body 为空，或已在终态被 drain 过
      *
      * @note 这是 drain API，会修改内部缓冲区，因此为非 const
+     * @note 读取非空响应体即交付输出，随后失败不再透明重试；Core 无法回滚消费者副作用。
+     * 唯一例外是独占目标文件、能够检查并恢复本次输出的 QCNetworkResumableDownloadJob。
      */
     [[nodiscard]] std::optional<QByteArray> readAll();
 
@@ -350,6 +352,7 @@ private:
 
     friend class QCNetworkAccessManagerPrivate;
     friend class Internal::QCNetworkReplyExecution;
+    friend class QCNetworkResumableDownloadJob;
 
     Q_DECLARE_PRIVATE(QCNetworkReply)
     QScopedPointer<QCNetworkReplyPrivate> d_ptr;

@@ -51,6 +51,9 @@ public:
      */
     [[nodiscard]] std::optional<QString> commitIfNeeded(QCNetworkReply *reply);
 
+    /// 恢复本次写入前的目标；失败时禁止重试，不改变调用方设备。
+    [[nodiscard]] std::optional<QString> restoreBeforeRetry();
+
 #ifdef QCURL_ENABLE_TEST_HOOKS
     /** @brief 返回测试进程中当前存活的 writer 实例数。 */
     [[nodiscard]] static int activeInstanceCountForTesting() noexcept;
@@ -65,6 +68,8 @@ private:
     [[nodiscard]] bool isAlreadyComplete(QCNetworkReply *reply) const;
     [[nodiscard]] std::optional<QString> decideWriteMode(QCNetworkReply *reply);
     [[nodiscard]] std::optional<QString> ensureWriteTarget(QCNetworkReply *reply);
+    [[nodiscard]] std::optional<QString> validateRange(QCNetworkReply *reply);
+    [[nodiscard]] std::optional<QString> restoreAppend();
     [[nodiscard]] QIODevice *activeTarget() noexcept;
     void closeTargets();
     void assertOwnerThread() const;
@@ -75,6 +80,9 @@ private:
     bool m_modeDecided       = false;
     bool m_appendMode        = false;
     bool m_safeOverwriteMode = false;
+    qint64 m_writtenBytes    = 0;
+    qint64 m_rangeBytes      = -1;
+    qint64 m_rangeTotal      = -1;
     QThread *const m_ownerThread;
     QFile m_file;
     QSaveFile m_overwriteFile;

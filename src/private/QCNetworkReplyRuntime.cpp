@@ -108,6 +108,15 @@ ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, Netw
     if (!decision.allowed) {
         return {};
     }
+    if (d->responseBodyDelivered && !d->restoreResponseBeforeRetry) {
+        return {};
+    }
+    if (d->restoreResponseBeforeRetry) {
+        if (const auto outputError = d->restoreResponseBeforeRetry(); outputError.has_value()) {
+            d->setError(NetworkError::OutputDeviceError, outputError.value());
+            return {d->setState(ReplyState::Error), std::nullopt};
+        }
+    }
 
     std::optional<std::chrono::milliseconds> retryAfter;
     if (error == NetworkError::HttpTooManyRequests) {
@@ -144,6 +153,7 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     }
 
     d->bodyBuffer.clear();
+    d->responseBodyDelivered = false;
     d->cacheBodyBuffer.clear();
     d->headerData.clear();
     d->finalHeaderList.clear();
@@ -152,6 +162,7 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     d->bytesUploaded   = 0;
     d->downloadTotal   = -1;
     d->uploadTotal     = -1;
+    d->httpStatusCode  = 0;
 }
 
 void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,

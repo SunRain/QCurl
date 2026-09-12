@@ -318,7 +318,8 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
     }
 
     const auto retry = Internal::advanceReplyRetryIfNeeded(this, info.error);
-    if (retry.emissionResult == Internal::SignalEmissionResult::Destroyed) {
+    if (retry.emissionResult == Internal::SignalEmissionResult::Destroyed
+        || isTerminalState(state)) {
         return;
     }
     if (retry.delay.has_value()) {
