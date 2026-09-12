@@ -76,7 +76,6 @@ def collect_ctbp_entries(artifacts_roots: list[Path]) -> dict[str, Any]:
                     "response": payload.get("response") if isinstance(payload.get("response"), dict) else {},
                     "observed_error": observed.get("error") if isinstance(observed.get("error"), dict) else {},
                     "derived_error": derived.get("error") if isinstance(derived.get("error"), dict) else {},
-                    "legacy_error": payload.get("error") if isinstance(payload.get("error"), dict) else {},
                 }
             )
 
@@ -102,11 +101,15 @@ def _dedupe_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _error_kind(entry: dict[str, Any]) -> str:
-    """Return the normalized error kind for an artifact entry."""
+    """从 artifact 条目中提取规范化的 error kind。
 
+    优先级：observed.error.kind → derived.error.kind。
+    不回退到 legacy payload.error（已被判定应下线的 producer 形态）。
+    """
+
+    observed = entry.get("observed_error") if isinstance(entry.get("observed_error"), dict) else {}
     derived = entry.get("derived_error") if isinstance(entry.get("derived_error"), dict) else {}
-    legacy = entry.get("legacy_error") if isinstance(entry.get("legacy_error"), dict) else {}
-    return str(derived.get("kind") or legacy.get("kind") or "")
+    return str(observed.get("kind") or derived.get("kind") or "")
 
 
 def _validate_connection_reuse(entry: dict[str, Any]) -> list[dict[str, Any]]:
