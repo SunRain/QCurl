@@ -15,4 +15,5 @@
 - 代码风格：`Qt6_CPP17_Coding_Style.md`
 - 注释规范（含 Doxygen 约定）：`CPP_Code_Comment_Guidelines.md`
 - Pimpl / shared-data 规范：`docs/dev/pimpl-and-shared-data-style.md`
-- 工程知识库（维护者 SSOT）：`.helloagents/INDEX.md`（入口）/ `.helloagents/modules/project.md`（工程约定与门禁）
+- 可选本地笔记：`.helloagents/` 不入库，也不是 CI／发布输入；正式约束以本目录、
+  [发布合同](../arch/2.0.0-hard-break-release-contract.md)和 [UCE 文档](../uce/README.md)为准。

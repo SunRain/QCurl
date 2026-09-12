@@ -80,8 +80,6 @@ def _resolve_common_paths(args: argparse.Namespace, repo_root: Path) -> None:
         path if path.is_absolute() else (repo_root / path).resolve()
         for path in args.authority
     ]
-    if args.contract_json is not None and not args.contract_json.is_absolute():
-        args.contract_json = (repo_root / args.contract_json).resolve()
     args.required_artifact = [
         path if path.is_absolute() else (repo_root / path).resolve()
         for path in args.required_artifact

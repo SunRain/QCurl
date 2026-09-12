@@ -197,8 +197,6 @@ def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
 
 def _authority_paths(args: argparse.Namespace, repo_root: Path) -> list[Path]:
     paths = list(args.authority)
-    if args.contract_json is not None:
-        paths.append(args.contract_json)
     resolved = [
         (path if path.is_absolute() else repo_root / path).resolve()
         for path in paths
@@ -211,7 +209,8 @@ def _authority_paths(args: argparse.Namespace, repo_root: Path) -> list[Path]:
             or set(resolved) != set(expected)
         ):
             raise ValueError(
-                "full release gate requires the exact four authority inputs"
+                "full release gate requires the version-controlled release contract "
+                "as its only authority input"
             )
         missing = [path for path in expected if not path.is_file()]
         if missing:

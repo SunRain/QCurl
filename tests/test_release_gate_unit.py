@@ -515,15 +515,13 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
     repo = _init_identity_repo(tmp_path)
     package = (
         repo
-        / ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation"
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation"
     )
-    authority = [
-        package / "requirements.md",
-        package / "plan.md",
-        package / "contract.json",
-        repo / "docs/arch/2.0.0-hard-break-release-contract.md",
+    authority = [repo / "docs/arch/2.0.0-hard-break-release-contract.md"]
+    local_files = [
+        package / name for name in ("requirements.md", "plan.md", "contract.json", "tasks.md")
     ]
-    for path in authority + [package / "tasks.md"]:
+    for path in authority + local_files:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(path.name + "\n", encoding="utf-8")
     session = repo / ".helloagents/sessions/master/session-1"
@@ -557,7 +555,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
     return repo, authority
 
 
-def test_default_authority_paths_bind_current_remediation_contract(
+def test_default_authority_paths_bind_versioned_release_contract(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -569,28 +567,15 @@ def test_default_authority_paths_bind_current_remediation_contract(
     ]
 
     assert relative_paths == [
-        ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/requirements.md",
-        ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/plan.md",
-        ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/contract.json",
         "docs/arch/2.0.0-hard-break-release-contract.md",
     ]
 
 
 def _manifest_authority_paths(repo: Path, authority: list[Path]) -> list[Path]:
-    args = run_release_gate.build_parser().parse_args(
-        [
-            "--release-shared-build-dir",
-            str(repo / "release-shared"),
-            "--contract-json",
-            str(authority[2]),
-            "--authority",
-            str(authority[0]),
-            "--authority",
-            str(authority[1]),
-            "--authority",
-            str(authority[3]),
-        ]
-    )
+    argv = ["--release-shared-build-dir", str(repo / "release-shared")]
+    for path in authority:
+        argv.extend(("--authority", str(path)))
+    args = run_release_gate.build_parser().parse_args(argv)
     run_release_gate._resolve_paths(args, repo)
     return run_release_gate._authority_paths(args, repo)
 
@@ -627,9 +612,8 @@ def test_full_gate_requires_exact_authority_set(tmp_path: Path) -> None:
 
     invalid_sets = (
         [],
-        authority[:-1],
         authority + [repo / "extra-authority.md"],
-        authority[:-1] + [authority[0]],
+        authority + [authority[0]],
     )
     for invalid in invalid_sets:
         with pytest.raises(ValueError, match="authority"):
@@ -664,7 +648,7 @@ def test_runtime_progress_is_not_authority(tmp_path: Path) -> None:
     repo, authority = _prepare_manifest_authority_repo(tmp_path)
     runtime_progress = (
         repo
-        / ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/tasks.md"
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation/tasks.md"
     )
 
     with pytest.raises(ValueError, match="authority"):
@@ -688,7 +672,13 @@ def test_release_manifest_ignores_runtime_progress_mutations(tmp_path: Path) -> 
 
     runtime_files = [
         repo
-        / ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/tasks.md",
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation/requirements.md",
+        repo
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation/plan.md",
+        repo
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation/contract.json",
+        repo
+        / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation/tasks.md",
         repo / ".helloagents/sessions/master/session-1/STATE.md",
         repo / ".helloagents/sessions/master/session-1/artifacts/finding-map.json",
         repo / ".helloagents/sessions/master/session-1/artifacts/qa-review.json",

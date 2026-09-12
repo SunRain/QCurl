@@ -20,9 +20,6 @@ SCHEMA = "qa-manifest@v1"
 MANIFEST_PAYLOAD_DIGEST_FIELD = "manifestPayloadSha256"
 
 AUTHORITY_RELATIVE_PATHS = (
-    ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/requirements.md",
-    ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/plan.md",
-    ".helloagents/plans/202608051224_qcurl_v2_comprehensive_review_remediation/contract.json",
     "docs/arch/2.0.0-hard-break-release-contract.md",
 )
 
@@ -267,12 +264,13 @@ def _authority(repo: Path, paths: Iterable[Path]) -> dict[str, Any]:
             if path.is_relative_to(repo)
             else str(path)
         )
-        entry = (
-            _file_entry(repo, relative)
-            if path.is_relative_to(repo)
-            else {"path": relative, "type": "missing", "digest": None}
-        )
-        if path.is_file() and not path.is_relative_to(repo):
+        if not path.is_file():
+            raise ValueError(
+                f"release authority input is not a regular file: {relative}"
+            )
+        if path.is_relative_to(repo):
+            entry = _file_entry(repo, relative)
+        else:
             entry = {
                 "path": relative,
                 "type": "file",
@@ -285,7 +283,7 @@ def _authority(repo: Path, paths: Iterable[Path]) -> dict[str, Any]:
 
 
 def default_authority_paths(repo: Path) -> list[Path]:
-    """Return the four immutable authority inputs for the v2 release."""
+    """返回正式发布合同路径，不读取本地方案或会话资料。"""
     return [(repo / relative).resolve() for relative in AUTHORITY_RELATIVE_PATHS]
 
 

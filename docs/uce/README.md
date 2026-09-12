@@ -115,6 +115,8 @@ build/evidence/uce/<run-id>.tar.gz
 
 - Manifest 合同：`docs/uce/schema/manifest@v1.md`
 - Evidence 合同：`docs/uce/schema/evidence@v1.md`
+- 发布身份与完整 acceptance 约束：[正式发布合同](../arch/2.0.0-hard-break-release-contract.md)
+- 策略字典：[机器输入](policy_violations_dictionary.json)与[语义说明](policy_violations_dictionary.md)
 - Netproof capability 探测：`scripts/netproof_capabilities.py`
 - Netproof runner：`scripts/netproof_strace_gate.py`
 - Sanitizer runner：`scripts/run_uce_sanitizers.py`
@@ -124,5 +126,7 @@ build/evidence/uce/<run-id>.tar.gz
 ## 8. 维护规则
 
 - 先改 schema，再改 runner / validator / workflow。
-- `policy_violations` 新 code 必须先登记到稳定字典，再落到脚本。
+- `policy_violations` 新 code 必须先同步登记到两份正式字典，再落到脚本；运行
+  `python3 scripts/validate_policy_violations_dictionary.py` 校验，缺文件或集合不一致均失败。
+- 方案、会话与本地执行记录保留在被忽略的 `.helloagents/`，不得成为 CI 的隐式前置。
 - 任何“缺失 provider 但这次先算通过”的特殊口径，都必须在 schema 和 README 里显式写清，不允许只存在于 CI 说明文字。

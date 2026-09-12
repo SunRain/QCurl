@@ -1,0 +1,463 @@
+{
+  "schema_version": 1,
+  "last_updated": "2026-09-05",
+  "enums": {
+    "evidence_severity": ["CRITICAL", "HIGH", "MEDIUM"],
+    "quality_signal": ["IMPLEMENTATION", "INFRA", "SECURITY", "EVIDENCE", "MIXED"]
+  },
+  "entries": {
+    "artifacts_schema": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "artifacts schema/version 不符合 qcurl-lc/artifacts@v1 或 required 字段缺失（避免字段漂移导致误判）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/gate_<suite>.json: postflight_artifacts_schema_check.violations",
+        "curl/tests/http/gen/artifacts/**/{baseline,qcurl}.json"
+      ]
+    },
+    "env_preflight_httpbin_env_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "httpbin 启动命令返回成功，但未生成 httpbin.env（证据链断裂）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/httpbin_start.log",
+        "build/evidence/uce/<run-id>/httpbin/httpbin.env（缺失）"
+      ]
+    },
+    "env_preflight_httpbin_env_parse_error": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "httpbin.env 存在但解析失败（无法获得 QCURL_HTTPBIN_URL 等关键环境）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/httpbin/httpbin_env_parse_error.txt",
+        "build/evidence/uce/<run-id>/httpbin/httpbin.env"
+      ]
+    },
+    "env_preflight_httpbin_start_failed": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "httpbin 启动失败（Docker 权限/镜像/端口/健康检查失败等）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/logs/httpbin_start.log"]
+    },
+    "env_preflight_httpbin_url_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "httpbin 已启动，但 env 缺失 QCURL_HTTPBIN_URL（无法运行 LABELS=env 证据集合）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/httpbin/httpbin.env"]
+    },
+    "gate_env_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "MIXED",
+      "meaning": "LABELS=env 严格门禁失败（真实执行后失败或 skipped 超限）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/ctest_strict_env.log",
+        "build/evidence/uce/<run-id>/meta/ctest_list_env.txt"
+      ]
+    },
+    "gate_exception": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "UCE 编排或门禁工作负载发生未预期异常（必须结构化记录并尽量归档可用证据）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: exception",
+        "build/evidence/uce/<run-id>/logs/gate_exception.log"
+      ]
+    },
+    "gate_libcurl_consistency_p0_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "tests/libcurl_consistency/run_gate.py --suite p0 失败（包含 policy checks）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/libcurl_consistency_p0.log",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p0/gate_p0.json",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p0/junit_p0.xml"
+      ]
+    },
+    "gate_libcurl_consistency_p1_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "tests/libcurl_consistency/run_gate.py --suite p1 失败（包含 policy checks）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/libcurl_consistency_p1.log",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p1/gate_p1.json",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p1/junit_p1.xml"
+      ]
+    },
+    "gate_libcurl_consistency_p2_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "tests/libcurl_consistency/run_gate.py --suite p2 失败（包含 CTBP 相关 TLS/边界专题与 policy checks）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/libcurl_consistency_p2.log",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p2/gate_p2.json",
+        "build/evidence/uce/<run-id>/libcurl_consistency/reports/runs/uce-<run-id>-p2/junit_p2.xml"
+      ]
+    },
+    "gate_offline_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "LABELS=offline 严格门禁失败（含 test 失败或 skipped 超限）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/ctest_strict_offline.log",
+        "build/evidence/uce/<run-id>/meta/ctest_list_offline.txt"
+      ]
+    },
+    "gate_public_api_slow_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "public-api-slow 安装/消费者契约门禁失败或没有可执行测试。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/public_api_slow.log",
+        "build/evidence/uce/<run-id>/meta/ctest_list_public_api_slow.txt"
+      ]
+    },
+    "gate_capability_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "capability QtTest 严格门禁失败或发生 skipped（skip=fail）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/capability.log",
+        "build/evidence/uce/<run-id>/meta/ctest_list_capability.txt"
+      ]
+    },
+    "http3_required": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "设置 QCURL_REQUIRE_HTTP3=1 但缺失 HTTP/3 能力（服务端或 curl 不支持），Gate 必须失败。",
+      "where_to_check": ["build/libcurl_consistency/reports/gate_<suite>.json: preflight_http3_required"]
+    },
+    "junit_parse_error": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "JUnit XML 缺失或无法解析（无法证明真实执行了哪些用例/是否有 skip）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/junit_<suite>.xml",
+        "build/libcurl_consistency/reports/gate_<suite>.json: junit_counts.parse_error"
+      ]
+    },
+    "no_tests_executed": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "JUnit 统计 tests==0（未执行=无证据）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/gate_<suite>.json: junit_counts.tests",
+        "build/libcurl_consistency/reports/gate_<suite>.json: pytest_stdout/pytest_stderr"
+      ]
+    },
+    "artifact_required_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "UCE manifest 中标记为 required=true 的 artifact 缺失。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: artifacts",
+        "build/evidence/uce/<run-id>/policy_violations.json: missing_required_artifacts"
+      ]
+    },
+    "capability_required_provider_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "当前 tier 声明的 required provider 缺失（如 nightly 缺 strace）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: capabilities.netproof",
+        "build/evidence/uce/<run-id>/netproof/capabilities.json"
+      ]
+    },
+    "timeline_provider_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "TLC contract 声明的 required provider 缺失 timeline stream（如 PR 缺 Qt、nightly 缺 baseline/qcurl 任一侧）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: contracts.timeline@v1",
+        "build/evidence/uce/<run-id>/timeline/report.json: provider_summary"
+      ]
+    },
+    "timeline_evidence_parse_error": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "TLC timeline evidence 无法解析（无效 UTF-8/JSON、非对象内容或读取失败）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/timeline/report.json: violations",
+        "build/evidence/uce/<run-id>/timeline/*.timeline.jsonl"
+      ]
+    },
+    "timeline_contract_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "TLC 校验发现 headers/progress/pause/backpressure/terminal invariant 失败。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/timeline/report.json: streams[].violations",
+        "build/evidence/uce/<run-id>/timeline/*.timeline.jsonl"
+      ]
+    },
+    "ctbp_evidence_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "CTBP contract 要求的 runner × kind 组合缺失（如 nightly 缺 baseline/qcurl 任一侧或缺连接/TLS 任一类证据）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: contracts.ctbp@v1",
+        "build/evidence/uce/<run-id>/ctbp/report.json: violations"
+      ]
+    },
+    "ctbp_contract_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "CTBP 校验发现连接复用/TLS 边界证明失败（如跨边界复用、unique_connections 不一致、TLS 失败口径漂移）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/ctbp/report.json: entries[].violations",
+        "build/evidence/uce/<run-id>/ctbp/evidence.json"
+      ]
+    },
+    "hes_evidence_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "HES contract 要求的 runner × kind 组合缺失（例如缺 baseline/qcurl 任一侧或缺某类 HES kind 证据）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/hes/report.json: missing",
+        "build/evidence/uce/<run-id>/manifest.json: contracts.hes@v1"
+      ]
+    },
+    "hes_contract_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "HES 校验发现头部/压缩/Expect/Chunked 语义不满足合同，或 required coverage 缺失。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/hes/report.json: entries[].violations",
+        "build/evidence/uce/<run-id>/hes/report.json: missing"
+      ]
+    },
+    "dci_binary_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "DCI QtTest 二进制缺失（无法执行 fixed-seed suite）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/dci/report.json: qt_test_binary"]
+    },
+    "dci_seed_run_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "MIXED",
+      "meaning": "DCI fixed-seed QtTest 执行失败（returncode!=0，可能是实现回归或环境波动）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/dci/report.json: runs[]",
+        "build/evidence/uce/<run-id>/logs/dci_*.log"
+      ]
+    },
+    "dci_evidence_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "DCI 用例执行后未产出 dci_evidence_*.jsonl（skip/未执行/证据链断裂均视为失败）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/dci/report.json: runs[].evidence_files"]
+    },
+    "netproof_strace_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "netproof 所需 strace 缺失（nightly/soak required provider 不满足）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/netproof/strace_report.json: policy_violations"]
+    },
+    "netproof_subject_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "MIXED",
+      "meaning": "offline subject 在 strace 下执行失败（returncode!=0）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/netproof/strace_report.json: subject_returncode",
+        "build/evidence/uce/<run-id>/netproof/trace/subject.log"
+      ]
+    },
+    "netproof_network_syscall_detected": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "offline subject 观测到 network syscalls（违反 offline 真实性合同）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/netproof/strace_report.json: network_syscalls"]
+    },
+    "bp_binary_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "INFRA",
+      "meaning": "backpressure 合同所需 QtTest 二进制缺失。",
+      "where_to_check": ["build/evidence/uce/<run-id>/bp/report.json: qt_test_binary"]
+    },
+    "bp_test_run_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "MIXED",
+      "meaning": "backpressure QtTest 用例执行失败（returncode!=0）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/bp_testAsyncDownloadBackpressure.log",
+        "build/evidence/uce/<run-id>/bp/report.json: gate"
+      ]
+    },
+    "bp_evidence_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "backpressure 用例未产出目标 stream 的 dci_evidence_*.jsonl（skip/未执行/证据链断裂均视为失败）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/bp/report.json: summary",
+        "build/evidence/uce/<run-id>/bp/report.json: evidence_files"
+      ]
+    },
+    "bp_evidence_parse_error": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "backpressure JSONL 证据解析失败（格式损坏或混入非 JSON 行）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/bp/report.json: summary.parse_errors",
+        "build/evidence/uce/<run-id>/bp/report.json: evidence.scanned_files"
+      ]
+    },
+    "bp_contract_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "BP validator 发现事件顺序/不变量/最终结果不满足合同（如 pause drift 超限、body_len 不一致）。",
+      "where_to_check": ["build/evidence/uce/<run-id>/bp/report.json: violations"]
+    },
+    "packaging_tar_gz_failed": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "证据 tarball 打包失败（无法归档，证据链不完整）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: packaging.tar_gz_error",
+        "文件系统空间/权限"
+      ]
+    },
+    "archive_envelope_source_missing": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "写 archive envelope 时归档文件缺失（打包声称成功但产物不存在，或被外部删除）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: packaging.envelope_error",
+        "build/evidence/uce/<run-id>.tar.gz（缺失）"
+      ]
+    },
+    "archive_envelope_read_failed": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "归档文件存在但无法读取以计算 sha256（I/O 错误、权限不足、介质故障），归档身份无法证明。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: packaging.envelope_error",
+        "文件系统权限/介质健康状态"
+      ]
+    },
+    "archive_envelope_write_failed": {
+      "source": "uce",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "归档可读但 envelope 落盘失败（磁盘满、权限不足、序列化错误），归档身份记录未持久化。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/manifest.json: packaging.envelope_error",
+        "build/evidence/uce/<run-id>.archive-envelope.json（缺失或不完整）"
+      ]
+    },
+    "env_preflight_httpbin_stop_failed": {
+      "source": "uce",
+      "evidence_severity": "MEDIUM",
+      "quality_signal": "INFRA",
+      "meaning": "httpbin 停止命令失败（容器残留，可能影响后续 run 的端口分配）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/logs/httpbin_stop.log",
+        "docker ps -a 中的残留容器"
+      ]
+    },
+    "redaction": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "SECURITY",
+      "meaning": "脱敏扫描发现敏感头明文落盘（Authorization/Cookie 等），必须失败。",
+      "where_to_check": ["build/libcurl_consistency/reports/gate_<suite>.json: postflight_redaction_scan.violations"]
+    },
+    "skipped_tests": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "JUnit 统计 skipped>0（Gate 口径：skip=fail）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/junit_<suite>.xml",
+        "build/libcurl_consistency/reports/gate_<suite>.json: junit_counts.skipped"
+      ]
+    },
+    "execution_contract": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "实际执行的用例集合与计划集合不一致（漏跑、多跑或 nodeid 对不上，执行证据不可信）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/gate_<suite>.json: execution_contract.violations",
+        "build/libcurl_consistency/reports/junit_<suite>.xml"
+      ]
+    },
+    "evidence_integrity": {
+      "source": "libcurl_consistency",
+      "evidence_severity": "CRITICAL",
+      "quality_signal": "EVIDENCE",
+      "meaning": "证据文件完整性校验失败（缺失、截断或 digest 不匹配）。",
+      "where_to_check": [
+        "build/libcurl_consistency/reports/gate_<suite>.json: evidence_integrity.errors",
+        "curl/tests/http/gen/artifacts/"
+      ]
+    },
+    "sanitizer_config_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "INFRA",
+      "meaning": "sanitizer 构建树 CMake 配置失败（工具链缺失或参数不受支持），未能进入构建阶段。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/sanitizers/report.json: configure",
+        "build/evidence/uce/<run-id>/logs/sanitizer_configure_*.log"
+      ]
+    },
+    "sanitizer_build_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "sanitizer 构建树编译失败，未能产出可执行 subject。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/sanitizers/report.json: build",
+        "build/evidence/uce/<run-id>/logs/sanitizer_build_*.log"
+      ]
+    },
+    "sanitizer_subject_failed": {
+      "source": "uce",
+      "evidence_severity": "HIGH",
+      "quality_signal": "IMPLEMENTATION",
+      "meaning": "配置与构建均成功，但 ASan/UBSan/TSan subject 执行失败（检出内存、未定义行为或数据竞争）。",
+      "where_to_check": [
+        "build/evidence/uce/<run-id>/sanitizers/report.json: subject_returncode",
+        "build/evidence/uce/<run-id>/logs/sanitizer_subject_*.log"
+      ]
+    }
+  }
+}

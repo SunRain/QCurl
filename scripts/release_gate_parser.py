@@ -16,11 +16,6 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
         help="manifest stage; promotion and final are independently verified",
     )
 
-    parser.add_argument(
-        "--contract-json",
-        type=Path,
-        help="validate this explicit local readiness contract JSON as part of the fast gate",
-    )
     parser.add_argument("--dry-run", action="store_true", help="print the selected gate plan without running it")
     parser.add_argument("--manifest", type=Path, help="machine QA manifest output or verification path")
     parser.add_argument(
@@ -28,7 +23,7 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         action="append",
         default=[],
-        help="additional authority input whose content is bound to the manifest",
+        help="authority input; full requires only docs/arch/2.0.0-hard-break-release-contract.md",
     )
     parser.add_argument("--snapshot-only", action="store_true", help="write a T0 identity snapshot without claiming that gates passed")
     parser.add_argument("--verify-manifest", action="store_true", help="recompute identity and required gate/artifact status from --manifest")

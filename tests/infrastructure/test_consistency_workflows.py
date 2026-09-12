@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -61,3 +62,17 @@ def test_consistency_workflow_wrappers_delegate_to_supported_gate() -> None:
 
     assert '"libcurl_consistency" / "run_gate.py"' in basic_runner
     assert '"libcurl_consistency" / "run_gate.py"' in uce_runner
+
+
+@pytest.mark.parametrize("event", ("push", "pull_request"))
+def test_policy_dictionary_workflow_tracks_versioned_inputs(event: str) -> None:
+    """字典的正式文件变更必须触发校验，本地方案路径不参与 CI。"""
+    workflow = yaml.load(
+        Path(".github/workflows/policy_violations_dictionary.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    paths = workflow["on"][event]["paths"]
+    for suffix in ("json", "md"):
+        relative = f"docs/uce/policy_violations_dictionary.{suffix}"
+        assert any(fnmatchcase(relative, pattern) for pattern in paths)
+    assert not any(".helloagents" in pattern for pattern in paths)
