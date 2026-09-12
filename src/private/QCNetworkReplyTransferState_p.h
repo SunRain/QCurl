@@ -38,6 +38,7 @@ struct QCNetworkReplyTransferState
     ReplyState state = ReplyState::Idle;
     QCByteDataBuffer bodyBuffer;
     QByteArray cacheBodyBuffer;
+    qint64 cacheBodyLimit = -1; ///< -1 表示本次响应不再收集缓存候选。
     QByteArray headerData;
     QList<RawHeaderPair> finalHeaderList;
     QMap<QByteArray, QByteArray> finalHeaderMap;

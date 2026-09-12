@@ -11,10 +11,13 @@
 namespace QCurl {
 
 class QCNetworkReplyPrivate;
+class QCNetworkAccessManager;
 
 namespace Internal {
 
 [[nodiscard]] SignalEmissionResult restoreRevalidatedCacheResponse(QCNetworkReplyPrivate *reply);
+/// 在每次网络尝试前按现有缓存容量确定候选收集上限。
+void prepareReplyCacheCollection(QCNetworkReplyPrivate *reply, QCNetworkAccessManager *manager);
 void storeReplyInCache(QCNetworkReplyPrivate *reply);
 
 } // namespace Internal

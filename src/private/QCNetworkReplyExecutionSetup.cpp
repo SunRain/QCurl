@@ -8,6 +8,7 @@
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyCache_p.h"
 #include "private/QCNetworkReplyExecution_p.h"
 
 namespace QCurl::Internal {
@@ -138,6 +139,7 @@ bool QCNetworkReplyExecution::prepareNetwork(QCNetworkReply *reply, QCNetworkAcc
     auto *d      = reply->d_func();
     CURL *handle = d->curlManager.handle();
     inheritManagerCookieConfig(d, manager);
+    prepareReplyCacheCollection(d, manager);
 
     const bool configured = configureCookiePersistence(d, handle)
                             && configureHttpStateFiles(d, handle, manager)

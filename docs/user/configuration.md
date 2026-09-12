@@ -92,6 +92,9 @@ Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP me
 v4，并通过禁用 direct fallback 的 `QSaveFile` 单文件原子提交；v3/未知格式按 miss 清理。`clear()` 返回结构化状态、删除/失败
 计数和残留字节，调用方不得忽略部分失败。
 
+无缓存或 `OnlyNetwork` 路径不保留已消费响应的缓存副本。允许缓存的 GET 响应使用现有
+`maxCacheSize()` 约束收集量；超过容量即放弃缓存，但网络数据交付不受影响。
+
 ### 连接池配置与请求统计
 
 `QCNetworkConnectionPoolManager::setConfig()` 只提交线程安全的进程模板。每个线程的 multi

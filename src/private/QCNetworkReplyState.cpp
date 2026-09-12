@@ -94,6 +94,7 @@ Internal::SignalEmissionResult completeFinishedReply(QCNetworkReplyPrivate *repl
 {
     flushCookieJar(reply);
     Internal::storeReplyInCache(reply);
+    reply->cacheBodyBuffer = QByteArray();
     return Internal::emitReplySignal(observer, [](QCNetworkReply *q) { Q_EMIT q->finished(); });
 }
 
@@ -144,6 +145,9 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
 
     if (isTerminalState(newState)) {
         finishPoolRequest();
+        if (newState != ReplyState::Finished) {
+            cacheBodyBuffer = QByteArray();
+        }
         if (Internal::clearReplyFlowControlOnTerminalState(this)
             == Internal::SignalEmissionResult::Destroyed) {
             return Internal::SignalEmissionResult::Destroyed;

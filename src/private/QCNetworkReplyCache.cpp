@@ -76,7 +76,9 @@ void storeGetResponse(QCNetworkReplyPrivate *reply,
                       QCNetworkCache *cache,
                       const QCNetworkCacheRequestKey &key)
 {
-    if (reply->httpStatusCode != 200 || !responseHeadersAreCacheable(reply->finalHeaderList)
+    if (reply->transferState->cacheBodyLimit < 0 || reply->httpStatusCode != 200
+        || reply->cacheBodyBuffer.size() > cache->maxCacheSize()
+        || !responseHeadersAreCacheable(reply->finalHeaderList)
         || (key.hasAuthenticationContext() && key.cachePartitionKey().isEmpty())) {
         return;
     }
@@ -132,6 +134,22 @@ void scheduleOnlyCacheMiss(QCNetworkReply *reply, QCNetworkReplyPrivate *replyPr
 }
 
 } // namespace
+
+void prepareReplyCacheCollection(QCNetworkReplyPrivate *reply, QCNetworkAccessManager *manager)
+{
+    reply->cacheBodyBuffer               = QByteArray();
+    reply->transferState->cacheBodyLimit = -1;
+    auto *cache                          = manager ? manager->cache() : nullptr;
+    if (!cache || reply->httpMethod != HttpMethod::Get
+        || reply->request.cachePolicy() == QCNetworkCachePolicy::OnlyNetwork
+        || requestForbidsCacheStorage(reply->request)) {
+        return;
+    }
+    const auto key = replyCacheKey(reply, manager);
+    if (!key.hasAuthenticationContext() || !key.cachePartitionKey().isEmpty()) {
+        reply->transferState->cacheBodyLimit = qMax<qint64>(0, cache->maxCacheSize());
+    }
+}
 
 bool QCNetworkReplyExecution::completeFromCache(QCNetworkReply *reply,
                                                 QCNetworkAccessManager *manager)

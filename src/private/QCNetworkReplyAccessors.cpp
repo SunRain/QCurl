@@ -96,6 +96,14 @@ std::optional<QByteArray> QCNetworkReply::readAll()
     return out;
 }
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+qint64 QCNetworkReply::retainedCacheBodyBytesForTesting() const
+{
+    Q_D(const QCNetworkReply);
+    return d->cacheBodyBuffer.size();
+}
+#endif
+
 QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
 {
     Q_D(const QCNetworkReply);

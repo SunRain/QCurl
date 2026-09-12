@@ -123,6 +123,9 @@ public:
                             HttpMethod method,
                             const QByteArray &requestBody = QByteArray(),
                             QObject *parent               = nullptr);
+
+    /// 返回测试用缓存候选保留字节数，不包含未消费响应缓冲。
+    [[nodiscard]] qint64 retainedCacheBodyBytesForTesting() const;
 #endif
 
     /// 析构 reply 并释放底层 easy handle、回调和缓存资源。

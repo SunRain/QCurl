@@ -27,7 +27,14 @@ void appendReplyBody(QCNetworkReplyTransferState *state, char *ptr, size_t total
 {
     const QByteArray chunk(ptr, static_cast<int>(totalSize));
     state->bodyBuffer.append(chunk);
-    state->cacheBodyBuffer.append(chunk);
+    if (state->cacheBodyLimit >= 0) {
+        if (chunk.size() <= state->cacheBodyLimit - state->cacheBodyBuffer.size()) {
+            state->cacheBodyBuffer.append(chunk);
+        } else {
+            state->cacheBodyBuffer = QByteArray();
+            state->cacheBodyLimit  = -1;
+        }
+    }
     state->bytesDownloaded += static_cast<qint64>(totalSize);
 }
 
