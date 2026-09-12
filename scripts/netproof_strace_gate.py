@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,9 @@ _NETWORK_ACTIVITY_MARKERS = (
 )
 
 _NETWORK_MARKERS = (*_SOCKET_MARKERS, *_NETWORK_ACTIVITY_MARKERS)
+_LOCAL_IPC_FD_RE = re.compile(
+    r"^(?:\d+\s+)?\w+\(\d+<(?:UNIX(?:-[A-Z]+)?|NETLINK):"
+)
 
 
 def utc_now_iso() -> str:
@@ -79,9 +83,16 @@ def find_network_syscalls(trace_text: str) -> list[str]:
 
 
 def find_network_activity_syscalls(trace_text: str) -> list[str]:
-    """Extract syscalls that bind, listen, connect, transfer, or accept data."""
+    """仅排除 strace 明确标为本地 IPC 的 UNIX/NETLINK fd，未知类型仍阻断。
 
-    return _find_matching_syscalls(trace_text, _NETWORK_ACTIVITY_MARKERS)
+    -yy 从内核解析调用时的 fd 类型，不依赖同一 trace 中先出现 socket()，因此覆盖
+    继承、dup、跨线程和 fd 复用。只信任调用的首个 fd 标注，不读取载荷中的类型文字。
+    """
+
+    return [
+        line for line in _find_matching_syscalls(trace_text, _NETWORK_ACTIVITY_MARKERS)
+        if not _LOCAL_IPC_FD_RE.match(line)
+    ]
 
 
 def _set_sanitizer_option(options: str, key: str, value: str) -> str:
@@ -154,6 +165,7 @@ def _run_traced_subject(
     command = [
         strace_bin,
         "-ff",
+        "-yy",
         "-e",
         "trace=network",
         "-o",

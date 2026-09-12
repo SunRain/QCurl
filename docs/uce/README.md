@@ -32,6 +32,10 @@ UCE 是 QCurl 面向门禁与证据链的统一入口：它不试图证明“所
 - `pr`：记录 capability 与 `downgrade_reason`，用于解释“本轮未覆盖什么”，但默认不把 `strace/tc/netns` 作为 required provider。
 - `nightly` / `soak`：至少要求 `strace` provider 可用；`tc` / `netns` 是否 required 由具体 contract 决定，并必须写进 manifest。
 - capability 结论必须可机器消费，不能只留在 CI 日志里。
+- strace 使用 `-yy` 标注调用时的文件描述符类型，只排除明确的 `AF_UNIX` / `AF_NETLINK`
+  本地通信；INET 及类型未知的网络操作仍阻断，包括继承、复制和复用的描述符。仅创建
+  套接字的能力探测独立记录，不等同于网络传输。
+
 
 ## 3. 证据目录结构
 
