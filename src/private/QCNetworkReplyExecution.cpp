@@ -7,6 +7,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkReplyExecution_p.h"
 
 #include <QDebug>
@@ -52,7 +53,7 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
         return;
     }
     qDebug() << "QCNetworkReply::execute: Started async request for"
-             << d->request.url();
+             << QCNetworkLogRedaction::redactUrl(d->request.url());
     QCCurlMultiManager::instance()->addReply(reply);
 }
 

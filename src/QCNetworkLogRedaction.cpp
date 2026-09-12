@@ -145,7 +145,7 @@ QString redactSensitiveTraceLine(const QByteArray &line)
 
 QString redactUrl(const QUrl &url)
 {
-    return redactSensitiveQueryParams(url.toString());
+    return redactSensitiveQueryParams(url.toString(QUrl::RemoveUserInfo));
 }
 
 } // namespace QCNetworkLogRedaction

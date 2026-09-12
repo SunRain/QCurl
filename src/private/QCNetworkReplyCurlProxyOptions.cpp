@@ -14,6 +14,7 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "private/QCNetworkHttpVersion_p.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkReplyCurlOptions_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 
@@ -83,7 +84,7 @@ unsigned long curlHttpAuthMethod(QCNetworkHttpAuthMethod method)
         && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
         qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider "
                       "HTTPS. url="
-                   << request.url().toString();
+                   << QCNetworkLogRedaction::redactUrl(request.url());
     }
     if (hasExplicitAuthorization) {
         return true;

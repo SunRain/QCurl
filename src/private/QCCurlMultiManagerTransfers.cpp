@@ -9,6 +9,7 @@
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
 
 #include <QDebug>
@@ -339,7 +340,10 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::takeFini
     curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &redirectUrl);
     qDebug() << "QCCurlMultiManager::checkMultiInfo: Request finished"
              << "Reply:" << safeReply.data() << "CURLcode:" << message->data.result
-             << "HTTP code:" << responseCode << "Redirect:" << (redirectUrl ? redirectUrl : "none");
+             << "HTTP code:" << responseCode << "Redirect:"
+             << (redirectUrl
+                     ? QCNetworkLogRedaction::redactUrl(QUrl(QString::fromUtf8(redirectUrl)))
+                     : QStringLiteral("none"));
 
     auto transfer = detachTransferRecordLocked(record,
                                                message->data.result,

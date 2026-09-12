@@ -6,6 +6,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkMiddlewareInternal_p.h"
 
 #include <QDebug>
@@ -54,7 +55,8 @@ void QCNetworkMiddleware::unregisterManager(QCNetworkAccessManager *manager)
 
 void QCLoggingMiddleware::onRequestPreSend(QCNetworkRequest &request)
 {
-    qDebug() << "[QCurl Middleware] Sending request:" << request.url().toString();
+    qDebug() << "[QCurl Middleware] Sending request:"
+             << QCNetworkLogRedaction::redactUrl(request.url());
 }
 
 void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
@@ -64,10 +66,12 @@ void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 
     if (reply->error() == NetworkError::NoError) {
-        qDebug() << "[QCurl Middleware] Response received:" << reply->url().toString();
+        qDebug() << "[QCurl Middleware] Response received:"
+                 << QCNetworkLogRedaction::redactUrl(reply->url());
     } else {
-        qWarning() << "[QCurl Middleware] Response error:" << reply->url().toString()
-                   << "Error:" << reply->errorString();
+        qWarning() << "[QCurl Middleware] Response error:"
+                   << QCNetworkLogRedaction::redactUrl(reply->url()) << "Error:"
+                   << QCNetworkLogRedaction::redactSensitiveQueryParams(reply->errorString());
     }
 }
 
@@ -93,7 +97,8 @@ void QCErrorHandlingMiddleware::onResponseReceived(QCNetworkReply *reply)
             m_errorCallback(errorMsg);
         }
 
-        qWarning() << "[QCurl] Error:" << errorMsg;
+        qWarning() << "[QCurl] Error:"
+                   << QCNetworkLogRedaction::redactSensitiveQueryParams(errorMsg);
     }
 }
 

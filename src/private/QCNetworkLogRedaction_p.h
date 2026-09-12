@@ -60,7 +60,7 @@ namespace QCNetworkLogRedaction {
 /**
  * @brief 脱敏 URL
  * @param url 原始 URL
- * @return 脱敏后的 URL 字符串
+ * @return 移除用户信息并隐藏敏感查询值的 URL 字符串
  */
 [[nodiscard]] QString redactUrl(const QUrl &url);
 

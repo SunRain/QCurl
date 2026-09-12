@@ -1,5 +1,6 @@
 #include "QCNetworkRequest.h"
 
+#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkRequestPrivate_p.h"
 
 #include <QDebug>
@@ -337,9 +338,9 @@ QByteArray QCNetworkRequest::cachePartitionKey() const
 QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)
 {
     dbg.nospace() << "QCNetworkRequest("
-                  << "url=" << req.url().toString() << ", followLocation=" << req.followLocation()
-                  << ", range=" << req.rangeStart() << "-" << req.rangeEnd()
-                  << ", lane=" << req.lane().name()
+                  << "url=" << QCNetworkLogRedaction::redactUrl(req.url())
+                  << ", followLocation=" << req.followLocation() << ", range=" << req.rangeStart()
+                  << "-" << req.rangeEnd() << ", lane=" << req.lane().name()
                   << ", httpVersion=" << static_cast<int>(req.httpVersion()) << ")";
     return dbg.space();
 }
