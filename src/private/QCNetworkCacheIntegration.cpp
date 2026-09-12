@@ -128,7 +128,9 @@ private:
     if (!base.isValid() || seconds <= 0) {
         return base;
     }
-    const QDateTime maxDate(QDate(9999, 12, 31), QTime(23, 59, 59), QTimeZone::UTC);
+    const QDateTime maxDate(QDate(9999, 12, 31),
+                            QTime(23, 59, 59),
+                            QTimeZone(QByteArrayLiteral("UTC")));
     const qint64 available = base.secsTo(maxDate);
     return available <= 0 || seconds >= available ? maxDate : base.addSecs(seconds);
 }
@@ -308,7 +310,9 @@ QCNetworkCacheMetadata buildCacheMetadata(
     const QDateTime responseTime = QDateTime::currentDateTimeUtc();
     const qint64 boundedDelay    = qMax<qint64>(0, responseDelayMs);
     const QDateTime requestTime  = boundedDelay > responseTime.toMSecsSinceEpoch()
-                                       ? QDateTime::fromMSecsSinceEpoch(0, QTimeZone::UTC)
+                                       ? QDateTime::fromMSecsSinceEpoch(0,
+                                                                        QTimeZone(QByteArrayLiteral(
+                                                                            "UTC")))
                                        : responseTime.addMSecs(-boundedDelay);
     const ResponseHeaderIndex responseHeaders(rawResponseHeaders);
     const qint64 initialAge = correctedInitialAgeSeconds(responseHeaders, requestTime, responseTime);

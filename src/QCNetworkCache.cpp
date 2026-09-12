@@ -116,7 +116,9 @@ private:
     if (!base.isValid() || seconds <= 0) {
         return base;
     }
-    const QDateTime maxDate(QDate(9999, 12, 31), QTime(23, 59, 59), QTimeZone::UTC);
+    const QDateTime maxDate(QDate(9999, 12, 31),
+                            QTime(23, 59, 59),
+                            QTimeZone(QByteArrayLiteral("UTC")));
     const qint64 available = base.secsTo(maxDate);
     if (available <= 0 || seconds >= available) {
         return maxDate;

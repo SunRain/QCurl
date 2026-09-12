@@ -31,6 +31,7 @@ if(NOT QCURL_BUILD_SHARED_LIBS)
 endif()
 
 set(QCURL_MIN_LIBCURL_VERSION "7.85.0")
+set(QCURL_MIN_QT_VERSION "6.2")
 
 # 编译选项：启用所有警告
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -40,8 +41,7 @@ elseif(MSVC)
 endif()
 
 # 查找依赖
-find_package(Qt6 REQUIRED COMPONENTS Core)
-find_package(Qt6 REQUIRED COMPONENTS Network)
+find_package(Qt6 ${QCURL_MIN_QT_VERSION} REQUIRED COMPONENTS Core Network)
 find_package(ZLIB REQUIRED)
 if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     if(NOT BUILD_TESTING)
@@ -346,9 +346,9 @@ if(NOT QCURL_BUILD_LIBCURL_CONSISTENCY)
     set(CPACK_GENERATOR "TGZ;DEB;RPM")
     set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libqt6core6, libqt6network6, libcurl4 (>= ${QCURL_MIN_LIBCURL_VERSION})")
+        "libqt6core6 (>= ${QCURL_MIN_QT_VERSION}), libqt6network6 (>= ${QCURL_MIN_QT_VERSION}), libcurl4 (>= ${QCURL_MIN_LIBCURL_VERSION})")
     set(CPACK_RPM_PACKAGE_REQUIRES
-        "qt6-qtbase >= 6.2, libcurl >= ${QCURL_MIN_LIBCURL_VERSION}")
+        "qt6-qtbase >= ${QCURL_MIN_QT_VERSION}, libcurl >= ${QCURL_MIN_LIBCURL_VERSION}")
     include(CPack)
 else()
     message(STATUS "QCURL_BUILD_LIBCURL_CONSISTENCY=ON：保留 install/export 以支持 consumer smoke，跳过 CPack 打包")

@@ -114,7 +114,7 @@ private:
 {
     return milliseconds == kNullDateTime
                ? QDateTime()
-               : QDateTime::fromMSecsSinceEpoch(milliseconds, QTimeZone::UTC);
+               : QDateTime::fromMSecsSinceEpoch(milliseconds, QTimeZone(QByteArrayLiteral("UTC")));
 }
 
 [[nodiscard]] bool verifyChecksum(QFile &file,
