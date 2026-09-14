@@ -23,7 +23,7 @@ def _load_yaml(path: str) -> dict[str, object]:
 def _registered_labels(*cmake_paths: str) -> dict[str, set[str]]:
     labels: dict[str, set[str]] = {}
     for cmake_path in cmake_paths:
-        cmake_text = Path(cmake_path).read_text(encoding="utf-8")
+        cmake_text = label_matrix.read_cmake_inputs(Path(cmake_path))
         for target, label_string in label_matrix._parse_labels(cmake_text).items():
             labels[target] = {label for label in label_string.split(";") if label}
     return labels

@@ -83,6 +83,14 @@ def _parse_labels(cmake_text: str) -> dict[str, str]:
     return labels_by_target
 
 
+def read_cmake_inputs(cmake_path: Path) -> str:
+    """读取测试入口及其直接包含的同目录 CMake 片段。"""
+    source = cmake_path.read_text(encoding="utf-8")
+    includes = re.findall(r'include\("\$\{CMAKE_CURRENT_LIST_DIR\}/([^"\n]+)"\)', source)
+    fragments = [(cmake_path.parent / name).read_text(encoding="utf-8") for name in includes]
+    return "\n".join([source, *fragments])
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Fail when qcurl preflight targets miss required CTest labels.",
@@ -99,7 +107,7 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(f"[qcurl_label_matrix] CMake file not found: {cmake_path}\n")
         return 2
 
-    cmake_text = cmake_path.read_text(encoding="utf-8")
+    cmake_text = read_cmake_inputs(cmake_path)
     preflight_targets = _parse_preflight_targets(cmake_text)
     labels_by_target = _parse_labels(cmake_text)
 

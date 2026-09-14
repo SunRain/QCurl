@@ -1119,6 +1119,8 @@ def test_test_internals_are_non_installable() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     source = (repo_root / "src" / "CMakeLists.txt").read_text(encoding="utf-8")
     companion_targets = ("QCurlTestInternals", "QCurlOtherExtrasTestInternals")
+    assert 'include("${CMAKE_CURRENT_LIST_DIR}/QCurlTestInternals.cmake")' in source
+    source += (repo_root / "src" / "QCurlTestInternals.cmake").read_text(encoding="utf-8")
 
     for target in companion_targets:
         assert re.search(
