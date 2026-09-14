@@ -62,6 +62,7 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkRequestScheduler.cpp
     QCMultipartFormData.cpp         # Core / Stable: Multipart 表单数据
     QCNetworkCache.cpp              # Core / Stable: 缓存基类
+    QCNetworkCacheResults.cpp
     QCNetworkCacheRequestKey.cpp    # Core / Stable: 结构化缓存请求键
     QCNetworkMemoryCache.cpp        # Core / Stable: 内存缓存
     QCNetworkDiskCache.cpp          # Core / Stable: 磁盘缓存

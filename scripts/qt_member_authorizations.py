@@ -178,6 +178,10 @@ SHARED_DATA_AUTHORIZATIONS = (
         "shared_data",
         "src/QCNetworkCache.cpp",
         "QCNetworkCacheMetadataData",
+    ),
+    *_entries(
+        "shared_data",
+        "src/QCNetworkCacheResults.cpp",
         "QCNetworkCacheLookupResultData",
         "QCNetworkCacheClearResultData",
     ),
