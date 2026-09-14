@@ -5,6 +5,7 @@ on:
   push:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
       - 'CMakeLists.txt'
       - 'src/**'
       - 'tests/**'
@@ -41,7 +42,6 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
-            qt6-base-dev \
             libcurl4-openssl-dev \
             libssl-dev \
             zlib1g-dev \
@@ -56,6 +56,9 @@ jobs:
 
           # 默认层级不强制 HTTP/3；运行镜像提供兼容软件包时安装其依赖。
           sudo apt-get install -y libngtcp2-dev || true
+
+      - name: 安装项目最低 Qt SDK
+        uses: ./.github/actions/setup-qt
 
       - name: Install Python dependencies
         run: |
@@ -111,10 +114,11 @@ jobs:
         run: |
           set -euo pipefail
           ROOT="$PWD"
-          QT_VERSION="$(qmake6 -query QT_VERSION)"
+          QT_VERSION="$(qmake -query QT_VERSION)"
           QT_SERIES="${QT_VERSION%.*}"
           DEPS="$ROOT/build/tsan-deps"
           QT_TSAN_PREFIX="$DEPS/qt-$QT_VERSION"
+          echo "QT_TSAN_PREFIX=$QT_TSAN_PREFIX" >> "$GITHUB_ENV"
           SOURCE="$DEPS/src/qtbase-$QT_VERSION"
           EVIDENCE="$ROOT/build/evidence/uce-sanitizers/tsan/$UCE_RUN_ID/qt-dependency"
           ARCHIVE="qtbase-everywhere-src-$QT_VERSION.tar.xz"
@@ -148,6 +152,10 @@ jobs:
       - name: Run TSAN subset
         run: |
           set -euo pipefail
+          # 普通 SDK 的全局环境不能覆盖本步骤独立构建的插桩 Qt。
+          export LD_LIBRARY_PATH="$QT_TSAN_PREFIX/lib"
+          export QT_PLUGIN_PATH="$QT_TSAN_PREFIX/plugins"
+          unset QML2_IMPORT_PATH
           HTTPBIN_NAME="qcurl-tsan-$UCE_RUN_ID"
           bash "tests/qcurl/httpbin/start_httpbin.sh" --port 0 --name "$HTTPBIN_NAME" \
             --write-env "build/test-env/tsan-httpbin.env"

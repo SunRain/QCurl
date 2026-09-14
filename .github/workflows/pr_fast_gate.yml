@@ -5,6 +5,7 @@ on:
   pull_request:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
       - 'CMakeLists.txt'
       - 'src/**'
       - 'tests/**'
@@ -14,6 +15,7 @@ on:
   push:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
       - 'CMakeLists.txt'
       - 'src/**'
       - 'tests/**'
@@ -46,7 +48,6 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
-            qt6-base-dev \
             libcurl4-openssl-dev \
             libssl-dev \
             zlib1g-dev \
@@ -56,6 +57,9 @@ jobs:
             apache2-dev \
             libapache2-mod-http2 \
             libevent-dev
+
+      - name: 安装项目最低 Qt SDK
+        uses: ./.github/actions/setup-qt
 
       - name: Install Python dependencies
         run: |

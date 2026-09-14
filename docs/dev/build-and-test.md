@@ -4,12 +4,19 @@
 
 ## 1. 最小构建
 
+最低依赖为 Qt **6.10.3**、C++17 和 libcurl 7.85.0。使用独立 Qt SDK 时，通过
+`-DCMAKE_PREFIX_PATH=/path/to/Qt/6.10.3/gcc_64` 指定前缀；6.10.0–6.10.2 会被拒绝。
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
 默认会按仓库配置启用 tests / examples / benchmarks。
+
+Ubuntu/Debian CI 通过 `.github/actions/setup-qt` 从 `QCURL_MIN_QT_VERSION` 读取版本并安装
+Qt SDK，不再依赖发行版提供的旧 Qt。Arch 快照仍使用原生软件包，所选快照必须满足同一最低版本。
+nightly 的 TSan 路线另外构建同版本插桩 Qt，并隔离其运行库与插件路径，不能混用普通 SDK。
 
 ## 2. QtTest 门禁
 

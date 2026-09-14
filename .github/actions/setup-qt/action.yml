@@ -1,0 +1,36 @@
+name: 安装项目最低 Qt
+description: 从 CMake 的唯一版本声明安装 CI 使用的 Qt SDK。
+
+inputs:
+  install-deps:
+    description: Linux 依赖安装方式；root 容器使用 nosudo。
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: 读取最低 Qt 版本
+      id: qt-version
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="$(sed -nE 's/^set\(QCURL_MIN_QT_VERSION "([0-9]+\.[0-9]+\.[0-9]+)"\)$/\1/p' CMakeLists.txt)"
+        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo '无法从 CMakeLists.txt 读取唯一、精确到补丁号的最低 Qt 版本' >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: 安装 Qt SDK
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ steps.qt-version.outputs.version }}
+        install-deps: ${{ inputs.install-deps }}
+        cache: 'true'
+
+    - name: 校验并导出 Qt 前缀
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(qmake -query QT_VERSION)" = '${{ steps.qt-version.outputs.version }}'
+        echo "CMAKE_PREFIX_PATH=$QT_ROOT_DIR${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"

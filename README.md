@@ -2,7 +2,7 @@
 
 > 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类型安全的异步 Core，以及可独立安装的 Blocking Extras、Other Extras 和 Test Support。
 
-[![Qt6](https://img.shields.io/badge/Qt-6.2+-41CD52?logo=qt)](https://www.qt.io/)
+[![Qt6](https://img.shields.io/badge/Qt-6.10.3+-41CD52?logo=qt)](https://www.qt.io/)
 [![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
 [![libcurl](https://img.shields.io/badge/libcurl-7.85%2B-073551?logo=curl)](https://curl.se/libcurl/)
 [![CMake](https://img.shields.io/badge/CMake-3.16+-064F8C?logo=cmake)](https://cmake.org/)
@@ -94,9 +94,12 @@ WebSocket 标记为 Preview；Middleware Extras 属于 Other Extras 的公开稳
 | 依赖          | 版本要求  | 说明                           |
 | ----------- | ----- | ---------------------------- |
 | **CMake**   | 3.16+ | 构建系统                         |
-| **Qt6**     | 6.2+  | Core consumer 需要 QtCore；Other Extras diagnostics 需要 QtNetwork |
+| **Qt6**     | 6.10.3+ | Core consumer 需要 QtCore；Other Extras diagnostics 需要 QtNetwork |
 | **libcurl** | 7.85.0+ | WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend |
 | **编译器**     | C++17 | GCC 11+、Clang 14+、MSVC 2019+ |
+
+Qt 的最低版本精确到 **6.10.3**；6.10.0–6.10.2 不受支持。构建、安装包发现、
+pkg-config 和公共头文件均使用这一要求；发行版自带 Qt 较旧时需使用满足版本要求的 SDK。
 
 ---
 

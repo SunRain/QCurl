@@ -7,12 +7,16 @@ on:
   push:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
+      - 'CMakeLists.txt'
       - 'src/**'
       - 'benchmarks/**'
       - '.github/workflows/benchmark.yml'
   pull_request:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
+      - 'CMakeLists.txt'
       - 'src/**'
       - 'benchmarks/**'
   # 允许手动触发
@@ -51,10 +55,12 @@ jobs:
         sudo apt-get install -y \
           cmake \
           ninja-build \
-          qt6-base-dev \
           libcurl4-openssl-dev \
           libssl-dev \
           zlib1g-dev
+
+    - name: 安装项目最低 Qt SDK
+      uses: ./.github/actions/setup-qt
 
     - name: Configure CMake
       run: |

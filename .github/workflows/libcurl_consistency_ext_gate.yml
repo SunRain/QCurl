@@ -5,6 +5,7 @@ on:
   push:
     branches: [ master, main, develop ]
     paths:
+      - '.github/actions/**'
       - 'CMakeLists.txt'
       - 'src/**'
       - 'tests/**'
@@ -37,7 +38,6 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
-            qt6-base-dev \
             libcurl4-openssl-dev \
             libssl-dev \
             zlib1g-dev \
@@ -50,6 +50,9 @@ jobs:
 
           # ngtcp2 的包名在不同 Ubuntu 版本可能不同：优先 libngtcp2-dev，否则退回 crypto 后端包。
           sudo apt-get install -y libngtcp2-dev || sudo apt-get install -y libngtcp2-crypto-openssl-dev || sudo apt-get install -y libngtcp2-crypto-gnutls-dev
+
+      - name: 安装项目最低 Qt SDK
+        uses: ./.github/actions/setup-qt
 
       - name: Install Python dependencies
         run: |

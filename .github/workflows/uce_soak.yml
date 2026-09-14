@@ -31,7 +31,6 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
-            qt6-base-dev \
             libcurl4-openssl-dev \
             libssl-dev \
             zlib1g-dev \
@@ -42,6 +41,9 @@ jobs:
             libapache2-mod-http2 \
             libevent-dev \
             strace
+
+      - name: 安装项目最低 Qt SDK
+        uses: ./.github/actions/setup-qt
 
       - name: Install Python dependencies
         run: |

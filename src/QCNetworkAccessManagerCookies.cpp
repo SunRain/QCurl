@@ -5,6 +5,7 @@
 #include <QAbstractEventDispatcher>
 #include <QFutureInterface>
 #include <QMetaObject>
+#include <QMutexLocker>
 #include <QThread>
 
 #include <atomic>
@@ -57,7 +58,6 @@ public:
     CookieCompletionState()
     {
         m_interface.reportStarted();
-        m_interface.setAddResultsIfCanceledEnabled(true);
     }
 
     [[nodiscard]] QFuture<Result> future() { return m_interface.future(); }
@@ -69,7 +69,15 @@ public:
         if (!m_completed.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
             return false;
         }
-        m_interface.reportResult(std::move(result));
+        {
+            // 取消只阻止尚未执行的命令，不丢弃结构化终态。Qt 6.10 的 reportResult()
+            // 会拒绝已取消的 Future，因此在其互斥锁内直接发布唯一结果，不清除取消标志。
+            QMutexLocker locker(&m_interface.mutex());
+            auto &store     = m_interface.resultStoreBase();
+            const int index = store.template emplaceResult<Result>(0, std::move(result));
+            Q_ASSERT(index == 0);
+            m_interface.reportResultsReady(index, index + 1);
+        }
         m_interface.reportFinished();
         return true;
     }

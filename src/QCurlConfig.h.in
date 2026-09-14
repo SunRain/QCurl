@@ -29,10 +29,10 @@
 #define QCURL_VERSION \
     QCURL_VERSION_CHECK(QCURL_VERSION_MAJOR, QCURL_VERSION_MINOR, QCURL_VERSION_PATCH)
 
-// Qt 版本检查：要求 Qt 6.0 或更高
+// 最低 Qt 版本与源码构建、安装包依赖使用同一配置来源。
 #include <QtGlobal>
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-#error "QCurl requires Qt 6.0 or later. Please upgrade your Qt installation."
+#if QT_VERSION < QT_VERSION_CHECK(@QCURL_MIN_QT_VERSION_COMPONENTS@)
+#error "QCurl requires Qt @QCURL_MIN_QT_VERSION@ or later. Please upgrade your Qt installation."
 #endif
 
 // 特性可用性检查宏
