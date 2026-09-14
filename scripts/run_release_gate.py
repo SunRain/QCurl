@@ -14,7 +14,7 @@ from pathlib import Path
 
 if __package__:
     from . import release_identity
-    from .release_gate_steps import GateStep
+    from .release_gate_model import GateStep, GateTier
     from .release_gate_steps import build_steps as _build_steps
     from .release_gate_execution import artifact_path as _artifact_path
     from .release_gate_execution import execute_gate as _execute_gate_impl
@@ -36,7 +36,7 @@ if __package__:
     from .release_tree_model import tree_registry
 else:
     import release_identity
-    from release_gate_steps import GateStep
+    from release_gate_model import GateStep, GateTier
     from release_gate_steps import build_steps as _build_steps
     from release_gate_execution import artifact_path as _artifact_path
     from release_gate_execution import execute_gate as _execute_gate_impl
@@ -63,9 +63,8 @@ def _repo_root() -> Path:
 
 
 def _selected_steps(args: argparse.Namespace) -> list[GateStep]:
-    order = {"fast": 0, "strict": 1, "full": 2}
-    max_order = order[args.tier]
-    return [step for step in _build_steps(args) if order[step.tier] <= max_order]
+    tier = GateTier(args.tier)
+    return [step for step in _build_steps(args) if step.tier.rank <= tier.rank]
 
 
 def _identity_build_dirs(args: argparse.Namespace) -> list[Path]:
@@ -171,7 +170,7 @@ def _execute_gate(
 
 def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
     payload = {
-        "tier": args.tier,
+        "tier": GateTier(args.tier).value,
         "abiMode": args.abi_mode,
         "trees": {
             tree_id: {
@@ -183,7 +182,7 @@ def _write_plan(args: argparse.Namespace, steps: list[GateStep]) -> None:
         "steps": [
             {
                 "name": step.name,
-                "tier": step.tier,
+                "tier": step.tier.value,
                 "description": step.description,
                 "command": step.command,
                 "producerTreeId": step.producer_tree_id,
@@ -201,7 +200,7 @@ def _authority_paths(args: argparse.Namespace, repo_root: Path) -> list[Path]:
         (path if path.is_absolute() else repo_root / path).resolve()
         for path in paths
     ]
-    if args.tier == "full":
+    if args.tier is GateTier.FULL:
         expected = release_identity.default_authority_paths(repo_root)
         if (
             len(resolved) != len(expected)
@@ -229,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
             "comparison is explicit opt-in."
         )
     )
-    parser.add_argument("--tier", choices=("fast", "strict", "full"), default="fast")
+    parser.add_argument("--tier", type=GateTier, choices=tuple(GateTier), default=GateTier.FAST)
     parser.add_argument("--release-shared-build-dir", type=Path)
     parser.add_argument("--release-static-build-dir", type=Path)
     parser.add_argument("--test-shared-gcc-build-dir", type=Path)
@@ -255,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.scan_metadata:
         return _scan_metadata(repo_root)
-    if args.tier == "full":
+    if args.tier is GateTier.FULL:
         try:
             _validate_build_capabilities(args)
         except ValueError as exc:

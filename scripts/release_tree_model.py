@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+
+if __package__:
+    from .release_gate_model import GateTier
+else:
+    from release_gate_model import GateTier
 from typing import Any
 
 
@@ -87,14 +92,14 @@ def tree_registry(args: Any) -> dict[str, dict[str, Any]]:
     return registry
 
 
-def required_tree_ids(tier: str) -> tuple[str, ...]:
+def required_tree_ids(tier: GateTier) -> tuple[str, ...]:
     """返回指定 gate tier 允许消费的显式 producer tree 集合。"""
 
-    if tier == "fast":
+    if tier is GateTier.FAST:
         return ("release-shared",)
-    if tier == "strict":
+    if tier is GateTier.STRICT:
         return ("release-shared", "test-shared-gcc")
-    if tier == "full":
+    if tier is GateTier.FULL:
         return TREE_IDS
     raise ValueError(f"unsupported release gate tier: {tier}")
 

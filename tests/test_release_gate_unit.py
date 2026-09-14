@@ -220,7 +220,7 @@ def test_release_gate_writes_promotion_manifest_binding(tmp_path: Path) -> None:
     run_release_gate._resolve_paths(args, repo)
     step = run_release_gate.GateStep(
         "abi_hardbreak_report",
-        "full",
+        run_release_gate.GateTier.FULL,
         ["true"],
         "promotion report",
         "release-shared",
@@ -1016,7 +1016,7 @@ def test_release_gate_writes_and_revalidates_machine_pass_manifest(
 ) -> None:
     repo = _init_identity_repo(tmp_path)
     manifest_path = repo / "artifacts" / "qa-manifest.json"
-    step = run_release_gate.GateStep("machine_gate", "fast", ["true"], "test gate")
+    step = run_release_gate.GateStep("machine_gate", run_release_gate.GateTier.FAST, ["true"], "test gate")
     monkeypatch.setattr(run_release_gate, "_repo_root", lambda: repo)
     monkeypatch.setattr(run_release_gate, "_selected_steps", lambda args: [step])
     monkeypatch.setattr(run_release_gate, "_run_step", lambda candidate, root: 0)

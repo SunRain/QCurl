@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 
 if __package__:
-    from .release_gate_model import GateStep
+    from .release_gate_model import GateStep, GateTier
 else:
-    from release_gate_model import GateStep
+    from release_gate_model import GateStep, GateTier
 
 
 def examples_benchmarks_steps(
@@ -21,7 +21,7 @@ def examples_benchmarks_steps(
     return [
         GateStep(
             "examples_benchmarks_configure",
-            "strict",
+            GateTier.STRICT,
             [
                 args.cmake,
                 "-S",
@@ -39,7 +39,7 @@ def examples_benchmarks_steps(
         ),
         GateStep(
             "examples_benchmarks_build",
-            "strict",
+            GateTier.STRICT,
             [
                 args.cmake,
                 "--build",

@@ -7,14 +7,14 @@ from pathlib import Path
 
 if __package__:
     from .release_examples_steps import examples_benchmarks_steps
-    from .release_gate_model import GateStep
+    from .release_gate_model import GateStep, GateTier
     from .release_package_steps import package_evidence_step
     from .release_package_steps import sanitizer_steps
     from .release_package_steps import shared_package_steps
     from .release_tree_model import tree_path
 else:
     from release_examples_steps import examples_benchmarks_steps
-    from release_gate_model import GateStep
+    from release_gate_model import GateStep, GateTier
     from release_package_steps import package_evidence_step
     from release_package_steps import sanitizer_steps
     from release_package_steps import shared_package_steps
@@ -23,7 +23,7 @@ else:
 
 def _step(
     name: str,
-    tier: str,
+    tier: GateTier,
     command: list[str],
     description: str,
     tree_id: str,
@@ -41,7 +41,7 @@ def _shared_steps(args: argparse.Namespace) -> list[GateStep]:
         steps.append(
             _step(
                 "shared_public_api",
-                "strict",
+                GateTier.STRICT,
                 [args.ctest, "--test-dir", str(test_gcc), "-L", "^public-api$", "--output-on-failure"],
                 "run shared public API checks in the GCC test tree",
                 "test-shared-gcc",
@@ -64,7 +64,7 @@ def _static_build_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         _step(
             "static_configure",
-            "full",
+            GateTier.FULL,
             [
                 args.cmake,
                 "-S",
@@ -85,7 +85,7 @@ def _static_build_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "static_package_candidate",
-            "full",
+            GateTier.FULL,
             [args.python, "tests/public_api/package_gate_contracts.py", "validate-candidate", str(build_dir)],
             "reject force-disabled or capability-cropped static candidates",
             "release-static",
@@ -93,7 +93,7 @@ def _static_build_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "static_build",
-            "full",
+            GateTier.FULL,
             [
                 args.cmake,
                 "--build",
@@ -139,7 +139,7 @@ def _strict_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         _step(
             "strict_qttest",
-            "strict",
+            GateTier.STRICT,
             [args.python, "scripts/ctest_strict.py", "--build-dir", str(test_gcc)],
             "run the GCC QtTest suite with skip failures",
             "test-shared-gcc",
@@ -148,7 +148,7 @@ def _strict_steps(args: argparse.Namespace) -> list[GateStep]:
         *examples_benchmarks_steps(args, test_gcc),
         _step(
             "deprecated_curl_api_guard",
-            "strict",
+            GateTier.STRICT,
             [args.python, "scripts/check_deprecated_curl_apis.py", "--curl-header", "curl/include/curl/curl.h", "--scan-root", "src"],
             "scan QCurl sources for deprecated libcurl APIs",
             "test-shared-gcc",
@@ -156,7 +156,7 @@ def _strict_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "label_matrix_guard",
-            "strict",
+            GateTier.STRICT,
             [args.python, "scripts/check_qcurl_label_matrix.py"],
             "validate the CTest label matrix",
             "test-shared-gcc",
@@ -164,7 +164,7 @@ def _strict_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "skip_contract_guard",
-            "strict",
+            GateTier.STRICT,
             [args.python, "scripts/check_skip_contract.py"],
             "validate the CTest skip contract policy",
             "test-shared-gcc",
@@ -179,7 +179,7 @@ def _full_test_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         _step(
             "full_ctest",
-            "full",
+            GateTier.FULL,
             [
                 args.ctest,
                 "--test-dir",
@@ -194,7 +194,7 @@ def _full_test_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "clang_ctest",
-            "full",
+            GateTier.FULL,
             [
                 args.ctest,
                 "--test-dir",
@@ -209,7 +209,7 @@ def _full_test_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "libcurl_consistency_full",
-            "full",
+            GateTier.FULL,
             [
                 args.python,
                 "tests/libcurl_consistency/run_gate.py",
@@ -241,7 +241,7 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         _step(
             "capability_matrix_build",
-            "full",
+            GateTier.FULL,
             [args.cmake, "--build", str(test_gcc), "--target", "qcurl_lc_capability_probe", "-j", str(args.jobs)],
             "build the libcurl capability probe in the GCC test tree",
             "test-shared-gcc",
@@ -249,7 +249,7 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "capability_matrix_probe",
-            "full",
+            GateTier.FULL,
             [str(test_gcc / "tests" / "qcurl_lc_capability_probe"), "--output", str(test_gcc / "libcurl_consistency" / "reports" / "capabilities.json")],
             "write the capability matrix report in the GCC test tree",
             "test-shared-gcc",
@@ -257,7 +257,7 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "metadata_scan",
-            "full",
+            GateTier.FULL,
             [args.python, "scripts/run_release_gate.py", "--scan-metadata"],
             "scan release metadata without a build-dir fallback",
             "release-shared",
@@ -265,7 +265,7 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "uce_evidence",
-            "full",
+            GateTier.FULL,
             [args.python, "scripts/run_uce_gate.py", "--tier", "nightly", "--build-dir", str(test_gcc), "--run-id", "release-gate"],
             "run UCE evidence from the GCC test tree",
             "test-shared-gcc",
@@ -273,7 +273,7 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "doxygen_report",
-            "full",
+            GateTier.FULL,
             [
                 args.python,
                 "scripts/run_doxygen_gate.py",
@@ -295,7 +295,7 @@ def _abi_steps(args: argparse.Namespace) -> list[GateStep]:
         return [
             _step(
                 "abi_current_baseline_diff",
-                "full",
+                GateTier.FULL,
                 [
                     args.python,
                     "scripts/qcurl_abi_gate.py",
@@ -318,7 +318,7 @@ def _abi_steps(args: argparse.Namespace) -> list[GateStep]:
         return [
             _step(
                 "abi_hardbreak_report",
-                "full",
+                GateTier.FULL,
                 [
                     args.python,
                     "scripts/qcurl_abi_gate.py",
@@ -347,7 +347,7 @@ def _symbol_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         _step(
             "dynamic_symbol_allowlist",
-            "full",
+            GateTier.FULL,
             [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / "libQCurl.so.2.0.0"), "--symbol-report", str(release_shared / "abi" / "qcurl-core-v2.dynamic-symbols.json"), "symbols"],
             "validate Core dynamic symbols from the release shared tree",
             "release-shared",
@@ -355,7 +355,7 @@ def _symbol_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         _step(
             "other_extras_dynamic_symbol_allowlist",
-            "full",
+            GateTier.FULL,
             [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / "libQCurlOtherExtras.so.2.0.0"), "--component", "other-extras", "--symbol-report", str(release_shared / "abi" / "qcurl-other-extras-v2.dynamic-symbols.json"), "symbols"],
             "validate Other Extras dynamic symbols from the release shared tree",
             "release-shared",
@@ -367,13 +367,14 @@ def _symbol_steps(args: argparse.Namespace) -> list[GateStep]:
 def build_steps(args: argparse.Namespace) -> list[GateStep]:
     """返回按 producer tree 固定顺序排列的 release gate 步骤。"""
 
-    if args.tier == "fast":
-        return [step for step in _shared_steps(args) if step.tier == "fast"]
-    if args.tier == "strict":
+    tier = GateTier(args.tier)
+    if tier is GateTier.FAST:
+        return [step for step in _shared_steps(args) if step.tier == GateTier.FAST]
+    if tier is GateTier.STRICT:
         steps = _shared_steps(args)
         steps.extend(_static_package_steps(args))
         steps.extend(_strict_steps(args))
-        return [step for step in steps if step.tier in {"fast", "strict"}]
+        return [step for step in steps if step.tier in {GateTier.FAST, GateTier.STRICT}]
     steps = _shared_steps(args)
     steps.extend(_static_build_steps(args))
     steps.extend(_static_package_steps(args))

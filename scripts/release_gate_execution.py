@@ -9,14 +9,14 @@ from typing import Callable
 
 if __package__:
     from . import release_identity
-    from .release_gate_model import GateStep
+    from .release_gate_model import GateStep, GateTier
     from .release_evidence_model import ARTIFACT_CONTRACTS
     from .release_evidence_model import command_digest
     from .release_tree_model import tree_path
     from .release_tree_model import tree_registry
 else:
     import release_identity
-    from release_gate_model import GateStep
+    from release_gate_model import GateStep, GateTier
     from release_evidence_model import ARTIFACT_CONTRACTS
     from release_evidence_model import command_digest
     from release_tree_model import tree_path
@@ -272,7 +272,7 @@ def verify_manifest(args, repo_root: Path, steps: list[GateStep] | None = None) 
     recorded_registry = capabilities.get("tree_registry", {})
     current_registry = tree_registry(args)
     if stage in {"promotion", "final"}:
-        if args.tier != "full" or len(current_registry) != 6:
+        if args.tier is not GateTier.FULL or len(current_registry) != 6:
             print(
                 "[release_gate] promotion/final verification requires --tier full "
                 "and all six explicit tree paths",

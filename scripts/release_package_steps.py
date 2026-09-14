@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 
 if __package__:
-    from .release_gate_model import GateStep
+    from .release_gate_model import GateStep, GateTier
     from .release_tree_model import tree_path
 else:
-    from release_gate_model import GateStep
+    from release_gate_model import GateStep, GateTier
     from release_tree_model import tree_path
 
 
@@ -23,7 +23,7 @@ def shared_package_steps(args: argparse.Namespace) -> list[GateStep]:
     return [
         GateStep(
             "package_gate_contract",
-            "fast",
+            GateTier.FAST,
             [args.python, PACKAGE_GATE_SCRIPT, "validate-contract", PACKAGE_GATE_MANIFEST],
             "validate four-target delivery, lifecycle and sanitizer evidence mapping",
             "release-shared",
@@ -31,7 +31,7 @@ def shared_package_steps(args: argparse.Namespace) -> list[GateStep]:
         ),
         GateStep(
             "shared_package_candidate",
-            "fast",
+            GateTier.FAST,
             [args.python, PACKAGE_GATE_SCRIPT, "validate-candidate", str(build_dir)],
             "reject force-disabled or capability-cropped shared release candidates",
             "release-shared",
@@ -62,7 +62,7 @@ def package_evidence_step(
     )
     return GateStep(
         name,
-        "full",
+        GateTier.FULL,
         [
             args.python,
             "scripts/release_package_evidence.py",
@@ -108,7 +108,7 @@ def sanitizer_steps(args: argparse.Namespace) -> list[GateStep]:
         steps.append(
             GateStep(
                 name,
-                "full",
+                GateTier.FULL,
                 [
                     args.python,
                     "scripts/run_uce_sanitizers.py",
