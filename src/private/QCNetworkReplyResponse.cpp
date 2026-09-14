@@ -3,6 +3,7 @@
  * @brief QCNetworkReply response header 与 attempt error 实现。
  */
 
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkMockHandler_p.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
@@ -115,7 +116,7 @@ bool isSatisfiedRangeCompletion(QCNetworkReplyPrivate *reply)
     bool ok                        = false;
     const qint64 existingSize      = existingSizeVar.toLongLong(&ok);
     const auto completeSize        = parseContentRangeCompleteSize(
-        reply->finalHeaderMap.value(QByteArrayLiteral("content-range")));
+        reply->finalHeaderMap.value(QCurl::httpheaders::kContentRange.toLower()));
     return ok && existingSize >= 0 && completeSize.has_value()
            && completeSize.value() == existingSize;
 }

@@ -675,7 +675,7 @@ void TestLibcurlConsistency::testCase()
 
         QCNetworkRequest req(url);
         req.setHttpVersion(httpVersion);
-        req.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        req.setAllowedProtocols(QCurl::QCNetworkProtocol::Https);
         req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
@@ -744,7 +744,7 @@ void TestLibcurlConsistency::testCase()
         req.setHttpVersion(httpVersion);
         req.setFollowLocation(true);
         QCOMPARE(req.setMaxRedirects(10), QCNetworkConfigUpdateResult::Applied);
-        req.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+        req.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
         req.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
         auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);

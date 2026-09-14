@@ -6,6 +6,7 @@
 #include "CurlFeatureProbe.h"
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkError.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply_p.h"
@@ -186,16 +187,16 @@ void configureExpectContinueTimeout(QCNetworkReplyPrivate *reply,
 
 void recordHeaderFact(const QByteArray &normalizedName, HeaderFacts *facts)
 {
-    if (normalizedName == QByteArrayLiteral("authorization")) {
+    if (normalizedName == QCurl::httpheaders::kAuthorization.toLower()) {
         facts->hasExplicitAuthorization = true;
         facts->hasSensitive             = true;
-    } else if (normalizedName == QByteArrayLiteral("proxy-authorization")
-               || normalizedName == QByteArrayLiteral("cookie")
-               || normalizedName == QByteArrayLiteral("set-cookie")) {
+    } else if (normalizedName == QCurl::httpheaders::kProxyAuthorization.toLower()
+               || normalizedName == QCurl::httpheaders::kCookie.toLower()
+               || normalizedName == QCurl::httpheaders::kSetCookie.toLower()) {
         facts->hasSensitive = true;
-    } else if (normalizedName == QByteArrayLiteral("referer")) {
+    } else if (normalizedName == QCurl::httpheaders::kReferer.toLower()) {
         facts->hasExplicitReferer = true;
-    } else if (normalizedName == QByteArrayLiteral("accept-encoding")) {
+    } else if (normalizedName == QCurl::httpheaders::kAcceptEncoding.toLower()) {
         facts->hasExplicitAcceptEncoding = true;
     }
 }

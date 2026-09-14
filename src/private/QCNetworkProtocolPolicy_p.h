@@ -6,6 +6,8 @@
 #ifndef QCNETWORKPROTOCOLPOLICY_P_H
 #define QCNETWORKPROTOCOLPOLICY_P_H
 
+#include "QCNetworkProtocol.h"
+
 #include <QStringList>
 #include <QUrl>
 
@@ -25,20 +27,18 @@ public:
     /// 校验 RFC HTTP token；方法大小写属于协议语义，不做归一化。
     [[nodiscard]] static bool isValidHttpMethodToken(QByteArrayView method);
 
-    [[nodiscard]] static QStringList coreProtocols();
-
     [[nodiscard]] static bool validateCoreUrl(const QUrl &url, QString *error);
 
-    [[nodiscard]] static bool resolveInitialProtocols(const std::optional<QStringList> &requested,
+    [[nodiscard]] static bool resolveInitialProtocols(std::optional<QCNetworkProtocols> requested,
                                                       QStringList *effective,
                                                       QString *error);
 
-    [[nodiscard]] static bool resolveRedirectProtocols(const std::optional<QStringList> &requested,
+    [[nodiscard]] static bool resolveRedirectProtocols(std::optional<QCNetworkProtocols> requested,
                                                        QStringList *effective,
                                                        QString *error);
 
 private:
-    [[nodiscard]] static bool resolveProtocols(const std::optional<QStringList> &requested,
+    [[nodiscard]] static bool resolveProtocols(std::optional<QCNetworkProtocols> requested,
                                                const QString &scope,
                                                QStringList *effective,
                                                QString *error);

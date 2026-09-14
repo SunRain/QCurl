@@ -192,11 +192,15 @@ public:
     [[nodiscard]] std::optional<QUrl> dohUrl() const;
 #endif
 
-    QCNetworkRequest &setAllowedProtocols(const QStringList &protocols);
-    [[nodiscard]] std::optional<QStringList> allowedProtocols() const;
+    /// 设置初始协议集合并返回自身；空集合恢复 HTTP 与 HTTPS，非法标志在发送前被拒绝。
+    QCNetworkRequest &setAllowedProtocols(QCNetworkProtocols protocols);
+    /// 返回显式初始协议集合；未设置或已清空时返回 std::nullopt。
+    [[nodiscard]] std::optional<QCNetworkProtocols> allowedProtocols() const;
 
-    QCNetworkRequest &setAllowedRedirectProtocols(const QStringList &protocols);
-    [[nodiscard]] std::optional<QStringList> allowedRedirectProtocols() const;
+    /// 设置重定向协议集合并返回自身；空集合恢复默认，非法标志在初始网络访问前被拒绝。
+    QCNetworkRequest &setAllowedRedirectProtocols(QCNetworkProtocols protocols);
+    /// 返回显式重定向协议集合；未设置或已清空时返回 std::nullopt。
+    [[nodiscard]] std::optional<QCNetworkProtocols> allowedRedirectProtocols() const;
 
     QCNetworkRequest &setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy policy);
     [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy() const;

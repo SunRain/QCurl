@@ -4,6 +4,7 @@
  */
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkTimeoutConfig.h"
@@ -60,7 +61,7 @@ void appendAcceptEncodingConflictWarning(QCNetworkReplyPrivate *reply)
     const auto &request = reply->curlPlan.normalized.request;
     bool explicitHeader = false;
     for (const QByteArray &name : request.rawHeaderList()) {
-        if (name.trimmed().toLower() == QByteArrayLiteral("accept-encoding")) {
+        if (name.trimmed().toLower() == QCurl::httpheaders::kAcceptEncoding.toLower()) {
             explicitHeader = true;
             break;
         }

@@ -134,7 +134,7 @@ void tst_QCBlockingRequestConfig::rejectsUnsupportedAllowedProtocolsByDefault()
                                        QByteArrayLiteral("CURLOPT_PROTOCOLS_STR"));
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/blocked")));
-    request.setAllowedProtocols({QStringLiteral("http")});
+    request.setAllowedProtocols(QCurl::QCNetworkProtocol::Http);
 
     const auto result = makeClient().get(request);
     QVERIFY(!result.isSuccess());

@@ -2,6 +2,7 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkAccessManager_p.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkHttpMethod.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
@@ -114,7 +115,7 @@ void QCNetworkResumableDownloadJob::doStart()
 
     QCNetworkRequest downloadRequest(d->request);
     if (d->existingSize > 0) {
-        downloadRequest.setRawHeader(QByteArrayLiteral("Range"),
+        downloadRequest.setRawHeader(QCurl::httpheaders::kRange,
                                      QStringLiteral("bytes=%1-").arg(d->existingSize).toUtf8());
     }
 

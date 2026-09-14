@@ -36,6 +36,12 @@ target_include_directories(qcurl_qttest_paths INTERFACE
 include("${CMAKE_CURRENT_LIST_DIR}/QCurlQtTestHelpers.cmake")
 
 # 添加测试文件
+add_qcurl_test_with_preflight(tst_QCStringContracts
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCStringContracts.cpp qcurl_http_script_server.h)
+target_link_libraries(tst_QCStringContracts PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
+set_tests_properties(tst_QCStringContracts PROPERTIES LABELS "env;local_port")
+
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)

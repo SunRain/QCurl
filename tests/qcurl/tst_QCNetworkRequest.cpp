@@ -216,8 +216,8 @@ void TestQCNetworkRequest::testTransferConfig()
     QCOMPARE(config.setExpect100ContinueTimeout(std::chrono::milliseconds(250)),
              QCNetworkConfigUpdateResult::Applied);
     config.setIpResolve(QCNetworkIpResolve::Ipv6);
-    config.setAllowedProtocols({QStringLiteral("http"), QStringLiteral("https")});
-    config.setAllowedRedirectProtocols({QStringLiteral("https")});
+    config.setAllowedProtocols(QCurl::QCNetworkProtocol::Http | QCurl::QCNetworkProtocol::Https);
+    config.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
     config.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
     request.setTransferConfig(config);
 
@@ -229,8 +229,9 @@ void TestQCNetworkRequest::testTransferConfig()
     QCOMPARE(request.backpressureResumeBytes(), qint64(8 * 1024));
     QCOMPARE(request.expect100ContinueTimeout()->count(), 250);
     QCOMPARE(request.ipResolve().value(), QCNetworkIpResolve::Ipv6);
-    QCOMPARE(request.allowedProtocols()->size(), 2);
-    QCOMPARE(request.allowedRedirectProtocols()->size(), 1);
+    QCOMPARE(request.allowedProtocols().value(), QCNetworkProtocol::Http | QCNetworkProtocol::Https);
+    QCOMPARE(request.allowedRedirectProtocols().value(),
+             QCNetworkProtocols(QCNetworkProtocol::Https));
     QCOMPARE(request.unsupportedSecurityOptionPolicy(), QCUnsupportedSecurityOptionPolicy::Warn);
 
     request.setAcceptedEncodings({});

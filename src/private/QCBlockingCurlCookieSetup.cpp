@@ -3,6 +3,7 @@
  * @brief 实现 Blocking Extras 的 cookie 请求与响应转换辅助函数。
  */
 
+#include "QCNetworkHttpHeaders.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
 
 #include <QDateTime>
@@ -127,7 +128,7 @@ QCCookieDelta extractCookieDelta(const QCBlockingNetworkResult::HeaderList &head
 {
     QList<QCCookie> cookies;
     for (const auto &header : headers) {
-        if (header.first.compare(QByteArrayLiteral("Set-Cookie"), Qt::CaseInsensitive) != 0) {
+        if (header.first.compare(QCurl::httpheaders::kSetCookie, Qt::CaseInsensitive) != 0) {
             continue;
         }
         auto cookie = parseSetCookieHeader(header.second);

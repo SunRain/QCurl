@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
+#include "QCNetworkHttpHeaders.h"
 #include "private/QCNetworkLogRedaction_p.h"
 
 #include <QStringList>
@@ -41,8 +42,10 @@ static bool isSignedUrlQueryKey(const QString &keyLower)
 
 bool isSensitiveHeaderKey(const QByteArray &keyLower)
 {
-    if (keyLower == "authorization" || keyLower == "proxy-authorization" || keyLower == "cookie"
-        || keyLower == "set-cookie") {
+    if (keyLower == QCurl::httpheaders::kAuthorization.toLower()
+        || keyLower == QCurl::httpheaders::kProxyAuthorization.toLower()
+        || keyLower == QCurl::httpheaders::kCookie.toLower()
+        || keyLower == QCurl::httpheaders::kSetCookie.toLower()) {
         return true;
     }
 

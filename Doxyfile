@@ -29,6 +29,11 @@ EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = NO
 EXTRACT_STATIC         = NO
 
+# 仅展开 Qt flags 的真实类型别名，避免公开协议集合在 API 文档中丢失。
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED            = "Q_DECLARE_FLAGS(Flags,Enum)=typedef QFlags<Enum> Flags;"
+
 GENERATE_HTML          = YES
 HTML_OUTPUT            = doxygen
 GENERATE_TREEVIEW      = YES

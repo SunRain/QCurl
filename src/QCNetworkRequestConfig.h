@@ -7,6 +7,7 @@
 #define QCNETWORKREQUESTCONFIG_H
 
 #include "QCGlobal.h"
+#include "QCNetworkProtocol.h"
 
 #include <QSharedDataPointer>
 #include <QString>
@@ -218,15 +219,15 @@ public:
     /// 设置 IP 族选择；`Any` 会清空显式配置。
     void setIpResolve(QCNetworkIpResolve resolve);
 
-    /// 返回允许的 URL 协议；`std::nullopt` 表示使用默认策略。
-    [[nodiscard]] std::optional<QStringList> allowedProtocols() const;
-    /// 设置允许的 URL 协议；空白项会被忽略，空列表清空显式配置。
-    void setAllowedProtocols(const QStringList &protocols);
+    /// 返回允许的 URL 协议；`std::nullopt` 表示默认允许 HTTP 与 HTTPS。
+    [[nodiscard]] std::optional<QCNetworkProtocols> allowedProtocols() const;
+    /// 设置初始协议集合；空集合恢复默认，非法标志在网络访问前以 InvalidRequest 拒绝。
+    void setAllowedProtocols(QCNetworkProtocols protocols);
 
-    /// 返回允许的重定向目标协议；`std::nullopt` 表示使用默认策略。
-    [[nodiscard]] std::optional<QStringList> allowedRedirectProtocols() const;
-    /// 设置允许的重定向目标协议；空白项会被忽略，空列表清空显式配置。
-    void setAllowedRedirectProtocols(const QStringList &protocols);
+    /// 返回允许的重定向协议；`std::nullopt` 表示默认允许 HTTP 与 HTTPS。
+    [[nodiscard]] std::optional<QCNetworkProtocols> allowedRedirectProtocols() const;
+    /// 设置重定向协议集合；空集合恢复默认，非法标志在网络访问前以 InvalidRequest 拒绝。
+    void setAllowedRedirectProtocols(QCNetworkProtocols protocols);
 
     /// 返回当前运行时不支持显式安全选项时的处理策略。
     [[nodiscard]] QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy() const;

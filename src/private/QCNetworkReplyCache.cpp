@@ -1,6 +1,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkCache.h"
 #include "QCNetworkCachePolicy.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkCacheIntegration_p.h"
@@ -63,13 +64,15 @@ namespace {
 [[nodiscard]] bool headMetadataMatchesCachedEntity(const QMap<QByteArray, QByteArray> &cachedHeaders,
                                                    const QMap<QByteArray, QByteArray> &headHeaders)
 {
-    return cachedHeaderMatchesIfPresent(cachedHeaders, headHeaders, QByteArrayLiteral("etag"))
+    return cachedHeaderMatchesIfPresent(cachedHeaders,
+                                        headHeaders,
+                                        QCurl::httpheaders::kETag.toLower())
            && cachedHeaderMatchesIfPresent(cachedHeaders,
                                            headHeaders,
-                                           QByteArrayLiteral("last-modified"))
+                                           QCurl::httpheaders::kLastModified.toLower())
            && cachedHeaderMatchesIfPresent(cachedHeaders,
                                            headHeaders,
-                                           QByteArrayLiteral("content-length"));
+                                           QCurl::httpheaders::kContentLength.toLower());
 }
 
 void storeGetResponse(QCNetworkReplyPrivate *reply,
@@ -265,10 +268,10 @@ namespace {
 [[nodiscard]] bool cacheReplayHeaderIsForbidden(const QByteArray &name)
 {
     const QByteArray normalized = name.trimmed().toLower();
-    return normalized == QByteArrayLiteral("set-cookie")
+    return normalized == QCurl::httpheaders::kSetCookie.toLower()
            || normalized == QByteArrayLiteral("set-cookie2")
-           || normalized == QByteArrayLiteral("authorization")
-           || normalized == QByteArrayLiteral("proxy-authorization");
+           || normalized == QCurl::httpheaders::kAuthorization.toLower()
+           || normalized == QCurl::httpheaders::kProxyAuthorization.toLower();
 }
 
 [[nodiscard]] QByteArray cacheResponseHeaderBlock(const QCNetworkCacheMetadata &metadata)

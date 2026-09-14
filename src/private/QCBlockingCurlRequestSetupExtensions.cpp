@@ -3,6 +3,7 @@
  * @brief 实现 Blocking Extras 的扩展请求配置辅助函数。
  */
 
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestConfig.h"
@@ -141,7 +142,7 @@ bool configureTransferOptions(CURL *handle,
                               const QCNetworkRequest &request,
                               RequestOptionStorage *storage)
 {
-    const bool hasRefererHeader = isHeaderSet(request, QByteArrayLiteral("referer"));
+    const bool hasRefererHeader = isHeaderSet(request, QCurl::httpheaders::kReferer.toLower());
     if (!hasRefererHeader && !request.referer().isEmpty()) {
         storage->referer = request.referer().toUtf8();
         if (!setStringOption(handle, CURLOPT_REFERER, "CURLOPT_REFERER", storage->referer)) {
@@ -149,7 +150,8 @@ bool configureTransferOptions(CURL *handle,
         }
     }
 
-    const bool hasAcceptEncodingHeader = isHeaderSet(request, QByteArrayLiteral("accept-encoding"));
+    const bool hasAcceptEncodingHeader = isHeaderSet(request,
+                                                     QCurl::httpheaders::kAcceptEncoding.toLower());
     if (!hasAcceptEncodingHeader && request.autoDecompressionEnabled()) {
         storage->acceptEncoding = request.acceptedEncodings().join(QLatin1Char(',')).toUtf8();
         if (!setStringOption(handle,
@@ -186,9 +188,11 @@ bool configureAuthOptions(CURL *handle,
                           RequestOptionStorage *storage)
 {
     bool hasSensitiveHeader           = false;
-    const bool hasAuthorizationHeader = isHeaderSet(request, QByteArrayLiteral("authorization"));
-    hasSensitiveHeader = hasAuthorizationHeader || isHeaderSet(request, QByteArrayLiteral("cookie"))
-                         || isHeaderSet(request, QByteArrayLiteral("proxy-authorization"));
+    const bool hasAuthorizationHeader = isHeaderSet(request,
+                                                    QCurl::httpheaders::kAuthorization.toLower());
+    hasSensitiveHeader = hasAuthorizationHeader
+                         || isHeaderSet(request, QCurl::httpheaders::kCookie.toLower())
+                         || isHeaderSet(request, QCurl::httpheaders::kProxyAuthorization.toLower());
 
     if (const auto auth = request.httpAuth(); auth.has_value() && !hasAuthorizationHeader) {
         hasSensitiveHeader        = true;

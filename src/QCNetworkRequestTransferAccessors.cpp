@@ -239,24 +239,24 @@ std::optional<QUrl> QCNetworkRequest::dohUrl() const
 }
 #endif
 
-QCNetworkRequest &QCNetworkRequest::setAllowedProtocols(const QStringList &protocols)
+QCNetworkRequest &QCNetworkRequest::setAllowedProtocols(QCNetworkProtocols protocols)
 {
     d.data()->transferConfig.setAllowedProtocols(protocols);
     return *this;
 }
 
-std::optional<QStringList> QCNetworkRequest::allowedProtocols() const
+std::optional<QCNetworkProtocols> QCNetworkRequest::allowedProtocols() const
 {
     return d.constData()->transferConfig.allowedProtocols();
 }
 
-QCNetworkRequest &QCNetworkRequest::setAllowedRedirectProtocols(const QStringList &protocols)
+QCNetworkRequest &QCNetworkRequest::setAllowedRedirectProtocols(QCNetworkProtocols protocols)
 {
     d.data()->transferConfig.setAllowedRedirectProtocols(protocols);
     return *this;
 }
 
-std::optional<QStringList> QCNetworkRequest::allowedRedirectProtocols() const
+std::optional<QCNetworkProtocols> QCNetworkRequest::allowedRedirectProtocols() const
 {
     return d.constData()->transferConfig.allowedRedirectProtocols();
 }

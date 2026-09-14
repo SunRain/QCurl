@@ -40,8 +40,8 @@ public:
     qint64 backpressureResumeBytes = 0;
     std::optional<std::chrono::milliseconds> expect100ContinueTimeout;
     std::optional<QCNetworkIpResolve> ipResolve;
-    std::optional<QStringList> allowedProtocols;
-    std::optional<QStringList> allowedRedirectProtocols;
+    std::optional<QCNetworkProtocols> allowedProtocols;
+    std::optional<QCNetworkProtocols> allowedRedirectProtocols;
     QCUnsupportedSecurityOptionPolicy unsupportedSecurityOptionPolicy
         = QCUnsupportedSecurityOptionPolicy::Fail;
 };
@@ -183,27 +183,25 @@ void QCNetworkTransferConfig::setIpResolve(QCNetworkIpResolve resolve)
                                                       : std::optional<QCNetworkIpResolve>(resolve);
 }
 
-std::optional<QStringList> QCNetworkTransferConfig::allowedProtocols() const
+std::optional<QCNetworkProtocols> QCNetworkTransferConfig::allowedProtocols() const
 {
     return d->allowedProtocols;
 }
 
-void QCNetworkTransferConfig::setAllowedProtocols(const QStringList &protocols)
+void QCNetworkTransferConfig::setAllowedProtocols(QCNetworkProtocols protocols)
 {
-    const QStringList cleaned = normalizedStringList(protocols);
-    d->allowedProtocols = cleaned.isEmpty() ? std::nullopt : std::optional<QStringList>(cleaned);
+    d->allowedProtocols = protocols ? std::optional<QCNetworkProtocols>(protocols) : std::nullopt;
 }
 
-std::optional<QStringList> QCNetworkTransferConfig::allowedRedirectProtocols() const
+std::optional<QCNetworkProtocols> QCNetworkTransferConfig::allowedRedirectProtocols() const
 {
     return d->allowedRedirectProtocols;
 }
 
-void QCNetworkTransferConfig::setAllowedRedirectProtocols(const QStringList &protocols)
+void QCNetworkTransferConfig::setAllowedRedirectProtocols(QCNetworkProtocols protocols)
 {
-    const QStringList cleaned = normalizedStringList(protocols);
-    d->allowedRedirectProtocols = cleaned.isEmpty() ? std::nullopt
-                                                    : std::optional<QStringList>(cleaned);
+    d->allowedRedirectProtocols = protocols ? std::optional<QCNetworkProtocols>(protocols)
+                                            : std::nullopt;
 }
 
 QCUnsupportedSecurityOptionPolicy QCNetworkTransferConfig::unsupportedSecurityOptionPolicy() const

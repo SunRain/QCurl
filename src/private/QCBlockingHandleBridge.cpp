@@ -38,14 +38,14 @@ bool validateBlockingUrl(const QUrl &url, QString *error)
     return Internal::QCNetworkProtocolPolicy::validateCoreUrl(url, error);
 }
 
-bool resolveBlockingInitialProtocols(const std::optional<QStringList> &requested,
+bool resolveBlockingInitialProtocols(std::optional<QCNetworkProtocols> requested,
                                      QStringList *effective,
                                      QString *error)
 {
     return Internal::QCNetworkProtocolPolicy::resolveInitialProtocols(requested, effective, error);
 }
 
-bool resolveBlockingRedirectProtocols(const std::optional<QStringList> &requested,
+bool resolveBlockingRedirectProtocols(std::optional<QCNetworkProtocols> requested,
                                       QStringList *effective,
                                       QString *error)
 {

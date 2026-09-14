@@ -7,6 +7,7 @@
 #define QCBLOCKINGHANDLEBRIDGE_P_H
 
 #include "QCGlobal.h"
+#include "QCNetworkProtocol.h"
 
 #include <QScopedPointer>
 #include <QString>
@@ -45,10 +46,12 @@ private:
 
 [[nodiscard]] QCBlockingRuntimeAvailability blockingRuntimeAvailability();
 [[nodiscard]] bool validateBlockingUrl(const QUrl &url, QString *error);
-[[nodiscard]] bool resolveBlockingInitialProtocols(
-    const std::optional<QStringList> &requested, QStringList *effective, QString *error);
-[[nodiscard]] bool resolveBlockingRedirectProtocols(
-    const std::optional<QStringList> &requested, QStringList *effective, QString *error);
+[[nodiscard]] bool resolveBlockingInitialProtocols(std::optional<QCNetworkProtocols> requested,
+                                                   QStringList *effective,
+                                                   QString *error);
+[[nodiscard]] bool resolveBlockingRedirectProtocols(std::optional<QCNetworkProtocols> requested,
+                                                    QStringList *effective,
+                                                    QString *error);
 
 } // namespace QCurl
 

@@ -129,11 +129,12 @@ cmake --install build --prefix "$PWD/stage"
 
 ```cpp
 #include <QCNetworkAccessManager.h>
+#include <QCNetworkHttpHeaders.h>
 #include <QCNetworkRequest.h>
 
 QCurl::QCNetworkAccessManager manager;
 QCurl::QCNetworkRequest request(QUrl("https://api.example.com/data"));
-request.setRawHeader("Authorization", "Bearer token")
+request.setRawHeader(QCurl::httpheaders::kAuthorization, "Bearer token")
     .setTimeout(std::chrono::seconds(30));
 
 auto *reply = manager.get(request);

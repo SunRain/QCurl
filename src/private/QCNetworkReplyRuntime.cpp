@@ -3,6 +3,7 @@
  * @brief QCNetworkReply retry/capability runtime helpers.
  */
 
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
 #include "private/QCNetworkReplyRuntime_p.h"
@@ -39,7 +40,7 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
     const QList<RawHeaderPair> &headers)
 {
     for (const RawHeaderPair &header : headers) {
-        if (header.first.compare(QByteArrayLiteral("Retry-After"), Qt::CaseInsensitive) != 0) {
+        if (header.first.compare(QCurl::httpheaders::kRetryAfter, Qt::CaseInsensitive) != 0) {
             continue;
         }
 

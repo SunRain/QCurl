@@ -1,5 +1,6 @@
 #include "QCNetworkCache.h"
 
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkTypes.h"
 #include "private/QCHttpDate_p.h"
 
@@ -61,7 +62,10 @@ private:
 [[nodiscard]] QStringList cacheControlDirectives(const QList<RawHeaderPair> &headers,
                                                  const RawHeaderIndex &index)
 {
-    return QString::fromLatin1(joinedListField(headers, index, QByteArrayView("cache-control")))
+    return QString::fromLatin1(
+               joinedListField(headers,
+                               index,
+                               QByteArrayView(QCurl::httpheaders::kCacheControl.toLower())))
         .split(QLatin1Char(','), Qt::SkipEmptyParts);
 }
 
@@ -74,10 +78,16 @@ private:
 
 [[nodiscard]] bool isSensitiveResponseHeader(QByteArrayView name)
 {
-    return name.compare(QByteArrayView("set-cookie"), Qt::CaseInsensitive) == 0
+    return name.compare(QByteArrayView(QCurl::httpheaders::kSetCookie.toLower()),
+                        Qt::CaseInsensitive)
+               == 0
            || name.compare(QByteArrayView("set-cookie2"), Qt::CaseInsensitive) == 0
-           || name.compare(QByteArrayView("authorization"), Qt::CaseInsensitive) == 0
-           || name.compare(QByteArrayView("proxy-authorization"), Qt::CaseInsensitive) == 0;
+           || name.compare(QByteArrayView(QCurl::httpheaders::kAuthorization.toLower()),
+                           Qt::CaseInsensitive)
+                  == 0
+           || name.compare(QByteArrayView(QCurl::httpheaders::kProxyAuthorization.toLower()),
+                           Qt::CaseInsensitive)
+                  == 0;
 }
 
 [[nodiscard]] bool parseDeltaSeconds(const QByteArray &text, qint64 *result)
@@ -406,7 +416,9 @@ QDateTime QCNetworkCache::parseExpirationDate(const QList<RawHeaderPair> &header
         return now;
     }
 
-    if (joinedListField(headers, index, QByteArrayView("pragma")).toLower().contains("no-cache")) {
+    if (joinedListField(headers, index, QByteArrayView(QCurl::httpheaders::kPragma.toLower()))
+            .toLower()
+            .contains("no-cache")) {
         return now;
     }
 

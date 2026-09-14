@@ -154,6 +154,9 @@ set(QCURL_INSTALL_HEADERS
     QCNetworkProxyConfig.h
     QCNetworkTimeoutConfig.h
     QCNetworkHttpMethod.h
+    QCNetworkProtocol.h
+    QCNetworkHttpHeaders.h
+    QCNetworkContentEncoding.h
     QCNetworkHttpVersion.h
     QCNetworkLaneKey.h
     QCNetworkLaneCancelResult.h

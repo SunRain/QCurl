@@ -3,8 +3,6 @@
 
 #include "QCNetworkProtocolPolicy_p.h"
 
-#include <QSet>
-
 namespace QCurl::Internal {
 
 bool QCNetworkProtocolPolicy::isValidHttpMethodToken(QByteArrayView method)
@@ -20,11 +18,6 @@ bool QCNetworkProtocolPolicy::isValidHttpMethodToken(QByteArrayView method)
         }
     }
     return true;
-}
-
-QStringList QCNetworkProtocolPolicy::coreProtocols()
-{
-    return {QStringLiteral("http"), QStringLiteral("https")};
 }
 
 bool QCNetworkProtocolPolicy::validateCoreUrl(const QUrl &url, QString *error)
@@ -54,21 +47,21 @@ bool QCNetworkProtocolPolicy::validateCoreUrl(const QUrl &url, QString *error)
     return true;
 }
 
-bool QCNetworkProtocolPolicy::resolveInitialProtocols(const std::optional<QStringList> &requested,
+bool QCNetworkProtocolPolicy::resolveInitialProtocols(std::optional<QCNetworkProtocols> requested,
                                                       QStringList *effective,
                                                       QString *error)
 {
     return resolveProtocols(requested, QStringLiteral("initial request"), effective, error);
 }
 
-bool QCNetworkProtocolPolicy::resolveRedirectProtocols(const std::optional<QStringList> &requested,
+bool QCNetworkProtocolPolicy::resolveRedirectProtocols(std::optional<QCNetworkProtocols> requested,
                                                        QStringList *effective,
                                                        QString *error)
 {
     return resolveProtocols(requested, QStringLiteral("redirect"), effective, error);
 }
 
-bool QCNetworkProtocolPolicy::resolveProtocols(const std::optional<QStringList> &requested,
+bool QCNetworkProtocolPolicy::resolveProtocols(std::optional<QCNetworkProtocols> requested,
                                                const QString &scope,
                                                QStringList *effective,
                                                QString *error)
@@ -80,42 +73,24 @@ bool QCNetworkProtocolPolicy::resolveProtocols(const std::optional<QStringList> 
         return false;
     }
 
-    if (!requested.has_value()) {
-        *effective = coreProtocols();
-        return true;
-    }
-
-    QStringList normalized;
-    QSet<QString> seen;
-    for (const QString &value : requested.value()) {
-        const QString protocol = value.trimmed().toLower();
-        if (protocol.isEmpty()) {
-            continue;
-        }
-
-        if (protocol != QStringLiteral("http") && protocol != QStringLiteral("https")) {
-            if (error) {
-                *error = QStringLiteral(
-                             "QCurl Core %1 protocol allowlist may contain only HTTP/HTTPS")
-                             .arg(scope);
-            }
-            return false;
-        }
-
-        if (!seen.contains(protocol)) {
-            seen.insert(protocol);
-            normalized.append(protocol);
-        }
-    }
-
-    if (normalized.isEmpty()) {
+    constexpr auto kCoreProtocols = QCNetworkProtocol::Http | QCNetworkProtocol::Https;
+    const auto protocols          = requested && *requested ? *requested : kCoreProtocols;
+    if ((protocols.toInt() & ~kCoreProtocols.toInt()) != 0) {
         if (error) {
-            *error = QStringLiteral("QCurl Core %1 protocol allowlist must contain HTTP or HTTPS")
+            *error = QStringLiteral(
+                         "QCurl Core %1 protocol allowlist contains invalid HTTP/HTTPS flags")
                          .arg(scope);
         }
         return false;
     }
 
+    QStringList normalized;
+    if (protocols.testFlag(QCNetworkProtocol::Http)) {
+        normalized.append(QStringLiteral("http"));
+    }
+    if (protocols.testFlag(QCNetworkProtocol::Https)) {
+        normalized.append(QStringLiteral("https"));
+    }
     *effective = normalized;
     return true;
 }

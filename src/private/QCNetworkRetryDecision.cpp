@@ -3,6 +3,7 @@
  * @brief Unified retry method, body, error, and attempt gate.
  */
 
+#include "QCNetworkHttpHeaders.h"
 #include "private/QCNetworkRetryDecision_p.h"
 
 namespace QCurl::Internal {
@@ -13,7 +14,7 @@ namespace {
     QByteArray key;
     bool found = false;
     for (const QByteArray &name : request.rawHeaderList()) {
-        if (name.compare(QByteArrayLiteral("Idempotency-Key"), Qt::CaseInsensitive) != 0) {
+        if (name.compare(QCurl::httpheaders::kIdempotencyKey, Qt::CaseInsensitive) != 0) {
             continue;
         }
 

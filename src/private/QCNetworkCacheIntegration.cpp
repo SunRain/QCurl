@@ -1,3 +1,4 @@
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkSslConfig.h"
 #include "private/QCHttpDate_p.h"
 #include "private/QCNetworkCacheIntegration_p.h"
@@ -15,7 +16,7 @@ namespace {
 [[nodiscard]] bool requestCacheControlContains(const QCNetworkRequest &request,
                                                QByteArrayView wantedDirective)
 {
-    const QByteArray cacheControl = request.rawHeader(QByteArrayLiteral("Cache-Control"));
+    const QByteArray cacheControl = request.rawHeader(QCurl::httpheaders::kCacheControl);
     for (const QByteArray &part : cacheControl.split(',')) {
         if (QByteArrayView(part.trimmed()).compare(wantedDirective, Qt::CaseInsensitive) == 0) {
             return true;
@@ -55,10 +56,16 @@ namespace {
 
 [[nodiscard]] bool isCacheSensitiveHeader(QByteArrayView name)
 {
-    return name.compare(QByteArrayView("set-cookie"), Qt::CaseInsensitive) == 0
+    return name.compare(QByteArrayView(QCurl::httpheaders::kSetCookie.toLower()),
+                        Qt::CaseInsensitive)
+               == 0
            || name.compare(QByteArrayView("set-cookie2"), Qt::CaseInsensitive) == 0
-           || name.compare(QByteArrayView("authorization"), Qt::CaseInsensitive) == 0
-           || name.compare(QByteArrayView("proxy-authorization"), Qt::CaseInsensitive) == 0;
+           || name.compare(QByteArrayView(QCurl::httpheaders::kAuthorization.toLower()),
+                           Qt::CaseInsensitive)
+                  == 0
+           || name.compare(QByteArrayView(QCurl::httpheaders::kProxyAuthorization.toLower()),
+                           Qt::CaseInsensitive)
+                  == 0;
 }
 
 class ResponseHeaderIndex
@@ -137,7 +144,8 @@ private:
 
 [[nodiscard]] QStringList responseCacheControlDirectives(const ResponseHeaderIndex &headers)
 {
-    return QString::fromLatin1(headers.joined(QByteArrayView("cache-control")))
+    return QString::fromLatin1(
+               headers.joined(QByteArrayView(QCurl::httpheaders::kCacheControl.toLower())))
         .split(QLatin1Char(','), Qt::SkipEmptyParts);
 }
 
@@ -164,7 +172,9 @@ private:
             return true;
         }
     }
-    return headers.joined(QByteArrayView("pragma")).toLower().contains(QByteArrayLiteral("no-cache"));
+    return headers.joined(QByteArrayView(QCurl::httpheaders::kPragma.toLower()))
+        .toLower()
+        .contains(QByteArrayLiteral("no-cache"));
 }
 
 [[nodiscard]] qint64 correctedInitialAgeSeconds(const ResponseHeaderIndex &headers,
@@ -250,7 +260,7 @@ bool requestRequiresCacheRevalidation(const QCNetworkRequest &request)
         || requestCacheControlContains(request, QByteArrayView("max-age=0"))) {
         return true;
     }
-    return request.rawHeader(QByteArrayLiteral("Pragma"))
+    return request.rawHeader(QCurl::httpheaders::kPragma)
         .toLower()
         .contains(QByteArrayLiteral("no-cache"));
 }
@@ -265,9 +275,9 @@ bool requestHasAuthenticationContext(const QCNetworkRequest &request, bool manag
     const QCNetworkSslConfig ssl = request.sslConfig();
     return managerUsesCookies || request.httpAuth().has_value()
            || !request.url().userInfo().isEmpty()
-           || requestHasHeader(request, QByteArrayView("authorization"))
-           || requestHasHeader(request, QByteArrayView("cookie")) || !ssl.clientCertPath().isEmpty()
-           || !ssl.clientKeyPath().isEmpty();
+           || requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kAuthorization.toLower()))
+           || requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kCookie.toLower()))
+           || !ssl.clientCertPath().isEmpty() || !ssl.clientKeyPath().isEmpty();
 }
 
 QCNetworkCacheRequestKey buildCacheRequestKey(const QCNetworkRequest &request,
@@ -279,22 +289,24 @@ QCNetworkCacheRequestKey buildCacheRequestKey(const QCNetworkRequest &request,
     for (const QByteArray &name : request.rawHeaderList()) {
         key.setRequestHeader(name, request.rawHeader(name));
     }
-    if (!requestHasHeader(request, QByteArrayView("referer")) && !request.referer().isEmpty()) {
-        key.setRequestHeader(QByteArrayLiteral("Referer"), request.referer().toUtf8());
-    } else if (!requestHasHeader(request, QByteArrayView("referer")) && request.followLocation()
-               && request.autoRefererEnabled()) {
-        key.markRequestHeaderUnavailable(QByteArrayLiteral("Referer"));
+    if (!requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kReferer.toLower()))
+        && !request.referer().isEmpty()) {
+        key.setRequestHeader(QCurl::httpheaders::kReferer, request.referer().toUtf8());
+    } else if (!requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kReferer.toLower()))
+               && request.followLocation() && request.autoRefererEnabled()) {
+        key.markRequestHeaderUnavailable(QCurl::httpheaders::kReferer);
     }
-    if (!requestHasHeader(request, QByteArrayView("accept-encoding"))) {
+    if (!requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kAcceptEncoding.toLower()))) {
         const QByteArray acceptEncoding = configuredAcceptEncoding(request);
         if (!acceptEncoding.isEmpty()) {
-            key.setRequestHeader(QByteArrayLiteral("Accept-Encoding"), acceptEncoding);
+            key.setRequestHeader(QCurl::httpheaders::kAcceptEncoding, acceptEncoding);
         } else if (request.autoDecompressionEnabled()) {
-            key.markRequestHeaderUnavailable(QByteArrayLiteral("Accept-Encoding"));
+            key.markRequestHeaderUnavailable(QCurl::httpheaders::kAcceptEncoding);
         }
     }
-    if (managerUsesCookies && !requestHasHeader(request, QByteArrayView("cookie"))) {
-        key.markRequestHeaderUnavailable(QByteArrayLiteral("Cookie"));
+    if (managerUsesCookies
+        && !requestHasHeader(request, QByteArrayView(QCurl::httpheaders::kCookie.toLower()))) {
+        key.markRequestHeaderUnavailable(QCurl::httpheaders::kCookie);
     }
     key.setCachePartitionKey(request.cachePartitionKey());
     key.setAuthenticationContext(requestHasAuthenticationContext(request, managerUsesCookies));
@@ -335,21 +347,24 @@ bool responseHeadersAreCacheable(const QList<RawHeaderPair> &rawResponseHeaders)
 
 bool cacheMetadataHasValidator(const QCNetworkCacheMetadata &metadata)
 {
-    return !metadataHeader(metadata, QByteArrayView("etag")).isEmpty()
-           || !metadataHeader(metadata, QByteArrayView("last-modified")).isEmpty();
+    return !metadataHeader(metadata, QByteArrayView(QCurl::httpheaders::kETag.toLower())).isEmpty()
+           || !metadataHeader(metadata, QByteArrayView(QCurl::httpheaders::kLastModified.toLower()))
+                   .isEmpty();
 }
 
 QCNetworkRequest requestWithCacheValidators(const QCNetworkRequest &request,
                                             const QCNetworkCacheMetadata &metadata)
 {
     QCNetworkRequest conditioned = request;
-    const QByteArray etag        = metadataHeader(metadata, QByteArrayView("etag"));
+    const QByteArray etag = metadataHeader(metadata,
+                                           QByteArrayView(QCurl::httpheaders::kETag.toLower()));
     if (!etag.isEmpty()) {
-        conditioned.setRawHeader(QByteArrayLiteral("If-None-Match"), etag);
+        conditioned.setRawHeader(QCurl::httpheaders::kIfNoneMatch, etag);
     }
-    const QByteArray lastModified = metadataHeader(metadata, QByteArrayView("last-modified"));
+    const QByteArray lastModified
+        = metadataHeader(metadata, QByteArrayView(QCurl::httpheaders::kLastModified.toLower()));
     if (!lastModified.isEmpty()) {
-        conditioned.setRawHeader(QByteArrayLiteral("If-Modified-Since"), lastModified);
+        conditioned.setRawHeader(QCurl::httpheaders::kIfModifiedSince, lastModified);
     }
     return conditioned;
 }

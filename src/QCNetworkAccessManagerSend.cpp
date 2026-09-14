@@ -1,6 +1,7 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkAccessManager_p.h"
 #include "QCNetworkBody.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -17,7 +18,7 @@ bool hasContentTypeHeader(const QCurl::QCNetworkRequest &request)
 {
     const QList<QByteArray> headerNames = request.rawHeaderList();
     for (const auto &name : headerNames) {
-        if (name.trimmed().toLower() == QByteArrayLiteral("content-type")) {
+        if (name.trimmed().toLower() == QCurl::httpheaders::kContentType.toLower()) {
             return true;
         }
     }
@@ -32,7 +33,7 @@ QCurl::QCNetworkRequest requestWithBodyContentType(const QCurl::QCNetworkRequest
     }
 
     QCurl::QCNetworkRequest prepared(request);
-    prepared.setRawHeader(QByteArrayLiteral("Content-Type"), body.contentType());
+    prepared.setRawHeader(QCurl::httpheaders::kContentType, body.contentType());
     return prepared;
 }
 

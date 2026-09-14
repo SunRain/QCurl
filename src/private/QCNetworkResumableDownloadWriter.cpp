@@ -1,3 +1,5 @@
+#include "QCNetworkContentEncoding.h"
+#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply.h"
 #include "private/QCNetworkResumableDownloadWriter_p.h"
 
@@ -97,7 +99,7 @@ ResumableDownloadWriter::~ResumableDownloadWriter()
 bool ResumableDownloadWriter::isAlreadyComplete(QCNetworkReply *reply) const
 {
     return reply && m_existingSize > 0 && reply->httpStatusCode() == 416
-           && parseContentRangeCompleteSize(reply->rawHeader(QByteArrayLiteral("Content-Range")))
+           && parseContentRangeCompleteSize(reply->rawHeader(QCurl::httpheaders::kContentRange))
                       .value_or(-1)
                   == m_existingSize;
 }
@@ -123,8 +125,8 @@ std::optional<QString> ResumableDownloadWriter::decideWriteMode(QCNetworkReply *
 std::optional<QString> ResumableDownloadWriter::validateRange(QCNetworkReply *reply)
 {
     const auto range = parseContentRangeBytesSpec(
-        reply->rawHeader(QByteArrayLiteral("Content-Range")));
-    const auto encoding = reply->rawHeader(QByteArrayLiteral("Content-Encoding")).trimmed();
+        reply->rawHeader(QCurl::httpheaders::kContentRange));
+    const auto encoding = reply->rawHeader(QCurl::httpheaders::kContentEncoding).trimmed();
     if (!range) {
         return QStringLiteral("QCNetworkResumableDownloadJob: Content-Range 无效: %1")
             .arg(m_savePath);
@@ -138,14 +140,16 @@ std::optional<QString> ResumableDownloadWriter::validateRange(QCNetworkReply *re
         return QStringLiteral("QCNetworkResumableDownloadJob: Content-Range 未覆盖完整目标: %1")
             .arg(m_savePath);
     }
-    if (!encoding.isEmpty() && encoding.compare("identity", Qt::CaseInsensitive) != 0) {
+    if (!encoding.isEmpty()
+        && encoding.compare(QCurl::contentencoding::kIdentity.toLatin1(), Qt::CaseInsensitive)
+               != 0) {
         return QStringLiteral(
                    "QCNetworkResumableDownloadJob: 206 只支持 identity Content-Encoding: %1")
             .arg(m_savePath);
     }
     m_rangeBytes            = range->end - range->start + 1;
     m_rangeTotal            = range->total;
-    const QByteArray length = reply->rawHeader(QByteArrayLiteral("Content-Length"));
+    const QByteArray length = reply->rawHeader(QCurl::httpheaders::kContentLength);
     if (!length.isEmpty()) {
         bool ok                    = false;
         const qint64 contentLength = length.toLongLong(&ok);

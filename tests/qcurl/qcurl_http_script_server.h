@@ -39,6 +39,7 @@ public:
         return QUrl(QStringLiteral("http://127.0.0.1:%1/resource").arg(m_server.serverPort()));
     }
     QList<QByteArray> requests() const { return m_requests; }
+    int connectionCount() const { return m_connectionCount; }
     int peakRequests() const { return m_peakRequests; }
     int activeRequests() const { return m_activeRequests; }
 
@@ -54,6 +55,7 @@ public:
 private:
     void acceptSocket(QTcpSocket *socket)
     {
+        ++m_connectionCount;
         auto buffer = QSharedPointer<QByteArray>::create();
         connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
         connect(socket, &QTcpSocket::readyRead, this, [this, socket, buffer]() {
@@ -107,6 +109,7 @@ private:
     QTcpServer m_server;
     QList<Response> m_responses;
     QList<QByteArray> m_requests;
+    int m_connectionCount = 0;
     int m_activeRequests = 0;
     int m_peakRequests   = 0;
 };

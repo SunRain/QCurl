@@ -96,13 +96,14 @@ void TestQCNetworkNetworkPath::testSettersAndGetters()
     QVERIFY(request.dohUrl().has_value());
     QCOMPARE(request.dohUrl()->toString(), QStringLiteral("https://doh.example/dns-query"));
 
-    request.setAllowedProtocols(QStringList{QStringLiteral("http"), QStringLiteral("https")});
+    request.setAllowedProtocols(QCurl::QCNetworkProtocol::Http | QCurl::QCNetworkProtocol::Https);
     QVERIFY(request.allowedProtocols().has_value());
-    QCOMPARE(request.allowedProtocols()->size(), 2);
+    QCOMPARE(request.allowedProtocols().value(), QCNetworkProtocol::Http | QCNetworkProtocol::Https);
 
-    request.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+    request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
     QVERIFY(request.allowedRedirectProtocols().has_value());
-    QCOMPARE(request.allowedRedirectProtocols()->size(), 1);
+    QCOMPARE(request.allowedRedirectProtocols().value(),
+             QCNetworkProtocols(QCNetworkProtocol::Https));
 
     request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
     QCOMPARE(request.unsupportedSecurityOptionPolicy(), QCUnsupportedSecurityOptionPolicy::Warn);
@@ -141,10 +142,10 @@ void TestQCNetworkNetworkPath::testInvalidInputs()
     request.setDohUrl(QUrl());
     QVERIFY(!request.dohUrl().has_value());
 
-    request.setAllowedProtocols(QStringList{QString(), QStringLiteral("   ")});
+    request.setAllowedProtocols({});
     QVERIFY(!request.allowedProtocols().has_value());
 
-    request.setAllowedRedirectProtocols(QStringList{QString(), QStringLiteral("   ")});
+    request.setAllowedRedirectProtocols({});
     QVERIFY(!request.allowedRedirectProtocols().has_value());
 }
 
@@ -161,8 +162,8 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     request.setConnectTo(QStringList{QStringLiteral("example.com:443:127.0.0.1:443")});
     request.setDnsServers(QStringList{QStringLiteral("8.8.8.8")});
     request.setDohUrl(QUrl(QStringLiteral("https://doh.example/dns-query")));
-    request.setAllowedProtocols(QStringList{QStringLiteral("http"), QStringLiteral("https")});
-    request.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+    request.setAllowedProtocols(QCurl::QCNetworkProtocol::Http | QCurl::QCNetworkProtocol::Https);
+    request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
 
     // 触发 configureCurlOptions（不发起网络请求）
     QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -281,7 +282,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-        request.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
         QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -299,7 +300,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-        request.setAllowedProtocols(QStringList{QStringLiteral("https")});
+        request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
 
         QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -318,7 +319,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                 QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-        request.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+        request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
         QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -337,7 +338,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
                 QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-        request.setAllowedRedirectProtocols(QStringList{QStringLiteral("https")});
+        request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
 
         QCNetworkReplyPrivate replyPrivate(nullptr,
@@ -406,7 +407,8 @@ void TestQCNetworkNetworkPath::testCoreEntryRejectsNonHttpScheme()
 void TestQCNetworkNetworkPath::testExplicitProtocolCannotExpandCore()
 {
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-    request.setAllowedProtocols({QStringLiteral("https"), QStringLiteral("ftp")});
+    request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https
+                                | static_cast<QCurl::QCNetworkProtocol>(0x4));
 
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,

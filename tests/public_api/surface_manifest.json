@@ -129,6 +129,33 @@
       "rationale": "Core timeout request configuration value object."
     },
     {
+      "path": "QCNetworkProtocol.h",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component",
+      "rationale": "Core 初始请求与重定向共用的 HTTP/HTTPS 类型化协议集合。"
+    },
+    {
+      "path": "QCNetworkHttpHeaders.h",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component",
+      "rationale": "可直接传入 raw header API 的常用名称；保留自定义字段。"
+    },
+    {
+      "path": "QCNetworkContentEncoding.h",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component",
+      "rationale": "压缩编码命名入口；保留文本扩展，不承诺运行库能力。"
+    },
+    {
       "path": "QCNetworkHttpMethod.h",
       "component": "Core",
       "maturity": "Stable",
