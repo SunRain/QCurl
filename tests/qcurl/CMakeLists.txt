@@ -43,6 +43,21 @@ target_compile_definitions(tst_QCStringContracts PRIVATE QCURL_ENABLE_TEST_HOOKS
 target_link_libraries(tst_QCStringContracts PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 set_tests_properties(tst_QCStringContracts PROPERTIES LABELS "env;local_port")
 
+set(_qcurl_url_encoding_preflight REQUIRE_LOCAL_PORT)
+if(QCURL_WEBSOCKET_SUPPORT)
+    list(APPEND _qcurl_url_encoding_preflight REQUIRE_NODE)
+endif()
+add_qcurl_test_with_preflight(tst_QCNetworkUrlEncoding
+    ${_qcurl_url_encoding_preflight}
+    SOURCES tst_QCNetworkUrlEncoding.cpp qcurl_http_script_server.h
+            qcblocking_upload_echo_server.cpp)
+target_link_libraries(tst_QCNetworkUrlEncoding PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
+set_tests_properties(tst_QCNetworkUrlEncoding PROPERTIES LABELS "env;local_port")
+if(QCURL_WEBSOCKET_SUPPORT)
+    target_link_libraries(tst_QCNetworkUrlEncoding PRIVATE ${QCURL_QTTEST_OTHER_EXTRAS_TARGET})
+    set_tests_properties(tst_QCNetworkUrlEncoding PROPERTIES LABELS "env;local_port;node;websocket")
+endif()
+
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)

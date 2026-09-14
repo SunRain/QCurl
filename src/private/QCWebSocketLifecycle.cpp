@@ -28,7 +28,7 @@ bool applyStringOption(CURL *curl,
 
 bool configureBaseOptions(CURL *curl, QCWebSocketPrivate *d)
 {
-    const QByteArray url = d->url.toString().toUtf8();
+    const QByteArray url = d->url.toEncoded(QUrl::FullyEncoded);
     if (!WsCurl::apply(CurlOptions::setString(curl, CURLOPT_URL, url.constData()),
                        d,
                        QCURL_CURL_OPTION(CURLOPT_URL).name)

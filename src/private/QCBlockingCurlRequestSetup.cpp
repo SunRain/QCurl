@@ -219,7 +219,7 @@ bool configureBasicRequestOptions(CURL *handle,
                                   const QCNetworkRequest &request,
                                   RequestOptionStorage *storage)
 {
-    storage->url = request.url().toString().toUtf8();
+    storage->url = request.url().toEncoded(QUrl::FullyEncoded);
     if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_URL), storage->url)) {
         return false;
     }

@@ -42,7 +42,7 @@ namespace {
         return false;
     }
 
-    const QByteArray urlBytes = request.url().toString().toUtf8();
+    const QByteArray urlBytes = request.url().toEncoded(QUrl::FullyEncoded);
     return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_URL), urlBytes.constData())
            && setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_PRIVATE), reply)
            && setRequiredOption(reply,

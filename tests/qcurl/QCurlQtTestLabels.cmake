@@ -74,6 +74,7 @@ endif()
 # 统计本测试目录的主要 QtTest 目标，不包含 libcurl_consistency 的 pytest 执行器。
 set(_qcurl_qttest_targets
     tst_QCStringContracts
+    tst_QCNetworkUrlEncoding
     tst_QCNetworkRequest
     tst_QCNetworkError
     tst_CurlFeatureProbe
