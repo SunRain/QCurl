@@ -43,6 +43,13 @@ target_compile_definitions(tst_QCStringContracts PRIVATE QCURL_ENABLE_TEST_HOOKS
 target_link_libraries(tst_QCStringContracts PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 set_tests_properties(tst_QCStringContracts PROPERTIES LABELS "env;local_port")
 
+add_qcurl_test_with_preflight(tst_ApiClient
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_ApiClient.cpp qcurl_http_script_server.h
+            "${PROJECT_SOURCE_DIR}/examples/ApiClientDemo/ApiClient.cpp")
+target_include_directories(tst_ApiClient PRIVATE "${PROJECT_SOURCE_DIR}/examples/ApiClientDemo")
+set_tests_properties(tst_ApiClient PROPERTIES LABELS "env;local_port")
+
 set(_qcurl_url_encoding_preflight REQUIRE_LOCAL_PORT)
 if(QCURL_WEBSOCKET_SUPPORT)
     list(APPEND _qcurl_url_encoding_preflight REQUIRE_NODE)

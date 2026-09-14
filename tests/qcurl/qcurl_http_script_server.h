@@ -53,6 +53,25 @@ public:
     }
 
 private:
+    Q_DISABLE_COPY_MOVE(HttpScriptServer)
+
+    static bool requestComplete(const QByteArray &buffer)
+    {
+        const qsizetype headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd < 0) {
+            return false;
+        }
+        // 已知长度的上传必须等到完整正文，不能用只收到请求头的观察证明 PUT 正文正确。
+        for (const auto &line : buffer.first(headerEnd).split('\n')) {
+            if (line.toLower().startsWith("content-length:")) {
+                bool ok             = false;
+                const qint64 length = line.mid(line.indexOf(':') + 1).trimmed().toLongLong(&ok);
+                return ok && length >= 0 && buffer.size() - headerEnd - 4 >= length;
+            }
+        }
+        return true;
+    }
+
     void acceptSocket(QTcpSocket *socket)
     {
         ++m_connectionCount;
@@ -60,7 +79,7 @@ private:
         connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
         connect(socket, &QTcpSocket::readyRead, this, [this, socket, buffer]() {
             buffer->append(socket->readAll());
-            if (!buffer->contains("\r\n\r\n")) {
+            if (!requestComplete(*buffer)) {
                 return;
             }
             disconnect(socket, &QTcpSocket::readyRead, this, nullptr);
