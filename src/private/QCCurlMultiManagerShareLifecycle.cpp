@@ -83,8 +83,11 @@ bool QCCurlMultiManager::detachShareBindingLocked(CURL *easy, const char *operat
     }
 
     Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult result = adapter.setEasy(
-        easy, CURLOPT_SHARE, "CURLOPT_SHARE", Internal::CookieOptionStage::Rollback, nullptr);
+    const Internal::RequiredOptionResult result
+        = adapter.setEasy(easy,
+                          QCURL_CURL_OPTION(CURLOPT_SHARE),
+                          Internal::CookieOptionStage::Rollback,
+                          nullptr);
     if (!result.isSuccess()) {
         poisonLocked(operation, CURLM_INTERNAL_ERROR);
         return false;
@@ -213,8 +216,7 @@ QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
     Internal::CookieOptionAdapter adapter;
     const Internal::RequiredOptionResult easyShare
         = adapter.setEasy(easy,
-                          CURLOPT_SHARE,
-                          "CURLOPT_SHARE",
+                          QCURL_CURL_OPTION(CURLOPT_SHARE),
                           Internal::CookieOptionStage::Setup,
                           shareContext->share);
     const CURLcode rc = easyShare.curlCode;
@@ -232,8 +234,11 @@ QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
     auto *d                 = reply->d_func();
     const bool hasCookieJar = (d->cookieMode != 0) && !d->cookieFilePath.isEmpty();
     if (shareContext->applied.cookies && !hasCookieJar) {
-        const Internal::RequiredOptionResult cookieEngine = adapter.setEasy(
-            easy, CURLOPT_COOKIEFILE, "CURLOPT_COOKIEFILE", Internal::CookieOptionStage::Setup, "");
+        const Internal::RequiredOptionResult cookieEngine
+            = adapter.setEasy(easy,
+                              QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
+                              Internal::CookieOptionStage::Setup,
+                              "");
         if (!cookieEngine.isSuccess()) {
             reply->d_func()->capabilityWarnings.append(
                 QStringLiteral("启用共享 cookie engine 失败（%1）").arg(cookieEngine.message));

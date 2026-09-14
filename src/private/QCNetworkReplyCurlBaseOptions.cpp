@@ -43,13 +43,13 @@ namespace {
     }
 
     const QByteArray urlBytes = request.url().toString().toUtf8();
-    return setRequiredCurlOption(reply, handle, CURLOPT_URL, "CURLOPT_URL", urlBytes.constData())
-           && setRequiredCurlOption(reply, handle, CURLOPT_PRIVATE, "CURLOPT_PRIVATE", reply)
+    return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_URL), urlBytes.constData())
+           && setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_PRIVATE), reply)
            && setRequiredOption(reply,
                                 Internal::CurlOptions::setEnabled(handle,
                                                                   CURLOPT_FOLLOWLOCATION,
                                                                   request.followLocation()),
-                                "CURLOPT_FOLLOWLOCATION");
+                                QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION).name);
 }
 
 std::optional<long> postRedirectValue(QCNetworkPostRedirectPolicy policy)
@@ -78,18 +78,16 @@ void configureRedirects(QCNetworkReplyPrivate *reply, CURL *handle, const QCNetw
     if (const auto maxRedirects = request.maxRedirects(); maxRedirects.has_value()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_MAXREDIRS,
-                              "CURLOPT_MAXREDIRS",
+                              QCURL_CURL_OPTION(CURLOPT_MAXREDIRS),
                               static_cast<long>(maxRedirects.value()));
     }
     if (const auto value = postRedirectValue(request.postRedirectPolicy()); value.has_value()) {
-        setOptionalLongOption(reply, handle, CURLOPT_POSTREDIR, "CURLOPT_POSTREDIR", value.value());
+        setOptionalLongOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_POSTREDIR), value.value());
     }
     if (request.autoRefererEnabled()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_AUTOREFERER,
-                              "CURLOPT_AUTOREFERER",
+                              QCURL_CURL_OPTION(CURLOPT_AUTOREFERER),
                               Internal::CurlOptions::kEnabled);
     }
 }
@@ -114,8 +112,7 @@ void configureIpResolution(QCNetworkReplyPrivate *reply,
     if (const auto value = request.ipResolve(); value.has_value()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_IPRESOLVE,
-                              "CURLOPT_IPRESOLVE",
+                              QCURL_CURL_OPTION(CURLOPT_IPRESOLVE),
                               curlIpResolveValue(value.value()));
     }
 }
@@ -129,30 +126,26 @@ void configureLocalNetworkBinding(QCNetworkReplyPrivate *reply,
     if (const auto timeout = request.happyEyeballsTimeout(); timeout.has_value()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS,
-                              "CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS",
+                              QCURL_CURL_OPTION(CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS),
                               static_cast<long>(timeout->count()));
     }
     if (const auto interface = request.networkInterface(); interface.has_value()) {
         reply->interfaceBytes = interface->toUtf8();
         setOptionalStringOption(reply,
                                 handle,
-                                CURLOPT_INTERFACE,
-                                "CURLOPT_INTERFACE",
+                                QCURL_CURL_OPTION(CURLOPT_INTERFACE),
                                 reply->interfaceBytes);
     }
     if (const auto port = request.localPort(); port.has_value()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_LOCALPORT,
-                              "CURLOPT_LOCALPORT",
+                              QCURL_CURL_OPTION(CURLOPT_LOCALPORT),
                               static_cast<long>(*port));
     }
     if (const auto range = request.localPortRange(); range.has_value()) {
         setOptionalLongOption(reply,
                               handle,
-                              CURLOPT_LOCALPORTRANGE,
-                              "CURLOPT_LOCALPORTRANGE",
+                              QCURL_CURL_OPTION(CURLOPT_LOCALPORTRANGE),
                               static_cast<long>(*range));
     }
 }
@@ -161,18 +154,17 @@ void configureLocalNetworkBinding(QCNetworkReplyPrivate *reply,
                                         CURL *handle,
                                         const QStringList &entries,
                                         curl_slist **storage,
-                                        CURLoption option,
-                                        const char *optionName)
+                                        QCurl::Internal::CurlOptions::Option option)
 {
     QString error;
-    if (!buildSlistFromStrings(entries, storage, &error, optionName)) {
+    if (!buildSlistFromStrings(entries, storage, &error, option.name)) {
         reply->setError(NetworkError::InvalidRequest, error);
         return false;
     }
     if (!*storage
         || setRequiredOption(reply,
-                             curlEasySetoptWithTestHook(handle, option, optionName, *storage),
-                             optionName)) {
+                             curlEasySetoptWithTestHook(handle, option, *storage),
+                             option.name)) {
         return true;
     }
 
@@ -189,16 +181,14 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
         reply->dnsServersBytes = servers->join(QStringLiteral(",")).toUtf8();
         setOptionalStringOption(reply,
                                 handle,
-                                CURLOPT_DNS_SERVERS,
-                                "CURLOPT_DNS_SERVERS",
+                                QCURL_CURL_OPTION(CURLOPT_DNS_SERVERS),
                                 reply->dnsServersBytes);
     }
     if (const auto dohUrl = request.dohUrl(); dohUrl.has_value()) {
         reply->dohUrlBytes = dohUrl->toString().toUtf8();
         setOptionalStringOption(reply,
                                 handle,
-                                CURLOPT_DOH_URL,
-                                "CURLOPT_DOH_URL",
+                                QCURL_CURL_OPTION(CURLOPT_DOH_URL),
                                 reply->dohUrlBytes);
     }
 }
@@ -214,17 +204,16 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
                                  handle,
                                  entries.value(),
                                  &reply->resolveSlist,
-                                 CURLOPT_RESOLVE,
-                                 "CURLOPT_RESOLVE")) {
+                                 QCURL_CURL_OPTION(CURLOPT_RESOLVE))) {
         return false;
     }
-    if (const auto entries = request.connectTo(); entries.has_value()
-                                                  && !configureSlistOption(reply,
-                                                                           handle,
-                                                                           entries.value(),
-                                                                           &reply->connectToSlist,
-                                                                           CURLOPT_CONNECT_TO,
-                                                                           "CURLOPT_CONNECT_TO")) {
+    if (const auto entries = request.connectTo();
+        entries.has_value()
+        && !configureSlistOption(reply,
+                                 handle,
+                                 entries.value(),
+                                 &reply->connectToSlist,
+                                 QCURL_CURL_OPTION(CURLOPT_CONNECT_TO))) {
         return false;
     }
     configureDnsTransport(reply, handle, request);
@@ -237,15 +226,13 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
                                          CURL *handle,
                                          const QStringList &protocols,
                                          QByteArray *storage,
-                                         CURLoption option,
-                                         const char *optionName,
+                                         QCurl::Internal::CurlOptions::Option option,
                                          const QString &unsupportedMessage,
                                          QCUnsupportedSecurityOptionPolicy policy)
 {
     *storage            = protocols.join(QStringLiteral(",")).toUtf8();
     const CURLcode code = curlEasySetoptWithTestHook(handle,
                                                      option,
-                                                     optionName,
                                                      storage->constData());
     if (code == CURLE_OK) {
         return true;
@@ -262,7 +249,7 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
 
     reply->setError(NetworkError::InvalidRequest,
                     QStringLiteral("设置 %1 失败（%2）")
-                        .arg(QString::fromUtf8(optionName),
+                        .arg(QString::fromUtf8(option.name),
                              QString::fromUtf8(curl_easy_strerror(code))));
     return false;
 }
@@ -285,8 +272,7 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
             handle,
             allowedProtocols,
             &reply->allowedProtocolsBytes,
-            CURLOPT_PROTOCOLS_STR,
-            "CURLOPT_PROTOCOLS_STR",
+            QCURL_CURL_OPTION(CURLOPT_PROTOCOLS_STR),
             QStringLiteral(
                 "QCurl Core initial protocol allowlist could not be applied because libcurl does "
                 "not support CURLOPT_PROTOCOLS_STR (%1)"),
@@ -307,8 +293,7 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
             handle,
             redirectProtocols,
             &reply->allowedRedirectProtocolsBytes,
-            CURLOPT_REDIR_PROTOCOLS_STR,
-            "CURLOPT_REDIR_PROTOCOLS_STR",
+            QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
             QStringLiteral(
                 "QCurl Core redirect protocol allowlist could not be applied because libcurl does "
                 "not support CURLOPT_REDIR_PROTOCOLS_STR (%1)"),

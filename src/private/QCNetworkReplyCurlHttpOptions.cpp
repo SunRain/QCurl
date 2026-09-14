@@ -35,8 +35,7 @@ using namespace Detail;
     return (effective == QCNetworkHttpVersion::Http1_1 && !request.isHttpVersionExplicit())
            || setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_HTTP_VERSION,
-                                    "CURLOPT_HTTP_VERSION",
+                                    QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
                                     detail::toCurlHttpVersion(effective));
 }
 

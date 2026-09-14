@@ -58,8 +58,11 @@ bool QCCurlMultiManagerTestAccess::prepareShareDetach(QCCurlMultiManager *manage
     }
 
     Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult bindResult = adapter.setEasy(
-        easy, CURLOPT_SHARE, "CURLOPT_SHARE", Internal::CookieOptionStage::Setup, context->share);
+    const Internal::RequiredOptionResult bindResult
+        = adapter.setEasy(easy,
+                          QCURL_CURL_OPTION(CURLOPT_SHARE),
+                          Internal::CookieOptionStage::Setup,
+                          context->share);
     if (!bindResult.isSuccess()) {
         if (manager->cleanupShareHandleLocked(
                 context.data(), "QCCurlMultiManagerTestAccess::prepareShareDetach/bind-cleanup")) {
@@ -92,8 +95,11 @@ bool QCCurlMultiManagerTestAccess::prepareShareRollback(QCCurlMultiManager *mana
     QMutexLocker locker(&manager->m_mutex);
     CURL *easy = easyForToken(manager->m_activeTransfers, token);
     Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult cookieEngine = adapter.setEasy(
-        easy, CURLOPT_COOKIEFILE, "CURLOPT_COOKIEFILE", Internal::CookieOptionStage::Setup, "");
+    const Internal::RequiredOptionResult cookieEngine
+        = adapter.setEasy(easy,
+                          QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
+                          Internal::CookieOptionStage::Setup,
+                          "");
     if (cookieEngine.isSuccess()) {
         static_cast<void>(manager->detachShareBindingLocked(
             easy, "QCCurlMultiManagerTestAccess::prepareShareRollback/unexpected-success"));

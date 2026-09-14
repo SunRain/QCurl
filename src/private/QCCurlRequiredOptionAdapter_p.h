@@ -6,6 +6,8 @@
 #ifndef QCCURLREQUIREDOPTIONADAPTER_P_H
 #define QCCURLREQUIREDOPTIONADAPTER_P_H
 
+#include "QCCurlOptionAdapter_p.h"
+
 #include <QByteArray>
 #include <QHash>
 #include <QList>
@@ -71,14 +73,16 @@ class CookieOptionAdapter final
 {
 public:
     template<typename T>
-    [[nodiscard]] RequiredOptionResult setEasy(
-        CURL *handle, CURLoption option, const char *optionName, CookieOptionStage stage, T value)
+    [[nodiscard]] RequiredOptionResult setEasy(CURL *handle,
+                                               QCurl::Internal::CurlOptions::Option option,
+                                               CookieOptionStage stage,
+                                               T value)
     {
-        const QByteArray name(optionName);
+        const QByteArray name(option.name);
         const int occurrence = ++m_occurrences[stageKey(stage, name)];
         const CURLcode code  = shouldFailEasy(stage, name, occurrence)
                                    ? CURLE_BAD_FUNCTION_ARGUMENT
-                                   : curl_easy_setopt(handle, option, value);
+                                   : curl_easy_setopt(handle, option.id, value);
         return easyResult(code, name);
     }
 

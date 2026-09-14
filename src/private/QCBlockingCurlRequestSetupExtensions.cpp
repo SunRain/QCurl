@@ -16,22 +16,20 @@ namespace QCurl::Internal {
 namespace {
 
 bool setStringOption(CURL *handle,
-                     CURLoption option,
-                     const char *optionName,
+                     QCurl::Internal::CurlOptions::Option option,
                      const QByteArray &value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, value.constData()) == CURLE_OK;
+    return CurlOptions::setWithTestHook(handle, option, value.constData()) == CURLE_OK;
 }
 
-bool setLongOption(CURL *handle, CURLoption option, const char *optionName, long value)
+bool setLongOption(CURL *handle, QCurl::Internal::CurlOptions::Option option, long value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, value) == CURLE_OK;
+    return CurlOptions::setWithTestHook(handle, option, value) == CURLE_OK;
 }
 
-bool setOffTOption(CURL *handle, CURLoption option, const char *optionName, qint64 value)
+bool setOffTOption(CURL *handle, QCurl::Internal::CurlOptions::Option option, qint64 value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, static_cast<curl_off_t>(value))
-           == CURLE_OK;
+    return CurlOptions::setWithTestHook(handle, option, static_cast<curl_off_t>(value)) == CURLE_OK;
 }
 
 long curlProxyType(QCNetworkProxyConfig::ProxyType type)
@@ -101,37 +99,34 @@ bool configureProxyOptions(CURL *handle,
     if (const auto proxy = request.proxyConfig(); proxy.has_value()) {
         storage->proxyHost = proxy->hostName().toUtf8();
         if (!storage->proxyHost.isEmpty()) {
-            if (!setStringOption(handle, CURLOPT_PROXY, "CURLOPT_PROXY", storage->proxyHost)) {
-                return failOption(storage, "CURLOPT_PROXY");
+            if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_PROXY), storage->proxyHost)) {
+                return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PROXY).name);
             }
         }
         if (proxy->port() > 0) {
-            if (!setLongOption(handle, CURLOPT_PROXYPORT, "CURLOPT_PROXYPORT", proxy->port())) {
-                return failOption(storage, "CURLOPT_PROXYPORT");
+            if (!setLongOption(handle, QCURL_CURL_OPTION(CURLOPT_PROXYPORT), proxy->port())) {
+                return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PROXYPORT).name);
             }
         }
         if (!setLongOption(handle,
-                           CURLOPT_PROXYTYPE,
-                           "CURLOPT_PROXYTYPE",
+                           QCURL_CURL_OPTION(CURLOPT_PROXYTYPE),
                            curlProxyType(proxy->type()))) {
-            return failOption(storage, "CURLOPT_PROXYTYPE");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PROXYTYPE).name);
         }
         storage->proxyUser     = proxy->userName().toUtf8();
         storage->proxyPassword = proxy->password().toUtf8();
         if (!storage->proxyUser.isEmpty()) {
             if (!setStringOption(handle,
-                                 CURLOPT_PROXYUSERNAME,
-                                 "CURLOPT_PROXYUSERNAME",
+                                 QCURL_CURL_OPTION(CURLOPT_PROXYUSERNAME),
                                  storage->proxyUser)) {
-                return failOption(storage, "CURLOPT_PROXYUSERNAME");
+                return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PROXYUSERNAME).name);
             }
         }
         if (!storage->proxyPassword.isEmpty()) {
             if (!setStringOption(handle,
-                                 CURLOPT_PROXYPASSWORD,
-                                 "CURLOPT_PROXYPASSWORD",
+                                 QCURL_CURL_OPTION(CURLOPT_PROXYPASSWORD),
                                  storage->proxyPassword)) {
-                return failOption(storage, "CURLOPT_PROXYPASSWORD");
+                return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PROXYPASSWORD).name);
             }
         }
     }
@@ -145,8 +140,8 @@ bool configureTransferOptions(CURL *handle,
     const bool hasRefererHeader = isHeaderSet(request, QCurl::httpheaders::kReferer.toLower());
     if (!hasRefererHeader && !request.referer().isEmpty()) {
         storage->referer = request.referer().toUtf8();
-        if (!setStringOption(handle, CURLOPT_REFERER, "CURLOPT_REFERER", storage->referer)) {
-            return failOption(storage, "CURLOPT_REFERER");
+        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_REFERER), storage->referer)) {
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_REFERER).name);
         }
     }
 
@@ -155,29 +150,26 @@ bool configureTransferOptions(CURL *handle,
     if (!hasAcceptEncodingHeader && request.autoDecompressionEnabled()) {
         storage->acceptEncoding = request.acceptedEncodings().join(QLatin1Char(',')).toUtf8();
         if (!setStringOption(handle,
-                             CURLOPT_ACCEPT_ENCODING,
-                             "CURLOPT_ACCEPT_ENCODING",
+                             QCURL_CURL_OPTION(CURLOPT_ACCEPT_ENCODING),
                              storage->acceptEncoding)) {
-            return failOption(storage, "CURLOPT_ACCEPT_ENCODING");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_ACCEPT_ENCODING).name);
         }
     }
 
     if (const auto bytesPerSec = request.maxDownloadBytesPerSec();
         bytesPerSec.has_value() && bytesPerSec.value() > 0) {
         if (!setOffTOption(handle,
-                           CURLOPT_MAX_RECV_SPEED_LARGE,
-                           "CURLOPT_MAX_RECV_SPEED_LARGE",
+                           QCURL_CURL_OPTION(CURLOPT_MAX_RECV_SPEED_LARGE),
                            bytesPerSec.value())) {
-            return failOption(storage, "CURLOPT_MAX_RECV_SPEED_LARGE");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_MAX_RECV_SPEED_LARGE).name);
         }
     }
     if (const auto bytesPerSec = request.maxUploadBytesPerSec();
         bytesPerSec.has_value() && bytesPerSec.value() > 0) {
         if (!setOffTOption(handle,
-                           CURLOPT_MAX_SEND_SPEED_LARGE,
-                           "CURLOPT_MAX_SEND_SPEED_LARGE",
+                           QCURL_CURL_OPTION(CURLOPT_MAX_SEND_SPEED_LARGE),
                            bytesPerSec.value())) {
-            return failOption(storage, "CURLOPT_MAX_SEND_SPEED_LARGE");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_MAX_SEND_SPEED_LARGE).name);
         }
     }
     return true;
@@ -198,27 +190,24 @@ bool configureAuthOptions(CURL *handle,
         hasSensitiveHeader        = true;
         storage->httpAuthUser     = auth->userName().toUtf8();
         storage->httpAuthPassword = auth->password().toUtf8();
-        if (!setStringOption(handle, CURLOPT_USERNAME, "CURLOPT_USERNAME", storage->httpAuthUser)) {
-            return failOption(storage, "CURLOPT_USERNAME");
+        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_USERNAME), storage->httpAuthUser)) {
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_USERNAME).name);
         }
         if (!setStringOption(handle,
-                             CURLOPT_PASSWORD,
-                             "CURLOPT_PASSWORD",
+                             QCURL_CURL_OPTION(CURLOPT_PASSWORD),
                              storage->httpAuthPassword)) {
-            return failOption(storage, "CURLOPT_PASSWORD");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_PASSWORD).name);
         }
         if (!setLongOption(handle,
-                           CURLOPT_HTTPAUTH,
-                           "CURLOPT_HTTPAUTH",
+                           QCURL_CURL_OPTION(CURLOPT_HTTPAUTH),
                            static_cast<long>(curlHttpAuth(auth->method())))) {
-            return failOption(storage, "CURLOPT_HTTPAUTH");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_HTTPAUTH).name);
         }
         if (auth->allowUnrestrictedAuth() && request.followLocation()) {
             if (!setLongOption(handle,
-                               CURLOPT_UNRESTRICTED_AUTH,
-                               "CURLOPT_UNRESTRICTED_AUTH",
+                               QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH),
                                Internal::CurlOptions::kEnabled)) {
-                return failOption(storage, "CURLOPT_UNRESTRICTED_AUTH");
+                return failOption(storage, QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH).name);
             }
         }
     }
@@ -226,10 +215,9 @@ bool configureAuthOptions(CURL *handle,
     if (request.followLocation() && request.allowUnrestrictedSensitiveHeadersOnRedirect()
         && hasSensitiveHeader) {
         if (!setLongOption(handle,
-                           CURLOPT_UNRESTRICTED_AUTH,
-                           "CURLOPT_UNRESTRICTED_AUTH",
+                           QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH),
                            Internal::CurlOptions::kEnabled)) {
-            return failOption(storage, "CURLOPT_UNRESTRICTED_AUTH");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH).name);
         }
     }
     return true;

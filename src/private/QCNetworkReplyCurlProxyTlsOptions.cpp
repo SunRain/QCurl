@@ -25,17 +25,13 @@ namespace {
     const auto policy = config.unsupportedSecurityPolicy();
     return handleSecurityOptionResult(reply,
                                       Internal::CurlOptions::setProxySslVerifyPeerWithTestHook(
-                                          handle,
-                                          "CURLOPT_PROXY_SSL_VERIFYPEER",
-                                          config.verifyPeer()),
-                                      "CURLOPT_PROXY_SSL_VERIFYPEER",
+                                          handle, config.verifyPeer()),
+                                      QCURL_CURL_OPTION(CURLOPT_PROXY_SSL_VERIFYPEER).name,
                                       policy)
            && handleSecurityOptionResult(reply,
                                          Internal::CurlOptions::setProxySslVerifyHostWithTestHook(
-                                             handle,
-                                             "CURLOPT_PROXY_SSL_VERIFYHOST",
-                                             config.verifyHost()),
-                                         "CURLOPT_PROXY_SSL_VERIFYHOST",
+                                             handle, config.verifyHost()),
+                                         QCURL_CURL_OPTION(CURLOPT_PROXY_SSL_VERIFYHOST).name,
                                          policy);
 }
 
@@ -50,11 +46,11 @@ namespace {
     reply->proxySslCaCertPathBytes = config.caCertPath().toUtf8();
     return handleSecurityOptionResult(reply,
                                       curlEasySetoptWithTestHook(handle,
-                                                                 CURLOPT_PROXY_CAINFO,
-                                                                 "CURLOPT_PROXY_CAINFO",
+                                                                 QCURL_CURL_OPTION(
+                                                                     CURLOPT_PROXY_CAINFO),
                                                                  reply->proxySslCaCertPathBytes
                                                                      .constData()),
-                                      "CURLOPT_PROXY_CAINFO",
+                                      QCURL_CURL_OPTION(CURLOPT_PROXY_CAINFO).name,
                                       config.unsupportedSecurityPolicy());
 }
 
@@ -69,10 +65,10 @@ namespace {
     if (version.has_value()) {
         return handleSecurityOptionResult(reply,
                                           curlEasySetoptWithTestHook(handle,
-                                                                     CURLOPT_PROXY_SSLVERSION,
-                                                                     "CURLOPT_PROXY_SSLVERSION",
+                                                                     QCURL_CURL_OPTION(
+                                                                         CURLOPT_PROXY_SSLVERSION),
                                                                      version.value()),
-                                          "CURLOPT_PROXY_SSLVERSION",
+                                          QCURL_CURL_OPTION(CURLOPT_PROXY_SSLVERSION).name,
                                           config.unsupportedSecurityPolicy());
     }
 
@@ -87,8 +83,7 @@ namespace {
 
 [[nodiscard]] bool configureProxyCipherOption(QCNetworkReplyPrivate *reply,
                                               CURL *handle,
-                                              CURLoption option,
-                                              const char *optionName,
+                                              QCurl::Internal::CurlOptions::Option option,
                                               const QString &value,
                                               QByteArray *storage,
                                               QCUnsupportedSecurityOptionPolicy policy)
@@ -101,9 +96,8 @@ namespace {
     return handleSecurityOptionResult(reply,
                                       curlEasySetoptWithTestHook(handle,
                                                                  option,
-                                                                 optionName,
                                                                  storage->constData()),
-                                      optionName,
+                                      option.name,
                                       policy);
 }
 
@@ -114,15 +108,13 @@ namespace {
     const auto policy = config.unsupportedSecurityPolicy();
     return configureProxyCipherOption(reply,
                                       handle,
-                                      CURLOPT_PROXY_SSL_CIPHER_LIST,
-                                      "CURLOPT_PROXY_SSL_CIPHER_LIST",
+                                      QCURL_CURL_OPTION(CURLOPT_PROXY_SSL_CIPHER_LIST),
                                       config.cipherList(),
                                       &reply->proxySslCipherListBytes,
                                       policy)
            && configureProxyCipherOption(reply,
                                          handle,
-                                         CURLOPT_PROXY_TLS13_CIPHERS,
-                                         "CURLOPT_PROXY_TLS13_CIPHERS",
+                                         QCURL_CURL_OPTION(CURLOPT_PROXY_TLS13_CIPHERS),
                                          config.tls13Ciphers(),
                                          &reply->proxySslTls13CiphersBytes,
                                          policy);

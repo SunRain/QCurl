@@ -100,7 +100,8 @@ bool QCCurlHandleManager::appendHeader(const QString &header)
 
     // curl_slist_append 会复制字符串，所以临时的 QByteArray 生命周期没问题
     QByteArray headerBytes = header.toUtf8();
-    if (Internal::CurlOptions::shouldForceSlistAppendFailure("CURLOPT_HTTPHEADER")) {
+    if (Internal::CurlOptions::shouldForceSlistAppendFailure(
+            QCURL_CURL_OPTION(CURLOPT_HTTPHEADER).name)) {
         qWarning() << "QCCurlHandleManager::appendHeader: forced curl_slist_append failure";
         return false;
     }

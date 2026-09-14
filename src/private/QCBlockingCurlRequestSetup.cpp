@@ -22,16 +22,15 @@ namespace QCurl::Internal {
 namespace {
 
 bool setStringOption(CURL *handle,
-                     CURLoption option,
-                     const char *optionName,
+                     QCurl::Internal::CurlOptions::Option option,
                      const QByteArray &value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, value.constData()) == CURLE_OK;
+    return CurlOptions::setWithTestHook(handle, option, value.constData()) == CURLE_OK;
 }
 
-bool setLongOption(CURL *handle, CURLoption option, const char *optionName, long value)
+bool setLongOption(CURL *handle, QCurl::Internal::CurlOptions::Option option, long value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, value) == CURLE_OK;
+    return CurlOptions::setWithTestHook(handle, option, value) == CURLE_OK;
 }
 
 long curlPostRedirectPolicy(QCNetworkPostRedirectPolicy policy)
@@ -89,7 +88,8 @@ bool appendRequestHeaders(CURL *handle,
     const QList<QByteArray> names = request.rawHeaderList();
     for (const QByteArray &name : names) {
         const QByteArray line = name + QByteArrayLiteral(": ") + request.rawHeader(name);
-        if (Internal::CurlOptions::shouldForceSlistAppendFailure("CURLOPT_HTTPHEADER")) {
+        if (Internal::CurlOptions::shouldForceSlistAppendFailure(
+                QCURL_CURL_OPTION(CURLOPT_HTTPHEADER).name)) {
             if (error) {
                 *error = QStringLiteral("追加 CURLOPT_HTTPHEADER 失败（测试故障注入）");
             }
@@ -110,8 +110,7 @@ bool appendRequestHeaders(CURL *handle,
     }
 
     const CURLcode rc = CurlOptions::setWithTestHook(handle,
-                                                     CURLOPT_HTTPHEADER,
-                                                     "CURLOPT_HTTPHEADER",
+                                                     QCURL_CURL_OPTION(CURLOPT_HTTPHEADER),
                                                      *headers);
     if (rc == CURLE_OK) {
         return true;
@@ -129,31 +128,28 @@ bool appendRequestHeaders(CURL *handle,
 {
     if (Internal::CurlOptions::setEnabled(handle, CURLOPT_FOLLOWLOCATION, request.followLocation())
         != CURLE_OK) {
-        return failOption(storage, "CURLOPT_FOLLOWLOCATION");
+        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION).name);
     }
     if (const auto redirects = request.maxRedirects(); redirects.has_value()) {
         if (!setLongOption(handle,
-                           CURLOPT_MAXREDIRS,
-                           "CURLOPT_MAXREDIRS",
+                           QCURL_CURL_OPTION(CURLOPT_MAXREDIRS),
                            static_cast<long>(redirects.value()))) {
-            return failOption(storage, "CURLOPT_MAXREDIRS");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_MAXREDIRS).name);
         }
     }
     if (request.followLocation()
         && request.postRedirectPolicy() != QCNetworkPostRedirectPolicy::Default) {
         if (!setLongOption(handle,
-                           CURLOPT_POSTREDIR,
-                           "CURLOPT_POSTREDIR",
+                           QCURL_CURL_OPTION(CURLOPT_POSTREDIR),
                            curlPostRedirectPolicy(request.postRedirectPolicy()))) {
-            return failOption(storage, "CURLOPT_POSTREDIR");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_POSTREDIR).name);
         }
     }
     if (request.followLocation() && request.autoRefererEnabled()) {
         if (!setLongOption(handle,
-                           CURLOPT_AUTOREFERER,
-                           "CURLOPT_AUTOREFERER",
+                           QCURL_CURL_OPTION(CURLOPT_AUTOREFERER),
                            Internal::CurlOptions::kEnabled)) {
-            return failOption(storage, "CURLOPT_AUTOREFERER");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_AUTOREFERER).name);
         }
     }
     return true;
@@ -176,24 +172,23 @@ bool appendRequestHeaders(CURL *handle,
         qWarning().noquote() << warning;
     }
     if (!setLongOption(handle,
-                       CURLOPT_HTTP_VERSION,
-                       "CURLOPT_HTTP_VERSION",
+                       QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
                        detail::toCurlHttpVersion(effective))) {
-        return failOption(storage, "CURLOPT_HTTP_VERSION");
+        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION).name);
     }
     if (Internal::CurlOptions::setSslVerifyPeer(handle, request.sslConfig().verifyPeer())
         != CURLE_OK) {
-        return failOption(storage, "CURLOPT_SSL_VERIFYPEER");
+        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER).name);
     }
     if (Internal::CurlOptions::setSslVerifyHost(handle, request.sslConfig().verifyHost())
         != CURLE_OK) {
-        return failOption(storage, "CURLOPT_SSL_VERIFYHOST");
+        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST).name);
     }
     if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
         storage->range
             = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd()).toUtf8();
-        if (!setStringOption(handle, CURLOPT_RANGE, "CURLOPT_RANGE", storage->range)) {
-            return failOption(storage, "CURLOPT_RANGE");
+        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_RANGE), storage->range)) {
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_RANGE).name);
         }
     }
     return true;
@@ -207,15 +202,14 @@ bool appendRequestHeaders(CURL *handle,
     if (timeout.connectTimeout().has_value()) {
         if (Internal::CurlOptions::setConnectTimeout(handle, timeout.connectTimeout().value())
             != CURLE_OK) {
-            return failOption(storage, "CURLOPT_CONNECTTIMEOUT_MS");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name);
         }
     }
     if (timeout.totalTimeout().has_value()) {
         if (!setLongOption(handle,
-                           CURLOPT_TIMEOUT_MS,
-                           "CURLOPT_TIMEOUT_MS",
+                           QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
                            static_cast<long>(timeout.totalTimeout()->count()))) {
-            return failOption(storage, "CURLOPT_TIMEOUT_MS");
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS).name);
         }
     }
     return true;
@@ -226,7 +220,7 @@ bool configureBasicRequestOptions(CURL *handle,
                                   RequestOptionStorage *storage)
 {
     storage->url = request.url().toString().toUtf8();
-    if (!setStringOption(handle, CURLOPT_URL, "CURLOPT_URL", storage->url)) {
+    if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_URL), storage->url)) {
         return false;
     }
     return configureRedirectOptions(handle, request, storage)
@@ -243,13 +237,12 @@ bool configureAdvancedPathOptions(CURL *handle,
         if (!appendStringList(&storage->resolveList,
                               resolve.value(),
                               &storage->failureMessage,
-                              "CURLOPT_RESOLVE")) {
+                              QCURL_CURL_OPTION(CURLOPT_RESOLVE).name)) {
             return false;
         }
         if (storage->resolveList) {
             const CURLcode rc = CurlOptions::setWithTestHook(handle,
-                                                             CURLOPT_RESOLVE,
-                                                             "CURLOPT_RESOLVE",
+                                                             QCURL_CURL_OPTION(CURLOPT_RESOLVE),
                                                              storage->resolveList);
             if (rc != CURLE_OK) {
                 storage->failureMessage = QStringLiteral("设置 CURLOPT_RESOLVE 失败（%1）")
@@ -262,13 +255,12 @@ bool configureAdvancedPathOptions(CURL *handle,
         if (!appendStringList(&storage->connectToList,
                               connectTo.value(),
                               &storage->failureMessage,
-                              "CURLOPT_CONNECT_TO")) {
+                              QCURL_CURL_OPTION(CURLOPT_CONNECT_TO).name)) {
             return false;
         }
         if (storage->connectToList) {
             const CURLcode rc = CurlOptions::setWithTestHook(handle,
-                                                             CURLOPT_CONNECT_TO,
-                                                             "CURLOPT_CONNECT_TO",
+                                                             QCURL_CURL_OPTION(CURLOPT_CONNECT_TO),
                                                              storage->connectToList);
             if (rc != CURLE_OK) {
                 storage->failureMessage = QStringLiteral("设置 CURLOPT_CONNECT_TO 失败（%1）")
@@ -300,8 +292,8 @@ bool configureRequestOptions(CURL *handle,
 
     storage->caInfo = request.sslConfig().caCertPath().toUtf8();
     if (!storage->caInfo.isEmpty()) {
-        if (!setStringOption(handle, CURLOPT_CAINFO, "CURLOPT_CAINFO", storage->caInfo)) {
-            return failOption(storage, "CURLOPT_CAINFO");
+        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_CAINFO), storage->caInfo)) {
+            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_CAINFO).name);
         }
     }
 

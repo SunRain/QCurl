@@ -22,6 +22,15 @@
 
 namespace QCurl::Internal::CurlOptions {
 
+struct Option
+{
+    CURLoption id;
+    const char *name;
+};
+
+// 保留调用处 token（包括别名）的名称；选项查询接口可以被 libcurl 构建禁用。
+#define QCURL_CURL_OPTION(option) (::QCurl::Internal::CurlOptions::Option{option, #option})
+
 /**
  * @brief 释放 libcurl header list 的 RAII deleter。
  */
@@ -209,13 +218,10 @@ constexpr long kConnectOnlyWebSocket = 2L;
 }
 
 template<typename T>
-[[nodiscard]] static inline CURLcode setWithTestHook(CURL *handle,
-                                                     CURLoption option,
-                                                     const char *optionName,
-                                                     T value)
+[[nodiscard]] static inline CURLcode setWithTestHook(CURL *handle, Option option, T value)
 {
 #ifdef QCURL_ENABLE_TEST_HOOKS
-    if (shouldForceSetoptFailure(optionName)) {
+    if (shouldForceSetoptFailure(option.name)) {
         return CURLE_BAD_FUNCTION_ARGUMENT;
     }
     // 测试环境可按 option 名定向注入 capability 缺失，用于验证降级路径。
@@ -228,15 +234,13 @@ template<typename T>
 
         const QList<QByteArray> parts = raw.split(',');
         for (const QByteArray &part : parts) {
-            if (part.trimmed() == optionName) {
+            if (part.trimmed() == option.name) {
                 return CURLE_NOT_BUILT_IN;
             }
         }
     }
-#else
-    Q_UNUSED(optionName);
 #endif
-    return curl_easy_setopt(handle, option, value);
+    return curl_easy_setopt(handle, option.id, value);
 }
 
 /**
@@ -247,7 +251,7 @@ template<typename T>
  */
 [[nodiscard]] static inline CURLcode setHttpHeaderList(CURL *handle, curl_slist *headers)
 {
-    return setWithTestHook(handle, CURLOPT_HTTPHEADER, "CURLOPT_HTTPHEADER", headers);
+    return setWithTestHook(handle, QCURL_CURL_OPTION(CURLOPT_HTTPHEADER), headers);
 }
 
 [[nodiscard]] inline CURLcode setEnabled(CURL *handle, CURLoption option, bool enabled)
@@ -270,13 +274,10 @@ template<typename T>
     return setEnabled(handle, CURLOPT_PROXY_SSL_VERIFYPEER, enabled);
 }
 
-[[nodiscard]] inline CURLcode setProxySslVerifyPeerWithTestHook(CURL *handle,
-                                                                const char *optionName,
-                                                                bool enabled)
+[[nodiscard]] inline CURLcode setProxySslVerifyPeerWithTestHook(CURL *handle, bool enabled)
 {
     return setWithTestHook(handle,
-                           CURLOPT_PROXY_SSL_VERIFYPEER,
-                           optionName,
+                           QCURL_CURL_OPTION(CURLOPT_PROXY_SSL_VERIFYPEER),
                            enabled ? kEnabled : kDisabled);
 }
 
@@ -285,13 +286,10 @@ template<typename T>
     return setLong(handle, CURLOPT_PROXY_SSL_VERIFYHOST, enabled ? kVerifyHostStrict : kDisabled);
 }
 
-[[nodiscard]] inline CURLcode setProxySslVerifyHostWithTestHook(CURL *handle,
-                                                                const char *optionName,
-                                                                bool enabled)
+[[nodiscard]] inline CURLcode setProxySslVerifyHostWithTestHook(CURL *handle, bool enabled)
 {
     return setWithTestHook(handle,
-                           CURLOPT_PROXY_SSL_VERIFYHOST,
-                           optionName,
+                           QCURL_CURL_OPTION(CURLOPT_PROXY_SSL_VERIFYHOST),
                            enabled ? kVerifyHostStrict : kDisabled);
 }
 

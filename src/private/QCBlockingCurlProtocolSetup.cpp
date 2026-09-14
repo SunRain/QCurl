@@ -16,8 +16,7 @@ namespace {
 
 bool setProtocolListOption(CURL *handle,
                            RequestOptionStorage *storage,
-                           CURLoption option,
-                           const char *optionName,
+                           QCurl::Internal::CurlOptions::Option option,
                            const QStringList &protocols,
                            QByteArray *bytes)
 {
@@ -25,11 +24,11 @@ bool setProtocolListOption(CURL *handle,
     const QList<QByteArray> forcedOptions = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR").split(',');
     for (const QByteArray &forced : forcedOptions) {
         const QByteArray trimmed = forced.trimmed();
-        if (trimmed == "1" || trimmed == "all" || trimmed == optionName) {
+        if (trimmed == "1" || trimmed == "all" || trimmed == option.name) {
             storage->failureMessage        = QStringLiteral(
                                                  "Blocking Extras Core protocol policy requires %1, but "
                                                  "this libcurl does not support it")
-                                                 .arg(QString::fromUtf8(optionName));
+                                                 .arg(QString::fromUtf8(option.name));
             storage->unsupportedCapability = true;
             return false;
         }
@@ -37,7 +36,7 @@ bool setProtocolListOption(CURL *handle,
 #endif
 
     *bytes = protocols.join(QLatin1Char(',')).toUtf8();
-    const CURLcode rc = CurlOptions::setWithTestHook(handle, option, optionName, bytes->constData());
+    const CURLcode rc = CurlOptions::setWithTestHook(handle, option, bytes->constData());
     if (rc == CURLE_OK) {
         return true;
     }
@@ -46,14 +45,14 @@ bool setProtocolListOption(CURL *handle,
         storage->failureMessage        = QStringLiteral(
                                              "Blocking Extras Core protocol policy requires %1, but this "
                                              "libcurl does not support it: %2")
-                                             .arg(QString::fromUtf8(optionName))
+                                             .arg(QString::fromUtf8(option.name))
                                              .arg(QString::fromUtf8(curl_easy_strerror(rc)));
         storage->unsupportedCapability = true;
         return false;
     }
 
     storage->failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
-                                  .arg(QString::fromUtf8(optionName))
+                                  .arg(QString::fromUtf8(option.name))
                                   .arg(QString::fromUtf8(curl_easy_strerror(rc)));
     return false;
 }
@@ -73,8 +72,7 @@ bool configureProtocolOptions(CURL *handle,
 
     if (!setProtocolListOption(handle,
                                storage,
-                               CURLOPT_PROTOCOLS_STR,
-                               "CURLOPT_PROTOCOLS_STR",
+                               QCURL_CURL_OPTION(CURLOPT_PROTOCOLS_STR),
                                allowedProtocols,
                                &storage->allowedProtocols)) {
         return false;
@@ -89,8 +87,7 @@ bool configureProtocolOptions(CURL *handle,
 
     return setProtocolListOption(handle,
                                  storage,
-                                 CURLOPT_REDIR_PROTOCOLS_STR,
-                                 "CURLOPT_REDIR_PROTOCOLS_STR",
+                                 QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
                                  redirectProtocols,
                                  &storage->allowedRedirectProtocols);
 }

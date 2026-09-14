@@ -19,29 +19,34 @@ namespace WsCurl      = Internal::WebSocketCurlOptions;
 
 bool applyStringOption(CURL *curl,
                        QCWebSocketPrivate *d,
-                       CURLoption option,
-                       const QByteArray &value,
-                       const char *optionName)
+                       CurlOptions::Option option,
+                       const QByteArray &value)
 {
     const char *data = value.isEmpty() ? nullptr : value.constData();
-    return WsCurl::apply(CurlOptions::setString(curl, option, data), d, optionName);
+    return WsCurl::apply(CurlOptions::setString(curl, option.id, data), d, option.name);
 }
 
 bool configureBaseOptions(CURL *curl, QCWebSocketPrivate *d)
 {
     const QByteArray url = d->url.toString().toUtf8();
-    if (!WsCurl::apply(CurlOptions::setString(curl, CURLOPT_URL, url.constData()), d, "CURLOPT_URL")
-        || !WsCurl::apply(CurlOptions::setConnectOnlyWebSocket(curl), d, "CURLOPT_CONNECT_ONLY")) {
+    if (!WsCurl::apply(CurlOptions::setString(curl, CURLOPT_URL, url.constData()),
+                       d,
+                       QCURL_CURL_OPTION(CURLOPT_URL).name)
+        || !WsCurl::apply(CurlOptions::setConnectOnlyWebSocket(curl),
+                          d,
+                          QCURL_CURL_OPTION(CURLOPT_CONNECT_ONLY).name)) {
         return false;
     }
 
-    if (!WsCurl::apply(CurlOptions::setWebSocketNoAutoPong(curl), d, "CURLOPT_WS_OPTIONS")) {
+    if (!WsCurl::apply(CurlOptions::setWebSocketNoAutoPong(curl),
+                       d,
+                       QCURL_CURL_OPTION(CURLOPT_WS_OPTIONS).name)) {
         return false;
     }
 
     return WsCurl::apply(CurlOptions::setConnectTimeout(curl, d->options.connectTimeout()),
                          d,
-                         "CURLOPT_CONNECTTIMEOUT_MS");
+                         QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name);
 }
 
 void loadTlsStrings(QCWebSocketPrivate *d, const QCNetworkSslConfig &config)
@@ -54,14 +59,13 @@ void loadTlsStrings(QCWebSocketPrivate *d, const QCNetworkSslConfig &config)
 
 bool applyTlsStrings(CURL *curl, QCWebSocketPrivate *d)
 {
-    return applyStringOption(curl, d, CURLOPT_CAINFO, d->sslCaInfoUtf8, "CURLOPT_CAINFO")
-           && applyStringOption(curl, d, CURLOPT_SSLCERT, d->sslCertUtf8, "CURLOPT_SSLCERT")
-           && applyStringOption(curl, d, CURLOPT_SSLKEY, d->sslKeyUtf8, "CURLOPT_SSLKEY")
+    return applyStringOption(curl, d, QCURL_CURL_OPTION(CURLOPT_CAINFO), d->sslCaInfoUtf8)
+           && applyStringOption(curl, d, QCURL_CURL_OPTION(CURLOPT_SSLCERT), d->sslCertUtf8)
+           && applyStringOption(curl, d, QCURL_CURL_OPTION(CURLOPT_SSLKEY), d->sslKeyUtf8)
            && applyStringOption(curl,
                                 d,
-                                CURLOPT_KEYPASSWD,
-                                d->sslKeyPasswordUtf8,
-                                "CURLOPT_KEYPASSWD");
+                                QCURL_CURL_OPTION(CURLOPT_KEYPASSWD),
+                                d->sslKeyPasswordUtf8);
 }
 
 bool configureTlsOptions(CURL *curl, QCWebSocketPrivate *d)
@@ -77,10 +81,10 @@ bool configureTlsOptions(CURL *curl, QCWebSocketPrivate *d)
     const QCNetworkSslConfig config = d->options.sslConfig();
     if (!WsCurl::apply(CurlOptions::setSslVerifyPeer(curl, config.verifyPeer()),
                        d,
-                       "CURLOPT_SSL_VERIFYPEER")
+                       QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER).name)
         || !WsCurl::apply(CurlOptions::setSslVerifyHost(curl, config.verifyHost()),
                           d,
-                          "CURLOPT_SSL_VERIFYHOST")) {
+                          QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST).name)) {
         return false;
     }
 

@@ -82,22 +82,22 @@ bool Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(
         *error = QStringLiteral("连接池配置缺少 easy handle");
         return false;
     }
-    const auto set = [handle, error](CURLoption option, const char *name, long value) {
-        const auto code = Internal::CurlOptions::setWithTestHook(handle, option, name, value);
+    const auto set = [handle, error](QCurl::Internal::CurlOptions::Option option, long value) {
+        const auto code = Internal::CurlOptions::setWithTestHook(handle, option, value);
         if (code == CURLE_OK) {
             return true;
         }
         *error = QStringLiteral("连接池设置 %1 失败：%2")
-                     .arg(QString::fromLatin1(name), QString::fromLatin1(curl_easy_strerror(code)));
+                     .arg(QString::fromLatin1(option.name),
+                          QString::fromLatin1(curl_easy_strerror(code)));
         return false;
     };
-    return set(CURLOPT_TCP_KEEPALIVE, "CURLOPT_TCP_KEEPALIVE", 1L)
-           && set(CURLOPT_TCP_KEEPIDLE, "CURLOPT_TCP_KEEPIDLE", 60L)
-           && set(CURLOPT_TCP_KEEPINTVL, "CURLOPT_TCP_KEEPINTVL", kTcpKeepAliveInterval.count())
-           && set(CURLOPT_MAXAGE_CONN, "CURLOPT_MAXAGE_CONN", cfg.maxIdleTime())
-           && set(CURLOPT_MAXLIFETIME_CONN, "CURLOPT_MAXLIFETIME_CONN", cfg.maxConnectionLifetime())
-           && set(CURLOPT_DNS_CACHE_TIMEOUT,
-                  "CURLOPT_DNS_CACHE_TIMEOUT",
+    return set(QCURL_CURL_OPTION(CURLOPT_TCP_KEEPALIVE), 1L)
+           && set(QCURL_CURL_OPTION(CURLOPT_TCP_KEEPIDLE), 60L)
+           && set(QCURL_CURL_OPTION(CURLOPT_TCP_KEEPINTVL), kTcpKeepAliveInterval.count())
+           && set(QCURL_CURL_OPTION(CURLOPT_MAXAGE_CONN), cfg.maxIdleTime())
+           && set(QCURL_CURL_OPTION(CURLOPT_MAXLIFETIME_CONN), cfg.maxConnectionLifetime())
+           && set(QCURL_CURL_OPTION(CURLOPT_DNS_CACHE_TIMEOUT),
                   cfg.dnsCacheEnabled() ? cfg.dnsCacheTimeout() : 0L);
 }
 

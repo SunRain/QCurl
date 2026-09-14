@@ -77,14 +77,16 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
     return false;
 }
 
-bool setOptionalLongOption(
-    QCNetworkReplyPrivate *d, CURL *handle, CURLoption option, const char *optionName, long value)
+bool setOptionalLongOption(QCNetworkReplyPrivate *d,
+                           CURL *handle,
+                           QCurl::Internal::CurlOptions::Option option,
+                           long value)
 {
     if (!handle) {
         return false;
     }
 
-    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, optionName, value);
+    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, value);
     if (rc == CURLE_OK) {
         return true;
     }
@@ -92,29 +94,28 @@ bool setOptionalLongOption(
     if (isCapabilityRelatedCurlError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
-                                    .arg(QString::fromUtf8(optionName))
+                                    .arg(QString::fromUtf8(option.name))
                                     .arg(QString::fromUtf8(curl_easy_strerror(rc))));
         return false;
     }
 
     appendCapabilityWarning(d,
                             QStringLiteral("设置 %1 失败（%2）")
-                                .arg(QString::fromUtf8(optionName))
+                                .arg(QString::fromUtf8(option.name))
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc))));
     return false;
 }
 
 bool setOptionalStringOption(QCNetworkReplyPrivate *d,
                              CURL *handle,
-                             CURLoption option,
-                             const char *optionName,
+                             QCurl::Internal::CurlOptions::Option option,
                              const QByteArray &value)
 {
     if (!handle) {
         return false;
     }
 
-    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, optionName, value.constData());
+    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, value.constData());
     if (rc == CURLE_OK) {
         return true;
     }
@@ -122,29 +123,28 @@ bool setOptionalStringOption(QCNetworkReplyPrivate *d,
     if (isCapabilityRelatedCurlError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
-                                    .arg(QString::fromUtf8(optionName))
+                                    .arg(QString::fromUtf8(option.name))
                                     .arg(QString::fromUtf8(curl_easy_strerror(rc))));
         return false;
     }
 
     appendCapabilityWarning(d,
                             QStringLiteral("设置 %1 失败（%2）")
-                                .arg(QString::fromUtf8(optionName))
+                                .arg(QString::fromUtf8(option.name))
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc))));
     return false;
 }
 
 bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
                            CURL *handle,
-                           CURLoption option,
-                           const char *optionName,
+                           QCurl::Internal::CurlOptions::Option option,
                            curl_off_t value)
 {
     if (!handle) {
         return false;
     }
 
-    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, optionName, value);
+    const CURLcode rc = curlEasySetoptWithTestHook(handle, option, value);
     if (rc == CURLE_OK) {
         return true;
     }
@@ -152,14 +152,14 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
     if (isCapabilityRelatedCurlError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
-                                    .arg(QString::fromUtf8(optionName))
+                                    .arg(QString::fromUtf8(option.name))
                                     .arg(QString::fromUtf8(curl_easy_strerror(rc))));
         return false;
     }
 
     appendCapabilityWarning(d,
                             QStringLiteral("设置 %1 失败（%2）")
-                                .arg(QString::fromUtf8(optionName))
+                                .arg(QString::fromUtf8(option.name))
                                 .arg(QString::fromUtf8(curl_easy_strerror(rc))));
     return false;
 }
@@ -170,7 +170,7 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
     reply->proxyHostBytes.clear();
     reply->proxyUserBytes.clear();
     reply->proxyPasswordBytes.clear();
-    return setRequiredCurlOption(reply, handle, CURLOPT_PROXY, "CURLOPT_PROXY", "");
+    return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_PROXY), "");
 }
 
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API

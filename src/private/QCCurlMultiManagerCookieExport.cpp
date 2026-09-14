@@ -43,14 +43,12 @@ Internal::RequiredOptionResult configureExportHandle(CURL *easy,
                                                      Internal::CookieOptionAdapter *adapter)
 {
     Internal::RequiredOptionResult option = adapter->setEasy(easy,
-                                                             CURLOPT_SHARE,
-                                                             "CURLOPT_SHARE",
+                                                             QCURL_CURL_OPTION(CURLOPT_SHARE),
                                                              Internal::CookieOptionStage::Setup,
                                                              share);
     if (option.isSuccess()) {
         option = adapter->setEasy(easy,
-                                  CURLOPT_COOKIEFILE,
-                                  "CURLOPT_COOKIEFILE",
+                                  QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
                                   Internal::CookieOptionStage::Setup,
                                   "");
     }

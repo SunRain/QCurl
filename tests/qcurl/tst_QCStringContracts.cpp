@@ -4,9 +4,11 @@
 #include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkProtocolPolicy_p.h"
 #include "qcurl_http_script_server.h"
 
+#include <QScopeGuard>
 #include <QtTest>
 
 #include <curl/curl.h>
@@ -46,6 +48,7 @@ public:
 
 private Q_SLOTS:
     void namedVocabulary();
+    void optionIdentityAndFaultInjection();
     void protocolValues_data();
     void protocolValues();
     void invalidProtocols_data();
@@ -92,6 +95,41 @@ void TestQCStringContracts::namedVocabulary()
     request.setAutoDecompressionEnabled(true);
     QVERIFY(request.autoDecompressionEnabled());
     QVERIFY(request.acceptedEncodings().isEmpty());
+}
+
+void TestQCStringContracts::optionIdentityAndFaultInjection()
+{
+    constexpr auto kUrlOption     = QCURL_CURL_OPTION(CURLOPT_URL);
+    constexpr auto kEncodingAlias = QCURL_CURL_OPTION(CURLOPT_ENCODING);
+    static_assert(kUrlOption.id == CURLOPT_URL);
+    static_assert(kEncodingAlias.id == CURLOPT_ACCEPT_ENCODING);
+    QCOMPARE(QByteArray(kUrlOption.name), QByteArray("CURLOPT_URL"));
+    QCOMPARE(QByteArray(kEncodingAlias.name), QByteArray("CURLOPT_ENCODING"));
+    CURL *handle = curl_easy_init();
+    QVERIFY(handle);
+    const auto cleanup = qScopeGuard([handle]() { curl_easy_cleanup(handle); });
+    QCOMPARE(Internal::CurlOptions::setWithTestHook(handle, kUrlOption, "http://127.0.0.1/test"),
+             CURLE_OK);
+    char *actual = nullptr;
+    QCOMPARE(curl_easy_getinfo(handle, CURLINFO_EFFECTIVE_URL, &actual), CURLE_OK);
+    QCOMPARE(QByteArray(actual), QByteArray("http://127.0.0.1/test"));
+    const bool hadValue = qEnvironmentVariableIsSet("QCURL_TEST_FORCE_SETOPT_ERROR");
+    const auto previous = qgetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+    const auto restore  = qScopeGuard([hadValue, previous]() {
+        if (hadValue) {
+            qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", previous);
+        } else {
+            qunsetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
+        }
+    });
+    qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", "CURLOPT_URL");
+    QCOMPARE(Internal::CurlOptions::setWithTestHook(handle, kUrlOption, "http://invalid.test/"),
+             CURLE_BAD_FUNCTION_ARGUMENT);
+    QCOMPARE(Internal::CurlOptions::setWithTestHook(handle, QCURL_CURL_OPTION(CURLOPT_NOBODY), 1L),
+             CURLE_OK);
+    qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", "CURLOPT_URl");
+    QCOMPARE(Internal::CurlOptions::setWithTestHook(handle, kUrlOption, "http://127.0.0.1/control"),
+             CURLE_OK);
 }
 
 void TestQCStringContracts::protocolValues_data()

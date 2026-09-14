@@ -62,8 +62,7 @@ CookieStoreResult applied(QList<QCCookie> cookies = {})
 CookieStoreResult configureCookieHandle(CURL *easy, CURLSH *share, CookieOptionAdapter *adapter)
 {
     RequiredOptionResult option = adapter->setEasy(easy,
-                                                   CURLOPT_SHARE,
-                                                   "CURLOPT_SHARE",
+                                                   QCURL_CURL_OPTION(CURLOPT_SHARE),
                                                    CookieOptionStage::Setup,
                                                    share);
     if (!option.isSuccess()) {
@@ -72,8 +71,7 @@ CookieStoreResult configureCookieHandle(CURL *easy, CURLSH *share, CookieOptionA
                              option);
     }
     option = adapter->setEasy(easy,
-                              CURLOPT_COOKIEFILE,
-                              "CURLOPT_COOKIEFILE",
+                              QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
                               CookieOptionStage::Setup,
                               "");
     return option.isSuccess() ? applied()
@@ -110,8 +108,7 @@ RequiredOptionResult restoreSnapshot(CURL *easy,
                                      CookieOptionAdapter *adapter)
 {
     RequiredOptionResult option = adapter->setEasy(easy,
-                                                   CURLOPT_COOKIELIST,
-                                                   "CURLOPT_COOKIELIST",
+                                                   QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                                                    CookieOptionStage::Rollback,
                                                    "ALL");
     if (!option.isSuccess()) {
@@ -119,8 +116,7 @@ RequiredOptionResult restoreSnapshot(CURL *easy,
     }
     for (const QByteArray &line : snapshot) {
         option = adapter->setEasy(easy,
-                                  CURLOPT_COOKIELIST,
-                                  "CURLOPT_COOKIELIST",
+                                  QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                                   CookieOptionStage::Rollback,
                                   line.constData());
         if (!option.isSuccess()) {
@@ -128,8 +124,7 @@ RequiredOptionResult restoreSnapshot(CURL *easy,
         }
     }
     return adapter->setEasy(easy,
-                            CURLOPT_COOKIELIST,
-                            "CURLOPT_COOKIELIST",
+                            QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                             CookieOptionStage::Rollback,
                             "FLUSH");
 }
@@ -142,8 +137,7 @@ CookieStoreResult applyCookieLines(CURL *easy,
 {
     for (const QByteArray &line : lines) {
         const RequiredOptionResult option = adapter->setEasy(easy,
-                                                             CURLOPT_COOKIELIST,
-                                                             "CURLOPT_COOKIELIST",
+                                                             QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                                                              CookieOptionStage::Apply,
                                                              line.constData());
         if (option.isSuccess()) {
@@ -166,8 +160,7 @@ CookieStoreResult applyCookieLines(CURL *easy,
 CookieStoreResult persistCookies(CURL *easy, CookieOptionAdapter *adapter)
 {
     const RequiredOptionResult option = adapter->setEasy(easy,
-                                                         CURLOPT_COOKIELIST,
-                                                         "CURLOPT_COOKIELIST",
+                                                         QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                                                          CookieOptionStage::Persist,
                                                          "FLUSH");
     return option.isSuccess() ? applied()
@@ -264,8 +257,7 @@ Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
         return reported(std::move(result));
     }
     const RequiredOptionResult clear = adapter.setEasy(easy,
-                                                       CURLOPT_COOKIELIST,
-                                                       "CURLOPT_COOKIELIST",
+                                                       QCURL_CURL_OPTION(CURLOPT_COOKIELIST),
                                                        CookieOptionStage::Clear,
                                                        "ALL");
     if (!clear.isSuccess()) {

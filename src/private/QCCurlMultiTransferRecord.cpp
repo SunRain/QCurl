@@ -18,16 +18,18 @@ namespace QCurl {
 namespace {
 
 template<typename T>
-[[nodiscard]] bool setRecordCallbackOption(
-    CURL *easy, QString *errorMessage, CURLoption option, const char *name, T value)
+[[nodiscard]] bool setRecordCallbackOption(CURL *easy,
+                                           QString *errorMessage,
+                                           QCurl::Internal::CurlOptions::Option option,
+                                           T value)
 {
-    const CURLcode code = Internal::CurlOptions::setWithTestHook(easy, option, name, value);
+    const CURLcode code = Internal::CurlOptions::setWithTestHook(easy, option, value);
     if (code == CURLE_OK) {
         return true;
     }
     if (errorMessage) {
         *errorMessage = QStringLiteral("设置 %1 失败（%2）")
-                            .arg(QString::fromUtf8(name))
+                            .arg(QString::fromUtf8(option.name))
                             .arg(QString::fromUtf8(curl_easy_strerror(code)));
     }
     return false;
@@ -130,8 +132,7 @@ bool QCCurlMultiTransferRecord::bindPrivate(QString *errorMessage)
     }
 
     const CURLcode code = Internal::CurlOptions::setWithTestHook(easy,
-                                                                 CURLOPT_PRIVATE,
-                                                                 "CURLOPT_PRIVATE",
+                                                                 QCURL_CURL_OPTION(CURLOPT_PRIVATE),
                                                                  static_cast<void *>(this));
     if (code == CURLE_OK) {
         return true;
@@ -157,42 +158,36 @@ bool QCCurlMultiTransferRecord::bindCallbacks(bool readCallbackConfigured,
         return false;
     }
 
-    auto setOption = [easy, errorMessage](CURLoption option, const char *name, auto value) {
-        return setRecordCallbackOption(easy, errorMessage, option, name, value);
+    auto setOption = [easy, errorMessage](QCurl::Internal::CurlOptions::Option option, auto value) {
+        return setRecordCallbackOption(easy, errorMessage, option, value);
     };
 
-    if (!setOption(CURLOPT_WRITEFUNCTION,
-                   "CURLOPT_WRITEFUNCTION",
+    if (!setOption(QCURL_CURL_OPTION(CURLOPT_WRITEFUNCTION),
                    &QCCurlMultiTransferRecord::writeCallback)
-        || !setOption(CURLOPT_WRITEDATA, "CURLOPT_WRITEDATA", static_cast<void *>(this))
-        || !setOption(CURLOPT_HEADERFUNCTION,
-                      "CURLOPT_HEADERFUNCTION",
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_WRITEDATA), static_cast<void *>(this))
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_HEADERFUNCTION),
                       &QCCurlMultiTransferRecord::headerCallback)
-        || !setOption(CURLOPT_HEADERDATA, "CURLOPT_HEADERDATA", static_cast<void *>(this))
-        || !setOption(CURLOPT_SEEKFUNCTION,
-                      "CURLOPT_SEEKFUNCTION",
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_HEADERDATA), static_cast<void *>(this))
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_SEEKFUNCTION),
                       &QCCurlMultiTransferRecord::seekCallback)
-        || !setOption(CURLOPT_SEEKDATA, "CURLOPT_SEEKDATA", static_cast<void *>(this))
-        || !setOption(CURLOPT_XFERINFOFUNCTION,
-                      "CURLOPT_XFERINFOFUNCTION",
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_SEEKDATA), static_cast<void *>(this))
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_XFERINFOFUNCTION),
                       &QCCurlMultiTransferRecord::progressCallback)
-        || !setOption(CURLOPT_XFERINFODATA, "CURLOPT_XFERINFODATA", static_cast<void *>(this))) {
+        || !setOption(QCURL_CURL_OPTION(CURLOPT_XFERINFODATA), static_cast<void *>(this))) {
         return false;
     }
 
     if (readCallbackConfigured
-        && (!setOption(CURLOPT_READFUNCTION,
-                       "CURLOPT_READFUNCTION",
+        && (!setOption(QCURL_CURL_OPTION(CURLOPT_READFUNCTION),
                        &QCCurlMultiTransferRecord::readCallback)
-            || !setOption(CURLOPT_READDATA, "CURLOPT_READDATA", static_cast<void *>(this)))) {
+            || !setOption(QCURL_CURL_OPTION(CURLOPT_READDATA), static_cast<void *>(this)))) {
         return false;
     }
 
     if (debugCallbackConfigured
-        && (!setOption(CURLOPT_DEBUGFUNCTION,
-                       "CURLOPT_DEBUGFUNCTION",
+        && (!setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGFUNCTION),
                        &QCCurlMultiTransferRecord::debugCallback)
-            || !setOption(CURLOPT_DEBUGDATA, "CURLOPT_DEBUGDATA", static_cast<void *>(this)))) {
+            || !setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGDATA), static_cast<void *>(this)))) {
         return false;
     }
 

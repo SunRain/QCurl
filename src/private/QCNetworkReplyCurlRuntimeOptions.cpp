@@ -40,7 +40,7 @@ namespace {
                                Internal::CurlOptions::setConnectTimeout(handle,
                                                                         timeout.connectTimeout()
                                                                             .value()),
-                               "CURLOPT_CONNECTTIMEOUT_MS")) {
+                               QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name)) {
             return false;
         }
     }
@@ -48,8 +48,7 @@ namespace {
     if (timeout.totalTimeout().has_value() && timeout.totalTimeout()->count() > 0) {
         if (!setRequiredCurlOption(reply,
                                    handle,
-                                   CURLOPT_TIMEOUT_MS,
-                                   "CURLOPT_TIMEOUT_MS",
+                                   QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
                                    static_cast<long>(timeout.totalTimeout()->count()))) {
             return false;
         }
@@ -58,8 +57,7 @@ namespace {
     if (timeout.lowSpeedTime().has_value() && timeout.lowSpeedTime()->count() > 0) {
         if (!setRequiredCurlOption(reply,
                                    handle,
-                                   CURLOPT_LOW_SPEED_TIME,
-                                   "CURLOPT_LOW_SPEED_TIME",
+                                   QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_TIME),
                                    static_cast<long>(timeout.lowSpeedTime()->count()))) {
             return false;
         }
@@ -68,8 +66,7 @@ namespace {
     if (timeout.lowSpeedLimit().has_value() && *timeout.lowSpeedLimit() > 0) {
         if (!setRequiredCurlOption(reply,
                                    handle,
-                                   CURLOPT_LOW_SPEED_LIMIT,
-                                   "CURLOPT_LOW_SPEED_LIMIT",
+                                   QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_LIMIT),
                                    static_cast<long>(*timeout.lowSpeedLimit()))) {
             return false;
         }
@@ -82,19 +79,17 @@ namespace {
 {
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_WRITEFUNCTION,
-                               "CURLOPT_WRITEFUNCTION",
+                               QCURL_CURL_OPTION(CURLOPT_WRITEFUNCTION),
                                QCNetworkReplyPrivate::curlWriteCallback)
-        || !setRequiredCurlOption(reply, handle, CURLOPT_WRITEDATA, "CURLOPT_WRITEDATA", reply)) {
+        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_WRITEDATA), reply)) {
         return false;
     }
 
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_HEADERFUNCTION,
-                               "CURLOPT_HEADERFUNCTION",
+                               QCURL_CURL_OPTION(CURLOPT_HEADERFUNCTION),
                                QCNetworkReplyPrivate::curlHeaderCallback)
-        || !setRequiredCurlOption(reply, handle, CURLOPT_HEADERDATA, "CURLOPT_HEADERDATA", reply)) {
+        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_HEADERDATA), reply)) {
         return false;
     }
 
@@ -105,28 +100,22 @@ namespace {
 {
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_SEEKFUNCTION,
-                               "CURLOPT_SEEKFUNCTION",
+                               QCURL_CURL_OPTION(CURLOPT_SEEKFUNCTION),
                                QCNetworkReplyPrivate::curlSeekCallback)
-        || !setRequiredCurlOption(reply, handle, CURLOPT_SEEKDATA, "CURLOPT_SEEKDATA", reply)) {
+        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_SEEKDATA), reply)) {
         return false;
     }
 
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_XFERINFOFUNCTION,
-                               "CURLOPT_XFERINFOFUNCTION",
+                               QCURL_CURL_OPTION(CURLOPT_XFERINFOFUNCTION),
                                QCNetworkReplyPrivate::curlProgressCallback)
-        || !setRequiredCurlOption(reply,
-                                  handle,
-                                  CURLOPT_XFERINFODATA,
-                                  "CURLOPT_XFERINFODATA",
-                                  reply)) {
+        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_XFERINFODATA), reply)) {
         return false;
     }
     if (!setRequiredOption(reply,
                            Internal::CurlOptions::setEnabled(handle, CURLOPT_NOPROGRESS, false),
-                           "CURLOPT_NOPROGRESS")) {
+                           QCURL_CURL_OPTION(CURLOPT_NOPROGRESS).name)) {
         return false;
     }
 

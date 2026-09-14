@@ -53,18 +53,15 @@ unsigned long curlHttpAuthMethod(QCNetworkHttpAuthMethod method)
     reply->httpAuthPasswordBytes = config.password().toUtf8();
     return setRequiredCurlOption(reply,
                                  handle,
-                                 CURLOPT_USERNAME,
-                                 "CURLOPT_USERNAME",
+                                 QCURL_CURL_OPTION(CURLOPT_USERNAME),
                                  reply->httpAuthUserBytes.constData())
            && setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_PASSWORD,
-                                    "CURLOPT_PASSWORD",
+                                    QCURL_CURL_OPTION(CURLOPT_PASSWORD),
                                     reply->httpAuthPasswordBytes.constData())
            && setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_HTTPAUTH,
-                                    "CURLOPT_HTTPAUTH",
+                                    QCURL_CURL_OPTION(CURLOPT_HTTPAUTH),
                                     curlHttpAuthMethod(config.method()));
 }
 
@@ -112,8 +109,7 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
                                            "UNRESTRICTED_AUTH=1），请确认重定向目标可信"));
     setOptionalLongOption(reply,
                           handle,
-                          CURLOPT_UNRESTRICTED_AUTH,
-                          "CURLOPT_UNRESTRICTED_AUTH",
+                          QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH),
                           Internal::CurlOptions::kEnabled);
 }
 
@@ -127,7 +123,7 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
 
     const QByteArray range
         = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd()).toUtf8();
-    return setRequiredCurlOption(reply, handle, CURLOPT_RANGE, "CURLOPT_RANGE", range.constData());
+    return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_RANGE), range.constData());
 }
 
 [[nodiscard]] bool resolveCurlProxyType(QCNetworkReplyPrivate *reply,
@@ -191,24 +187,21 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
     reply->proxyHostBytes           = config.hostName().toUtf8();
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_PROXY,
-                               "CURLOPT_PROXY",
+                               QCURL_CURL_OPTION(CURLOPT_PROXY),
                                reply->proxyHostBytes.constData())) {
         return false;
     }
     if (config.port() > 0
         && !setRequiredCurlOption(reply,
                                   handle,
-                                  CURLOPT_PROXYPORT,
-                                  "CURLOPT_PROXYPORT",
+                                  QCURL_CURL_OPTION(CURLOPT_PROXYPORT),
                                   static_cast<long>(config.port()))) {
         return false;
     }
     return resolveCurlProxyType(reply, config, curlProxyType)
            && setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_PROXYTYPE,
-                                    "CURLOPT_PROXYTYPE",
+                                    QCURL_CURL_OPTION(CURLOPT_PROXYTYPE),
                                     *curlProxyType);
 }
 
@@ -221,24 +214,21 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
     if (!config.userName().isEmpty()
         && !setRequiredCurlOption(reply,
                                   handle,
-                                  CURLOPT_PROXYUSERNAME,
-                                  "CURLOPT_PROXYUSERNAME",
+                                  QCURL_CURL_OPTION(CURLOPT_PROXYUSERNAME),
                                   reply->proxyUserBytes.constData())) {
         return false;
     }
     if (!config.password().isEmpty()
         && !setRequiredCurlOption(reply,
                                   handle,
-                                  CURLOPT_PROXYPASSWORD,
-                                  "CURLOPT_PROXYPASSWORD",
+                                  QCURL_CURL_OPTION(CURLOPT_PROXYPASSWORD),
                                   reply->proxyPasswordBytes.constData())) {
         return false;
     }
     return (config.userName().isEmpty() && config.password().isEmpty())
            || setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_PROXYAUTH,
-                                    "CURLOPT_PROXYAUTH",
+                                    QCURL_CURL_OPTION(CURLOPT_PROXYAUTH),
                                     CURLAUTH_ANY);
 }
 

@@ -114,16 +114,15 @@ QCBlockingNetworkResult finishBlockingResult(const BlockingExecution &execution)
 
 template<typename T>
 bool setRequiredOption(BlockingRequestContext *context,
-                       CURLoption option,
-                       const char *optionName,
+                       QCurl::Internal::CurlOptions::Option option,
                        T value)
 {
-    const CURLcode code = CurlOptions::setWithTestHook(context->handle, option, optionName, value);
+    const CURLcode code = CurlOptions::setWithTestHook(context->handle, option, value);
     if (code == CURLE_OK) {
         return true;
     }
     context->storage.failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
-                                          .arg(QString::fromUtf8(optionName))
+                                          .arg(QString::fromUtf8(option.name))
                                           .arg(QString::fromUtf8(curl_easy_strerror(code)));
     return false;
 }
@@ -160,23 +159,18 @@ std::optional<QCBlockingNetworkResult> configureResponseCallbacks(BlockingReques
 {
     const QByteArray cookieHeader = cookieHeaderValue(cookies);
     if (!cookieHeader.isEmpty()
-        && !setRequiredOption(context, CURLOPT_COOKIE, "CURLOPT_COOKIE", cookieHeader.constData())) {
+        && !setRequiredOption(context, QCURL_CURL_OPTION(CURLOPT_COOKIE), cookieHeader.constData())) {
         return optionFailure(*context);
     }
 
     if (!setRequiredOption(context,
-                           CURLOPT_WRITEFUNCTION,
-                           "CURLOPT_WRITEFUNCTION",
+                           QCURL_CURL_OPTION(CURLOPT_WRITEFUNCTION),
                            writeBlockingResponseBody)
-        || !setRequiredOption(context, CURLOPT_WRITEDATA, "CURLOPT_WRITEDATA", &context->responseSink)
+        || !setRequiredOption(context, QCURL_CURL_OPTION(CURLOPT_WRITEDATA), &context->responseSink)
         || !setRequiredOption(context,
-                              CURLOPT_HEADERFUNCTION,
-                              "CURLOPT_HEADERFUNCTION",
+                              QCURL_CURL_OPTION(CURLOPT_HEADERFUNCTION),
                               writeBlockingResponseHeader)
-        || !setRequiredOption(context,
-                              CURLOPT_HEADERDATA,
-                              "CURLOPT_HEADERDATA",
-                              &context->headerSink)) {
+        || !setRequiredOption(context, QCURL_CURL_OPTION(CURLOPT_HEADERDATA), &context->headerSink)) {
         return optionFailure(*context);
     }
     return std::nullopt;
@@ -187,13 +181,9 @@ std::optional<QCBlockingNetworkResult> configureProgressCallback(BlockingRequest
     if (!context->progressState.callback) {
         return std::nullopt;
     }
-    if (!setRequiredOption(context,
-                           CURLOPT_XFERINFOFUNCTION,
-                           "CURLOPT_XFERINFOFUNCTION",
-                           progressCallback)
+    if (!setRequiredOption(context, QCURL_CURL_OPTION(CURLOPT_XFERINFOFUNCTION), progressCallback)
         || !setRequiredOption(context,
-                              CURLOPT_XFERINFODATA,
-                              "CURLOPT_XFERINFODATA",
+                              QCURL_CURL_OPTION(CURLOPT_XFERINFODATA),
                               &context->progressState)) {
         return optionFailure(*context);
     }

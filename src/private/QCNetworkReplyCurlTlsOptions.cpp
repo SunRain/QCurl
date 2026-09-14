@@ -37,10 +37,10 @@ namespace {
 {
     return setRequiredOption(reply,
                              Internal::CurlOptions::setSslVerifyPeer(handle, config.verifyPeer()),
-                             "CURLOPT_SSL_VERIFYPEER")
+                             QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER).name)
            && setRequiredOption(reply,
                                 Internal::CurlOptions::setSslVerifyHost(handle, config.verifyHost()),
-                                "CURLOPT_SSL_VERIFYHOST");
+                                QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST).name);
 }
 
 [[nodiscard]] bool configureCaCertificate(QCNetworkReplyPrivate *reply,
@@ -51,8 +51,7 @@ namespace {
         reply->sslCaCertPathBytes = config.caCertPath().toUtf8();
         return setRequiredCurlOption(reply,
                                      handle,
-                                     CURLOPT_CAINFO,
-                                     "CURLOPT_CAINFO",
+                                     QCURL_CURL_OPTION(CURLOPT_CAINFO),
                                      reply->sslCaCertPathBytes.constData());
     }
 
@@ -68,8 +67,7 @@ namespace {
         if (candidate.exists() && candidate.isReadable()) {
             return setRequiredCurlOption(reply,
                                          handle,
-                                         CURLOPT_CAINFO,
-                                         "CURLOPT_CAINFO",
+                                         QCURL_CURL_OPTION(CURLOPT_CAINFO),
                                          systemCaPaths[i]);
         }
     }
@@ -77,15 +75,13 @@ namespace {
     reply->sslCaCertPathBytes.clear();
     return setRequiredCurlOption(reply,
                                  handle,
-                                 CURLOPT_CAINFO,
-                                 "CURLOPT_CAINFO",
+                                 QCURL_CURL_OPTION(CURLOPT_CAINFO),
                                  static_cast<const char *>(nullptr));
 }
 
 [[nodiscard]] bool setNullableTlsStringOption(QCNetworkReplyPrivate *reply,
                                               CURL *handle,
-                                              CURLoption option,
-                                              const char *optionName,
+                                              QCurl::Internal::CurlOptions::Option option,
                                               const QString &value,
                                               QByteArray *storage)
 {
@@ -94,12 +90,11 @@ namespace {
         return setRequiredCurlOption(reply,
                                      handle,
                                      option,
-                                     optionName,
                                      static_cast<const char *>(nullptr));
     }
 
     *storage = value.toUtf8();
-    return setRequiredCurlOption(reply, handle, option, optionName, storage->constData());
+    return setRequiredCurlOption(reply, handle, option, storage->constData());
 }
 
 [[nodiscard]] bool configureClientCredentials(QCNetworkReplyPrivate *reply,
@@ -108,20 +103,17 @@ namespace {
 {
     return setNullableTlsStringOption(reply,
                                       handle,
-                                      CURLOPT_SSLCERT,
-                                      "CURLOPT_SSLCERT",
+                                      QCURL_CURL_OPTION(CURLOPT_SSLCERT),
                                       config.clientCertPath(),
                                       &reply->sslClientCertPathBytes)
            && setNullableTlsStringOption(reply,
                                          handle,
-                                         CURLOPT_SSLKEY,
-                                         "CURLOPT_SSLKEY",
+                                         QCURL_CURL_OPTION(CURLOPT_SSLKEY),
                                          config.clientKeyPath(),
                                          &reply->sslClientKeyPathBytes)
            && setNullableTlsStringOption(reply,
                                          handle,
-                                         CURLOPT_KEYPASSWD,
-                                         "CURLOPT_KEYPASSWD",
+                                         QCURL_CURL_OPTION(CURLOPT_KEYPASSWD),
                                          config.clientKeyPassword(),
                                          &reply->sslClientKeyPasswordBytes);
 }
@@ -137,11 +129,11 @@ namespace {
     reply->sslPinnedPublicKeyBytes = config.pinnedPublicKey().toUtf8();
     return handleSecurityOptionResult(reply,
                                       curlEasySetoptWithTestHook(handle,
-                                                                 CURLOPT_PINNEDPUBLICKEY,
-                                                                 "CURLOPT_PINNEDPUBLICKEY",
+                                                                 QCURL_CURL_OPTION(
+                                                                     CURLOPT_PINNEDPUBLICKEY),
                                                                  reply->sslPinnedPublicKeyBytes
                                                                      .constData()),
-                                      "CURLOPT_PINNEDPUBLICKEY",
+                                      QCURL_CURL_OPTION(CURLOPT_PINNEDPUBLICKEY).name,
                                       config.unsupportedSecurityPolicy());
 }
 
@@ -157,10 +149,10 @@ namespace {
     if (version.has_value()) {
         return handleSecurityOptionResult(reply,
                                           curlEasySetoptWithTestHook(handle,
-                                                                     CURLOPT_SSLVERSION,
-                                                                     "CURLOPT_SSLVERSION",
+                                                                     QCURL_CURL_OPTION(
+                                                                         CURLOPT_SSLVERSION),
                                                                      version.value()),
-                                          "CURLOPT_SSLVERSION",
+                                          QCURL_CURL_OPTION(CURLOPT_SSLVERSION).name,
                                           config.unsupportedSecurityPolicy());
     }
 
@@ -175,8 +167,7 @@ namespace {
 
 [[nodiscard]] bool configureSecurityStringOption(QCNetworkReplyPrivate *reply,
                                                  CURL *handle,
-                                                 CURLoption option,
-                                                 const char *optionName,
+                                                 QCurl::Internal::CurlOptions::Option option,
                                                  const QString &value,
                                                  QByteArray *storage,
                                                  QCUnsupportedSecurityOptionPolicy policy)
@@ -189,9 +180,8 @@ namespace {
     return handleSecurityOptionResult(reply,
                                       curlEasySetoptWithTestHook(handle,
                                                                  option,
-                                                                 optionName,
                                                                  storage->constData()),
-                                      optionName,
+                                      option.name,
                                       policy);
 }
 
@@ -202,15 +192,13 @@ namespace {
     const auto policy = config.unsupportedSecurityPolicy();
     return configureSecurityStringOption(reply,
                                          handle,
-                                         CURLOPT_SSL_CIPHER_LIST,
-                                         "CURLOPT_SSL_CIPHER_LIST",
+                                         QCURL_CURL_OPTION(CURLOPT_SSL_CIPHER_LIST),
                                          config.cipherList(),
                                          &reply->sslCipherListBytes,
                                          policy)
            && configureSecurityStringOption(reply,
                                             handle,
-                                            CURLOPT_TLS13_CIPHERS,
-                                            "CURLOPT_TLS13_CIPHERS",
+                                            QCURL_CURL_OPTION(CURLOPT_TLS13_CIPHERS),
                                             config.tls13Ciphers(),
                                             &reply->sslTls13CiphersBytes,
                                             policy);

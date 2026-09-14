@@ -43,30 +43,28 @@ struct HeaderFacts
 [[nodiscard]] bool setMethodFlag(QCNetworkReplyPrivate *reply,
                                  CURL *handle,
                                  bool enabled,
-                                 CURLoption option,
-                                 const char *optionName)
+                                 QCurl::Internal::CurlOptions::Option option)
 {
     return !enabled
            || setRequiredOption(reply,
-                                Internal::CurlOptions::setEnabled(handle, option, true),
-                                optionName);
+                                Internal::CurlOptions::setEnabled(handle, option.id, true),
+                                option.name);
 }
 
 [[nodiscard]] bool configureMethodSelection(QCNetworkReplyPrivate *reply,
                                             CURL *handle,
                                             const Internal::CurlPlan &plan)
 {
-    if (!setMethodFlag(reply, handle, plan.setNoBody, CURLOPT_NOBODY, "CURLOPT_NOBODY")
-        || !setMethodFlag(reply, handle, plan.setHttpGet, CURLOPT_HTTPGET, "CURLOPT_HTTPGET")
-        || !setMethodFlag(reply, handle, plan.setPost, CURLOPT_POST, "CURLOPT_POST")
-        || !setMethodFlag(reply, handle, plan.setUpload, CURLOPT_UPLOAD, "CURLOPT_UPLOAD")) {
+    if (!setMethodFlag(reply, handle, plan.setNoBody, QCURL_CURL_OPTION(CURLOPT_NOBODY))
+        || !setMethodFlag(reply, handle, plan.setHttpGet, QCURL_CURL_OPTION(CURLOPT_HTTPGET))
+        || !setMethodFlag(reply, handle, plan.setPost, QCURL_CURL_OPTION(CURLOPT_POST))
+        || !setMethodFlag(reply, handle, plan.setUpload, QCURL_CURL_OPTION(CURLOPT_UPLOAD))) {
         return false;
     }
     return plan.customRequest.isEmpty()
            || setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_CUSTOMREQUEST,
-                                    "CURLOPT_CUSTOMREQUEST",
+                                    QCURL_CURL_OPTION(CURLOPT_CUSTOMREQUEST),
                                     plan.customRequest.constData());
 }
 
@@ -77,13 +75,11 @@ struct HeaderFacts
 {
     return setRequiredCurlOption(reply,
                                  handle,
-                                 CURLOPT_POSTFIELDS,
-                                 "CURLOPT_POSTFIELDS",
+                                 QCURL_CURL_OPTION(CURLOPT_POSTFIELDS),
                                  body.inlineBytes.constData())
            && setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_POSTFIELDSIZE_LARGE,
-                                    "CURLOPT_POSTFIELDSIZE_LARGE",
+                                    QCURL_CURL_OPTION(CURLOPT_POSTFIELDSIZE_LARGE),
                                     static_cast<curl_off_t>(plan.bodySizeBytes));
 }
 
@@ -98,10 +94,9 @@ struct HeaderFacts
     }
     if (!setRequiredCurlOption(reply,
                                handle,
-                               CURLOPT_READFUNCTION,
-                               "CURLOPT_READFUNCTION",
+                               QCURL_CURL_OPTION(CURLOPT_READFUNCTION),
                                QCNetworkReplyPrivate::curlReadCallback)
-        || !setRequiredCurlOption(reply, handle, CURLOPT_READDATA, "CURLOPT_READDATA", reply)) {
+        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_READDATA), reply)) {
         return false;
     }
     reply->readCallbackConfigured = true;
@@ -110,20 +105,17 @@ struct HeaderFacts
     if (plan.setPost) {
         return setRequiredCurlOption(reply,
                                      handle,
-                                     CURLOPT_POSTFIELDS,
-                                     "CURLOPT_POSTFIELDS",
+                                     QCURL_CURL_OPTION(CURLOPT_POSTFIELDS),
                                      static_cast<const char *>(nullptr))
                && setRequiredCurlOption(reply,
                                         handle,
-                                        CURLOPT_POSTFIELDSIZE_LARGE,
-                                        "CURLOPT_POSTFIELDSIZE_LARGE",
+                                        QCURL_CURL_OPTION(CURLOPT_POSTFIELDSIZE_LARGE),
                                         size);
     }
     return !plan.setUpload
            || setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_INFILESIZE_LARGE,
-                                    "CURLOPT_INFILESIZE_LARGE",
+                                    QCURL_CURL_OPTION(CURLOPT_INFILESIZE_LARGE),
                                     size);
 }
 
@@ -178,11 +170,7 @@ void configureExpectContinueTimeout(QCNetworkReplyPrivate *reply,
             reply,
             QStringLiteral("请求配置：Expect: 100-continue timeout 过大，已截断为 LONG_MAX ms"));
     }
-    setOptionalLongOption(reply,
-                          handle,
-                          CURLOPT_EXPECT_100_TIMEOUT_MS,
-                          "CURLOPT_EXPECT_100_TIMEOUT_MS",
-                          value);
+    setOptionalLongOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_EXPECT_100_TIMEOUT_MS), value);
 }
 
 void recordHeaderFact(const QByteArray &normalizedName, HeaderFacts *facts)
@@ -220,8 +208,7 @@ void recordHeaderFact(const QByteArray &normalizedName, HeaderFacts *facts)
     return !reply->curlManager.headerList()
            || setRequiredCurlOption(reply,
                                     handle,
-                                    CURLOPT_HTTPHEADER,
-                                    "CURLOPT_HTTPHEADER",
+                                    QCURL_CURL_OPTION(CURLOPT_HTTPHEADER),
                                     reply->curlManager.headerList());
 }
 
@@ -234,8 +221,7 @@ void configureReferer(QCNetworkReplyPrivate *reply,
         reply->refererBytes = request.referer().toUtf8();
         setOptionalStringOption(reply,
                                 handle,
-                                CURLOPT_REFERER,
-                                "CURLOPT_REFERER",
+                                QCURL_CURL_OPTION(CURLOPT_REFERER),
                                 reply->refererBytes);
     } else if (facts.hasExplicitReferer && !request.referer().isEmpty()) {
         appendCapabilityWarning(
@@ -286,8 +272,7 @@ void configureAcceptEncoding(QCNetworkReplyPrivate *reply,
                                      : encodings.join(QLatin1Char(',')).toUtf8();
     setOptionalStringOption(reply,
                             handle,
-                            CURLOPT_ACCEPT_ENCODING,
-                            "CURLOPT_ACCEPT_ENCODING",
+                            QCURL_CURL_OPTION(CURLOPT_ACCEPT_ENCODING),
                             reply->acceptEncodingBytes);
 }
 
@@ -299,15 +284,13 @@ void configureTransferLimits(QCNetworkReplyPrivate *reply,
         limit.has_value() && limit.value() > 0) {
         setOptionalOffTOption(reply,
                               handle,
-                              CURLOPT_MAX_RECV_SPEED_LARGE,
-                              "CURLOPT_MAX_RECV_SPEED_LARGE",
+                              QCURL_CURL_OPTION(CURLOPT_MAX_RECV_SPEED_LARGE),
                               static_cast<curl_off_t>(limit.value()));
     }
     if (const auto limit = request.maxUploadBytesPerSec(); limit.has_value() && limit.value() > 0) {
         setOptionalOffTOption(reply,
                               handle,
-                              CURLOPT_MAX_SEND_SPEED_LARGE,
-                              "CURLOPT_MAX_SEND_SPEED_LARGE",
+                              QCURL_CURL_OPTION(CURLOPT_MAX_SEND_SPEED_LARGE),
                               static_cast<curl_off_t>(limit.value()));
     }
 }

@@ -44,34 +44,33 @@ Q_DECL_HIDDEN void appendCapabilityWarning(QCNetworkReplyPrivate *reply, const Q
                                                             QCUnsupportedSecurityOptionPolicy policy);
 
 template<typename T>
-CURLcode curlEasySetoptWithTestHook(CURL *handle, CURLoption option, const char *optionName, T value)
+CURLcode curlEasySetoptWithTestHook(CURL *handle,
+                                    QCurl::Internal::CurlOptions::Option option,
+                                    T value)
 {
-    return CurlOptions::setWithTestHook(handle, option, optionName, value);
+    return CurlOptions::setWithTestHook(handle, option, value);
 }
 
 template<typename T>
-[[nodiscard]] bool setRequiredCurlOption(
-    QCNetworkReplyPrivate *reply, CURL *handle, CURLoption option, const char *optionName, T value)
+[[nodiscard]] bool setRequiredCurlOption(QCNetworkReplyPrivate *reply,
+                                         CURL *handle,
+                                         QCurl::Internal::CurlOptions::Option option,
+                                         T value)
 {
-    return setRequiredOption(reply,
-                             curlEasySetoptWithTestHook(handle, option, optionName, value),
-                             optionName);
+    return setRequiredOption(reply, curlEasySetoptWithTestHook(handle, option, value), option.name);
 }
 
 Q_DECL_HIDDEN bool setOptionalLongOption(QCNetworkReplyPrivate *reply,
                                          CURL *handle,
-                                         CURLoption option,
-                                         const char *optionName,
+                                         QCurl::Internal::CurlOptions::Option option,
                                          long value);
 Q_DECL_HIDDEN bool setOptionalStringOption(QCNetworkReplyPrivate *reply,
                                            CURL *handle,
-                                           CURLoption option,
-                                           const char *optionName,
+                                           QCurl::Internal::CurlOptions::Option option,
                                            const QByteArray &value);
 Q_DECL_HIDDEN bool setOptionalOffTOption(QCNetworkReplyPrivate *reply,
                                          CURL *handle,
-                                         CURLoption option,
-                                         const char *optionName,
+                                         QCurl::Internal::CurlOptions::Option option,
                                          curl_off_t value);
 [[nodiscard]] Q_DECL_HIDDEN bool disableProxyEnvironmentInheritance(QCNetworkReplyPrivate *reply,
                                                                     CURL *handle);

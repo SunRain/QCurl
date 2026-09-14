@@ -15,17 +15,19 @@ namespace QCurl::Internal {
 namespace {
 
 template<typename T>
-[[nodiscard]] bool setRequiredExecutionOption(
-    QCNetworkReplyPrivate *reply, CURL *handle, CURLoption option, const char *optionName, T value)
+[[nodiscard]] bool setRequiredExecutionOption(QCNetworkReplyPrivate *reply,
+                                              CURL *handle,
+                                              QCurl::Internal::CurlOptions::Option option,
+                                              T value)
 {
-    const CURLcode code = CurlOptions::setWithTestHook(handle, option, optionName, value);
+    const CURLcode code = CurlOptions::setWithTestHook(handle, option, value);
     if (code == CURLE_OK) {
         return true;
     }
 
     reply->setError(NetworkError::InvalidRequest,
                     QStringLiteral("设置 %1 失败（%2）")
-                        .arg(QString::fromUtf8(optionName))
+                        .arg(QString::fromUtf8(option.name))
                         .arg(QString::fromUtf8(curl_easy_strerror(code))));
     return false;
 }
@@ -56,16 +58,14 @@ void inheritManagerCookieConfig(QCNetworkReplyPrivate *reply, const QCNetworkAcc
     if ((reply->cookieMode & readMode)
         && !setRequiredExecutionOption(reply,
                                        handle,
-                                       CURLOPT_COOKIEFILE,
-                                       "CURLOPT_COOKIEFILE",
+                                       QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
                                        cookiePath.constData())) {
         return false;
     }
     return !(reply->cookieMode & writeMode)
            || setRequiredExecutionOption(reply,
                                          handle,
-                                         CURLOPT_COOKIEJAR,
-                                         "CURLOPT_COOKIEJAR",
+                                         QCURL_CURL_OPTION(CURLOPT_COOKIEJAR),
                                          cookiePath.constData());
 }
 
@@ -83,16 +83,14 @@ void inheritManagerCookieConfig(QCNetworkReplyPrivate *reply, const QCNetworkAcc
     if (!reply->hstsCachePathBytes.isEmpty()
         && !setRequiredExecutionOption(reply,
                                        handle,
-                                       CURLOPT_HSTS,
-                                       "CURLOPT_HSTS",
+                                       QCURL_CURL_OPTION(CURLOPT_HSTS),
                                        reply->hstsCachePathBytes.constData())) {
         return false;
     }
     return reply->altSvcCachePathBytes.isEmpty()
            || setRequiredExecutionOption(reply,
                                          handle,
-                                         CURLOPT_ALTSVC,
-                                         "CURLOPT_ALTSVC",
+                                         QCURL_CURL_OPTION(CURLOPT_ALTSVC),
                                          reply->altSvcCachePathBytes.constData());
 }
 
@@ -111,10 +109,9 @@ void inheritManagerCookieConfig(QCNetworkReplyPrivate *reply, const QCNetworkAcc
     }
     if (!setRequiredExecutionOption(reply,
                                     handle,
-                                    CURLOPT_DEBUGFUNCTION,
-                                    "CURLOPT_DEBUGFUNCTION",
+                                    QCURL_CURL_OPTION(CURLOPT_DEBUGFUNCTION),
                                     QCNetworkReplyPrivate::curlDebugCallback)
-        || !setRequiredExecutionOption(reply, handle, CURLOPT_DEBUGDATA, "CURLOPT_DEBUGDATA", reply)) {
+        || !setRequiredExecutionOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_DEBUGDATA), reply)) {
         return false;
     }
     reply->debugCallbackConfigured = true;
