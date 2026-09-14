@@ -4,6 +4,7 @@
  */
 
 #include "QCNetworkDiagnostics.h"
+#include "private/QCNetworkDiagnosticKeys_p.h"
 #include "private/QCNetworkDiagnosticsOperation_p.h"
 
 #include <QAbstractEventDispatcher>
@@ -258,8 +259,8 @@ private:
         const QString output        = QString::fromLocal8Bit(m_process->readAllStandardOutput());
         const QString standardError = QString::fromLocal8Bit(m_process->readAllStandardError());
         DiagResult result;
-        result.setDetail(QStringLiteral("host"), m_host);
-        result.setDetail(QStringLiteral("resolvedIP"), m_resolvedIp);
+        result.setDetail(QCurl::Internal::diagnostickeys::kHost, m_host);
+        result.setDetail(QCurl::Internal::diagnostickeys::kResolvedIp, m_resolvedIp);
         result.setDetail(QStringLiteral("processExitCode"), exitCode);
         if (!standardError.isEmpty()) {
             result.setDetail(QStringLiteral("standardError"), standardError);

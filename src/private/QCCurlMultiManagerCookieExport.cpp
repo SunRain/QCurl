@@ -1,6 +1,7 @@
 #include "QCCurlHandleManager.h"
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
+#include "private/QCCookiePolicyCode_p.h"
 #include "private/QCCookieStoreCodec_p.h"
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
@@ -64,7 +65,7 @@ Internal::CookieStoreResult readExportedCookies(CURL *easy,
         = adapter->getCookieList(easy, Internal::CookieOptionStage::Export, &list);
     if (!option.isSuccess()) {
         curl_slist_free_all(list);
-        return exportOptionFailure(QStringLiteral("cookie.export_failed"), option);
+        return exportOptionFailure(QCurl::Internal::cookiepolicy::kExportFailed, option);
     }
 
     QList<QCCookie> cookies;
@@ -75,7 +76,7 @@ Internal::CookieStoreResult readExportedCookies(CURL *easy,
         const auto cookie = Internal::parseCurlCookieLine(QByteArray(entry->data));
         if (!cookie.has_value()) {
             curl_slist_free_all(list);
-            return exportFailure(QStringLiteral("cookie.export_parse_failed"),
+            return exportFailure(QCurl::Internal::cookiepolicy::kExportParseFailed,
                                  QStringLiteral("cookie store 包含无法解析的记录"));
         }
         if (Internal::cookieMatchesUrl(*cookie, filterUrl)) {
@@ -85,7 +86,7 @@ Internal::CookieStoreResult readExportedCookies(CURL *easy,
     curl_slist_free_all(list);
     Internal::CookieStoreResult result;
     result.status     = Internal::CookieStoreStatus::Applied;
-    result.policyCode = QStringLiteral("cookie.applied");
+    result.policyCode = QCurl::Internal::cookiepolicy::kApplied;
     result.cookies    = std::move(cookies);
     return result;
 }
@@ -96,12 +97,12 @@ Internal::CookieStoreResult QCCurlMultiManager::exportCookiesForManager(
     const QCNetworkAccessManager *manager, const QUrl &filterUrl)
 {
     if (!manager) {
-        return reported(exportFailure(QStringLiteral("cookie.invalid_manager"),
+        return reported(exportFailure(QCurl::Internal::cookiepolicy::kInvalidManager,
                                       QStringLiteral("manager 为空")));
     }
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
-        return reported(exportFailure(QStringLiteral("cookie.share_disabled"),
+        return reported(exportFailure(QCurl::Internal::cookiepolicy::kShareDisabled,
                                       QStringLiteral("cookie share 未启用")));
     }
 
@@ -114,7 +115,7 @@ Internal::CookieStoreResult QCCurlMultiManager::exportCookiesForManager(
     QCCurlHandleManager handle;
     CURL *easy = handle.handle();
     if (!easy) {
-        return reported(exportFailure(QStringLiteral("cookie.handle_init_failed"),
+        return reported(exportFailure(QCurl::Internal::cookiepolicy::kHandleInitFailed,
                                       QStringLiteral("curl easy handle 初始化失败")));
     }
 
@@ -124,7 +125,7 @@ Internal::CookieStoreResult QCCurlMultiManager::exportCookiesForManager(
                                                                         &adapter);
     if (!option.isSuccess()) {
         return reported(
-            exportOptionFailure(QStringLiteral("cookie.required_option_failed"), option));
+            exportOptionFailure(QCurl::Internal::cookiepolicy::kRequiredOptionFailed, option));
     }
     return reported(readExportedCookies(easy, filterUrl, &adapter));
 }

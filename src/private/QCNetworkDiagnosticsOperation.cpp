@@ -1,4 +1,5 @@
 #include "QCNetworkCancelToken.h"
+#include "private/QCNetworkDiagnosticKeys_p.h"
 #include "private/QCNetworkDiagnosticsOperation_p.h"
 
 #include <QDateTime>
@@ -45,7 +46,7 @@ DiagnosticsOperation::~DiagnosticsOperation()
         result.setSuccess(false);
         result.setSummary(QStringLiteral("%1 owner 已销毁: %2").arg(m_operationName, m_target));
         result.setErrorString(QStringLiteral("OwnerDestroyed"));
-        result.setDetail(QStringLiteral("target"), m_target);
+        result.setDetail(QCurl::Internal::diagnostickeys::kTarget, m_target);
         result.setDetail(QStringLiteral("ownerDestroyed"), true);
         result.setDurationMs(m_elapsed.elapsed());
         m_promise.addResult(std::move(result));
@@ -102,7 +103,7 @@ void DiagnosticsOperation::fail(const QString &summary, const QString &errorStri
     result.setSuccess(false);
     result.setSummary(summary);
     result.setErrorString(errorString);
-    result.setDetail(QStringLiteral("target"), m_target);
+    result.setDetail(QCurl::Internal::diagnostickeys::kTarget, m_target);
     finish(std::move(result));
 }
 
@@ -120,7 +121,7 @@ void DiagnosticsOperation::cancel()
     result.setSuccess(false);
     result.setSummary(QStringLiteral("%1 已取消: %2").arg(m_operationName, m_target));
     result.setErrorString(QStringLiteral("Cancelled"));
-    result.setDetail(QStringLiteral("target"), m_target);
+    result.setDetail(QCurl::Internal::diagnostickeys::kTarget, m_target);
     result.setDetail(QStringLiteral("cancelled"), true);
     finish(std::move(result));
 }
@@ -141,7 +142,7 @@ void DiagnosticsOperation::timeout()
     result.setSuccess(false);
     result.setSummary(QStringLiteral("%1 超时: %2").arg(m_operationName, m_target));
     result.setErrorString(QStringLiteral("Timeout"));
-    result.setDetail(QStringLiteral("target"), m_target);
+    result.setDetail(QCurl::Internal::diagnostickeys::kTarget, m_target);
     result.setDetail(QStringLiteral("timedOut"), true);
     finish(std::move(result));
 }
@@ -168,7 +169,7 @@ QVariantMap diagResultToVariantMap(const DiagResult &result)
     map.insert(QStringLiteral("summary"), result.summary());
     map.insert(QStringLiteral("durationMs"), result.durationMs());
     if (!result.errorString().isEmpty()) {
-        map.insert(QStringLiteral("errorString"), result.errorString());
+        map.insert(QCurl::Internal::diagnostickeys::kErrorString, result.errorString());
     }
     return map;
 }

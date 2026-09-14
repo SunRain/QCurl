@@ -1,6 +1,7 @@
 #include "QCNetworkTransferJob.h"
 
 #include "QCNetworkReply.h"
+#include "private/QCNetworkReplyProperties_p.h"
 
 #include <QPointer>
 #include <QVariant>
@@ -108,7 +109,7 @@ void QCNetworkTransferJob::finishFromReply(QCNetworkReply *reply)
     }
 
     if (reply->error() == NetworkError::OperationCancelled
-        && reply->property("_qcurl_reply_destroying").toBool()) {
+        && reply->property(Internal::replyproperties::kDestroying).toBool()) {
         failBecauseReplyDestroyed();
     } else if (reply->state() == ReplyState::Cancelled) {
         fail(reply->error(), reply->errorString());

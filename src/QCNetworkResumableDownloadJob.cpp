@@ -7,6 +7,7 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkResumableDownloadWriter_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "private/QCThreading_p.h"
@@ -134,6 +135,15 @@ void QCNetworkResumableDownloadJob::doStart()
         return;
     }
 
+    attachDownloadReply(networkReply, hadExistingFile);
+
+    managerPrivate->startPreparedReply(networkReply, preparedRequest);
+}
+
+void QCNetworkResumableDownloadJob::attachDownloadReply(QCNetworkReply *networkReply,
+                                                        bool hadExistingFile)
+{
+    Q_D(QCNetworkResumableDownloadJob);
     d->writer = std::make_unique<Internal::ResumableDownloadWriter>(d->savePath,
                                                                     d->existingSize,
                                                                     hadExistingFile);
@@ -148,7 +158,7 @@ void QCNetworkResumableDownloadJob::doStart()
     });
     setReply(networkReply);
 
-    networkReply->setProperty("_qcurl_resumable_existing_size",
+    networkReply->setProperty(Internal::replyproperties::kResumableExistingSize,
                               QVariant::fromValue(d->existingSize));
 
     QObject::connect(networkReply,
@@ -180,8 +190,6 @@ void QCNetworkResumableDownloadJob::doStart()
             },
             Qt::QueuedConnection);
     }
-
-    managerPrivate->startPreparedReply(networkReply, preparedRequest);
 }
 
 QCNetworkResumableDownloadJob::~QCNetworkResumableDownloadJob()

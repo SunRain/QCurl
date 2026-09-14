@@ -1,4 +1,5 @@
 #include "QCCurlMultiManager.h"
+#include "private/QCCookiePolicyCode_p.h"
 
 #include <QString>
 
@@ -13,7 +14,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
     if (!context) {
         if (failure) {
             failure->status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
-            failure->policyCode = QStringLiteral("cookie.share_context_unavailable");
+            failure->policyCode = QCurl::Internal::cookiepolicy::kShareContextUnavailable;
             failure->message    = QStringLiteral("share context 不可用");
         }
         return nullptr;
@@ -22,7 +23,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
     if (context->cookieStorePoisoned) {
         if (failure) {
             failure->status     = Internal::CookieStoreStatus::StorePoisoned;
-            failure->policyCode = QStringLiteral("cookie.store_poisoned");
+            failure->policyCode = QCurl::Internal::cookiepolicy::kStorePoisoned;
             failure->message    = QStringLiteral("cookie store 已进入不可恢复状态");
         }
         return nullptr;
@@ -32,7 +33,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
         if (context->activeUsers != 0) {
             if (failure) {
                 failure->status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
-                failure->policyCode = QStringLiteral("cookie.share_busy");
+                failure->policyCode = QCurl::Internal::cookiepolicy::kShareBusy;
                 failure->message    = QStringLiteral("share handle 正在使用中，无法切换配置");
             }
             return nullptr;
@@ -44,7 +45,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
                 *failure = context->lastInitResult;
                 if (failure->message.isEmpty()) {
                     failure->status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
-                    failure->policyCode = QStringLiteral("cookie.share_init_failed");
+                    failure->policyCode = QCurl::Internal::cookiepolicy::kShareInitFailed;
                     failure->message    = error;
                 }
             }
@@ -55,7 +56,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
     if (!context->share || !context->applied.cookies) {
         if (failure) {
             failure->status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
-            failure->policyCode = QStringLiteral("cookie.share_disabled");
+            failure->policyCode = QCurl::Internal::cookiepolicy::kShareDisabled;
             failure->message    = QStringLiteral("share cookie store 未启用");
         }
         return nullptr;

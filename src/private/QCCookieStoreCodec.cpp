@@ -1,4 +1,5 @@
 #include "QCCookieStoreCodec_p.h"
+#include "private/QCCookiePolicyCode_p.h"
 
 #include <QByteArrayView>
 #include <QDateTime>
@@ -53,7 +54,7 @@ CookieStoreResult invalidCookie(qsizetype index)
 {
     CookieStoreResult result;
     result.status     = CookieStoreStatus::RejectedBeforeMutation;
-    result.policyCode = QStringLiteral("cookie.invalid_input");
+    result.policyCode = QCurl::Internal::cookiepolicy::kInvalidInput;
     result.message    = QStringLiteral("cookie 输入校验失败（索引 %1）").arg(index);
     return result;
 }
@@ -110,7 +111,7 @@ CookieStoreResult prepareCookieImport(const QList<QCCookie> &cookies,
 
     CookieStoreResult result;
     result.status     = CookieStoreStatus::Applied;
-    result.policyCode = QStringLiteral("cookie.validated");
+    result.policyCode = QCurl::Internal::cookiepolicy::kValidated;
     return result;
 }
 

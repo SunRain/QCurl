@@ -1,6 +1,7 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkAccessManager_p.h"
+#include "private/QCCookiePolicyCode_p.h"
 
 #include <QAbstractEventDispatcher>
 #include <QFutureInterface>
@@ -23,14 +24,14 @@ QCurl::QCCookieOperationResult cookieOperationFailure(const QString &error)
 {
     return QCurl::QCCookieOperationResult::failure(QCurl::QCCookieAsyncError::BusinessError,
                                                    error,
-                                                   QStringLiteral("cookie.multi_unavailable"));
+                                                   QCurl::Internal::cookiepolicy::kMultiUnavailable);
 }
 
 QCurl::QCCookieExportResult cookieExportFailure(const QString &error)
 {
     return QCurl::QCCookieExportResult::failure(QCurl::QCCookieAsyncError::BusinessError,
                                                 error,
-                                                QStringLiteral("cookie.multi_unavailable"));
+                                                QCurl::Internal::cookiepolicy::kMultiUnavailable);
 }
 
 QCurl::QCCookieOperationResult operationResult(const QCurl::Internal::CookieStoreResult &storeResult)

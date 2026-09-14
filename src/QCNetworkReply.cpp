@@ -5,6 +5,7 @@
 #include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 #include "private/QCRequestPipeline_p.h"
 
@@ -212,7 +213,7 @@ QCNetworkReply::~QCNetworkReply()
 
     // 如果正在运行，先取消
     if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
-        setProperty("_qcurl_reply_destroying", true);
+        setProperty(Internal::replyproperties::kDestroying, true);
         cancel();
     }
 }

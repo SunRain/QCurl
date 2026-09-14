@@ -1,6 +1,7 @@
 #include "QCCurlHandleManager.h"
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
+#include "private/QCCookiePolicyCode_p.h"
 #include "private/QCCookieStoreCodec_p.h"
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
@@ -54,7 +55,7 @@ CookieStoreResult applied(QList<QCCookie> cookies = {})
 {
     CookieStoreResult result;
     result.status     = CookieStoreStatus::Applied;
-    result.policyCode = QStringLiteral("cookie.applied");
+    result.policyCode = QCurl::Internal::cookiepolicy::kApplied;
     result.cookies    = std::move(cookies);
     return result;
 }
@@ -67,7 +68,7 @@ CookieStoreResult configureCookieHandle(CURL *easy, CURLSH *share, CookieOptionA
                                                    share);
     if (!option.isSuccess()) {
         return optionFailure(CookieStoreStatus::RejectedBeforeMutation,
-                             QStringLiteral("cookie.required_option_failed"),
+                             QCurl::Internal::cookiepolicy::kRequiredOptionFailed,
                              option);
     }
     option = adapter->setEasy(easy,
@@ -76,7 +77,7 @@ CookieStoreResult configureCookieHandle(CURL *easy, CURLSH *share, CookieOptionA
                               "");
     return option.isSuccess() ? applied()
                               : optionFailure(CookieStoreStatus::RejectedBeforeMutation,
-                                              QStringLiteral("cookie.required_option_failed"),
+                                              QCurl::Internal::cookiepolicy::kRequiredOptionFailed,
                                               option);
 }
 
@@ -91,7 +92,7 @@ CookieStoreResult snapshotCookies(CURL *easy,
     if (!option.isSuccess()) {
         curl_slist_free_all(list);
         return optionFailure(CookieStoreStatus::RejectedBeforeMutation,
-                             QStringLiteral("cookie.snapshot_failed"),
+                             QCurl::Internal::cookiepolicy::kSnapshotFailed,
                              option);
     }
     for (const curl_slist *entry = list; entry; entry = entry->next) {
@@ -147,11 +148,11 @@ CookieStoreResult applyCookieLines(CURL *easy,
         if (!rollback.isSuccess()) {
             *storePoisoned = true;
             return optionFailure(CookieStoreStatus::StorePoisoned,
-                                 QStringLiteral("cookie.rollback_failed"),
+                                 QCurl::Internal::cookiepolicy::kRollbackFailed,
                                  rollback);
         }
         return optionFailure(CookieStoreStatus::RolledBack,
-                             QStringLiteral("cookie.apply_failed_rolled_back"),
+                             QCurl::Internal::cookiepolicy::kApplyFailedRolledBack,
                              option);
     }
     return applied();
@@ -165,7 +166,7 @@ CookieStoreResult persistCookies(CURL *easy, CookieOptionAdapter *adapter)
                                                          "FLUSH");
     return option.isSuccess() ? applied()
                               : optionFailure(CookieStoreStatus::PersistenceFailed,
-                                              QStringLiteral("cookie.persistence_failed"),
+                                              QCurl::Internal::cookiepolicy::kPersistenceFailed,
                                               option);
 }
 
@@ -176,13 +177,13 @@ Internal::CookieStoreResult QCCurlMultiManager::importCookiesForManager(
 {
     if (!manager) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.invalid_manager"),
+                                QCurl::Internal::cookiepolicy::kInvalidManager,
                                 QStringLiteral("manager 为空")));
     }
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.share_disabled"),
+                                QCurl::Internal::cookiepolicy::kShareDisabled,
                                 QStringLiteral("cookie share 未启用")));
     }
 
@@ -201,7 +202,7 @@ Internal::CookieStoreResult QCCurlMultiManager::importCookiesForManager(
     CURL *easy = handle.handle();
     if (!easy) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.handle_init_failed"),
+                                QCurl::Internal::cookiepolicy::kHandleInitFailed,
                                 QStringLiteral("curl easy handle 初始化失败")));
     }
 
@@ -227,13 +228,13 @@ Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
 {
     if (!manager) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.invalid_manager"),
+                                QCurl::Internal::cookiepolicy::kInvalidManager,
                                 QStringLiteral("manager 为空")));
     }
     const ShareConfig desired = toShareConfig(manager);
     if (!desired.cookies) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.share_disabled"),
+                                QCurl::Internal::cookiepolicy::kShareDisabled,
                                 QStringLiteral("cookie share 未启用")));
     }
 
@@ -247,7 +248,7 @@ Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
     CURL *easy = handle.handle();
     if (!easy) {
         return reported(failure(CookieStoreStatus::RejectedBeforeMutation,
-                                QStringLiteral("cookie.handle_init_failed"),
+                                QCurl::Internal::cookiepolicy::kHandleInitFailed,
                                 QStringLiteral("curl easy handle 初始化失败")));
     }
 
@@ -262,7 +263,7 @@ Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
                                                        "ALL");
     if (!clear.isSuccess()) {
         return reported(optionFailure(CookieStoreStatus::RejectedBeforeMutation,
-                                      QStringLiteral("cookie.clear_failed"),
+                                      QCurl::Internal::cookiepolicy::kClearFailed,
                                       clear));
     }
     return reported(persistCookies(easy, &adapter));

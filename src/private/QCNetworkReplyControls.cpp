@@ -8,6 +8,7 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkReplyFlowControl_p.h"
+#include "private/QCNetworkReplyProperties_p.h"
 
 #include <QMetaObject>
 #include <QPointer>
@@ -61,7 +62,7 @@ void QCNetworkReply::cancel()
     d->setError(NetworkError::OperationCancelled,
                 QCurl::errorString(NetworkError::OperationCancelled));
 
-    if (property("_qcurl_reply_destroying").toBool()) {
+    if (property(Internal::replyproperties::kDestroying).toBool()) {
         d->state = ReplyState::Cancelled;
         return;
     }

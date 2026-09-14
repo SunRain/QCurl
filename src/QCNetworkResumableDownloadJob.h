@@ -89,6 +89,7 @@ private:
 
     /// 在 start() 之后执行校验、Range 计算、reply 创建和信号连接。
     void doStart();
+    Q_DECL_HIDDEN void attachDownloadReply(QCNetworkReply *networkReply, bool hadExistingFile);
 
     /**
      * @brief 在 job owner thread 提交或取消唯一 writer 后传播 reply 终态。

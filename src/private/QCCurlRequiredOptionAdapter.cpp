@@ -1,4 +1,5 @@
 #include "QCCurlRequiredOptionAdapter_p.h"
+#include "private/QCCookiePolicyCode_p.h"
 
 namespace QCurl::Internal {
 
@@ -73,8 +74,8 @@ RequiredOptionResult CookieOptionAdapter::easyResult(CURLcode code, const QByteA
     RequiredOptionResult result;
     result.curlCode   = code;
     result.optionName = name;
-    result.policyCode = code == CURLE_OK ? QStringLiteral("cookie.option_applied")
-                                         : QStringLiteral("cookie.required_option_failed");
+    result.policyCode = code == CURLE_OK ? QCurl::Internal::cookiepolicy::kOptionApplied
+                                         : QCurl::Internal::cookiepolicy::kRequiredOptionFailed;
     if (code != CURLE_OK) {
         result.message = QStringLiteral("required option %1 失败（%2）")
                              .arg(QString::fromLatin1(name),
@@ -90,8 +91,8 @@ RequiredOptionResult CookieOptionAdapter::shareResult(CURLSHcode code,
     RequiredOptionResult result;
     result.shareCode  = code;
     result.optionName = name;
-    result.policyCode = code == CURLSHE_OK ? QStringLiteral("cookie.option_applied")
-                                           : QStringLiteral("cookie.required_option_failed");
+    result.policyCode = code == CURLSHE_OK ? QCurl::Internal::cookiepolicy::kOptionApplied
+                                           : QCurl::Internal::cookiepolicy::kRequiredOptionFailed;
     if (code != CURLSHE_OK) {
         const QString label = detail.isEmpty()
                                   ? QString::fromLatin1(name)

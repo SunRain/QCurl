@@ -8,6 +8,7 @@
 #include "QCNetworkDiagnostics.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkDiagnosticKeys_p.h"
 #include "private/QCNetworkDiagnosticsOperation_p.h"
 
 #include <QAbstractEventDispatcher>
@@ -38,7 +39,7 @@ QFuture<DiagResult> dispatchFailure(const QString &operation, const QString &tar
     result.setSuccess(false);
     result.setSummary(QStringLiteral("%1 无法调度: %2").arg(operation, target));
     result.setErrorString(QStringLiteral("DispatchFailed"));
-    result.setDetail(QStringLiteral("target"), target);
+    result.setDetail(QCurl::Internal::diagnostickeys::kTarget, target);
     return Internal::finishedDiagnosticsFuture(std::move(result));
 }
 
@@ -54,6 +55,47 @@ QString redactDiagnosticUrl(const QUrl &url)
     redacted.setQuery(QString());
     redacted.setFragment(QString());
     return redacted.toString(QUrl::FullyEncoded);
+}
+
+DiagResult sslHandshakeResult(QSslSocket *socket, const QString &host, int port)
+{
+    const QSslCertificate certificate = socket->peerCertificate();
+    DiagResult result;
+    result.setSuccess(true);
+    result.setSummary(QStringLiteral("SSL 证书有效: %1").arg(host));
+    result.setDetail(QCurl::Internal::diagnostickeys::kHost, host);
+    result.setDetail(QStringLiteral("port"), port);
+    result.setDetail(QStringLiteral("issuer"), certificate.issuerDisplayName());
+    result.setDetail(QStringLiteral("subject"), certificate.subjectDisplayName());
+    result.setDetail(QStringLiteral("notBefore"), certificate.effectiveDate());
+    result.setDetail(QStringLiteral("notAfter"), certificate.expiryDate());
+    result.setDetail(QStringLiteral("daysValid"),
+                     QDateTime::currentDateTime().daysTo(certificate.expiryDate()));
+    result.setDetail(QStringLiteral("tlsVersion"),
+                     socket->sessionProtocol() == QSsl::TlsV1_3 ? QStringLiteral("TLSv1.3")
+                                                                : QStringLiteral("TLSv1.2"));
+    result.setDetail(QStringLiteral("verified"), socket->sslHandshakeErrors().isEmpty());
+    return result;
+}
+
+DiagResult httpProbeResult(QCNetworkReply *reply, const QString &redactedUrl, qint64 elapsedMs)
+{
+    DiagResult result;
+    result.setDetail(QStringLiteral("url"), redactedUrl);
+    result.setDetail(QStringLiteral("totalTime"), elapsedMs);
+    result.setDetail(QStringLiteral("finalURL"), redactDiagnosticUrl(reply->url()));
+    result.setDetail(QStringLiteral("networkError"), static_cast<int>(reply->error()));
+    if (reply->httpStatusCode() > 0) {
+        result.setDetail(QStringLiteral("statusCode"), reply->httpStatusCode());
+    }
+    result.setSuccess(reply->error() == NetworkError::NoError);
+    result.setSummary(result.success() ? QStringLiteral("HTTP 探测成功: %1").arg(redactedUrl)
+                                       : QStringLiteral("HTTP 探测失败: %1").arg(redactedUrl));
+    if (!result.success()) {
+        result.setErrorString(reply->errorString());
+        result.setDetail(QCurl::Internal::diagnostickeys::kErrorString, result.errorString());
+    }
+    return result;
 }
 
 class DiagnosisSequence final : public QObject
@@ -202,11 +244,12 @@ QFuture<DiagResult> QCNetworkDiagnostics::testConnection(const QString &host,
         DiagResult result;
         result.setSuccess(true);
         result.setSummary(QStringLiteral("连接成功: %1:%2").arg(host).arg(options.port()));
-        result.setDetail(QStringLiteral("host"), host);
+        result.setDetail(QCurl::Internal::diagnostickeys::kHost, host);
         result.setDetail(QStringLiteral("port"), options.port());
         result.setDetail(QStringLiteral("connected"), true);
         result.setDetail(QStringLiteral("connectDuration"), state->elapsedMs());
-        result.setDetail(QStringLiteral("resolvedIP"), socket->peerAddress().toString());
+        result.setDetail(QCurl::Internal::diagnostickeys::kResolvedIp,
+                         socket->peerAddress().toString());
         socket->disconnectFromHost();
         state->finish(std::move(result));
     });
@@ -222,7 +265,7 @@ QFuture<DiagResult> QCNetworkDiagnostics::testConnection(const QString &host,
                          result.setSummary(
                              QStringLiteral("连接失败: %1:%2").arg(host).arg(options.port()));
                          result.setErrorString(socket->errorString());
-                         result.setDetail(QStringLiteral("host"), host);
+                         result.setDetail(QCurl::Internal::diagnostickeys::kHost, host);
                          result.setDetail(QStringLiteral("port"), options.port());
                          result.setDetail(QStringLiteral("connected"), false);
                          state->finish(std::move(result));
@@ -262,22 +305,7 @@ QFuture<DiagResult> QCNetworkDiagnostics::checkSSL(const QString &host,
         if (state->isFinished()) {
             return;
         }
-        const QSslCertificate certificate = socket->peerCertificate();
-        DiagResult result;
-        result.setSuccess(true);
-        result.setSummary(QStringLiteral("SSL 证书有效: %1").arg(host));
-        result.setDetail(QStringLiteral("host"), host);
-        result.setDetail(QStringLiteral("port"), options.port());
-        result.setDetail(QStringLiteral("issuer"), certificate.issuerDisplayName());
-        result.setDetail(QStringLiteral("subject"), certificate.subjectDisplayName());
-        result.setDetail(QStringLiteral("notBefore"), certificate.effectiveDate());
-        result.setDetail(QStringLiteral("notAfter"), certificate.expiryDate());
-        result.setDetail(QStringLiteral("daysValid"),
-                         QDateTime::currentDateTime().daysTo(certificate.expiryDate()));
-        result.setDetail(QStringLiteral("tlsVersion"),
-                         socket->sessionProtocol() == QSsl::TlsV1_3 ? QStringLiteral("TLSv1.3")
-                                                                    : QStringLiteral("TLSv1.2"));
-        result.setDetail(QStringLiteral("verified"), socket->sslHandshakeErrors().isEmpty());
+        auto result = sslHandshakeResult(socket, host, options.port());
         socket->disconnectFromHost();
         state->finish(std::move(result));
     });
@@ -343,21 +371,7 @@ QFuture<DiagResult> QCNetworkDiagnostics::probeHTTP(const QUrl &url,
         if (state->isFinished() || !reply) {
             return;
         }
-        DiagResult result;
-        result.setDetail(QStringLiteral("url"), redactedUrl);
-        result.setDetail(QStringLiteral("totalTime"), state->elapsedMs());
-        result.setDetail(QStringLiteral("finalURL"), redactDiagnosticUrl(reply->url()));
-        result.setDetail(QStringLiteral("networkError"), static_cast<int>(reply->error()));
-        if (reply->httpStatusCode() > 0) {
-            result.setDetail(QStringLiteral("statusCode"), reply->httpStatusCode());
-        }
-        result.setSuccess(reply->error() == NetworkError::NoError);
-        result.setSummary(result.success() ? QStringLiteral("HTTP 探测成功: %1").arg(redactedUrl)
-                                           : QStringLiteral("HTTP 探测失败: %1").arg(redactedUrl));
-        if (!result.success()) {
-            result.setErrorString(reply->errorString());
-            result.setDetail(QStringLiteral("errorString"), result.errorString());
-        }
+        auto result = httpProbeResult(reply.data(), redactedUrl, state->elapsedMs());
         state->finish(std::move(result));
     };
     QObject::connect(reply, &QCNetworkReply::finished, state, collectResult);

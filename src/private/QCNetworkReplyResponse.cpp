@@ -7,6 +7,7 @@
 #include "QCNetworkMockHandler_p.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyTransferState_p.h"
 
@@ -112,7 +113,8 @@ bool isSatisfiedRangeCompletion(QCNetworkReplyPrivate *reply)
 {
     parseReplyHeaders(reply);
 
-    const QVariant existingSizeVar = reply->qObject()->property("_qcurl_resumable_existing_size");
+    const QVariant existingSizeVar = reply->qObject()->property(
+        Internal::replyproperties::kResumableExistingSize);
     bool ok                        = false;
     const qint64 existingSize      = existingSizeVar.toLongLong(&ok);
     const auto completeSize        = parseContentRangeCompleteSize(

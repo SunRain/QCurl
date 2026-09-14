@@ -1,6 +1,7 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCCookiePolicyCode_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
@@ -296,7 +297,7 @@ bool QCCurlMultiManager::initializeShareContextLocked(ShareContext *context,
         context->lastInitFailed            = true;
         context->lastInitError             = QStringLiteral("curl_share_init 失败");
         context->lastInitResult.status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
-        context->lastInitResult.policyCode = QStringLiteral("cookie.share_init_failed");
+        context->lastInitResult.policyCode = QCurl::Internal::cookiepolicy::kShareInitFailed;
         context->lastInitResult.message    = context->lastInitError;
         if (error) {
             *error = context->lastInitError;

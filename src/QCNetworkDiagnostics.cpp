@@ -5,6 +5,7 @@
 
 #include "QCNetworkDiagnostics.h"
 
+#include "private/QCNetworkDiagnosticKeys_p.h"
 #include "private/QCNetworkDiagnosticsOperation_p.h"
 
 #include <QAbstractEventDispatcher>
@@ -26,7 +27,7 @@ QFuture<DiagResult> dispatchFailure(const QString &operation, const QString &tar
     result.setSuccess(false);
     result.setSummary(QStringLiteral("%1 无法调度: %2").arg(operation, target));
     result.setErrorString(QStringLiteral("DispatchFailed"));
-    result.setDetail(QStringLiteral("target"), target);
+    result.setDetail(QCurl::Internal::diagnostickeys::kTarget, target);
     return Internal::finishedDiagnosticsFuture(std::move(result));
 }
 
