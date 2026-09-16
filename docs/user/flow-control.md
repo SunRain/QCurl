@@ -16,8 +16,10 @@
 
 | 当前 API | 说明 | 备注 |
 | --- | --- | --- |
-| `setBackpressureLimitBytes(qint64)` / `backpressureLimitBytes()` | 高水位线 | `bytes > 0` 启用；`bytes <= 0` 禁用 |
-| `setBackpressureResumeBytes(qint64)` / `backpressureResumeBytes()` | 低水位线 | `0` 表示使用默认值（`limit/2`）；`resume >= limit` 会回退默认 |
+| `setBackpressureLimitBytes(qint64)` / `backpressureLimitBytes()` | 高水位线 | 正值启用；0 关闭并清除低水位；负值或不高于既有非零低水位时拒绝 |
+| `setBackpressureResumeBytes(qint64)` / `backpressureResumeBytes()` | 低水位线 | 0 使用默认值（`limit/2`）；负值或不小于已启用高水位时拒绝 |
+
+两个 setter 返回 `QCNetworkConfigUpdateResult`，失败保持旧配置，不再链式调用或静默回退默认值。
 
 ## 2. 核心语义（避免误用）
 
@@ -36,7 +38,7 @@
   - `Running → Paused`（pause）
   - `Paused → Running`（resume）
   - 其他状态/重复调用为幂等 no-op
-- `resumeTransport()` 成功后会触发一次 multi wakeup，避免“恢复后不推进”的边缘态。
+- `resumeTransport()` 成功后继续推进同一次传输，不只是把可见状态改回 Running。
 
 ### 2.3 backpressure 是 soft limit（高水位线），允许有界超限
 
@@ -53,7 +55,7 @@ manager-level raw-body 流式上传（如 `QCNetworkAccessManager::post(..., QIO
 - 该语义只属于 async manager-level raw-body device 合同。
 - raw-body device overload 必须从 manager 所在线程调用，且 source `QIODevice` 与 manager/reply 在同一线程。
 - Sync raw-body 不承诺 `source-not-ready` 恢复；遇到 `read() == 0 && !atEnd()` 会显式失败。
-- `QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` 构造成功只表示 wrapper 已准备好；发送阶段仍要求 source device、wrapper device 与 reply/manager 同线程。它要求已知长度且设备可 seek，不属于 unknown-size live producer 入口。
+- `QCNetworkMultipartBody::fromSingleFileDevice(device, ...)` 只保存已校验的元数据并借用源设备，不创建 wrapper；随后在源设备 owner thread 通过 `takeDevice()` 创建 wrapper。发送阶段仍要求 source、wrapper 与 reply/manager 同线程。它要求已知长度且设备可 seek，不属于 unknown-size live producer 入口。
 
 推荐使用以下只读诊断面做排障与一致性验证：
 
@@ -74,8 +76,13 @@ reply->resumeTransport();
 ### 3.2 启用下载 backpressure
 
 ```cpp
-request.setBackpressureLimitBytes(64 * 1024)
-       .setBackpressureResumeBytes(32 * 1024);
+if (request.setBackpressureLimitBytes(64 * 1024)
+        != QCurl::QCNetworkConfigUpdateResult::Applied
+    || request.setBackpressureResumeBytes(32 * 1024)
+        != QCurl::QCNetworkConfigUpdateResult::Applied) {
+    qWarning() << "invalid backpressure configuration";
+    return;
+}
 ```
 
 ### 3.3 观察内部流控状态（推荐用于排障）
@@ -94,8 +101,8 @@ QObject::connect(reply, &QCurl::QCNetworkReply::uploadSendPausedChanged,
 
 ## 4. 相关文档
 
-- 维护者设计/实现索引：`docs/arch/transport-pause-resume.md`
+- [维护者传输实现](../dev/architecture/transport-pause-resume.md)：multi/callback 安全和恢复推进。
 
 ## 5. 维护者参考
 
-历史任务页已合并到本文和 `docs/arch/transport-pause-resume.md`。若需要追溯旧执行记录，请查看 `docs/internal/archived-release/transport-pause-resume-tasks.md`。
+历史任务仅通过[历史索引](../dev/archive/README.md)追溯，不作为当前状态或更新目标。

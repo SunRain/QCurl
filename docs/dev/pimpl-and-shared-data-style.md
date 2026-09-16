@@ -1,44 +1,19 @@
-# PIMPL 与 Shared-Data 规范草案
+# PIMPL 与 Shared-Data 规范
 
-> 适用范围：QCurl 的 public / library-facing 头文件，以及会影响 install surface、ABI 和 public-api guardrail 的实现约定。
+适用于 QCurl 的 public / library-facing 类型，统一值数据与运行时资源的布局、命名及不完整类型处理。2.0 ABI 非稳定；PIMPL 不代替下游重编译，也不是二进制兼容证明。
 
-## 1. 目标
+## 1. 选择类型模式
 
-本规范用于替代 `QCPimpl.h` 的 helper-macro 约定，统一回到 Qt6 / KDE 公共库可直接审查的原生写法。
+| 类型职责 | 布局 | 数据边界 |
+| --- | --- | --- |
+| 配置、协议参数、序列化状态等轻量值类型 | `FooData` + `QSharedDataPointer<FooData>` | 只承载值语义数据，可 copy-on-write，不持有运行时句柄 |
+| QObject、manager、reply、logger、middleware、runtime service | `FooPrivate` + d-pointer | 持有线程、事件循环、socket、timer、libcurl handle、锁、队列、缓存等运行时状态 |
 
-目标只有三个：
+`Foo` 表示实际类名，不能保留嵌套裸 `Data` / `Private`。不引入 `QCPimpl.h`、`QCURL_DECLARE_DPTR`、`QCURL_DECLARE_SHARED_DATA` 等自定义 helper 宏或兼容 wrapper；显式类型名便于审查，不为无关私有实现机械增加 ABI 包装。
 
-- 保持 public header 不泄漏 libcurl / private 实现细节
-- 让值类型与运行时类分别使用清晰、稳定、可 grep 的命名模式
-- 把 ABI 风险点收敛到少数明确规则，而不是依赖仓库自定义宏
+## 2. 值类型的正向模式
 
-## 2. 总规则
-
-QCurl 统一使用两套模式，不能混用：
-
-- 值类型：`ClassData` 模式
-- QObject / manager / reply / logger / runtime service：`ClassPrivate` 模式
-
-本文中的 `ClassData` / `ClassPrivate` 是占位写法。落到实际代码时，必须展开为 `FooData` / `FooPrivate`，不保留嵌套裸 `Data` / `Private`。
-
-## 3. 值类型：`ClassData`
-
-### 3.1 适用对象
-
-以下类型应优先使用 `ClassData` + `QSharedDataPointer`：
-
-- 配置对象
-- 轻量值语义类型
-- 需要 copy-on-write 的 public ABI 友好类型
-
-典型场景：
-
-- TLS / proxy / timeout / retry 等配置类
-- 仅承载请求配置、协议参数、序列化状态的值对象
-
-### 3.2 推荐写法
-
-头文件：
+以下仅展示布局；构造、析构、拷贝、移动及赋值的定义放在能看到完整 `FooData` 的源文件中。
 
 ```cpp
 class FooData;
@@ -58,7 +33,7 @@ private:
 };
 ```
 
-源文件：
+源文件中的值数据：
 
 ```cpp
 class FooData : public QSharedData
@@ -69,38 +44,9 @@ public:
 };
 ```
 
-### 3.3 强制规则
+非 `const` 写路径使用 `QSharedDataPointer` 自带的 detach 语义，不手写无意义的 `d.detach()`；setter 参数遵循[Qt/KDE 参数规范](../../Qt6_CPP17_Coding_Style/cn/Qt6_KDE_API_Parameter_Style.md)。
 
-- 命名使用 `FooData`，不使用嵌套 `class Data`
-- `QSharedDataPointer<FooData>` 只能承载值语义数据，不承载运行时句柄
-- 析构、拷贝、移动、赋值在持有不完整类型时必须 out-of-line
-- setter 参数遵循 Qt / KDE API 参数规范
-- 非 `const` 写路径依赖 `QSharedDataPointer` 自带的 detach 语义，不手写无意义的 `d.detach()`
-
-### 3.4 libcurl binding 边界
-
-值类型不得在 public header 中暴露以下内容：
-
-- `CURL *`
-- `curl_*`
-- `<curl/...>`
-- `_p.h`
-
-libcurl easy / multi / share handle 属于运行时实现细节，应放在 `.cpp`、private header 或 `FooPrivate` 中，而不是 `FooData` 中。
-
-## 4. 运行时类：`ClassPrivate`
-
-### 4.1 适用对象
-
-以下类型应使用 `FooPrivate` + d-pointer：
-
-- `QObject` 派生类
-- manager / reply / logger / middleware / runtime service
-- 持有线程、事件循环、socket、timer、curl handle 等运行时状态的类
-
-### 4.2 推荐写法
-
-头文件：
+## 3. 运行时类的正向模式
 
 ```cpp
 class FooPrivate;
@@ -119,170 +65,16 @@ private:
 };
 ```
 
-### 4.3 强制规则
+运行时资源放入 `FooPrivate` 或其他私有实现，不放入 `FooData`。d-pointer 持有不完整类型时，析构必须在源文件 out-of-line 定义。
 
-- 命名使用 `FooPrivate`，不使用嵌套 `class Private`
-- d-pointer 持有不完整类型时，析构必须 out-of-line
-- public header 只保留表达 contract 所需的最小 include
-- `FooPrivate` 可持有 libcurl handle、Qt runtime 对象、锁、队列、缓存和其他实现细节
+## 4. 公共头与升级边界
 
-## 5. 禁止写法
+两种模式都只在公共头保留表达合同所需的最小 include；libcurl easy/multi/share handle 属于源文件或私有实现，不能泄漏到安装面。禁止泄漏项和完整安装头边界只在[公共头与安装边界](architecture/public-header-boundary.md)维护。
 
-以下写法不再作为推荐实现：
+Retry/TLS/Proxy/Timeout accessor 在 v1.0.0 已存在，不把旧 public-field 教程重新列为 2.0 升级要求。真实调用方变化见[迁移指南](../user/migration-2.0.md)，本页只定义现行实现规范。
 
-```cpp
-class Foo
-{
-private:
-    class Data;
-    QSharedDataPointer<Data> d;
-};
-```
+## 5. 验证与人工评审分工
 
-```cpp
-class Foo
-{
-private:
-    class Private;
-    QScopedPointer<Private> d_ptr;
-};
-```
+public-api guardrail 对安装头自动阻止 `QCPimpl.h`、`QCURL_DECLARE_DPTR(` 和 `QCURL_DECLARE_SHARED_DATA(`；命名是否贴合类型职责、值数据与运行时资源是否分离、special members 的完整类型条件，以及 setter 参数和局部风格例外仍需人工评审。不能把这些语义要求写成已由 regex 全部保证。
 
-```cpp
-QCURL_DECLARE_DPTR(Foo)
-QCURL_DECLARE_SHARED_DATA(Foo)
-```
-
-原因如下：
-
-- 嵌套裸 `Data` / `Private` 在公共库代码里不够直观，grep 与批量审查成本更高
-- helper macro 会把“规则”重新包装成仓库私有框架层
-- 对 install surface 的长期维护，显式写法比宏壳更容易做 guardrail 和 code review
-
-## 6. 审查清单
-
-提交涉及 public / library-facing 头文件时，至少检查以下事项：
-
-- 值类型是否使用 `FooData` 而不是裸 `Data`
-- 运行时类是否使用 `FooPrivate` 而不是裸 `Private`
-- 是否仍引入 `QCPimpl.h` 或 `QCURL_DECLARE_*`
-- public header 是否泄漏 libcurl / `_p.h` / Qt private include
-- 持有不完整类型时，special members 是否 out-of-line
-- setter 参数是否符合 `Qt6_KDE_API_Parameter_Style.md`
-- 值类型是否只承载配置数据，而不是运行时句柄
-
-## 7. 渐进迁移策略
-
-本规范采用“禁止回流 + 触点迁移”：
-
-- 新增代码必须直接使用 `FooData` / `FooPrivate`
-- 已存在的嵌套 `Data` / `Private` 作为迁移债务逐步消除
-- 不为兼容旧风格新增 wrapper、helper macro 或过渡壳层
-
-### 7.1 当前迁移状态
-
-Core install surface 中的 public / library-facing 类型已完成显式 `FooData` / `FooPrivate` 命名迁移；当前没有新的裸 `Data` / `Private` 迁移债务。
-
-已完成的触点迁移：
-
-- `QCNetworkSslConfig`：改为 `QCNetworkSslConfigData + QSharedDataPointer`
-- `QCNetworkTimeoutConfig`：改为 `QCNetworkTimeoutConfigData + QSharedDataPointer`
-- `QCNetworkRetryPolicy`：改为 `QCNetworkRetryPolicyData + QSharedDataPointer`
-- `QCNetworkProxyConfig`：改为 `QCNetworkProxyConfigData + QSharedDataPointer`
-- `QCNetworkProxyConfig::ProxyTlsConfig`：改为 `QCNetworkProxyTlsConfigData + QSharedDataPointer`
-- `QCNetworkHttpAuthConfig`：改为 `QCNetworkHttpAuthConfigData + QSharedDataPointer`
-- `QCNetworkSchedulerPolicy` / `LaneConfig` / `QCNetworkSchedulerStatistics` 保留 public shared-data；私有 scheduler/core 不增加 ABI 包装，旧 scheduler 值类型退出。
-- `QCNetworkLogger`：改为 `NetworkLogEntryData + QSharedDataPointer` 的 accessor-only Core contract
-- `QCNetworkDefaultLogger`：改为 `QCNetworkDefaultLoggerPrivate + QScopedPointer`
-- `QCNetworkCancelToken`：改为 `QCNetworkCancelTokenPrivate + QScopedPointer`
-
-Extras / internal 范围内，public/library-facing 审计没有新的裸 `Private` 例外。
-
-### 7.2 Consumer 迁移清单（accessor-only contract）
-
-当前规范不只是内部命名收口，也把一批默认安装面的值类型收敛成 accessor-only
-contract。下游如果还在用 public field / aggregate 风格，需要一并迁移。
-
-受影响的类型：
-
-- `QCNetworkSslConfig`
-- `QCNetworkTimeoutConfig`
-- `QCNetworkRetryPolicy`
-- `QCNetworkProxyConfig`
-- `QCNetworkProxyConfig::ProxyTlsConfig`
-- `QCNetworkHttpAuthConfig`
-- `QCNetworkSchedulerPolicy` / `QCNetworkSchedulerStatistics`
-- `NetworkLogEntry`
-
-迁移示例：
-
-```cpp
-// before
-QCNetworkRetryPolicy policy;
-policy.maxRetries = 3;
-policy.initialDelay = std::chrono::milliseconds(250);
-
-QCNetworkSslConfig sslConfig;
-sslConfig.verifyPeer = true;
-sslConfig.verifyHost = true;
-
-QCNetworkProxyConfig proxy;
-proxy.type = QCNetworkProxyConfig::ProxyType::Https;
-proxy.hostName = QStringLiteral("proxy.example.com");
-proxy.port = 443;
-
-QCNetworkProxyConfig::ProxyTlsConfig tls;
-tls.verifyPeer = true;
-proxy.setTlsConfig(std::nullopt);
-
-// after
-QCNetworkRetryPolicy policy;
-policy.setMaxRetries(3);
-policy.setInitialDelay(std::chrono::milliseconds(250));
-
-QCNetworkSslConfig sslConfig;
-sslConfig.setVerifyPeer(true);
-sslConfig.setVerifyHost(true);
-
-QCNetworkProxyConfig proxy;
-proxy.setType(QCNetworkProxyConfig::ProxyType::Https);
-proxy.setHostName(QStringLiteral("proxy.example.com"));
-proxy.setPort(443);
-
-QCNetworkProxyConfig::ProxyTlsConfig tls;
-tls.setVerifyPeer(true);
-proxy.clearTlsConfig();
-
-QCNetworkSchedulerPolicy::LaneConfig lane;
-lane.setWeight(3);
-```
-
-额外约束：
-
-- 读取配置/统计值时，统一改为 `foo()` getter，不再直接读字段
-- `QCNetworkProxyConfig::setTlsConfig()` 只接受 `ProxyTlsConfig`
-- 需要清空 proxy TLS 配置时，使用 `clearTlsConfig()`；不要再传 `std::nullopt`
-- `NetworkLogEntry` 只通过 `level()` / `category()` / `message()` / `timestampUtc()` 访问
-  字段
-
-## 8. 与 public-api guardrail 的关系
-
-自动 blocker 只负责低误报规则：
-
-- install headers 不得 include `QCPimpl.h`
-- install headers 不得出现 `QCURL_DECLARE_DPTR(`
-- install headers 不得出现 `QCURL_DECLARE_SHARED_DATA(`
-
-以下内容保留在文档与 code review 层，不直接做脆弱 regex blocker：
-
-- 是否使用 `FooData` / `FooPrivate` 命名
-- 是否存在不值得自动化的局部例外
-- 更细的风格一致性判断
-
-## 9. 稳定命名口径
-
-QCurl public / library-facing 头文件的统一口径如下：
-
-- 值类型：`ClassData` 占位，实际代码展开为 `FooData`
-- 运行时类：`ClassPrivate` 占位，实际代码展开为 `FooPrivate`
-- 删除 `QCPimpl.h` 后，不再引入新的 helper macro / wrapper 层
+检查命令见[构建与测试](build-and-test.md)，安装 consumer 与 public header 验证入口见[公共头边界](architecture/public-header-boundary.md)。

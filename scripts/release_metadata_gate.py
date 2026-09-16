@@ -28,18 +28,15 @@ def _is_release_identity_scan_target(path: Path) -> bool:
 
 def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
     allowed_file_prefixes = (
-        "docs/internal/",
-        "docs/reviews/",
-        "docs/arch/1.0-first-stable-release-contract.md",
-        "docs/arch/1.0-first-stable-readiness-report.md",
-        "docs/arch/1.0.0-release-notes.md",
-        "docs/arch/2.0.0-migration-guide.md",
-        "SYSTEM_DOCUMENTATION.md",
+        "docs/dev/archive/",
+        "docs/user/migration-2.0.md",
+        "docs/dev/architecture/overview.md",
         "scripts/qcurl_abi_gate.py",
         "scripts/release_gate_steps.py",
         "scripts/release_metadata_gate.py",
         "scripts/run_release_gate.py",
         "tests/public_api/test_run_public_api_checks.py",
+        "tests/public_api/test_hard_break_docs.py",  # Contains intentional negative identity fixtures.
         "abi/baseline/qcurl-core-v3.abi.xml",
     )
     if relative.startswith(allowed_file_prefixes):
@@ -60,21 +57,14 @@ def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
 
 
 def _is_historical_release_document(relative: str) -> bool:
-    return relative.startswith(
-        (
-            "docs/internal/",
-            "docs/reviews/",
-            "docs/arch/1.0-first-stable-",
-            "docs/arch/1.0.0-",
-        )
-    )
+    return relative.startswith("docs/dev/archive/")
 
 
 def _fixed_metadata_violations(repo_root: Path) -> list[str]:
     checks = {
         "CMakeLists.txt": ["WebSocket support\")", "HTTP/2 and WebSocket support"],
         "README.md": ["单请求延迟", "31,000 ms", "~15,000 ms", "~10,000 ms"],
-        "SYSTEM_DOCUMENTATION.md": [
+        "docs/dev/architecture/overview.md": [
             "提供同步和异步两种网络请求方式",
             "| **执行模式** | 同步、异步 |",
             "enum class ExecutionMode",

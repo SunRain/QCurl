@@ -6,8 +6,8 @@
 不要求 Qt 信号与 libcurl 回调逐次对应，也不把有限用例通过解释为所有外部行为完全等价。
 QCurl 的线程归属、对象生命周期和终态通知另由对应 QtTest 合同验证。
 
-这里只保留稳定 contract、运行入口与排查路径；维护者状态看板已移到
-`docs/internal/maintainer-backlog/libcurl-consistency.md`，专题决策仍落到 handoff 文档。
+这里只保留稳定 contract、运行入口与排查路径；持续维护规则见
+[build-and-test](../../docs/dev/build-and-test.md#maintenance-rules)，专题决策仍落到 handoff 文档。旧状态板只读归档，不再更新。
 
 ## 1. 一致性定义
 
@@ -177,14 +177,14 @@ QCURL_REQUIRE_HTTP3=1
 
 - 不在本文件追加“本地跑过一次通过”的记录
 - 不在本文件保存单次环境快照或版本清单
-- 需要状态看板时更新 `docs/internal/maintainer-backlog/libcurl-consistency.md`
+- 持续规则见 `docs/dev/build-and-test.md#maintenance-rules`；本次缺口与任务放在对应审查结果中，不更新旧状态板
 - 需要专题决策时补充 handoff / 设计说明
 
 ## 9. 相关文件
 
-- `docs/internal/maintainer-backlog/libcurl-consistency.md`
+- [现行维护规则](../../docs/dev/build-and-test.md#maintenance-rules)；[旧状态板（只读）](../../docs/dev/archive/topics/libcurl-consistency.md)
 - `tests/libcurl_consistency/LC-15_handoff.md`
 - `tests/libcurl_consistency/run_gate.py`
 - `tests/libcurl_consistency/pytest_support/compare.py`
 - `tests/libcurl_consistency/tst_LibcurlConsistency.cpp`
-- `docs/uce/README.md`
+- `docs/dev/uce/README.md`

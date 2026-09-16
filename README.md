@@ -1,376 +1,44 @@
 # QCurl
 
-> 基于 Qt6 和 libcurl 的现代 C++ 网络库，提供类型安全的异步 Core，以及可独立安装的 Blocking Extras、Other Extras 和 Test Support。
+基于 Qt6 / C++17 和 libcurl 的网络库：异步 HTTP、请求配置、lane 调度、缓存、流式传输，以及显式 opt-in 的扩展组件。
 
-[![Qt6](https://img.shields.io/badge/Qt-6.10.3+-41CD52?logo=qt)](https://www.qt.io/)
-[![C++17](https://img.shields.io/badge/C++-17-00599C?logo=cplusplus)](https://en.cppreference.com/w/cpp/17)
-[![libcurl](https://img.shields.io/badge/libcurl-7.85%2B-073551?logo=curl)](https://curl.se/libcurl/)
-[![CMake](https://img.shields.io/badge/CMake-3.16+-064F8C?logo=cmake)](https://cmake.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## 当前版本与消费边界
 
----
+`v1.0.0` 是已发布历史，`2.0.0` 是当前开发候选。Core 在 2.x 内保证源码兼容，**ABI 非稳定；每次更新都必须重新编译和链接下游**。`SOVERSION 2` 不代表二进制兼容，候选说明不代表已经通过发布验收。
 
-## 2.0.0 hard-break 候选边界
+| 逻辑组件 | 消费方式与边界 |
+| --- | --- |
+| Core | 默认 `find_package(QCurl CONFIG REQUIRED)` / `QCurl::QCurl`；异步 HTTP 与公共配置、调度、缓存和传输 API |
+| Blocking Extras | 显式 `COMPONENTS BlockingExtras` / `QCurl::BlockingExtras`；同步值结果，实现随 Core 物理库交付 |
+| Other Extras | 显式 `COMPONENTS OtherExtras` / `QCurl::OtherExtras`；Diagnostics、WebSocket 为 Preview，Middleware Extras 为 Stable，均非默认 Core |
+| Test Support | 显式 `COMPONENTS TestSupport` / `QCurl::TestSupport`；仅供开发测试的静态库，不是生产 Runtime |
 
-最新已发布版本为 `v1.0.0`，当前开发候选为 `v2.0.0`。`QCurl 2.0.0` 的源码兼容范围以 Core component 安装面为准：`QCURL_INSTALL_HEADERS + QCurlConfig.h`。这些头文件构成当前 Core API，并进入无组件 `find_package(QCurl)` / `QCurl::QCurl` 默认 consumer contract。shared library 与 static library 都属于候选发布形态；whole project、WebSocket 和 Diagnostics 不随 Core 一起进入源码兼容承诺。
+Preview 是成熟度，Internal 是可见性，不是额外组件。精确安装面见[公共头边界](docs/dev/architecture/public-header-boundary.md)，发布承诺见[正式合同](docs/dev/release/2.0.0-hard-break-release-contract.md)。
 
-本节只定义当前候选合同，不证明当前工作树已经通过 release gate。当前 checkout 只有在最后一次源码变更之后重新通过 shared/static public API、动态符号 allowlist、完整 CTest、libcurl consistency 和 sanitizer 门禁，才可形成新的本地 readiness 证据；文档本身、历史 snapshot 或旧 QA 数字不能替代该证据。
+## 依赖
 
-| 交付组件 | 发布含义 | 当前范围 |
-| --- | --- | --- |
-| **Core** | 默认 consumer target；通过最终 release gate 后作为 2.0.0 源码兼容 API，ABI 非稳定且要求下游重编译 | `QCNetworkAccessManager`、`QCCookie`、`QCCookieAsyncResult`、`QCNetworkRequest`、`QCNetworkRequestConfig`、`QCNetworkReply`、TLS / proxy / timeout / retry / redirect / transfer 配置、HTTP method / version / error / priority、lane-aware scheduler、cache policy type header、Cache lookup concrete API、Multipart builder、`QCNetworkLogger`、`QCNetworkDefaultLogger`、`QCNetworkCancelToken`、Middleware base、ConnectionPool 管理面 |
-| **Blocking Extras** | 显式 opt-in 的 `INTERFACE` consumer target；实现由 Core 物理库承载，提供同步 value-result 工具 | `QCBlockingNetworkClient`、`QCBlockingNetworkResult`、`QCBlockingCookieStore` |
-| **Other Extras** | 显式 opt-in consumer target；不属于 Core 源码兼容承诺 | Diagnostics、Middleware Extras、WebSocket |
-| **Test Support** | 显式 opt-in 的开发静态库；不属于生产 Runtime | `QCNetworkMockHandler`、`QCNetworkCapturedRequest`、`QCNetworkTestSupport` |
+- CMake 3.16+、C++17 编译器（GCC 11+ / Clang 14+ / MSVC 2019+）。
+- **Qt 6.10.3+**；源码构建需要 QtCore、QtNetwork，默认 Core consumer 只依赖 QtCore。Qt 6.10.0–6.10.2 不受支持。
+- libcurl 7.85.0+、zlib 开发包；WebSocket 需要 libcurl 7.86.0+，HTTP/3 还取决于 QUIC backend 与服务端能力，见[HTTP 版本配置](docs/user/configuration.md#http-version)。
 
-`Preview` 是 API 成熟度，`Internal` 是可见性，不是额外交付组件。当前 Diagnostics 和
-WebSocket 标记为 Preview；Middleware Extras 属于 Other Extras 的公开稳定面。一个能力的
-组件归属、成熟度和可见性由 `tests/public_api/surface_manifest.json` 分别记录。
+## 用法预览
 
-除非文档明确标注为 Core，示例中引用 `QCURL_INSTALL_HEADERS_EXTRAS` 的头文件时，都应视为显式 opt-in 的非默认发行面。当前边界见 `docs/arch/2.0.0-hard-break-release-contract.md` 与 `docs/arch/public-header-boundary.md`；1.0 文档只记录已发布历史。
-
-## 为什么选择 QCurl？
-
-| **现代化架构** | **Core HTTP** | **可选扩展** | **Qt 友好** |
-|:-------------:|:-------------:|:------------:|:-----------:|
-| CMake + RAII + C++17 | HTTP/1.1、HTTP/2、HTTP/3 capability | 三个显式组件 + Preview 成熟度标记 | QObject 线程归属与事件循环合同 |
-
----
-
-## 功能分层
-
-### Core
-
-- **CMake 构建系统** - 跨平台支持，自动依赖检测
-- **统一 Reply 架构** - `QCNetworkReply` 作为 Core 异步响应入口，统一承载状态、信号、读取和错误信息
-- **RAII 资源管理** - Core 资源生命周期由 public API 合同和测试门禁约束，调用方无需直接管理 libcurl handle
-- **C++17 特性** - `std::optional`、`std::chrono`、`[[nodiscard]]`、`enum class`
-- **HTTP/1.1、HTTP/2、HTTP/3 capability** - HTTP/3 取决于运行时 libcurl / QUIC backend
-- **SSL/TLS** - 可配置证书验证、客户端证书、CA 路径
-- **代理支持** - HTTP、HTTPS、SOCKS4/4A、SOCKS5
-- **Canonical Request API** - `QCNetworkRequest` + `QCNetworkAccessManager::head()/get()/post()/put()/patch()` 一套入口覆盖配置与发送
-- **请求对象配置** - `QCNetworkRequest::setRawHeader()/setTimeout()/setPriority()/setLane()` 支持链式配置；`QCNetworkRedirectConfig` 与 `QCNetworkTransferConfig` 聚合重定向和传输配置
-- **请求重试** - GET/HEAD 默认安全重试；其他方法必须显式启用幂等键门禁，并使用有界 equal-jitter 退避
-- **lane-aware 调度** - lane reservation + 按启动次数加权轮转 + 按 lane 精准取消
-- **缓存策略类型** - `QCNetworkCachePolicy` 是 `QCNetworkRequest` 的 Core 配置类型
-- **Cache lookup API** - 显式启用的 `QCNetworkCache`、`QCNetworkMemoryCache`、`QCNetworkDiskCache` 使用包含 method、规范化 URL、Vary 请求头和认证分区的结构化请求键；`clear()` 返回删除计数、失败计数和残留容量
-- **Multipart/form-data builder** - `QCMultipartFormData` / `QCNetworkMultipartBody` 生成 body，再通过 `post()` 发送
-- **日志接口** - `QCNetworkLogger` 提供 Core 级日志抽象与 debug trace 脱敏入口
-- **默认日志实现** - `QCNetworkDefaultLogger` 提供 Core 级默认 logger helper
-- **取消令牌** - `QCNetworkCancelToken` 提供 reply-level 批量取消和自动超时取消
-- **Middleware base** - `QCNetworkMiddleware` 作为 Core 拦截与观测基类进入 Core component 安装面；通用具体 middleware 通过 Other Extras opt-in 使用
-- **ConnectionPool 管理面** - 连接池配置、统计和资源控制接口使用 accessor / shared-data API
-- **流式下载/上传** - `QCNetworkDownloadToDeviceJob` 与 manager-level `post()/put()` raw-body device overload 支持大文件
-- **断点续传** - `QCNetworkResumableDownloadJob` 基于 HTTP Range 请求恢复下载
-- **Core cookie model** - `QCCookie` 是 Core public cookie 值类型；默认 consumer 不需要 QtNetwork cookie 类型
-- **Cookie async result** - `QCCookieOperationResult` / `QCCookieExportResult` 是 manager cookie async signal 与 `QFuture` 的 Core 值结果
-
-### Blocking Extras
-
-- **同步 value-result client** - `QCBlockingNetworkClient` / `QCBlockingNetworkResult` 通过 `QCurl::BlockingExtras` 显式 opt-in，不进入无组件 Core consumer。
-- **受限内存响应体** - `QCBlockingRequestOptions::maxInMemoryBodyBytes()` 默认限制内存响应体；超过上限返回 `NetworkError::BodyTooLarge`。
-- **大响应下载** - 大响应使用 `QCBlockingNetworkClient::downloadToDevice()` 写入调用方提供的 `QIODevice`，`body()` 保持为空，`bytesReceived()` 记录实际接收字节数。
-- **诊断错误边界** - Blocking Extras 使用 `BodyTooLarge`、`OutputDeviceError`、`InputDeviceError`、`ReplayNotSupported` 等明确错误；curl code 只通过 `diagnosticCurlCode()` 作为辅助诊断，不作为主判断 API。
-- **Cookie snapshot / delta** - `QCBlockingCookieStore` 提供 Blocking Extras cookie 边界，不访问 live manager cookie store。
-
-### Test Support
-
-- **MockHandler Test Support** - `QCNetworkMockHandler`、`QCNetworkCapturedRequest` 与 `QCNetworkTestSupport` 通过显式 `TestSupportDevelopment` 安装，供测试程序 opt-in 使用。
-
-### Other Extras
-
-- **Diagnostics 扩展诊断（Preview）** - `QCNetworkDiagnostics` 通过显式 `OtherExtrasDevelopment` 安装，公开入口统一返回可取消的 `QFuture<DiagResult>`；QtNetwork 依赖只由 `QCurl::OtherExtras` 承担，HTTP 探测只使用 `QCNetworkAccessManager/QCNetworkReply`，`ping/traceroute` 与 `details` schema 仍不作为默认 Core 源码兼容合同。
-- **Middleware Extras（Stable）** - `QCNetworkMiddlewareExtras` 通过显式 `OtherExtrasDevelopment` 安装；默认 Core 只承诺 `QCNetworkMiddleware` base。
-- **WebSocket（Preview）** - 客户端提供有界异步收发、关闭握手和重连能力，条件进入 Other Extras；默认不提供 permessage-deflate，也不属于 Core consumer surface。
-
-### 性能基准说明
-
-性能数字需要绑定具体 benchmark 版本、依赖版本、网络环境和日期。未绑定证据的数字不应作为 `2.0.0` 稳定发布承诺。
-
----
-
-## 📦 系统要求
-
-| 依赖          | 版本要求  | 说明                           |
-| ----------- | ----- | ---------------------------- |
-| **CMake**   | 3.16+ | 构建系统                         |
-| **Qt6**     | 6.10.3+ | Core consumer 需要 QtCore；Other Extras diagnostics 需要 QtNetwork |
-| **libcurl** | 7.85.0+ | WebSocket 需 7.86.0+；HTTP/3 推荐 8.16.0+ 且带 QUIC backend |
-| **编译器**     | C++17 | GCC 11+、Clang 14+、MSVC 2019+ |
-
-Qt 的最低版本精确到 **6.10.3**；6.10.0–6.10.2 不受支持。构建、安装包发现、
-pkg-config 和公共头文件均使用这一要求；发行版自带 Qt 较旧时需使用满足版本要求的 SDK。
-
----
-
-## 🚀 快速开始
-
-### 构建安装
-
-```bash
-git clone https://github.com/SunRain/QCurl.git
-cd QCurl
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-cmake --install build --prefix "$PWD/stage"
-```
-
-不带 `--component` 的 `cmake --install` 是无过滤完整安装，会部署四个逻辑消费面和三个物理库产物：`libQCurl`（含 Blocking Extras 实现）、`libQCurlOtherExtras`、静态 `libQCurlTestSupport`。这里的“默认”只指 consumer 行为：`find_package(QCurl CONFIG REQUIRED)` 只加载 `QCurl::QCurl`；非 Core 目标必须通过 `COMPONENTS` 显式请求。
-
-发布合同提示：
-
-- 2.0.0 只承诺 Core install surface 的源码兼容；下游在每次 QCurl 更新后必须重新编译和链接。
-- 使用分组件安装时，Blocking Extras 只需要 `BlockingExtrasDevelopment`，其实现随 Core Runtime 交付；Other Extras 需要 `OtherExtrasRuntime` + `OtherExtrasDevelopment`，Test Support 只需要 `TestSupportDevelopment`。
-- 当前 lane-aware scheduler 已纳入 `QCurl 2.0.0 / SOVERSION 2` Core 源码合同；`SOVERSION 2` 不代表 2.x 二进制兼容，本 hard-break 发布线不提供 v1 alias、wrapper、shim 或兼容开关。
-
-### 代码示例
-
-#### 1. 简单 GET 请求
+下面仅展示 Core 异步请求的发起，**不是独立程序**。它使用 [Quickstart 的完整 consumer 上下文](docs/user/quickstart.md#2-独立-core-consumer)：`app` 已创建并检查 URL 参数，manager 与 reply 在同一事件循环线程使用，完成信号负责响应与错误处理、回收 reply 和退出应用。
 
 ```cpp
-#include <QCNetworkAccessManager.h>
-#include <QCNetworkHttpHeaders.h>
-#include <QCNetworkRequest.h>
-
 QCurl::QCNetworkAccessManager manager;
-QCurl::QCNetworkRequest request(QUrl("https://api.example.com/data"));
-request.setRawHeader(QCurl::httpheaders::kAuthorization, "Bearer token")
-    .setTimeout(std::chrono::seconds(30));
-
+QCurl::QCNetworkRequest request(QUrl{app.arguments().at(1)});
+request.setTimeout(std::chrono::seconds(10));
 auto *reply = manager.get(request);
-
-connect(reply, &QCurl::QCNetworkReply::finished, [reply]() {
-    if (reply->error() == QCurl::NetworkError::NoError) {
-        if (const auto data = reply->readAll(); data.has_value()) {
-            qDebug() << "Response:" << *data;
-        }
-    }
-    reply->deleteLater();
-});
 ```
 
-#### 2. WebSocket 连接（Preview）
+manager 必须存活到请求结束。安装步骤、完整 CMakeLists/main.cpp、构建运行命令及本地 HTTP 成功/失败核对统一见 [Quickstart](docs/user/quickstart.md)，不要把本片段直接作为完整 main() 使用。
 
-> 说明：WebSocket 使用 `QCURL_INSTALL_HEADERS_EXTRAS` 中的扩展头。
-> 它属于 Other Extras 组件并标记为 Preview，不属于 2.0.0 默认 Core 承诺。
+## 文档与社区
 
-```cpp
-#include <QCWebSocket.h>
-#include <QCWebSocketReconnectPolicy.h>
+- [文档目录](docs/README.md)：用户与开发者/维护者两条路径。
+- [版本变化](CHANGELOG.md) · [示例集合](examples/README.md)。
+- [贡献指南](CONTRIBUTING.md) · [支持与反馈](SUPPORT.md) · [安全披露](SECURITY.md) · [行为准则](CODE_OF_CONDUCT.md)。
+- [MIT 许可证](LICENSE) · [第三方许可](THIRD_PARTY_NOTICES.md)。
 
-QCurl::QCWebSocketOptions options;
-options.setReconnectPolicy(QCurl::QCWebSocketReconnectPolicy::standardReconnect());
-options.setMaxMessageBytes(8 * 1024 * 1024);
-options.setMaxPendingSendBytes(4 * 1024 * 1024);
-
-auto *socket = new QCurl::QCWebSocket(QUrl("wss://echo.websocket.org"), options);
-
-connect(socket, &QCurl::QCWebSocket::connected, [socket]() {
-    socket->sendTextMessage("Hello WebSocket!");
-});
-
-connect(socket, &QCurl::QCWebSocket::textMessageReceived, [](const QString &msg) {
-    qDebug() << "Received:" << msg;
-});
-
-socket->open();
-```
-
-#### 3. 文件上传（Core Multipart）
-
-`QCMultipartFormData.h` 属于 Core install surface，默认 installed consumer 可以直接使用该 builder。
-
-```cpp
-#include <QCMultipartFormData.h>
-#include <QCNetworkMultipartBody.h>
-
-QCurl::QCMultipartFormData formData;
-formData.addTextField("userId", "12345");
-formData.addFileField("avatar", "/path/to/photo.jpg");
-
-QCurl::QCNetworkRequest uploadRequest(QUrl("https://api.example.com/upload"));
-auto body = QCurl::QCNetworkMultipartBody::fromFormData(formData);
-uploadRequest.setRawHeader("Content-Type", body.contentType());
-auto *reply = manager.post(uploadRequest, body.data());
-```
-
-#### 4. 内存请求体（JSON / form-urlencoded）
-
-`QCNetworkBody` 会随请求体保存匹配的 `Content-Type`。`post()` / `put()` /
-`patch()` 接收 `QCNetworkBody` 时，若请求尚未显式设置 `Content-Type`，会自动补齐；若已设置，
-则尊重请求里的显式值。
-
-```cpp
-#include <QCNetworkBody.h>
-
-QCurl::QCNetworkRequest formRequest(QUrl("https://api.example.com/form"));
-auto formBody = QCurl::QCNetworkBody::fromFormUrlEncoded(
-    QList<QPair<QString, QString>>{
-        {QStringLiteral("tag"), QStringLiteral("one")},
-        {QStringLiteral("tag"), QStringLiteral("two")},
-    });
-auto *formReply = manager.post(formRequest, formBody);
-```
-
-#### 5. Lane-aware Scheduler
-
-调度配置入口在 `QCNetworkAccessManager` 上；请求 lane 使用 typed key，未注册 lane 会
-fail-closed。
-
-```cpp
-#include <QCNetworkLaneKey.h>
-#include <QCNetworkSchedulerPolicy.h>
-
-QCurl::QCNetworkSchedulerPolicy policy = QCurl::QCNetworkSchedulerPolicy::defaultPolicy();
-policy.setMaxConcurrentRequests(6);
-policy.setMaxRequestsPerHost(2);
-
-QString schedulerError;
-QCurl::QCNetworkSchedulerPolicy::LaneConfig controlLane;
-controlLane.setWeight(3);
-controlLane.setQuantum(1);
-controlLane.setReservedGlobal(1);
-controlLane.setReservedPerHost(1);
-if (!policy.setLaneConfig(QCurl::QCNetworkLaneKey::control(), controlLane, &schedulerError)) {
-    qWarning() << schedulerError;
-}
-
-QCurl::QCNetworkSchedulerPolicy::LaneConfig transferLane;
-transferLane.setWeight(1);
-transferLane.setQuantum(1);
-if (!policy.setLaneConfig(QCurl::QCNetworkLaneKey::transfer(), transferLane, &schedulerError)) {
-    qWarning() << schedulerError;
-}
-
-if (!manager.setSchedulerPolicy(policy, &schedulerError)) {
-    qWarning() << schedulerError;
-}
-
-QCurl::QCNetworkRequest controlRequest(QUrl("https://api.example.com/manifest"));
-controlRequest.setLane(QCurl::QCNetworkLaneKey::control())
-    .setPriority(QCurl::QCNetworkRequestPriority::High);
-
-QCurl::QCNetworkRequest transferRequest(QUrl("https://cdn.example.com/chunk.bin"));
-transferRequest.setLane(QCurl::QCNetworkLaneKey::transfer())
-    .setPriority(QCurl::QCNetworkRequestPriority::Low);
-
-const auto stats = manager.schedulerStatistics();
-qDebug() << "pending=" << stats.pendingRequests()
-         << "running=" << stats.runningRequests();
-
-const auto cancelResult = manager.cancelLaneRequests(
-    QCurl::QCNetworkLaneKey::transfer(),
-    QCurl::QCNetworkAccessManager::SchedulerCancelScope::PendingAndRunning);
-if (!cancelResult.isSuccess()) {
-    qWarning() << cancelResult.error();
-}
-```
-
-简要提示：
-
-- `lane` 可以理解成“请求车道”：先按车道分组，再在车道内按优先级排序。
-- `Critical` 现在只影响同一条 lane 内的启动顺序；若需要给控制类请求留保底名额，请使用 lane reservation。
-- `QCNetworkLaneKey::fromName(name, &lane, &error)` 可创建自定义 lane；解析失败不会返回 invalid sentinel，成功后必须先写入 `QCNetworkSchedulerPolicy`。
-- `cancelLaneRequests()` 返回 `QCNetworkLaneCancelResult`；`PendingOnly` 只清 pending/deferred，`PendingAndRunning` 会连 running 一并取消。
-- scheduler policy 和统计接口必须在 manager owner thread 调用；跨线程配置请显式投递到 owner thread。
-
-完整说明、请求时序图和 `Control / Transfer / Background` 配置建议统一参考：
-
-- `docs/user/lane-scheduler.md`
-
----
-
-## ⚡ 性能回归入口
-
-性能数字只在绑定具体 benchmark 版本、依赖版本、网络环境和日期时才作为发布证据。
-当前 README 不把固定延迟或吞吐数字写成 `2.0.0` 稳定承诺。
-
-性能回归与能力证据以以下入口为准：
-
-- `docs/reference/performance.md`
-- `docs/reference/benchmarks.md`
-- `tests/libcurl_consistency/run_gate.py --suite all --with-ext --build`
-
----
-
-## 🧪 测试与验证
-
-测试运行与门禁以 `docs/dev/build-and-test.md` 为准。发布前使用 `--abi-mode none` 的 full release gate、shared/static public-api gate、动态符号 allowlist、metadata scan 和 `git diff --check` 形成可复验结果。2.0 不要求 ABI baseline 或 compatibility diff。
-
-本 README 不维护固定测试数量、通过率或一次性 gate 输出；这些数字必须绑定具体 build、依赖版本、环境和日期后，放入维护者证据文档或 CI artifacts。
-
----
-
-## 📚 文档
-
-| 文档                                                 | 说明                    |
-| -------------------------------------------------- | --------------------- |
-| [docs/README.md](docs/README.md)                   | 文档入口（按读者角色分层）        |
-| [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) | 维护者 Architecture overview |
-| [examples/README.md](examples/README.md)           | 示例集合与运行方式              |
-
----
-
-## 🔧 项目集成
-
-### CMake
-
-```cmake
-find_package(QCurl CONFIG REQUIRED)
-target_link_libraries(your_app PRIVATE QCurl::QCurl)
-```
-
-使用 staging prefix 验证独立 consumer 时：
-
-```bash
-cmake -S your-app -B build-your-app -DCMAKE_PREFIX_PATH=/path/to/QCurl/stage
-cmake --build build-your-app
-```
-
-默认构建发布 shared library。Static library 需要显式 opt-in：
-
-```bash
-cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release -DQCURL_BUILD_SHARED_LIBS=OFF
-cmake --build build-static --target QCurl qcurl_public_api_self_compile
-ctest --test-dir build-static -L '^public-api$' --output-on-failure
-ctest --test-dir build-static -L '^public-api-slow$' --output-on-failure
-```
-
-Static 路径已纳入 full release gate。正式打包前按 `docs/dev/release-procedure.md` 使用六棵显式构建树和 `--abi-mode none`；即使 static gate 通过，也只声明 Core static library ready，不声明 whole project static library ready。
-
-Static consumer 若只使用 `QCNetworkRequestPriority` 等头文件类型，并需要 Qt 元类型按名称可见，应在 `main()` 早期调用一次 `QCurl::initialize()`。shared consumer 通常不需要手动调用；该函数幂等，调用后不会创建网络对象或启动 scheduler。
-
-### pkg-config
-
-```bash
-g++ your_app.cpp $(pkg-config --cflags --libs qcurl) -o your_app
-```
-
----
-
-## 🤝 贡献
-
-欢迎 Pull Request！
-
-- 贡献指南：`CONTRIBUTING.md`
-- 行为准则：`CODE_OF_CONDUCT.md`
-- 安全策略：`SECURITY.md`
-- 支持与反馈：`SUPPORT.md`
-
----
-
-## 📜 许可证
-
-[MIT License](LICENSE) - 自由使用、修改、分发
-
----
-
-## 🙏 致谢
-
-- **[libcurl](https://curl.se/)** - 强大的网络传输库
-- **[Qt](https://www.qt.io/)** - 优雅的跨平台 C++ 框架
-
----
-
-
-**QCurl** - Qt6 + libcurl Core HTTP library
+QCurl 使用 [Qt](https://www.qt.io/) 与 [libcurl](https://curl.se/libcurl/)。

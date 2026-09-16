@@ -13,11 +13,12 @@ from tests.public_api.component_contracts import FailFunc
 QMAP_BYTE_ARRAY_TYPE = r"QMap\s*<\s*QByteArray\s*,\s*QByteArray\s*>"
 
 CURRENT_RELEASE_DOC_PATHS = (
-    "docs/dev/release-procedure.md",
+    "docs/dev/release/release-procedure.md",
     "docs/dev/build-and-test.md",
-    "docs/arch/2.0.0-hard-break-release-contract.md",
-    "docs/arch/2.0.0-release-notes.md",
-    "docs/arch/public-header-boundary.md",
+    "docs/dev/release/2.0.0-hard-break-release-contract.md",
+    "CHANGELOG.md",
+    "docs/dev/architecture/public-header-boundary.md",
+    "docs/dev/uce/README.md",
 )
 
 POOL_SYNC_MUTATOR_PATHS = (
@@ -28,7 +29,7 @@ POOL_SYNC_MUTATOR_PATHS = (
 WEBSOCKET_COMMAND_PATHS = (
     "src/QCWebSocket.h",
     "src/QCWebSocket.cpp",
-    "docs/arch/public-contract-inventory.md",
+    "docs/dev/architecture/public-header-boundary.md",
 )
 
 
@@ -112,8 +113,10 @@ QMAP_VARIABLE_RE = re.compile(
 
 SCHEDULER_PUBLIC_SURFACE_PATHS = (
     "README.md",
+    "CHANGELOG.md",
     "docs/user/",
-    "docs/arch/",
+    "docs/dev/architecture/",
+    "docs/dev/release/2.0.0-hard-break-release-contract.md",
     "examples/",
     "tests/public_api/consumer_smoke/",
 )
@@ -330,16 +333,18 @@ SCOPED_CONTENT_DENY_RULES: tuple[
 
 INCLUDE_PATHS: tuple[str, ...] = (
     "README.md",
-    "SYSTEM_DOCUMENTATION.md",
+    "CHANGELOG.md",
     "src",
     "include",
     "examples",
     "tests/public_api/consumer_smoke",
     "tests/public_api/consumer_blocking_extras_smoke",
     "docs/user",
-    "docs/arch",
-    "docs/dev/release-procedure.md",
+    "docs/dev/architecture",
+    "docs/dev/release/2.0.0-hard-break-release-contract.md",
+    "docs/dev/release/release-procedure.md",
     "docs/dev/build-and-test.md",
+    "docs/dev/uce/README.md",
     "tests/qcurl",
     "tests/libcurl_consistency",
 )
@@ -347,7 +352,7 @@ INCLUDE_PATHS: tuple[str, ...] = (
 EXCLUDED_PARTS = {".git", "build", "generated", ".helloagents", "__pycache__", "node_modules"}
 
 ALLOWLIST: dict[str, tuple[str, ...]] = {
-    "SYSTEM_DOCUMENTATION.md": (
+    "docs/dev/architecture/overview.md": (
         "enum class ExecutionMode { Async, Sync };",
         "#### ExecutionMode",
         "enum class ExecutionMode {",

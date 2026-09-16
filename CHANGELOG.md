@@ -1,64 +1,46 @@
 # QCurl Changelog
 
-本文记录当前 `2.0.0` hard-break 候选和已发布的 `1.0.0` 历史版本。pre-1.0 日期流水、RC 草稿和旧不兼容变更过程已移入 `docs/internal/pre-1.0-history.md` 索引和内部 raw archive，不再作为当前用户-facing release history。
-
-`v1.0.0` 已发布；`v2.0.0` 尚未创建 tag、推送或发布，因此当前变更继续放在 `Unreleased`。
+记录当前 `2.0.0` hard-break 候选与已发布的 `1.0.0`。旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
 ## [Unreleased]
 
-### Release readiness
+`v1.0.0` 已发布；`v2.0.0` 尚未创建 tag 或远端发布。以下是候选变更，不是 readiness 或 CI 通过证明；正式发布说明从本版本条目生成。
 
-- 将当前候选发布线切换为 `QCurl 2.0.0`：`PROJECT_VERSION=2.0.0`、shared library `SOVERSION=2`、默认 shared library `libQCurl.so.2.0.0`。
-- 明确 2.0.0 的默认 Core install surface 保证源码兼容，但 ABI 非稳定；下游在每次 QCurl 更新后必须重新编译和链接。
-- Full release gate 以 `scripts/run_release_gate.py --tier full --abi-mode none` 和六棵显式构建树为入口，覆盖 shared/static public API、strict QtTest、完整 CTest、QCurl/libcurl observable consistency、动态符号 allowlist、capability matrix、sanitizer、Doxygen 和 metadata scan，不要求 v2 ABI baseline。
+### Core 与包交付
 
-### Source-compatible Core
+- 当前版本为 `2.0.0`，shared 库使用 `SOVERSION 2` / `libQCurl.so.2.0.0`。Core 在 2.x 内保证源码兼容，但 ABI 非稳定，下游每次更新都必须重新编译和链接。
+- 保留 Core、Blocking Extras、Other Extras、Test Support 四个逻辑消费面，物理产物收敛为 Core、Other Extras 与静态 Test Support 三个库。Blocking Extras 的实现和符号并入 Core，显式 `QCurl::BlockingExtras` 变为 INTERFACE target，只需额外安装 `BlockingExtrasDevelopment`。
+- Other Extras 仍独立编译；Diagnostics、WebSocket 为 Preview，Middleware Extras 为 Stable。Test Support 仅供开发，以上均不自动成为默认 Core。
+- shared/static 安装与隔离 consumer 证据改由 `BUILD_TESTING=OFF` producer 产生；static 与测试开启的组合在 configure 时以 `QCURL_STATIC_TESTING_UNSUPPORTED：静态构建不支持测试` 拒绝。
 
-- 将 `QCNetworkAccessManager`、`QCNetworkRequest`、`QCNetworkReply` 及异步 HTTP `head()` / `get()` / `post()` / `put()` / `patch()` / `deleteResource()` / `sendCustomRequest()` 路径纳入源码兼容 Core。
-- 将 HTTP method / version / error / priority types、TLS、proxy、timeout、retry、redirect、transfer、cache policy、connection pool config / manager、middleware base、logger、default logger 和 cancel token 纳入源码兼容 Core。
-- 将 proxy 的 fail-closed 默认行为纳入源码兼容 Core：未显式配置代理或显式设置 `QCNetworkProxyConfig::ProxyType::None` 时，QCurl 会禁止 libcurl 从 `HTTP_PROXY` / `HTTPS_PROXY` 等环境变量隐式继承代理。
-- 将 lane-aware scheduler、Cache lookup、Multipart builder、body helper、transfer/download/resumable job types 纳入源码兼容 Core。
-- 将 Core cookie API `QCurl::QCCookie`、`QCCookieOperationResult`、`QCCookieExportResult` 纳入源码兼容 Core；默认 Core consumer 不需要 QtNetwork cookie 类型或 `Qt6Network` 链接依赖。
+### Breaking changes
 
-### Package-shipped non-default surfaces
+- 相对 v1 有意打破源码与 ABI，不提供 alias、wrapper、shim、兼容开关或迁移窗口。2.0 不生成稳定 ABI baseline，动态符号 allowlist 只防止实现符号泄漏。
+- `QCNetworkRequest(const QUrl &)` 改为 explicit，依赖隐式转换的调用须显式构造请求。
+- 缓存策略移除有损 QMap overload，改用有序 raw headers，保留重复字段；缓存读取改为包含 method、规范化 URL、Vary 请求头和认证分区的结构化 key，清理返回结构化结果。
+- 未配置代理或显式选择 None 时禁止继承环境代理；需要代理的程序须显式设置配置。合法自定义 HTTP method token 按原字节发送，请求头按大小写无关字段名替换。
+- 协议限制改用 `QCNetworkProtocols` flags；HTTP 头名和 content encoding 提供命名常量，仍允许自定义字符串。
+- 可失败的重定向/传输配置、RetryPolicy、连接池配置、logger 与 WebSocket 命令返回显式接受结果；无效输入拒绝且不修改旧状态。RetryPolicy 使用 validated factory，自动重试默认关闭，非 GET/HEAD 需要显式幂等键策略。
+- logger 注入改为 opaque `QCNetworkLoggerHandle`；manager 和已创建 reply 分别保留快照。文件配置/日志写入返回 `QCNetworkLogResult`，不得忽略部分失败。
+- cookie 异步操作只通过每次调用的 QFuture 返回结果，不再并行发出结果信号。`QCCookie` 是 v1 已有的 Core 值模型，不是本次新增迁移。
+- WebSocket pool 的 acquire/preWarm 使用逐调用 QFuture；租借以纯值 LeaseId 表达，owner thread 临时 resolve，归还返回 LeaseResult；clearPool/setConfig 返回可检查的 bool 和可选错误输出，失败不改变池状态。
 
-- 交付面固定为 Core、Blocking Extras、Other Extras、Test Support 四个逻辑消费组件；物理产物收敛为 `libQCurl`、`libQCurlOtherExtras` 和静态 `libQCurlTestSupport` 三个库，Preview 是成熟度，Internal 是可见性，不建立第五模块。
-- Blocking Extras 保留独立头文件、`COMPONENTS BlockingExtras` 和 `QCurl::BlockingExtras` 显式消费面，但实现编入 `libQCurl`；该 CMake target 为 `INTERFACE`，只需安装 `BlockingExtrasDevelopment`，不再生成独立 runtime library。
-- Other Extras 保持独立 shared/static 聚合库；consumer 需要安装 `OtherExtrasRuntime` / `OtherExtrasDevelopment`，显式 `COMPONENTS OtherExtras` 并链接 `QCurl::OtherExtras`。Diagnostics 与 WebSocket 标记为 Preview，Middleware Extras 标记为 Stable。
-- Test Support 从 Core 抽离为开发静态库；consumer 只安装 `TestSupportDevelopment`，显式 `COMPONENTS TestSupport` 并链接 `QCurl::TestSupport`。它不属于生产 Runtime。
-- Core 动态符号 allowlist 同时覆盖 Core 与 Blocking Extras 公共符号；Other Extras 保持独立 allowlist，Test Support 为静态开发库，不建立动态符号门禁。
+### 调度与传输
 
-### Compatibility boundary
+- lane 配置、调度通知、同步启动前取消及 Pending 的 defer/undefer/优先级控制统一经 manager；命令返回 `SchedulerCommandResult`，拒绝无副作用，借用 reply 与值快照的生命周期明确区分。
+- scheduler 实现私有化，旧公开实现类型/配置统计类型、quantum、可配置 default lane、UnknownLaneMode 和旧带宽开关退出；按单一启动权重轮转。
+- admission core 统一管理队列，修正 busy lane 删除、policy 重入、重复取消计数与极端权重算术；保留启动票据和原 multi 生命周期。admissionByteBudget 只延迟新请求启动，不提供 manager 聚合限速。
+- 修正流式消费后透明重试与下载输出回滚边界，续传成功要求 identity 表示与完整长度一致。手动 libcurl 关闭由应用级 QCurlRuntime 协调，不支持动态卸载。
+- 补充 WebSocket pool 四类公共信号及 acquire/release/clearPool 的同步重入覆盖，以及匹配、延迟、错误、缺失 Pong 和连接断开的本地 keepalive 用例；测试存在不等于当前候选已执行通过。
 
-- 1.0.0 是已发布的历史 ABI baseline；2.0.0 相对 v1 hard-break，并建立新的 Core 源码兼容线，但不建立稳定 ABI。
-- 本发布不提供 v1 surface 的兼容层、alias、wrapper、ABI shim 或迁移窗口。
-- 下游应以 2.0.0 头文件、CMake package、pkg-config 和当前 shared/static 产物重新构建。
-- 后续每次 QCurl 2.x 更新也要求下游重新编译和链接；`SOVERSION 2` 只表示当前装载命名空间。
-- `QCNetworkRequest(const QUrl &)` 现在是 `explicit`：依赖 `QUrl` 隐式转换的源码必须改为 `QCNetworkRequest{url}`；该变更不改变构造函数符号或对象布局，不提供兼容重载或迁移开关。
-- Core cookie public API 不保留 QtNetwork cookie overload / alias / shim / wrapper；下游应迁移到 `QCurl::QCCookie`。
-- 未显式配置代理的请求不再继承 libcurl 环境代理；需要代理的调用方必须显式设置 `QCNetworkProxyConfig`。
+### 发布与证据边界
 
-### ABI policy
+- release manifest 绑定唯一正式发布合同，而不是可变任务进度或历史审查；使用六棵显式 producer 树、full/final 验收和 `abiMode=none`。操作命令只在[发布流程](docs/dev/release/release-procedure.md)维护。
+- tag、GitHub Release、assets/checksums 不由本条目或本地 PASS 自动创建。SBOM、签名与 provenance 尚不是已交付能力。
+- 稳定 ABI 合同与首份 baseline 为[Deferred 项目](docs/dev/release/stable-abi-contract-and-baseline.md)，不属于 2.0 发布阻断项。
 
-- 2.0.0 的正式 release gate 使用 `abiMode=none`，不生成或要求 `qcurl-core-v2.abi.xml`。
-- 动态符号 allowlist 继续检查 private/internal export 泄漏，但不构成二进制兼容证据。
-- 稳定 ABI 合同、支持平台矩阵和首份 baseline 作为未来 TODO，见 `docs/roadmap/stable-abi-contract-and-baseline.md`。
-
-### Verification
-
-- `python3 -m py_compile scripts/qcurl_abi_gate.py scripts/run_release_gate.py`
-- `pytest -q tests/test_release_gate_unit.py`
-- 按 `docs/dev/build-and-test.md` 的六树命令执行 `scripts/run_release_gate.py --tier full --abi-mode none --dry-run`
-- `python3 scripts/run_release_gate.py --scan-metadata --release-shared-build-dir build-release-shared`
-- `git diff --check`
-
-### Not included in this release claim
-
-- Tag、GitHub Release、release assets、checksums、SBOM、signature 和 provenance 尚未创建或上传。
-- WebSocket、Diagnostics、Middleware Extras 不随 2.0.0 Core 一起宣布 Stable。
-- 稳定 ABI 合同、v2 ABI baseline 和跨 2.x 二进制兼容承诺不属于本次发布。
-- 本条目是 2.0.0 release-candidate changelog；只有完成后续 tag 与 GitHub Release 授权，才能改写为已发布条目。
+调用方逐项升级见[迁移指南](docs/user/migration-2.0.md)，精确组件范围见[正式发布合同](docs/dev/release/2.0.0-hard-break-release-contract.md)。
 
 ## [1.0.0] - 2026-06-24
 
-v1.0.0 已发布。该版本是历史 Core ABI 基线；后续 v2.0.0 hard-break 不提供 v1 兼容层。
+v1.0.0 已发布，是历史 Core ABI 基线；完整发布记录从[历史索引](docs/dev/archive/README.md)查阅。后续 2.0 hard-break 不提供 v1 兼容层。

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "authority": "docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md",
+  "authority": "docs/dev/archive/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md",
   "reviewScope": "QCURL_INSTALL_HEADERS plus Blocking Extras, Other Extras and Test Support",
   "hardBreakAllowlist": [
     "fallible.request-config",

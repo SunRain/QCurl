@@ -46,7 +46,7 @@ build/doxygen/index.html
 - `_p.h`、`src/private/` 和未安装 internal helper 不得进入 release API 文档输入。
 - 非 Core 组件可以生成文档，但必须标注组件；Preview API 还必须标注成熟度，不能写入 Core 源码兼容范围。
 - 当前 Core API 文档必须反映结构化 `QCNetworkCacheRequestKey`、`cachePartitionKey`、统一 retry method gate、`QCNetworkLoggerHandle` opaque ownership 与 reply snapshot；private transfer record 和 global-init state 不进入安装面文档。
-- 注释风格参考：`CPP_Code_Comment_Guidelines.md`。
+- 注释风格参考：[中文注释规范](../../Qt6_CPP17_Coding_Style/cn/CPP_Code_Comment_Guidelines.md)。
 - 新增、移动或删除公共头文件时，先同步 `tests/public_api/surface_manifest.json` 与 public API gate，再重新生成 Doxygen 输入片段。
 - 当前仓库未配置 Doxyqml，且没有 QML public API；Doxyqml 在本 profile 中不适用，不能把
   普通 Doxygen 生成成功记录为 Doxyqml 通过。

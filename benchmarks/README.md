@@ -41,6 +41,6 @@ cmake --build build --parallel
 
 ## 文档规则
 
-基准测试文档与 `docs/reference/benchmarks.md` 和 `docs/reference/performance.md` 对齐。
+基准方法、命令和结果解释统一见 [性能回归](../docs/dev/performance.md)。
 不包含固定吞吐量、延迟或通过率数值，除非绑定到日期报告和环境说明。
 不重新引入旧的 pre-1.0、RC 或基于日期的发布叙述。

@@ -26,4 +26,4 @@
 
 ## 公开披露
 
-安全修复合并、版本发布和 advisory 公开应按 `docs/dev/release-procedure.md` 执行。未经维护者确认前，不应在公开 issue、commit message 或 release notes 中暴露可直接利用的细节。
+安全修复合并、版本发布和 advisory 公开应按 `docs/dev/release/release-procedure.md` 执行。未经维护者确认前，不应在公开 issue、commit message 或 release notes 中暴露可直接利用的细节。

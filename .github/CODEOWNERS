@@ -5,10 +5,10 @@
 /CMakeLists.txt @SunRain
 /cmake/ @SunRain
 /.github/ @SunRain
-/docs/dev/release-procedure.md @SunRain
-/docs/dev/supply-chain.md @SunRain
+/docs/dev/release/release-procedure.md @SunRain
+/docs/dev/release/supply-chain.md @SunRain
 
 # Public API and release contract
 /src/*.h @SunRain
-/docs/arch/1.0-first-stable-release-contract.md @SunRain
-/docs/arch/public-header-boundary.md @SunRain
+/docs/dev/release/2.0.0-hard-break-release-contract.md @SunRain
+/docs/dev/architecture/public-header-boundary.md @SunRain

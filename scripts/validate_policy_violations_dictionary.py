@@ -295,13 +295,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate policy_violations dictionary and forbid unregistered codes.")
     parser.add_argument(
         "--dictionary",
-        default="docs/uce/policy_violations_dictionary.json",
-        help="Path to machine-readable dictionary JSON (default: docs/uce/policy_violations_dictionary.json).",
+        default="docs/dev/uce/policy_violations_dictionary.json",
+        help="Path to machine-readable dictionary JSON (default: docs/dev/uce/policy_violations_dictionary.json).",
     )
     parser.add_argument(
         "--markdown",
-        default="docs/uce/policy_violations_dictionary.md",
-        help="Path to human-readable dictionary MD (default: docs/uce/policy_violations_dictionary.md).",
+        default="docs/dev/uce/policy_violations_dictionary.md",
+        help="Path to human-readable dictionary MD (default: docs/dev/uce/policy_violations_dictionary.md).",
     )
     return parser.parse_args(argv)
 

@@ -122,6 +122,6 @@ def test_policy_dictionary_workflow_tracks_versioned_inputs(event: str) -> None:
     )
     paths = workflow["on"][event]["paths"]
     for suffix in ("json", "md"):
-        relative = f"docs/uce/policy_violations_dictionary.{suffix}"
+        relative = f"docs/dev/uce/policy_violations_dictionary.{suffix}"
         assert any(fnmatchcase(relative, pattern) for pattern in paths)
     assert not any(".helloagents" in pattern for pattern in paths)

@@ -35,5 +35,5 @@ QCNetworkLogger::log(const NetworkLogEntry &entry)` contract.
 
 ## Related docs
 
-- `docs/arch/1.0-first-stable-release-contract.md`
+- [当前发布合同](../../docs/dev/release/2.0.0-hard-break-release-contract.md)
 - `docs/dev/api-docs.md`

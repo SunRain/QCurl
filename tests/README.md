@@ -53,7 +53,7 @@ Public API gate 覆盖：
 
 `tests/libcurl_consistency/run_gate.py` 是一致性测试唯一受支持的取证入口。它会统一处理 capabilities、pytest 规划、schema 校验、redaction 和 gate report。裸 `pytest` 只能用于本地诊断，不能单独作为通过证据。
 
-专题状态看板已内部化到 `docs/internal/maintainer-backlog/libcurl-consistency.md`，不再作为公开测试入口。
+持续维护规则见 [build-and-test](../docs/dev/build-and-test.md#maintenance-rules)；[旧状态板](../docs/dev/archive/topics/libcurl-consistency.md)仅作只读历史，不再作为更新或任务输出目标。
 
 ## 证据工件
 
@@ -68,10 +68,12 @@ Public API gate 覆盖：
 
 ## 命令 SSOT
 
-构建、httpbin、QtTest、public API、libcurl consistency、release gate 和“基本无问题”验收命令统一见：
+日常构建、httpbin、QtTest、public API 与 libcurl consistency 命令见：
 
 - `docs/dev/build-and-test.md`
 
+候选发布命令见 [release procedure](../docs/dev/release/release-procedure.md)，UCE 启动与归档见 [UCE](../docs/dev/uce/README.md)。
+
 测试门禁可证明边界和非证明边界见：
 
-- `docs/test_gate.md`
+- [日常测试判据](../docs/dev/build-and-test.md#判据与证据)与 [UCE 证据边界](../docs/dev/uce/README.md#5-可证与不可证边界)。

@@ -1,6 +1,6 @@
 # 常见配置
 
-本页给出“常用配置点”的导航，避免读者在大量 API 中迷路；更细的行为契约以代码与注释为准（Ground Truth）。
+本页说明请求与管理器的常用配置、失败边界和使用前提。先按[Quickstart](quickstart.md)准备 manager、事件循环及独立 consumer；示例片段中的 `manager` 均在其 owner thread 使用。更细的参数与生命周期以公开头注释为准。
 
 ## 1. 请求级配置（推荐从 `QCNetworkRequest` 开始）
 
@@ -33,20 +33,50 @@
 - 未设置 `setProxyConfig(...)` 或显式设置 `QCNetworkProxyConfig::ProxyType::None` 时，请求不会继承 libcurl 的 `HTTP_PROXY` / `HTTPS_PROXY` 等环境代理。
 - 需要代理时，必须显式设置 `QCNetworkProxyConfig` 的类型、地址、端口和认证信息。
 
+### 内存 body 与 Multipart
+
+`QCNetworkBody` 生成 JSON/form-urlencoded body，并保存匹配的 Content-Type。传给
+manager 的 post/put/patch 时，仅在请求未显式设置 Content-Type 的情况下自动补齐，
+不会覆盖调用方设置。form-urlencoded 可保留同名参数：
+
+```cpp
+#include <QCNetworkBody.h>
+
+auto body = QCurl::QCNetworkBody::fromFormUrlEncoded(
+    QList<QPair<QString, QString>>{
+        {QStringLiteral("tag"), QStringLiteral("one")},
+        {QStringLiteral("tag"), QStringLiteral("two")},
+    });
+auto *formReply = manager.post(request, body);
+```
+
+Core 的 `QCMultipartFormData` 负责字段构建，再通过 `QCNetworkMultipartBody` 生成内存 body，
+发送仍走 manager；下面片段使用纯文本字段，不依赖本机文件：
+
+```cpp
+#include <QCMultipartFormData.h>
+#include <QCNetworkMultipartBody.h>
+#include <QCNetworkHttpHeaders.h>
+
+QCurl::QCMultipartFormData form;
+form.addTextField("userId", "12345");
+const auto body = QCurl::QCNetworkMultipartBody::fromFormData(form);
+request.setRawHeader(QCurl::httpheaders::kContentType, body.contentType());
+auto *uploadReply = manager.post(request, body.data());
+```
+
+内存 builder 也可添加文件字段；大文件改用上述借用设备或单文件 streaming body，
+不要把整个文件装入内存。reply 的连接、读取和释放沿用 Quickstart。
+
 ### 值语义与 `operator==`
 
 - `QCNetworkRequest` 是值语义配置对象，但 `operator==` 当前只比较 URL、follow redirect、raw headers、Range、HTTP version 与 `lane`。
 - `sslConfig()` / `proxyConfig()` / `timeoutConfig()` / `retryPolicy()` / `httpAuth()` 以及 `priority`、cache 等执行配置族 **不参与** `operator==`。
 - 如果你需要判断“完整执行配置是否一致”，请分别读取这些 config family，而不要把 `operator==` 当作全量 diff。
 
-### 优先级（调度器）
+### 调度
 
-`setPriority(...)` 会设置 `QCNetworkRequestPriority`，用于调度器出队顺序。当前调度契约为**非抢占式**（non-preemptive）：已 Running 的请求不会因更高优先级到来而被中断。
-
-补充说明：
-
-- 通常优先使用 `High/VeryHigh`，适合大多数“希望尽快处理”的前台请求。
-- 如果你还需要理解 `lane`、`Critical`、lane reservation，或想按 `Control / Transfer / Background` 分车道配置，请统一参考 `docs/user/lane-scheduler.md`。
+请求的 `setPriority()` / `setLane()` 与 manager 的 policy 配合使用；优先级不抢占运行中的请求。lane、reservation、通知及取消统一见[调度合同](lane-scheduler.md)。
 
 ## 2. 管理器级配置（统一策略与复用）
 
@@ -70,13 +100,40 @@ manager.setLogger(logger);
 内建 Qt 日志、请求调试输出、内建 logger 与 trace 统一隐藏敏感查询值；URL 用户信息也不进入
 常规 URL 诊断。重定向地址与 Basic-over-HTTP 警告同样脱敏，不依赖是否注入 logger。
 
-补充说明（优先级调度契约）：
-
-- 调度器为**非抢占式**（non-preemptive）：优先级只影响 pending 出队顺序；已 Running 的请求不会因更高优先级到来而被中断。
-- 与 lane 相关的完整行为、推荐车道划分和配置建议，统一参考 `docs/user/lane-scheduler.md`。
-- 更细的底层定义仍以 `src/QCNetworkAccessManager.h` 与 `src/QCNetworkRequestPriority.h` 的注释为准。
-
 ## 3. HTTP、重试和缓存边界
+
+<a id="http-version"></a>
+### HTTP 版本与 HTTP/3
+
+HTTP 版本是请求级偏好，QCurl 将其交给 libcurl，不保证每个环境都使用 HTTP/3。
+
+| 配置 | 协商与拒绝边界 |
+| --- | --- |
+| `HttpAny` | 不表达偏好，由 libcurl 自动协商 |
+| `Http3` | 优先尝试 HTTP/3，允许按 libcurl 能力和服务端协商降级 |
+| `Http3Only` | 只接受 HTTP/3；能力或服务端不满足时失败，不静默降级 |
+
+最低 libcurl 仍为 7.85.0；`Http3Only` 额外要求编译头与运行时均达到 7.88.0，且运行时带 HTTP/3/QUIC 支持。缺少 `CURL_HTTP_VERSION_3ONLY` 不能改用可降级的 Http3。能力预检查拒绝时，**Core 返回 InvalidRequest，Blocking Extras 返回 UnsupportedCapability，均保留诊断且不发送请求**。协商阶段的传输失败另按相应执行器报告。
+
+在 Quickstart 的请求创建后、`manager.get()` 之前设置：
+
+```cpp
+#include <QCNetworkHttpVersion.h>
+
+request.setHttpVersion(QCurl::QCNetworkHttpVersion::Http3); // 业务允许降级。
+```
+
+若业务只接受 HTTP/3，改为 `QCNetworkHttpVersion::Http3Only`。服务端也必须支持 QUIC，网络须允许 UDP/443；只看到 curl 命令行工具宣称 HTTP3 还不能证明 QCurl 加载的 libcurl 是同一个构建。能力验证和严格 HTTP/3 专题见[构建与测试](../dev/build-and-test.md#libcurl-consistency)。
+
+HTTP/3 不一定更快，首次握手、UDP 可达性和服务端实现都会影响结果；性能判断需同环境多次采样，见[性能回归](../dev/performance.md)。
+
+### TLS 与代理
+
+默认保持证书链与主机名验证。通过 `QCNetworkSslConfig` 设置 CA、客户端证书与 TLS 范围，再交给 `request.setSslConfig()`；不要用关闭校验作为生产修复。
+
+代理通过 `QCNetworkProxyConfig` 显式设置，支持 HTTP/HTTPS/SOCKS；HTTPS proxy 的 TLS 配置与目标站点 TLS 配置分开，清除代理 TLS 使用 `clearTlsConfig()`。默认 None 禁止隐式环境代理。
+
+### HTTP 方法、重试与缓存
 
 Core 请求入口只接受 `http` 和 `https` scheme；初始请求与重定向都会使用 `http,https` 协议白名单。`file`、`ftp`、`ftps` 不属于 Core HTTP 路径。
 
@@ -96,8 +153,7 @@ Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP me
 
 缓存仍是显式 `setCache()` 注入的 Core 能力，不默认启用。缓存请求键包含 method、规范化 URL、参与 `Vary` 的请求头和
 调用方提供的 `cachePartitionKey`；带认证身份但没有分区的响应不得存储。当前稳定存储范围是 GET 200，HEAD 只更新已有 GET
-条目的元数据；`no-store` 不落盘，`no-cache` / `max-age=0` 必须先条件重验证。磁盘 entry 只接受有界 fixed-header
-v4，并通过禁用 direct fallback 的 `QSaveFile` 单文件原子提交；v3/未知格式按 miss 清理。`clear()` 返回结构化状态、删除/失败
+条目的元数据；`no-store` 不落盘，`no-cache` / `max-age=0` 必须先条件重验证。磁盘缓存使用当前有界格式；旧版或未知格式不复用为有效命中。`clear()` 返回结构化状态、删除/失败
 计数和残留字节，调用方不得忽略部分失败。
 
 无缓存或 `OnlyNetwork` 路径不保留已消费响应的缓存副本。允许缓存的 GET 响应使用现有
@@ -142,10 +198,20 @@ WebSocket 的 public 配置入口集中在以下头文件注释：
 
 示例目录（`examples/WebSocketDemo/`、`examples/WebSocketPoolDemo/`）只演示典型用法，不定义参数合同。
 
-## 5. 排障与常见问题
+## 5. Blocking Extras 的响应边界
+
+显式启用 BlockingExtras 后，`QCBlockingRequestOptions::maxInMemoryBodyBytes()` 限制内存响应，
+超限返回 BodyTooLarge。大响应使用 `downloadToDevice()` 写入调用方设备，此时 body 为空，
+bytesReceived 记录实际字节。InputDeviceError、OutputDeviceError、ReplayNotSupported 等错误
+应作为主判断；diagnosticCurlCode 只辅助定位，不能代替结果状态。
+
+同步 cookie 使用 `QCBlockingCookieStore` 的 snapshot/delta，不跨线程访问 live manager
+cookie store。设备线程、重放能力与详细结果约束见[Blocking 公开头](../../src/QCBlockingNetworkClient.h)。
+
+## 6. 排障与常见问题
 
 建议优先：
 
 1. 开启/查看日志（如你已启用日志或中间件）
-2. 对照 `docs/reference/performance.md` 与相关模块文档
-3. 复现最小样例后再上报问题（见 `SUPPORT.md`）
+2. 对照 [性能回归](../dev/performance.md) 与相关模块文档
+3. 复现最小样例后再上报问题（见[支持与反馈](../../SUPPORT.md)）

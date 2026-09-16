@@ -38,6 +38,6 @@ cmake --build build --target NetworkFeaturesDemo
 
 ## Related docs
 
-- `docs/reference/http3.md`
-- `docs/arch/1.0-first-stable-release-contract.md`
-- `docs/arch/1.0.0-release-notes.md`
+- [HTTP 版本配置](../../docs/user/configuration.md#http-version)
+- [当前发布合同](../../docs/dev/release/2.0.0-hard-break-release-contract.md)
+- [当前版本变化](../../CHANGELOG.md#unreleased)

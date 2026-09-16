@@ -517,7 +517,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
         repo
         / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation"
     )
-    authority = [repo / "docs/arch/2.0.0-hard-break-release-contract.md"]
+    authority = [repo / "docs/dev/release/2.0.0-hard-break-release-contract.md"]
     local_files = [
         package / name for name in ("requirements.md", "plan.md", "contract.json", "tasks.md")
     ]
@@ -540,16 +540,16 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
         session / "artifacts/closeout.json",
     ]:
         path.write_text(path.name + "\n", encoding="utf-8")
-    (repo / "docs/reviews/2026-07-31-release-blockers.md").parent.mkdir(
+    (repo / "docs/dev/archive/reviews/2026-07-31-release-blockers.md").parent.mkdir(
         parents=True, exist_ok=True
     )
-    (repo / "docs/reviews/2026-07-31-release-blockers.md").write_text(
+    (repo / "docs/dev/archive/reviews/2026-07-31-release-blockers.md").write_text(
         "historical\n", encoding="utf-8"
     )
     exclude = repo / ".git/info/exclude"
     exclude.write_text(
         exclude.read_text(encoding="utf-8")
-        + "\n.helloagents/\ndocs/reviews/\ndocs/arch/2.0.0-hard-break-release-contract.md\n",
+        + "\n.helloagents/\ndocs/dev/archive/reviews/\ndocs/dev/release/2.0.0-hard-break-release-contract.md\n",
         encoding="utf-8",
     )
     return repo, authority
@@ -567,7 +567,7 @@ def test_default_authority_paths_bind_versioned_release_contract(
     ]
 
     assert relative_paths == [
-        "docs/arch/2.0.0-hard-break-release-contract.md",
+        "docs/dev/release/2.0.0-hard-break-release-contract.md",
     ]
 
 
@@ -610,10 +610,14 @@ def test_full_gate_requires_exact_authority_set(tmp_path: Path) -> None:
     actual = _full_gate_authority_paths(repo, authority)
     assert sorted(actual) == sorted(path.resolve() for path in authority)
 
+    obsolete = repo / "docs/arch/2.0.0-hard-break-release-contract.md"
+    obsolete.parent.mkdir(parents=True, exist_ok=True)
+    obsolete.write_bytes(authority[0].read_bytes())
     invalid_sets = (
         [],
         authority + [repo / "extra-authority.md"],
         authority + [authority[0]],
+        [obsolete],
     )
     for invalid in invalid_sets:
         with pytest.raises(ValueError, match="authority"):

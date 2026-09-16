@@ -36,7 +36,7 @@
 | --- | --- |
 | `tests/libcurl_consistency/requirements.lock.txt` | Python test tooling lock file；仅用于测试/门禁。 |
 | `tests/qcurl/package-lock.json` | Node-based local test support lock file；仅用于测试/门禁。 |
-| `docs/local-mail-server/docker-compose.yml` | 本地邮件测试/开发 compose 示例；镜像治理见 `docs/dev/supply-chain.md`。 |
+| `docs/local-mail-server/docker-compose.yml` | 本地邮件测试/开发 compose 示例；镜像治理见 `docs/dev/release/supply-chain.md`。 |
 
 ## SPDX / REUSE policy
 

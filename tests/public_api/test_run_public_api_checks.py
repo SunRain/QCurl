@@ -360,7 +360,7 @@ def test_hard_break_guards_reject_legacy_release_and_pool_contracts(
     tmp_path,
     capsys,
 ) -> None:
-    docs = tmp_path / "docs" / "dev"
+    docs = tmp_path / "docs" / "dev" / "release"
     docs.mkdir(parents=True)
     (docs / "release-procedure.md").write_text(
         "推荐使用三棵构建树。\n"
@@ -392,7 +392,7 @@ def test_hard_break_guards_reject_legacy_release_and_pool_contracts(
 
 
 def test_hard_break_guards_do_not_join_adjacent_cmake_commands(tmp_path, capsys) -> None:
-    docs = tmp_path / "docs" / "dev"
+    docs = tmp_path / "docs" / "dev" / "release"
     docs.mkdir(parents=True)
     (docs / "release-procedure.md").write_text(
         "cmake -S . -B build-release-shared -DBUILD_TESTING=OFF \\\n"
@@ -410,13 +410,13 @@ def test_hard_break_guards_do_not_join_adjacent_cmake_commands(tmp_path, capsys)
 
 def test_current_release_docs_match_six_tree_static_and_pool_contracts() -> None:
     repo = Path(__file__).resolve().parents[2]
-    release_procedure = (repo / "docs/dev/release-procedure.md").read_text(
+    release_procedure = (repo / "docs/dev/release/release-procedure.md").read_text(
         encoding="utf-8"
     )
     build_and_test = (repo / "docs/dev/build-and-test.md").read_text(
         encoding="utf-8"
     )
-    pool_boundary = (repo / "docs/arch/public-header-boundary.md").read_text(
+    pool_boundary = (repo / "docs/dev/architecture/public-header-boundary.md").read_text(
         encoding="utf-8"
     )
 
@@ -996,7 +996,8 @@ def test_release_metadata_scan_rejects_legacy_identity(tmp_path, capsys) -> None
     import scripts.run_release_gate as release_gate
 
     (tmp_path / "README.md").write_text("QCurl 3.0.0 current release\n", encoding="utf-8")
-    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
     (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 1
@@ -1007,7 +1008,8 @@ def test_release_metadata_scan_allows_external_protocol_versions(tmp_path, capsy
     import scripts.run_release_gate as release_gate
 
     (tmp_path / "README.md").write_text("HTTP/3 and Qt 6 are external versions\n", encoding="utf-8")
-    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("libcurl supports HTTP/2 and HTTP/3\n", encoding="utf-8")
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text("libcurl supports HTTP/2 and HTTP/3\n", encoding="utf-8")
     (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 0
@@ -1018,7 +1020,8 @@ def test_release_metadata_scan_ignores_generated_build_trees(tmp_path, capsys) -
     import scripts.run_release_gate as release_gate
 
     (tmp_path / "README.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
-    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
     (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
     for build_dir_name in ("build-clang", "build-asan-ubsan"):
         build_dir = tmp_path / build_dir_name
@@ -1035,7 +1038,7 @@ def test_release_metadata_scan_ignores_generated_build_trees(tmp_path, capsys) -
 def test_release_metadata_scan_allows_published_v1_history_and_current_v2(tmp_path, capsys) -> None:
     import scripts.run_release_gate as release_gate
 
-    docs = tmp_path / "docs" / "arch"
+    docs = tmp_path / "docs" / "dev" / "archive" / "1.0"
     docs.mkdir(parents=True)
     (docs / "1.0.0-release-notes.md").write_text(
         "QCurl 1.0.0 first stable was published.\n",
@@ -1045,7 +1048,8 @@ def test_release_metadata_scan_allows_published_v1_history_and_current_v2(tmp_pa
         "latest published: v1.0.0; current development candidate: v2.0.0\n",
         encoding="utf-8",
     )
-    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text(
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text(
         "QCurl 2.0.0 architecture\n",
         encoding="utf-8",
     )
@@ -1070,7 +1074,8 @@ def test_release_metadata_scan_rejects_current_v1_candidate_identity(tmp_path, c
         "QCurl 1.0.0 first stable candidate; tag not created yet.\n",
         encoding="utf-8",
     )
-    (tmp_path / "SYSTEM_DOCUMENTATION.md").write_text(
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text(
         "QCurl release identity\n",
         encoding="utf-8",
     )

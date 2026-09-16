@@ -50,7 +50,7 @@ _CODE_PRODUCING_MODULES = (
 
 def _registered_codes() -> set[str]:
     payload = json.loads(
-        (_REPO_ROOT / "docs" / "uce" / "policy_violations_dictionary.json").read_text(
+        (_REPO_ROOT / "docs" / "dev" / "uce" / "policy_violations_dictionary.json").read_text(
             encoding="utf-8"
         )
     )

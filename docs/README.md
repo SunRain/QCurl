@@ -1,44 +1,43 @@
-# QCurl documentation
+# QCurl 文档
 
-This documentation describes the latest published `QCurl 1.0.0` and the current `QCurl 2.0.0` release candidate.
+本文档对应当前 `2.0.0` 开发候选；`1.0.0` 是已发布历史。Core 在 2.x 内保证源码兼容，ABI 非稳定，每次更新都需要下游重新编译和链接。候选文档不是发布通过证明。
 
-## Public entrypoints
+## 用户
 
-- User guide: `docs/user/README.md`
-- Quick start: `docs/user/quickstart.md`
-- Configuration: `docs/user/configuration.md`
-- Flow control: `docs/user/flow-control.md`
-- Lane scheduler: `docs/user/lane-scheduler.md`
-- Build and test: `docs/dev/build-and-test.md`
-- Current release contract: `docs/arch/2.0.0-hard-break-release-contract.md`
-- Current release notes: `docs/arch/2.0.0-release-notes.md`
-- Migration guide: `docs/arch/2.0.0-migration-guide.md`
-- Release contract: `docs/arch/1.0-first-stable-release-contract.md`
-- Release notes: `docs/arch/1.0.0-release-notes.md`
-- Readiness report: `docs/arch/1.0-first-stable-readiness-report.md`
-- Release procedure: `docs/dev/release-procedure.md`
-- Future stable ABI project: `docs/roadmap/stable-abi-contract-and-baseline.md`
+| 任务 | 正文 |
+| --- | --- |
+| 安装并跑通独立 Core 程序 | [快速开始](user/quickstart.md) |
+| 请求、HTTP 版本、代理、TLS、重试、缓存和上传 | [常见配置](user/configuration.md) |
+| lane、优先级、reservation、取消与通知 | [Lane scheduler](user/lane-scheduler.md) |
+| 传输暂停、下载背压与上传源暂停 | [流控](user/flow-control.md) |
+| 升级已发布的 1.0 API/包 | [迁移到 2.0](user/migration-2.0.md) |
 
-## Maintainer reference
+用户可见变化见 [CHANGELOG](../CHANGELOG.md)，完整程序见[示例集合](../examples/README.md)。API 细节以安装头的注释为准，浏览文档的生成方式见下方维护者入口。
 
-- Architecture index: `docs/arch/README.md`
-- Historical 2.0 comprehensive review (its ABI-baseline conclusion is superseded by the current release contract): `docs/reviews/2026-08-05-qcurl-2.0.0-comprehensive-readonly-review-conclusion.md`
-- Current Qt6/C++17 source review: `docs/reviews/2026-08-12-qcurl-qt6-cpp17-current-src-review-comprehensive-conclusion.md`
-- Current tests and libcurl consistency review: `docs/reviews/2026-08-15-qcurl-tests-libcurl-consistency-review-conclusion.md`
-- Current libcurl consistency remediation WIP review: `docs/reviews/2026-08-17-qcurl-libcurl-consistency-remediation-wip-comprehensive-readonly-review-conclusion.md`
-- Current overdesign / compatibility-layer / workaround review (`49c2276`): `docs/reviews/2026-08-31-qcurl-overdesign-compat-workaround-readonly-review-conclusion.md`
-- **P1+P2+P3 cleanup & contract revision report**: `docs/reviews/2026-09-03-cleanup-p1-p2-p3-execution-report.md` — Executed P1-1, P1-2, P2-1, P2-2, P2-3, P3-1~P3-5 cleanup, fixed three false-green gates, removed five compatibility stubs, revised release authority handling with fail-loud + explicit declaration, verification passed
-- **P2-C/P2-B/P3 followup execution**: `docs/reviews/2026-09-03-cleanup-p1-p2-p3-followup-execution.md` — Completed P2-C (gate coverage for examples/benchmarks), P2-B (envelope failure path & exception handling), P3 (five low-risk renames & conftest cleanup), verification passed
-- **P3-6/RawHeaderPair/conftest final cleanup (historical snapshot)**: `docs/reviews/2026-09-03-cleanup-p3-6-final-execution.md` — Records the 2026-09-03 partial execution. Its P3-6 decommission conclusion is superseded by the current conditional UCE acceptance contract; fresh current-candidate evidence is still required before deletion is submit-ready.
-- Historical Qt6/libcurl lifecycle review (`a1bafb7`): `docs/reviews/2026-08-07-qcurl-qt6-libcurl-lifecycle-review-comprehensive-conclusion.md`
-- Developer docs: `docs/dev/README.md`
-- Supply-chain notes: `docs/dev/supply-chain.md`
-- Reference docs: `docs/reference/README.md`
-- Gate contract: `docs/test_gate.md`
-- UCE evidence contract: `docs/uce/README.md`
-- Architecture overview: `SYSTEM_DOCUMENTATION.md`
+## 开发者 / 维护者
 
-## Internal history
+### 开发与验证
 
-Pre-1.0 changelog history and old RC / 3.0 / incompatible-change documents live under `docs/internal/`.
-They are kept for audit/reference and should not be used as current public release guidance.
+- [贡献流程](../CONTRIBUTING.md)：提交与验证范围。
+- [构建与测试](dev/build-and-test.md)：日常构建、严格 QtTest、一致性专题与结果解释。
+- [公共头与安装边界](dev/architecture/public-header-boundary.md)：install/export、隔离 consumer 与四类公共合同检查。
+- [PIMPL 与 shared-data 规范](dev/pimpl-and-shared-data-style.md)：实现布局和 special members。
+- [API 文档生成](dev/api-docs.md)：manifest-driven Doxygen 与产物核对。
+- [性能回归](dev/performance.md)：方法、命令、阈值与证据局限。
+
+### 架构
+
+- [架构概览](dev/architecture/overview.md)：模块边界和请求路径。
+- [libcurl binding](dev/architecture/libcurl-binding-contract.md)：owner/lifetime、驱动、协议与诊断约束。
+- [请求归一化管线](dev/architecture/request-normalization-pipeline.md)。
+- [传输 pause/resume 实现](dev/architecture/transport-pause-resume.md)。
+- [业务移植尽调案例](dev/architecture/porting-due-diligence.md)：适配分层，不是上手或发布入口。
+
+### 发布与证据
+
+- [正式 2.0 发布合同](dev/release/2.0.0-hard-break-release-contract.md)：唯一 release identity authority。
+- [发布操作](dev/release/release-procedure.md)：六树、阶段、候选验证、打包与远端动作。
+- [UCE 使用与证据](dev/uce/README.md)：启动、tier、schema 入口与归档判据。
+- [供应链安全](dev/release/supply-chain.md)。
+- [未来稳定 ABI 项目](dev/release/stable-abi-contract-and-baseline.md)：Deferred，不是 2.0 发布阻断项。
+- [历史索引](dev/archive/README.md)：已发布 1.0、pre-1.0、dated review 与旧任务/ABI 证据；仅作追溯。

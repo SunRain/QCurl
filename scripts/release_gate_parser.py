@@ -23,7 +23,7 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         action="append",
         default=[],
-        help="authority input; full requires only docs/arch/2.0.0-hard-break-release-contract.md",
+        help="authority input; full requires only docs/dev/release/2.0.0-hard-break-release-contract.md",
     )
     parser.add_argument("--snapshot-only", action="store_true", help="write a T0 identity snapshot without claiming that gates passed")
     parser.add_argument("--verify-manifest", action="store_true", help="recompute identity and required gate/artifact status from --manifest")
