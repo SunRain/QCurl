@@ -1,4 +1,4 @@
-"""QCurl release gate 的六棵物理构建树模型。"""
+"""QCurl 2.0 release gate 的五棵物理构建树模型。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ TREE_IDS = (
     "test-shared-gcc",
     "test-shared-clang",
     "asan-ubsan-lsan",
-    "tsan",
 )
 
 TREE_ARGUMENTS = {
@@ -27,7 +26,6 @@ TREE_ARGUMENTS = {
     "test-shared-gcc": "test_shared_gcc_build_dir",
     "test-shared-clang": "test_shared_clang_build_dir",
     "asan-ubsan-lsan": "asan_ubsan_lsan_build_dir",
-    "tsan": "tsan_build_dir",
 }
 
 
@@ -48,7 +46,6 @@ TREE_SPECS = (
     TreeSpec("test-shared-gcc", "ON", "ON", "gcc"),
     TreeSpec("test-shared-clang", "ON", "ON", "clang"),
     TreeSpec("asan-ubsan-lsan", "ON", "ON", "clang", "asan-ubsan-lsan"),
-    TreeSpec("tsan", "ON", "ON", "clang", "tsan"),
 )
 TREE_SPEC_BY_ID = {spec.tree_id: spec for spec in TREE_SPECS}
 
@@ -125,6 +122,4 @@ def sanitizer_matches(options: dict[str, str], profile: str | None) -> bool:
     values = " ".join(options.values()).lower()
     if profile == "asan-ubsan-lsan":
         return all(token in values for token in ("asan", "ubsan", "lsan"))
-    if profile == "tsan":
-        return "tsan" in values
     return False

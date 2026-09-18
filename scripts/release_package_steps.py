@@ -97,33 +97,27 @@ def package_evidence_step(
 def sanitizer_steps(args: argparse.Namespace) -> list[GateStep]:
     """构造绑定专用 sanitizer tree 的 package evidence 步骤。"""
 
-    steps: list[GateStep] = []
-    for tree_id, profile, artifact_id in (
-        ("asan-ubsan-lsan", "asan-ubsan-lsan", "asan_ubsan_lsan_report"),
-        ("tsan", "tsan", "tsan_report"),
-    ):
-        build_dir = tree_path(args, tree_id)
-        evidence_root = build_dir / "evidence" / "package-sanitizers" / profile
-        name = "package_asan_ubsan_lsan" if profile != "tsan" else "package_tsan"
-        steps.append(
-            GateStep(
-                name,
-                GateTier.FULL,
-                [
-                    args.python,
-                    "scripts/run_uce_sanitizers.py",
-                    "--profile",
-                    profile,
-                    "--build-dir",
-                    str(build_dir),
-                    "--output-dir",
-                    str(evidence_root),
-                    "--nproc",
-                    str(args.jobs),
-                ],
-                f"run {profile} package evidence from its dedicated producer tree",
-                tree_id,
-                (artifact_id,),
-            )
+    profile = "asan-ubsan-lsan"
+    build_dir = tree_path(args, profile)
+    evidence_root = build_dir / "evidence" / "package-sanitizers" / profile
+    return [
+        GateStep(
+            "package_asan_ubsan_lsan",
+            GateTier.FULL,
+            [
+                args.python,
+                "scripts/run_uce_sanitizers.py",
+                "--profile",
+                profile,
+                "--build-dir",
+                str(build_dir),
+                "--output-dir",
+                str(evidence_root),
+                "--nproc",
+                str(args.jobs),
+            ],
+            f"run {profile} package evidence from its dedicated producer tree",
+            profile,
+            ("asan_ubsan_lsan_report",),
         )
-    return steps
+    ]

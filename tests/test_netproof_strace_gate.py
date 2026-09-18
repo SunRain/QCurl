@@ -120,15 +120,18 @@ def test_traced_subject_requests_socket_type_annotations(tmp_path: Path, monkeyp
 
 
 def test_subject_environment_disables_lsan_under_ptrace() -> None:
-    environment = build_subject_environment(
-        {
-            "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
-            "UBSAN_OPTIONS": "halt_on_error=1",
-        }
-    )
+    base = {
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+        "LSAN_OPTIONS": "detect_leaks=1:leak_check_at_exit=1:exitcode=23",
+        "UBSAN_OPTIONS": "halt_on_error=1",
+    }
+    environment = build_subject_environment(base)
 
     assert environment["ASAN_OPTIONS"] == "halt_on_error=1:detect_leaks=0"
+    assert environment["LSAN_OPTIONS"] == "leak_check_at_exit=1:exitcode=23:detect_leaks=0"
     assert environment["UBSAN_OPTIONS"] == "halt_on_error=1"
+    assert base["ASAN_OPTIONS"] == "detect_leaks=1:halt_on_error=1"
+    assert base["LSAN_OPTIONS"] == "detect_leaks=1:leak_check_at_exit=1:exitcode=23"
 
 
 def test_default_subject_command_targets_offline_gate(tmp_path: Path) -> None:

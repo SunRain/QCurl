@@ -5,9 +5,12 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 from typing import Callable
-import shutil
 import subprocess
-import sys
+
+from tests.public_api.consumer_build import build_consumer
+from tests.public_api.consumer_build import configure_and_build
+from tests.public_api.consumer_build import configure_consumer
+from tests.public_api.consumer_build import run_consumer
 
 from tests.public_api.consumer_contract_validators import validate_cache_core_contract_fixture
 from tests.public_api.consumer_contract_validators import validate_cache_policy_core_contract_fixture
@@ -49,35 +52,6 @@ CONSUMER_FIXTURE_VALIDATORS = (
     validate_cookie_async_result_core_contract_fixture,
     validate_middleware_core_contract_fixture,
 )
-
-
-def configure_and_build(
-    source_dir: Path,
-    build_dir: Path,
-    stage_dir: Path,
-    cmake: str,
-    config: str,
-    run_command: RunCommand,
-) -> None:
-    """Configure and build a fixture consumer project against the staged package."""
-
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
-
-    configure = [
-        cmake,
-        "-S",
-        str(source_dir),
-        "-B",
-        str(build_dir),
-        f"-DQCURL_STAGE_PREFIX={stage_dir}",
-    ]
-    run_command(configure)
-
-    build = [cmake, "--build", str(build_dir)]
-    if config:
-        build.extend(["--config", config])
-    run_command(build)
 
 
 def validate_consumer_fixture(source_dir: Path) -> None:
@@ -157,11 +131,11 @@ def run_metatype_consumer_smoke(args: Namespace, *, run_command: RunCommand, fai
             args.cmake,
             args.config,
             run_command,
+            args.consumer_cache,
         )
-        executable = args.build_dir / "qcurl_public_api_consumer_metatype_smoke"
-        if sys.platform == "win32":
-            executable = executable.with_suffix(".exe")
-        run_command([str(executable)])
+        run_consumer(
+            args.build_dir, "qcurl_public_api_consumer_metatype_smoke", args.config, run_command
+        )
     except RuntimeError as exc:
         return fail_func(f"consumer metatype smoke failed: {exc}")
 
@@ -170,30 +144,20 @@ def run_metatype_consumer_smoke(args: Namespace, *, run_command: RunCommand, fai
 
 
 def _configure_negative_consumer(args: Namespace, run_command: RunCommand, fail_func: FailFunc) -> int | None:
-    if args.negative_build_dir.exists():
-        shutil.rmtree(args.negative_build_dir)
-
-    configure = [
-        args.cmake,
-        "-S",
-        str(args.negative_source_dir),
-        "-B",
-        str(args.negative_build_dir),
-        f"-DQCURL_STAGE_PREFIX={args.stage_dir}",
-    ]
     try:
-        run_command(configure)
+        configure_consumer(
+            args.negative_source_dir, args.negative_build_dir, args.stage_dir,
+            args.cmake, args.consumer_cache, run_command,
+        )
     except RuntimeError as exc:
         return fail_func(f"negative consumer configure failed unexpectedly: {exc}")
     return None
 
 
 def _build_negative_consumer(args: Namespace, run_command: RunCommand, fail_func: FailFunc) -> int | None:
-    build = [args.cmake, "--build", str(args.negative_build_dir)]
-    if args.config:
-        build.extend(["--config", args.config])
-
-    proc = run_command(build, expect_success=False)
+    proc = build_consumer(
+        args.negative_build_dir, args.cmake, args.config, run_command, expect_success=False
+    )
     if proc.returncode == 0:
         return fail_func("negative consumer unexpectedly built successfully")
     return None
@@ -215,6 +179,10 @@ def run_consumer_smoke(args: Namespace, *, run_command: RunCommand, fail_func: F
             args.cmake,
             args.config,
             run_command,
+            args.consumer_cache,
+        )
+        run_consumer(
+            args.positive_build_dir, "qcurl_public_api_consumer_smoke", args.config, run_command
         )
     except RuntimeError as exc:
         return fail_func(f"positive consumer smoke failed: {exc}")

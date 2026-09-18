@@ -105,11 +105,10 @@ def build_subject_environment(base_environment: Mapping[str, str] | None = None)
     """Disable leak detection for the ptraced subject while preserving sanitizer hard-fail options."""
 
     environment = dict(base_environment) if base_environment is not None else os.environ.copy()
-    environment["ASAN_OPTIONS"] = _set_sanitizer_option(
-        environment.get("ASAN_OPTIONS", ""),
-        "detect_leaks",
-        "0",
-    )
+    for name in ("ASAN_OPTIONS", "LSAN_OPTIONS"):
+        environment[name] = _set_sanitizer_option(
+            environment.get(name, ""), "detect_leaks", "0"
+        )
     return environment
 
 

@@ -25,7 +25,7 @@
 | 一致性合同 | [libcurl consistency](docs/dev/build-and-test.md#libcurl-consistency) 的对应专题和负向判据 |
 | 发布范围、producer 或 release evidence | [发布操作](docs/dev/release/release-procedure.md)的对应检查；最终资格使用 full/final 与 `abi-mode none`，不要求 2.0 ABI baseline |
 
-检查选择应与影响相称；docs-only 不自动触发六树完整发布验收。任何定向 PASS 都不能代替未运行的产品测试或远端 CI。
+检查选择应与影响相称；docs-only 不自动触发五树完整发布验收。任何定向 PASS 都不能代替未运行的产品测试或远端 CI。
 
 ## 文档与 PR 要求
 

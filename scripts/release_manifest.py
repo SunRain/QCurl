@@ -106,7 +106,10 @@ def _identity_reasons(
     return reasons, actual
 
 
-def _gate_reasons(manifest: dict[str, Any]) -> tuple[list[str], list[str]]:
+def _gate_reasons(
+    manifest: dict[str, Any],
+    gate_contracts: dict[str, dict[str, Any]] | None,
+) -> tuple[list[str], list[str]]:
     gates = manifest.get("gates")
     if not isinstance(gates, dict):
         return ["gate schema missing"], []
@@ -114,7 +117,16 @@ def _gate_reasons(manifest: dict[str, Any]) -> tuple[list[str], list[str]]:
     results = gates.get("results")
     if not isinstance(required, list) or not isinstance(results, dict):
         return ["gate schema missing"], []
+    if not all(isinstance(gate, str) for gate in required):
+        return ["required gate IDs must be strings"], []
     reasons = []
+    if len(required) != len(set(required)):
+        reasons.append("duplicate required gate IDs")
+    if gate_contracts is not None:
+        if set(required) != set(gate_contracts):
+            reasons.append("required gate registry mismatch")
+        if set(results) != set(gate_contracts):
+            reasons.append("gate result registry mismatch")
     for gate in required:
         result = results.get(gate)
         if (
@@ -123,6 +135,12 @@ def _gate_reasons(manifest: dict[str, Any]) -> tuple[list[str], list[str]]:
             or result.get("returncode") != 0
         ):
             reasons.append(f"required gate missing or failed: {gate}")
+        if gate_contracts is not None and isinstance(result, dict):
+            expected = gate_contracts.get(gate, {})
+            if result.get("command") != expected.get("command"):
+                reasons.append(f"required gate command mismatch: {gate}")
+            if result.get("producerTreeId") != expected.get("producerTreeId"):
+                reasons.append(f"required gate producer tree mismatch: {gate}")
     return reasons, required
 
 
@@ -152,7 +170,7 @@ def verify_snapshot(
     )
     if expected_stage is not None and manifest.get("stage") != expected_stage:
         reasons.append("manifest stage does not match requested stage")
-    gate_errors, required_gates = _gate_reasons(manifest)
+    gate_errors, required_gates = _gate_reasons(manifest, gate_contracts)
     reasons.extend(gate_errors)
     actual_registry = None
     if isinstance(actual, dict):

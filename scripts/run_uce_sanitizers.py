@@ -160,7 +160,7 @@ def sanitizer_subject_environment(
     *,
     base_environment: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """构造严格检测环境，保留 ASan profile 的既有设置。"""
+    """构造严格检测环境，外部选项不能禁用泄漏检测或失败退出。"""
     environment = dict(os.environ if base_environment is None else base_environment)
     if profile.name not in {"asan-ubsan-lsan", "tsan"}:
         return environment
@@ -169,6 +169,20 @@ def sanitizer_subject_environment(
     if profile.name == "tsan":
         options = _strict_tsan_options(repo_root, options)
         environment["LC_ALL"] = "C.UTF-8"
+    else:
+        for name, value in {
+            "detect_leaks": "1", "leak_check_at_exit": "1",
+            "halt_on_error": "1", "exitcode": "1",
+        }.items():
+            options = _set_sanitizer_option(options, name, value)
+        for variable, required in {
+            "LSAN_OPTIONS": {"detect_leaks": "1", "leak_check_at_exit": "1", "exitcode": "23"},
+            "UBSAN_OPTIONS": {"halt_on_error": "1", "exitcode": "1", "print_stacktrace": "1"},
+        }.items():
+            effective = environment.get(variable, "")
+            for name, value in required.items():
+                effective = _set_sanitizer_option(effective, name, value)
+            environment[variable] = effective
     addr2line = shutil.which("addr2line", path=environment.get("PATH"))
     if addr2line:
         # LLVM 22 symbolizer 在并发 QtTest 退出时可能崩溃，保留可定位的替代符号解析。

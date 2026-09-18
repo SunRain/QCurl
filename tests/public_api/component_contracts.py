@@ -5,10 +5,12 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 from typing import Callable
-import shutil
 import subprocess
 
-from tests.public_api.consumer_contracts import configure_and_build
+from tests.public_api.consumer_build import build_consumer
+from tests.public_api.consumer_build import configure_and_build
+from tests.public_api.consumer_build import configure_consumer
+from tests.public_api.consumer_build import run_consumer
 
 
 RunCommand = Callable[..., subprocess.CompletedProcess[str]]
@@ -55,33 +57,22 @@ def build_default_core_negative_consumer(
     negative_source_dir: Path,
     negative_build_dir: Path,
     config: str,
+    consumer_cache: Path,
     component_label: str,
     run_command: RunCommand,
     fail_func: FailFunc,
 ) -> int | None:
     """Verify a negative consumer cannot build against the default Core stage."""
 
-    if negative_build_dir.exists():
-        shutil.rmtree(negative_build_dir)
-
-    configure = [
-        cmake,
-        "-S",
-        str(negative_source_dir),
-        "-B",
-        str(negative_build_dir),
-        f"-DQCURL_STAGE_PREFIX={default_stage_dir}",
-    ]
     try:
-        run_command(configure)
+        configure_consumer(
+            negative_source_dir, negative_build_dir, default_stage_dir,
+            cmake, consumer_cache, run_command,
+        )
     except RuntimeError as exc:
         return fail_func(f"{component_label} negative consumer configure failed unexpectedly: {exc}")
 
-    build = [cmake, "--build", str(negative_build_dir)]
-    if config:
-        build.extend(["--config", config])
-
-    proc = run_command(build, expect_success=False)
+    proc = build_consumer(negative_build_dir, cmake, config, run_command, expect_success=False)
     if proc.returncode == 0:
         return fail_func(f"{component_label} negative consumer unexpectedly built successfully")
     return None
@@ -97,6 +88,8 @@ def run_opt_in_consumer_smoke(
     negative_source_dir: Path,
     negative_build_dir: Path,
     config: str,
+    consumer_cache: Path,
+    executable_name: str,
     component_label: str,
     run_command: RunCommand,
     fail_func: FailFunc,
@@ -111,7 +104,9 @@ def run_opt_in_consumer_smoke(
             cmake,
             config,
             run_command,
+            consumer_cache,
         )
+        run_consumer(positive_build_dir, executable_name, config, run_command)
     except RuntimeError as exc:
         return fail_func(f"{component_label} positive consumer smoke failed: {exc}")
 
@@ -121,6 +116,7 @@ def run_opt_in_consumer_smoke(
         negative_source_dir=negative_source_dir,
         negative_build_dir=negative_build_dir,
         config=config,
+        consumer_cache=consumer_cache,
         component_label=component_label,
         run_command=run_command,
         fail_func=fail_func,

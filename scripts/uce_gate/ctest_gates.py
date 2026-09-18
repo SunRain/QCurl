@@ -60,6 +60,7 @@ def _execution_command(repo_root: Path, build_dir: Path, selection: _CtestSelect
         "--test-dir",
         str(build_dir),
         "--output-on-failure",
+        "--verbose",
         "--no-tests=error",
         "-L",
         label_pattern,

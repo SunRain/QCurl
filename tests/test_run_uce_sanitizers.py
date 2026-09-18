@@ -34,6 +34,29 @@ def test_cmake_configure_command_enables_consistency_for_asan(tmp_path: Path) ->
     assert any(
         item.startswith("-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined,leak") for item in command
     )
+    assert "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined,leak -fno-omit-frame-pointer" in command
+    assert "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined,leak -fno-omit-frame-pointer" in command
+
+
+def test_asan_profile_cannot_disable_leaks_or_successfully_exit_on_errors(tmp_path: Path) -> None:
+    environment = sanitizer_subject_environment(
+        tmp_path,
+        sanitizer_profiles()["asan-ubsan-lsan"],
+        base_environment={
+            "ASAN_OPTIONS": "detect_leaks=0:leak_check_at_exit=0:halt_on_error=0:exitcode=0",
+            "LSAN_OPTIONS": "detect_leaks=0:leak_check_at_exit=0:exitcode=0",
+            "UBSAN_OPTIONS": "halt_on_error=0:exitcode=0",
+        },
+    )
+    for variable in ("ASAN_OPTIONS", "LSAN_OPTIONS"):
+        options = dict(item.split("=", 1) for item in environment[variable].split(":"))
+        assert options["detect_leaks"] == "1"
+        assert options["leak_check_at_exit"] == "1"
+        assert int(options["exitcode"]) != 0
+    for variable in ("ASAN_OPTIONS", "UBSAN_OPTIONS"):
+        options = dict(item.split("=", 1) for item in environment[variable].split(":"))
+        assert options["halt_on_error"] == "1"
+        assert int(options["exitcode"]) != 0
 
 
 def test_cmake_configure_command_requires_clang_for_tsan(tmp_path: Path) -> None:

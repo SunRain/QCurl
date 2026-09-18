@@ -141,6 +141,21 @@ def _run_label(
     return [result for result in results if result.gate_id.startswith("ctest_")]
 
 
+def test_public_api_slow_archives_successful_consumer_output(tmp_path: Path) -> None:
+    """Successful build/run output must survive in the archived UCE gate log."""
+
+    build_dir = _ctest_fixture(tmp_path, "public-api-slow", "pass")
+    manifest = _manifest()
+    results = ctest_gates.run_public_api_slow_gate(
+        _REPO_ROOT, build_dir, build_dir / "evidence", manifest
+    )
+    assert manifest["contracts"]["qtest_public_api_slow@v1"]["result"] == "pass"
+    assert results[1].returncode == 0
+    output = results[1].log_path.read_text(encoding="utf-8")
+    assert "Skipped Disabled Sanitizer: diagnostic text" in output
+    assert "Totals: 1 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms" in output
+
+
 @pytest.mark.parametrize("label", ["offline", "env", "capability"])
 def test_real_ctest_qttest_skip_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, label: str

@@ -14,7 +14,7 @@ from scripts import release_identity
 from scripts import run_release_gate
 
 
-def _six_tree_args(tmp_path: Path) -> list[str]:
+def _five_tree_args(tmp_path: Path) -> list[str]:
     return [
         "--release-shared-build-dir",
         str(tmp_path / "release-shared"),
@@ -26,12 +26,10 @@ def _six_tree_args(tmp_path: Path) -> list[str]:
         str(tmp_path / "test-shared-clang"),
         "--asan-ubsan-lsan-build-dir",
         str(tmp_path / "asan-ubsan-lsan"),
-        "--tsan-build-dir",
-        str(tmp_path / "tsan"),
     ]
 
 
-def _write_six_tree_caches(tmp_path: Path) -> None:
+def _write_five_tree_caches(tmp_path: Path) -> None:
     specs = {
         "release-shared": ("OFF", "ON", "/usr/bin/g++", ""),
         "release-static": ("OFF", "OFF", "/usr/bin/g++", ""),
@@ -43,7 +41,6 @@ def _write_six_tree_caches(tmp_path: Path) -> None:
             "/usr/bin/clang++",
             "asan-ubsan-lsan",
         ),
-        "tsan": ("ON", "ON", "/usr/bin/clang++", "tsan"),
     }
     for tree_id, (testing, shared, compiler, sanitizer) in specs.items():
         build_dir = tmp_path / tree_id
@@ -99,12 +96,12 @@ def test_full_release_gate_runs_symbol_allowlists_without_default_abi_diff(
     tmp_path: Path,
     capsys,
 ) -> None:
-    _write_six_tree_caches(tmp_path)
+    _write_five_tree_caches(tmp_path)
     assert run_release_gate.main(
         [
             "--tier",
             "full",
-            *_six_tree_args(tmp_path),
+            *_five_tree_args(tmp_path),
             "--dry-run",
         ]
     ) == 0
@@ -654,7 +651,7 @@ def test_full_release_manifest_requires_symbols_but_not_abi_baseline_artifacts(
         [
             "--tier",
             "full",
-            *_six_tree_args(tmp_path),
+            *_five_tree_args(tmp_path),
         ]
     )
     steps = run_release_gate._selected_steps(args)

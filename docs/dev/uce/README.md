@@ -177,10 +177,12 @@ python3 scripts/run_uce_sanitizers.py --profile asan-ubsan-lsan \
   --output-dir "build/evidence/uce-sanitizers/asan/$(date -u +%Y%m%dT%H%M%S%NZ)"
 ```
 
-`asan-ubsan-lsan` 沿用独立构建与 `run_uce_gate.py --tier nightly`。先按[六树配置](../release/release-procedure.md#producer-trees)准备 Clang/Ninja sanitizer 树，runner 会按 profile 重新配置并构建。普通构建与 ASan 构建
+`asan-ubsan-lsan` 沿用独立构建与 `run_uce_gate.py --tier nightly`。先按[五树配置](../release/release-procedure.md#producer-trees)准备 Clang/Ninja sanitizer 树，runner 会按 profile 重新配置并构建。public-api-slow 的安装 consumer 显式继承 producer 的编译器及编译/链接参数，并记录 verbose 构建和实际运行输出；runner 固定开启泄漏检测与失败退出，报告保留有效 ASan/UBSan/LSan 选项。普通构建与 ASan 构建
 不得指向下面的检测专用 Qt；它也不是 QCurl 消费者的新依赖。
 
 ### 7.1 检测专用 Qt
+
+以下 TSan 教程是独立诊断入口，不是本次 QCurl 2.0.0 final 或 nightly CI 的前置要求。未运行、环境缺失或失败均不计入 final 通过数量，也不等于取得 TSan 覆盖；诊断确认的产品缺陷仍须处理。此非阻断政策仅适用于本次发布。
 
 只给 QCurl 加 `-fsanitize=thread` 不足以观察 Qt 的同步路径。使用与普通构建同版本的
 官方 qtbase，以同一个 Clang 构建 Qt 和 QCurl；不修改 `/usr`、不提高产品最低 Qt 版本。
@@ -216,7 +218,20 @@ cmake --install "$DEPS/qtbase-build"
 
 ```
 
-随后按[发布操作的六树配置](../release/release-procedure.md#producer-trees)将 QCurl 的 TSan 树指向 `QT_TSAN_PREFIX`，并使用相同 Clang；不要只给 QCurl 加插桩。
+随后将独立 QCurl TSan 树指向 `QT_TSAN_PREFIX`，并使用相同 Clang；不要只给 QCurl 加插桩：
+
+```bash
+: "${QT_TSAN_PREFIX:?先准备同版本插桩 Qt 并设置其绝对安装前缀}"
+cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_PREFIX_PATH="$QT_TSAN_PREFIX" -DQt6_DIR="$QT_TSAN_PREFIX/lib/cmake/Qt6" \
+  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON \
+  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF \
+  -DQCURL_SANITIZER_PROFILE=tsan \
+  -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread"
+```
 
 源码归档校验值、下载来源、Qt 配置和构建原始输出须与本轮证据一起保留。重复执行时使用
 该版本对应的独立构建树；不要在同一 Qt build 目录中混用不同版本。runner 复用已经明确

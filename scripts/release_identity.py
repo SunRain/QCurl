@@ -161,31 +161,75 @@ def _untracked(repo: Path) -> dict[str, Any]:
     return {"digest": _digest(entries), "entries": entries}
 
 
-def _submodules(repo: Path) -> dict[str, Any]:
-    entries: list[dict[str, Any]] = []
-    for line in _run(repo, ["git", "submodule", "status", "--recursive"]).splitlines():
-        match = re.match(r"(?P<marker>[-+U ])(?P<sha>[0-9a-f]+) (?P<path>[^ ]+)", line)
+def _submodule_git(repo: Path, args: Sequence[str]) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+            errors="surrogateescape",
+            timeout=10.0,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        raise ValueError(f"cannot read submodule identity in {repo}: {detail}") from exc
+    return completed.stdout
+
+
+def _submodule_status(repo: Path) -> list[tuple[str, str, str]]:
+    output = _submodule_git(repo, ["submodule", "status", "--cached", "--recursive"])
+    entries: list[tuple[str, str, str]] = []
+    paths: set[str] = set()
+    for line in output.splitlines():
+        match = re.fullmatch(
+            r"([-+U ])([0-9a-f]{40}|[0-9a-f]{64}) (.+?)(?: \([^\n]*\))?", line
+        )
         if not match:
-            continue
-        path = repo / match.group("path")
-        checked_out = (
-            _run(path, ["git", "rev-parse", "HEAD"]) if path.is_dir() else "missing"
+            raise ValueError(f"invalid submodule status line: {line!r}")
+        marker, index_sha, relative = match.groups()
+        path = Path(relative)
+        if (
+            not path.parts
+            or relative in paths
+            or path.is_absolute()
+            or ".." in path.parts
+        ):
+            raise ValueError(f"invalid or duplicate submodule path: {relative!r}")
+        paths.add(relative)
+        entries.append((marker, index_sha, relative))
+    return entries
+
+
+def _submodule_entry(
+    repo: Path, marker: str, index_sha: str, relative: str
+) -> dict[str, Any]:
+    path = repo / relative
+    # 未初始化目录仍可能存在，不能让 Git 向上发现父仓后误记父仓身份。
+    available = marker != "-" and path.is_dir() and (path / ".git").exists()
+    checked_out = "missing"
+    dirty = True
+    if available:
+        checked_out = _submodule_git(path, ["rev-parse", "HEAD"]).strip()
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", checked_out):
+            raise ValueError(f"invalid submodule HEAD in {path}: {checked_out!r}")
+        status = _submodule_git(
+            path, ["status", "--porcelain", "--untracked-files=all"]
         )
-        dirty = (
-            bool(_run(path, ["git", "status", "--porcelain", "--untracked-files=all"]))
-            if path.is_dir()
-            else True
-        )
-        entries.append(
-            {
-                "path": match.group("path"),
-                "index_sha": match.group("sha"),
-                "sha": checked_out,
-                "dirty": dirty,
-                "tracked_patch": _tracked_patch(path) if path.is_dir() else None,
-                "untracked": _untracked(path) if path.is_dir() else None,
-            }
-        )
+        dirty = marker != " " or checked_out != index_sha or bool(status)
+    return {
+        "path": relative,
+        "index_sha": index_sha,
+        "sha": checked_out,
+        "dirty": dirty,
+        "tracked_patch": _tracked_patch(path) if available else None,
+        "untracked": _untracked(path) if available else None,
+    }
+
+
+def _submodules(repo: Path) -> dict[str, Any]:
+    entries = [_submodule_entry(repo, *entry) for entry in _submodule_status(repo)]
     entries.sort(key=lambda item: item["path"])
     return {"digest": _digest(entries), "entries": entries}
 
@@ -250,7 +294,7 @@ def _toolchain(repo: Path, caches: Sequence[dict[str, Any]]) -> dict[str, Any]:
                 repo,
                 [shutil.which("c++") or "c++", "-print-file-name=lib" + name + ".so"],
             )
-            for name in ("asan", "ubsan", "tsan")
+            for name in ("asan", "ubsan", "lsan")
         },
     }
 

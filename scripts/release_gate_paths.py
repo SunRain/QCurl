@@ -17,7 +17,6 @@ _TREE_ARGUMENTS = (
     "test_shared_gcc_build_dir",
     "test_shared_clang_build_dir",
     "asan_ubsan_lsan_build_dir",
-    "tsan_build_dir",
 )
 
 

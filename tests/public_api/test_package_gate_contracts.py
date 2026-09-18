@@ -227,17 +227,16 @@ def test_full_release_plan_gates_default_shared_and_static_packages(
         "test-shared-gcc": tmp_path / "test-shared-gcc",
         "test-shared-clang": tmp_path / "test-shared-clang",
         "asan-ubsan-lsan": tmp_path / "asan-ubsan-lsan",
-        "tsan": tmp_path / "tsan",
     }
     for tree_id, path in trees.items():
         build_testing = "OFF" if tree_id.startswith("release-") else "ON"
         shared_libs = "OFF" if tree_id == "release-static" else "ON"
         compiler = (
             "clang++"
-            if tree_id in {"test-shared-clang", "asan-ubsan-lsan", "tsan"}
+            if tree_id in {"test-shared-clang", "asan-ubsan-lsan"}
             else "g++"
         )
-        sanitizer = tree_id if tree_id in {"asan-ubsan-lsan", "tsan"} else ""
+        sanitizer = tree_id if tree_id == "asan-ubsan-lsan" else ""
         path.mkdir(parents=True)
         (path / "CMakeCache.txt").write_text(
             f"BUILD_TESTING:BOOL={build_testing}\n"
@@ -260,8 +259,6 @@ def test_full_release_plan_gates_default_shared_and_static_packages(
             str(trees["test-shared-clang"]),
             "--asan-ubsan-lsan-build-dir",
             str(trees["asan-ubsan-lsan"]),
-            "--tsan-build-dir",
-            str(trees["tsan"]),
             "--dry-run",
         ]
     )
@@ -291,7 +288,7 @@ def test_full_release_plan_gates_default_shared_and_static_packages(
         "static_lifecycle_report",
     }
     assert "package_asan_ubsan_lsan" in steps
-    assert "package_tsan" in steps
+    assert "package_tsan" not in steps
     assert "-DQCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=OFF" in steps["static_configure"][
         "command"
     ]

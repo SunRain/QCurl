@@ -12,6 +12,7 @@ from scripts import release_evidence_model
 from scripts import release_identity
 from scripts import release_tree_model
 from scripts import run_release_gate
+from scripts.uce_gate.candidate import capture_candidate_fingerprint
 
 
 def test_release_gate_path_resolution_respects_function_size_limit() -> None:
@@ -87,8 +88,6 @@ def test_release_gate_promotion_candidate_uses_only_archived_abi_comparison(
             str(tmp_path / "build-tests-clang"),
             "--asan-ubsan-lsan-build-dir",
             str(tmp_path / "build-asan-ubsan-lsan"),
-            "--tsan-build-dir",
-            str(tmp_path / "build-tsan"),
             "--abi-mode",
             "promotion-candidate",
             "--abi-hardbreak-baseline",
@@ -138,8 +137,6 @@ def test_release_gate_promotion_candidate_records_bound_input_artifacts(
             str(tmp_path / "build-tests-clang"),
             "--asan-ubsan-lsan-build-dir",
             str(tmp_path / "build-asan-ubsan-lsan"),
-            "--tsan-build-dir",
-            str(tmp_path / "build-tsan"),
             "--abi-mode",
             "promotion-candidate",
             "--abi-hardbreak-baseline",
@@ -203,8 +200,6 @@ def test_release_gate_writes_promotion_manifest_binding(tmp_path: Path) -> None:
             str(repo / "test-shared-clang"),
             "--asan-ubsan-lsan-build-dir",
             str(repo / "asan-ubsan-lsan"),
-            "--tsan-build-dir",
-            str(repo / "tsan"),
             "--abi-mode",
             "promotion-candidate",
             "--abi-hardbreak-baseline",
@@ -278,8 +273,6 @@ def test_release_gate_default_skips_abi_compatibility_gate(
             str(tmp_path / "build-tests-clang"),
             "--asan-ubsan-lsan-build-dir",
             str(tmp_path / "build-asan-ubsan-lsan"),
-            "--tsan-build-dir",
-            str(tmp_path / "build-tsan"),
             "--dry-run",
         ]
     )
@@ -314,8 +307,6 @@ def test_release_gate_abi_mode_supports_unstable_default_and_explicit_diagnostic
         str(tmp_path / "build-tests-clang"),
         "--asan-ubsan-lsan-build-dir",
         str(tmp_path / "build-asan-ubsan-lsan"),
-        "--tsan-build-dir",
-        str(tmp_path / "build-tsan"),
     ]
 
     assert parser.parse_args(base_args).abi_mode == "none"
@@ -347,8 +338,6 @@ def test_release_gate_abi_modes_have_mutually_exclusive_step_lists(
         str(tmp_path / "build-tests-clang"),
         "--asan-ubsan-lsan-build-dir",
         str(tmp_path / "build-asan-ubsan-lsan"),
-        "--tsan-build-dir",
-        str(tmp_path / "build-tsan"),
     ]
     none_result = run_release_gate.main(base_args + ["--dry-run"])
     assert none_result == 0
@@ -445,8 +434,6 @@ def test_release_gate_keeps_abi_tools_opt_in_and_preserves_promotion_gate(
             str(tmp_path / "build-tests-clang"),
             "--asan-ubsan-lsan-build-dir",
             str(tmp_path / "build-asan-ubsan-lsan"),
-            "--tsan-build-dir",
-            str(tmp_path / "build-tsan"),
         ]
     )
     steps = run_release_gate._selected_steps(args)
@@ -594,8 +581,6 @@ def _full_gate_authority_paths(repo: Path, paths: list[Path]) -> list[Path]:
         str(repo / "test-shared-clang"),
         "--asan-ubsan-lsan-build-dir",
         str(repo / "asan-ubsan-lsan"),
-        "--tsan-build-dir",
-        str(repo / "tsan"),
     ]
     for path in paths:
         argv.extend(("--authority", str(path)))
@@ -1065,7 +1050,6 @@ def _three_tree_gate_args(tmp_path: Path) -> tuple[Path, Path, Path, object]:
     test_shared = tmp_path / "test-shared-gcc"
     test_clang = tmp_path / "test-shared-clang"
     asan = tmp_path / "asan-ubsan-lsan"
-    tsan = tmp_path / "tsan"
     parser = run_release_gate.build_parser()
     args = parser.parse_args(
         [
@@ -1081,8 +1065,6 @@ def _three_tree_gate_args(tmp_path: Path) -> tuple[Path, Path, Path, object]:
             str(test_clang),
             "--asan-ubsan-lsan-build-dir",
             str(asan),
-            "--tsan-build-dir",
-            str(tsan),
         ]
     )
     return release_shared, release_static, test_shared, args
@@ -1110,7 +1092,6 @@ def test_full_gate_requires_off_off_on_build_capabilities(tmp_path: Path) -> Non
         "test-shared-gcc": test_shared,
         "test-shared-clang": tmp_path / "test-shared-clang",
         "asan-ubsan-lsan": tmp_path / "asan-ubsan-lsan",
-        "tsan": tmp_path / "tsan",
     }
     for tree_id, path in trees.items():
         _write_tree_capability_cache(path, tree_id)
@@ -1124,7 +1105,6 @@ def test_full_gate_requires_off_off_on_build_capabilities(tmp_path: Path) -> Non
         (test_shared, "ON"),
         (trees["test-shared-clang"], "ON"),
         (trees["asan-ubsan-lsan"], "ON"),
-        (trees["tsan"], "ON"),
     ):
         cache_path = path / "CMakeCache.txt"
         cache_path.write_text(
@@ -1160,7 +1140,7 @@ def test_full_gate_routes_release_and_test_steps_to_distinct_trees(
     assert steps["full_ctest"].producer_tree_id == "test-shared-gcc"
     assert steps["clang_ctest"].producer_tree_id == "test-shared-clang"
     assert steps["package_asan_ubsan_lsan"].producer_tree_id == "asan-ubsan-lsan"
-    assert steps["package_tsan"].producer_tree_id == "tsan"
+    assert "package_tsan" not in steps
     assert str(release_shared) in " ".join(steps["shared_package_evidence"].command)
     assert str(release_static) in " ".join(steps["static_package_evidence"].command)
     assert str(test_shared) in " ".join(steps["full_ctest"].command)
@@ -1207,14 +1187,13 @@ def test_examples_benchmarks_gate_uses_direct_commands(tmp_path: Path) -> None:
     ]
 
 
-def _six_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
+def _five_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
     trees = {
         "release-shared": tmp_path / "release-shared",
         "release-static": tmp_path / "release-static",
         "test-shared-gcc": tmp_path / "test-shared-gcc",
         "test-shared-clang": tmp_path / "test-shared-clang",
         "asan-ubsan-lsan": tmp_path / "asan-ubsan-lsan",
-        "tsan": tmp_path / "tsan",
     }
     parser = run_release_gate.build_parser()
     args = parser.parse_args(
@@ -1231,14 +1210,12 @@ def _six_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
             str(trees["test-shared-clang"]),
             "--asan-ubsan-lsan-build-dir",
             str(trees["asan-ubsan-lsan"]),
-            "--tsan-build-dir",
-            str(trees["tsan"]),
         ]
     )
     return args, trees
 
 
-def test_full_gate_requires_all_six_explicit_tree_arguments(tmp_path: Path) -> None:
+def test_full_gate_requires_all_five_explicit_tree_arguments(tmp_path: Path) -> None:
     parser = run_release_gate.build_parser()
     flags = (
         "--release-shared-build-dir",
@@ -1246,7 +1223,6 @@ def test_full_gate_requires_all_six_explicit_tree_arguments(tmp_path: Path) -> N
         "--test-shared-gcc-build-dir",
         "--test-shared-clang-build-dir",
         "--asan-ubsan-lsan-build-dir",
-        "--tsan-build-dir",
     )
     for missing in flags:
         argv = ["--tier", "full"]
@@ -1254,7 +1230,7 @@ def test_full_gate_requires_all_six_explicit_tree_arguments(tmp_path: Path) -> N
             if flag != missing:
                 argv.extend((flag, str(tmp_path / flag.removeprefix("--"))))
         args = parser.parse_args(argv)
-        with pytest.raises(ValueError, match="six|tree"):
+        with pytest.raises(ValueError, match="tree"):
             run_release_gate._resolve_paths(args, tmp_path)
 
 
@@ -1264,8 +1240,8 @@ def test_release_gate_rejects_legacy_build_dir_fallback_flags() -> None:
         parser.parse_args(["--build-dir", "build"])
 
 
-def test_full_gate_exposes_fixed_six_tree_registry(tmp_path: Path) -> None:
-    args, trees = _six_tree_gate_args(tmp_path)
+def test_full_gate_exposes_fixed_five_tree_registry(tmp_path: Path) -> None:
+    args, trees = _five_tree_gate_args(tmp_path)
     run_release_gate._resolve_paths(args, tmp_path)
 
     registry = run_release_gate._tree_registry(args)
@@ -1276,17 +1252,17 @@ def test_full_gate_exposes_fixed_six_tree_registry(tmp_path: Path) -> None:
         assert registry[tree_id]["tree_id"] == tree_id
 
 
-def test_release_tree_contract_uses_clang_for_both_sanitizer_trees() -> None:
+def test_release_tree_contract_uses_clang_for_required_sanitizer_tree() -> None:
     specs = release_tree_model.TREE_SPEC_BY_ID
 
     assert specs["asan-ubsan-lsan"].compiler_family == "clang"
-    assert specs["tsan"].compiler_family == "clang"
+    assert "tsan" not in specs
 
 
 def test_full_gate_steps_bind_producer_tree_and_required_artifacts(
     tmp_path: Path,
 ) -> None:
-    args, _ = _six_tree_gate_args(tmp_path)
+    args, _ = _five_tree_gate_args(tmp_path)
     run_release_gate._resolve_paths(args, tmp_path)
 
     steps = run_release_gate._selected_steps(args)
@@ -1303,7 +1279,6 @@ def test_full_gate_steps_bind_producer_tree_and_required_artifacts(
         "test-shared-gcc",
         "test-shared-clang",
         "asan-ubsan-lsan",
-        "tsan",
     }
     assert {
         "parity_report",
@@ -1312,7 +1287,6 @@ def test_full_gate_steps_bind_producer_tree_and_required_artifacts(
         "shared_lifecycle_report",
         "static_lifecycle_report",
         "asan_ubsan_lsan_report",
-        "tsan_report",
         "uce_report",
         "doxygen_report",
         "core_dynamic_symbols",
@@ -1325,7 +1299,7 @@ def test_full_gate_steps_bind_producer_tree_and_required_artifacts(
 def _write_tree_capability_cache(path: Path, tree_id: str) -> None:
     compiler = (
         "clang++"
-        if tree_id in {"test-shared-clang", "asan-ubsan-lsan", "tsan"}
+        if tree_id in {"test-shared-clang", "asan-ubsan-lsan"}
         else "g++"
     )
     profile = ""
@@ -1333,9 +1307,6 @@ def _write_tree_capability_cache(path: Path, tree_id: str) -> None:
     if tree_id == "asan-ubsan-lsan":
         profile = "asan-ubsan-lsan"
         flags = "-fsanitize=address,undefined,leak"
-    elif tree_id == "tsan":
-        profile = "tsan"
-        flags = "-fsanitize=thread"
     build_testing = "OFF" if tree_id.startswith("release-") else "ON"
     shared_libs = "OFF" if tree_id == "release-static" else "ON"
     path.mkdir(parents=True)
@@ -1361,7 +1332,6 @@ def _prepare_full_tree_caches(tmp_path: Path) -> dict[str, Path]:
         "test-shared-gcc": tmp_path / "build-tests",
         "test-shared-clang": tmp_path / "build-tests-clang",
         "asan-ubsan-lsan": tmp_path / "build-asan-ubsan-lsan",
-        "tsan": tmp_path / "build-tsan",
     }
     for tree_id, path in trees.items():
         _write_tree_capability_cache(path, tree_id)
@@ -1369,7 +1339,7 @@ def _prepare_full_tree_caches(tmp_path: Path) -> dict[str, Path]:
 
 
 def test_full_gate_rejects_tree_compiler_and_sanitizer_drift(tmp_path: Path) -> None:
-    args, trees = _six_tree_gate_args(tmp_path)
+    args, trees = _five_tree_gate_args(tmp_path)
     run_release_gate._resolve_paths(args, tmp_path)
     for tree_id, path in trees.items():
         _write_tree_capability_cache(path, tree_id)
@@ -1388,9 +1358,9 @@ def test_full_gate_rejects_tree_compiler_and_sanitizer_drift(tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    sanitizer_cache = trees["tsan"] / "CMakeCache.txt"
+    sanitizer_cache = trees["asan-ubsan-lsan"] / "CMakeCache.txt"
     sanitizer_cache.write_text(
-        sanitizer_cache.read_text(encoding="utf-8").replace("tsan", "asan"),
+        sanitizer_cache.read_text(encoding="utf-8").replace("lsan", "").replace(",leak", ""),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="sanitizer"):
@@ -1573,7 +1543,7 @@ def test_release_gate_stage_is_explicit_and_closed() -> None:
 
 
 def test_full_gate_artifact_contract_is_complete_and_unique(tmp_path: Path) -> None:
-    args, _ = _six_tree_gate_args(tmp_path)
+    args, _ = _five_tree_gate_args(tmp_path)
     run_release_gate._resolve_paths(args, tmp_path)
 
     bindings = [
@@ -1593,7 +1563,7 @@ def test_full_gate_artifact_contract_is_complete_and_unique(tmp_path: Path) -> N
 def test_current_and_promotion_abi_artifacts_use_distinct_contracts(
     tmp_path: Path,
 ) -> None:
-    args, trees = _six_tree_gate_args(tmp_path)
+    args, trees = _five_tree_gate_args(tmp_path)
     args.abi_mode = "current"
     run_release_gate._resolve_paths(args, tmp_path)
     current_ids = {
@@ -1632,7 +1602,7 @@ def test_current_and_promotion_abi_artifacts_use_distinct_contracts(
 def test_release_gate_rejects_abi_stage_and_output_route_drift(
     tmp_path: Path,
 ) -> None:
-    args, trees = _six_tree_gate_args(tmp_path)
+    args, trees = _five_tree_gate_args(tmp_path)
     args.abi_mode = "promotion-candidate"
     args.stage = "promotion"
     args.abi_hardbreak_baseline = tmp_path / "qcurl-core-v1.abi.xml"
@@ -1734,28 +1704,53 @@ def _artifact_fixture_content(kind: str) -> str:
     return "release evidence\n"
 
 
-def test_full_manifest_fixture_binds_every_fixed_required_artifact(
-    tmp_path: Path,
-) -> None:
-    repo = _init_identity_repo(tmp_path)
+def _sanitizer_fixture_report(path: Path, build_dir: Path, repo: Path) -> str:
+    command = ["python3", "scripts/run_uce_gate.py", "--tier", "nightly"]
+    fingerprint = capture_candidate_fingerprint(repo, excluded_paths=(path.parent,))
+    return json.dumps({
+        "schema": "qcurl-uce/sanitizer-report@v1",
+        "profile": "asan-ubsan-lsan",
+        "result": "pass",
+        "policy_violations": [],
+        "build_dir": str(build_dir),
+        "output_dir": str(path.parent),
+        "configure_returncode": 0,
+        "build_returncode": 0,
+        "subject_returncode": 0,
+        "subject_commands": [command],
+        "command_results": [{"command": command, "returncode": 0, "timed_out": False}],
+        "candidate_unchanged": True,
+        "candidate_before": fingerprint,
+        "candidate_after": fingerprint,
+        "sanitizer_options": {
+            "ASAN_OPTIONS": "detect_leaks=1:leak_check_at_exit=1:halt_on_error=1:exitcode=1",
+            "UBSAN_OPTIONS": "halt_on_error=1:exitcode=1",
+            "LSAN_OPTIONS": "detect_leaks=1:leak_check_at_exit=1:exitcode=23",
+        },
+    })
+
+
+def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
+    repo = _init_identity_repo(tmp_path) if repo is None else repo
+    authority = repo / "docs/dev/release/2.0.0-hard-break-release-contract.md"
+    authority.parent.mkdir(parents=True)
+    authority.write_text("release authority fixture\n", encoding="utf-8")
     trees = {
         "release-shared": repo / "build" / "release-shared",
         "release-static": repo / "build" / "release-static",
         "test-shared-gcc": repo / "build" / "test-shared-gcc",
         "test-shared-clang": repo / "build" / "test-shared-clang",
         "asan-ubsan-lsan": repo / "build" / "asan-ubsan-lsan",
-        "tsan": repo / "build" / "tsan",
     }
     for tree_id, path in trees.items():
         _write_tree_capability_cache(path, tree_id)
-    argv = ["--tier", "full", "--manifest", str(repo / "artifacts" / "full.json")]
+    argv = ["--tier", "full", "--stage", "final", "--manifest", str(repo / "artifacts" / "full.json")]
     for tree_id, flag in (
         ("release-shared", "--release-shared-build-dir"),
         ("release-static", "--release-static-build-dir"),
         ("test-shared-gcc", "--test-shared-gcc-build-dir"),
         ("test-shared-clang", "--test-shared-clang-build-dir"),
         ("asan-ubsan-lsan", "--asan-ubsan-lsan-build-dir"),
-        ("tsan", "--tsan-build-dir"),
     ):
         argv.extend((flag, str(trees[tree_id])))
     args = run_release_gate.build_parser().parse_args(argv)
@@ -1772,7 +1767,12 @@ def test_full_manifest_fixture_binds_every_fixed_required_artifact(
         contract = release_evidence_model.ARTIFACT_CONTRACTS[artifact_id]
         path = Path(registry[contract.tree_id]["path"]) / contract.relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_artifact_fixture_content(contract.kind), encoding="utf-8")
+        content = (
+            _sanitizer_fixture_report(path, trees["asan-ubsan-lsan"], repo)
+            if artifact_id == "asan_ubsan_lsan_report"
+            else _artifact_fixture_content(contract.kind)
+        )
+        path.write_text(content, encoding="utf-8")
 
     commands = [step.command for step in steps]
     start_identity = release_identity.build_identity(
@@ -1801,8 +1801,16 @@ def test_full_manifest_fixture_binds_every_fixed_required_artifact(
         start_identity,
     )
 
-    assert check.valid
+    assert check.valid, check.reasons
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    return repo, args, steps, manifest
+
+
+def test_full_manifest_fixture_binds_every_fixed_required_artifact(tmp_path: Path) -> None:
+    _, _, steps, manifest = _full_manifest_fixture(tmp_path)
+    required_ids = {
+        artifact_id for step in steps for artifact_id in step.required_artifact_ids
+    }
     assert manifest["abiMode"] == "none"
     assert set(manifest["evidence_contract"]["artifact_ids"]) == required_ids
     assert required_ids <= set(manifest["artifacts"])

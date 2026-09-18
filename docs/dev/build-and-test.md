@@ -1,6 +1,6 @@
 # 构建与测试
 
-本文负责日常开发构建、QtTest 与 libcurl 一致性专题的命令、前提和结果解释。候选资格与六树命令只在[发布操作](release/release-procedure.md)，UCE 启动、sanitizer 和归档判据只在[UCE 使用](uce/README.md)。所有命令默认从仓库根目录执行。
+本文负责日常开发构建、QtTest 与 libcurl 一致性专题的命令、前提和结果解释。候选资格与五树命令只在[发布操作](release/release-procedure.md)，UCE 启动、sanitizer 和归档判据只在[UCE 使用](uce/README.md)。所有命令默认从仓库根目录执行。
 
 ## 1. 开发构建
 

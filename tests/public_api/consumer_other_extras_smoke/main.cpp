@@ -7,6 +7,7 @@
 #include <QCWebSocketPool.h>
 #endif
 
+#include <QCoreApplication>
 #include <QFuture>
 #include <QMetaObject>
 #include <QMetaProperty>
@@ -17,8 +18,10 @@
 #include <chrono>
 #include <type_traits>
 
-int main()
+int main(int argc, char **argv)
 {
+    QCoreApplication app(argc, argv);
+
     QCurl::DiagResult result;
     result.setSuccess(true);
     result.setSummary(QStringLiteral("other-extras"));

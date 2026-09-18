@@ -77,6 +77,8 @@ def run_blocking_extras_consumer_smoke(
         negative_source_dir=args.negative_source_dir,
         negative_build_dir=args.negative_build_dir,
         config=args.config,
+        consumer_cache=args.consumer_cache,
+        executable_name="qcurl_public_api_consumer_blocking_extras_smoke",
         component_label="blocking extras",
         run_command=run_command,
         fail_func=fail_func,

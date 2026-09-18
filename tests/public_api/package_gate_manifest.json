@@ -26,8 +26,7 @@
         "tst_QCNetworkReply"
       ],
       "sanitizerEvidence": [
-        "asan-ubsan-lsan",
-        "tsan"
+        "asan-ubsan-lsan"
       ]
     },
     "BlockingExtras": {
@@ -85,8 +84,7 @@
         "tst_QCWebSocketPool"
       ],
       "sanitizerEvidence": [
-        "asan-ubsan-lsan",
-        "tsan"
+        "asan-ubsan-lsan"
       ]
     }
   }

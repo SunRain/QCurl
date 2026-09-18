@@ -36,7 +36,7 @@
 ### 发布与证据
 
 - [正式 2.0 发布合同](dev/release/2.0.0-hard-break-release-contract.md)：唯一 release identity authority。
-- [发布操作](dev/release/release-procedure.md)：六树、阶段、候选验证、打包与远端动作。
+- [发布操作](dev/release/release-procedure.md)：五树、阶段、候选验证、打包与远端动作。
 - [UCE 使用与证据](dev/uce/README.md)：启动、tier、schema 入口与归档判据。
 - [供应链安全](dev/release/supply-chain.md)。
 - [未来稳定 ABI 项目](dev/release/stable-abi-contract-and-baseline.md)：Deferred，不是 2.0 发布阻断项。

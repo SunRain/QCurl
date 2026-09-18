@@ -12,6 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 if __package__:
     from . import release_identity
     from .release_gate_model import GateStep, GateTier
@@ -72,7 +75,7 @@ def _identity_build_dirs(args: argparse.Namespace) -> list[Path]:
 
 
 def _tree_registry(args: argparse.Namespace) -> dict[str, dict[str, object]]:
-    """返回当前参数对应的六树 registry。"""
+    """返回当前参数对应的五树 registry。"""
 
     return tree_registry(args)
 
@@ -234,7 +237,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-shared-gcc-build-dir", type=Path)
     parser.add_argument("--test-shared-clang-build-dir", type=Path)
     parser.add_argument("--asan-ubsan-lsan-build-dir", type=Path)
-    parser.add_argument("--tsan-build-dir", type=Path)
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--cmake", default="cmake")

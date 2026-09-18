@@ -35,7 +35,7 @@
 
 ### 发布与证据边界
 
-- release manifest 绑定唯一正式发布合同，而不是可变任务进度或历史审查；使用六棵显式 producer 树、full/final 验收和 `abiMode=none`。操作命令只在[发布流程](docs/dev/release/release-procedure.md)维护。
+- release manifest 绑定唯一正式发布合同，而不是可变任务进度或历史审查；使用五棵显式 producer 树、full/final 验收和 `abiMode=none`。本次 2.0.0 的 TSan 为独立非阻断诊断，不计入 final 必需证据；ASan/UBSan/LSan 及线程安全合同不放宽，未取得 TSan 证据不宣称通过。操作命令只在[发布流程](docs/dev/release/release-procedure.md)维护。
 - tag、GitHub Release、assets/checksums 不由本条目或本地 PASS 自动创建。SBOM、签名与 provenance 尚不是已交付能力。
 - 稳定 ABI 合同与首份 baseline 为[Deferred 项目](docs/dev/release/stable-abi-contract-and-baseline.md)，不属于 2.0 发布阻断项。
 

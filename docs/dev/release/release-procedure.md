@@ -1,6 +1,6 @@
 # 发布操作
 
-维护者用本页准备候选、执行六树资格验收、打包并在获得授权后发布。唯一 release identity authority 是[2.0 正式发布合同](2.0.0-hard-break-release-contract.md)；本页只定义操作，不以历史报告、文档校验或局部 PASS 代替候选证明。命令默认从仓库根目录执行。
+维护者用本页准备候选、执行五树资格验收、打包并在获得授权后发布。唯一 release identity authority 是[2.0 正式发布合同](2.0.0-hard-break-release-contract.md)；本页只定义操作，不以历史报告、文档校验或局部 PASS 代替候选证明。命令默认从仓库根目录执行。
 
 ## 1. 前置条件与授权
 
@@ -11,7 +11,7 @@
 - 本地 gate 不执行 commit/tag/push/Release，但身份采集会读取 Git。任何远端动作和 ABI promotion 都需要独立授权。
 
 <a id="producer-trees"></a>
-## 2. 六棵独立 producer 树
+## 2. 五棵独立 producer 树
 
 构建目录必须物理独立，不接受同一路径、符号链接复用或其他 producer 回退。新一轮完整验收使用为该候选准备的目录；不要覆盖需要保留的旧证据。
 
@@ -22,9 +22,10 @@
 | test-shared-gcc | `--test-shared-gcc-build-dir` | GCC、shared、BUILD_TESTING=ON；QtTest、public API、一致性 |
 | test-shared-clang | `--test-shared-clang-build-dir` | Clang、shared、BUILD_TESTING=ON；交叉编译器 QtTest/public API |
 | asan-ubsan-lsan | `--asan-ubsan-lsan-build-dir` | Clang、shared、BUILD_TESTING=ON；ASan/UBSan/LSan |
-| tsan | `--tsan-build-dir` | Clang、shared、BUILD_TESTING=ON；TSan 与同版本插桩 Qt |
 
-先按[UCE 的检测 Qt 教程](../uce/README.md#71-检测专用-qt)准备 `QT_TSAN_PREFIX`。以下六树均使用 Ninja；所有 shared 测试树必须明确 shared，static 只允许测试关闭：
+本次 2.0.0 正式发布不要求 TSan 树、插桩 Qt 或 TSan 报告。独立诊断入口及其真实失败语义保留在 [UCE 的检测 Qt 教程](../uce/README.md#71-检测专用-qt)，不进入本次 final 必需集合或通过数量；没有成功证据不得宣称候选通过 TSan，已确认产品缺陷仍按缺陷本身处理。本次政策不自动推广到后续版本。
+
+以下五树均使用 Ninja；所有 shared 测试树必须明确 shared，static 只允许测试关闭：
 
 ```bash
 git submodule update --init --recursive
@@ -58,21 +59,9 @@ cmake -S . -B build-asan-ubsan-lsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined,leak" \
   -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined,leak"
 cmake --build build-asan-ubsan-lsan --parallel
-
-: "${QT_TSAN_PREFIX:?先准备同版本插桩 Qt 并设置其绝对安装前缀}"
-cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_PREFIX_PATH="$QT_TSAN_PREFIX" -DQt6_DIR="$QT_TSAN_PREFIX/lib/cmake/Qt6" \
-  -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=ON \
-  -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF \
-  -DQCURL_SANITIZER_PROFILE=tsan \
-  -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
-  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
-  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread"
-cmake --build build-tsan --parallel
 ```
 
-`QCURL_SANITIZER_PROFILE` 是 gate 读取的 cache 能力记录，不能代替真实编译/链接插桩和 TSan 正负对照。普通/ASan 树不能加载检测 Qt。固定能力、真实路径和 compiler family 会在 full gate 开始前检查；runtime 检测环境另由 sanitizer runner 校准。
+`QCURL_SANITIZER_PROFILE` 是 gate 读取的 cache 能力记录，不能代替真实编译/链接插桩。普通/ASan 树不能加载检测 Qt。固定能力、真实路径和 compiler family 会在 full gate 开始前检查；runtime 检测环境另由 sanitizer runner 校准。ASan/UBSan/LSan、真实泄漏检测及普通线程/生命周期测试仍为必需项。
 
 <a id="qualification"></a>
 ## 3. 选择 tier 与阶段
@@ -81,7 +70,7 @@ cmake --build build-tsan --parallel
 | --- | --- |
 | fast | release-shared 的 package contract 与 candidate 能力检查；**不执行完整安装 consumer** |
 | strict | 加上 test-shared-gcc 的 public-api、严格 offline QtTest、examples/benchmarks build/smoke、deprecated curl API、label/skip 检查 |
-| full | 六树完整 CTest、一致性 all+ext、shared/static package consumer/生命周期、动态符号、capability、sanitizer、UCE nightly、Doxygen 和 metadata |
+| full | 五树完整 CTest、一致性 all+ext、shared/static package consumer/生命周期、动态符号、capability、ASan/UBSan/LSan、UCE nightly、Doxygen 和 metadata |
 
 `remediation`（默认）是修复中本地验证，不能形成最终资格；`final` 必须显式指定并绑定干净 C1。`promotion` 及非 none ABI 模式留给[未来稳定 ABI 项目](stable-abi-contract-and-baseline.md)，不是 2.0 的必需阶段。
 
@@ -95,7 +84,6 @@ python3 scripts/run_release_gate.py --tier full --stage final --abi-mode none \
   --test-shared-gcc-build-dir build-test-shared-gcc \
   --test-shared-clang-build-dir build-test-shared-clang \
   --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
-  --tsan-build-dir build-tsan \
   --manifest build-release-shared/release/qa-manifest.json
 ```
 
@@ -115,13 +103,12 @@ python3 scripts/run_release_gate.py --tier full --stage final --abi-mode none \
   --test-shared-gcc-build-dir build-test-shared-gcc \
   --test-shared-clang-build-dir build-test-shared-clang \
   --asan-ubsan-lsan-build-dir build-asan-ubsan-lsan \
-  --tsan-build-dir build-tsan \
   --manifest build-release-shared/release/qa-manifest.json --verify-manifest
 python3 scripts/run_release_gate.py --scan-metadata
 git diff --check
 ```
 
-manifest 需要同一候选、工具链、六树能力、规范化命令、正式合同与 regular-file artifact digest；手写结果字段、历史 PASS、单个 sanitizer/control、普通 pytest 或文档检查均不能替代完整 final。Core/Other Extras 动态符号 allowlist 防止私有符号泄漏，不证明二进制兼容。
+manifest 需要同一候选、工具链、五树能力、规范化命令、正式合同与 regular-file artifact digest；每个必需 gate ID 必须恰有一条真实通过结果，不按旧六树的总数验收。手写结果字段、历史 PASS、单个 sanitizer/control、普通 pytest 或文档检查均不能替代完整 final。政策变更前的 manifest 也不能作为当前证据。Core/Other Extras 动态符号 allowlist 防止私有符号泄漏，不证明二进制兼容。
 
 full 内的 UCE 固定使用该 test tree 下的 release-gate run-id；若已有同名证据，应保留旧结果并使用新候选构建树，不覆盖或手改归档。更多归档与远端持久化边界见[UCE](../uce/README.md)。
 

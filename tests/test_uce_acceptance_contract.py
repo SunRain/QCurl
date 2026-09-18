@@ -48,6 +48,22 @@ def test_uce_nightly_uploads_archive_envelope() -> None:
     assert "archive-envelope.json" in paths
 
 
+def test_uce_nightly_keeps_asan_required_without_tsan_prerequisites() -> None:
+    workflow = _workflow(".github/workflows/uce_nightly.yml")
+    job = workflow["jobs"]["uce_nightly"]
+    run_blocks = _run_blocks(job)
+    sanitizer_runs = [block for block in run_blocks if "run_uce_sanitizers.py" in block]
+
+    assert len(sanitizer_runs) == 1
+    assert "--profile asan-ubsan-lsan" in sanitizer_runs[0]
+    assert all("tsan" not in block.lower() for block in run_blocks)
+    sanitizer = next(step for step in job["steps"] if step.get("name") == "Run ASan/UBSan/LSan bundle")
+    assert sanitizer.get("continue-on-error", False) is False
+    upload = next(step for step in job["steps"] if step.get("name") == "Upload sanitizer evidence [required]")
+    assert str(upload["with"]["path"]).strip() == "build/evidence/uce-sanitizers/asan/"
+    assert upload["with"]["if-no-files-found"] == "error"
+
+
 def test_uce_workload_exception_is_structured_and_archived(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     build_dir = tmp_path / "build"
     build_dir.mkdir()

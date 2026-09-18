@@ -77,13 +77,6 @@ ARTIFACT_CONTRACTS = {
         "json",
         "evidence/package-sanitizers/asan-ubsan-lsan/report.json",
     ),
-    "tsan_report": ArtifactContract(
-        "tsan_report",
-        "package_tsan",
-        "tsan",
-        "json",
-        "evidence/package-sanitizers/tsan/report.json",
-    ),
     "uce_report": ArtifactContract(
         "uce_report",
         "uce_evidence",

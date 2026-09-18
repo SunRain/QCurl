@@ -408,7 +408,7 @@ def test_hard_break_guards_do_not_join_adjacent_cmake_commands(tmp_path, capsys)
     assert capsys.readouterr().err == ""
 
 
-def test_current_release_docs_match_six_tree_static_and_pool_contracts() -> None:
+def test_current_release_docs_match_five_tree_static_and_pool_contracts() -> None:
     repo = Path(__file__).resolve().parents[2]
     release_procedure = (repo / "docs/dev/release/release-procedure.md").read_text(
         encoding="utf-8"
@@ -427,10 +427,10 @@ def test_current_release_docs_match_six_tree_static_and_pool_contracts() -> None
         "--test-shared-gcc-build-dir",
         "--test-shared-clang-build-dir",
         "--asan-ubsan-lsan-build-dir",
-        "--tsan-build-dir",
     ):
         assert option in release_docs
     assert "--static-build-dir" not in release_docs
+    assert "--tsan-build-dir" not in release_docs
     assert "--test-build-dir" not in release_docs
     assert "QCURL_STATIC_TESTING_UNSUPPORTED：静态构建不支持测试" in build_and_test
     assert "[[nodiscard]] LeaseResult resolveLease(LeaseId leaseId, QCWebSocket **socket) const" in pool_boundary
