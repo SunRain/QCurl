@@ -130,7 +130,11 @@ def prepare_artifact_parents(
     step: GateStep,
     registry: dict[str, dict[str, object]],
 ) -> None:
-    """在 producer 启动前创建固定 artifact 的父目录。"""
+    """为不独占运行目录的 producer 准备 artifact 父目录。"""
+
+    if step.name == "uce_evidence":
+        # UCE 独占创建 run 目录；预建目录会触发其拒绝覆盖已有证据的保护。
+        return
 
     for artifact_id in step.required_artifact_ids:
         contract = ARTIFACT_CONTRACTS[artifact_id]

@@ -51,6 +51,7 @@ add_test(
     NAME qcurl_uce_infrastructure
     COMMAND "${Python3_EXECUTABLE}" -m pytest --noconftest -q
             "${CMAKE_SOURCE_DIR}/tests/test_run_uce_gate.py"
+            "${CMAKE_SOURCE_DIR}/tests/test_release_uce_evidence.py"
             "${CMAKE_SOURCE_DIR}/tests/test_uce_acceptance_contract.py"
             "${CMAKE_SOURCE_DIR}/tests/test_uce_archive_validation.py"
             "${CMAKE_SOURCE_DIR}/tests/test_uce_candidate.py"

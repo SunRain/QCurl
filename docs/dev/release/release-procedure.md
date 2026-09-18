@@ -4,7 +4,7 @@
 
 ## 1. 前置条件与授权
 
-- `2.0.0` 是当前开发候选，CHANGELOG 保持 Unreleased，直到真正发布。Core 的合同是 2.x 源码兼容、ABI 非稳定，每次更新都要求下游重编译和重新链接。
+- `2.0.0` 的正式 release notes 必须在形成 C1 前冻结于 CHANGELOG；在通过 L1-L3 并获得独立 P1 授权前，不得把候选描述为已发布。Core 的合同是 2.x 源码兼容、ABI 非稳定，每次更新都要求下游重编译和重新链接。
 - 准备 Linux、CMake/Ninja、GCC/Clang、满足最低版本的 Qt/libcurl/zlib、Python/pytest、Doxygen，以及[本地测试服务](../build-and-test.md#2-qttest-与本地服务)。一致性与 HTTP/3 所需 curl testenv/QUIC 依赖见[专题说明](../../../tests/libcurl_consistency/README.md)。
 - 正式候选不得裁剪可用的 WebSocket。其余组件归属、成熟度、安装面与[公共头边界](../architecture/public-header-boundary.md)一致，Test Support 不是生产 Runtime。
 - 先完成源码、文档与机器输入，再验证候选。最终资格要求干净、完整的 C1 身份及子模块；dirty WIP 的 remediation 结果不能改名为 final。

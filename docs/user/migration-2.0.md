@@ -2,7 +2,7 @@
 
 1.0.0 是已发布历史，2.0.0 是有意打破 v1 源码/API/ABI 的开发候选。下游需按新头文件和库重新构建；采用 2.0 后，每次 QCurl 更新也必须重新编译和链接。
 
-本指南对照 `v1.0.0@12822251efb04ea78d97f33ed441a85660e72bbf` 与当前开发候选的真实公开头差异。Retry/TLS/Proxy/Timeout 的 accessor、typed lane 和 QCCookie 在 v1 已存在，不是本次新增迁移。现行实现写法见[PIMPL 规范](../dev/pimpl-and-shared-data-style.md)，用户可见变化见[CHANGELOG](../../CHANGELOG.md#unreleased)。
+本指南对照 `v1.0.0@12822251efb04ea78d97f33ed441a85660e72bbf` 与当前 2.0.0 候选的真实公开头差异。Retry/TLS/Proxy/Timeout 的 accessor、typed lane 和 QCCookie 在 v1 已存在，不是本次新增迁移。现行实现写法见[PIMPL 规范](../dev/pimpl-and-shared-data-style.md)，用户可见变化见[CHANGELOG](../../CHANGELOG.md#2.0.0)。
 
 ## 1. 依赖、请求构造与可失败配置
 

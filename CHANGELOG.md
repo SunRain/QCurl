@@ -1,10 +1,10 @@
 # QCurl Changelog
 
-记录当前 `2.0.0` hard-break 候选与已发布的 `1.0.0`。旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
+记录 `2.0.0` hard-break 发布说明与已发布的 `1.0.0`。旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
-## [Unreleased]
+## [2.0.0]
 
-`v1.0.0` 已发布；`v2.0.0` 尚未创建 tag 或远端发布。以下是候选变更，不是 readiness 或 CI 通过证明；正式发布说明从本版本条目生成。
+本条目是 QCurl 2.0.0 的冻结发布说明。发布资格、tag、远端 Release 和资产状态以[正式发布合同](docs/dev/release/2.0.0-hard-break-release-contract.md)及其机器证据为准；本条目本身不构成 readiness 或发布证明。
 
 ### Core 与包交付
 
