@@ -2,6 +2,8 @@
 
 从源码安装 QCurl，在独立 CMake 工程中只消费 Core。以下命令在仓库根目录执行；构建目录名可自行指定，安装前缀必须使用绝对路径。
 
+Arch Linux 用户也可从当前工作区生成由 pacman 管理的完整开发包，见 [Arch Linux 本地开发包](archlinux-packaging.md)。安装包后直接从第 2 节开始消费，无需再次源码安装。
+
 ## 1. 准备与安装
 
 需要 CMake 3.16+、C++17 编译器、Qt **6.10.3+**（源码构建需要 Core、Network）、libcurl 7.85.0+ 与 zlib 开发包。Core consumer 不需要 QtNetwork；WebSocket 需 libcurl 7.86.0+，HTTP/3 能力边界见[配置](configuration.md#http-version)。

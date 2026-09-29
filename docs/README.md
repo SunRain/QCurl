@@ -7,6 +7,7 @@
 | 任务 | 正文 |
 | --- | --- |
 | 安装并跑通独立 Core 程序 | [快速开始](user/quickstart.md) |
+| 从当前工作区构建 Arch Linux 完整开发包 | [Arch Linux 本地开发包](user/archlinux-packaging.md) |
 | 请求、HTTP 版本、代理、TLS、重试、缓存和上传 | [常见配置](user/configuration.md) |
 | lane、优先级、reservation、取消与通知 | [Lane scheduler](user/lane-scheduler.md) |
 | 传输暂停、下载背压与上传源暂停 | [流控](user/flow-control.md) |
