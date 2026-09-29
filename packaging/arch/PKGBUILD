@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+# makepkg 读取元数据并提供 srcdir/pkgdir。
+# shellcheck disable=SC2034,SC2154
+
+pkgname=qcurl
+pkgver=2.0.0
+pkgrel=1
+pkgdesc='Qt6 libcurl library with opt-in extras and development test support'
+arch=('x86_64')
+url='https://github.com/SunRain/QCurl'
+license=('MIT')
+depends=('qt6-base>=6.10.3' 'curl>=7.85.0' 'zlib')
+makedepends=('cmake>=3.19' 'ninja' 'pkgconf')
+# TestSupport 必须保留原生代码；makepkg strip 会破坏 GCC 的瘦 LTO 静态对象。
+# 不生成第二个 debug 包，也不让下游链接依赖打包时的 LTO 工具链。
+options=('staticlibs' '!debug' '!lto')
+source=()
+sha256sums=()
+
+_pkgbuild_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+_repo_root="$(cd -- "${_pkgbuild_dir}/../.." && pwd -P)"
+
+_fail()
+{
+    printf '==> ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+prepare()
+{
+    local path project_version
+    for path in CMakeLists.txt src/CMakeLists.txt LICENSE THIRD_PARTY_NOTICES.md \
+        tests/public_api/surface_manifest.json packaging/arch/verify_package.cmake; do
+        [[ -f "${_repo_root}/${path}" ]] || _fail "Required source file is missing: ${_repo_root}/${path}"
+    done
+    project_version="$(sed -nE \
+        's/^[[:space:]]*project\(QCurl[[:space:]]+VERSION[[:space:]]+([^[:space:])]+).*/\1/p' \
+        "${_repo_root}/CMakeLists.txt")"
+    [[ -n "${project_version}" ]] || _fail 'Could not read QCurl project version'
+    [[ "${project_version}" == "${pkgver}" ]] || _fail \
+        "PKGBUILD pkgver ${pkgver} does not match CMake project version ${project_version}"
+}
+
+build()
+{
+    cmake -S "${_repo_root}" -B "${srcdir}/qcurl-build" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DQCURL_BUILD_SHARED_LIBS=ON \
+        -DBUILD_TESTING=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_BENCHMARKS=OFF \
+        -DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF \
+        -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF \
+        -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
+    cmake --build "${srcdir}/qcurl-build" --parallel
+}
+
+package()
+{
+    DESTDIR="${pkgdir}" cmake --install "${srcdir}/qcurl-build"
+    install -Dm644 "${_repo_root}/LICENSE" "${pkgdir}/usr/share/licenses/qcurl/LICENSE"
+    install -Dm644 "${_repo_root}/THIRD_PARTY_NOTICES.md" \
+        "${pkgdir}/usr/share/licenses/qcurl/THIRD_PARTY_NOTICES.md"
+    cmake "-DPACKAGE_ROOT=${pkgdir}" "-DPACKAGE_VERSION=${pkgver}" \
+        "-DSOURCE_ROOT=${_repo_root}" "-DBUILD_ROOT=${srcdir}/qcurl-build" \
+        -P "${_pkgbuild_dir}/verify_package.cmake"
+}
