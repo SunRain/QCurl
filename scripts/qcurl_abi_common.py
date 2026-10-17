@@ -45,7 +45,10 @@ def run(
 ) -> subprocess.CompletedProcess[str]:
     """运行 ABI producer 命令，并对非零返回码 fail closed。"""
 
-    proc = subprocess.run(command, text=True, capture_output=True)
+    try:
+        proc = subprocess.run(command, text=True, capture_output=True)
+    except OSError as exc:
+        raise AbiGateError(f"cannot execute ABI tool: {command[0]}: {exc}") from exc
     if output_file is not None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(
@@ -84,7 +87,4 @@ def validate_snapshot_output(
     """阻止诊断 producer 修改受控 ABI baseline。"""
 
     if path_is_controlled_baseline(path, repo_root=repo_root):
-        raise AbiGateError(
-            "diagnostic baseline/snapshot commands cannot write abi/baseline; "
-            "use the explicit promote command"
-        )
+        raise AbiGateError("ABI evidence commands cannot write historical abi/baseline")

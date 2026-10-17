@@ -2,10 +2,11 @@
 """Validate QCurl release contracts.
 
 Checks:
-1. PROJECT_VERSION major must match QCurl SOVERSION.
-2. The curl submodule checkout must match the currently intended pin
+1. Both runtime targets use the derived major.minor SOVERSION and full VERSION.
+2. The installed CMake package uses SameMinorVersion matching.
+3. The curl submodule checkout must match the currently intended pin
    (either HEAD's gitlink or the working-tree-updated gitlink).
-3. Print the bundled curl version from curlver.h for diagnostics.
+4. Print the bundled curl version from curlver.h for diagnostics.
 """
 
 from __future__ import annotations
@@ -29,12 +30,39 @@ def parse_project_version(source_root: pathlib.Path) -> tuple[int, int, int]:
     return tuple(int(part) for part in match.groups())
 
 
-def parse_soversion(source_root: pathlib.Path) -> int:
-    content = read_text(source_root / "src" / "CMakeLists.txt")
-    match = re.search(r"\bSOVERSION\s+(\d+)\b", content)
-    if not match:
-        raise ValueError("无法从 src/CMakeLists.txt 解析 SOVERSION")
-    return int(match.group(1))
+def validate_version_policy(source_root: pathlib.Path) -> list[str]:
+    """Validate the common ABI-line input and both runtime target bindings."""
+
+    root_content = read_text(source_root / "CMakeLists.txt")
+    source_content = read_text(source_root / "src" / "CMakeLists.txt")
+    errors: list[str] = []
+    if not re.search(
+        r'set\s*\(\s*QCURL_ABI_VERSION\s+"\$\{PROJECT_VERSION_MAJOR\}\.\$\{PROJECT_VERSION_MINOR\}"\s*\)',
+        root_content,
+    ):
+        errors.append("QCURL_ABI_VERSION must derive from PROJECT_VERSION major.minor")
+    for target in ("QCurl", "QCurlOtherExtras"):
+        blocks = re.findall(
+            rf"set_target_properties\s*\(\s*{target}\s+PROPERTIES\s+(.*?)\)",
+            source_content,
+            re.DOTALL,
+        )
+        versions = re.findall(r"\bVERSION\s+(\S+)", "\n".join(blocks))
+        soversions = re.findall(r"\bSOVERSION\s+(\S+)", "\n".join(blocks))
+        if versions != ["${PROJECT_VERSION}"]:
+            errors.append(f"{target} VERSION must bind exactly once to PROJECT_VERSION")
+        if soversions != ["${QCURL_ABI_VERSION}"]:
+            errors.append(
+                f"{target} SOVERSION must bind exactly once to QCURL_ABI_VERSION"
+            )
+    package_version = re.findall(
+        r"write_basic_package_version_file\s*\((.*?)\)", root_content, re.DOTALL
+    )
+    if len(package_version) != 1 or not re.search(
+        r"\bCOMPATIBILITY\s+SameMinorVersion\b", package_version[0]
+    ):
+        errors.append("QCurlConfigVersion must use SameMinorVersion")
+    return errors
 
 
 def run_git(args: list[str], source_root: pathlib.Path) -> str:
@@ -88,17 +116,12 @@ def main() -> int:
     source_root = args.source_root.resolve()
 
     project_version = parse_project_version(source_root)
-    soversion = parse_soversion(source_root)
+    soversion = f"{project_version[0]}.{project_version[1]}"
     current_pin = current_curl_pin(source_root)
     desired_pin = desired_curl_pin(source_root)
     curl_version = parse_bundled_curl_version(source_root)
 
-    errors: list[str] = []
-    if project_version[0] != soversion:
-        errors.append(
-            "PROJECT_VERSION major 与 SOVERSION 不一致："
-            f"{project_version[0]} != {soversion}"
-        )
+    errors = validate_version_policy(source_root)
 
     if current_pin != desired_pin:
         errors.append(

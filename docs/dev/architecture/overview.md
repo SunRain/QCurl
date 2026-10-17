@@ -1,6 +1,6 @@
 # QCurl 架构概览
 
-面向维护者说明模块边界与请求路径。用户用法从[文档目录](../../README.md)进入；组件、成熟度及 2.x 源码兼容/下游重编译合同由[正式发布合同](../release/2.0.0-hard-break-release-contract.md)定义，这里不复制发布矩阵。
+面向维护者说明模块边界与请求路径。用户用法从[文档目录](../../README.md)进入；组件、成熟度与同版本线 patch 保护见[版本与兼容政策](../release/versioning-and-compatibility.md)，候选资格由[正式发布合同](../release/2.1.0-release-contract.md)定义，这里不复制发布矩阵。
 
 ## 模块边界
 

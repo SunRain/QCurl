@@ -41,7 +41,7 @@ curl submodule、系统包和 Qt/libcurl 版本仍由维护者按 release gate �
 
 资产清单、打包与上传步骤只在[发布操作](release-procedure.md#5-打包说明与-checksum)维护。这里约束来源与完整性，不复制发布流程。
 
-当前 release workflow 只产出候选 packages 与 gate reports；它不会创建 GitHub Release，也不会自动生成或上传 checksum、SBOM、signature 或 provenance。QCurl 2.0 使用非稳定 ABI 合同，不要求 ABI diff report。正式发布前，checksum、asset 清单和 release notes 仍是 release blocker；SBOM、signature 和 provenance 在未启用前只能作为 roadmap / follow-up 描述。
+当前 release workflow 只产出候选 packages 与 gate reports；它不会创建 GitHub Release，也不会自动生成或上传 checksum、SBOM、signature 或 provenance。2.1 首版须保留两库 snapshot 与 compatibility-reference，后续 patch 还须有 first/latest 兼容证据，具体集合由[当前正式合同](2.1.0-release-contract.md)规定。正式发布前，真实资产、checksum 与 release notes 必须核对；SBOM、signature 和 provenance 在未启用前只能作为 roadmap / follow-up 描述。
 
 在未启用签名和 provenance 前，release notes 应明确可信边界：用户至少应校验 `SHA256SUMS`，并优先从 GitHub Release 官方 assets 下载。
 

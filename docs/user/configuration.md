@@ -206,7 +206,7 @@ WebSocket 的 public 配置入口集中在以下头文件注释：
 - `setOptions(...)` 必须在下一次 `open()` 前调用；`Closed` 状态可为重连前重新配置，`Connecting / Connected / Closing` 阶段会拒绝修改并保留旧值
 - `maxFrameBytes`、`maxMessageBytes`、`maxPendingSendBytes`、`maxReceiveBufferBytes` 必须为正值且不超过 256 MiB；非法设置返回 `false` 并保留旧值
 - `closeHandshakeTimeout` 必须为正值；超时后连接会执行有界 teardown
-- WebSocket 属于 Other Extras 组件并标记为 Preview，默认关闭；握手复用现有 multi 驱动，不使用 owner-thread 阻塞传输或独立 worker transport
+- WebSocket 属于 Other Extras 组件并标记为 Preview，须显式消费 OtherExtras；握手复用现有 multi 驱动，不使用 owner-thread 阻塞传输或独立 worker transport
 - 发送队列、frame/message/receive buffer 都有硬上限，partial send 和 `CURLE_AGAIN` 会等待后续事件继续；文本消息在交付前完成 UTF-8 校验
 - WebSocket Preview 不提供 `permessage-deflate`；底层无法表达 RSV1 时不会模拟压缩语义
 
@@ -273,4 +273,4 @@ getter 不依赖是否开启重试，不增加计数或预算；调度仅在原�
 尚未收到目标响应时为 0，不把代理的 403 冒充目标状态。原始头仍可用于诊断。
 其余高级网络路径 API 继续是内部测试能力，安装 target 不导出整组宏。
 
-这些接口沿用 QCurl 2.x 每次更新重编译与非稳定 ABI 合同；不自动接管消费方的上层重试。
+这些 Public 接口（含 Preview）遵循[版本与兼容政策](../dev/release/versioning-and-compatibility.md)：从 2.1 起，同 `major.minor` 后续 patch 向后兼容源码、受支持 shared ABI、安装消费与公开行为，跨 minor 不保证兼容。它们不自动接管消费方的上层重试。

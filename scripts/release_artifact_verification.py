@@ -301,7 +301,7 @@ def artifact_reasons(
     required_gates = gates.get("required", []) if isinstance(gates, dict) else []
     contract_ids, reasons = _contract_reasons(manifest, required_gates)
     stage = manifest.get("stage")
-    if stage not in {"remediation", "promotion", "final"}:
+    if stage not in {"remediation", "final"}:
         reasons.append("manifest stage is invalid")
     registry = tree_registry if isinstance(tree_registry, dict) else {}
     for artifact_id in sorted(contract_ids):

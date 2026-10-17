@@ -40,6 +40,8 @@ EXPECTED_GATES = {
     "metadata_scan",
     "uce_evidence",
     "doxygen_report",
+    "compatibility_reference_capture",
+    "compatibility_reference_roundtrip",
 }
 EXPECTED_ARTIFACTS = {
     "full_ctest_report",
@@ -55,6 +57,17 @@ EXPECTED_ARTIFACTS = {
     "core_dynamic_symbols",
     "other_extras_dynamic_symbols",
     "capability_matrix_report",
+    "compatibility_reference",
+    "compatibility_reference_validation",
+    "abi_core_snapshot",
+    "abi_other_extras_snapshot",
+    "compatibility_roundtrip_report",
+    "compatibility_roundtrip_core_full",
+    "compatibility_roundtrip_core_residual",
+    "compatibility_roundtrip_core_comparison",
+    "compatibility_roundtrip_other_extras_full",
+    "compatibility_roundtrip_other_extras_residual",
+    "compatibility_roundtrip_other_extras_comparison",
 }
 EXPECTED_TREES = {
     "release-shared",
@@ -94,7 +107,7 @@ def test_script_entrypoint_verifies_candidate_without_pythonpath(
     tmp_path: Path,
 ) -> None:
     repo, args, _, _ = _full_manifest_fixture(tmp_path)
-    argv = ["--tier", "full", "--stage", "final", "--manifest", str(args.manifest)]
+    argv = ["--abi-mode", "snapshot", "--authority", str(args.authority[0]), "--tier", "full", "--stage", "final", "--manifest", str(args.manifest)]
     for tree_id, record in run_release_gate._tree_registry(args).items():
         argv.extend((f"--{tree_id}-build-dir", str(record["path"])))
     command = (
@@ -258,7 +271,7 @@ def _rebind_manifest_identity(fixture) -> None:
     manifest["identity"] = release_identity.build_identity(
         repo,
         build_dirs=run_release_gate._identity_build_dirs(args),
-        authority_paths=[],
+        authority_paths=args.authority,
         commands=[step.command for step in steps],
         tree_registry=run_release_gate._tree_registry(args),
     )
@@ -287,7 +300,7 @@ def test_old_stable_sanitizer_report_is_rejected_for_new_candidate(
     changed_path = {
         "tracked": repo / "tracked.txt",
         "untracked": repo / "new-source.txt",
-        "authority": repo / "docs/dev/release/2.0.0-hard-break-release-contract.md",
+        "authority": repo / "docs/dev/release/2.1.0-release-contract.md",
         "submodule": repo / "dependency/subject.txt",
     }[changed]
     changed_path.write_text("new candidate content\n", encoding="utf-8")
@@ -298,9 +311,9 @@ def test_old_stable_sanitizer_report_is_rejected_for_new_candidate(
     _rebind_manifest_identity(fixture)
     artifact["sha256"] = release_identity.file_sha256(path)
     assert _verify(fixture) == 1
-    assert json.loads(capsys.readouterr().out)["reasons"] == [
-        "sanitizer report candidate does not match current candidate"
-    ]
+    reasons = json.loads(capsys.readouterr().out)["reasons"]
+    assert "sanitizer report candidate does not match current candidate" in reasons
+    assert "compatibility evidence invalid: final/reference requires a clean candidate" in reasons
     assert path.read_bytes() == original_bytes
 
 

@@ -200,8 +200,24 @@ jobs:
       - name: Package artifacts (DEB + TGZ)
         run: |
           set -euo pipefail
-          (cd build && cpack -G TGZ)
-          (cd build && cpack -G DEB)
+          cmake -S . -B build-package -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DQCURL_BUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF \
+            -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+          python3 scripts/release_package_evidence.py \
+            --build-dir build-package --linkage shared \
+            --contract tests/public_api/package_gate_manifest.json \
+            --surface-manifest tests/public_api/surface_manifest.json \
+            --install-report build-package/evidence/install.json \
+            --lifecycle-report build-package/evidence/lifecycle.xml --jobs 2
+          python3 tests/public_api/version_contracts.py \
+            --stage-dir build-package/evidence/package-stage/shared \
+            --producer-build-dir build-package \
+            --build-dir build-package/evidence/version-contract
+          (cd build-package && cpack -G TGZ)
+          test -f build-package/QCurl-2.1.0-Linux.tar.gz
+          (cd build-package && cpack -G DEB)
+          test -f build-package/QCurl-2.1.0-Linux.deb
 
       - name: Upload gate reports
         if: always()
@@ -210,6 +226,7 @@ jobs:
           name: release-debian12-gate-reports-${{ github.sha }}
           path: |
             build/libcurl_consistency/reports/
+            build-package/evidence/
           retention-days: 14
 
       - name: Upload packages
@@ -218,8 +235,8 @@ jobs:
         with:
           name: release-debian12-packages-${{ github.sha }}
           path: |
-            build/*.deb
-            build/*.tar.gz
+            build-package/QCurl-2.1.0-Linux.deb
+            build-package/QCurl-2.1.0-Linux.tar.gz
           retention-days: 14
 
       - name: Upload service logs (on failure)
@@ -407,7 +424,22 @@ jobs:
       - name: Package artifacts (TGZ)
         run: |
           set -euo pipefail
-          (cd build && cpack -G TGZ)
+          cmake -S . -B build-package -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DQCURL_BUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF \
+            -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+          python3 scripts/release_package_evidence.py \
+            --build-dir build-package --linkage shared \
+            --contract tests/public_api/package_gate_manifest.json \
+            --surface-manifest tests/public_api/surface_manifest.json \
+            --install-report build-package/evidence/install.json \
+            --lifecycle-report build-package/evidence/lifecycle.xml --jobs 2
+          python3 tests/public_api/version_contracts.py \
+            --stage-dir build-package/evidence/package-stage/shared \
+            --producer-build-dir build-package \
+            --build-dir build-package/evidence/version-contract
+          (cd build-package && cpack -G TGZ)
+          test -f build-package/QCurl-2.1.0-Linux.tar.gz
 
       - name: Upload gate reports
         if: always()
@@ -416,6 +448,7 @@ jobs:
           name: release-arch-gate-reports-${{ github.sha }}
           path: |
             build/libcurl_consistency/reports/
+            build-package/evidence/
           retention-days: 14
 
       - name: Upload packages
@@ -424,7 +457,7 @@ jobs:
         with:
           name: release-arch-packages-${{ github.sha }}
           path: |
-            build/*.tar.gz
+            build-package/QCurl-2.1.0-Linux.tar.gz
           retention-days: 14
 
       - name: Upload Arch environment trace

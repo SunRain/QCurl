@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(QCURL_STAGE_PREFIX "" CACHE PATH "Staged QCurl install prefix")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Network)
-find_package(QCurl CONFIG REQUIRED COMPONENTS TestSupport
+find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS TestSupport
     PATHS "${QCURL_STAGE_PREFIX}"
     NO_DEFAULT_PATH
 )

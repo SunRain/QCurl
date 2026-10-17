@@ -9,6 +9,11 @@ from typing import Callable
 
 if __package__:
     from . import release_identity
+    from .release_compatibility_policy import (
+        reference_input_records,
+        require_clean_identity,
+    )
+    from .release_compatibility_verification import compatibility_reasons
     from .release_gate_model import GateStep, GateTier
     from .release_evidence_model import ARTIFACT_CONTRACTS
     from .release_evidence_model import command_digest
@@ -16,6 +21,11 @@ if __package__:
     from .release_tree_model import tree_registry
 else:
     import release_identity
+    from release_compatibility_policy import (
+        reference_input_records,
+        require_clean_identity,
+    )
+    from release_compatibility_verification import compatibility_reasons
     from release_gate_model import GateStep, GateTier
     from release_evidence_model import ARTIFACT_CONTRACTS
     from release_evidence_model import command_digest
@@ -49,9 +59,7 @@ def artifact_path(path: Path, repo_root: Path) -> str:
         return str(path)
 
 
-def source_identity_stable(
-    start: dict[str, object], finish: dict[str, object]
-) -> bool:
+def source_identity_stable(start: dict[str, object], finish: dict[str, object]) -> bool:
     keys = (
         "head",
         "tracked_patch",
@@ -68,62 +76,10 @@ def source_identity_stable(
 def required_artifacts(args, steps: list[GateStep]) -> list[tuple[str, Path]]:
     """返回当前 gate 的基础 artifact 路径集合。"""
 
-    names = {step.name for step in steps}
-    artifacts = [
+    return [
         (f"required_{index}", path)
         for index, path in enumerate(args.required_artifact, start=1)
     ]
-    release_shared = tree_path(args, "release-shared")
-    if "capability_matrix_probe" in names:
-        test_gcc = tree_path(args, "test-shared-gcc")
-        artifacts.append(
-            (
-                "capability_matrix",
-                test_gcc / "libcurl_consistency" / "reports" / "capabilities.json",
-            )
-        )
-    if "abi_hardbreak_report" in names:
-        artifacts.extend(
-            (
-                (
-                    "candidate_core_library",
-                    release_shared / "src" / "libQCurl.so.2.0.0",
-                ),
-                ("v1_baseline", args.abi_hardbreak_baseline),
-                ("abi_hardbreak_report", args.abi_hardbreak_report),
-                ("abi_hardbreak_current_snapshot", args.abi_hardbreak_current_snapshot),
-            )
-        )
-    if "dynamic_symbol_allowlist" in names:
-        artifacts.append(
-            (
-                "core_dynamic_symbols",
-                release_shared / "abi" / "qcurl-core-v2.dynamic-symbols.json",
-            )
-        )
-    if "other_extras_dynamic_symbol_allowlist" in names:
-        artifacts.append(
-            (
-                "other_extras_dynamic_symbols",
-                release_shared
-                / "abi"
-                / "qcurl-other-extras-v2.dynamic-symbols.json",
-            )
-        )
-    if "abi_current_baseline_diff" in names:
-        artifacts.extend(
-            (
-                (
-                    "abi_current_report",
-                    release_shared / "abi" / "qcurl-core-v2.abidiff.txt",
-                ),
-                (
-                    "abi_current_snapshot",
-                    release_shared / "abi" / "qcurl-core-v2.current.abi.xml",
-                ),
-            )
-        )
-    return artifacts
 
 
 def prepare_artifact_parents(
@@ -132,7 +88,7 @@ def prepare_artifact_parents(
 ) -> None:
     """为不独占运行目录的 producer 准备 artifact 父目录。"""
 
-    if step.name == "uce_evidence":
+    if step.name == "uce_evidence" or step.name.startswith("compatibility_"):
         # UCE 独占创建 run 目录；预建目录会触发其拒绝覆盖已有证据的保护。
         return
 
@@ -145,33 +101,9 @@ def prepare_artifact_parents(
         )
 
 
-def write_gate_manifest(
-    args,
-    repo_root: Path,
-    steps: list[GateStep],
-    authority_paths: list[Path],
-    gate_results: dict[str, dict[str, object]],
-    start_identity: dict[str, object],
-) -> release_identity.SnapshotCheck:
-    commands = [step.command for step in steps]
-    registry = tree_registry(args)
-    stage = args.stage
-    manifest = release_identity.create_snapshot(
-        repo_root,
-        build_dirs=identity_build_dirs(args),
-        authority_paths=authority_paths,
-        commands=commands,
-        required_gates=[step.name for step in steps],
-        stage=stage,
-        tree_registry=registry,
-    )
-    manifest["abiMode"] = args.abi_mode
-    manifest["gates"]["results"] = gate_results
-    manifest["gate_contract"] = gate_contracts(steps)
-    if "abi_hardbreak_report" in {step.name for step in steps}:
-        manifest["promotion"] = {
-            "manifest_path": artifact_path(args.manifest, repo_root),
-        }
+def _record_additional_artifacts(
+    args, manifest: dict, repo_root: Path, steps: list[GateStep]
+) -> None:
     for artifact_id, path in required_artifacts(args, steps):
         entry: dict[str, object] = {
             "path": artifact_path(path, repo_root),
@@ -181,31 +113,28 @@ def write_gate_manifest(
         if path.is_file():
             entry["sha256"] = release_identity.file_sha256(path)
         manifest["artifacts"][artifact_id] = entry
+
+
+def _record_gate_artifacts(
+    args, manifest: dict, repo_root: Path, steps: list[GateStep], registry: dict
+) -> None:
     contract_ids = {
-        artifact_id
-        for step in steps
-        for artifact_id in step.required_artifact_ids
+        artifact_id for step in steps for artifact_id in step.required_artifact_ids
     }
     manifest["evidence_contract"] = {
         "artifact_ids": sorted(contract_ids),
-        "stage": stage,
+        "stage": args.stage,
     }
-    commands_by_gate = {
-        step.name: step.command for step in steps
-    }
+    commands_by_gate = {step.name: step.command for step in steps}
     for artifact_id in sorted(contract_ids):
-        contract = ARTIFACT_CONTRACTS.get(artifact_id)
-        if contract is None:
-            continue
-        tree = registry.get(contract.tree_id)
-        if tree is None:
-            continue
+        contract = ARTIFACT_CONTRACTS[artifact_id]
+        tree = registry[contract.tree_id]
         path = Path(tree["path"]) / contract.relative_path
         command = commands_by_gate.get(contract.gate, [])
         manifest["artifacts"][artifact_id] = {
             "path": artifact_path(path, repo_root),
             "required": True,
-            "stage": stage,
+            "stage": args.stage,
             "treeId": contract.tree_id,
             "buildDir": str(tree["path"]),
             "command": command,
@@ -213,10 +142,36 @@ def write_gate_manifest(
             "kind": contract.kind,
             "sha256": release_identity.file_sha256(path) if path.is_file() else None,
         }
+
+
+def write_gate_manifest(
+    args,
+    repo_root: Path,
+    steps: list[GateStep],
+    authority_paths: list[Path],
+    gate_results: dict[str, dict[str, object]],
+    start_identity: dict[str, object],
+) -> release_identity.SnapshotCheck:
+    """生成绑定固定生产步骤、候选和全部必需证据的 manifest 并立即复核。"""
+    commands = [step.command for step in steps]
+    registry = tree_registry(args)
+    manifest = release_identity.create_snapshot(
+        repo_root,
+        build_dirs=identity_build_dirs(args),
+        authority_paths=authority_paths,
+        commands=commands,
+        required_gates=[step.name for step in steps],
+        stage=args.stage,
+        tree_registry=registry,
+    )
+    manifest["abiMode"] = args.abi_mode
+    manifest["gates"]["results"] = gate_results
+    manifest["gate_contract"] = gate_contracts(steps)
+    manifest["compatibilityInputs"] = reference_input_records(args, repo_root)
+    _record_additional_artifacts(args, manifest, repo_root, steps)
+    _record_gate_artifacts(args, manifest, repo_root, steps, registry)
     manifest["run_guard"] = {
-        "identity_stable": source_identity_stable(
-            start_identity, manifest["identity"]
-        ),
+        "identity_stable": source_identity_stable(start_identity, manifest["identity"]),
     }
     release_identity.write_snapshot(args.manifest, manifest)
     check = release_identity.verify_snapshot(
@@ -227,8 +182,13 @@ def write_gate_manifest(
         commands=commands,
         tree_registry=registry,
         gate_contracts=gate_contracts(steps),
-        expected_stage=stage,
+        expected_stage=args.stage,
     )
+    policy_reasons = compatibility_reasons(manifest, repo_root, registry, args=args)
+    if policy_reasons:
+        check = release_identity.SnapshotCheck(
+            False, "blocked", (*check.reasons, *policy_reasons), check.current_identity
+        )
     manifest["result"] = check.result
     manifest["validation"] = {"valid": check.valid, "reasons": list(check.reasons)}
     release_identity.write_snapshot(args.manifest, manifest)
@@ -254,17 +214,42 @@ def manifest_authority_paths(
     return paths
 
 
+def _verification_inputs(
+    args, manifest: dict, repo_root: Path
+) -> tuple[dict, list[Path]]:
+    capabilities = manifest.get("identity", {}).get("capabilities", {})
+    recorded_registry = capabilities.get("tree_registry", {})
+    current_registry = tree_registry(args)
+    if args.stage == "final":
+        if args.tier is not GateTier.FULL or set(current_registry) != set(
+            required_tree_ids(GateTier.FULL)
+        ):
+            raise ValueError(
+                "final verification requires --tier full and all five explicit tree paths"
+            )
+        registry = current_registry
+    else:
+        registry = current_registry or recorded_registry
+    if not isinstance(registry, dict):
+        registry = {}
+    authority_paths = list(args.authority)
+    if args.tier is GateTier.FULL:
+        expected = release_identity.default_authority_paths(repo_root)
+        if len(authority_paths) != len(expected) or set(authority_paths) != set(
+            expected
+        ):
+            raise ValueError("full verification requires the unique current authority")
+    return registry, authority_paths
+
+
 def verify_manifest(args, repo_root: Path, steps: list[GateStep] | None = None) -> int:
+    """独立重算固定步骤、源码身份、历史输入及全部必需发布产物。"""
     if not args.manifest.is_file():
         print(f"[release_gate] manifest missing: {args.manifest}", file=sys.stderr)
         return 1
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    stage = manifest.get("stage")
-    if stage != args.stage:
-        print(
-            "[release_gate] manifest stage does not match --stage",
-            file=sys.stderr,
-        )
+    if manifest.get("stage") != args.stage:
+        print("[release_gate] manifest stage does not match --stage", file=sys.stderr)
         return 1
     if manifest.get("abiMode") != args.abi_mode:
         print(
@@ -272,24 +257,12 @@ def verify_manifest(args, repo_root: Path, steps: list[GateStep] | None = None) 
             file=sys.stderr,
         )
         return 1
-    capabilities = manifest.get("identity", {}).get("capabilities", {})
-    recorded_registry = capabilities.get("tree_registry", {})
-    current_registry = tree_registry(args)
-    if stage in {"promotion", "final"}:
-        if args.tier is not GateTier.FULL or set(current_registry) != set(required_tree_ids(GateTier.FULL)):
-            print(
-                "[release_gate] promotion/final verification requires --tier full "
-                "and all five explicit tree paths",
-                file=sys.stderr,
-            )
-            return 2
-        registry = current_registry
-    else:
-        registry = current_registry or recorded_registry
-    if not isinstance(registry, dict):
-        registry = {}
+    try:
+        registry, authority_paths = _verification_inputs(args, manifest, repo_root)
+    except ValueError as exc:
+        print(f"[release_gate] {exc}", file=sys.stderr)
+        return 2
     build_dirs = [Path(record["path"]) for record in registry.values()]
-    authority_paths = manifest_authority_paths(manifest, repo_root)
     fixed_contracts = gate_contracts(steps) if steps is not None else None
     commands = [step.command for step in steps] if steps is not None else None
     check = release_identity.verify_snapshot(
@@ -302,12 +275,19 @@ def verify_manifest(args, repo_root: Path, steps: list[GateStep] | None = None) 
         gate_contracts=fixed_contracts,
         expected_stage=args.stage,
     )
+    policy_reasons = compatibility_reasons(manifest, repo_root, registry, args=args)
+    if policy_reasons:
+        check = release_identity.SnapshotCheck(
+            False, "blocked", (*check.reasons, *policy_reasons), check.current_identity
+        )
     payload = {"result": check.result, "valid": check.valid, "reasons": check.reasons}
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0 if check.valid else 1
 
 
-def write_snapshot_only(args, repo_root: Path, steps: list[GateStep], authority_paths: list[Path]) -> int:
+def write_snapshot_only(
+    args, repo_root: Path, steps: list[GateStep], authority_paths: list[Path]
+) -> int:
     manifest = release_identity.create_snapshot(
         repo_root,
         build_dirs=identity_build_dirs(args),
@@ -339,6 +319,8 @@ def execute_gate(
         commands=commands,
         tree_registry=tree_registry(args),
     )
+    if args.stage == "final":
+        require_clean_identity(start_identity)
     gate_results: dict[str, dict[str, object]] = {}
     registry = tree_registry(args)
     for step in steps:

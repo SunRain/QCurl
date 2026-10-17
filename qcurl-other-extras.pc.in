@@ -4,7 +4,7 @@ libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
 Name: QCurlOtherExtras
-Description: Opt-in non-stable QCurl Other Extras and Preview components
+Description: Opt-in QCurl Other Extras and Preview components
 Version: @PROJECT_VERSION@
 URL: https://github.com/SunRain/QCurl
 Requires: qcurl = @PROJECT_VERSION@, Qt6Network >= @QCURL_MIN_QT_VERSION@

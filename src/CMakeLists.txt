@@ -284,14 +284,14 @@ qcurl_enable_qt_no_keywords(QCurlOtherExtras)
 # 设置库属性
 set_target_properties(QCurl PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 2
+    SOVERSION ${QCURL_ABI_VERSION}
     AUTOMOC ON  # 自动处理 Qt MOC
     EXPORT_NAME QCurl
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(QCurlOtherExtras PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 2
+    SOVERSION ${QCURL_ABI_VERSION}
     AUTOMOC ON
     POSITION_INDEPENDENT_CODE ON
 )

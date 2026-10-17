@@ -67,191 +67,10 @@ def test_abi_gate_accepts_inherited_qobject_delete_later_symbol() -> None:
     qcurl_abi_gate.validate_dynamic_symbol_contract(symbols)
 
 
-def test_release_gate_promotion_candidate_uses_only_archived_abi_comparison(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    _prepare_full_tree_caches(tmp_path)
-    result = run_release_gate.main(
-        [
-            "--tier",
-            "full",
-            "--stage",
-            "promotion",
-            "--release-shared-build-dir",
-            str(tmp_path / "build"),
-            "--release-static-build-dir",
-            str(tmp_path / "build-static"),
-            "--test-shared-gcc-build-dir",
-            str(tmp_path / "build-tests"),
-            "--test-shared-clang-build-dir",
-            str(tmp_path / "build-tests-clang"),
-            "--asan-ubsan-lsan-build-dir",
-            str(tmp_path / "build-asan-ubsan-lsan"),
-            "--abi-mode",
-            "promotion-candidate",
-            "--abi-hardbreak-baseline",
-            str(tmp_path / "previous.abi.xml"),
-            "--abi-hardbreak-report",
-            str(tmp_path / "build" / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"),
-            "--abi-hardbreak-current-snapshot",
-            str(
-                tmp_path
-                / "build"
-                / "abi"
-                / "qcurl-core-v2.promotion-candidate.abi.xml"
-            ),
-            "--dry-run",
-        ]
-    )
-
-    assert result == 0
-
-    plan = json.loads(capsys.readouterr().out)
-    steps = plan["steps"]
-    names = [step["name"] for step in steps]
-
-    assert "abi_hardbreak_report" in names
-    assert "abi_current_baseline_diff" not in names
-
-    hardbreak_step = steps[names.index("abi_hardbreak_report")]
-    assert "hardbreak-report" in hardbreak_step["command"]
 
 
-def test_release_gate_promotion_candidate_records_bound_input_artifacts(
-    tmp_path: Path,
-) -> None:
-    args = run_release_gate.build_parser().parse_args(
-        [
-            "--tier",
-            "full",
-            "--stage",
-            "promotion",
-            "--release-shared-build-dir",
-            str(tmp_path / "build"),
-            "--release-static-build-dir",
-            str(tmp_path / "build-static"),
-            "--test-shared-gcc-build-dir",
-            str(tmp_path / "build-tests"),
-            "--test-shared-clang-build-dir",
-            str(tmp_path / "build-tests-clang"),
-            "--asan-ubsan-lsan-build-dir",
-            str(tmp_path / "build-asan-ubsan-lsan"),
-            "--abi-mode",
-            "promotion-candidate",
-            "--abi-hardbreak-baseline",
-            str(tmp_path / "v1.abi.xml"),
-            "--abi-hardbreak-report",
-            str(tmp_path / "build" / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"),
-            "--abi-hardbreak-current-snapshot",
-            str(
-                tmp_path
-                / "build"
-                / "abi"
-                / "qcurl-core-v2.promotion-candidate.abi.xml"
-            ),
-        ]
-    )
-    steps = run_release_gate._selected_steps(args)
-    artifacts = dict(run_release_gate._required_artifacts(args, steps))
-
-    assert artifacts["candidate_core_library"] == (
-        tmp_path / "build" / "src" / "libQCurl.so.2.0.0"
-    )
-    assert artifacts["v1_baseline"] == tmp_path / "v1.abi.xml"
-    assert artifacts["abi_hardbreak_current_snapshot"] == (
-        tmp_path / "build" / "abi" / "qcurl-core-v2.promotion-candidate.abi.xml"
-    )
-    assert artifacts["abi_hardbreak_report"] == (
-        tmp_path / "build" / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"
-    )
 
 
-def test_release_gate_writes_promotion_manifest_binding(tmp_path: Path) -> None:
-    repo = _init_identity_repo(tmp_path)
-    build_dir = repo / "build"
-    static_build_dir = repo / "build-static"
-    test_build_dir = repo / "build-tests"
-    manifest_path = repo / "artifacts" / "promotion.json"
-    input_paths = [
-        build_dir / "src" / "libQCurl.so.2.0.0",
-        repo / "v1.abi.xml",
-        build_dir / "abi" / "qcurl-core-v1-to-v2.abidiff.txt",
-        build_dir / "abi" / "qcurl-core-v2.promotion-candidate.abi.xml",
-    ]
-    for path in input_paths:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        content = "<abi-corpus/>\n" if path.suffix == ".xml" else path.name + "\n"
-        path.write_text(content, encoding="utf-8")
-
-    args = run_release_gate.build_parser().parse_args(
-        [
-            "--tier",
-            "full",
-            "--stage",
-            "promotion",
-            "--release-shared-build-dir",
-            str(build_dir),
-            "--release-static-build-dir",
-            str(static_build_dir),
-            "--test-shared-gcc-build-dir",
-            str(test_build_dir),
-            "--test-shared-clang-build-dir",
-            str(repo / "test-shared-clang"),
-            "--asan-ubsan-lsan-build-dir",
-            str(repo / "asan-ubsan-lsan"),
-            "--abi-mode",
-            "promotion-candidate",
-            "--abi-hardbreak-baseline",
-            str(repo / "v1.abi.xml"),
-            "--abi-hardbreak-report",
-            str(input_paths[2]),
-            "--abi-hardbreak-current-snapshot",
-            str(input_paths[3]),
-            "--manifest",
-            str(manifest_path),
-        ]
-    )
-    run_release_gate._resolve_paths(args, repo)
-    step = run_release_gate.GateStep(
-        "abi_hardbreak_report",
-        run_release_gate.GateTier.FULL,
-        ["true"],
-        "promotion report",
-        "release-shared",
-        ("abi_hardbreak_report", "abi_hardbreak_current_snapshot"),
-    )
-    commands = [step.command]
-    start_identity = release_identity.build_identity(
-        repo,
-        build_dirs=run_release_gate._identity_build_dirs(args),
-        authority_paths=[],
-        commands=commands,
-    )
-
-    check = run_release_gate._write_gate_manifest(
-        args,
-        repo,
-        [step],
-        [],
-        {
-            step.name: {
-                "result": "pass",
-                "returncode": 0,
-                "command": step.command,
-                "producerTreeId": "release-shared",
-            }
-        },
-        start_identity,
-    )
-
-    assert check.valid
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert "qa_manifest" not in manifest["artifacts"]
-    assert manifest["promotion"]["manifest_path"] == "artifacts/promotion.json"
-    assert manifest["artifacts"]["candidate_core_library"]["sha256"] == (
-        release_identity.file_sha256(input_paths[0])
-    )
 
 
 def test_release_gate_default_skips_abi_compatibility_gate(
@@ -290,190 +109,12 @@ def test_release_gate_default_skips_abi_compatibility_gate(
     assert "abi_hardbreak_report" not in names
 
 
-def test_release_gate_abi_mode_supports_unstable_default_and_explicit_diagnostics(
-    tmp_path: Path,
-) -> None:
-    parser = run_release_gate.build_parser()
-    base_args = [
-        "--tier",
-        "full",
-        "--release-shared-build-dir",
-        str(tmp_path / "build"),
-        "--release-static-build-dir",
-        str(tmp_path / "build-static"),
-        "--test-shared-gcc-build-dir",
-        str(tmp_path / "build-tests"),
-        "--test-shared-clang-build-dir",
-        str(tmp_path / "build-tests-clang"),
-        "--asan-ubsan-lsan-build-dir",
-        str(tmp_path / "build-asan-ubsan-lsan"),
-    ]
-
-    assert parser.parse_args(base_args).abi_mode == "none"
-    assert parser.parse_args(base_args + ["--abi-mode", "none"]).abi_mode == "none"
-    assert parser.parse_args(base_args + ["--abi-mode", "current"]).abi_mode == "current"
-    assert (
-        parser.parse_args(base_args + ["--abi-mode", "promotion-candidate"]).abi_mode
-        == "promotion-candidate"
-    )
-    with pytest.raises(SystemExit):
-        parser.parse_args(base_args + ["--abi-mode", "hybrid"])
 
 
-def test_release_gate_abi_modes_have_mutually_exclusive_step_lists(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    _prepare_full_tree_caches(tmp_path)
-    base_args = [
-        "--tier",
-        "full",
-        "--release-shared-build-dir",
-        str(tmp_path / "build"),
-        "--release-static-build-dir",
-        str(tmp_path / "build-static"),
-        "--test-shared-gcc-build-dir",
-        str(tmp_path / "build-tests"),
-        "--test-shared-clang-build-dir",
-        str(tmp_path / "build-tests-clang"),
-        "--asan-ubsan-lsan-build-dir",
-        str(tmp_path / "build-asan-ubsan-lsan"),
-    ]
-    none_result = run_release_gate.main(base_args + ["--dry-run"])
-    assert none_result == 0
-    none_names = [
-        item["name"] for item in json.loads(capsys.readouterr().out)["steps"]
-    ]
-    assert "abi_current_baseline_diff" not in none_names
-    assert "abi_hardbreak_report" not in none_names
-
-    current_result = run_release_gate.main(
-        base_args + ["--abi-mode", "current", "--dry-run"]
-    )
-    assert current_result == 0
-    current_names = [
-        item["name"] for item in json.loads(capsys.readouterr().out)["steps"]
-    ]
-    assert "abi_current_baseline_diff" in current_names
-    assert "abi_hardbreak_report" not in current_names
-
-    candidate_result = run_release_gate.main(
-        base_args
-        + [
-            "--stage",
-            "promotion",
-            "--abi-mode",
-            "promotion-candidate",
-            "--abi-hardbreak-baseline",
-            str(tmp_path / "v1.abi.xml"),
-            "--abi-hardbreak-report",
-            str(tmp_path / "build" / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"),
-            "--abi-hardbreak-current-snapshot",
-            str(
-                tmp_path
-                / "build"
-                / "abi"
-                / "qcurl-core-v2.promotion-candidate.abi.xml"
-            ),
-            "--dry-run",
-        ]
-    )
-    assert candidate_result == 0
-    candidate_names = [
-        item["name"] for item in json.loads(capsys.readouterr().out)["steps"]
-    ]
-    assert "abi_hardbreak_report" in candidate_names
-    assert "abi_current_baseline_diff" not in candidate_names
 
 
-def test_release_gate_abi_mode_parameters_fail_closed(tmp_path: Path) -> None:
-    parser = run_release_gate.build_parser()
-    candidate_args = parser.parse_args(
-        ["--abi-mode", "promotion-candidate"]
-    )
-    with pytest.raises(ValueError, match="promotion-candidate"):
-        run_release_gate._resolve_paths(candidate_args, tmp_path)
-
-    current_args = parser.parse_args(
-        [
-            "--abi-mode",
-            "current",
-            "--abi-hardbreak-baseline",
-            str(tmp_path / "v1.abi.xml"),
-        ]
-    )
-    with pytest.raises(ValueError, match="current"):
-        run_release_gate._resolve_paths(current_args, tmp_path)
-
-    none_args = parser.parse_args(
-        [
-            "--abi-mode",
-            "none",
-            "--abi-hardbreak-baseline",
-            str(tmp_path / "v1.abi.xml"),
-        ]
-    )
-    with pytest.raises(ValueError, match="none"):
-        run_release_gate._resolve_paths(none_args, tmp_path)
 
 
-def test_release_gate_keeps_abi_tools_opt_in_and_preserves_promotion_gate(
-    tmp_path: Path,
-) -> None:
-    args = run_release_gate.build_parser().parse_args(
-        [
-            "--tier",
-            "full",
-            "--release-shared-build-dir",
-            str(tmp_path / "build"),
-            "--release-static-build-dir",
-            str(tmp_path / "build-static"),
-            "--test-shared-gcc-build-dir",
-            str(tmp_path / "build-tests"),
-            "--test-shared-clang-build-dir",
-            str(tmp_path / "build-tests-clang"),
-            "--asan-ubsan-lsan-build-dir",
-            str(tmp_path / "build-asan-ubsan-lsan"),
-        ]
-    )
-    steps = run_release_gate._selected_steps(args)
-    artifacts = dict(run_release_gate._required_artifacts(args, steps))
-
-    assert artifacts["core_dynamic_symbols"].name == "qcurl-core-v2.dynamic-symbols.json"
-    assert "blocking_extras_dynamic_symbols" not in artifacts
-    assert artifacts["other_extras_dynamic_symbols"].name == (
-        "qcurl-other-extras-v2.dynamic-symbols.json"
-    )
-    assert "abi_current_report" not in artifacts
-    assert "abi_current_snapshot" not in artifacts
-
-    args.abi_mode = "current"
-    current_artifacts = dict(
-        run_release_gate._required_artifacts(
-            args,
-            run_release_gate._selected_steps(args),
-        )
-    )
-    assert current_artifacts["abi_current_report"].name == "qcurl-core-v2.abidiff.txt"
-    assert current_artifacts["abi_current_snapshot"].name == "qcurl-core-v2.current.abi.xml"
-
-    abi_args = qcurl_abi_gate.build_parser().parse_args(["diff"])
-    assert abi_args.library == Path("build/src/libQCurl.so.2.0.0")
-    assert abi_args.baseline == Path("abi/baseline/qcurl-core-v2.abi.xml")
-    assert qcurl_abi_gate.PROMOTION_REQUIRED_GATES[-1] == "abi_hardbreak_report"
-
-    promote_args = qcurl_abi_gate.build_parser().parse_args(
-        [
-            "promote",
-            "--candidate-manifest",
-            str(tmp_path / "manifest.json"),
-            "--candidate-commit",
-            "a" * 40,
-            "--old-baseline",
-            str(tmp_path / "v1.abi.xml"),
-        ]
-    )
-    assert promote_args.output == Path("abi/baseline/qcurl-core-v2.abi.xml")
 
 
 def _init_identity_repo(tmp_path: Path) -> Path:
@@ -485,7 +126,8 @@ def _init_identity_repo(tmp_path: Path) -> Path:
     run_release("init", "-q")
     (repo / "tracked.txt").write_text("one\n", encoding="utf-8")
     (repo / ".gitignore").write_text("build/\nartifacts/\n", encoding="utf-8")
-    run_release("add", "tracked.txt", ".gitignore")
+    (repo / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0 LANGUAGES CXX)\n", encoding="utf-8")
+    run_release("add", "tracked.txt", ".gitignore", "CMakeLists.txt")
     run_release(
         "-c",
         "user.name=qa",
@@ -504,7 +146,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
         repo
         / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation"
     )
-    authority = [repo / "docs/dev/release/2.0.0-hard-break-release-contract.md"]
+    authority = [repo / "docs/dev/release/2.1.0-release-contract.md"]
     local_files = [
         package / name for name in ("requirements.md", "plan.md", "contract.json", "tasks.md")
     ]
@@ -536,7 +178,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
     exclude = repo / ".git/info/exclude"
     exclude.write_text(
         exclude.read_text(encoding="utf-8")
-        + "\n.helloagents/\ndocs/dev/archive/reviews/\ndocs/dev/release/2.0.0-hard-break-release-contract.md\n",
+        + "\n.helloagents/\ndocs/dev/archive/reviews/\ndocs/dev/release/2.1.0-release-contract.md\n",
         encoding="utf-8",
     )
     return repo, authority
@@ -554,7 +196,7 @@ def test_default_authority_paths_bind_versioned_release_contract(
     ]
 
     assert relative_paths == [
-        "docs/dev/release/2.0.0-hard-break-release-contract.md",
+        "docs/dev/release/2.1.0-release-contract.md",
     ]
 
 
@@ -1040,11 +682,12 @@ def test_release_gate_writes_and_revalidates_machine_pass_manifest(
                 "current",
             ]
         )
-        == 1
+        == 2
     )
 
 
 def _three_tree_gate_args(tmp_path: Path) -> tuple[Path, Path, Path, object]:
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0 LANGUAGES CXX)\n", encoding="utf-8")
     release_shared = tmp_path / "release-shared"
     release_static = tmp_path / "release-static"
     test_shared = tmp_path / "test-shared-gcc"
@@ -1188,6 +831,7 @@ def test_examples_benchmarks_gate_uses_direct_commands(tmp_path: Path) -> None:
 
 
 def _five_tree_gate_args(tmp_path: Path) -> tuple[object, dict[str, Path]]:
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0 LANGUAGES CXX)\n", encoding="utf-8")
     trees = {
         "release-shared": tmp_path / "release-shared",
         "release-static": tmp_path / "release-static",
@@ -1326,6 +970,7 @@ def _write_tree_capability_cache(path: Path, tree_id: str) -> None:
 
 
 def _prepare_full_tree_caches(tmp_path: Path) -> dict[str, Path]:
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0 LANGUAGES CXX)\n", encoding="utf-8")
     trees = {
         "release-shared": tmp_path / "build",
         "release-static": tmp_path / "build-static",
@@ -1535,7 +1180,7 @@ def test_release_gate_stage_is_explicit_and_closed() -> None:
     parser = run_release_gate.build_parser()
 
     assert parser.parse_args([]).stage == "remediation"
-    for stage in ("remediation", "promotion", "final"):
+    for stage in ("remediation", "final"):
         assert parser.parse_args(["--stage", stage]).stage == stage
 
     with pytest.raises(SystemExit):
@@ -1560,76 +1205,8 @@ def test_full_gate_artifact_contract_is_complete_and_unique(tmp_path: Path) -> N
         assert contract.tree_id == step.producer_tree_id
 
 
-def test_current_and_promotion_abi_artifacts_use_distinct_contracts(
-    tmp_path: Path,
-) -> None:
-    args, trees = _five_tree_gate_args(tmp_path)
-    args.abi_mode = "current"
-    run_release_gate._resolve_paths(args, tmp_path)
-    current_ids = {
-        artifact_id
-        for step in run_release_gate._selected_steps(args)
-        if step.name == "abi_current_baseline_diff"
-        for artifact_id in step.required_artifact_ids
-    }
-
-    args.abi_mode = "promotion-candidate"
-    args.stage = "promotion"
-    args.abi_hardbreak_baseline = tmp_path / "qcurl-core-v1.abi.xml"
-    args.abi_hardbreak_report = trees["release-shared"] / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"
-    args.abi_hardbreak_current_snapshot = (
-        trees["release-shared"] / "abi" / "qcurl-core-v2.promotion-candidate.abi.xml"
-    )
-    run_release_gate._resolve_paths(args, tmp_path)
-    promotion_ids = {
-        artifact_id
-        for step in run_release_gate._selected_steps(args)
-        if step.name == "abi_hardbreak_report"
-        for artifact_id in step.required_artifact_ids
-    }
-
-    assert current_ids == {"abi_current_report", "abi_current_snapshot"}
-    assert promotion_ids == {
-        "abi_hardbreak_report",
-        "abi_hardbreak_current_snapshot",
-    }
-    assert current_ids.isdisjoint(promotion_ids)
-    assert current_ids | promotion_ids <= set(
-        release_evidence_model.ARTIFACT_CONTRACTS
-    )
 
 
-def test_release_gate_rejects_abi_stage_and_output_route_drift(
-    tmp_path: Path,
-) -> None:
-    args, trees = _five_tree_gate_args(tmp_path)
-    args.abi_mode = "promotion-candidate"
-    args.stage = "promotion"
-    args.abi_hardbreak_baseline = tmp_path / "qcurl-core-v1.abi.xml"
-    args.abi_hardbreak_report = tmp_path / "forged-report.txt"
-    args.abi_hardbreak_current_snapshot = tmp_path / "forged-snapshot.xml"
-    with pytest.raises(ValueError, match="fixed release-shared ABI output"):
-        run_release_gate._resolve_paths(args, tmp_path)
-
-    args.abi_hardbreak_report = (
-        trees["release-shared"] / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"
-    )
-    args.abi_hardbreak_current_snapshot = (
-        trees["release-shared"]
-        / "abi"
-        / "qcurl-core-v2.promotion-candidate.abi.xml"
-    )
-    args.stage = "remediation"
-    with pytest.raises(ValueError, match="promotion stage"):
-        run_release_gate._resolve_paths(args, tmp_path)
-
-    args.abi_mode = "current"
-    args.stage = "promotion"
-    args.abi_hardbreak_baseline = None
-    args.abi_hardbreak_report = None
-    args.abi_hardbreak_current_snapshot = None
-    with pytest.raises(ValueError, match="promotion-candidate ABI mode"):
-        run_release_gate._resolve_paths(args, tmp_path)
 
 
 def test_manifest_recomputes_required_artifact_ids(tmp_path: Path) -> None:
@@ -1730,9 +1307,9 @@ def _sanitizer_fixture_report(path: Path, build_dir: Path, repo: Path) -> str:
     })
 
 
-def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
+def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None, historical: tuple[Path, Path] | None = None):
     repo = _init_identity_repo(tmp_path) if repo is None else repo
-    authority = repo / "docs/dev/release/2.0.0-hard-break-release-contract.md"
+    authority = repo / "docs/dev/release/2.1.0-release-contract.md"
     authority.parent.mkdir(parents=True)
     authority.write_text("release authority fixture\n", encoding="utf-8")
     trees = {
@@ -1742,9 +1319,16 @@ def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
         "test-shared-clang": repo / "build" / "test-shared-clang",
         "asan-ubsan-lsan": repo / "build" / "asan-ubsan-lsan",
     }
+    from tests.test_release_identity import _git
+    from tests.release_compatibility_fixture import prepare_snapshot_fixture, bind_fixture_identity, prepare_roundtrip_fixture, prepare_historical_fixture
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "release authority fixture")
     for tree_id, path in trees.items():
         _write_tree_capability_cache(path, tree_id)
-    argv = ["--tier", "full", "--stage", "final", "--manifest", str(repo / "artifacts" / "full.json")]
+    reference = prepare_snapshot_fixture(repo, trees["release-shared"])
+    argv = ["--abi-mode", "current" if historical else "snapshot", "--authority", str(authority), "--tier", "full", "--stage", "final", "--manifest", str(repo / "artifacts" / "full.json")]
+    if historical:
+        argv.extend(["--abi-reference-first", str(historical[0]), "--abi-reference-latest", str(historical[1])])
     for tree_id, flag in (
         ("release-shared", "--release-shared-build-dir"),
         ("release-static", "--release-static-build-dir"),
@@ -1764,9 +1348,13 @@ def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
         for artifact_id in step.required_artifact_ids
     }
     for artifact_id in required_ids:
+        if artifact_id.startswith(("compatibility_roundtrip_", "compatibility_first_", "compatibility_latest_")):
+            continue
         contract = release_evidence_model.ARTIFACT_CONTRACTS[artifact_id]
         path = Path(registry[contract.tree_id]["path"]) / contract.relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            continue
         content = (
             _sanitizer_fixture_report(path, trees["asan-ubsan-lsan"], repo)
             if artifact_id == "asan_ubsan_lsan_report"
@@ -1778,10 +1366,14 @@ def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
     start_identity = release_identity.build_identity(
         repo,
         build_dirs=run_release_gate._identity_build_dirs(args),
-        authority_paths=[],
+        authority_paths=[authority],
         commands=commands,
         tree_registry=registry,
     )
+    bind_fixture_identity(reference, start_identity)
+    prepare_roundtrip_fixture(trees["release-shared"], start_identity)
+    if historical:
+        prepare_historical_fixture(repo, trees["release-shared"], historical, start_identity)
     results = {
         step.name: {
             "result": "pass",
@@ -1796,7 +1388,7 @@ def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None):
         args,
         repo,
         steps,
-        [],
+        [authority],
         results,
         start_identity,
     )
@@ -1811,6 +1403,6 @@ def test_full_manifest_fixture_binds_every_fixed_required_artifact(tmp_path: Pat
     required_ids = {
         artifact_id for step in steps for artifact_id in step.required_artifact_ids
     }
-    assert manifest["abiMode"] == "none"
+    assert manifest["abiMode"] == "snapshot"
     assert set(manifest["evidence_contract"]["artifact_ids"]) == required_ids
     assert required_ids <= set(manifest["artifacts"])

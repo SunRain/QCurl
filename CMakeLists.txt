@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
-project(QCurl VERSION 2.0.0 LANGUAGES CXX)
+project(QCurl VERSION 2.1.0 LANGUAGES CXX)
+set(QCURL_ABI_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -199,6 +200,7 @@ message(STATUS "✅ HTTP/2 API available (runtime backend support checked separa
 
 # 配置头文件
 configure_file(src/QCurlConfig.h.in src/QCurlConfig.h)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QCurlConsumerProfile.cmake")
 
 # 子目录
 add_subdirectory(src)
@@ -310,7 +312,7 @@ configure_package_config_file(
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/QCurlConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
+    COMPATIBILITY SameMinorVersion
 )
 install(
     FILES

@@ -4,16 +4,18 @@
 
 ## 当前版本与消费边界
 
-`v1.0.0` 是已发布历史，`2.0.0` 是当前开发候选。Core 在 2.x 内保证源码兼容，**ABI 非稳定；每次更新都必须重新编译和链接下游**。`SOVERSION 2` 不代表二进制兼容，候选说明不代表已经通过发布验收。
+`v2.0.0` 是已有历史 tag，**2.1.0 是当前开发候选**。从 2.1 起，同 `major.minor` 的后续 patch 保证全部已发布 Public 组件的源码、受支持 shared ABI、安装消费与公开行为向后兼容，包括 Preview。跨 minor 不保证兼容，须核对迁移并重建；这是自定义政策，不是 SemVer 的 minor 兼容规则。
+
+Linux 2.1 线使用 `SOVERSION 2.1` / `SameMinorVersion`；二进制承诺限于正式支持的 Linux x86_64 GCC/libstdc++ C++17、Release shared、相同 ABI 与功能配置，具体见[版本与兼容政策](docs/dev/release/versioning-and-compatibility.md)。2.1.0 首版只捕获并自测参考，不代表已经通过一次实际 patch 升级或发布验收。
 
 | 逻辑组件 | 消费方式与边界 |
 | --- | --- |
-| Core | 默认 `find_package(QCurl CONFIG REQUIRED)` / `QCurl::QCurl`；异步 HTTP 与公共配置、调度、缓存和传输 API |
+| Core | `find_package(QCurl 2.1.0 CONFIG REQUIRED)` 默认只导入 `QCurl::QCurl`；异步 HTTP 与公共配置、调度、缓存和传输 API |
 | Blocking Extras | 显式 `COMPONENTS BlockingExtras` / `QCurl::BlockingExtras`；同步值结果，实现随 Core 物理库交付 |
 | Other Extras | 显式 `COMPONENTS OtherExtras` / `QCurl::OtherExtras`；Diagnostics、WebSocket 为 Preview，Middleware Extras 为 Stable，均非默认 Core |
 | Test Support | 显式 `COMPONENTS TestSupport` / `QCurl::TestSupport`；仅供开发测试的静态库，不是生产 Runtime |
 
-Preview 是成熟度，Internal 是可见性，不是额外组件。精确安装面见[公共头边界](docs/dev/architecture/public-header-boundary.md)，发布承诺见[正式合同](docs/dev/release/2.0.0-hard-break-release-contract.md)。
+Preview 是成熟度，Internal 是可见性，不是额外组件；Preview 公共接口也受同线 patch 保护。精确安装面见[公共头边界](docs/dev/architecture/public-header-boundary.md)，发布承诺见[当前正式合同](docs/dev/release/2.1.0-release-contract.md)，2.0 升级见[迁移指南](docs/user/migration-2.1.md)。
 
 ## 依赖
 

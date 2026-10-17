@@ -105,7 +105,7 @@ build/evidence/uce/<run-id>.archive-envelope.json
 - 包内外 manifest/policy 逐字节一致。归档新增失败时只有限次补打包失败快照，绝不
   通过包后重写元数据把旧成功状态留在 tar 内。
 - `candidate_fingerprint` 记录 HEAD、完整 index、工作树/未跟踪内容、递归子模块与
-  唯一正式发布合同 `docs/dev/release/2.0.0-hard-break-release-contract.md`；本次输出不参与
+  唯一正式发布合同 `docs/dev/release/2.1.0-release-contract.md`；本次输出不参与
   指纹，避免自引用。本地 `.helloagents/` 不入库、不作为输入，缺少该目录不阻断 CI。
 - contract report、raw evidence、capability snapshot、脱敏扫描结果都必须能通过 manifest 反向定位。
 
@@ -182,7 +182,7 @@ python3 scripts/run_uce_sanitizers.py --profile asan-ubsan-lsan \
 
 ### 7.1 检测专用 Qt
 
-以下 TSan 教程是独立诊断入口，不是本次 QCurl 2.0.0 final 或 nightly CI 的前置要求。未运行、环境缺失或失败均不计入 final 通过数量，也不等于取得 TSan 覆盖；诊断确认的产品缺陷仍须处理。此非阻断政策仅适用于本次发布。
+以下 TSan 教程是独立诊断入口，不是 QCurl 2.1 final 或 nightly CI 的前置要求。未运行记 NOT_RUN，环境缺失或失败不计为 PASS，也不等于取得 TSan 覆盖；诊断确认的产品缺陷仍须处理。ASan/UBSan/LSan 和普通线程/生命周期验证仍是必需项，发布范围以[当前正式合同](../release/2.1.0-release-contract.md)为准。
 
 只给 QCurl 加 `-fsanitize=thread` 不足以观察 Qt 的同步路径。使用与普通构建同版本的
 官方 qtbase，以同一个 Clang 构建 Qt 和 QCurl；不修改 `/usr`、不提高产品最低 Qt 版本。
@@ -278,7 +278,7 @@ bash "tests/qcurl/httpbin/stop_httpbin.sh" --name "qcurl-tsan-httpbin"
 
 - [Manifest 合同](schema/manifest@v1.md)
 - [Evidence 合同](schema/evidence@v1.md)
-- 发布身份与完整 acceptance 约束：[正式发布合同](../release/2.0.0-hard-break-release-contract.md)
+- 发布身份与完整 acceptance 约束：[正式发布合同](../release/2.1.0-release-contract.md)
 - 策略字典：[机器输入](policy_violations_dictionary.json)与[语义说明](policy_violations_dictionary.md)
 - Netproof capability 探测：`scripts/netproof_capabilities.py`
 - Netproof runner：`scripts/netproof_strace_gate.py`

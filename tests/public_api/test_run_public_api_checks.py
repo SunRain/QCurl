@@ -499,7 +499,7 @@ def test_surface_manifest_accepts_default_core_and_opt_in_extras(tmp_path, capsy
   },
   "maturityLevels": ["Stable", "Preview"],
   "visibilityLevels": ["Public", "Internal"],
-  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
+  "compatibilityContract": {"scope": "all-installed-public-including-preview", "source": "same-major.minor-patch-backward-compatible", "abi": "same-major.minor-patch-backward-compatible-supported-configurations"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
@@ -568,7 +568,7 @@ def test_surface_manifest_accepts_installed_blocking_extras(tmp_path, capsys) ->
   },
   "maturityLevels": ["Stable", "Preview"],
   "visibilityLevels": ["Public", "Internal"],
-  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
+  "compatibilityContract": {"scope": "all-installed-public-including-preview", "source": "same-major.minor-patch-backward-compatible", "abi": "same-major.minor-patch-backward-compatible-supported-configurations"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
@@ -620,7 +620,7 @@ def test_surface_manifest_rejects_mismatched_test_support_install(tmp_path, caps
   },
   "maturityLevels": ["Stable", "Preview"],
   "visibilityLevels": ["Public", "Internal"],
-  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
+  "compatibilityContract": {"scope": "all-installed-public-including-preview", "source": "same-major.minor-patch-backward-compatible", "abi": "same-major.minor-patch-backward-compatible-supported-configurations"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
@@ -680,7 +680,7 @@ def test_surface_manifest_rejects_untracked_core_header(tmp_path, capsys) -> Non
   },
   "maturityLevels": ["Stable", "Preview"],
   "visibilityLevels": ["Public", "Internal"],
-  "compatibilityContract": {"source": "2.x-compatible", "abi": "unstable-rebuild-required"},
+  "compatibilityContract": {"scope": "all-installed-public-including-preview", "source": "same-major.minor-patch-backward-compatible", "abi": "same-major.minor-patch-backward-compatible-supported-configurations"},
   "headers": [
     {
       "path": "QCNetworkAccessManager.h",
@@ -720,7 +720,8 @@ def test_surface_manifest_rejects_untracked_core_header(tmp_path, capsys) -> Non
     assert "QCNetworkMockHandler.h: missing from surface manifest" in capsys.readouterr().err
 
 
-def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
+@pytest.mark.parametrize("maturity", ["Stable", "Preview"])
+def test_surface_manifest_rejects_stale_installed_public_header(tmp_path, capsys, maturity) -> None:
     surface = tmp_path / "surface.json"
     surface.write_text(
         json.dumps(
@@ -751,14 +752,15 @@ def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
                 "maturityLevels": ["Stable", "Preview"],
                 "visibilityLevels": ["Public", "Internal"],
                 "compatibilityContract": {
-                    "source": "2.x-compatible",
-                    "abi": "unstable-rebuild-required",
+                    "scope": "all-installed-public-including-preview",
+                    "source": "same-major.minor-patch-backward-compatible",
+                    "abi": "same-major.minor-patch-backward-compatible-supported-configurations",
                 },
                 "headers": [
                     {
                         "path": "QCNetworkAccessManager.h",
                         "component": "Core",
-                        "maturity": "Stable",
+                        "maturity": maturity,
                         "visibility": "Public",
                         "currentInstall": "core-component",
                         "targetInstall": "core-component",
@@ -766,7 +768,7 @@ def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
                     {
                         "path": "QCBlockingNetworkClient.h",
                         "component": "BlockingExtras",
-                        "maturity": "Stable",
+                        "maturity": maturity,
                         "visibility": "Public",
                         "currentInstall": "blocking-extras",
                         "targetInstall": "blocking-extras",
@@ -774,7 +776,7 @@ def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
                     {
                         "path": "QCNetworkMockHandler.h",
                         "component": "TestSupport",
-                        "maturity": "Stable",
+                        "maturity": maturity,
                         "visibility": "Public",
                         "currentInstall": "test-support",
                         "targetInstall": "test-support",
@@ -799,7 +801,7 @@ def test_surface_manifest_rejects_stale_stable_header(tmp_path, capsys) -> None:
 
     assert rc == 1
     assert (
-        "QCNetworkMockHandler.h: stable public header is absent from generated install manifests"
+        "QCNetworkMockHandler.h: installed public header is absent from generated install manifests"
         in capsys.readouterr().err
     )
 
@@ -938,7 +940,7 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 2.0.0, Qt6Network >= 6.10.3\n"
+        "Requires: qcurl = 2.1.0, Qt6Network >= 6.10.3\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -962,7 +964,7 @@ def test_pkg_config_contract_rejects_core_qtnetwork(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     (pc_dir / "qcurl-other-extras.pc").write_text(
-        "Requires: qcurl = 2.0.0, Qt6Network >= 6.10.3\n"
+        "Requires: qcurl = 2.1.0, Qt6Network >= 6.10.3\n"
         "Requires.private: zlib\n"
         "Libs: -L${libdir} -lQCurlOtherExtras\n",
         encoding="utf-8",
@@ -1000,7 +1002,7 @@ def test_release_metadata_scan_rejects_legacy_identity(tmp_path, capsys) -> None
     (tmp_path / "README.md").write_text("QCurl 3.0.0 current release\n", encoding="utf-8")
     (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
     (tmp_path / "docs/dev/architecture/overview.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
-    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 1
     assert "forbidden legacy release identity" in capsys.readouterr().err
@@ -1012,7 +1014,7 @@ def test_release_metadata_scan_allows_external_protocol_versions(tmp_path, capsy
     (tmp_path / "README.md").write_text("HTTP/3 and Qt 6 are external versions\n", encoding="utf-8")
     (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
     (tmp_path / "docs/dev/architecture/overview.md").write_text("libcurl supports HTTP/2 and HTTP/3\n", encoding="utf-8")
-    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0)\n", encoding="utf-8")
 
     assert release_gate._scan_metadata(tmp_path) == 0
     assert "metadata scan passed" in capsys.readouterr().out
@@ -1024,7 +1026,7 @@ def test_release_metadata_scan_ignores_generated_build_trees(tmp_path, capsys) -
     (tmp_path / "README.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
     (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
     (tmp_path / "docs/dev/architecture/overview.md").write_text("QCurl 1.0.0\n", encoding="utf-8")
-    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.0.0)\n", encoding="utf-8")
+    (tmp_path / "CMakeLists.txt").write_text("project(QCurl VERSION 2.1.0)\n", encoding="utf-8")
     for build_dir_name in ("build-clang", "build-asan-ubsan"):
         build_dir = tmp_path / build_dir_name
         build_dir.mkdir()
@@ -1047,21 +1049,21 @@ def test_release_metadata_scan_allows_published_v1_history_and_current_v2(tmp_pa
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text(
-        "latest published: v1.0.0; current development candidate: v2.0.0\n",
+        "latest published: v1.0.0; current development candidate: v2.1.0\n",
         encoding="utf-8",
     )
     (tmp_path / "docs/dev/architecture").mkdir(parents=True, exist_ok=True)
     (tmp_path / "docs/dev/architecture/overview.md").write_text(
-        "QCurl 2.0.0 architecture\n",
+        "QCurl 2.1.0 architecture\n",
         encoding="utf-8",
     )
     (tmp_path / "CMakeLists.txt").write_text(
-        "project(QCurl VERSION 2.0.0)\n",
+        "project(QCurl VERSION 2.1.0)\n",
         encoding="utf-8",
     )
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "CMakeLists.txt").write_text(
-        "set_target_properties(QCurl PROPERTIES SOVERSION 2)\n",
+        "set_target_properties(QCurl PROPERTIES SOVERSION 2.1)\n",
         encoding="utf-8",
     )
 

@@ -91,47 +91,19 @@ ARTIFACT_CONTRACTS = {
         "html",
         "evidence/doxygen/index.html",
     ),
-    "abi_current_report": ArtifactContract(
-        "abi_current_report",
-        "abi_current_baseline_diff",
-        "release-shared",
-        "text",
-        "abi/qcurl-core-v2.abidiff.txt",
-    ),
-    "abi_current_snapshot": ArtifactContract(
-        "abi_current_snapshot",
-        "abi_current_baseline_diff",
-        "release-shared",
-        "xml",
-        "abi/qcurl-core-v2.current.abi.xml",
-    ),
-    "abi_hardbreak_report": ArtifactContract(
-        "abi_hardbreak_report",
-        "abi_hardbreak_report",
-        "release-shared",
-        "text",
-        "abi/qcurl-core-v1-to-v2.abidiff.txt",
-    ),
-    "abi_hardbreak_current_snapshot": ArtifactContract(
-        "abi_hardbreak_current_snapshot",
-        "abi_hardbreak_report",
-        "release-shared",
-        "xml",
-        "abi/qcurl-core-v2.promotion-candidate.abi.xml",
-    ),
     "core_dynamic_symbols": ArtifactContract(
         "core_dynamic_symbols",
         "dynamic_symbol_allowlist",
         "release-shared",
         "json",
-        "abi/qcurl-core-v2.dynamic-symbols.json",
+        "abi/core.dynamic-symbols.json",
     ),
     "other_extras_dynamic_symbols": ArtifactContract(
         "other_extras_dynamic_symbols",
         "other_extras_dynamic_symbol_allowlist",
         "release-shared",
         "json",
-        "abi/qcurl-other-extras-v2.dynamic-symbols.json",
+        "abi/other-extras.dynamic-symbols.json",
     ),
     "capability_matrix_report": ArtifactContract(
         "capability_matrix_report",
@@ -141,6 +113,56 @@ ARTIFACT_CONTRACTS = {
         "libcurl_consistency/reports/capabilities.json",
     ),
 }
+
+
+for _artifact_id, _kind, _path in (
+    ("compatibility_reference", "json", "reference.json"),
+    ("compatibility_reference_validation", "json", "validation.json"),
+    ("abi_core_snapshot", "xml", "abi/core.snapshot.xml"),
+    ("abi_other_extras_snapshot", "xml", "abi/other-extras.snapshot.xml"),
+):
+    ARTIFACT_CONTRACTS[_artifact_id] = ArtifactContract(
+        _artifact_id,
+        "compatibility_reference_capture",
+        "release-shared",
+        _kind,
+        f"evidence/compatibility/reference/{_path}",
+    )
+
+for _role in ("roundtrip", "first", "latest"):
+    _gate = (
+        "compatibility_reference_roundtrip"
+        if _role == "roundtrip"
+        else f"compatibility_{_role}_check"
+    )
+    _directory = "roundtrip" if _role == "roundtrip" else f"check-{_role}"
+    for _name, _kind, _path in (
+        ("report", "json", "report.json"),
+        ("core_full", "text", "abi/core.full.txt"),
+        ("core_residual", "text", "abi/core.residual.txt"),
+        ("core_comparison", "json", "abi/core.comparison.json"),
+        ("other_extras_full", "text", "abi/other-extras.full.txt"),
+        ("other_extras_residual", "text", "abi/other-extras.residual.txt"),
+        ("other_extras_comparison", "json", "abi/other-extras.comparison.json"),
+    ):
+        _artifact_id = f"compatibility_{_role}_{_name}"
+        ARTIFACT_CONTRACTS[_artifact_id] = ArtifactContract(
+            _artifact_id,
+            _gate,
+            "release-shared",
+            _kind,
+            f"evidence/compatibility/{_directory}/{_path}",
+        )
+    if _role == "roundtrip":
+        continue
+    _artifact_id = f"compatibility_{_role}_source"
+    ARTIFACT_CONTRACTS[_artifact_id] = ArtifactContract(
+        _artifact_id,
+        _artifact_id,
+        "release-shared",
+        "json",
+        f"evidence/compatibility/source-{_role}/report.json",
+    )
 
 
 GATE_REQUIRED_ARTIFACTS = {

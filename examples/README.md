@@ -1,13 +1,13 @@
 # QCurl examples
 
-This directory contains examples for the `QCurl 1.0.0 first stable` line.
+This directory contains examples for the current QCurl 2.1.0 development candidate. Build and run them against the same candidate; an example build does not establish release qualification.
 
 ## Surface labels
 
 - Core / Stable: examples that use the default `QCurl::QCurl` install surface.
-- Blocking Extras / package-shipped non-default Core: examples that require explicit Blocking Extras components.
+- Blocking Extras / explicit opt-in: synchronous examples; implementation is embedded in Core.
 - Test Support / explicit opt-in: examples or fixtures for tests only.
-- Other Extras / Preview: WebSocket, Diagnostics, Middleware Extras, and other non-default surfaces.
+- Other Extras / explicit opt-in: WebSocket and Diagnostics are Preview; Middleware Extras is Stable.
 
 ## Build
 
@@ -38,7 +38,7 @@ Run examples from `build/examples/<ExampleName>/` after building.
 - `WebSocketPoolDemo`
 - `NetworkFeaturesDemo` diagnostics and WebSocket sections
 
-Preview examples can be built and packaged, but they are not part of the default Core Stable contract.
+These examples require Other Extras explicitly. Preview denotes maturity; its published Public APIs receive the same backward compatibility protection within a major.minor patch line. Cross-minor compatibility is not promised. See the [versioning policy](../docs/dev/release/versioning-and-compatibility.md).
 
 ## Documentation rules
 

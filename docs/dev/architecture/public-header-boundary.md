@@ -9,7 +9,7 @@
 - Core 默认消费；Blocking Extras 是显式 INTERFACE target，实现在 Core 库内；Other Extras 独立编译；Test Support 是开发静态库。Preview 与 Internal 都不是额外组件。
 - QCURL_INSTALL_HEADERS_EXTRAS 仅为非默认头的聚合集合，不定义所有权；WebSocket 按 QCURL_WEBSOCKET_SUPPORT 条件安装，不进入 Core。
 
-[正式合同](../release/2.0.0-hard-break-release-contract.md)规定 2.x Core 源码兼容，ABI 非稳定，每次更新都须下游重编译和链接。机器清单负责枚举，不在正文复制完整头列表。
+[版本与兼容政策](../release/versioning-and-compatibility.md)规定从 2.1 起，同 `major.minor` 后续 patch 保护全部已发布 Public 安装面（含 Preview）的源码、受支持 shared ABI、安装消费与公开行为；跨 minor 不保证兼容。[当前正式合同](../release/2.1.0-release-contract.md)定义实际资格输入。机器清单负责枚举，不在正文复制完整头列表。
 
 ## 2. 公开头约束
 
@@ -17,7 +17,7 @@
 - libcurl 转换放到 cpp/private；能前置声明就不强制传递 include。共享轻量类型使用独立 type header，避免大头文件成为转运站。
 - 值类型、QObject/运行时类及不完整类型 special members 遵循 PIMPL 规范，不在这里逐类重写布局表。
 - Core cookie 模型不得泄漏 QtNetwork cookie；CachePolicy 类型不混入 concrete cache 读取接口，HttpVersion 头不公开 curl 常量映射。
-- RequestConfig 只承载现行配置族；DNS/DoH/connect-to/resolve override/Happy Eyeballs/本地端口绑定不进入默认 Core。运行时 registry/lease、transfer record、handle accessor、日志脱敏 helper 留在非安装面；QCurlRuntimeState 这个公开枚举仍随 QCurlRuntime 交付，不能和私有 registry 混淆。
+- RequestConfig 只承载现行配置族；严格的 resolve override 与隔离策略属于普通 Core，其他 DNS/DoH/connect-to/Happy Eyeballs/本地端口路径仍不作为默认公共能力导出。运行时 registry/lease、transfer record、handle accessor、日志脱敏 helper 留在非安装面；QCurlRuntimeState 这个公开枚举仍随 QCurlRuntime 交付，不能和私有 registry 混淆。
 - scheduler 实现和 admission core 不安装、不导出，用户配置、命令和通知只走 manager；行为细节链接[lane 正文](../../user/lane-scheduler.md)。
 - Body/Multipart helper 不承担 manager 发送；transfer job 不旁路 manager 管线。Middleware base 不泄漏具体策略状态，mock/capture/test hook 不回流 Core。
 - 磁盘缓存只接受有界 fixed-header v4，v3/未知格式按 miss 清理；QSaveFile 禁用 direct fallback，单文件原子提交。不得恢复无界 QDataStream 容器解析，缓存容器、锁与文件系统细节留在实现中。
@@ -51,7 +51,7 @@ WebSocket pool 的 acquire/preWarm 使用 QFuture，结果只携带纯值 LeaseI
 - 无组件 `find_package(QCurl CONFIG REQUIRED)` 只加载 QCurl::QCurl。其余三个目标通过 COMPONENTS 显式加载；BlockingExtras 只转发 Core，不生成独立 libQCurlBlockingExtras。
 - QCurlTargets 不得定义或引用 QCurl::libcurl_shared。shared Core interface 不泄漏 CURL::libcurl 或 ZLIB::ZLIB；static Core 只传播必需的 CURL::libcurl，并由 QCurlConfig.cmake 的 find_dependency 补齐，不传播 ZLIB。
 - bundled libcurl_shared 只属于 staging/runtime 细节，不进入 public package/export 合同。
-- 跨库私有 bridge 仅限 Other Extras 的 persistent-transfer register/remove，以及 Test Support 的 installNetworkMockProvider；声明不安装，具体 owner 由 `scripts/qcurl_abi_symbols.py` 限定。组件必须与 Core 来自同一 package source identity，不把锁步内部链接当作 public API/稳定 ABI。Blocking helper 同库解析且隐藏。
+- 跨库私有 bridge 仅限 Other Extras 的 persistent-transfer register/remove，以及 Test Support 的 installNetworkMockProvider；声明不安装，具体 owner 由 `scripts/qcurl_abi_symbols.py` 限定。完整包组件与 Core 来自同一 source identity，bridge 不成为公共源码 API；但已静态链接旧 TestSupport 的公共 consumer 使用后续 patch Core 的能力仍须验证。Blocking helper 同库解析且隐藏。
 
 ## 4. 隔离 consumer 的独有验收
 

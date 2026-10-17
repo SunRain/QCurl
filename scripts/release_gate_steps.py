@@ -6,6 +6,8 @@ import argparse
 from pathlib import Path
 
 if __package__:
+    from .release_compatibility_steps import compatibility_steps
+    from .release_compatibility_policy import candidate_version, version_text
     from .release_examples_steps import examples_benchmarks_steps
     from .release_gate_model import GateStep, GateTier
     from .release_package_steps import package_evidence_step
@@ -13,6 +15,8 @@ if __package__:
     from .release_package_steps import shared_package_steps
     from .release_tree_model import tree_path
 else:
+    from release_compatibility_steps import compatibility_steps
+    from release_compatibility_policy import candidate_version, version_text
     from release_examples_steps import examples_benchmarks_steps
     from release_gate_model import GateStep, GateTier
     from release_package_steps import package_evidence_step
@@ -287,68 +291,14 @@ def _full_evidence_steps(args: argparse.Namespace) -> list[GateStep]:
     ]
 
 
-def _abi_steps(args: argparse.Namespace) -> list[GateStep]:
-    release_shared = tree_path(args, "release-shared")
-    if args.abi_mode == "none":
-        return []
-    if args.abi_mode == "current":
-        return [
-            _step(
-                "abi_current_baseline_diff",
-                GateTier.FULL,
-                [
-                    args.python,
-                    "scripts/qcurl_abi_gate.py",
-                    "--library",
-                    str(release_shared / "src" / "libQCurl.so.2.0.0"),
-                    "--headers-dir",
-                    "src",
-                    "diff",
-                    "--report",
-                    str(release_shared / "abi" / "qcurl-core-v2.abidiff.txt"),
-                    "--current-snapshot",
-                    str(release_shared / "abi" / "qcurl-core-v2.current.abi.xml"),
-                ],
-                "compare the release shared library against the controlled v2 ABI baseline",
-                "release-shared",
-                ("abi_current_report", "abi_current_snapshot"),
-            )
-        ]
-    if args.abi_mode == "promotion-candidate":
-        return [
-            _step(
-                "abi_hardbreak_report",
-                GateTier.FULL,
-                [
-                    args.python,
-                    "scripts/qcurl_abi_gate.py",
-                    "--library",
-                    str(release_shared / "src" / "libQCurl.so.2.0.0"),
-                    "--headers-dir",
-                    "src",
-                    "hardbreak-report",
-                    "--baseline",
-                    str(args.abi_hardbreak_baseline),
-                    "--report",
-                    str(args.abi_hardbreak_report),
-                    "--current-snapshot",
-                    str(args.abi_hardbreak_current_snapshot),
-                ],
-                "write the v1-to-v2 hard-break ABI report from the release shared tree",
-                "release-shared",
-                ("abi_hardbreak_report", "abi_hardbreak_current_snapshot"),
-            )
-        ]
-    raise ValueError(f"unsupported ABI mode: {args.abi_mode}")
-
-
 def _symbol_steps(args: argparse.Namespace) -> list[GateStep]:
     release_shared = tree_path(args, "release-shared")
+    version = version_text(candidate_version(args))
     return [
         _step(
             "dynamic_symbol_allowlist",
             GateTier.FULL,
-            [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / "libQCurl.so.2.0.0"), "--symbol-report", str(release_shared / "abi" / "qcurl-core-v2.dynamic-symbols.json"), "symbols"],
+            [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / f"libQCurl.so.{version}"), "--symbol-report", str(release_shared / "abi" / "core.dynamic-symbols.json"), "symbols"],
             "validate Core dynamic symbols from the release shared tree",
             "release-shared",
             ("core_dynamic_symbols",),
@@ -356,7 +306,7 @@ def _symbol_steps(args: argparse.Namespace) -> list[GateStep]:
         _step(
             "other_extras_dynamic_symbol_allowlist",
             GateTier.FULL,
-            [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / "libQCurlOtherExtras.so.2.0.0"), "--component", "other-extras", "--symbol-report", str(release_shared / "abi" / "qcurl-other-extras-v2.dynamic-symbols.json"), "symbols"],
+            [args.python, "scripts/qcurl_abi_gate.py", "--library", str(release_shared / "src" / f"libQCurlOtherExtras.so.{version}"), "--component", "other-extras", "--symbol-report", str(release_shared / "abi" / "other-extras.dynamic-symbols.json"), "symbols"],
             "validate Other Extras dynamic symbols from the release shared tree",
             "release-shared",
             ("other_extras_dynamic_symbols",),
@@ -381,7 +331,7 @@ def build_steps(args: argparse.Namespace) -> list[GateStep]:
     steps.extend(_strict_steps(args))
     steps.extend(_full_test_steps(args))
     steps.extend(_symbol_steps(args))
-    steps.extend(_abi_steps(args))
+    steps.extend(compatibility_steps(args))
     steps.extend(sanitizer_steps(args))
     steps.extend(_full_evidence_steps(args))
     return steps

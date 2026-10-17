@@ -119,10 +119,11 @@ def _validate_schema(data: dict[str, Any], errors: list[str]) -> None:
     if set(data.get("visibilityLevels", [])) != ALLOWED_VISIBILITY:
         errors.append("visibilityLevels must list Public and Internal")
     if data.get("compatibilityContract") != {
-        "source": "2.x-compatible",
-        "abi": "unstable-rebuild-required",
+        "scope": "all-installed-public-including-preview",
+        "source": "same-major.minor-patch-backward-compatible",
+        "abi": "same-major.minor-patch-backward-compatible-supported-configurations",
     }:
-        errors.append("compatibilityContract must require downstream rebuilds for 2.x updates")
+        errors.append("compatibilityContract must protect all installed Public and Preview components within major.minor")
 
 
 def _validate_core_manifest(
@@ -203,7 +204,7 @@ def _validate_manifest_completeness(
         errors.append(f"{header}: generated Core and Extras manifests overlap")
 
     for path, entry in entries.items():
-        if entry.get("visibility") != "Public" or entry.get("maturity") != "Stable":
+        if entry.get("visibility") != "Public":
             continue
         current_install = entry.get("currentInstall", "none")
         if current_install == "none":
@@ -211,7 +212,7 @@ def _validate_manifest_completeness(
         generated_headers = core_headers if entry.get("component") == "Core" else extras_headers
         if path not in generated_headers:
             errors.append(
-                f"{path}: stable public header is absent from generated install manifests"
+                f"{path}: installed public header is absent from generated install manifests"
             )
 
 

@@ -23,7 +23,7 @@
 | 普通代码 | 构建、相关 QtTest 与离线严格检查；覆盖本次行为的失败和边界路径 |
 | public header / install / export / pkg-config | [安装面检查](docs/dev/build-and-test.md#public-api)，shared 测试树与适用的 static/OFF package evidence，不能给 static/OFF 树分配 CTest |
 | 一致性合同 | [libcurl consistency](docs/dev/build-and-test.md#libcurl-consistency) 的对应专题和负向判据 |
-| 发布范围、producer 或 release evidence | [发布操作](docs/dev/release/release-procedure.md)的对应检查；最终资格使用 full/final 与 `abi-mode none`，不要求 2.0 ABI baseline |
+| 发布范围、producer 或 release evidence | [发布操作](docs/dev/release/release-procedure.md)的对应检查；新线首版 full/final 使用 `snapshot`，后续 patch 使用 `current` 并核对 first/latest 参考 |
 
 检查选择应与影响相称；docs-only 不自动触发五树完整发布验收。任何定向 PASS 都不能代替未运行的产品测试或远端 CI。
 

@@ -11,22 +11,36 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument(
         "--stage",
-        choices=("remediation", "promotion", "final"),
+        choices=("remediation", "final"),
         default="remediation",
-        help="manifest stage; promotion and final are independently verified",
+        help="manifest stage; final requires a clean candidate and full qualification",
     )
 
-    parser.add_argument("--dry-run", action="store_true", help="print the selected gate plan without running it")
-    parser.add_argument("--manifest", type=Path, help="machine QA manifest output or verification path")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the selected gate plan without running it",
+    )
+    parser.add_argument(
+        "--manifest", type=Path, help="machine QA manifest output or verification path"
+    )
     parser.add_argument(
         "--authority",
         type=Path,
         action="append",
         default=[],
-        help="authority input; full requires only docs/dev/release/2.0.0-hard-break-release-contract.md",
+        help="authority input; full requires only docs/dev/release/2.1.0-release-contract.md",
     )
-    parser.add_argument("--snapshot-only", action="store_true", help="write a T0 identity snapshot without claiming that gates passed")
-    parser.add_argument("--verify-manifest", action="store_true", help="recompute identity and required gate/artifact status from --manifest")
+    parser.add_argument(
+        "--snapshot-only",
+        action="store_true",
+        help="write a T0 identity snapshot without claiming that gates passed",
+    )
+    parser.add_argument(
+        "--verify-manifest",
+        action="store_true",
+        help="recompute identity and required gate/artifact status from --manifest",
+    )
     parser.add_argument(
         "--required-artifact",
         type=Path,
@@ -34,29 +48,32 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
         default=[],
         help="additional gate output that must exist and retain its content digest",
     )
-    parser.add_argument("--scan-metadata", action="store_true", help="run only the release metadata scan")
+    parser.add_argument(
+        "--scan-metadata",
+        action="store_true",
+        help="run only the release metadata scan",
+    )
 
 
 def add_abi_arguments(parser: argparse.ArgumentParser) -> None:
-    """添加默认非稳定 ABI 与显式诊断参数。"""
+    """添加首版参考和后续 patch 兼容参数。"""
 
     parser.add_argument(
         "--abi-mode",
-        choices=("none", "current", "promotion-candidate"),
+        choices=("none", "snapshot", "current"),
         default="none",
         help=(
-            "ABI compatibility mode; none is the 2.0 source-compatible, "
-            "rebuild-required release contract"
+            "snapshot captures a version-line first release; current compares "
+            "a patch with its first and latest published references; none is diagnostic only"
         ),
     )
     parser.add_argument(
-        "--abi-hardbreak-baseline",
+        "--abi-reference-first",
         type=Path,
-        help="archived pre-1.0 baseline XML used only for internal ABI comparison",
+        help="verified compatibility-reference directory for vM.m.0",
     )
-    parser.add_argument("--abi-hardbreak-report", type=Path, help="output path for the old-baseline ABI report")
     parser.add_argument(
-        "--abi-hardbreak-current-snapshot",
+        "--abi-reference-latest",
         type=Path,
-        help="output path for the promotion candidate ABI snapshot",
+        help="verified reference for the highest published patch before this candidate",
     )

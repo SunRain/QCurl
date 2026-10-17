@@ -33,7 +33,7 @@ WebSocket 握手复用同一 multi driver，不回退到 owner-thread `curl_easy
 | Other Extras | `registerPersistentTransfer`、`removePersistentTransfer` | opaque transfer token |
 | Test Support | `installNetworkMockProvider` | 进程期 callback table |
 
-bridge 声明留在 `_p.h`，不进入 public install manifest。transfer record 类型不得出现在跨库导出签名或 Core 动态符号中；组件与 Core 必须来自同一 package source identity，这种锁步内部合同不是 public source API 或稳定 ABI。Blocking Extras 与 Core 同库编译，handle/protocol helper 保持隐藏内部符号。
+bridge 声明留在 `_p.h`，不进入 public install manifest。transfer record 类型不得出现在跨库导出签名或 Core 动态符号中；完整包组件与 Core 来自同一 source identity，bridge 不是 public source API。但旧 consumer 已静态链接的 TestSupport 代码依赖新 Core 时，仍须满足同线 patch 运行合同。Blocking Extras 与 Core 同库编译，handle/protocol helper 保持隐藏内部符号。
 
 动态符号检查只接受 `scripts/qcurl_abi_symbols.py` 逐项列出的 owner，禁止用通配 owner 掩盖新增导出。`QCCurlMultiTransferRecord`、`QCCurlHandleManager`、reply-private 和 jitter helper 等实现符号不能因存在 bridge 而被放行。
 
@@ -69,7 +69,7 @@ URL 脱敏分两种情况：
 
 ## 发布边界与验证入口
 
-2.x Core public source API 的破坏需要新的 major release；ABI 变化仍须保持下游每次更新重编译的合同，并同步相关发布说明和测试。2.0 的 `abiMode=none`、非稳定 ABI 及未来 baseline/diff/promotion 的适用范围统一见[正式发布合同](../release/2.0.0-hard-break-release-contract.md)，本页不另维护发布矩阵。历史对比只从[归档索引](../archive/README.md)追溯。
+从 2.1 起，全部已发布 Public 组件（含 Preview）在同 `major.minor` 后续 patch 内保护源码、受支持 shared ABI、安装消费与公开行为。确需破坏时进入新版本线，并同步迁移说明和测试；跨 minor 不保证兼容。规范范围见[版本与兼容政策](../release/versioning-and-compatibility.md)，必需参考/报告见[正式发布合同](../release/2.1.0-release-contract.md)，本页不另维护发布矩阵。历史对比只从[归档索引](../archive/README.md)追溯。
 
 评审按上面的职责检查受影响路径，再选择能验证本次变更的入口，不重复抄写规则清单：
 

@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
-import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -13,6 +13,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from typing import Callable
+
+try:
+    from .release_identity import file_sha256
+    from .release_package_runtime import consumer_runtime_libraries
+    from .qcurl_compatibility_common import (
+        CompatibilityError,
+        library_environment,
+        read_profile,
+    )
+except ImportError:
+    from release_identity import file_sha256
+    from release_package_runtime import consumer_runtime_libraries
+    from qcurl_compatibility_common import (
+        CompatibilityError,
+        library_environment,
+        read_profile,
+    )
 
 
 @dataclass(frozen=True)
@@ -71,12 +88,14 @@ def _run_command(
     command: list[str],
     *,
     capture_output: bool,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         check=False,
         capture_output=capture_output,
         text=True,
+        env=env,
     )
 
 
@@ -111,6 +130,11 @@ def _header_manifests(surface_manifest: Path) -> dict[str, list[str]]:
     for entry in headers:
         if not isinstance(entry, dict):
             raise PackageEvidenceError("surface manifest header must be an object")
+        if (
+            entry.get("visibility") != "Public"
+            or entry.get("currentInstall", "none") == "none"
+        ):
+            continue
         target = COMPONENT_TARGETS.get(entry.get("component"))
         path = entry.get("path")
         if target is not None and isinstance(path, str) and path:
@@ -165,14 +189,28 @@ def _install_inventory(
 ) -> dict[str, Any]:
     files = []
     target_files = {spec.target: [] for spec in CONSUMERS}
-    for path in sorted(candidate for candidate in stage_dir.rglob("*") if candidate.is_file()):
+    for path in sorted(
+        candidate for candidate in stage_dir.rglob("*") if candidate.is_file()
+    ):
         relative = path.relative_to(stage_dir).as_posix()
         if "libQCurlBlockingExtras" in Path(relative).name:
             raise PackageEvidenceError(
-                "BlockingExtras must not install an independent runtime library: " + relative
+                "BlockingExtras must not install an independent runtime library: "
+                + relative
             )
         owners = _owners_for_path(relative, manifests)
-        files.append({"path": relative, "owners": owners})
+        entry = {"path": relative, "owners": owners}
+        if path.is_symlink():
+            entry.update({"type": "symlink", "target": path.readlink().as_posix()})
+        else:
+            entry.update(
+                {
+                    "type": "file",
+                    "sha256": file_sha256(path),
+                    "size": path.stat().st_size,
+                }
+            )
+        files.append(entry)
         for owner in owners:
             if owner in target_files:
                 target_files[owner].append(relative)
@@ -200,8 +238,10 @@ def _prepare_stage(
     jobs: int,
     run_command: RunCommand,
 ) -> None:
-    if stage_dir.exists():
-        shutil.rmtree(stage_dir)
+    if stage_dir.exists() or stage_dir.is_symlink():
+        raise PackageEvidenceError(
+            f"refusing to overwrite existing install stage: {stage_dir}"
+        )
     _run_checked(
         [cmake, "--build", str(build_dir), "--parallel", str(jobs)],
         run_command=run_command,
@@ -212,52 +252,123 @@ def _prepare_stage(
     )
 
 
+def _build_consumer(
+    source_dir: Path,
+    consumer_build: Path,
+    profile: Path,
+    stage_dir: Path,
+    *,
+    cmake: str,
+    jobs: int,
+    run_command: RunCommand,
+) -> None:
+    _run_checked(
+        [
+            cmake,
+            "-C",
+            str(profile),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(consumer_build),
+            f"-DQCURL_STAGE_PREFIX={stage_dir}",
+        ],
+        run_command=run_command,
+    )
+    _run_checked(
+        [cmake, "--build", str(consumer_build), "--parallel", str(jobs)],
+        run_command=run_command,
+    )
+
+
+def _consumer_evidence(
+    spec: ConsumerSpec,
+    repo_root: Path,
+    consumer_root: Path,
+    profile: Path,
+    stage_dir: Path,
+    *,
+    cmake: str,
+    linkage: str,
+    jobs: int,
+    run_command: RunCommand,
+    runtime_command: RunCommand,
+    values: dict[str, str],
+) -> dict[str, Any]:
+    consumer_build = consumer_root / spec.target
+    source_dir = repo_root / "tests" / "public_api" / spec.source_dir
+    _build_consumer(
+        source_dir,
+        consumer_build,
+        profile,
+        stage_dir,
+        cmake=cmake,
+        jobs=jobs,
+        run_command=run_command,
+    )
+    executable = consumer_build / spec.executable
+    libraries = consumer_runtime_libraries(
+        executable,
+        stage_dir,
+        linkage=linkage,
+        component=spec.target,
+        profile=values,
+        run_command=runtime_command,
+    )
+    _run_checked([str(executable)], run_command=runtime_command)
+    return {
+        "target": spec.target,
+        "consumer": spec.test_name,
+        "result": "pass",
+        "runtimeLibraries": libraries,
+    }
+
+
 def _run_consumers(
     repo_root: Path,
     build_dir: Path,
     stage_dir: Path,
     *,
     cmake: str,
+    linkage: str,
     jobs: int,
     run_command: RunCommand,
-) -> list[dict[str, str]]:
-    results = []
+) -> list[dict[str, Any]]:
     consumer_root = build_dir / "evidence" / "package-consumers"
-    for spec in CONSUMERS:
-        consumer_build = consumer_root / spec.target
-        if consumer_build.exists():
-            shutil.rmtree(consumer_build)
-        source_dir = repo_root / "tests" / "public_api" / spec.source_dir
-        _run_checked(
-            [
-                cmake,
-                "-S",
-                str(source_dir),
-                "-B",
-                str(consumer_build),
-                "-DCMAKE_BUILD_TYPE=Release",
-                f"-DQCURL_STAGE_PREFIX={stage_dir}",
-            ],
+    profile = build_dir / "generated" / "consumer-profile.cmake"
+    if not profile.is_file():
+        raise PackageEvidenceError(f"missing producer consumer profile: {profile}")
+    if consumer_root.exists() or consumer_root.is_symlink():
+        raise PackageEvidenceError(
+            f"refusing to overwrite existing consumer build: {consumer_root}"
+        )
+    values = read_profile(profile)
+    environment = library_environment(stage_dir, values)
+    # ldd 的 LD_DEBUG 输出会混入 stdout，不能当作依赖列表解析。
+    environment.pop("LD_DEBUG", None)
+    runtime_command = partial(run_command, env=environment)
+    return [
+        _consumer_evidence(
+            spec,
+            repo_root,
+            consumer_root,
+            profile,
+            stage_dir,
+            cmake=cmake,
+            linkage=linkage,
+            jobs=jobs,
             run_command=run_command,
+            runtime_command=runtime_command,
+            values=values,
         )
-        _run_checked(
-            [cmake, "--build", str(consumer_build), "--parallel", str(jobs)],
-            run_command=run_command,
-        )
-        _run_checked(
-            [str(consumer_build / spec.executable)],
-            run_command=run_command,
-        )
-        results.append(
-            {"target": spec.target, "consumer": spec.test_name, "result": "pass"}
-        )
-    return results
+        for spec in CONSUMERS
+    ]
 
 
 def _write_lifecycle_report(
     path: Path,
     linkage: str,
-    consumers: list[dict[str, str]],
+    consumers: list[dict[str, Any]],
 ) -> None:
     suite = ET.Element(
         "testsuite",
@@ -274,6 +385,19 @@ def _write_lifecycle_report(
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _new_package_paths(build_dir: Path, linkage: str) -> tuple[Path, Path]:
+    stage_dir = build_dir / "evidence" / "package-stage" / linkage
+    consumer_root = build_dir / "evidence" / "package-consumers"
+    profile = build_dir / "generated" / "consumer-profile.cmake"
+    if any(path.exists() or path.is_symlink() for path in (stage_dir, consumer_root)):
+        raise PackageEvidenceError(
+            "refusing to overwrite existing package stage or consumer build"
+        )
+    if not profile.is_file():
+        raise PackageEvidenceError(f"missing producer consumer profile: {profile}")
+    return stage_dir, profile
 
 
 def run_evidence(
@@ -294,7 +418,7 @@ def run_evidence(
     contract = _load_json_object(contract_path)
     _validate_consumer_contract(contract, linkage)
     manifests = _header_manifests(surface_manifest)
-    stage_dir = build_dir / "evidence" / "package-stage" / linkage
+    stage_dir, profile = _new_package_paths(build_dir, linkage)
     _prepare_stage(
         build_dir,
         stage_dir,
@@ -308,6 +432,7 @@ def run_evidence(
         build_dir,
         stage_dir,
         cmake=cmake,
+        linkage=linkage,
         jobs=jobs,
         run_command=run_command,
     )
@@ -317,6 +442,11 @@ def run_evidence(
             {
                 "schema": "qcurl/release-package-evidence@v1",
                 "linkage": linkage,
+                "stagePrefix": str(stage_dir.resolve()),
+                "profile": {
+                    "path": str(profile.resolve()),
+                    "sha256": file_sha256(profile),
+                },
                 "installInventory": inventory,
                 "consumers": consumers,
             },
@@ -355,7 +485,12 @@ def main(argv: list[str] | None = None) -> int:
             cmake=args.cmake,
             jobs=args.jobs,
         )
-    except (json.JSONDecodeError, OSError, PackageEvidenceError) as exc:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        PackageEvidenceError,
+        CompatibilityError,
+    ) as exc:
         print(f"[release_package_evidence] {exc}", file=sys.stderr)
         return 1
     return 0

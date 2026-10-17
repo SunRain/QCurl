@@ -25,8 +25,9 @@
   "maturityLevels": ["Stable", "Preview"],
   "visibilityLevels": ["Public", "Internal"],
   "compatibilityContract": {
-    "source": "2.x-compatible",
-    "abi": "unstable-rebuild-required"
+    "scope": "all-installed-public-including-preview",
+    "source": "same-major.minor-patch-backward-compatible",
+    "abi": "same-major.minor-patch-backward-compatible-supported-configurations"
   },
   "headers": [
     {

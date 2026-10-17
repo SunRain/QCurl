@@ -11,4 +11,7 @@
 # Public API and release contract
 /src/*.h @SunRain
 /docs/dev/release/2.0.0-hard-break-release-contract.md @SunRain
+/docs/dev/release/2.1.0-release-contract.md @SunRain
+/docs/dev/release/versioning-and-compatibility.md @SunRain
+/docs/dev/release/stable-abi-contract-and-baseline.md @SunRain
 /docs/dev/architecture/public-header-boundary.md @SunRain

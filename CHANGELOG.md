@@ -1,8 +1,48 @@
 # QCurl Changelog
 
-记录 `2.0.0` hard-break 发布说明与已发布的 `1.0.0`。旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
+记录当前 `2.1.0` 候选的变化与历史版本说明。2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
+<a id="current-release"></a>
+## [2.1.0] - Unreleased
+
+本条目以 `v2.0.0` 公共头、安装面与行为差异为依据。2.1.0 是当前开发候选，发布资格以[2.1 正式合同](docs/dev/release/2.1.0-release-contract.md)绑定的真实机器证据为准；本条目不表示 tag、Release 或资产已经发布。
+
+### 版本与兼容政策
+
+- 从 2.1.0 起，`major.minor` 是兼容版本线；同线后续 patch 保证全部已发布 Public 组件的源码、受支持 shared ABI、安装消费与公开行为向后兼容，包括 Preview。跨 minor 不保证兼容；这是自定义版本政策，不是 SemVer minor 兼容承诺。
+- 两个运行库使用 `SOVERSION 2.1` / `VERSION 2.1.0`，包规则改为 `SameMinorVersion`。不提供历史 `.so.2` 兼容链接；从 2.0 升级须修改受影响源码并重建下游。
+- 保留四个逻辑组件和三个物理库：Blocking 仍是实现内嵌 Core 的 INTERFACE target，Other Extras 独立，TestSupport 静态交付。首次 shared ABI 支持范围为 Linux x86_64 GCC/libstdc++ C++17、Release、未插桩、完整默认功能及匹配的依赖/ABI 配置，详见[长期政策](docs/dev/release/versioning-and-compatibility.md)。
+
+### Breaking changes
+
+- libcurl 最低版本从 `v2.0.0` 的 **7.85.0 提高至 8.14.1**，构建头、链接库与运行库统一执行；Qt 最低版本保持 6.10.3。运行库版本号不能替代 HTTP/3/QUIC 和 WebSocket 的实际能力检查。
+- 删除 `ShareHandleConfig::shareDnsCache()` / `setShareDnsCache()`；显式 share 只控制 manager 的 Cookie/SSL session store。DNS/连接资源由 CURLM 传输域管理，不提供旧 share-DNS 兼容路径。
+- 解析覆盖提升为普通 Core API，使用严格、原子校验的 `host:port:IPv4` 列表和 Qt ACE 主机规范化。曾使用内部高级路径开关的调用方须处理 `setResolveOverride()` 从链式 request 引用改为 `QCNetworkConfigUpdateResult`；无效列表保留旧状态。
+- 新默认 `Isolated` 按完整有效解析覆盖隔离异步 DNS/连接资源；显式 `NativeShared` 才选择同线程原生共享域。空列表不清缓存、不重置策略，Blocking 不提供跨调用缓存。连接限额和缓存容量按每个 CURLM 应用，同线程合计可超过单域值，不能继续视作线程总配额。
+
+### 新增能力
+
+- RetryPolicy 增加累计计划等待与总耗时预算；非负可选值、默认不限，在决定下一次重试时检查，保留正在执行的传输和已有错误/输出。Reply 增加重试次数、累计计划等待，以及不依赖自动重试开启状态的 `retryAfterDelay()` 查询。
+- 提供从当前工作区构建的 Arch Linux 完整开发包，覆盖四组件安装、最终归档检查与独立安装 consumer；本地产包不自动建立正式发布资格。
+
+### 缺陷修复
+
+- 原生终态保留 `CURLINFO_RESPONSE_CODE`，不把代理 CONNECT 的拒绝状态冒充目标响应；未收到目标响应时为 0。缓存命中正确恢复缓存元数据中的 HTTP 状态。
+- 中间件注销立即使当前注册失效，已开始请求跳过尚未执行阶段；同地址重注册只参与新请求。处理回调中删除 manager、reply、job 的重入，以及下载设备写入中的取消/销毁，避免继续使用过期借用。
+- WebSocket pool 在完成 future 前提交连接、容量和 lease 状态；清池先移除旧索引再通知，允许 owner-thread 同步 continuation 查询、再 acquire、clear 或销毁 pool，迟到通知不会复活旧 lease。
+- 子项目构建的生成头与安装路径使用自身 build/source 边界；正式安装 consumer 与测试伴随库使用独立构建验证，避免把测试目标或顶层路径泄漏给下游。
+
+### 发布证据
+
+- 当前唯一 authority 切换到 2.1 合同。首版 full/final 使用 `snapshot` 捕获两库 ABI、完整安装头、tuple 和四组件预编译 consumer，独立 round-trip 结果为 `REFERENCE_VALIDATED` / `patchCompatibility=false`，不能标成真实 patch 升级 PASS。后续 patch 使用 `current` 比较本线首版与最近正式 patch，并分别验证旧源码、旧二进制和公开行为。ABI 完整/残余分析固定比较两侧真实 ELF，避免 XML snapshot 对纯类方法/虚表变化的漏报；snapshot 仍为必需归档与语义校验输入。
+- 延续五树产品资格；TSan 在 2.1 为独立非阻断诊断，缺少执行写 NOT_RUN，ASan/UBSan/LSan 和普通线程/生命周期验证仍为必需。文档、工具或局部测试结果不替代 clean C1 的 fresh final、独立 verifier 或实际资产回验。
+
+具体调整与调用方义务见[迁移到 2.1](docs/user/migration-2.1.md)。
+
+<a id="2.0.0"></a>
 ## [2.0.0]
+
+以下为保留的 2.0 历史说明；其中 2.x 源码、ABI 非稳定及当时 gate 模式不适用于 2.1 新线。
 
 本条目是 QCurl 2.0.0 的冻结发布说明。发布资格、tag、远端 Release 和资产状态以[正式发布合同](docs/dev/release/2.0.0-hard-break-release-contract.md)及其机器证据为准；本条目本身不构成 readiness 或发布证明。
 

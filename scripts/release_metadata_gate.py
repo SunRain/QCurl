@@ -21,7 +21,26 @@ def _is_release_identity_scan_target(path: Path) -> bool:
         for part in path.parts
     ):
         return False
-    if path.suffix in {".pyc", ".so", ".a", ".o", ".png", ".jpg", ".jpeg", ".gif", ".pdf"}:
+    if ".pytest_cache" in path.parts:
+        return False
+    parts = path.parts
+    if any(
+        tuple(parts[index : index + 3])
+        in {("packaging", "arch", "pkg"), ("packaging", "arch", "src")}
+        for index in range(len(parts) - 2)
+    ):
+        return False
+    if path.suffix in {
+        ".pyc",
+        ".so",
+        ".a",
+        ".o",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".pdf",
+    }:
         return False
     return path.is_file()
 
@@ -31,15 +50,17 @@ def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
         "docs/dev/archive/",
         "docs/user/migration-2.0.md",
         "docs/dev/architecture/overview.md",
-        "scripts/qcurl_abi_gate.py",
-        "scripts/release_gate_steps.py",
         "scripts/release_metadata_gate.py",
-        "scripts/run_release_gate.py",
         "tests/public_api/test_run_public_api_checks.py",
         "tests/public_api/test_hard_break_docs.py",  # Contains intentional negative identity fixtures.
         "abi/baseline/qcurl-core-v3.abi.xml",
     )
     if relative.startswith(allowed_file_prefixes):
+        return True
+    if (
+        relative == "tests/public_api/test_version_compatibility.py"
+        and '"3.0.0"' in line
+    ):
         return True
     external_context = (
         "HTTP/2",
@@ -47,6 +68,7 @@ def _is_allowed_release_identity_match(relative: str, line: str) -> bool:
         "Qt 6",
         "Qt6",
         "libcurl",
+        "libabigail 3.0.0",
         "CMake >= 3.0.0",
         "cmake_policy(VERSION 3.0.0",
         "License",
@@ -62,7 +84,7 @@ def _is_historical_release_document(relative: str) -> bool:
 
 def _fixed_metadata_violations(repo_root: Path) -> list[str]:
     checks = {
-        "CMakeLists.txt": ["WebSocket support\")", "HTTP/2 and WebSocket support"],
+        "CMakeLists.txt": ['WebSocket support")', "HTTP/2 and WebSocket support"],
         "README.md": ["单请求延迟", "31,000 ms", "~15,000 ms", "~10,000 ms"],
         "docs/dev/architecture/overview.md": [
             "提供同步和异步两种网络请求方式",
@@ -83,7 +105,9 @@ def _fixed_metadata_violations(repo_root: Path) -> list[str]:
         text = path.read_text(encoding="utf-8")
         for needle in forbidden_values:
             if needle in text:
-                violations.append(f"{relative}: forbidden release metadata text: {needle}")
+                violations.append(
+                    f"{relative}: forbidden release metadata text: {needle}"
+                )
     return violations
 
 

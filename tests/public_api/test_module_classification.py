@@ -91,8 +91,9 @@ def test_surface_manifest_declares_component_maturity_and_compatibility_axes() -
         },
     }
     assert manifest["compatibilityContract"] == {
-        "source": "2.x-compatible",
-        "abi": "unstable-rebuild-required",
+        "scope": "all-installed-public-including-preview",
+        "source": "same-major.minor-patch-backward-compatible",
+        "abi": "same-major.minor-patch-backward-compatible-supported-configurations",
     }
     assert set(manifest["maturityLevels"]) == {"Stable", "Preview"}
 

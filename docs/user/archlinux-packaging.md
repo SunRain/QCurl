@@ -34,17 +34,17 @@ makepkg -D "/绝对路径/QCurl/packaging/arch"
 
 ```bash
 makepkg -D packaging/arch --packagelist
-pacman -Qip packaging/arch/qcurl-2.0.0-1-x86_64.pkg.tar.zst
-pacman -Qlp packaging/arch/qcurl-2.0.0-1-x86_64.pkg.tar.zst
+pacman -Qip packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
+pacman -Qlp packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
 ```
 
-以上文件名对应当前 `2.0.0-1`；更改版本或 `PKGDEST` 后，以 `--packagelist` 输出为准。
+以上文件名对应当前 `2.1.0-1`；更改版本或 `PKGDEST` 后，以 `--packagelist` 输出为准。
 
 | 组件 | 消费 target | 包内物理内容 |
 | --- | --- | --- |
-| Core | `QCurl::QCurl` | `libQCurl.so.2.0.0`、SONAME/开发链接及公共头 |
+| Core | `QCurl::QCurl` | `libQCurl.so.2.1.0`、SONAME/开发链接及公共头 |
 | BlockingExtras | `QCurl::BlockingExtras` | INTERFACE 导出及公共头；实现在 Core 库内，没有独立 Blocking 库 |
-| OtherExtras | `QCurl::OtherExtras` | `libQCurlOtherExtras.so.2.0.0`、链接及公共头；WebSocket 按实际 libcurl 能力启用 |
+| OtherExtras | `QCurl::OtherExtras` | `libQCurlOtherExtras.so.2.1.0`、链接及公共头；WebSocket 按实际 libcurl 能力启用 |
 | TestSupport | `QCurl::TestSupport` | **`libQCurlTestSupport.a`**、mock/capture 公共头及导出，仅供开发测试 |
 
 公共头安装到 `/usr/include/qcurl/`，CMake 配置到 `/usr/lib/cmake/QCurl/`，两个 `.pc` 到 `/usr/lib/pkgconfig/`。`LICENSE` 与 `THIRD_PARTY_NOTICES.md` 安装到 `/usr/share/licenses/qcurl/`。不安装私有头、测试程序、源码、bundled curl 或额外 debug 包。
@@ -52,14 +52,14 @@ pacman -Qlp packaging/arch/qcurl-2.0.0-1-x86_64.pkg.tar.zst
 用户明确决定安装到当前系统后执行：
 
 ```bash
-sudo pacman -U packaging/arch/qcurl-2.0.0-1-x86_64.pkg.tar.zst
+sudo pacman -U packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
 pacman -Q qcurl
 pacman -Ql qcurl
 ```
 
 这会修改当前系统；只想检验产物时使用下一节解包消费，或在隔离 Arch 环境中安装。无需额外安装脚本，文件归属由 pacman 管理。
 
-当前 Core 在 2.x 内保证源码兼容，但 **ABI 非稳定，每次更新都要重新编译和链接下游**；`.so.2` 不代表旧二进制可以直接复用。TestSupport 与 OtherExtras 也必须来自同一包，不能跨版本混装。
+从 2.1 起，同 `major.minor` 后续 patch 保证全部 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为向后兼容。Linux 两库 SONAME 为 `.so.2.1`，支持 tuple 内旧 shared consumer 无须重编译；跨 minor 不保证兼容，须核对迁移并重建。TestSupport 与 OtherExtras 必须来自同一完整包，不承诺任意混装；精确环境见[版本与兼容政策](../dev/release/versioning-and-compatibility.md)。
 
 同版本源码变化后，可增加 PKGBUILD 的 `pkgrel` 区分本地重包；项目版本变化时同步 `pkgver`。不一致会在 prepare 阶段报错。若确实要覆盖同名旧包，用户可显式加 `--force` 后重新 `pacman -U`；这会覆盖旧归档，应先保留所需旧包。不建议用 `--repackage` 验证源码变化，因为它跳过重新构建。
 
@@ -70,14 +70,14 @@ pacman -Ql qcurl
 推荐使用 CMake；独立程序与事件循环用法见[快速开始](quickstart.md)。默认 Core：
 
 ```cmake
-find_package(QCurl CONFIG REQUIRED)
+find_package(QCurl 2.1.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE QCurl::QCurl)
 ```
 
 完整包虽然安装了扩展文件，默认 `find_package` 只导入 Core，consumer 不需要主动查找 QtNetwork。按需请求扩展，例如：
 
 ```cmake
-find_package(QCurl CONFIG REQUIRED COMPONENTS BlockingExtras OtherExtras TestSupport)
+find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS BlockingExtras OtherExtras TestSupport)
 target_link_libraries(my_cli PRIVATE QCurl::BlockingExtras)
 target_link_libraries(my_diagnostics PRIVATE QCurl::OtherExtras)
 target_link_libraries(my_tests PRIVATE QCurl::TestSupport)
@@ -88,6 +88,7 @@ target_link_libraries(my_tests PRIVATE QCurl::TestSupport)
 现有 pkg-config 入口为 `qcurl` 和 `qcurl-other-extras`，没有独立 Blocking/TestSupport `.pc`。手工编译使用 C++17 和位置无关代码，避免新 Qt/GCC 工具链对导出符号产生 copy relocation；CMake 的 Qt imported target 会传递相关编译要求：
 
 ```bash
+pkg-config --exists 'qcurl >= 2.1.0' 'qcurl < 2.2.0'
 pkg-config --modversion qcurl qcurl-other-extras
 c++ -std=c++17 -fPIC -DQT_NO_KEYWORDS main.cpp -o my_app \
   $(pkg-config --cflags --libs qcurl)
@@ -112,8 +113,8 @@ python3 -m pytest -q tests/test_arch_packaging.py
 ```bash
 work="$(mktemp -d -t qcurl-arch-check.XXXXXX)"
 mkdir "$work/unpacked"
-bsdtar -xf packaging/arch/qcurl-2.0.0-1-x86_64.pkg.tar.zst -C "$work/unpacked"
-cmake "-DPACKAGE_ROOT=$work/unpacked" -DPACKAGE_VERSION=2.0.0 \
+bsdtar -xf packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst -C "$work/unpacked"
+cmake "-DPACKAGE_ROOT=$work/unpacked" -DPACKAGE_VERSION=2.1.0 \
   "-DSOURCE_ROOT=$PWD" "-DBUILD_ROOT=$PWD/packaging/arch/src/qcurl-build" \
   -P packaging/arch/verify_package.cmake
 python3 tests/arch/verify_install.py \

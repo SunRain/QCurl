@@ -39,4 +39,4 @@ Performance output is local evidence for the current environment only. Do not co
 ## Related docs
 
 - [HTTP 版本配置](../../docs/user/configuration.md#http-version)
-- [当前发布合同](../../docs/dev/release/2.0.0-hard-break-release-contract.md)
+- [当前发布合同](../../docs/dev/release/2.1.0-release-contract.md)

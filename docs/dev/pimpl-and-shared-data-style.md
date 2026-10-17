@@ -1,6 +1,6 @@
 # PIMPL 与 Shared-Data 规范
 
-适用于 QCurl 的 public / library-facing 类型，统一值数据与运行时资源的布局、命名及不完整类型处理。2.0 ABI 非稳定；PIMPL 不代替下游重编译，也不是二进制兼容证明。
+适用于 QCurl 的 public / library-facing 类型，统一值数据与运行时资源的布局、命名及不完整类型处理。从 2.1 起，同线 patch 的公共布局须满足[版本与兼容政策](release/versioning-and-compatibility.md)；PIMPL 有助于隐藏实现，但自身不是二进制兼容证明，不为建立承诺而全库重构。
 
 ## 1. 选择类型模式
 
@@ -71,7 +71,7 @@ private:
 
 两种模式都只在公共头保留表达合同所需的最小 include；libcurl easy/multi/share handle 属于源文件或私有实现，不能泄漏到安装面。禁止泄漏项和完整安装头边界只在[公共头与安装边界](architecture/public-header-boundary.md)维护。
 
-Retry/TLS/Proxy/Timeout accessor 在 v1.0.0 已存在，不把旧 public-field 教程重新列为 2.0 升级要求。真实调用方变化见[迁移指南](../user/migration-2.0.md)，本页只定义现行实现规范。
+Retry/TLS/Proxy/Timeout accessor 在 v1.0.0 已存在，不把旧 public-field 教程重新列为新增能力。当前调用方变化见[迁移到 2.1](../user/migration-2.1.md)，本页只定义现行实现规范。
 
 ## 5. 验证与人工评审分工
 

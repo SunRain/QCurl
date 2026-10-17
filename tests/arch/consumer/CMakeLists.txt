@@ -16,10 +16,10 @@ if(NOT "Qt6::Core" IN_LIST core_links OR core_links MATCHES "CURL::|ZLIB::|libcu
 endif()
 
 if(QCURL_REQUIRE_UNKNOWN)
-    find_package(QCurl CONFIG REQUIRED COMPONENTS UnknownArchComponent
+    find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS UnknownArchComponent
         PATHS "${QCURL_STAGE_PREFIX}" NO_DEFAULT_PATH)
 else()
-    find_package(QCurl CONFIG REQUIRED COMPONENTS Core BlockingExtras OtherExtras TestSupport
+    find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS Core BlockingExtras OtherExtras TestSupport
         PATHS "${QCURL_STAGE_PREFIX}" NO_DEFAULT_PATH)
     foreach(target IN ITEMS QCurl::QCurl QCurl::BlockingExtras QCurl::OtherExtras QCurl::TestSupport)
         if(NOT TARGET ${target})

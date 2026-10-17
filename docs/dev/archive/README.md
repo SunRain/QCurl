@@ -1,6 +1,6 @@
 # 历史文档索引
 
-维护者从此处追溯旧发布、审查、任务和 ABI 证据。历史中的“当前”、PASS/NO-GO、版本名和待办只适用于原始时点，不能覆盖[现行发布合同](../release/2.0.0-hard-break-release-contract.md)或替代新的候选验收。
+维护者从此处追溯旧发布、审查、任务和 ABI 证据。历史中的“当前”、PASS/NO-GO、版本名和待办只适用于原始时点，不能覆盖[现行发布合同](../release/2.1.0-release-contract.md)或替代新的候选验收。
 
 ## 时期索引
 
@@ -10,6 +10,7 @@
 | RC / 3.0 草稿 | 原始 history 与下面的历史审查/任务证据 | 旧身份不是当前版本；仅供历史追溯 |
 | 1.0.0 first stable | [发布合同](1.0/first-stable-release-contract.md)、[readiness snapshot](1.0/first-stable-readiness-report.md)、[release notes](1.0/1.0.0-release-notes.md) | 1.0 是已发布历史，snapshot 保留其自身日期与适用限制，不反推 tag 当时或 2.0 通过 |
 | 2.0 开发与整改 | 下表的 dated review / 执行记录，以及 [2026-08-19 发布资格快照](reviews/2026-08-19-qcurl-2.0.0-release-readiness-snapshot.md) | 各自候选独立，不拼接不同基准为一次综合 PASS |
+| 2.0 版本合同 | [当时正式合同](../release/2.0.0-hard-break-release-contract.md) | 保留原始源码/ABI与发布模式事实，不作为 2.1 authority |
 | 发布前 ABI/任务/状态 | 下方专题证据 | 旧统计没有 commit 绑定时保留该限制，不用收录 HEAD 补造身份 |
 
 ## 专题证据与 raw 入口

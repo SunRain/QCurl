@@ -6,8 +6,10 @@ import argparse
 from pathlib import Path
 
 if __package__:
+    from .release_compatibility_policy import validate_abi_arguments
     from .release_tree_model import required_tree_ids, tree_registry
 else:
+    from release_compatibility_policy import validate_abi_arguments
     from release_tree_model import required_tree_ids, tree_registry
 
 
@@ -18,31 +20,6 @@ _TREE_ARGUMENTS = (
     "test_shared_clang_build_dir",
     "asan_ubsan_lsan_build_dir",
 )
-
-
-def _validate_abi_mode(args: argparse.Namespace) -> None:
-    hardbreak_parameters = (
-        args.abi_hardbreak_baseline,
-        args.abi_hardbreak_report,
-        args.abi_hardbreak_current_snapshot,
-    )
-    if args.abi_mode in {"none", "current"} and any(
-        path is not None for path in hardbreak_parameters
-    ):
-        raise ValueError(
-            f"{args.abi_mode} ABI mode rejects promotion-candidate hard-break parameters"
-        )
-    if args.abi_mode == "promotion-candidate" and any(
-        path is None for path in hardbreak_parameters
-    ):
-        raise ValueError(
-            "promotion-candidate ABI mode requires --abi-hardbreak-baseline, "
-            "--abi-hardbreak-report and --abi-hardbreak-current-snapshot"
-        )
-    if args.stage == "promotion" and args.abi_mode != "promotion-candidate":
-        raise ValueError("promotion stage requires promotion-candidate ABI mode")
-    if args.abi_mode == "promotion-candidate" and args.stage != "promotion":
-        raise ValueError("promotion-candidate ABI mode requires promotion stage")
 
 
 def _resolve_tree_paths(args: argparse.Namespace, repo_root: Path) -> None:
@@ -85,56 +62,20 @@ def _resolve_common_paths(args: argparse.Namespace, repo_root: Path) -> None:
     ]
 
 
-def _resolve_abi_paths(args: argparse.Namespace, repo_root: Path) -> None:
-    baseline = args.abi_hardbreak_baseline
-    if baseline is not None and not baseline.is_absolute():
-        args.abi_hardbreak_baseline = (repo_root / baseline).resolve()
-    if args.abi_mode != "promotion-candidate":
-        return
-    if not args.abi_hardbreak_report.is_absolute():
-        args.abi_hardbreak_report = (repo_root / args.abi_hardbreak_report).resolve()
-    if not args.abi_hardbreak_current_snapshot.is_absolute():
-        args.abi_hardbreak_current_snapshot = (
-            repo_root / args.abi_hardbreak_current_snapshot
-        ).resolve()
-
-
-def _validate_promotion_outputs(args: argparse.Namespace) -> None:
-    if args.abi_mode != "promotion-candidate":
-        return
-    release_shared = args.release_shared_build_dir
-    if release_shared is None:
-        raise ValueError("promotion-candidate ABI mode requires release-shared tree")
-    expected_outputs = {
-        "--abi-hardbreak-report": (
-            release_shared / "abi" / "qcurl-core-v1-to-v2.abidiff.txt"
-        ).resolve(),
-        "--abi-hardbreak-current-snapshot": (
-            release_shared
-            / "abi"
-            / "qcurl-core-v2.promotion-candidate.abi.xml"
-        ).resolve(),
-    }
-    actual_outputs = {
-        "--abi-hardbreak-report": args.abi_hardbreak_report,
-        "--abi-hardbreak-current-snapshot": args.abi_hardbreak_current_snapshot,
-    }
-    drift = [
-        name for name, expected in expected_outputs.items() if actual_outputs[name] != expected
-    ]
-    if drift:
-        raise ValueError(
-            "promotion-candidate requires fixed release-shared ABI output: "
-            + ", ".join(drift)
-        )
-
-
 def resolve_paths(args: argparse.Namespace, repo_root: Path) -> None:
-    """解析路径并在执行 release gate 前验证阶段参数。"""
+    """解析路径，并依据真实候选版本验证 ABI 参数。"""
 
-    _validate_abi_mode(args)
+    args.source_root = repo_root.resolve()
     _resolve_tree_paths(args, repo_root)
     _validate_required_trees(args)
     _resolve_common_paths(args, repo_root)
-    _resolve_abi_paths(args, repo_root)
-    _validate_promotion_outputs(args)
+    for argument in ("abi_reference_first", "abi_reference_latest"):
+        path = getattr(args, argument)
+        if path is not None:
+            setattr(
+                args,
+                argument,
+                (path if path.is_absolute() else repo_root / path).resolve(),
+            )
+    if not args.scan_metadata:
+        validate_abi_arguments(args, repo_root)

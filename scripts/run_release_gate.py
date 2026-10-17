@@ -228,9 +228,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "QCurl no-git release gate. Full validates source/package, symbol, "
             "capability, sanitizer, and documentation evidence; ABI compatibility "
-            "comparison is explicit opt-in."
+            "evidence follows the major.minor patch compatibility policy."
         )
     )
+    parser.set_defaults(source_root=_repo_root())
     parser.add_argument("--tier", type=GateTier, choices=tuple(GateTier), default=GateTier.FAST)
     parser.add_argument("--release-shared-build-dir", type=Path)
     parser.add_argument("--release-static-build-dir", type=Path)

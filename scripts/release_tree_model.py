@@ -1,4 +1,4 @@
-"""QCurl 2.0 release gate 的五棵物理构建树模型。"""
+"""QCurl release gate 的五棵物理构建树模型。"""
 
 from __future__ import annotations
 

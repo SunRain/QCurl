@@ -19,10 +19,11 @@
 
 | 版本线 | 支持状态 | 说明 |
 | --- | --- | --- |
-| `1.x` | 支持 | 当前 stable line，优先接收安全修复。 |
-| `main` / `master` | 支持 | 开发分支，用于接收和验证修复。 |
-| pre-1.0 / RC / 旧 hard-break 历史 | 不支持 | 仅作为内部历史归档，不承诺安全修复。 |
-| WebSocket / Diagnostics / Other Extras Preview | best effort | 可随包发布，但不属于默认 Core Stable 支持面。 |
+| `master` 当前开发线（2.1 候选） | 维护 | 用于接收和验证安全修复；候选尚不等于已发布版本。 |
+| 历史版本与版本线（含 2.0、1.x） | 按 advisory 确认 | 报告时请给出确切版本；本策略不承诺所有旧线长期维护或自动回补。 |
+| pre-1.0 / RC 历史 | 不支持 | 仅作归档，不承诺安全修复。 |
+
+维护范围覆盖实际受影响的公共组件；Preview 表示成熟度，不构成忽略漏洞或破坏同线 patch 公共兼容的豁免。版本兼容与安全维护周期是不同承诺，具体规则见[版本与兼容政策](docs/dev/release/versioning-and-compatibility.md)。
 
 ## 公开披露
 

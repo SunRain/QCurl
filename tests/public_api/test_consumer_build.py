@@ -26,7 +26,11 @@ def consumer_cache(tmp_path: Path) -> Path:
         'set(CMAKE_EXE_LINKER_FLAGS "-fsanitize=address,undefined,leak")\n'
         'set(CMAKE_CXX_FLAGS_DEBUG "-g -DQUOTED=\\"a b\\"")\n'
         'set(CMAKE_EXE_LINKER_FLAGS_DEBUG "-Wl,--as-needed")\n'
-        f'include("{PUBLIC_API / "consumer_profile.cmake"}")\n',
+        'set(CMAKE_PREFIX_PATH "/dependencies/qt;/dependencies/curl")\n'
+        'set(Qt6_DIR "/dependencies/qt/lib/cmake/Qt6")\n'
+        'set(CURL_ROOT "/dependencies/curl")\n'
+        'set(CURL_LIBRARY_RELEASE "/dependencies/curl/lib/libcurl.so")\n'
+        f'include("{PUBLIC_API.parents[1] / "cmake/QCurlConsumerProfile.cmake"}")\n',
         encoding="utf-8",
     )
     subprocess.run(
@@ -62,6 +66,28 @@ def test_producer_profile_preserves_compiler_compile_and_executable_link_flags(
     subprocess.run(
         ["cmake", "-C", str(consumer_cache), "-P", str(probe)],
         cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_producer_profile_preserves_explicit_qt_and_curl_selection(
+    tmp_path: Path, consumer_cache: Path
+) -> None:
+    """An independent consumer cannot fall back from selected providers to ambient SDKs."""
+
+    probe = tmp_path / "providers.cmake"
+    probe.write_text(
+        'if(NOT CMAKE_PREFIX_PATH STREQUAL "/dependencies/qt;/dependencies/curl"\n'
+        '   OR NOT Qt6_DIR STREQUAL "/dependencies/qt/lib/cmake/Qt6"\n'
+        '   OR NOT CURL_ROOT STREQUAL "/dependencies/curl"\n'
+        '   OR NOT CURL_LIBRARY_RELEASE STREQUAL "/dependencies/curl/lib/libcurl.so")\n'
+        '  message(FATAL_ERROR "producer dependency selection changed")\n'
+        "endif()\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["cmake", "-C", str(consumer_cache), "-P", str(probe)],
         check=True,
         capture_output=True,
     )

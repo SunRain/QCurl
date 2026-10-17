@@ -15,7 +15,7 @@ QMAP_BYTE_ARRAY_TYPE = r"QMap\s*<\s*QByteArray\s*,\s*QByteArray\s*>"
 CURRENT_RELEASE_DOC_PATHS = (
     "docs/dev/release/release-procedure.md",
     "docs/dev/build-and-test.md",
-    "docs/dev/release/2.0.0-hard-break-release-contract.md",
+    "docs/dev/release/2.1.0-release-contract.md",
     "CHANGELOG.md",
     "docs/dev/architecture/public-header-boundary.md",
     "docs/dev/uce/README.md",
@@ -116,7 +116,7 @@ SCHEDULER_PUBLIC_SURFACE_PATHS = (
     "CHANGELOG.md",
     "docs/user/",
     "docs/dev/architecture/",
-    "docs/dev/release/2.0.0-hard-break-release-contract.md",
+    "docs/dev/release/2.1.0-release-contract.md",
     "examples/",
     "tests/public_api/consumer_smoke/",
 )
@@ -341,7 +341,7 @@ INCLUDE_PATHS: tuple[str, ...] = (
     "tests/public_api/consumer_blocking_extras_smoke",
     "docs/user",
     "docs/dev/architecture",
-    "docs/dev/release/2.0.0-hard-break-release-contract.md",
+    "docs/dev/release/2.1.0-release-contract.md",
     "docs/dev/release/release-procedure.md",
     "docs/dev/build-and-test.md",
     "docs/dev/uce/README.md",

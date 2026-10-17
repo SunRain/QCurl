@@ -44,7 +44,7 @@ build/doxygen/index.html
   投递、动态名称解析和 `QCurl::initialize()` 早于首次连接。
 - 生成脚本只选择 `visibility == Public` 且具有公开安装面的 headers；Internal 条目不得进入输入。
 - `_p.h`、`src/private/` 和未安装 internal helper 不得进入 release API 文档输入。
-- 非 Core 组件可以生成文档，但必须标注组件；Preview API 还必须标注成熟度，不能写入 Core 源码兼容范围。
+- 非 Core 组件须标注实际组件；Preview API 还须标注成熟度，不能被标作默认 Core。全部已发布 Public 安装面（含 Preview）均受[同线 patch 兼容政策](release/versioning-and-compatibility.md)保护。
 - 当前 Core API 文档必须反映结构化 `QCNetworkCacheRequestKey`、`cachePartitionKey`、统一 retry method gate、`QCNetworkLoggerHandle` opaque ownership 与 reply snapshot；private transfer record 和 global-init state 不进入安装面文档。
 - 注释风格参考：[中文注释规范](../../Qt6_CPP17_Coding_Style/cn/CPP_Code_Comment_Guidelines.md)。
 - 新增、移动或删除公共头文件时，先同步 `tests/public_api/surface_manifest.json` 与 public API gate，再重新生成 Doxygen 输入片段。
@@ -75,6 +75,6 @@ qcurl-<version>-api-docs.tar.gz
 - `doxygen Doxyfile` 能完成生成。
 - 生成日志无阻塞级别的文档错误。
 - public headers 的新增 API 带有能解释行为、线程归属、错误边界和稳定性级别的注释。
-- 非 Core 组件和 Preview API 在注释中不被写入 Core 源码兼容范围。
+- 非 Core 组件和 Preview API 标注真实组件/成熟度，不被写作默认 Core，也不以 Preview 豁免 patch 兼容。
 
 当前 `Doxyfile` 仍允许部分未文档化符号存在；是否把 `WARN_IF_UNDOCUMENTED` 升级为 release blocker，应在独立文档质量方案中处理，避免一次性阻断已有历史 API。

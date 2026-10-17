@@ -1,5 +1,7 @@
 # 从 QCurl 1.0.0 迁移到 2.0.0
 
+> 历史迁移说明：以下保留 2.0 开发阶段的原有描述，其中“当前”、依赖和每次更新重编译的边界按当时语境理解，不定义 2.1 政策。当前升级须继续阅读[从 2.0 迁移到 2.1](migration-2.1.md)；该页按真实 `v2.0.0` tag 核对差异。
+
 1.0.0 是已发布历史，2.0.0 是有意打破 v1 源码/API/ABI 的开发候选。下游需按新头文件和库重新构建；采用 2.0 后，每次 QCurl 更新也必须重新编译和链接。
 
 本指南对照 `v1.0.0@12822251efb04ea78d97f33ed441a85660e72bbf` 与当前 2.0.0 候选的真实公开头差异。Retry/TLS/Proxy/Timeout 的 accessor、typed lane 和 QCCookie 在 v1 已存在，不是本次新增迁移。现行实现写法见[PIMPL 规范](../dev/pimpl-and-shared-data-style.md)，用户可见变化见[CHANGELOG](../../CHANGELOG.md#2.0.0)。

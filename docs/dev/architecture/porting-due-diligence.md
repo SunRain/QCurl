@@ -12,7 +12,7 @@ QCurl 可以承担移植中的通用网络基础设施，但不应吸收 Epic �
 | 移植项目网络适配 | EGS/LGD 的 REST/GraphQL 客户端；OAuth、设备码和 Web 登录桥接；token 刷新与持久化、cookie/XSRF 会话策略；领域错误映射与业务级限流、重试分类 | 面向 UI/CLI 输出领域结果，不把业务包装层回灌 QCurl |
 | 下载与安装域 | manifest/chunk 管理、解析与校验；下载编排、恢复和重试策略；安装目录、文件落盘与用户交互 | 不将校验、安装事务与底层网络执行耦合 |
 
-WebSocket 对这一移植不构成阻断，仅是附加能力；HTTP/3 是否成为业务交付门槛由移植项目决定。组件 opt-in、Preview 成熟度及 API/ABI 边界遵循[正式发布合同](../release/2.0.0-hard-break-release-contract.md)，不能把网络能力列表当作所有组件均有同等稳定性。
+WebSocket 对这一移植不构成阻断，仅是附加能力；HTTP/3 是否成为业务交付门槛由移植项目决定。组件 opt-in 和 Preview 成熟度遵循[当前发布合同](../release/2.1.0-release-contract.md)；成熟度不同不豁免[同线 patch 公共兼容](../release/versioning-and-compatibility.md)，也不能仅凭网络能力列表推断业务可用性。
 
 ## 2. 实施前要确认的条件
 

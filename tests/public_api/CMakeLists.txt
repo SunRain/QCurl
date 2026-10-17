@@ -14,14 +14,15 @@ set_property(GLOBAL PROPERTY QCURL_STANDALONE_CONSUMER_SOURCE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_smoke"
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_negative"
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_smoke"
+    "${CMAKE_CURRENT_SOURCE_DIR}/consumer_version"
 )
 
 if(NOT DEFINED QCURL_INSTALL_HEADERS OR QCURL_INSTALL_HEADERS STREQUAL "")
     message(FATAL_ERROR "tests/public_api requires QCURL_INSTALL_HEADERS from src/CMakeLists.txt")
 endif()
 
-# 该套件审计 Core component 安装面（QCURL_INSTALL_HEADERS + QCurlConfig.h）。
-# QCURL_INSTALL_HEADERS_EXTRAS 只包含尚未 promotion 的非默认 Extras，不能混入 manifest。
+# Core 与 opt-in Extras 分别生成安装清单；两者的全部 Public/Preview 都受版本线合同保护。
+# 默认 Core 的头清单不能混入需显式请求的 Extras。
 if(DEFINED QCURL_INSTALL_HEADERS_EXTRAS)
     foreach(extra_header IN LISTS QCURL_INSTALL_HEADERS_EXTRAS)
         list(FIND QCURL_INSTALL_HEADERS "${extra_header}" _qcurl_public_api_extra_index)
@@ -383,5 +384,16 @@ set_tests_properties(qcurl_public_api_other_extras_install_contract PROPERTIES
     FIXTURES_REQUIRED "qcurl_public_api_stage;qcurl_public_api_other_extras_stage"
 )
 
-include("${CMAKE_CURRENT_SOURCE_DIR}/consumer_profile.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/consumer_tests.cmake")
+
+add_test(
+    NAME qcurl_public_api_version_contract
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/version_contracts.py"
+            --stage-dir "${QCURL_PUBLIC_API_PACKAGE_STAGE_DIR}"
+            --producer-build-dir "${CMAKE_BINARY_DIR}"
+            --build-dir "${CMAKE_BINARY_DIR}/public_api/version-contract"
+)
+set_tests_properties(qcurl_public_api_version_contract PROPERTIES
+    LABELS "public-api-slow"
+    FIXTURES_REQUIRED qcurl_public_api_package_stage
+)

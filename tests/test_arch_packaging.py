@@ -139,7 +139,7 @@ def package(source: Path) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, target)
     for name in ("QCurl", "QCurlOtherExtras"):
-        library = root / f"usr/lib/lib{name}.so.2.0.0"
+        library = root / f"usr/lib/lib{name}.so.2.1.0"
         result = subprocess.run(
             [
                 "cc",
@@ -148,7 +148,7 @@ def package(source: Path) -> Path:
                 "-x",
                 "c",
                 "-",
-                f"-Wl,-soname,lib{name}.so.2",
+                f"-Wl,-soname,lib{name}.so.2.1",
                 "-o",
                 str(library),
             ],
@@ -157,8 +157,8 @@ def package(source: Path) -> Path:
             capture_output=True,
         )
         assert result.returncode == 0, result.stderr
-        (root / f"usr/lib/lib{name}.so.2").symlink_to(library.name)
-        (root / f"usr/lib/lib{name}.so").symlink_to(f"lib{name}.so.2")
+        (root / f"usr/lib/lib{name}.so.2.1").symlink_to(library.name)
+        (root / f"usr/lib/lib{name}.so").symlink_to(f"lib{name}.so.2.1")
     native_object = source.parent / "test-support.o"
     subprocess.run(
         ["cc", "-c", "-x", "c", "-", "-o", str(native_object)],
@@ -178,7 +178,7 @@ def verify(source: Path, package: Path) -> subprocess.CompletedProcess:
     return run(
         "cmake",
         f"-DPACKAGE_ROOT={package}",
-        "-DPACKAGE_VERSION=2.0.0",
+        "-DPACKAGE_VERSION=2.1.0",
         f"-DSOURCE_ROOT={source}",
         "-P",
         str(source / "packaging/arch/verify_package.cmake"),

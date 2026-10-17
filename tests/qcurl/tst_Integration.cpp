@@ -286,7 +286,7 @@ void TestIntegration::testRealHttpPostRequest()
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/post"));
     request.setRawHeader("Content-Type", "application/json");
 
-    QByteArray postData = R"({"name":"QCurl","version":"2.0.0"})";
+    QByteArray postData = R"({"name":"QCurl","version":"2.1.0"})";
     auto *reply         = m_manager->post(request, postData);
 
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -300,7 +300,7 @@ void TestIntegration::testRealHttpPostRequest()
     QVERIFY(json.contains("data"));
     QString dataStr = json["data"].toString();
     QVERIFY(dataStr.contains("QCurl"));
-    QVERIFY(dataStr.contains("2.0.0"));
+    QVERIFY(dataStr.contains("2.1.0"));
 
     reply->deleteLater();
 }
@@ -440,7 +440,7 @@ void TestIntegration::testCustomHeaders()
 void TestIntegration::testUserAgentHeader()
 {
     QCNetworkRequest request(QUrl(m_httpbinBaseUrl + "/user-agent"));
-    request.setRawHeader("User-Agent", "QCurl/2.0.0 Integration-Test");
+    request.setRawHeader("User-Agent", "QCurl/2.1.0 Integration-Test");
 
     auto *reply = m_manager->get(request);
     QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 10000));
@@ -450,7 +450,7 @@ void TestIntegration::testUserAgentHeader()
 
     QJsonObject json  = parseJsonResponse(*data);
     QString userAgent = json["user-agent"].toString();
-    QVERIFY(userAgent.contains("QCurl/2.0.0"));
+    QVERIFY(userAgent.contains("QCurl/2.1.0"));
 
     reply->deleteLater();
 }

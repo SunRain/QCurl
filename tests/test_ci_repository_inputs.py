@@ -13,7 +13,7 @@ from scripts.validate_policy_violations_dictionary import _scan_targets
 
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[1]
-_RELEASE_CONTRACT = "docs/dev/release/2.0.0-hard-break-release-contract.md"
+_RELEASE_CONTRACT = "docs/dev/release/2.1.0-release-contract.md"
 _DICTIONARIES = (
     "docs/dev/uce/policy_violations_dictionary.json",
     "docs/dev/uce/policy_violations_dictionary.md",

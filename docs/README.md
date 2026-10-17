@@ -1,6 +1,6 @@
 # QCurl 文档
 
-本文档对应当前 `2.0.0` 开发候选；`1.0.0` 是已发布历史。Core 在 2.x 内保证源码兼容，ABI 非稳定，每次更新都需要下游重新编译和链接。候选文档不是发布通过证明。
+本文档对应当前 **2.1.0 开发候选**。从 2.1 起，同 `major.minor` 的后续 patch 保护全部已发布 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为；跨 minor 不保证兼容。版本语义和环境边界见[版本与兼容政策](dev/release/versioning-and-compatibility.md)，候选文档不是发布通过证明。
 
 ## 用户
 
@@ -11,7 +11,8 @@
 | 请求、HTTP 版本、代理、TLS、重试、缓存和上传 | [常见配置](user/configuration.md) |
 | lane、优先级、reservation、取消与通知 | [Lane scheduler](user/lane-scheduler.md) |
 | 传输暂停、下载背压与上传源暂停 | [流控](user/flow-control.md) |
-| 升级已发布的 1.0 API/包 | [迁移到 2.0](user/migration-2.0.md) |
+| 从 2.0 升级当前 API/包 | [迁移到 2.1](user/migration-2.1.md) |
+| 追溯 1.0 → 2.0 的迁移 | [历史迁移到 2.0](user/migration-2.0.md) |
 
 用户可见变化见 [CHANGELOG](../CHANGELOG.md)，完整程序见[示例集合](../examples/README.md)。API 细节以安装头的注释为准，浏览文档的生成方式见下方维护者入口。
 
@@ -36,9 +37,11 @@
 
 ### 发布与证据
 
-- [正式 2.0 发布合同](dev/release/2.0.0-hard-break-release-contract.md)：唯一 release identity authority。
+- [版本与兼容政策](dev/release/versioning-and-compatibility.md)：版本线、Public/Preview、ABI 环境和消费规则。
+- [正式 2.1 发布合同](dev/release/2.1.0-release-contract.md)：唯一当前 release identity authority。
 - [发布操作](dev/release/release-procedure.md)：五树、阶段、候选验证、打包与远端动作。
 - [UCE 使用与证据](dev/uce/README.md)：启动、tier、schema 入口与归档判据。
 - [供应链安全](dev/release/supply-chain.md)。
-- [未来稳定 ABI 项目](dev/release/stable-abi-contract-and-baseline.md)：Deferred，不是 2.0 发布阻断项。
+- [ABI 参考操作](dev/release/stable-abi-contract-and-baseline.md)：首版 capture、自测和后续 patch 的 first/latest 比较。
+- [2.0 历史合同](dev/release/2.0.0-hard-break-release-contract.md)：保留当时事实，不是当前 authority。
 - [历史索引](dev/archive/README.md)：已发布 1.0、pre-1.0、dated review 与旧任务/ABI 证据；仅作追溯。
