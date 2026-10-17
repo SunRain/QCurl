@@ -329,11 +329,11 @@ install(
 
 # 创建 pkg-config 文件
 configure_file(qcurl.pc.in qcurl.pc @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/qcurl.pc
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qcurl.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
         COMPONENT Development)
 configure_file(qcurl-other-extras.pc.in qcurl-other-extras.pc @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/qcurl-other-extras.pc
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qcurl-other-extras.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
         COMPONENT OtherExtrasDevelopment)
 
