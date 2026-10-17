@@ -28,6 +28,9 @@ class TestQCNetworkRetryOffline : public QObject
 {
     Q_OBJECT
 
+public:
+    TestQCNetworkRetryOffline() = default;
+
 private Q_SLOTS:
     void init();
     void cleanup();
@@ -44,6 +47,8 @@ private Q_SLOTS:
     void testCancelDuringRetryDelay();
 
 private:
+    Q_DISABLE_COPY_MOVE(TestQCNetworkRetryOffline)
+
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkMockHandler m_mock;
 };
@@ -77,8 +82,11 @@ void TestQCNetworkRetryOffline::testRetry500Then200()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        1, std::chrono::milliseconds(10), 2.0, std::chrono::milliseconds(200));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(10),
+                                             2.0,
+                                             std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
     auto *reply = m_manager->get(request);
@@ -90,6 +98,9 @@ void TestQCNetworkRetryOffline::testRetry500Then200()
     QCOMPARE(reply->error(), NetworkError::NoError);
     QCOMPARE(reply->readAll().value_or(QByteArray()), QByteArray("ok"));
 
+    QCOMPARE(reply->retryAttemptCount(), 1);
+    QCOMPARE(reply->cumulativeRetryDelay(), std::chrono::milliseconds(5));
+
     reply->deleteLater();
 }
 
@@ -100,8 +111,11 @@ void TestQCNetworkRetryOffline::testRetry501Then200()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        1, std::chrono::milliseconds(10), 2.0, std::chrono::milliseconds(200));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(10),
+                                             2.0,
+                                             std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
     auto *reply = m_manager->get(request);
@@ -122,8 +136,11 @@ void TestQCNetworkRetryOffline::testRetry503Exceeded()
     m_mock.mockResponse(HttpMethod::Get, url, QByteArray("svc down"), 503);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        2, std::chrono::milliseconds(10), 1.2, std::chrono::milliseconds(200));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(2,
+                                             std::chrono::milliseconds(10),
+                                             1.2,
+                                             std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
     auto *reply = m_manager->get(request);
@@ -147,8 +164,11 @@ void TestQCNetworkRetryOffline::testRetry429RetryAfterOverride()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        1, std::chrono::milliseconds(1), 2.0, std::chrono::milliseconds(50));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(1),
+                                             2.0,
+                                             std::chrono::milliseconds(50));
     request.setRetryPolicy(policy);
 
     QElapsedTimer timer;
@@ -177,8 +197,11 @@ void TestQCNetworkRetryOffline::testRetry429RetryAfterHttpDateOverride()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        1, std::chrono::milliseconds(1), 2.0, std::chrono::milliseconds(50));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(1),
+                                             2.0,
+                                             std::chrono::milliseconds(50));
     request.setRetryPolicy(policy);
 
     QElapsedTimer timer;
@@ -204,8 +227,11 @@ void TestQCNetworkRetryOffline::testRetry429FallbackToBackoff()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("ok"), 200);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        1, std::chrono::milliseconds(40), 2.0, std::chrono::milliseconds(200));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(1,
+                                             std::chrono::milliseconds(40),
+                                             2.0,
+                                             std::chrono::milliseconds(200));
     request.setRetryPolicy(policy);
 
     QElapsedTimer timer;
@@ -278,8 +304,9 @@ void TestQCNetworkRetryOffline::testExplicitIdempotencyKeyAllowsHttpAndNetworkRe
 
     QCNetworkRequest httpRequest(httpUrl);
     httpRequest.setRawHeader(QByteArrayLiteral("Idempotency-Key"), QByteArrayLiteral("stable-1"));
-    QCNetworkRetryPolicy httpPolicy
-        = TestSupport::makeRetryPolicyOrFail(1, std::chrono::milliseconds(1));
+    QCNetworkRetryPolicy httpPolicy = TestSupport::makeRetryPolicyOrFail(1,
+                                                                         std::chrono::milliseconds(
+                                                                             1));
     QCOMPARE(httpPolicy.setRetryMethodPolicy(
                  QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
              QCNetworkRetryPolicy::UpdateResult::Applied);
@@ -327,8 +354,11 @@ void TestQCNetworkRetryOffline::testCancelDuringRetryDelay()
     m_mock.enqueueResponse(HttpMethod::Get, url, QByteArray("svc down"), 503);
 
     QCNetworkRequest request(url);
-    const QCNetworkRetryPolicy policy = TestSupport::makeRetryPolicyOrFail(
-        3, std::chrono::milliseconds(500), 1.0, std::chrono::milliseconds(500));
+    const QCNetworkRetryPolicy policy
+        = TestSupport::makeRetryPolicyOrFail(3,
+                                             std::chrono::milliseconds(500),
+                                             1.0,
+                                             std::chrono::milliseconds(500));
     request.setRetryPolicy(policy);
 
     auto *reply = m_manager->get(request);

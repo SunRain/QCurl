@@ -148,6 +148,15 @@ public:
      */
     [[nodiscard]] UpdateResult setMaxDelay(std::chrono::milliseconds delay);
 
+    /// 返回单个 Reply 的累计重试等待预算；空值表示不限制。
+    [[nodiscard]] std::optional<std::chrono::milliseconds> maxCumulativeDelay() const;
+    /// 设置非负累计等待预算；负值返回 InvalidArgument，原值保持不变。
+    [[nodiscard]] UpdateResult setMaxCumulativeDelay(std::optional<std::chrono::milliseconds> delay);
+    /// 返回包含传输时间和重试等待的总耗时预算；空值表示不限制。
+    [[nodiscard]] std::optional<std::chrono::milliseconds> maxElapsedTime() const;
+    /// 设置非负总耗时预算；只控制是否开始下一次等待，不替代传输超时。
+    [[nodiscard]] UpdateResult setMaxElapsedTime(std::optional<std::chrono::milliseconds> elapsed);
+
     /**
      * @brief 可重试的错误集合
      *

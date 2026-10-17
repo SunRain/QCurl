@@ -11,11 +11,48 @@
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyTransferState_p.h"
 
+#include <QDebug>
 #include <QList>
 #include <QVariant>
 
+#include <cmath>
+#include <limits>
+
 namespace QCurl::Internal {
 namespace {
+
+std::optional<std::chrono::milliseconds> retryAfterSecondsToDelay(qint64 seconds)
+{
+    if (seconds < 0) {
+        qWarning() << "QCurl ignored negative Retry-After header";
+        return std::nullopt;
+    }
+    if (seconds > std::numeric_limits<qint64>::max() / 1000) {
+        qWarning() << "QCurl ignored overflowing Retry-After header";
+        return std::nullopt;
+    }
+    return std::chrono::milliseconds(seconds * 1000);
+}
+
+std::optional<std::chrono::milliseconds> retryAfterDateToDelay(const QString &raw, std::time_t now)
+{
+    const QByteArray dateBytes = raw.toUtf8();
+    const std::time_t parsed   = curl_getdate(dateBytes.constData(), nullptr);
+    if (parsed < 0) {
+        qWarning() << "QCurl ignored invalid Retry-After HTTP-date";
+        return std::nullopt;
+    }
+    if (parsed <= now) {
+        return std::chrono::milliseconds(0);
+    }
+    const long double delta = static_cast<long double>(parsed) - static_cast<long double>(now);
+    if (!std::isfinite(delta)
+        || delta > static_cast<long double>(std::numeric_limits<qint64>::max()) / 1000.0L) {
+        qWarning() << "QCurl ignored overflowing Retry-After HTTP-date";
+        return std::nullopt;
+    }
+    return std::chrono::milliseconds(static_cast<qint64>(delta * 1000.0L));
+}
 
 std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValue)
 {
@@ -115,15 +152,34 @@ bool isSatisfiedRangeCompletion(QCNetworkReplyPrivate *reply)
 
     const QVariant existingSizeVar = reply->qObject()->property(
         Internal::replyproperties::kResumableExistingSize);
-    bool ok                        = false;
-    const qint64 existingSize      = existingSizeVar.toLongLong(&ok);
-    const auto completeSize        = parseContentRangeCompleteSize(
+    bool ok                   = false;
+    const qint64 existingSize = existingSizeVar.toLongLong(&ok);
+    const auto completeSize   = parseContentRangeCompleteSize(
         reply->finalHeaderMap.value(QCurl::httpheaders::kContentRange.toLower()));
     return ok && existingSize >= 0 && completeSize.has_value()
            && completeSize.value() == existingSize;
 }
 
 } // namespace
+
+std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
+    const QList<RawHeaderPair> &headers, std::time_t now)
+{
+    for (const RawHeaderPair &header : headers) {
+        if (header.first.compare(httpheaders::kRetryAfter, Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+        const QString raw = QString::fromUtf8(header.second).trimmed();
+        if (raw.isEmpty()) {
+            qWarning() << "QCurl ignored empty Retry-After header";
+            return std::nullopt;
+        }
+        bool ok              = false;
+        const qint64 seconds = raw.toLongLong(&ok);
+        return ok ? retryAfterSecondsToDelay(seconds) : retryAfterDateToDelay(raw, now);
+    }
+    return std::nullopt;
+}
 
 void parseReplyHeaders(QCNetworkReplyPrivate *reply)
 {

@@ -201,6 +201,9 @@ add_qcurl_test_with_preflight(
 ) # 重试机制测试
 target_compile_definitions(tst_QCNetworkRetry PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRetryOffline tst_QCNetworkRetryOffline.cpp) # 离线重试/限流门禁（MockHandler）
+add_qcurl_test(tst_QCNetworkRetryBudgetOffline tst_QCNetworkRetryBudgetOffline.cpp)
+target_compile_definitions(tst_QCNetworkRetryBudgetOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
+set_tests_properties(tst_QCNetworkRetryBudgetOffline PROPERTIES LABELS "offline")
 add_qcurl_test(tst_QCNetworkResponseHeadersOffline tst_QCNetworkResponseHeadersOffline.cpp) # 离线门禁：响应头 unfold/原始头观测
 target_compile_definitions(tst_QCNetworkResponseHeadersOffline PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkRequestWarningsOffline tst_QCNetworkRequestWarningsOffline.cpp) # 离线门禁：请求配置冲突可诊断（warnings）
@@ -439,6 +442,10 @@ add_qcurl_test_with_preflight(
     tst_Integration.cpp
 )
 add_qcurl_test(tst_LargeFileDownload tst_LargeFileDownload.cpp)
+
+add_qcurl_test_with_preflight(tst_QCNetworkRetryBudgetLoopback
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkRetryBudgetLoopback.cpp qcurl_http_script_server.h)
 
 # -----------------------------------------------------------------------------
 # CTest Labels（取证式门禁分组）

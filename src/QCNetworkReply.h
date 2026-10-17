@@ -207,6 +207,12 @@ public:
     [[nodiscard]] int httpStatusCode() const noexcept;
     /// 返回请求耗时（毫秒）。
     [[nodiscard]] qint64 durationMs() const noexcept;
+    /// 返回最终响应头中的 Retry-After；缺失或非法时返回空值，仅在所属线程调用。
+    [[nodiscard]] std::optional<std::chrono::milliseconds> retryAfterDelay() const;
+    /// 返回本 Reply 已接受的重试次数，不包含初次传输。
+    [[nodiscard]] int retryAttemptCount() const noexcept;
+    /// 返回本 Reply 已接受的累计重试等待，不包含传输耗时。
+    [[nodiscard]] std::chrono::milliseconds cumulativeRetryDelay() const noexcept;
     /// 返回当前 body 缓冲中可读取的字节数。
     [[nodiscard]] qint64 bytesAvailable() const noexcept;
     /// 返回 capability 降级或兼容性告警列表。

@@ -6,9 +6,12 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "private/QCNetworkReplyFlowControl_p.h"
+#include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 
 #include <QDebug>
+
+#include <ctime>
 
 namespace QCurl {
 
@@ -41,8 +44,9 @@ std::optional<QByteArray> QCNetworkReply::readAll()
     Q_D(QCNetworkReply);
 
     if (d->bodyBuffer.isEmpty()) {
-        // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是 std::nullopt），
-        // 否则会把“空 body”与“尚无数据可读”混为一谈，导致可观测层面不可区分。
+        // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是
+        // std::nullopt）， 否则会把“空
+        // body”与“尚无数据可读”混为一谈，导致可观测层面不可区分。
         if (d->state == ReplyState::Finished || d->state == ReplyState::Error
             || d->state == ReplyState::Cancelled) {
             return QByteArray();
@@ -51,7 +55,7 @@ std::optional<QByteArray> QCNetworkReply::readAll()
     }
 
     // 注意：这会清空当前 reply 缓冲区。
-    QByteArray out = d->bodyBuffer.readAll();
+    QByteArray out           = d->bodyBuffer.readAll();
     d->responseBodyDelivered = true;
 
     Internal::scheduleReplyBackpressureResumeAfterRead(this, d);
@@ -131,6 +135,24 @@ qint64 QCNetworkReply::durationMs() const noexcept
 {
     Q_D(const QCNetworkReply);
     return d->durationMs;
+}
+
+std::optional<std::chrono::milliseconds> QCNetworkReply::retryAfterDelay() const
+{
+    Q_D(const QCNetworkReply);
+    return Internal::parseReplyRetryAfterDelay(d->finalHeaderList, std::time(nullptr));
+}
+
+int QCNetworkReply::retryAttemptCount() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->attemptCount;
+}
+
+std::chrono::milliseconds QCNetworkReply::cumulativeRetryDelay() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    return d->cumulativeRetryDelay;
 }
 
 qint64 QCNetworkReply::bytesAvailable() const noexcept

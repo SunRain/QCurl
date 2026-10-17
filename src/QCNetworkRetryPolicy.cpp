@@ -33,19 +33,21 @@ public:
     std::chrono::milliseconds initialDelay = kDefaultInitialDelay;
     double backoffMultiplier               = kDefaultBackoffMultiplier;
     std::chrono::milliseconds maxDelay     = kDefaultMaxDelay;
-    QSet<NetworkError> retryableErrors     = {// 网络层临时性错误
-                                              NetworkError::ConnectionRefused,
-                                              NetworkError::ConnectionTimeout,
-                                              NetworkError::HostNotFound,
+    std::optional<std::chrono::milliseconds> maxCumulativeDelay;
+    std::optional<std::chrono::milliseconds> maxElapsedTime;
+    QSet<NetworkError> retryableErrors           = {// 网络层临时性错误
+                                                    NetworkError::ConnectionRefused,
+                                                    NetworkError::ConnectionTimeout,
+                                                    NetworkError::HostNotFound,
 
-                                              // HTTP 临时性错误
-                                              NetworkError::HttpTimeout,
-                                              NetworkError::HttpTooManyRequests,
-                                              NetworkError::HttpInternalServerError,
-                                              NetworkError::HttpNotImplemented,
-                                              NetworkError::HttpBadGateway,
-                                              NetworkError::HttpServiceUnavailable,
-                                              NetworkError::HttpGatewayTimeout};
+                                                    // HTTP 临时性错误
+                                                    NetworkError::HttpTimeout,
+                                                    NetworkError::HttpTooManyRequests,
+                                                    NetworkError::HttpInternalServerError,
+                                                    NetworkError::HttpNotImplemented,
+                                                    NetworkError::HttpBadGateway,
+                                                    NetworkError::HttpServiceUnavailable,
+                                                    NetworkError::HttpGatewayTimeout};
     QCNetworkRetryMethodPolicy retryMethodPolicy = QCNetworkRetryMethodPolicy::GetHeadOnly;
 };
 
@@ -184,13 +186,42 @@ std::chrono::milliseconds QCNetworkRetryPolicy::maxDelay() const
     return d->maxDelay;
 }
 
-QCNetworkRetryPolicy::UpdateResult QCNetworkRetryPolicy::setMaxDelay(
-    std::chrono::milliseconds delay)
+QCNetworkRetryPolicy::UpdateResult QCNetworkRetryPolicy::setMaxDelay(std::chrono::milliseconds delay)
 {
     if (delay.count() < 0) {
         return UpdateResult::InvalidArgument;
     }
     d->maxDelay = delay;
+    return UpdateResult::Applied;
+}
+
+std::optional<std::chrono::milliseconds> QCNetworkRetryPolicy::maxCumulativeDelay() const
+{
+    return d->maxCumulativeDelay;
+}
+
+QCNetworkRetryPolicy::UpdateResult QCNetworkRetryPolicy::setMaxCumulativeDelay(
+    std::optional<std::chrono::milliseconds> delay)
+{
+    if (delay && delay->count() < 0) {
+        return UpdateResult::InvalidArgument;
+    }
+    d->maxCumulativeDelay = delay;
+    return UpdateResult::Applied;
+}
+
+std::optional<std::chrono::milliseconds> QCNetworkRetryPolicy::maxElapsedTime() const
+{
+    return d->maxElapsedTime;
+}
+
+QCNetworkRetryPolicy::UpdateResult QCNetworkRetryPolicy::setMaxElapsedTime(
+    std::optional<std::chrono::milliseconds> elapsed)
+{
+    if (elapsed && elapsed->count() < 0) {
+        return UpdateResult::InvalidArgument;
+    }
+    d->maxElapsedTime = elapsed;
     return UpdateResult::Applied;
 }
 
@@ -284,20 +315,20 @@ QCNetworkRetryPolicy QCNetworkRetryPolicy::noRetry()
 QCNetworkRetryPolicy QCNetworkRetryPolicy::standardRetry()
 {
     QCNetworkRetryPolicy policy;
-    policy.d->maxRetries         = kStandardMaxRetries;
-    policy.d->initialDelay       = kDefaultInitialDelay;
+    policy.d->maxRetries        = kStandardMaxRetries;
+    policy.d->initialDelay      = kDefaultInitialDelay;
     policy.d->backoffMultiplier = kDefaultBackoffMultiplier;
-    policy.d->maxDelay           = kDefaultMaxDelay;
+    policy.d->maxDelay          = kDefaultMaxDelay;
     return policy;
 }
 
 QCNetworkRetryPolicy QCNetworkRetryPolicy::aggressiveRetry()
 {
     QCNetworkRetryPolicy policy;
-    policy.d->maxRetries         = kAggressiveMaxRetries;
-    policy.d->initialDelay       = kAggressiveInitialDelay;
+    policy.d->maxRetries        = kAggressiveMaxRetries;
+    policy.d->initialDelay      = kAggressiveInitialDelay;
     policy.d->backoffMultiplier = kAggressiveBackoffMultiplier;
-    policy.d->maxDelay           = kAggressiveMaxDelay;
+    policy.d->maxDelay          = kAggressiveMaxDelay;
     return policy;
 }
 

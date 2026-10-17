@@ -215,3 +215,17 @@ cookie store。设备线程、重放能力与详细结果约束见[Blocking 公�
 1. 开启/查看日志（如你已启用日志或中间件）
 2. 对照 [性能回归](../dev/performance.md) 与相关模块文档
 3. 复现最小样例后再上报问题（见[支持与反馈](../../SUPPORT.md)）
+
+## 重试预算、查询与解析覆盖
+
+`QCNetworkRetryPolicy::setMaxCumulativeDelay()` 和 `setMaxElapsedTime()` 接受可选毫秒值。
+默认 `nullopt` 不限制；非负值返回 `Applied`，负值返回 `InvalidArgument` 并保留旧值。
+等待预算累计已经接受的计划等待，等待中取消不冲销；总耗时从首次 Running 起算，
+包含传输与重试等待，不计初次排队。两项都只在决定下一次重试时检查，恰好达到上限允许，
+拒绝时保留本次错误、正文和输出，不中断首个或正在传输的请求，也不替代传输超时。
+
+在 Reply 所属线程读取 `retryAttemptCount()`、`cumulativeRetryDelay()` 和 `retryAfterDelay()`。
+次数不含首次传输，累计量不是实际睡眠时间；最终头中的合法 0 为 0 ms，缺失、非法、
+负值或溢出的 Retry-After 返回 `nullopt`；HTTP-date 按查询时刻计算，过去日期为 0。
+getter 不依赖是否开启重试，不增加计数或预算；调度仅在原有 429 分支使用相同解析算法。
+预算检查先于输出回滚，其既有策略优先关系保持不变。

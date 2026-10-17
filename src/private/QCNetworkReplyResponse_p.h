@@ -11,7 +11,10 @@
 #include "private/QCNetworkMockProvider_p.h"
 #include "private/QCRequestPipeline_p.h"
 
+#include <chrono>
+#include <ctime>
 #include <curl/curl.h>
+#include <optional>
 
 namespace QCurl {
 
@@ -28,6 +31,9 @@ struct ReplyAttemptErrorInfo
 
 void parseReplyHeaders(QCNetworkReplyPrivate *reply);
 void parseReplyHeaders(QCNetworkReplyTransferState *state);
+// 只解析最终响应头；显式时钟使 HTTP-date 查询不依赖重试状态或首次读取时刻。
+[[nodiscard]] std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
+    const QList<RawHeaderPair> &headers, std::time_t now);
 size_t headerReplyCurlCallback(char *ptr,
                                size_t size,
                                size_t nmemb,

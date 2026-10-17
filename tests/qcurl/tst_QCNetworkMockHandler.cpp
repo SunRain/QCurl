@@ -4,11 +4,12 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QSignalSpy>
@@ -30,6 +31,9 @@ class TestQCNetworkMockHandler : public QObject
 {
     Q_OBJECT
 
+public:
+    TestQCNetworkMockHandler() = default;
+
 private Q_SLOTS:
     void initTestCase();
     void cleanupTestCase();
@@ -43,20 +47,22 @@ private Q_SLOTS:
     void testSequenceConsumption();
     void testGlobalDelayApplied();
     void testRequestCapture();
+    void testRetryAfterMetadata_data();
+    void testRetryAfterMetadata();
     void testCapturedRequestAccessorsAndTimeoutClearing();
     void testCapturedRequestSharedDataDetachesOnWrite();
     void testNullClearDoesNotPoisonReusedManagerAddress();
 
 private:
+    Q_DISABLE_COPY_MOVE(TestQCNetworkMockHandler)
+
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkMockHandler m_mockHandler;
 };
 
-void TestQCNetworkMockHandler::initTestCase()
-{}
+void TestQCNetworkMockHandler::initTestCase() {}
 
-void TestQCNetworkMockHandler::cleanupTestCase()
-{}
+void TestQCNetworkMockHandler::cleanupTestCase() {}
 
 void TestQCNetworkMockHandler::init()
 {
@@ -215,9 +221,7 @@ void TestQCNetworkMockHandler::testGlobalDelayApplied()
 void TestQCNetworkMockHandler::testNullClearDoesNotPoisonReusedManagerAddress()
 {
     alignas(QCNetworkAccessManager) std::byte storage[sizeof(QCNetworkAccessManager)];
-    auto createManager = [&storage]() {
-        return new (storage) QCNetworkAccessManager;
-    };
+    auto createManager = [&storage]() { return new (storage) QCNetworkAccessManager; };
 
     auto *first = createManager();
     QCurl::TestSupport::setMockHandler(first, nullptr);
@@ -229,7 +233,7 @@ void TestQCNetworkMockHandler::testNullClearDoesNotPoisonReusedManagerAddress()
     QCOMPARE(QCurl::TestSupport::mockHandler(second), &handler);
     second->~QCNetworkAccessManager();
 
-    auto *third = createManager();
+    auto *third      = createManager();
     auto *unexpected = QCurl::TestSupport::mockHandler(third);
     QCurl::TestSupport::setMockHandler(third, nullptr);
     third->~QCNetworkAccessManager();
@@ -346,6 +350,51 @@ void TestQCNetworkMockHandler::testCapturedRequestSharedDataDetachesOnWrite()
 
     copy.clearTotalTimeoutMs();
     QVERIFY(!copy.totalTimeoutMs().has_value());
+}
+
+void TestQCNetworkMockHandler::testRetryAfterMetadata_data()
+{
+    QTest::addColumn<QByteArray>("value");
+    QTest::addColumn<bool>("present");
+    QTest::addColumn<qint64>("minimumMs");
+    QTest::addColumn<qint64>("maximumMs");
+    const auto date = QDateTime::currentDateTimeUtc().addSecs(120).toString(Qt::RFC2822Date).toUtf8();
+    QTest::newRow("seconds") << QByteArrayLiteral("7") << true << qint64(7000) << qint64(7000);
+    QTest::newRow("zero") << QByteArrayLiteral("0") << true << qint64(0) << qint64(0);
+    QTest::newRow("date") << date << true << qint64(118000) << qint64(121000);
+    QTest::newRow("invalid") << QByteArrayLiteral("not-a-delay") << true << qint64(-1)
+                             << qint64(-1);
+    QTest::newRow("negative") << QByteArrayLiteral("-1") << true << qint64(-1) << qint64(-1);
+    QTest::newRow("overflow") << QByteArrayLiteral("9223372036854775807") << true << qint64(-1)
+                              << qint64(-1);
+    QTest::newRow("missing") << QByteArray() << false << qint64(-1) << qint64(-1);
+}
+
+void TestQCNetworkMockHandler::testRetryAfterMetadata()
+{
+    QFETCH(QByteArray, value);
+    QFETCH(bool, present);
+    QFETCH(qint64, minimumMs);
+    QFETCH(qint64, maximumMs);
+    const QUrl url(QStringLiteral("http://example.com/mock/retry-after"));
+    QMap<QByteArray, QByteArray> headers;
+    if (present) {
+        headers.insert(QByteArrayLiteral("rEtRy-AfTeR"), value);
+    }
+    m_mockHandler.mockResponse(HttpMethod::Get, url, {}, 429, headers);
+    TestSupport::setMockHandler(m_manager, &m_mockHandler);
+    auto *reply = m_manager->get(QCNetworkRequest(url));
+    QVERIFY(QSignalSpy(reply, &QCNetworkReply::finished).wait(1000));
+    QCOMPARE(reply->error(), NetworkError::HttpTooManyRequests);
+    const auto delay = reply->retryAfterDelay();
+    QCOMPARE(delay.has_value(), minimumMs >= 0);
+    if (delay) {
+        QVERIFY(delay->count() >= minimumMs);
+        QVERIFY(delay->count() <= maximumMs);
+    }
+    QCOMPARE(reply->retryAttemptCount(), 0);
+    QCOMPARE(reply->cumulativeRetryDelay(), std::chrono::milliseconds(0));
+    reply->deleteLater();
 }
 
 QTEST_MAIN(TestQCNetworkMockHandler)

@@ -3,18 +3,16 @@
  * @brief QCNetworkReply retry/capability runtime helpers.
  */
 
-#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRetryPolicy.h"
+#include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 #include "private/QCNetworkRetryDecision_p.h"
 
 #include <QDebug>
 #include <QTimer>
 
-#include <cmath>
 #include <ctime>
-#include <limits>
 
 namespace QCurl::Internal {
 
@@ -36,58 +34,30 @@ void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &m
 
 namespace {
 
-std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
-    const QList<RawHeaderPair> &headers)
+bool exceedsRetryBudget(std::chrono::milliseconds used,
+                        std::chrono::milliseconds next,
+                        std::optional<std::chrono::milliseconds> limit)
 {
-    for (const RawHeaderPair &header : headers) {
-        if (header.first.compare(QCurl::httpheaders::kRetryAfter, Qt::CaseInsensitive) != 0) {
-            continue;
-        }
+    return limit && (used > *limit || next > *limit - used);
+}
 
-        const QString raw = QString::fromUtf8(header.second).trimmed();
-        if (raw.isEmpty()) {
-            qWarning() << "QCurl ignored empty Retry-After header";
-            return std::nullopt;
-        }
-
-        bool ok              = false;
-        const qint64 seconds = raw.toLongLong(&ok);
-        if (ok) {
-            if (seconds < 0) {
-                qWarning() << "QCurl ignored negative Retry-After header";
-                return std::nullopt;
-            }
-            if (seconds > (std::numeric_limits<qint64>::max() / 1000)) {
-                qWarning() << "QCurl ignored overflowing Retry-After header";
-                return std::nullopt;
-            }
-            return std::chrono::milliseconds(seconds * 1000);
-        }
-
-        const QByteArray dateBytes = raw.toUtf8();
-        const time_t parsed        = curl_getdate(dateBytes.constData(), nullptr);
-        if (parsed < 0) {
-            qWarning() << "QCurl ignored invalid Retry-After HTTP-date";
-            return std::nullopt;
-        }
-
-        const time_t now = std::time(nullptr);
-        if (parsed <= now) {
-            return std::chrono::milliseconds(0);
-        }
-
-        const long double deltaSeconds = static_cast<long double>(parsed)
-                                         - static_cast<long double>(now);
-        if (!std::isfinite(deltaSeconds)
-            || deltaSeconds
-                   > (static_cast<long double>(std::numeric_limits<qint64>::max()) / 1000.0L)) {
-            qWarning() << "QCurl ignored overflowing Retry-After HTTP-date";
-            return std::nullopt;
-        }
-
-        return std::chrono::milliseconds(static_cast<qint64>(deltaSeconds * 1000.0L));
+std::optional<std::chrono::milliseconds> retryDelayWithinBudget(QCNetworkReplyPrivate *reply,
+                                                                const QCNetworkRetryPolicy &policy,
+                                                                NetworkError error)
+{
+    std::optional<std::chrono::milliseconds> retryAfter;
+    if (error == NetworkError::HttpTooManyRequests) {
+        reply->parseHeaders();
+        retryAfter = parseReplyRetryAfterDelay(reply->finalHeaderList, std::time(nullptr));
     }
-    return std::nullopt;
+    const auto delay   = policy.delayForAttempt(reply->attemptCount, retryAfter);
+    const auto elapsed = std::chrono::milliseconds(
+        reply->elapsedTimerStarted ? reply->elapsedTimer.elapsed() : 0);
+    if (exceedsRetryBudget(reply->cumulativeRetryDelay, delay, policy.maxCumulativeDelay())
+        || exceedsRetryBudget(elapsed, delay, policy.maxElapsedTime())) {
+        return std::nullopt;
+    }
+    return delay;
 }
 
 } // namespace
@@ -112,6 +82,11 @@ ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, Netw
     if (d->responseBodyDelivered && !d->restoreResponseBeforeRetry) {
         return {};
     }
+    const auto delay = retryDelayWithinBudget(d, policy, error);
+    if (!delay.has_value()) {
+        return {};
+    }
+    // 预算拒绝不得截断已写出的响应；只有决定重试后才回滚本次输出。
     if (d->restoreResponseBeforeRetry) {
         if (const auto outputError = d->restoreResponseBeforeRetry(); outputError.has_value()) {
             d->setError(NetworkError::OutputDeviceError, outputError.value());
@@ -119,15 +94,9 @@ ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, Netw
         }
     }
 
-    std::optional<std::chrono::milliseconds> retryAfter;
-    if (error == NetworkError::HttpTooManyRequests) {
-        d->parseHeaders();
-        retryAfter = parseReplyRetryAfterDelay(d->finalHeaderList);
-    }
-
-    const auto delay = policy.delayForAttempt(d->attemptCount, retryAfter);
-
     d->attemptCount++;
+    const auto remaining = std::chrono::milliseconds::max() - d->cumulativeRetryDelay;
+    d->cumulativeRetryDelay += std::min(delay.value(), remaining);
     const int attemptCount = d->attemptCount;
     const QPointer<QCNetworkReply> observer(d->qObject());
     if (emitReplySignal(observer,

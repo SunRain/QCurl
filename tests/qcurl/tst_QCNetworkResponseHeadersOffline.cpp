@@ -9,13 +9,16 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "private/QCNetworkReplyResponse_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QScopedPointer>
 #include <QtTest/QtTest>
+
+#include <limits>
 
 using namespace QCurl;
 
@@ -23,9 +26,18 @@ class TestQCNetworkResponseHeadersOffline final : public QObject
 {
     Q_OBJECT
 
+public:
+    TestQCNetworkResponseHeadersOffline() = default;
+
 private Q_SLOTS:
     void testHeaderUnfoldFromRawHeaderData();
     void testFinalHeaderBlockOnlyExposesLastResponseHeaders();
+    void retryAfterParsing_data();
+    void retryAfterParsing();
+    void retryAfterHttpDateUsesQueryClock();
+
+private:
+    Q_DISABLE_COPY_MOVE(TestQCNetworkResponseHeadersOffline)
 };
 
 void TestQCNetworkResponseHeadersOffline::testHeaderUnfoldFromRawHeaderData()
@@ -78,18 +90,18 @@ void TestQCNetworkResponseHeadersOffline::testFinalHeaderBlockOnlyExposesLastRes
     QCurl::TestSupport::setMockHandler(manager, &mock);
 
     const QUrl url(QStringLiteral("https://example.com/offline/final_headers"));
-    const QByteArray rawHeaderData = QByteArrayLiteral(
-        "HTTP/1.1 100 Continue\r\n"
-        "X-Interim: warmup\r\n"
-        "\r\n"
-        "HTTP/1.1 302 Found\r\n"
-        "Location: https://example.com/next\r\n"
-        "X-Redirect: hop\r\n"
-        "\r\n"
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: application/json\r\n"
-        "X-Final: done\r\n"
-        "\r\n");
+    const QByteArray rawHeaderData = QByteArrayLiteral("HTTP/1.1 100 Continue\r\n"
+                                                       "X-Interim: warmup\r\n"
+                                                       "Retry-After: 999\r\n"
+                                                       "\r\n"
+                                                       "HTTP/1.1 302 Found\r\n"
+                                                       "Location: https://example.com/next\r\n"
+                                                       "X-Redirect: hop\r\n"
+                                                       "\r\n"
+                                                       "HTTP/1.1 200 OK\r\n"
+                                                       "Content-Type: application/json\r\n"
+                                                       "X-Final: done\r\n"
+                                                       "\r\n");
 
     mock.mockResponse(HttpMethod::Get,
                       url,
@@ -111,6 +123,9 @@ void TestQCNetworkResponseHeadersOffline::testFinalHeaderBlockOnlyExposesLastRes
     QVERIFY(reply->hasRawHeader(QByteArrayLiteral("Content-Type")));
     QVERIFY(!reply->hasRawHeader(QByteArrayLiteral("X-Interim")));
     QVERIFY(!reply->hasRawHeader(QByteArrayLiteral("Location")));
+    QVERIFY(!reply->retryAfterDelay());
+    QCOMPARE(reply->retryAttemptCount(), 0);
+    QCOMPARE(reply->cumulativeRetryDelay().count(), 0);
 
     const QList<RawHeaderPair> headers = reply->rawHeaders();
     QCOMPARE(headers.size(), 2);
@@ -118,6 +133,46 @@ void TestQCNetworkResponseHeadersOffline::testFinalHeaderBlockOnlyExposesLastRes
     QCOMPARE(headers.at(0).second, QByteArrayLiteral("application/json"));
     QCOMPARE(headers.at(1).first, QByteArrayLiteral("X-Final"));
     QCOMPARE(headers.at(1).second, QByteArrayLiteral("done"));
+}
+
+void TestQCNetworkResponseHeadersOffline::retryAfterParsing_data()
+{
+    QTest::addColumn<QByteArray>("value");
+    QTest::addColumn<qint64>("expectedMs");
+    QTest::newRow("empty") << QByteArray() << qint64(-1);
+    QTest::newRow("invalid") << QByteArray("not-a-date") << qint64(-1);
+    QTest::newRow("negative") << QByteArray("-1") << qint64(-1);
+    QTest::newRow("zero") << QByteArray("0") << qint64(0);
+    QTest::newRow("trimmed-seconds") << QByteArray(" 2 ") << qint64(2000);
+    const auto maximumSeconds = std::numeric_limits<qint64>::max() / 1000;
+    QTest::newRow("maximum-seconds")
+        << QByteArray::number(maximumSeconds) << qint64(maximumSeconds * 1000);
+    QTest::newRow("milliseconds-overflow") << QByteArray::number(maximumSeconds + 1) << qint64(-1);
+    QTest::newRow("integer-overflow") << QByteArray("999999999999999999999999999") << qint64(-1);
+}
+
+void TestQCNetworkResponseHeadersOffline::retryAfterParsing()
+{
+    QFETCH(QByteArray, value);
+    QFETCH(qint64, expectedMs);
+    const QList<RawHeaderPair> headers{{QByteArrayLiteral("rEtRy-AfTeR"), value}};
+    const auto result = Internal::parseReplyRetryAfterDelay(headers, 1700000000);
+    QCOMPARE(result.has_value(), expectedMs >= 0);
+    if (result) {
+        QCOMPARE(result->count(), expectedMs);
+    }
+    QVERIFY(!Internal::parseReplyRetryAfterDelay({}, 1700000000));
+}
+
+void TestQCNetworkResponseHeadersOffline::retryAfterHttpDateUsesQueryClock()
+{
+    const QList<RawHeaderPair> headers{
+        {QByteArrayLiteral("Retry-After"), QByteArrayLiteral("Wed, 21 Oct 2015 07:28:00 GMT")}};
+    constexpr std::time_t kDate = 1445412480;
+    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate - 3)->count(), 3000);
+    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate - 1)->count(), 1000);
+    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate)->count(), 0);
+    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate + 1)->count(), 0);
 }
 
 QTEST_MAIN(TestQCNetworkResponseHeadersOffline)

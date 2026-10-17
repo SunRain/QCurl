@@ -149,6 +149,7 @@ public:
     // 重试机制
 
     int attemptCount;
+    std::chrono::milliseconds cumulativeRetryDelay{0};
     bool responseBodyDelivered = false;
     // 仅独占文件 writer 可恢复本次输出；通用消费者没有回滚合同。
     std::function<std::optional<QString>()> restoreResponseBeforeRetry;
