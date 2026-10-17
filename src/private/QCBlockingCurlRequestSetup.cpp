@@ -12,6 +12,7 @@
 #include "private/QCBlockingCurlRequestSetup_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkHttpVersion_p.h"
+#include "private/QCNetworkIpResolve_p.h"
 
 #include <QDebug>
 #include <QStringList>
@@ -58,7 +59,6 @@ bool failOption(RequestOptionStorage *storage, const char *optionName)
     return false;
 }
 
-#ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 [[nodiscard]] bool appendStringList(curl_slist **list,
                                     const QStringList &values,
                                     QString *error,
@@ -66,7 +66,46 @@ bool failOption(RequestOptionStorage *storage, const char *optionName)
 {
     return Internal::CurlOptions::buildCurlSlist(values, list, error, optionName);
 }
-#endif
+
+[[nodiscard]] bool configureSlistOption(CURL *handle,
+                                        const QStringList &entries,
+                                        curl_slist **list,
+                                        RequestOptionStorage *storage,
+                                        CurlOptions::Option option)
+{
+    curl_slist *candidate = nullptr;
+    if (!appendStringList(&candidate, entries, &storage->failureMessage, option.name)) {
+        return false;
+    }
+    const CURLcode code = CurlOptions::setWithTestHook(handle, option, candidate);
+    if (code != CURLE_OK) {
+        curl_slist_free_all(candidate);
+        storage->failureMessage = QStringLiteral("设置 %1 失败（%2）")
+                                      .arg(QString::fromUtf8(option.name),
+                                           QString::fromUtf8(curl_easy_strerror(code)));
+        return false;
+    }
+    curl_slist_free_all(*list);
+    *list = candidate;
+    return true;
+}
+
+[[nodiscard]] bool configureIpResolution(CURL *handle,
+                                         const QCNetworkRequest &request,
+                                         RequestOptionStorage *storage)
+{
+    const CURLcode code = CurlOptions::setWithTestHook(handle,
+                                                       QCURL_CURL_OPTION(CURLOPT_IPRESOLVE),
+                                                       curlIpResolveValue(
+                                                           request.ipResolve().value_or(
+                                                               QCNetworkIpResolve::Any)));
+    if (code == CURLE_OK) {
+        return true;
+    }
+    storage->failureMessage = QStringLiteral("设置 CURLOPT_IPRESOLVE 失败（%1）")
+                                  .arg(QString::fromUtf8(curl_easy_strerror(code)));
+    return false;
+}
 
 } // namespace
 
@@ -225,6 +264,7 @@ bool configureBasicRequestOptions(CURL *handle,
     }
     return configureRedirectOptions(handle, request, storage)
            && configureTransportOptions(handle, request, storage)
+           && configureIpResolution(handle, request, storage)
            && configureTimeoutOptions(handle, request, storage);
 }
 
@@ -232,47 +272,21 @@ bool configureAdvancedPathOptions(CURL *handle,
                                   const QCNetworkRequest &request,
                                   RequestOptionStorage *storage)
 {
+    if (!configureSlistOption(handle,
+                              request.resolveOverride().value_or(QStringList{}),
+                              &storage->resolveList,
+                              storage,
+                              QCURL_CURL_OPTION(CURLOPT_RESOLVE))) {
+        return false;
+    }
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
-    if (const auto resolve = request.resolveOverride(); resolve.has_value()) {
-        if (!appendStringList(&storage->resolveList,
-                              resolve.value(),
-                              &storage->failureMessage,
-                              QCURL_CURL_OPTION(CURLOPT_RESOLVE).name)) {
-            return false;
-        }
-        if (storage->resolveList) {
-            const CURLcode rc = CurlOptions::setWithTestHook(handle,
-                                                             QCURL_CURL_OPTION(CURLOPT_RESOLVE),
-                                                             storage->resolveList);
-            if (rc != CURLE_OK) {
-                storage->failureMessage = QStringLiteral("设置 CURLOPT_RESOLVE 失败（%1）")
-                                              .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-                return false;
-            }
-        }
+    if (!configureSlistOption(handle,
+                              request.connectTo().value_or(QStringList{}),
+                              &storage->connectToList,
+                              storage,
+                              QCURL_CURL_OPTION(CURLOPT_CONNECT_TO))) {
+        return false;
     }
-    if (const auto connectTo = request.connectTo(); connectTo.has_value()) {
-        if (!appendStringList(&storage->connectToList,
-                              connectTo.value(),
-                              &storage->failureMessage,
-                              QCURL_CURL_OPTION(CURLOPT_CONNECT_TO).name)) {
-            return false;
-        }
-        if (storage->connectToList) {
-            const CURLcode rc = CurlOptions::setWithTestHook(handle,
-                                                             QCURL_CURL_OPTION(CURLOPT_CONNECT_TO),
-                                                             storage->connectToList);
-            if (rc != CURLE_OK) {
-                storage->failureMessage = QStringLiteral("设置 CURLOPT_CONNECT_TO 失败（%1）")
-                                              .arg(QString::fromUtf8(curl_easy_strerror(rc)));
-                return false;
-            }
-        }
-    }
-#else
-    Q_UNUSED(handle);
-    Q_UNUSED(request);
-    Q_UNUSED(storage);
 #endif
     return true;
 }

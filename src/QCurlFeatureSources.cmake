@@ -48,8 +48,13 @@ set(QCURL_FEATURE_SOURCES
     private/QCCurlMultiTransferRecord.cpp
     private/QCCurlMultiManagerLimits.cpp
     private/QCCurlMultiManagerEventDriver.cpp
+    private/QCCurlMultiManagerAdmission.cpp
+    private/QCCurlMultiManagerDomains.cpp
+    private/QCCurlMultiManagerQuarantine.cpp
     private/QCCurlMultiManagerTransfers.cpp
+    private/QCCurlMultiManagerCompletion.cpp
     private/QCCurlMultiManagerTest.cpp
+    private/QCCurlMultiManagerDomainTest.cpp
     private/QCCurlMultiManagerShare.cpp
     private/QCCurlMultiManagerShareLifecycle.cpp
     private/QCCurlMultiManagerShareTest.cpp

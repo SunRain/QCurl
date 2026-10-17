@@ -23,7 +23,11 @@ if(QCURL_BUILD_LIBCURL_CONSISTENCY)
     # - 该二进制通过环境变量（QCURL_LC_CASE_ID 等）选择具体 case，并由 pytest driver 调用生成 artifacts。
     # - 若直接作为 ctest 测试运行，在缺少 env 时会 QSKIP 且进程返回 0，ctest 会将其计为 Passed，
     #   容易造成“全绿但未覆盖”的误读。
-    add_executable(tst_LibcurlConsistency tst_LibcurlConsistency.cpp)
+    add_executable(tst_LibcurlConsistency
+        tst_LibcurlConsistency.cpp
+        lc_network_path_case.cpp
+        lc_network_path_case.h
+    )
     qcurl_enable_qt_no_keywords(tst_LibcurlConsistency)
     target_link_libraries(tst_LibcurlConsistency
         PRIVATE

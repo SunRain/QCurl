@@ -68,7 +68,10 @@ def test_cookie_destroyed_functor_uses_manager_context_and_direct_delivery() -> 
 
 def test_multimanager_reply_entrypoints_are_owner_thread_only() -> None:
     manager_header = _source("src/QCCurlMultiManager.h")
-    manager_source = _source("src/QCCurlMultiManager.cpp")
+    manager_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((REPO_ROOT / "src").rglob("QCCurlMultiManager*.cpp"))
+    )
 
     assert "接受跨线程投递的管理操作" not in manager_header
     assert "@note 线程安全\n" not in manager_header

@@ -1,5 +1,5 @@
 #include "QCCurlMultiManager.h"
-#include "private/QCCurlMultiManagerSocketInfo_p.h"
+#include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCurlRuntimeState_p.h"
 
@@ -15,9 +15,9 @@
 
 namespace QCurl {
 
-bool QCCurlMultiManager::configureMultiCallbacks(const char *context)
+bool QCCurlMultiManager::configureMultiCallbacks(QCCurlMultiDomain *domain, const char *context)
 {
-    if (!m_multiHandle) {
+    if (!domain->multi) {
         return false;
     }
 #ifdef QCURL_ENABLE_TEST_HOOKS
@@ -29,30 +29,30 @@ bool QCCurlMultiManager::configureMultiCallbacks(const char *context)
 
     bool ok          = true;
     auto setCallback = [&](CURLMoption option, auto value, const char *name) {
-        const CURLMcode ret = curl_multi_setopt(m_multiHandle, option, value);
+        const CURLMcode ret = curl_multi_setopt(domain->multi, option, value);
         if (ret != CURLM_OK) {
             qCritical() << context << ": Failed to set" << name << ":" << ret;
             ok = false;
         }
     };
 
-    setCallback(CURLMOPT_SOCKETDATA, this, "CURLMOPT_SOCKETDATA");
+    setCallback(CURLMOPT_SOCKETDATA, domain, "CURLMOPT_SOCKETDATA");
     setCallback(CURLMOPT_SOCKETFUNCTION, curlSocketCallback, "CURLMOPT_SOCKETFUNCTION");
-    setCallback(CURLMOPT_TIMERDATA, this, "CURLMOPT_TIMERDATA");
+    setCallback(CURLMOPT_TIMERDATA, domain, "CURLMOPT_TIMERDATA");
     setCallback(CURLMOPT_TIMERFUNCTION, curlTimerCallback, "CURLMOPT_TIMERFUNCTION");
     return ok;
 }
 
-void QCCurlMultiManager::disableMultiCallbacks()
+void QCCurlMultiManager::disableMultiCallbacks(QCCurlMultiDomain *domain)
 {
-    if (!m_multiHandle) {
+    if (!domain->multi) {
         return;
     }
 
-    curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETDATA, nullptr);
-    curl_multi_setopt(m_multiHandle, CURLMOPT_SOCKETFUNCTION, nullptr);
-    curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERDATA, nullptr);
-    curl_multi_setopt(m_multiHandle, CURLMOPT_TIMERFUNCTION, nullptr);
+    curl_multi_setopt(domain->multi, CURLMOPT_SOCKETDATA, nullptr);
+    curl_multi_setopt(domain->multi, CURLMOPT_SOCKETFUNCTION, nullptr);
+    curl_multi_setopt(domain->multi, CURLMOPT_TIMERDATA, nullptr);
+    curl_multi_setopt(domain->multi, CURLMOPT_TIMERFUNCTION, nullptr);
 }
 
 void QCCurlMultiManager::wakeup()
@@ -67,22 +67,36 @@ void QCCurlMultiManager::wakeup()
         return;
     }
 
-    if (!m_multiHandle) {
-        return;
+    for (const auto &domain : allDomains()) {
+        wakeupDomain(domain);
     }
-
-    const CURLMcode wakeupCode = Internal::CurlOptions::wakeupMultiHandle(m_multiHandle);
-    if (wakeupCode != CURLM_OK) {
-        qWarning() << "QCCurlMultiManager::wakeup: curl_multi_wakeup failed:" << wakeupCode;
-    }
-
-    QTimer::singleShot(0, this, [this]() { handleSocketAction(CURL_SOCKET_TIMEOUT, 0); });
 }
 
-void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBitmask)
+void QCCurlMultiManager::wakeupDomain(const Domain &domain)
+{
+    if (!domain || !domain->multi || domain->wakeupQueued) {
+        return;
+    }
+    const auto code = Internal::CurlOptions::wakeupMultiHandle(domain->multi);
+    if (code != CURLM_OK) {
+        qWarning() << "curl_multi_wakeup failed:" << code;
+    }
+    domain->wakeupQueued = true;
+    const std::weak_ptr<QCCurlMultiDomain> weakDomain(domain);
+    QTimer::singleShot(0, this, [this, weakDomain]() {
+        if (const auto retained = weakDomain.lock()) {
+            retained->wakeupQueued = false;
+            handleSocketAction(retained.get(), CURL_SOCKET_TIMEOUT, 0);
+        }
+    });
+}
+
+void QCCurlMultiManager::handleSocketAction(QCCurlMultiDomain *domain,
+                                            curl_socket_t socketfd,
+                                            int eventsBitmask)
 {
     if (m_isPoisoned.load(std::memory_order_relaxed)
-        || m_isShuttingDown.load(std::memory_order_relaxed) || !m_multiHandle) {
+        || m_isShuttingDown.load(std::memory_order_relaxed) || !domain->multi) {
         return;
     }
 
@@ -93,7 +107,7 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
     ++m_testSocketActionCount;
 #endif
     int runningHandles = 0;
-    CURLMcode ret      = curl_multi_socket_action(m_multiHandle,
+    CURLMcode ret      = curl_multi_socket_action(domain->multi,
                                                   socketfd,
                                                   eventsBitmask,
                                                   &runningHandles);
@@ -107,20 +121,20 @@ void QCCurlMultiManager::handleSocketAction(curl_socket_t socketfd, int eventsBi
     qDebug() << "QCCurlMultiManager::handleSocketAction: Running handles:" << runningHandles;
 
     // 检查完成的请求
-    checkMultiInfo();
+    checkMultiInfo(domain);
 }
 
-void QCCurlMultiManager::checkMultiInfo()
+void QCCurlMultiManager::checkMultiInfo(QCCurlMultiDomain *domain)
 {
     if (m_isPoisoned.load(std::memory_order_relaxed)
-        || m_isShuttingDown.load(std::memory_order_relaxed) || !m_multiHandle) {
+        || m_isShuttingDown.load(std::memory_order_relaxed) || !domain->multi) {
         return;
     }
 
     int messagesLeft = 0;
 
     do {
-        CURLMsg *message = curl_multi_info_read(m_multiHandle, &messagesLeft);
+        CURLMsg *message = curl_multi_info_read(domain->multi, &messagesLeft);
         if (!message) {
             break;
         }
@@ -134,12 +148,12 @@ void QCCurlMultiManager::checkMultiInfo()
     } while (messagesLeft > 0);
 }
 
-void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
+void QCCurlMultiManager::cleanupSocket(QCCurlMultiDomain *domain, curl_socket_t socketfd)
 {
     QMutexLocker locker(&m_mutex);
 
-    auto it = m_socketMap.find(socketfd);
-    if (it == m_socketMap.end()) {
+    auto it = domain->sockets.find(socketfd);
+    if (it == domain->sockets.end()) {
         return;
     }
     SocketInfo *info = it.value().data();
@@ -147,7 +161,7 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
     qDebug() << "QCCurlMultiManager::cleanupSocket: Cleaning socket" << socketfd;
 
     // 从 libcurl 解除关联
-    curl_multi_assign(m_multiHandle, socketfd, nullptr);
+    curl_multi_assign(domain->multi, socketfd, nullptr);
 
     if (info->readNotifier) {
         info->readNotifier->setEnabled(false);
@@ -161,10 +175,11 @@ void QCCurlMultiManager::cleanupSocket(curl_socket_t socketfd)
         info->writeNotifier = nullptr;
     }
 
-    m_socketMap.erase(it);
+    domain->sockets.erase(it);
 }
 
-int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
+int QCCurlMultiManager::manageSocketNotifiers(QCCurlMultiDomain *domain,
+                                              curl_socket_t socketfd,
                                               int what,
                                               SocketInfo *socketInfo)
 {
@@ -178,7 +193,7 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
 
     // CURL_POLL_REMOVE: 删除 socket
     if (what == CURL_POLL_REMOVE) {
-        cleanupSocket(socketfd);
+        cleanupSocket(domain, socketfd);
         return 0;
     }
 
@@ -187,35 +202,39 @@ int QCCurlMultiManager::manageSocketNotifiers(curl_socket_t socketfd,
         return 0;
     }
 
-    socketInfo = ensureSocketInfo(socketfd, socketInfo);
-    updateReadNotifier(socketInfo, what);
-    updateWriteNotifier(socketInfo, what);
+    socketInfo = ensureSocketInfo(domain, socketfd, socketInfo);
+    updateReadNotifier(domain, socketInfo, what);
+    updateWriteNotifier(domain, socketInfo, what);
 
     return 0;
 }
 
-SocketInfo *QCCurlMultiManager::ensureSocketInfo(curl_socket_t socketfd, SocketInfo *socketInfo)
+SocketInfo *QCCurlMultiManager::ensureSocketInfo(QCCurlMultiDomain *domain,
+                                                 curl_socket_t socketfd,
+                                                 SocketInfo *socketInfo)
 {
     if (socketInfo) {
         return socketInfo;
     }
 
     QMutexLocker locker(&m_mutex);
-    auto it = m_socketMap.find(socketfd);
-    if (it != m_socketMap.end()) {
+    auto it = domain->sockets.find(socketfd);
+    if (it != domain->sockets.end()) {
         socketInfo = it.value().data();
     } else {
         auto newInfo      = QSharedPointer<SocketInfo>::create();
         newInfo->socketfd = socketfd;
         socketInfo        = newInfo.data();
-        m_socketMap.insert(socketfd, newInfo);
+        domain->sockets.insert(socketfd, newInfo);
     }
 
-    curl_multi_assign(m_multiHandle, socketfd, socketInfo);
+    curl_multi_assign(domain->multi, socketfd, socketInfo);
     return socketInfo;
 }
 
-void QCCurlMultiManager::updateReadNotifier(SocketInfo *socketInfo, int what)
+void QCCurlMultiManager::updateReadNotifier(QCCurlMultiDomain *domain,
+                                            SocketInfo *socketInfo,
+                                            int what)
 {
     const bool enableRead = (what == CURL_POLL_IN || what == CURL_POLL_INOUT);
     if (!enableRead) {
@@ -228,15 +247,22 @@ void QCCurlMultiManager::updateReadNotifier(SocketInfo *socketInfo, int what)
     if (!socketInfo->readNotifier) {
         const curl_socket_t socketfd = socketInfo->socketfd;
         socketInfo->readNotifier     = new QSocketNotifier(socketfd, QSocketNotifier::Read, this);
-        connect(socketInfo->readNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
-            qDebug() << "QCCurlMultiManager: Read event on socket" << socketfd;
-            handleSocketAction(socketfd, CURL_CSELECT_IN);
-        });
+        const auto weakDomain        = domain->weakSelf;
+        connect(socketInfo->readNotifier,
+                &QSocketNotifier::activated,
+                this,
+                [this, weakDomain, socketfd]() {
+                    if (const auto retained = weakDomain.lock()) {
+                        handleSocketAction(retained.get(), socketfd, CURL_CSELECT_IN);
+                    }
+                });
     }
     socketInfo->readNotifier->setEnabled(true);
 }
 
-void QCCurlMultiManager::updateWriteNotifier(SocketInfo *socketInfo, int what)
+void QCCurlMultiManager::updateWriteNotifier(QCCurlMultiDomain *domain,
+                                             SocketInfo *socketInfo,
+                                             int what)
 {
     const bool enableWrite = (what == CURL_POLL_OUT || what == CURL_POLL_INOUT);
     if (!enableWrite) {
@@ -249,10 +275,15 @@ void QCCurlMultiManager::updateWriteNotifier(SocketInfo *socketInfo, int what)
     if (!socketInfo->writeNotifier) {
         const curl_socket_t socketfd = socketInfo->socketfd;
         socketInfo->writeNotifier    = new QSocketNotifier(socketfd, QSocketNotifier::Write, this);
-        connect(socketInfo->writeNotifier, &QSocketNotifier::activated, this, [this, socketfd]() {
-            qDebug() << "QCCurlMultiManager: Write event on socket" << socketfd;
-            handleSocketAction(socketfd, CURL_CSELECT_OUT);
-        });
+        const auto weakDomain        = domain->weakSelf;
+        connect(socketInfo->writeNotifier,
+                &QSocketNotifier::activated,
+                this,
+                [this, weakDomain, socketfd]() {
+                    if (const auto retained = weakDomain.lock()) {
+                        handleSocketAction(retained.get(), socketfd, CURL_CSELECT_OUT);
+                    }
+                });
     }
     socketInfo->writeNotifier->setEnabled(true);
 }
@@ -262,7 +293,8 @@ int QCCurlMultiManager::curlSocketCallback(
 {
     Q_UNUSED(easy);
 
-    auto *manager = static_cast<QCCurlMultiManager *>(userp);
+    auto *domain  = static_cast<QCCurlMultiDomain *>(userp);
+    auto *manager = domain ? domain->owner : nullptr;
     if (!manager) {
         qCritical() << "QCCurlMultiManager::curlSocketCallback: Invalid manager pointer";
         return -1;
@@ -270,14 +302,15 @@ int QCCurlMultiManager::curlSocketCallback(
 
     auto *socketInfo = static_cast<SocketInfo *>(socketp);
 
-    return manager->manageSocketNotifiers(socketfd, what, socketInfo);
+    return manager->manageSocketNotifiers(domain, socketfd, what, socketInfo);
 }
 
 int QCCurlMultiManager::curlTimerCallback(CURLM *multi, long timeout_ms, void *userp)
 {
     Q_UNUSED(multi);
 
-    auto *manager = static_cast<QCCurlMultiManager *>(userp);
+    auto *domain  = static_cast<QCCurlMultiDomain *>(userp);
+    auto *manager = domain ? domain->owner : nullptr;
     if (!manager) {
         qCritical() << "QCCurlMultiManager::curlTimerCallback: Invalid manager pointer";
         return -1;
@@ -302,9 +335,9 @@ int QCCurlMultiManager::curlTimerCallback(CURLM *multi, long timeout_ms, void *u
 
     // 启动或停止定时器
     if (timeoutMs >= 0) {
-        manager->m_socketTimer->start(timeoutMs);
+        domain->timer->start(timeoutMs);
     } else {
-        manager->m_socketTimer->stop();
+        domain->timer->stop();
     }
 
     return 0;

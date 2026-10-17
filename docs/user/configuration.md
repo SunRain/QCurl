@@ -161,11 +161,25 @@ Core 与 Blocking Extras 的 `sendCustomRequest()` 都原样发送合法 HTTP me
 
 ### 连接池配置与请求统计
 
-`QCNetworkConnectionPoolManager::setConfig()` 只提交线程安全的进程模板。每个线程的 multi
-在下一次网络请求加入前应用完整快照，不表示其他线程立即生效，也不打断已有传输。
-`multiMaxTotalConnections` / `multiMaxHostConnections` 是每线程原生连接上限，
+`QCNetworkConnectionPoolManager::setConfig()` 只提交线程安全的进程模板。每个传输域的 CURLM
+在自己的下一次网络 admission 前应用快照，不广播到其他域，也不打断已有传输。
+`multiMaxTotalConnections` / `multiMaxHostConnections` 是每个 CURLM 的原生连接上限，
 `multiMaxConcurrentStreams` 是每连接并发流上限，`multiMaxConnects` 是连接缓存容量；清除后
-分别恢复 libcurl 默认值 `0`、`0`、`100`、`0`，不是进程级总连接配额。
+分别恢复 libcurl 默认值 `0`、`0`、`100`、`0`。同线程可以存在多个域，合计连接数可以超过
+单域配置值；这些值不是线程或进程级总配额。manager 调度器的请求排队与 libcurl 的连接等待
+是两层独立约束，统计不会按域重复累计。
+
+### Cookie 与 TLS session 共享
+
+`ShareHandleConfig` 仅提供 Cookie 和 SSL session 两个独立开关，默认均关闭。
+显式共享 store 按 manager 隔离，可跨该 manager 的传输域；旧 share-DNS 接口已移除。
+没有显式 SSL share 时，同 CURLM 仍有 libcurl 的隐式 TLS session 缓存，不同 CURLM 不共享它。
+TLS session 恢复不会关闭证书链、主机名或 SNI 身份验证。
+
+在途改成全关时，新传输立即不绑定 share；旧传输保持原绑定直到安全脱离。这不等于清空
+Cookie、DNS 或连接缓存。非空配置在有用户时延迟，仍按旧 applied 配置执行并给出诊断；
+最后用户退出后应用最新期望。连续变更只保留最新值，改回 applied 会撤回 pending，
+不会在空闲时重放已撤回的配置。必需 share 操作失败拒绝传输，不无声改为不共享。
 
 `maxIdleTime` / `maxConnectionLifetime` 限制可复用连接的空闲年龄与总年龄；
 TCP keepalive 固定启用，空闲 60 秒后探测，间隔 30 秒。`multiplexingEnabled` 控制原生
@@ -230,5 +244,33 @@ cookie store。设备线程、重放能力与详细结果约束见[Blocking 公�
 getter 不依赖是否开启重试，不增加计数或预算；调度仅在原有 429 分支使用相同解析算法。
 预算检查先于输出回滚，其既有策略优先关系保持不变。
 
+普通 Core 消费者无需功能宏即可调用 `setResolveOverride({QStringLiteral("host:443:127.0.0.1")})`。
+只接受 host:port:IPv4，端口 1–65535；各字段首尾空白去除，空列表清除覆盖。
+主机使用 Qt `QUrl::toAce()` 规则规范化，getter 返回与编码 URL 匹配的 ACE 形式。
+例如 `bücher.invalid:443:127.0.0.1` 与 `xn--bcher-kva.invalid:443:127.0.0.1`
+返回同一条目；大小写、合法 Unicode 组合形式与 Qt URL 保持一致，ASCII 内部名称仍可用。
+主机编码失败或结果为空同样返回 `InvalidArgument`，不接受内部空白和控制字符。
+列表中任何空项、非法项或 libcurl 扩展语法均原子拒绝并保留旧值；调用方必须检查结果。
+请求副本独立，RESOLVE 列表原样适配到 `CURLOPT_RESOLVE`，重复 host/port 由后项生效。
+原 URL、HTTP Host 和 TLS 验证主机保持原域名，不改写成连接目标。
+
+`resolveIsolation()` 默认是 `QCNetworkResolveIsolation::Isolated`；
+`setResolveIsolation()` 接受 `Isolated` 或 `NativeShared`，非法枚举原子拒绝。
+策略与列表互不清除，清空列表也不重置策略：
+
+- **Isolated**：完整有效规则等价的请求可共享域内 DNS/连接缓存；不同规则和无覆盖请求
+  不跨域复用。域有界回收，活跃、重试和持久传输所需资源不会提前释放。
+- **NativeShared**：显式选择同线程固定 CURLM 的原生共享语义，不按列表或 manager 再隔离
+  DNS/连接；同线程不同 manager 也可能观察到暖缓存。清除覆盖不等于 flush。
+
+异步与 Blocking Extras 使用相同原生选项和地址族约束，但 Blocking 每次使用独立 easy，
+没有跨调用 multi 缓存，不能把异步暖缓存行为外推到同步调用。
+内部 `connectTo` 单独映射 `CURLOPT_CONNECT_TO`，可与 RESOLVE 同时生效；RESOLVE 匹配
+实际本地解析目标，代理远端解析不能由它强制替换。必要选项或资源失败直接拒绝传输，
+不丢弃配置、改用系统 DNS 或从 Isolated 降级为 NativeShared。
+
 原生传输终态的 `httpStatusCode()` 采用 `CURLINFO_RESPONSE_CODE`；代理 CONNECT 被拒绝、
 尚未收到目标响应时为 0，不把代理的 403 冒充目标状态。原始头仍可用于诊断。
+其余高级网络路径 API 继续是内部测试能力，安装 target 不导出整组宏。
+
+这些接口沿用 QCurl 2.x 每次更新重编译与非稳定 ABI 合同；不自动接管消费方的上层重试。

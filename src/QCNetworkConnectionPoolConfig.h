@@ -31,12 +31,12 @@ public:
     QCNetworkConnectionPoolConfig &operator=(const QCNetworkConnectionPoolConfig &other);
     QCNetworkConnectionPoolConfig &operator=(QCNetworkConnectionPoolConfig &&other) noexcept;
 
-    /// 每线程 multi 的原生连接上限；空值恢复 libcurl 默认值 0（不限）。
+    /// 每个传输 CURLM 的原生连接上限；空值恢复 0（不限），线程合计可超过该值。
     [[nodiscard]] std::optional<long> multiMaxTotalConnections() const;
     void setMultiMaxTotalConnections(long value);
     void clearMultiMaxTotalConnections();
 
-    /// 每线程 multi 的单主机连接上限；空值恢复默认值 0（不限）。
+    /// 每个传输 CURLM 的单主机连接上限；空值恢复默认值 0（不限）。
     [[nodiscard]] std::optional<long> multiMaxHostConnections() const;
     void setMultiMaxHostConnections(long value);
     void clearMultiMaxHostConnections();
@@ -46,7 +46,7 @@ public:
     void setMultiMaxConcurrentStreams(long value);
     void clearMultiMaxConcurrentStreams();
 
-    /// 每线程 multi 的连接缓存容量；空值恢复默认值 0（libcurl 自动调整）。
+    /// 每个传输 CURLM 的连接缓存容量；空值恢复 0（自动容量），不表示禁用或 flush。
     [[nodiscard]] std::optional<long> multiMaxConnects() const;
     void setMultiMaxConnects(long value);
     void clearMultiMaxConnects();

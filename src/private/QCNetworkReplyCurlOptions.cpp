@@ -173,7 +173,6 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
     return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_PROXY), "");
 }
 
-#ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 [[nodiscard]] bool buildSlistFromStrings(const QStringList &entries,
                                          curl_slist **output,
                                          QString *error,
@@ -181,8 +180,6 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
 {
     return QCurl::Internal::CurlOptions::buildCurlSlist(entries, output, error, optionName);
 }
-
-#endif // QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 
 std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
 {

@@ -48,7 +48,9 @@ Blocking result 的旧 rawHeaderList 别名改为 `headers()`，保持接收顺�
 - manager 所属线程有事件循环时，拿到 reply 后再连接完成信号即可观察终态，包括校验失败；错误线程或无事件循环拒绝仍可同步查询。
 - 未配置代理或显式 None 时不继承环境代理；需要代理的调用方须显式设置 QCNetworkProxyConfig。
 - 将 maxConnectionsPerHost/maxTotalConnections 改为对应的 multiMaxHostConnections/multiMaxTotalConnections。移除 pipeliningEnabled、connectionWarmingEnabled 及其 setter，不提供兼容开关。
-- 连接池配置是进程模板，由每线程 multi 在下一次网络 admission 时应用，不是立即生效的进程总连接上限。使用 activeRequests 而不是 activeConnections，移除 idleConnections 消费；统计描述 Core 请求，不是物理连接库存。
+- 连接池配置是进程模板，由各传输域的 CURLM 在自己的下一次 admission 时应用。限额按 CURLM 生效，同线程多个域的合计可以超过该值，不是线程或进程总连接上限。使用 activeRequests 而不是 activeConnections，移除 idleConnections 消费；统计描述 Core 请求，不是物理连接库存。
+- RESOLVE 恢复原生选项适配，默认 `QCNetworkResolveIsolation::Isolated` 隔离不兼容规则的 DNS 与连接复用；显式 `NativeShared` 才使用同线程固定域的原生共享。清空列表不重置策略，也不清空原生缓存；Blocking 每次独立 easy，不新增跨调用池。
+- 移除 ShareHandleConfig 的 share-DNS 接口，只保留 Cookie/SSL session。全关对新传输立即生效；非空在途变更延迟到安全空闲，最后用户退出应用最新值，改回 applied 撤回 pending。共享关闭不等于清缓存，同 CURLM 的隐式 TLS session 缓存仍由 libcurl 管理。
 - maxIdleTime 映射原生连接空闲年龄，与 TCP keepalive 时序独立。
 - 响应数据被通用 consumer 消费后不能透明重试；只有文件下载 job 可先恢复自己的输出再重试。续传成功要求 identity 表示、完整 Range 及匹配的接收/最终文件长度。
 

@@ -1,3 +1,5 @@
+#include "tst_QCNetworkNetworkPath.h"
+
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
@@ -7,30 +9,48 @@
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
+#include "qcurl_resolve_test_server.h"
 
 #include <QScopeGuard>
 #include <QtTest/QtTest>
 
 using namespace QCurl;
 
-class TestQCNetworkNetworkPath : public QObject
+void TestQCNetworkNetworkPath::resolveOptionFailureDoesNotSend_data()
 {
-    Q_OBJECT
+    QTest::addColumn<QByteArray>("hook");
+    QTest::newRow("required-setopt") << QByteArrayLiteral("QCURL_TEST_FORCE_SETOPT_ERROR");
+    QTest::newRow("required-capability") << QByteArrayLiteral("QCURL_TEST_FORCE_CAPABILITY_ERROR");
+    QTest::newRow("slist") << QByteArrayLiteral("QCURL_TEST_FORCE_SLIST_APPEND_ERROR");
+}
 
-private Q_SLOTS:
-    void testDefaults();
-    void testSettersAndGetters();
-    void testInvalidInputs();
-    void testConfigureCurlOptionsSmoke();
-    void testSlistBuildFailureIsTerminal();
-    void testHeaderAppendFailureIsTerminal();
-    void testRequiredSetoptFailureIsTerminal();
-    void testMinimumRuntimeGate();
-    void testProtocolAllowlistCapabilityPolicy();
-    void testCoreProtocolOptionsAreMandatory();
-    void testCoreEntryRejectsNonHttpScheme();
-    void testExplicitProtocolCannotExpandCore();
-};
+void TestQCNetworkNetworkPath::resolveOptionFailureDoesNotSend()
+{
+    QFETCH(QByteArray, hook);
+    const auto old     = qgetenv(hook.constData());
+    const auto restore = qScopeGuard([hook, old]() {
+        if (old.isNull())
+            qunsetenv(hook.constData());
+        else
+            qputenv(hook.constData(), old);
+    });
+    qputenv(hook.constData(), QByteArrayLiteral("CURLOPT_RESOLVE"));
+    ResolveTestServer server(QByteArrayLiteral("must-not-arrive"));
+    QVERIFY(server.start(QStringLiteral("127.0.0.1")));
+    QCNetworkAccessManager manager;
+    QCNetworkRequest request(QUrl(QStringLiteral("http://localhost:%1/").arg(server.serverPort())));
+    QCOMPARE(request.setResolveOverride(
+                 {QStringLiteral("localhost:%1:127.0.0.1").arg(server.serverPort())}),
+             QCNetworkConfigUpdateResult::Applied);
+    auto *reply = manager.get(request);
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 1000);
+    QVERIFY(reply->error() != NetworkError::NoError);
+    QVERIFY(reply->errorString().contains(QStringLiteral("CURLOPT_RESOLVE")));
+    QTest::qWait(20);
+    QCOMPARE(server.requests().size(), 0);
+    QCOMPARE(server.connections(), 0);
+    reply->deleteLater();
+}
 
 void TestQCNetworkNetworkPath::testDefaults()
 {
@@ -73,9 +93,10 @@ void TestQCNetworkNetworkPath::testSettersAndGetters()
     QCOMPARE(request.localPort().value(), 12345);
     QCOMPARE(request.localPortRange().value(), 10);
 
-    request.setResolveOverride(QStringList{
-        QStringLiteral("example.com:443:127.0.0.1"),
-    });
+    QCOMPARE(request.setResolveOverride(QStringList{
+                 QStringLiteral("example.com:443:127.0.0.1"),
+             }),
+             QCNetworkConfigUpdateResult::Applied);
     QVERIFY(request.resolveOverride().has_value());
     QCOMPARE(request.resolveOverride()->size(), 1);
 
@@ -130,7 +151,8 @@ void TestQCNetworkNetworkPath::testInvalidInputs()
     QVERIFY(!request.localPort().has_value());
     QVERIFY(!request.localPortRange().has_value());
 
-    request.setResolveOverride(QStringList{QString(), QStringLiteral("   ")});
+    QCOMPARE(request.setResolveOverride(QStringList{QString(), QStringLiteral("   ")}),
+             QCNetworkConfigUpdateResult::InvalidArgument);
     QVERIFY(!request.resolveOverride().has_value());
 
     request.setConnectTo(QStringList{QString(), QStringLiteral("   ")});
@@ -158,7 +180,8 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     request.setHappyEyeballsTimeout(std::chrono::milliseconds(200));
     request.setNetworkInterface(QStringLiteral("lo"));
     request.setLocalPortRange(12345, 1);
-    request.setResolveOverride(QStringList{QStringLiteral("example.com:443:127.0.0.1")});
+    QCOMPARE(request.setResolveOverride(QStringList{QStringLiteral("example.com:443:127.0.0.1")}),
+             QCNetworkConfigUpdateResult::Applied);
     request.setConnectTo(QStringList{QStringLiteral("example.com:443:127.0.0.1:443")});
     request.setDnsServers(QStringList{QStringLiteral("8.8.8.8")});
     request.setDohUrl(QUrl(QStringLiteral("https://doh.example/dns-query")));
@@ -198,10 +221,11 @@ void TestQCNetworkNetworkPath::testSlistBuildFailureIsTerminal()
     qputenv("QCURL_TEST_FORCE_SLIST_APPEND_ERROR", QByteArrayLiteral("CURLOPT_RESOLVE:2"));
 
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-    request.setResolveOverride(QStringList{
-        QStringLiteral("example.com:443:127.0.0.1"),
-        QStringLiteral("example.net:443:127.0.0.1"),
-    });
+    QCOMPARE(request.setResolveOverride(QStringList{
+                 QStringLiteral("example.com:443:127.0.0.1"),
+                 QStringLiteral("example.net:443:127.0.0.1"),
+             }),
+             QCNetworkConfigUpdateResult::Applied);
 
     QCNetworkReplyPrivate replyPrivate(nullptr,
                                        request,
@@ -315,8 +339,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
 
     {
         // Fail 策略：redirect allowlist capability 缺失时必须 hard fail。
-        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR",
-                QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
         request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
@@ -334,8 +357,7 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
 
     {
         // Core 重定向协议边界不可降级：Warn 也不能回退到 libcurl 默认值。
-        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR",
-                QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
+        qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_REDIR_PROTOCOLS_STR"));
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
         request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
@@ -422,8 +444,16 @@ void TestQCNetworkNetworkPath::testExplicitProtocolCannotExpandCore()
 
 void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
 {
-    auto &probe = CurlFeatureProbe::instance();
+    auto &probe             = CurlFeatureProbe::instance();
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM");
+    const auto restoreEnv   = qScopeGuard([oldEnv, &probe]() {
+        if (oldEnv.isNull()) {
+            qunsetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM");
+        } else {
+            qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM", oldEnv);
+        }
+        probe.refreshForTesting();
+    });
 
     qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM", QByteArray("0x075400"));
     probe.refreshForTesting();
@@ -436,17 +466,8 @@ void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
                                        QByteArray());
     QVERIFY(!replyPrivate.configureCurlOptions());
     QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("7.85.0")));
+    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("8.14.1")));
     QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("请升级运行时 libcurl")));
-
-    if (oldEnv.isEmpty()) {
-        qunsetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM");
-    } else {
-        qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM", oldEnv);
-    }
-    probe.refreshForTesting();
 }
 
 QTEST_MAIN(TestQCNetworkNetworkPath)
-
-#include "tst_QCNetworkNetworkPath.moc"

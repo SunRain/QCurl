@@ -45,13 +45,15 @@ public:
     QCNetworkRedirectConfig redirectConfig;
     QCNetworkTransferConfig transferConfig;
 
+    std::optional<QStringList> resolveOverride;
+    QCNetworkResolveIsolation resolveIsolation = QCNetworkResolveIsolation::Isolated;
+
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
     /// 以下空值均表示沿用 libcurl 或系统默认网络路径策略。
     std::optional<std::chrono::milliseconds> happyEyeballsTimeout;
     std::optional<QString> networkInterface;
     std::optional<int> localPort;
     std::optional<int> localPortRange;
-    std::optional<QStringList> resolveOverride;
     std::optional<QStringList> connectTo;
     std::optional<QStringList> dnsServers;
     std::optional<QUrl> dohUrl;

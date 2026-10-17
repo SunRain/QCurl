@@ -2,7 +2,9 @@
 #include "private/QCNetworkRequestPrivate_p.h"
 
 #include <QDebug>
+#include <QUrl>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 
@@ -24,6 +26,68 @@ QStringList cleanedAdvancedStringList(const QStringList &entries)
     return cleaned;
 }
 #endif
+
+bool isDecimal(const QString &value)
+{
+    return !value.isEmpty() && std::all_of(value.cbegin(), value.cend(), [](QChar ch) {
+        return ch >= QLatin1Char('0') && ch <= QLatin1Char('9');
+    });
+}
+
+std::optional<QString> normalizedResolveHost(const QString &host)
+{
+    if (host.isEmpty() || host.startsWith(QLatin1Char('-'))
+        || std::any_of(host.cbegin(), host.cend(), [](QChar ch) {
+               return ch.isSpace() || ch.category() == QChar::Other_Control;
+           })) {
+        return std::nullopt;
+    }
+    // 与请求 URL 共用 Qt 的 IDNA 规则，不能把原始 Unicode 交给 libcurl 匹配 ACE 主机。
+    const QString aceHost = QString::fromLatin1(QUrl::toAce(host));
+    if (aceHost.isEmpty() || aceHost.startsWith(QLatin1Char('-'))
+        || std::any_of(aceHost.cbegin(), aceHost.cend(), [](QChar ch) {
+               return !((ch.isLetterOrNumber() && ch.unicode() < 128) || ch == QLatin1Char('.')
+                        || ch == QLatin1Char('-') || ch == QLatin1Char('_'));
+           })) {
+        return std::nullopt;
+    }
+    return aceHost;
+}
+
+bool isResolveIpv4Address(const QString &address)
+{
+    const auto octets = address.split(QLatin1Char('.'));
+    if (octets.size() != 4) {
+        return false;
+    }
+    for (const auto &octet : octets) {
+        bool ok         = false;
+        const int value = octet.toInt(&ok);
+        if (!isDecimal(octet) || !ok || value > 255
+            || (octet.size() > 1 && octet.startsWith(QLatin1Char('0')))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<QString> normalizedResolveEntry(const QString &entry)
+{
+    const auto parts = entry.trimmed().split(QLatin1Char(':'));
+    if (parts.size() != 3) {
+        return std::nullopt;
+    }
+    const auto host       = normalizedResolveHost(parts[0].trimmed());
+    const QString port    = parts[1].trimmed();
+    const QString address = parts[2].trimmed();
+    bool ok               = false;
+    const int number      = port.toInt(&ok);
+    if (!host || !isDecimal(port) || !ok || number < 1 || number > 65535
+        || !isResolveIpv4Address(address)) {
+        return std::nullopt;
+    }
+    return *host + QLatin1Char(':') + QString::number(number) + QLatin1Char(':') + address;
+}
 
 } // namespace
 
@@ -111,6 +175,42 @@ std::optional<QCNetworkIpResolve> QCNetworkRequest::ipResolve() const
     return d.constData()->transferConfig.ipResolve();
 }
 
+QCNetworkConfigUpdateResult QCNetworkRequest::setResolveOverride(const QStringList &entries)
+{
+    QStringList candidate;
+    candidate.reserve(entries.size());
+    for (const auto &entry : entries) {
+        const auto normalized = normalizedResolveEntry(entry);
+        if (!normalized) {
+            return QCNetworkConfigUpdateResult::InvalidArgument;
+        }
+        candidate.append(*normalized);
+    }
+    d.data()->resolveOverride = candidate.isEmpty() ? std::nullopt
+                                                    : std::optional<QStringList>(candidate);
+    return QCNetworkConfigUpdateResult::Applied;
+}
+
+std::optional<QStringList> QCNetworkRequest::resolveOverride() const
+{
+    return d.constData()->resolveOverride;
+}
+
+QCNetworkConfigUpdateResult QCNetworkRequest::setResolveIsolation(QCNetworkResolveIsolation isolation)
+{
+    if (isolation != QCNetworkResolveIsolation::Isolated
+        && isolation != QCNetworkResolveIsolation::NativeShared) {
+        return QCNetworkConfigUpdateResult::InvalidArgument;
+    }
+    d.data()->resolveIsolation = isolation;
+    return QCNetworkConfigUpdateResult::Applied;
+}
+
+QCNetworkResolveIsolation QCNetworkRequest::resolveIsolation() const noexcept
+{
+    return d.constData()->resolveIsolation;
+}
+
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 QCNetworkRequest &QCNetworkRequest::setHappyEyeballsTimeout(std::chrono::milliseconds timeout)
 {
@@ -178,20 +278,6 @@ std::optional<int> QCNetworkRequest::localPort() const
 std::optional<int> QCNetworkRequest::localPortRange() const
 {
     return d.constData()->localPortRange;
-}
-
-QCNetworkRequest &QCNetworkRequest::setResolveOverride(const QStringList &entries)
-{
-    d.data()->resolveOverride = cleanedAdvancedStringList(entries);
-    if (d.constData()->resolveOverride->isEmpty()) {
-        d.data()->resolveOverride.reset();
-    }
-    return *this;
-}
-
-std::optional<QStringList> QCNetworkRequest::resolveOverride() const
-{
-    return d.constData()->resolveOverride;
 }
 
 QCNetworkRequest &QCNetworkRequest::setConnectTo(const QStringList &entries)

@@ -67,6 +67,16 @@ quintptr QCCurlMultiTransferRecord::token() const noexcept
     return m_token;
 }
 
+void QCCurlMultiTransferRecord::bindDomain(std::shared_ptr<QCCurlMultiDomain> domain) noexcept
+{
+    m_domain = std::move(domain);
+}
+
+const std::shared_ptr<QCCurlMultiDomain> &QCCurlMultiTransferRecord::domain() const noexcept
+{
+    return m_domain;
+}
+
 void QCCurlMultiTransferRecord::bindObserver(
     const QSharedPointer<QCNetworkReplyTransferState> &state, QCNetworkReply *observer) noexcept
 {

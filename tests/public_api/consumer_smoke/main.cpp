@@ -304,13 +304,12 @@ int main(int argc, char **argv)
     }
 
     QCurl::QCNetworkAccessManager::ShareHandleConfig shareConfig;
-    shareConfig.setShareDnsCache(true);
     shareConfig.setShareCookies(true);
     shareConfig.setShareSslSession(true);
     manager.setShareHandleConfig(shareConfig);
     const auto savedShareConfig = manager.shareHandleConfig();
-    if (!savedShareConfig.enabled() || !savedShareConfig.shareDnsCache()
-        || !savedShareConfig.shareCookies() || !savedShareConfig.shareSslSession()) {
+    if (!savedShareConfig.enabled() || !savedShareConfig.shareCookies()
+        || !savedShareConfig.shareSslSession()) {
         return 12;
     }
 

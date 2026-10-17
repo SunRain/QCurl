@@ -30,7 +30,7 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareCookieContextLocked
     }
 
     if (!context->share || (context->applied != desired)) {
-        if (context->activeUsers != 0) {
+        if (context->hasUsers()) {
             if (failure) {
                 failure->status     = Internal::CookieStoreStatus::RejectedBeforeMutation;
                 failure->policyCode = QCurl::Internal::cookiepolicy::kShareBusy;

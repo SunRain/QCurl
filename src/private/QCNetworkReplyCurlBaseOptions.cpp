@@ -14,6 +14,7 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "private/QCNetworkHttpVersion_p.h"
+#include "private/QCNetworkIpResolve_p.h"
 #include "private/QCNetworkProtocolPolicy_p.h"
 #include "private/QCNetworkReplyCurlOptions_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
@@ -92,29 +93,40 @@ void configureRedirects(QCNetworkReplyPrivate *reply, CURL *handle, const QCNetw
     }
 }
 
-long curlIpResolveValue(QCNetworkIpResolve value)
+[[nodiscard]] bool configureIpResolution(QCNetworkReplyPrivate *reply,
+                                         CURL *handle,
+                                         const QCNetworkRequest &request)
 {
-    switch (value) {
-        case QCNetworkIpResolve::Any:
-            return CURL_IPRESOLVE_WHATEVER;
-        case QCNetworkIpResolve::Ipv4:
-            return CURL_IPRESOLVE_V4;
-        case QCNetworkIpResolve::Ipv6:
-            return CURL_IPRESOLVE_V6;
-    }
-    return CURL_IPRESOLVE_WHATEVER;
+    return setRequiredCurlOption(reply,
+                                 handle,
+                                 QCURL_CURL_OPTION(CURLOPT_IPRESOLVE),
+                                 curlIpResolveValue(
+                                     request.ipResolve().value_or(QCNetworkIpResolve::Any)));
 }
 
-void configureIpResolution(QCNetworkReplyPrivate *reply,
-                           CURL *handle,
-                           const QCNetworkRequest &request)
+[[nodiscard]] bool configureSlistOption(QCNetworkReplyPrivate *reply,
+                                        CURL *handle,
+                                        const QStringList &entries,
+                                        curl_slist **storage,
+                                        QCurl::Internal::CurlOptions::Option option)
 {
-    if (const auto value = request.ipResolve(); value.has_value()) {
-        setOptionalLongOption(reply,
-                              handle,
-                              QCURL_CURL_OPTION(CURLOPT_IPRESOLVE),
-                              curlIpResolveValue(value.value()));
+    QString error;
+    curl_slist *candidate = nullptr;
+    if (!buildSlistFromStrings(entries, &candidate, &error, option.name)) {
+        reply->setError(NetworkError::InvalidRequest, error);
+        return false;
     }
+    if (!setRequiredOption(reply,
+                           curlEasySetoptWithTestHook(handle, option, candidate),
+                           option.name)) {
+        curl_slist_free_all(candidate);
+        return false;
+    }
+
+    // nullptr 只解除本 easy 的列表，不删除所选 multi 域中已经加载的 DNS 或连接。
+    curl_slist_free_all(*storage);
+    *storage = candidate;
+    return true;
 }
 
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
@@ -150,29 +162,6 @@ void configureLocalNetworkBinding(QCNetworkReplyPrivate *reply,
     }
 }
 
-[[nodiscard]] bool configureSlistOption(QCNetworkReplyPrivate *reply,
-                                        CURL *handle,
-                                        const QStringList &entries,
-                                        curl_slist **storage,
-                                        QCurl::Internal::CurlOptions::Option option)
-{
-    QString error;
-    if (!buildSlistFromStrings(entries, storage, &error, option.name)) {
-        reply->setError(NetworkError::InvalidRequest, error);
-        return false;
-    }
-    if (!*storage
-        || setRequiredOption(reply,
-                             curlEasySetoptWithTestHook(handle, option, *storage),
-                             option.name)) {
-        return true;
-    }
-
-    curl_slist_free_all(*storage);
-    *storage = nullptr;
-    return false;
-}
-
 void configureDnsTransport(QCNetworkReplyPrivate *reply,
                            CURL *handle,
                            const QCNetworkRequest &request)
@@ -198,22 +187,11 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
                                                 const QCNetworkRequest &request)
 {
     configureLocalNetworkBinding(reply, handle, request);
-    if (const auto entries = request.resolveOverride();
-        entries.has_value()
-        && !configureSlistOption(reply,
-                                 handle,
-                                 entries.value(),
-                                 &reply->resolveSlist,
-                                 QCURL_CURL_OPTION(CURLOPT_RESOLVE))) {
-        return false;
-    }
-    if (const auto entries = request.connectTo();
-        entries.has_value()
-        && !configureSlistOption(reply,
-                                 handle,
-                                 entries.value(),
-                                 &reply->connectToSlist,
-                                 QCURL_CURL_OPTION(CURLOPT_CONNECT_TO))) {
+    if (!configureSlistOption(reply,
+                              handle,
+                              request.connectTo().value_or(QStringList{}),
+                              &reply->connectToSlist,
+                              QCURL_CURL_OPTION(CURLOPT_CONNECT_TO))) {
         return false;
     }
     configureDnsTransport(reply, handle, request);
@@ -231,9 +209,7 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
                                          QCUnsupportedSecurityOptionPolicy policy)
 {
     *storage            = protocols.join(QStringLiteral(",")).toUtf8();
-    const CURLcode code = curlEasySetoptWithTestHook(handle,
-                                                     option,
-                                                     storage->constData());
+    const CURLcode code = curlEasySetoptWithTestHook(handle, option, storage->constData());
     if (code == CURLE_OK) {
         return true;
     }
@@ -348,7 +324,14 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
         return false;
     }
     configureRedirects(reply, handle, normalized.request);
-    configureIpResolution(reply, handle, normalized.request);
+    if (!configureIpResolution(reply, handle, normalized.request)
+        || !configureSlistOption(reply,
+                                 handle,
+                                 normalized.request.resolveOverride().value_or(QStringList{}),
+                                 &reply->resolveSlist,
+                                 QCURL_CURL_OPTION(CURLOPT_RESOLVE))) {
+        return false;
+    }
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
     if (!configureAdvancedNetworkPath(reply, handle, normalized.request)) {
         return false;

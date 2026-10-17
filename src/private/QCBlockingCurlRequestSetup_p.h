@@ -34,6 +34,7 @@ struct RequestOptionStorage
     QByteArray allowedRedirectProtocols;
     QByteArray httpAuthUser;
     QByteArray httpAuthPassword;
+    // easy handle 结束后由 Blocking 适配器分别释放；两个原生选项不能共用同一列表。
     curl_slist *resolveList   = nullptr;
     curl_slist *connectToList = nullptr;
     QString failureMessage;
@@ -60,8 +61,7 @@ struct RequestOptionStorage
                                                       curl_slist **headers,
                                                       QString *error);
 [[nodiscard]] QByteArray cookieHeaderValue(const QCCookieSnapshot &snapshot);
-[[nodiscard]] QCCookieDelta extractCookieDelta(
-    const QCBlockingNetworkResult::HeaderList &headers);
+[[nodiscard]] QCCookieDelta extractCookieDelta(const QCBlockingNetworkResult::HeaderList &headers);
 
 } // namespace Internal
 } // namespace QCurl

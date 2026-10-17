@@ -47,6 +47,9 @@ public:
     void setToken(quintptr token) noexcept;
     [[nodiscard]] quintptr token() const noexcept;
 
+    void bindDomain(std::shared_ptr<QCCurlMultiDomain> domain) noexcept;
+    [[nodiscard]] const std::shared_ptr<QCCurlMultiDomain> &domain() const noexcept;
+
     void bindObserver(const QSharedPointer<QCNetworkReplyTransferState> &state,
                       QCNetworkReply *observer) noexcept;
     void clearObserver() noexcept;
@@ -84,6 +87,7 @@ public:
 
 private:
     std::optional<QCCurlHandleManager> m_handle;
+    std::shared_ptr<QCCurlMultiDomain> m_domain;
     quintptr m_token = 0;
     QSharedPointer<QCNetworkReplyTransferState> m_transferState;
     QPointer<QCNetworkReply> m_observer;

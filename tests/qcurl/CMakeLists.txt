@@ -358,11 +358,18 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkConnectionPool.cpp
 ) # 连接池测试
-add_qcurl_test(tst_QCNetworkNetworkPath tst_QCNetworkNetworkPath.cpp) # 网络路径与 DNS 控制（M4）
+add_qcurl_test(tst_QCNetworkNetworkPath
+    tst_QCNetworkNetworkPath.cpp
+    tst_QCNetworkNetworkPath.h
+    tst_QCNetworkPathCombinations.cpp
+    tst_QCNetworkPathLifecycle.cpp
+    qcurl_resolve_test_server.h
+) # 网络路径与 DNS 控制；辅助 QObject 由本目标独立执行 AUTOMOC。
 target_compile_definitions(tst_QCNetworkNetworkPath PRIVATE
     QCURL_ENABLE_TEST_HOOKS
     QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 )
+target_link_libraries(tst_QCNetworkNetworkPath PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 target_compile_definitions(${QCURL_QTTEST_CORE_TARGET}
     PRIVATE QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API)
 add_qcurl_test_with_preflight(
@@ -371,6 +378,8 @@ add_qcurl_test_with_preflight(
     REQUIRE_PYTHON
     SOURCES
     tst_QCNetworkShareHandle.cpp
+    tst_QCNetworkShareHandle.h
+    tst_QCNetworkTlsSessions.cpp
 ) # multi share handle（M6+）
 
 # Logger / middleware / cookie / cancel token 相关测试
@@ -446,6 +455,18 @@ add_qcurl_test(tst_LargeFileDownload tst_LargeFileDownload.cpp)
 add_qcurl_test_with_preflight(tst_QCNetworkRetryBudgetLoopback
     REQUIRE_LOCAL_PORT
     SOURCES tst_QCNetworkRetryBudgetLoopback.cpp qcurl_http_script_server.h)
+add_qcurl_test_with_preflight(tst_QCNetworkResolveOverride
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkResolveOverride.cpp tst_QCNetworkResolveCaches.cpp
+            tst_QCNetworkResolveOverride.h qcurl_resolve_test_server.h)
+add_qcurl_test_with_preflight(tst_QCCurlMultiDomains
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCCurlMultiDomains.cpp tst_QCCurlMultiDomainLifecycle.cpp
+            tst_QCCurlMultiDomains.h qcurl_resolve_test_server.h)
+target_compile_definitions(tst_QCCurlMultiDomains PRIVATE QCURL_ENABLE_TEST_HOOKS)
+# 正常 shared 库行为，不能靠内部伴随库的宏证明正式解析覆盖可用。
+set_property(TARGET tst_QCNetworkResolveOverride PROPERTY LINK_LIBRARIES
+    Qt6::Test Qt6::Network QCurl CURL::libcurl qcurl_qttest_paths)
 
 # -----------------------------------------------------------------------------
 # CTest Labels（取证式门禁分组）

@@ -56,10 +56,7 @@ template<typename Result>
 class CookieCompletionState
 {
 public:
-    CookieCompletionState()
-    {
-        m_interface.reportStarted();
-    }
+    CookieCompletionState() { m_interface.reportStarted(); }
 
     [[nodiscard]] QFuture<Result> future() { return m_interface.future(); }
     [[nodiscard]] bool isCanceled() const { return m_interface.isCanceled(); }
@@ -302,7 +299,12 @@ QFuture<QCCookieOperationResult> QCNetworkAccessManager::clearAllCookiesAsync()
 void QCNetworkAccessManager::setShareHandleConfig(const ShareHandleConfig &config)
 {
     Q_D(QCNetworkAccessManager);
+    if (QThread::currentThread() != thread()) {
+        qWarning() << "QCNetworkAccessManager::setShareHandleConfig: owner thread required";
+        return;
+    }
     d->shareHandleConfig = config;
+    QCCurlMultiManager::instance()->synchronizeShareConfig(this);
 }
 
 QCNetworkAccessManager::ShareHandleConfig QCNetworkAccessManager::shareHandleConfig() const noexcept

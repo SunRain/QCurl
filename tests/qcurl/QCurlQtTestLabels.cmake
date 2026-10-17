@@ -44,6 +44,8 @@ set_tests_properties(tst_QCNetworkCacheIntegration PROPERTIES LABELS "env;httpbi
 set_tests_properties(tst_QCNetworkConnectionPool PROPERTIES LABELS "env;httpbin;connection_pool")
 set_tests_properties(tst_QCNetworkNetworkPath PROPERTIES LABELS "capability;network_path")
 set_tests_properties(tst_QCNetworkRetryBudgetLoopback PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCNetworkResolveOverride PROPERTIES LABELS "env;local_port")
+set_tests_properties(tst_QCCurlMultiDomains PROPERTIES LABELS "env;local_port")
 set_tests_properties(tst_QCNetworkShareHandle PROPERTIES LABELS "env;local_port;python")
 set_tests_properties(tst_QCNetworkDiagnostics PROPERTIES LABELS "external_network;diagnostics")
 set_tests_properties(tst_QCNetworkDiagnosticsLocal PROPERTIES LABELS "env;local_port;diagnostics")
@@ -110,6 +112,8 @@ set(_qcurl_qttest_targets
     tst_QCNetworkConnectionPool
     tst_QCNetworkNetworkPath
     tst_QCNetworkRetryBudgetLoopback
+    tst_QCNetworkResolveOverride
+    tst_QCCurlMultiDomains
     tst_QCNetworkShareHandle
     tst_QCNetworkLogger
     tst_QCNetworkMiddleware

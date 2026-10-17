@@ -25,3 +25,18 @@ target_link_libraries(qcurl_public_api_consumer_smoke
         QCurl::QCurl
         Qt6::Core
 )
+
+# 普通已安装 Core 不得通过目标宏泄漏内部网络路径组。
+foreach(_internal_api IN ITEMS connectTo dnsServers dohUrl happyEyeballsTimeout networkInterface localPort)
+    try_compile(_internal_api_available
+        SOURCE_FROM_CONTENT network_path_negative.cpp
+            "#include <QCNetworkRequest.h>
+int main() { QCurl::QCNetworkRequest request; request.${_internal_api}(); }
+"
+        LINK_LIBRARIES QCurl::QCurl Qt6::Core
+        CXX_STANDARD 17
+        OUTPUT_VARIABLE _negative_output)
+    if(_internal_api_available OR NOT _negative_output MATCHES "(has no member|no member named)")
+        message(FATAL_ERROR "Internal API ${_internal_api} was not rejected for the expected reason: ${_negative_output}")
+    endif()
+endforeach()

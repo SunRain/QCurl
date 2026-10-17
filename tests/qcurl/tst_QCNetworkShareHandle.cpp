@@ -1,6 +1,8 @@
+#include "tst_QCNetworkShareHandle.h"
+
 /**
  * @file tst_QCNetworkShareHandle.cpp
- * @brief multi share handle（DNS/Cookie/SSL session）基础契约测试
+ * @brief manager share handle（Cookie/SSL session）基础契约测试
  *
  * 目标：
  * - 默认关闭：不共享 Cookie（两次独立请求无法复用登录态）
@@ -31,33 +33,6 @@
 #include <QtTest/QtTest>
 
 using namespace QCurl;
-
-class TestQCNetworkShareHandle : public QObject
-{
-    Q_OBJECT
-
-private Q_SLOTS:
-    void initTestCase();
-    void cleanupTestCase();
-
-    void testCookieShareDisabledByDefault();
-    void testCookieShareWithinManager();
-    void testCookieShareIsolationAcrossManagers();
-    void testCookieShareConcurrencySmoke();
-
-private:
-    [[nodiscard]] bool startObserveServer();
-    void stopObserveServer();
-
-    static bool waitForPortReady(quint16 port, int timeoutMs);
-    static bool waitForFinished(QCNetworkReply *reply, int timeoutMs);
-
-    QTemporaryDir m_tempDir;
-    QProcess m_server;
-    QString m_skipReason;
-    quint16 m_port = 0;
-    QString m_baseUrl;
-};
 
 void TestQCNetworkShareHandle::initTestCase()
 {
@@ -309,4 +284,3 @@ void TestQCNetworkShareHandle::testCookieShareConcurrencySmoke()
 }
 
 QTEST_MAIN(TestQCNetworkShareHandle)
-#include "tst_QCNetworkShareHandle.moc"

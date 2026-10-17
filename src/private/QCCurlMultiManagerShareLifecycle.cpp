@@ -5,6 +5,9 @@
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
 #include <QByteArray>
+#include <QDebug>
+#include <QMutexLocker>
+#include <QThread>
 
 namespace QCurl {
 
@@ -44,7 +47,7 @@ bool QCCurlMultiManager::cleanupShareHandleLocked(ShareContext *context, const c
     if (!context || !context->share) {
         return true;
     }
-    if (context->activeUsers != 0) {
+    if (context->hasUsers()) {
         poisonLocked(operation, CURLM_INTERNAL_ERROR);
         return false;
     }
@@ -110,7 +113,6 @@ QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(
     }
 
     const auto config = manager->shareHandleConfig();
-    out.dnsCache      = config.shareDnsCache();
     out.cookies       = config.shareCookies();
     out.sslSession    = config.shareSslSession();
     return out;
@@ -118,15 +120,19 @@ QCCurlMultiManager::ShareConfig QCCurlMultiManager::toShareConfig(
 
 void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
 {
-    if (!context || context->activeUsers != 0) {
+    if (!context || context->hasUsers()) {
         return;
     }
 
-    if (context->pending.has_value()) {
+    if (!context->pendingDelete && context->pending.has_value()) {
         QString error;
-        if (!applyShareConfigIfIdleLocked(context, context->pending.value(), &error)
-            && m_isPoisoned.load(std::memory_order_relaxed)) {
-            return;
+        // apply 会清除 pending；必须传值拷贝，不能借用随后失效的 optional 内容。
+        const auto desired = context->pending.value();
+        if (!applyShareConfigIfIdleLocked(context, desired, &error)) {
+            qWarning().noquote() << "share 配置应用失败：" << error;
+            if (m_isPoisoned.load(std::memory_order_relaxed)) {
+                return;
+            }
         }
     }
 
@@ -138,117 +144,115 @@ void QCCurlMultiManager::maybeFinalizeShareContextLocked(ShareContext *context)
             context, "QCCurlMultiManager::maybeFinalizeShareContextLocked/share-cleanup")) {
         return;
     }
-    m_shareContexts.remove(context->scopeKey);
+    const auto current = m_shareContexts.constFind(context->scopeKey);
+    if (current != m_shareContexts.cend() && current.value().data() == context) {
+        m_shareContexts.remove(context->scopeKey);
+    }
+    m_retiredShareContexts.removeIf(
+        [context](const auto &holder) { return holder.data() == context; });
+}
+
+void QCCurlMultiManager::synchronizeShareConfig(const QCNetworkAccessManager *manager)
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    QMutexLocker locker(&m_mutex);
+    const auto it = m_shareContexts.constFind(manager);
+    if (it == m_shareContexts.cend()) {
+        return;
+    }
+    ShareContext *context = it.value().data();
+    const auto desired    = toShareConfig(manager);
+    if (desired == context->applied) {
+        context->pending.reset();
+        return;
+    }
+    context->pending = desired;
+    if (!context->hasUsers()) {
+        maybeFinalizeShareContextLocked(context);
+    }
 }
 
 QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareShareForReplyLocked(
     QCNetworkReply *reply, CURL *)
 {
-    auto *accessManager                  = qobject_cast<QCNetworkAccessManager *>(reply->parent());
-    const ShareConfig desiredShareConfig = toShareConfig(accessManager);
-    if (!accessManager || !desiredShareConfig.enabled()) {
+    auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
+    if (!manager) {
         return nullptr;
     }
-
-    ShareContext *shareContext = getOrCreateShareContextLocked(accessManager);
-    if (!shareContext || shareContext->pendingDelete) {
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share handle 作用域已销毁，已降级为不共享缓存"));
-        return shareContext;
-    }
-
-    if (shareContext->cookieStorePoisoned) {
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share cookie context 已 poisoned，拒绝继续使用不可信共享状态"));
+    synchronizeShareConfig(manager);
+    const auto desired = toShareConfig(manager);
+    if (!desired.enabled()) {
         return nullptr;
     }
-
-    if (desiredShareConfig == shareContext->applied) {
-        return shareContext;
+    ShareContext *context = getOrCreateShareContextLocked(manager);
+    if (!context || context->pendingDelete || context->cookieStorePoisoned) {
+        return context;
     }
-
-    if (shareContext->activeUsers > 0) {
-        shareContext->pending = desiredShareConfig;
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share handle 配置变更延迟生效：当前仍按 %1 生效，"
-                           "待在途请求结束后切换为 %2")
-                .arg(shareConfigSummary(shareContext->applied))
-                .arg(shareConfigSummary(desiredShareConfig)));
-        return shareContext;
+    if (desired == context->applied && context->share) {
+        context->pending.reset();
+        return context;
     }
-
-    QString initError;
-    if (!applyShareConfigIfIdleLocked(shareContext, desiredShareConfig, &initError)) {
-        const QString reason = initError.isEmpty() ? shareContext->lastInitError : initError;
+    if (context->hasUsers()) {
+        context->pending = desired;
         reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share handle 不可用（%1），已降级为不共享缓存")
-                .arg(reason.isEmpty() ? QStringLiteral("unknown") : reason));
-    } else if (shareContext->applied != desiredShareConfig) {
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share handle 降级：期望 %1，但实际仅启用 %2")
-                .arg(shareConfigSummary(desiredShareConfig))
-                .arg(shareConfigSummary(shareContext->applied)));
+            QStringLiteral("share handle 配置变更延迟生效：期望 %1，实际 %2；仍有在途用户")
+                .arg(shareConfigSummary(desired), shareConfigSummary(context->applied)));
+        return context;
     }
-    return shareContext;
+    QString error;
+    if (!applyShareConfigIfIdleLocked(context, desired, &error)) {
+        reply->d_func()->capabilityWarnings.append(error);
+    }
+    return context;
 }
 
 QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
-    QCNetworkReply *reply, CURL *easy, ShareContext *shareContext)
+    QCNetworkReply *reply, CURL *easy, ShareContext *context)
 {
     if (m_isPoisoned.load(std::memory_order_relaxed)) {
         return {ShareApplyState::NonCallable, m_initializationError};
     }
-    if (shareContext && shareContext->cookieStorePoisoned) {
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("share cookie context 已 poisoned，未向请求绑定共享状态"));
+    auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
+    if (!toShareConfig(manager).enabled()) {
         resetShareOnEasyIfNeeded(easy);
         return m_isPoisoned.load(std::memory_order_relaxed)
                    ? ShareApplyResult{ShareApplyState::NonCallable, m_initializationError}
                    : ShareApplyResult{};
     }
-    if (!shareContext || !shareContext->share || !shareContext->applied.enabled()) {
-        resetShareOnEasyIfNeeded(easy);
-        return m_isPoisoned.load(std::memory_order_relaxed)
-                   ? ShareApplyResult{ShareApplyState::NonCallable, m_initializationError}
-                   : ShareApplyResult{};
+    if (!context || context->pendingDelete || context->cookieStorePoisoned || !context->share
+        || !context->applied.enabled() || context->lastInitFailed) {
+        const auto error = context && !context->lastInitError.isEmpty()
+                               ? context->lastInitError
+                               : QStringLiteral("必要的 manager Cookie/TLS share context 不可用");
+        return {ShareApplyState::Rejected, error};
     }
-
     Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult easyShare
-        = adapter.setEasy(easy,
-                          QCURL_CURL_OPTION(CURLOPT_SHARE),
-                          Internal::CookieOptionStage::Setup,
-                          shareContext->share);
-    const CURLcode rc = easyShare.curlCode;
-    if (rc != CURLE_OK) {
-        reply->d_func()->capabilityWarnings.append(
-            QStringLiteral("设置 CURLOPT_SHARE 失败（%1），已降级为不共享缓存")
-                .arg(QString::fromUtf8(curl_easy_strerror(rc))));
+    const auto binding = adapter.setEasy(easy,
+                                         QCURL_CURL_OPTION(CURLOPT_SHARE),
+                                         Internal::CookieOptionStage::Setup,
+                                         context->share);
+    if (!binding.isSuccess()) {
+        return {ShareApplyState::Rejected, binding.message};
+    }
+    context->activeUsers += 1;
+    m_easyToShareContext.insert(easy, context);
+    m_easyShareOptionSet.insert(easy, true);
+    const auto *state       = reply->d_func();
+    const bool hasCookieJar = state->cookieMode != 0 && !state->cookieFilePath.isEmpty();
+    if (!context->applied.cookies || hasCookieJar) {
         return {};
     }
-
-    shareContext->activeUsers += 1;
-    m_easyToShareContext.insert(easy, shareContext);
-    m_easyShareOptionSet.insert(easy, true);
-
-    auto *d                 = reply->d_func();
-    const bool hasCookieJar = (d->cookieMode != 0) && !d->cookieFilePath.isEmpty();
-    if (shareContext->applied.cookies && !hasCookieJar) {
-        const Internal::RequiredOptionResult cookieEngine
-            = adapter.setEasy(easy,
-                              QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
-                              Internal::CookieOptionStage::Setup,
-                              "");
-        if (!cookieEngine.isSuccess()) {
-            reply->d_func()->capabilityWarnings.append(
-                QStringLiteral("启用共享 cookie engine 失败（%1）").arg(cookieEngine.message));
-            if (!detachShareBindingLocked(
-                    easy, "QCCurlMultiManager::applyShareToEasyLocked/cookie-engine-rollback")) {
-                return {ShareApplyState::NonCallable, m_initializationError};
-            }
-        }
+    const auto cookie = adapter.setEasy(easy,
+                                        QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
+                                        Internal::CookieOptionStage::Setup,
+                                        "");
+    if (cookie.isSuccess()) {
+        return {};
     }
-    return {};
+    if (!detachShareBindingLocked(easy, "QCCurlMultiManager::applyShareToEasyLocked/rollback")) {
+        return {ShareApplyState::NonCallable, m_initializationError};
+    }
+    return {ShareApplyState::Rejected, cookie.message};
 }
 
 void QCCurlMultiManager::resetShareOnEasyIfNeeded(CURL *easy)

@@ -118,7 +118,8 @@ public:
     /**
      * @brief 选择当前 manager 共享哪些 libcurl share-handle 域。
      *
-     * 共享能力默认关闭，仅在显式启用后影响异步 multi 路径。
+     * 共享能力默认关闭，仅影响同 manager 的异步 Cookie/SSL session 显式 store，
+     * 不共享 DNS/连接。无 SSL share 仍保留所在 CURLM 的隐式 TLS session 缓存。
      */
     class QCURL_EXPORT ShareHandleConfig
     {
@@ -130,9 +131,6 @@ public:
 
         ShareHandleConfig &operator=(const ShareHandleConfig &other);
         ShareHandleConfig &operator=(ShareHandleConfig &&other) noexcept;
-
-        [[nodiscard]] bool shareDnsCache() const noexcept;
-        void setShareDnsCache(bool enabled);
 
         [[nodiscard]] bool shareCookies() const noexcept;
         void setShareCookies(bool enabled);
@@ -177,7 +175,7 @@ public:
     /// 配置 multi share handle（默认关闭，仅对异步 multi 路径生效）。
     void setShareHandleConfig(const ShareHandleConfig &config);
 
-    /// 获取当前 share handle 配置。
+    /// 获取最新期望配置，不代表所有在途 easy 已切换。
     [[nodiscard]] ShareHandleConfig shareHandleConfig() const noexcept;
 
     /// 配置 HSTS/Alt-Svc cache 持久化（默认关闭，显式 opt-in）。

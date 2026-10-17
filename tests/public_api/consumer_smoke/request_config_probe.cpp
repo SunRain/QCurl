@@ -7,6 +7,61 @@
 
 #include <type_traits>
 
+namespace {
+
+int checkResolveIsolation(QCurl::QCNetworkRequest &request)
+{
+    using Isolation  = QCurl::QCNetworkResolveIsolation;
+    using Update     = QCurl::QCNetworkConfigUpdateResult;
+    const auto rules = QStringList{QStringLiteral("example.invalid:443:127.0.0.1")};
+    if (request.resolveIsolation() != Isolation::Isolated
+        || request.setResolveOverride(rules) != Update::Applied
+        || request.setResolveIsolation(Isolation::NativeShared) != Update::Applied
+        || request.resolveOverride() != rules) {
+        return 8;
+    }
+    auto copy = request;
+    if (copy.setResolveIsolation(static_cast<Isolation>(-1)) != Update::InvalidArgument
+        || copy.resolveIsolation() != Isolation::NativeShared || copy.resolveOverride() != rules
+        || copy.setResolveIsolation(Isolation::Isolated) != Update::Applied
+        || copy.setResolveOverride({}) != Update::Applied || copy.resolveOverride()
+        || request.resolveIsolation() != Isolation::NativeShared
+        || request.resolveOverride() != rules) {
+        return 8;
+    }
+    if (request.setResolveOverride({}) != Update::Applied
+        || request.resolveIsolation() != Isolation::NativeShared) {
+        return 8;
+    }
+    return 0;
+}
+
+int checkResolveRules(QCurl::QCNetworkRequest &request)
+{
+    const auto resolve = QStringList{QStringLiteral("example.invalid:443:127.0.0.1")};
+    using Update       = QCurl::QCNetworkConfigUpdateResult;
+    if (request.setResolveOverride(resolve) != Update::Applied
+        || request.resolveOverride() != resolve
+        || request.setResolveOverride({QStringLiteral("invalid")}) != Update::InvalidArgument
+        || request.resolveOverride() != resolve) {
+        return 8;
+    }
+    auto copy = request;
+    if (copy.setResolveOverride({}) != Update::Applied || copy.resolveOverride()
+        || request.resolveOverride() != resolve) {
+        return 8;
+    }
+    if (request.setResolveOverride({QStringLiteral("BÜCHER.INVALID:443:127.0.0.1")})
+            != Update::Applied
+        || request.resolveOverride()
+               != QStringList{QStringLiteral("xn--bcher-kva.invalid:443:127.0.0.1")}) {
+        return 8;
+    }
+    return 0;
+}
+
+} // namespace
+
 int runRequestConfigProbe(QCurl::QCNetworkRequest &request)
 {
     static_assert(!std::is_invocable_v<decltype(&QCurl::QCNetworkRequest::setAllowedProtocols),
@@ -19,8 +74,7 @@ int runRequestConfigProbe(QCurl::QCNetworkRequest &request)
     }
     QCurl::QCNetworkRedirectConfig redirectConfig;
     redirectConfig.setFollowLocation(false);
-    if (redirectConfig.setMaxRedirects(3)
-        != QCurl::QCNetworkConfigUpdateResult::Applied) {
+    if (redirectConfig.setMaxRedirects(3) != QCurl::QCNetworkConfigUpdateResult::Applied) {
         return 8;
     }
     redirectConfig.setPostRedirectPolicy(QCurl::QCNetworkPostRedirectPolicy::KeepPost301);
@@ -41,5 +95,8 @@ int runRequestConfigProbe(QCurl::QCNetworkRequest &request)
         return 8;
     }
 
+    if (checkResolveIsolation(request) != 0 || checkResolveRules(request) != 0) {
+        return 8;
+    }
     return 0;
 }

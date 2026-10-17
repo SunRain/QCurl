@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Active async transfer state owned by the multi transfer record.
+ * @brief 保存 multi transfer record 拥有的异步传输状态。
  */
 
 #ifndef QCNETWORKREPLYTRANSFERSTATE_P_H
@@ -16,14 +16,17 @@
 #include <QString>
 
 #include <curl/curl.h>
+#include <memory>
 
 namespace QCurl {
 
+struct QCCurlMultiDomain;
+
 /**
- * @brief Callback data and option backing that must outlive an active easy handle.
+ * @brief 保存活动 easy handle 借用的回调数据与选项存储。
  *
- * A reply observes this state while it exists. Once the easy handle enters a
- * multi handle, the transfer record also owns it until detach completes.
+ * Reply 存活期间观察本状态；easy handle 进入 multi 后，transfer record 也持有本状态，
+ * 直至 detach 完成。两个原生列表分别持有，不能在仍被 libcurl 使用时释放。
  */
 struct QCNetworkReplyTransferState
 {
@@ -34,6 +37,8 @@ struct QCNetworkReplyTransferState
     }
 
     Internal::CurlPlan curlPlan;
+    // 重试等待期间固定原域；终态归还。活动 record 另持有引用直到原生 detach 成功。
+    std::shared_ptr<QCCurlMultiDomain> transportDomain;
 
     ReplyState state = ReplyState::Idle;
     QCByteDataBuffer bodyBuffer;
@@ -78,8 +83,8 @@ struct QCNetworkReplyTransferState
     QByteArray interfaceBytes;
     QByteArray dnsServersBytes;
     QByteArray dohUrlBytes;
-    curl_slist *resolveSlist   = nullptr;
-    curl_slist *connectToSlist = nullptr;
+    curl_slist *resolveSlist   = nullptr; ///< CURLOPT_RESOLVE 原始规范化列表。
+    curl_slist *connectToSlist = nullptr; ///< 独立的 CURLOPT_CONNECT_TO 列表。
 
     QByteArray allowedProtocolsBytes;
     QByteArray allowedRedirectProtocolsBytes;

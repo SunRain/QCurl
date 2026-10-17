@@ -8,7 +8,6 @@ namespace QCurl {
 class ShareHandleConfigData : public QSharedData
 {
 public:
-    bool shareDnsCache   = false;
     bool shareCookies    = false;
     bool shareSslSession = false;
 };
@@ -39,16 +38,6 @@ QCNetworkAccessManager::ShareHandleConfig &QCNetworkAccessManager::ShareHandleCo
 QCNetworkAccessManager::ShareHandleConfig &QCNetworkAccessManager::ShareHandleConfig::operator=(
     ShareHandleConfig &&other) noexcept = default;
 
-bool QCNetworkAccessManager::ShareHandleConfig::shareDnsCache() const noexcept
-{
-    return d->shareDnsCache;
-}
-
-void QCNetworkAccessManager::ShareHandleConfig::setShareDnsCache(bool enabled)
-{
-    d->shareDnsCache = enabled;
-}
-
 bool QCNetworkAccessManager::ShareHandleConfig::shareCookies() const noexcept
 {
     return d->shareCookies;
@@ -71,7 +60,7 @@ void QCNetworkAccessManager::ShareHandleConfig::setShareSslSession(bool enabled)
 
 bool QCNetworkAccessManager::ShareHandleConfig::enabled() const noexcept
 {
-    return d->shareDnsCache || d->shareCookies || d->shareSslSession;
+    return d->shareCookies || d->shareSslSession;
 }
 
 QCNetworkAccessManager::HstsAltSvcCacheConfig::HstsAltSvcCacheConfig()

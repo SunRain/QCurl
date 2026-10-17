@@ -43,7 +43,14 @@ Core 请求入口在创建 easy handle 前只接受 `http` / `https`。异步与
 
 ## share handle 合同
 
-只有配置完整的 lock / unlock callback 及 userdata 后，libcurl share interface 才能共享数据。可共享范围由当前 `ShareHandleConfig` 明确启用，例如 DNS、Cookie、SSL session；新增类型前须证明锁与回调生命周期覆盖完整 transfer，并同步测试及本合同。
+只有配置完整的 lock / unlock callback 及 userdata 后，libcurl share interface 才能共享数据。
+`ShareHandleConfig` 仅共享 manager 的 Cookie/SSL session store，不共享 DNS 或连接；
+后两者由每个传输域的 CURLM 持有。Isolated 按完整有效 RESOLVE 规则分域，NativeShared
+固定于同线程共享域，Blocking 每次独立 easy。各 CURLM 分别应用原生连接限额。
+
+share 全关后新传输立即不绑定，非空在途变更沿用 applied 并诊断；安全空闲时只应用最新
+pending，改回 applied 撤回 pending。active users 和临时 Cookie 操作都必须退出后才可配置
+或清理 CURLSH。detach 失败保留原生 ownership，不把未解绑的 easy 交给普通析构路径。
 
 ## borrowed lifetime 合同
 

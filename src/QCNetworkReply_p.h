@@ -195,7 +195,7 @@ public:
     QByteArray &interfaceBytes;  ///< CURLOPT_INTERFACE 缓存
     QByteArray &dnsServersBytes; ///< CURLOPT_DNS_SERVERS 缓存
     QByteArray &dohUrlBytes;     ///< CURLOPT_DOH_URL 缓存
-    curl_slist *&resolveSlist;   ///< CURLOPT_RESOLVE 列表（transfer state 生命周期内有效）
+    curl_slist *&resolveSlist;   ///< 解析覆盖的 CONNECT_TO 列表（transfer state 生命周期内有效）
     curl_slist *&connectToSlist; ///< CURLOPT_CONNECT_TO 列表（transfer state 生命周期内有效）
 
     // 协议白名单（M5，安全）

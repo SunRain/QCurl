@@ -168,6 +168,29 @@ public:
     QCNetworkRequest &setIpResolve(QCNetworkIpResolve resolve);
     [[nodiscard]] std::optional<QCNetworkIpResolve> ipResolve() const;
 
+    /**
+     * @brief 原子更新 host:port:IPv4 解析覆盖；空列表清除，非法条目保留原值。
+     * @note 只改变地址解析，URL、Host 与 TLS 验证主机保持原域名。
+     * 原列表按 CURLOPT_RESOLVE 适配，同键后条目生效；地址族选择仍限制可用地址。
+     * 此值属于请求副本；缓存传播由 resolveIsolation() 决定，清除列表不等于清空缓存。
+     * 更新不改变隔离策略或内部 CONNECT_TO 列表。
+     * Unicode 与 ACE 主机按 QUrl::toAce() 统一规范化；编码失败返回 InvalidArgument。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setResolveOverride(const QStringList &entries);
+    /** 返回 Qt URL 可匹配的 ACE 主机条目；未配置或已清除时返回 nullopt。 */
+    [[nodiscard]] std::optional<QStringList> resolveOverride() const;
+
+    /**
+     * @brief 原子更新解析隔离策略；不修改解析覆盖或内部 CONNECT_TO 列表。
+     * @return 两个合法值及重复设置返回 Applied；非法枚举值返回 InvalidArgument，
+     *         请求完整配置保持不变。
+     * @note 仅更新请求值，不创建网络资源、清理缓存或修改已经提交的传输快照。
+     */
+    [[nodiscard]] QCNetworkConfigUpdateResult setResolveIsolation(
+        QCNetworkResolveIsolation isolation);
+    /// 返回解析隔离策略；默认 Isolated，空解析列表不改变此值。
+    [[nodiscard]] QCNetworkResolveIsolation resolveIsolation() const noexcept;
+
 #ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
     QCNetworkRequest &setHappyEyeballsTimeout(std::chrono::milliseconds timeout);
     [[nodiscard]] std::optional<std::chrono::milliseconds> happyEyeballsTimeout() const;
@@ -179,10 +202,9 @@ public:
     [[nodiscard]] std::optional<int> localPort() const;
     [[nodiscard]] std::optional<int> localPortRange() const;
 
-    QCNetworkRequest &setResolveOverride(const QStringList &entries);
-    [[nodiscard]] std::optional<QStringList> resolveOverride() const;
-
+    /// 整体替换原生 CONNECT_TO 列表；保留 first-match 和空字段语义，空列表仅清除此项。
     QCNetworkRequest &setConnectTo(const QStringList &entries);
+    /// 返回独立的 CONNECT_TO 列表；不修改 resolveOverride 或 resolveIsolation。
     [[nodiscard]] std::optional<QStringList> connectTo() const;
 
     QCNetworkRequest &setDnsServers(const QStringList &servers);

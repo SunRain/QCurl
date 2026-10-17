@@ -105,14 +105,10 @@ template<typename Context, typename Config>
         *target = true;
         return true;
     };
-    return apply(desired.dnsCache,
-                 CURL_LOCK_DATA_DNS,
-                 "CURL_LOCK_DATA_DNS",
-                 &context->applied.dnsCache)
-           && apply(desired.cookies,
-                    CURL_LOCK_DATA_COOKIE,
-                    "CURL_LOCK_DATA_COOKIE",
-                    &context->applied.cookies)
+    return apply(desired.cookies,
+                 CURL_LOCK_DATA_COOKIE,
+                 "CURL_LOCK_DATA_COOKIE",
+                 &context->applied.cookies)
            && apply(desired.sslSession,
                     CURL_LOCK_DATA_SSL_SESSION,
                     "CURL_LOCK_DATA_SSL_SESSION",
@@ -132,9 +128,6 @@ void QCCurlMultiManager::shareLockCallback(CURL *,
     }
 
     switch (data) {
-        case CURL_LOCK_DATA_DNS:
-            context->dnsMutex.lock();
-            return;
         case CURL_LOCK_DATA_COOKIE:
             context->cookieMutex.lock();
             return;
@@ -155,9 +148,6 @@ void QCCurlMultiManager::shareUnlockCallback(CURL *, curl_lock_data data, void *
     }
 
     switch (data) {
-        case CURL_LOCK_DATA_DNS:
-            context->dnsMutex.unlock();
-            return;
         case CURL_LOCK_DATA_COOKIE:
             context->cookieMutex.unlock();
             return;
@@ -177,9 +167,6 @@ QString QCCurlMultiManager::shareConfigSummary(const ShareConfig &config)
     }
 
     QStringList parts;
-    if (config.dnsCache) {
-        parts.append(QStringLiteral("DNS"));
-    }
     if (config.cookies) {
         parts.append(QStringLiteral("Cookie"));
     }
@@ -233,7 +220,7 @@ void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessMan
     context->scopeDestroyed = true;
     context->pendingDelete  = true;
 
-    if (context->activeUsers == 0) {
+    if (!context->hasUsers()) {
         if (!cleanupShareHandleLocked(
                 context, "QCCurlMultiManager::onAccessManagerDestroyedLocked/share-cleanup")) {
             return;
@@ -242,14 +229,18 @@ void QCCurlMultiManager::onAccessManagerDestroyedLocked(const QCNetworkAccessMan
         return;
     }
 
-    context->pending = ShareConfig{};
+    // 从可选索引移出旧身份；地址随后被新 manager 复用时不得取得旧 context。
+    m_retiredShareContexts.append(it.value());
+    m_shareContexts.erase(it);
+    context->pending.reset();
+    context->scopeKey = nullptr;
 }
 
 bool QCCurlMultiManager::applyShareConfigIfIdleLocked(ShareContext *context,
                                                       const ShareConfig &desired,
                                                       QString *error)
 {
-    if (!context || context->activeUsers != 0) {
+    if (!context || context->hasUsers()) {
         if (error) {
             *error = QStringLiteral("share handle 正在使用中，无法切换配置");
         }
@@ -292,7 +283,14 @@ bool QCCurlMultiManager::initializeShareContextLocked(ShareContext *context,
         return true;
     }
 
-    CURLSH *share = curl_share_init();
+    CURLSH *share = nullptr;
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    if (qgetenv("QCURL_TEST_FORCE_SHARE_INIT_ERROR").isEmpty()) {
+        share = curl_share_init();
+    }
+#else
+    share = curl_share_init();
+#endif
     if (!share) {
         context->lastInitFailed            = true;
         context->lastInitError             = QStringLiteral("curl_share_init 失败");

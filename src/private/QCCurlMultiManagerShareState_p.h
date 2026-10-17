@@ -25,18 +25,16 @@ namespace Internal {
  */
 struct QCCurlMultiManagerShareConfig final
 {
-    bool dnsCache   = false; ///< 是否共享 DNS 缓存
     bool cookies    = false; ///< 是否共享 Cookie
     bool sslSession = false; ///< 是否共享 SSL session
 
     /** @return 至少启用一种共享数据时返回 true */
-    [[nodiscard]] bool enabled() const noexcept { return dnsCache || cookies || sslSession; }
+    [[nodiscard]] bool enabled() const noexcept { return cookies || sslSession; }
 
     /** @return 两个配置的全部共享开关相同时返回 true */
     bool operator==(const QCCurlMultiManagerShareConfig &other) const noexcept
     {
-        return dnsCache == other.dnsCache && cookies == other.cookies
-               && sslSession == other.sslSession;
+        return cookies == other.cookies && sslSession == other.sslSession;
     }
 
     /** @return 两个配置存在任一不同开关时返回 true */
@@ -65,8 +63,13 @@ struct QCCurlMultiManagerShareContext final
     bool pendingDelete       = false; ///< 用户归零后是否应清理
     bool cookieStorePoisoned = false; ///< Cookie 状态是否已经不可证明
     int activeUsers          = 0;     ///< 已成功绑定该 handle 的 easy 数量
+    int activeOperations     = 0;     ///< Cookie bridge 临时 easy 的操作引用，销毁后才退出
 
-    QMutex dnsMutex;    ///< 保护共享 DNS 数据
+    [[nodiscard]] bool hasUsers() const noexcept
+    {
+        return activeUsers != 0 || activeOperations != 0;
+    }
+
     QMutex cookieMutex; ///< 保护共享 Cookie 数据
     QMutex sslMutex;    ///< 保护共享 SSL session 数据
     QMutex otherMutex;  ///< 保护其他 libcurl 共享数据

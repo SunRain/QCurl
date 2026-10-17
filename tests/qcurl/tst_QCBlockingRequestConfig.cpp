@@ -39,7 +39,7 @@ public:
 
 private:
     const char *m_name = nullptr;
-    bool m_hadValue = false;
+    bool m_hadValue    = false;
     QByteArray m_oldValue;
 };
 
@@ -74,7 +74,12 @@ class tst_QCBlockingRequestConfig : public QObject
 {
     Q_OBJECT
 
+public:
+    tst_QCBlockingRequestConfig() = default;
+
 private Q_SLOTS:
+    void appliesResolveOverride_data();
+    void appliesResolveOverride();
     void appliesTransferRequestHeaders();
     void preservesExplicitHeadersOverRequestConfig();
     void rejectsUnsupportedAllowedProtocolsByDefault();
@@ -83,7 +88,45 @@ private Q_SLOTS:
     void rejectsSlistAppendFailure();
     void rejectsHeaderAppendFailure();
     void rejectsRequiredSetoptFailure();
+
+private:
+    Q_DISABLE_COPY_MOVE(tst_QCBlockingRequestConfig)
 };
+
+void tst_QCBlockingRequestConfig::appliesResolveOverride_data()
+{
+    QTest::addColumn<QString>("host");
+    QTest::newRow("ascii") << QStringLiteral("original.invalid");
+    QTest::newRow("internal") << QStringLiteral("internal_name");
+    QTest::newRow("unicode") << QStringLiteral("bücher.invalid");
+    QTest::newRow("unicode-normalization") << QStringLiteral("bu\u0308cher.invalid");
+    QTest::newRow("ace") << QStringLiteral("xn--bcher-kva.invalid");
+    QTest::newRow("uppercase") << QStringLiteral("BÜCHER.INVALID");
+}
+
+void tst_QCBlockingRequestConfig::appliesResolveOverride()
+{
+    QFETCH(QString, host);
+    UploadEchoServer::ResponsePlan plan;
+    plan.body = QByteArrayLiteral("resolved");
+    UploadEchoServer server(plan);
+    QVERIFY(server.start());
+    auto url = server.url(QStringLiteral("/resolve"));
+    url.setHost(host);
+    QCNetworkRequest request = makeRequest(url);
+    QCOMPARE(request.setResolveOverride(
+                 {QStringLiteral("%1:%2:127.0.0.1").arg(host).arg(url.port())}),
+             QCNetworkConfigUpdateResult::Applied);
+    const QByteArray aceHost = QUrl::toAce(url.host());
+    QCOMPARE(request.resolveOverride().value(),
+             QStringList{QString::fromLatin1(aceHost)
+                         + QStringLiteral(":%1:127.0.0.1").arg(url.port())});
+    const auto result = makeClient().get(request);
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+    QCOMPARE(result.body(), QByteArrayLiteral("resolved"));
+    QCOMPARE(headerValue(server.lastRequest(), QByteArrayLiteral("Host")),
+             aceHost + ':' + QByteArray::number(url.port()));
+}
 
 void tst_QCBlockingRequestConfig::appliesTransferRequestHeaders()
 {
@@ -93,8 +136,7 @@ void tst_QCBlockingRequestConfig::appliesTransferRequestHeaders()
     QCNetworkRequest request = makeRequest(server.url(QStringLiteral("/headers")));
     request.setReferer(QStringLiteral("https://origin.example/source"));
     request.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
-    QCOMPARE(request.setMaxDownloadBytesPerSec(1024 * 1024),
-             QCNetworkConfigUpdateResult::Applied);
+    QCOMPARE(request.setMaxDownloadBytesPerSec(1024 * 1024), QCNetworkConfigUpdateResult::Applied);
 
     const auto result = makeClient().get(request);
     QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
@@ -179,10 +221,11 @@ void tst_QCBlockingRequestConfig::rejectsSlistAppendFailure()
                                   QByteArrayLiteral("CURLOPT_RESOLVE:2"));
 
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/blocked")));
-    request.setResolveOverride(QStringList{
-        QStringLiteral("example.com:80:127.0.0.1"),
-        QStringLiteral("example.net:80:127.0.0.1"),
-    });
+    QCOMPARE(request.setResolveOverride(QStringList{
+                 QStringLiteral("example.com:80:127.0.0.1"),
+                 QStringLiteral("example.net:80:127.0.0.1"),
+             }),
+             QCNetworkConfigUpdateResult::Applied);
 
     const auto result = makeClient().get(request);
     QVERIFY(!result.isSuccess());

@@ -46,6 +46,18 @@ enum class QCNetworkIpResolve {
 };
 
 /**
+ * @brief 选择解析覆盖使用的 DNS 与连接资源作用域。
+ *
+ * `Isolated` 按完整有效覆盖隔离异步传输；`NativeShared` 使用同线程固定的原生共享域，
+ * 允许其中的请求按 libcurl 规则共享 DNS 和连接。两者不合并不同 manager 的 Cookie/TLS store。
+ * Blocking 每次使用独立 easy handle，两种策略均不提供跨请求共享池。
+ */
+enum class QCNetworkResolveIsolation {
+    Isolated,
+    NativeShared,
+};
+
+/**
  * @brief 表示请求配置值的一次同步更新结果。
  *
  * `Applied` 表示新值已完整提交；`InvalidArgument` 表示输入无效，配置对象保持原状态。
@@ -118,8 +130,7 @@ public:
      * @param maxRedirects 非负值表示显式上限，`std::nullopt` 表示清除显式上限。
      * @return 成功时返回 `Applied`；负值返回 `InvalidArgument` 且保持原状态。
      */
-    [[nodiscard]] QCNetworkConfigUpdateResult setMaxRedirects(
-        std::optional<int> maxRedirects);
+    [[nodiscard]] QCNetworkConfigUpdateResult setMaxRedirects(std::optional<int> maxRedirects);
 
     /// 返回 POST 在 301/302/303 下是否保持 POST 的策略。
     [[nodiscard]] QCNetworkPostRedirectPolicy postRedirectPolicy() const;

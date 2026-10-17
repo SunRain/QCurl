@@ -138,6 +138,19 @@ class ObserveMethodMixin:
         self._send_not_found(empty=True)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/tls_session"):
+            # 主动关闭连接，下一次请求只能通过新握手证明 session 恢复。
+            resumed = bool(getattr(self.connection, "session_reused", False))
+            body = b"resumed" if resumed else b"fresh"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+            self._write_log(200, {"Connection": "close"}, body)
+            self.close_connection = True
+            return
         if self._handle_request_headers():
             return
         if self.path.startswith("/range_boundary"):

@@ -4,6 +4,8 @@ P0/P1 用例清单与参数模板。
 - URL/端口需在运行时由 env 填充。
 """
 
+from .network_path_cases import NETWORK_PATH_CASES as P1_NETWORK_PATH_CASES
+
 # P0：下载
 # 参考 curl/tests/http/test_02_download.py test_02_21/test_02_22
 DOWNLOAD_DEFAULTS = {

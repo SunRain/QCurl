@@ -19,7 +19,7 @@
  * - QCURL_LC_RESUME_PATH: QCNetworkResumableDownloadJob 目标文件路径（Range 边界用）
  * - QCURL_LC_PAUSE_OFFSET: pause/resume 触发阈值（字节）
  * - QCURL_LC_REFERER: 显式 Referer（M1）
- * - QCURL_LC_SHARE_HANDLE: multi share handle（测试注入；默认不设置=关闭；off|dns,cookie,ssl_session）
+ * - QCURL_LC_SHARE_HANDLE: multi share handle（测试注入；默认不设置=关闭；off|cookie,ssl_session）
  * - QCURL_LC_CLIENT_CERT_PATH / QCURL_LC_CLIENT_KEY_PATH: mTLS 客户端证书与私钥
  * - QCURL_LC_TLS_MIN_VERSION / QCURL_LC_TLS_CIPHER_LIST / QCURL_LC_TLS13_CIPHERS:
  *   origin TLS 最低版本与密码套件策略
@@ -50,6 +50,7 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "QCWebSocket.h"
+#include "lc_network_path_case.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
@@ -582,10 +583,7 @@ void TestLibcurlConsistency::testCase()
             }
             for (const QString &raw : tokens) {
                 const QString t = raw.trimmed();
-                if (t == QStringLiteral("dns") || t == QStringLiteral("dns_cache")
-                    || t == QStringLiteral("dns-cache")) {
-                    shareCfg.setShareDnsCache(true);
-                } else if (t == QStringLiteral("cookie") || t == QStringLiteral("cookies")) {
+                if (t == QStringLiteral("cookie") || t == QStringLiteral("cookies")) {
                     shareCfg.setShareCookies(true);
                 } else if (t == QStringLiteral("ssl") || t == QStringLiteral("ssl_session")
                            || t == QStringLiteral("ssl-session")) {
@@ -606,64 +604,8 @@ void TestLibcurlConsistency::testCase()
         manager.setHstsAltSvcCacheConfig(cacheCfg);
     }
 
-    if (caseId == QStringLiteral("p1_resolve_override")) {
-        QVERIFY(observeHttpPort > 0);
-        const QString host = QStringLiteral("example.invalid");
-        const QUrl url     = withRequestId(QUrl(QStringLiteral("http://%1:%2/status/200")
-                                                    .arg(host)
-                                                    .arg(observeHttpPort)),
-                                           requestId);
-
-        QCNetworkRequest req(url);
-        req.setHttpVersion(httpVersion);
-        req.setResolveOverride(QStringList{
-            QStringLiteral("%1:%2:127.0.0.1").arg(host).arg(observeHttpPort),
-        });
-
-        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
-        QVERIFY(reply);
-        QCOMPARE(reply->error(), NetworkError::NoError);
-        const auto dataOpt = reply->readAll();
-        QVERIFY(dataOpt.has_value());
-        QVERIFY(!dataOpt->isEmpty());
-
-        const auto secondBodyOpt = reply->readAll();
-        QVERIFY(secondBodyOpt.has_value());
-        QVERIFY(secondBodyOpt->isEmpty());
-
-        const auto tailOpt = reply->readAll();
-        QVERIFY(tailOpt.has_value());
-        QVERIFY(tailOpt->isEmpty());
-
-        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
-                               *dataOpt,
-                               QIODevice::WriteOnly | QIODevice::Truncate));
-        deleteReplyLater(reply);
-        return;
-    }
-
-    if (caseId == QStringLiteral("p1_connect_to")) {
-        QVERIFY(observeHttpPort > 0);
-        const QString host    = QStringLiteral("example.invalid");
-        const int logicalPort = 18080;
-        const QUrl url        = withRequestId(
-            QUrl(QStringLiteral("http://%1:%2/status/200").arg(host).arg(logicalPort)), requestId);
-
-        QCNetworkRequest req(url);
-        req.setHttpVersion(httpVersion);
-        req.setConnectTo(QStringList{
-            QStringLiteral("%1:%2:127.0.0.1:%3").arg(host).arg(logicalPort).arg(observeHttpPort),
-        });
-
-        auto *reply = TestSupport::sendWaitedAsyncTestReply(manager, req);
-        QVERIFY(reply);
-        QCOMPARE(reply->error(), NetworkError::NoError);
-        const auto dataOpt = reply->readAll();
-        QVERIFY(dataOpt.has_value());
-        QVERIFY(writeAllToFile(QStringLiteral("download_0.data"),
-                               *dataOpt,
-                               QIODevice::WriteOnly | QIODevice::Truncate));
-        deleteReplyLater(reply);
+    if (caseId == QStringLiteral("p1_network_path")) {
+        runNetworkPathCase(manager);
         return;
     }
 

@@ -68,6 +68,18 @@ public:
      */
     [[nodiscard]] static int activeShareUsers(QCCurlMultiManager *manager);
 
+    [[nodiscard]] static std::weak_ptr<QCCurlMultiDomain> domainForReply(
+        QCCurlMultiManager *engine, const QCNetworkReply *reply);
+    [[nodiscard]] static int isolatedDomainCount(QCCurlMultiManager *engine);
+    static void ageIdleDomains(QCCurlMultiManager *engine);
+    static void reclaimIdleDomains(QCCurlMultiManager *engine);
+    [[nodiscard]] static Internal::QCCurlMultiManagerShareConfig appliedShareConfig(
+        QCCurlMultiManager *engine, const QCNetworkAccessManager *manager);
+    [[nodiscard]] static bool hasPendingShareConfig(QCCurlMultiManager *engine,
+                                                    const QCNetworkAccessManager *manager);
+    [[nodiscard]] static bool hasShareBinding(QCCurlMultiManager *engine,
+                                              const QCNetworkReply *reply);
+
 private:
     QCCurlMultiManagerTestAccess() = delete;
 };

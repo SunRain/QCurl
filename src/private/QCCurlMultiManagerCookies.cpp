@@ -7,6 +7,7 @@
 
 #include <QDebug>
 #include <QMutexLocker>
+#include <QScopeGuard>
 
 namespace QCurl {
 
@@ -198,6 +199,12 @@ Internal::CookieStoreResult QCCurlMultiManager::importCookiesForManager(
     if (!context) {
         return reported(std::move(result));
     }
+    ++context->activeOperations;
+    // guard 早于临时 easy 构造，确保解绑/析构完成后才允许重建或释放 share。
+    const auto operation = qScopeGuard([this, context]() {
+        --context->activeOperations;
+        maybeFinalizeShareContextLocked(context);
+    });
     QCCurlHandleManager handle;
     CURL *easy = handle.handle();
     if (!easy) {
@@ -244,6 +251,11 @@ Internal::CookieStoreResult QCCurlMultiManager::clearAllCookiesForManager(
     if (!context) {
         return reported(std::move(result));
     }
+    ++context->activeOperations;
+    const auto operation = qScopeGuard([this, context]() {
+        --context->activeOperations;
+        maybeFinalizeShareContextLocked(context);
+    });
     QCCurlHandleManager handle;
     CURL *easy = handle.handle();
     if (!easy) {

@@ -75,12 +75,10 @@ Q_DECL_HIDDEN bool setOptionalOffTOption(QCNetworkReplyPrivate *reply,
 [[nodiscard]] Q_DECL_HIDDEN bool disableProxyEnvironmentInheritance(QCNetworkReplyPrivate *reply,
                                                                     CURL *handle);
 
-#ifdef QCURL_ENABLE_ADVANCED_REQUEST_NETWORK_PATH_API
 [[nodiscard]] Q_DECL_HIDDEN bool buildSlistFromStrings(const QStringList &entries,
                                                        curl_slist **output,
                                                        QString *error,
                                                        const char *optionName);
-#endif
 
 Q_DECL_HIDDEN std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version);
 

@@ -29,6 +29,7 @@
 #include <curl/curl.h>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 
 // moc 需要完整 reply 类型来生成信号参数元类型代码。
@@ -40,6 +41,8 @@ class QCNetworkReply;                // 前向声明
 class QCNetworkAccessManager;        // 前向声明
 class QCNetworkConnectionPoolConfig; // 前向声明
 class QCCurlMultiTransferRecord;
+struct QCCurlMultiDomain;
+class QCNetworkRequest;
 class QCCurlMultiManagerTestAccess;
 struct SocketInfo;
 
@@ -204,6 +207,9 @@ public:
     [[nodiscard]] bool applyLimitsConfig(const QCNetworkConnectionPoolConfig &config,
                                          QString *error);
 
+    // 由 access manager 在其 owner thread 同步最新期望，避免无新请求时重放过时 pending。
+    Q_DECL_HIDDEN void synchronizeShareConfig(const QCNetworkAccessManager *manager);
+
 Q_SIGNALS:
     /**
      * @brief 请求完成信号（内部使用）
@@ -239,18 +245,29 @@ private:
      */
     ~QCCurlMultiManager() override;
 
-    void handleSocketAction(curl_socket_t socketfd, int eventsBitmask);
-    void checkMultiInfo();
-    void cleanupSocket(curl_socket_t socketfd);
-    int manageSocketNotifiers(curl_socket_t socketfd, int what, SocketInfo *socketInfo);
+    void handleSocketAction(QCCurlMultiDomain *domain, curl_socket_t socketfd, int eventsBitmask);
+    void checkMultiInfo(QCCurlMultiDomain *domain);
+    void cleanupSocket(QCCurlMultiDomain *domain, curl_socket_t socketfd);
+    int manageSocketNotifiers(QCCurlMultiDomain *domain,
+                              curl_socket_t socketfd,
+                              int what,
+                              SocketInfo *socketInfo);
 
     static int curlSocketCallback(
         CURL *easy, curl_socket_t socketfd, int what, void *userp, void *socketp);
 
     static int curlTimerCallback(CURLM *multi, long timeout_ms, void *userp);
 
-    [[nodiscard]] bool configureMultiCallbacks(const char *context);
-    void disableMultiCallbacks();
+    [[nodiscard]] bool configureMultiCallbacks(QCCurlMultiDomain *domain, const char *context);
+    void disableMultiCallbacks(QCCurlMultiDomain *domain);
+    using Domain = std::shared_ptr<QCCurlMultiDomain>;
+    [[nodiscard]] Domain createDomain(QString *error);
+    [[nodiscard]] Domain selectDomain(const QCNetworkRequest &request, QString *error);
+    [[nodiscard]] QList<Domain> allDomains() const;
+    void retireDomain(QCCurlMultiDomain *domain);
+    void stopDomainEvents(QCCurlMultiDomain *domain);
+    void reclaimIdleDomains();
+    void wakeupDomain(const Domain &domain);
 
     struct AddReplyResult
     {
@@ -261,6 +278,7 @@ private:
     /// 描述 share 配置后 easy 是否仍允许进入 libcurl multi。
     enum class ShareApplyState {
         Callable,
+        Rejected,
         NonCallable,
     };
 
@@ -272,6 +290,18 @@ private:
     };
 
     [[nodiscard]] Q_DECL_HIDDEN AddReplyResult tryAddReplyOnOwnerThread(QCNetworkReply *reply);
+    [[nodiscard]] AddReplyResult admitReplyRecordLocked(
+        QCNetworkReply *reply,
+        const Domain &domain,
+        QSharedPointer<QCCurlMultiTransferRecord> record);
+    [[nodiscard]] AddReplyResult rejectReplyAdmissionLocked(
+        QCNetworkReply *reply,
+        QSharedPointer<QCCurlMultiTransferRecord> record,
+        Internal::QCCurlMultiManagerShareContext *context,
+        const QString &error);
+    void commitReplyAdmissionLocked(QCNetworkReply *reply,
+                                    const Domain &domain,
+                                    const QSharedPointer<QCCurlMultiTransferRecord> &record);
     Q_DECL_HIDDEN void queueAddReplyFailure(const QPointer<QCNetworkReply> &reply,
                                             const QString &message);
 
@@ -289,6 +319,11 @@ private:
     [[nodiscard]] std::optional<FinishedTransfer> takeFinishedTransferLocked(CURLMsg *message);
     [[nodiscard]] Q_DECL_HIDDEN std::optional<FinishedTransfer> detachTransferRecordLocked(
         QCCurlMultiTransferRecord *record, CURLcode result, const char *context);
+    /// 返回 true 才表示 easy 已从所属 multi 安全移除；失败时不转移所有权。
+    [[nodiscard]] bool removeTransferHandleLocked(
+        const QSharedPointer<QCCurlMultiTransferRecord> &record,
+        CURLcode result,
+        const char *context);
     void retryDetachTransferRecord(const QSharedPointer<QCCurlMultiTransferRecord> &record,
                                    CURLcode result,
                                    const QString &context);
@@ -302,9 +337,11 @@ private:
     void retainPoisonedObjectGraph() noexcept;
     void dispatchFinishedTransfer(FinishedTransfer &&transfer);
 
-    [[nodiscard]] SocketInfo *ensureSocketInfo(curl_socket_t socketfd, SocketInfo *socketInfo);
-    void updateReadNotifier(SocketInfo *socketInfo, int what);
-    void updateWriteNotifier(SocketInfo *socketInfo, int what);
+    [[nodiscard]] SocketInfo *ensureSocketInfo(QCCurlMultiDomain *domain,
+                                               curl_socket_t socketfd,
+                                               SocketInfo *socketInfo);
+    void updateReadNotifier(QCCurlMultiDomain *domain, SocketInfo *socketInfo, int what);
+    void updateWriteNotifier(QCCurlMultiDomain *domain, SocketInfo *socketInfo, int what);
 
     using ShareConfig  = Internal::QCCurlMultiManagerShareConfig;
     using ShareContext = Internal::QCCurlMultiManagerShareContext;
@@ -335,8 +372,7 @@ private:
     void maybeFinalizeShareContextLocked(ShareContext *context);
 
     [[nodiscard]] CURL *validatedEasyHandle(QCNetworkReply *reply) const;
-    [[nodiscard]] bool addEasyToMultiLocked(CURL *easy);
-    [[nodiscard]] Q_DECL_HIDDEN bool addEasyToMultiLocked(CURL *easy, QString *error);
+    [[nodiscard]] bool addEasyToMultiLocked(QCCurlMultiDomain *domain, CURL *easy, QString *error);
     [[nodiscard]] Q_DECL_HIDDEN bool registerTransferRecord(
         const QSharedPointer<QCCurlMultiTransferRecord> &transfer,
         TransferToken *tokenOut,
@@ -351,12 +387,17 @@ private:
                                                            const ShareConfig &desired,
                                                            Internal::CookieStoreResult *failure);
 
-    [[nodiscard]] bool applyMultiLongOption(CURLMoption option,
+    [[nodiscard]] bool applyLimitsConfig(QCCurlMultiDomain *domain,
+                                         const QCNetworkConnectionPoolConfig &config,
+                                         QString *error);
+    [[nodiscard]] bool applyMultiLongOption(QCCurlMultiDomain *domain,
+                                            CURLMoption option,
                                             const char *optionName,
                                             long value,
                                             std::optional<long> &stateSlot,
                                             QString *error);
     void shutdown(bool retainPoisonedGraph);
+    void shutdownTransportGraph();
     void unregisterRuntimeParticipant() noexcept;
     void releaseRuntimeParticipation() noexcept;
 
@@ -367,9 +408,11 @@ private:
 
     Internal::RuntimeLease m_runtimeLease; ///< 覆盖 multi/share/callback 对象图的 runtime lease。
     quint64 m_runtimeParticipant = 0;      ///< 仅在 owner thread 注册和注销的 teardown token。
-    CURLM *m_multiHandle;                  ///< libcurl multi handle
-    bool m_isReady = false;                ///< multi handle 与事件回调均已就绪
-    QString m_initializationError;         ///< manager 不可用时的初始化错误
+    Domain m_baseDomain;                   ///< 无覆盖 Isolated/native transfer 的固定域。
+    Domain m_nativeDomain;                 ///< 同线程固定 NativeShared 域，不参与 LRU。
+    QHash<QStringList, Domain> m_isolatedDomains; ///< 完整有效规则到独立 CURLM 的映射。
+    bool m_isReady = false;                       ///< multi handle 与事件回调均已就绪
+    QString m_initializationError;                ///< manager 不可用时的初始化错误
 
     QRecursiveMutex m_mutex; ///< 保护共享资源的互斥锁（允许 libcurl 回调重入）
 
@@ -383,25 +426,14 @@ private:
     std::atomic<bool> m_isShuttingDown{false}; ///< 析构中标记（避免回调重入导致死锁）
     std::atomic<bool> m_isPoisoned{false};     ///< ownership cannot be proved after detach failure
 
-    QTimer *m_socketTimer; ///< socket 超时定时器
-
-    QHash<curl_socket_t, QSharedPointer<SocketInfo>> m_socketMap; ///< socket 信息映射
-
-    // ==================
-    // multi limits（M3）：上次成功应用的阀值（用于识别“清除设置”的场景）
-    // ==================
-
-    std::optional<long> m_multiMaxTotalConnections  = std::nullopt;
-    std::optional<long> m_multiMaxHostConnections   = std::nullopt;
-    std::optional<long> m_multiMaxConcurrentStreams = std::nullopt;
-    std::optional<long> m_multiMaxConnects          = std::nullopt;
-    std::optional<long> m_multiMultiplexing         = std::nullopt;
+    QTimer *m_domainReaper = nullptr; ///< 仅回收历史空闲域，不限制真实活动连接总数。
 
     // ==================
     // Share handle（M6+，可选）：按 manager scope 隔离（默认关闭）
     // ==================
 
     QHash<const QCNetworkAccessManager *, QSharedPointer<ShareContext>> m_shareContexts;
+    QList<QSharedPointer<ShareContext>> m_retiredShareContexts;
     QHash<CURL *, ShareContext *> m_easyToShareContext;
     QHash<CURL *, bool> m_easyShareOptionSet;
 

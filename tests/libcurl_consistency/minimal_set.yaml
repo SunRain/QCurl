@@ -419,7 +419,7 @@ cases:
     planner: coverage-map
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1"
+      nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1[isolated]"
     capability_gates:
       - http_observe_server
     dimensions:
@@ -442,7 +442,7 @@ cases:
     planner: coverage-map
     source:
       type: pytest
-      nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1"
+      nodeid: "tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1[isolated]"
     capability_gates:
       - http_observe_server
     dimensions:

@@ -13,6 +13,14 @@ static bool retryBudgetContract(QCurl::QCNetworkAccessManager &manager,
                                 QCurl::QCNetworkMockHandler &handler)
 {
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid/budget")));
+    using Update = QCurl::QCNetworkConfigUpdateResult;
+    if (request.setResolveOverride({QStringLiteral("example.invalid:443:127.0.0.1")})
+            != Update::Applied
+        || request.setResolveOverride({QStringLiteral("invalid")}) != Update::InvalidArgument
+        || !request.resolveOverride() || request.setResolveOverride({}) != Update::Applied
+        || request.resolveOverride()) {
+        return false;
+    }
     QCurl::QCNetworkRetryPolicy policy;
     using Result = QCurl::QCNetworkRetryPolicy::UpdateResult;
     if (policy.setMaxRetries(1) != Result::Applied

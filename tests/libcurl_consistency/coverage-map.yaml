@@ -83,8 +83,34 @@ nodeid_authority:
   - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_unrestricted_auth_redirect[False]
   - tests/libcurl_consistency/test_p1_httpauth.py::test_p1_unrestricted_auth_redirect[True]
   - tests/libcurl_consistency/test_p1_accept_encoding.py::test_p1_accept_encoding_gzip_http_1_1
-  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1
-  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1[isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1[native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1[isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1[native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[neither-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[neither-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[both-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[both-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[both_connect_first-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[both_connect_first-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_last_wins-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_last_wins-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_first_match-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_first_match-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_source_empty-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_source_empty-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_target_host_empty-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_target_host_empty-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_target_port_empty-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_target_port_empty-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_noop-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_noop-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_unmatched-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[connect_unmatched-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_origin_mismatch-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_origin_mismatch-native_shared]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_port_mismatch-isolated]
+  - tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_port_mismatch-native_shared]
   - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-False]
   - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[POST-True]
   - tests/libcurl_consistency/test_p1_upload_seek_constraints.py::test_p1_stream_body_redirect_307_replay[PUT-False]
@@ -259,6 +285,47 @@ contracts:
         pytest: tests/libcurl_consistency/test_p1_resp_headers.py
         required_fields: [response.headers_raw_lines, response.headers_raw_sha256]
         note: Included in p0 planning to prevent raw header evidence drift.
+
+  p1_network_path_options:
+    evidence_type: contract
+    suite: p1
+    cases:
+      - id: resolve_dual_mode
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_override_http_1_1
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        required_fields: [request, response, response.body_len, response.body_sha256]
+      - id: connect_to_dual_mode
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_connect_to_http_1_1
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        required_fields: [request, response, response.body_len, response.body_sha256]
+      - id: network_path_combinations
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        required_fields: [request, response, response.body_len, response.body_sha256]
+      - id: resolve_origin_mismatch_isolated
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_origin_mismatch-isolated]
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        artifact_cases:
+          p1_network_path/resolve_origin_mismatch_isolated_http_1.1: [request, response, response.body_len, response.body_sha256, observed.error.http_code, derived.error.curlcode]
+          p1_network_path/resolve_origin_mismatch_isolated_http_1.1_control: [request, response, response.body_len, response.body_sha256]
+      - id: resolve_origin_mismatch_native_shared
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_origin_mismatch-native_shared]
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        artifact_cases:
+          p1_network_path/resolve_origin_mismatch_native_shared_http_1.1: [request, response, response.body_len, response.body_sha256, observed.error.http_code, derived.error.curlcode]
+          p1_network_path/resolve_origin_mismatch_native_shared_http_1.1_control: [request, response, response.body_len, response.body_sha256]
+      - id: resolve_port_mismatch_isolated
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_port_mismatch-isolated]
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        artifact_cases:
+          p1_network_path/resolve_port_mismatch_isolated_http_1.1: [request, response, response.body_len, response.body_sha256, observed.error.http_code, derived.error.curlcode]
+          p1_network_path/resolve_port_mismatch_isolated_http_1.1_control: [request, response, response.body_len, response.body_sha256]
+      - id: resolve_port_mismatch_native_shared
+        nodeid: tests/libcurl_consistency/test_p1_resolve_connect_to.py::test_p1_resolve_connect_to_combinations_http_1_1[resolve_port_mismatch-native_shared]
+        pytest: tests/libcurl_consistency/test_p1_resolve_connect_to.py
+        artifact_cases:
+          p1_network_path/resolve_port_mismatch_native_shared_http_1.1: [request, response, response.body_len, response.body_sha256, observed.error.http_code, derived.error.curlcode]
+          p1_network_path/resolve_port_mismatch_native_shared_http_1.1_control: [request, response, response.body_len, response.body_sha256]
 
   p1_request_and_redirect_surface:
     evidence_type: contract
