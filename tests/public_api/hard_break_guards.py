@@ -297,7 +297,11 @@ SCOPED_DENY_RULES: tuple[tuple[str, re.Pattern[str], tuple[str, ...]], ...] = (
     ),
     (
         "legacy three-tree release topology",
-        re.compile(r"三棵|three[- ]tree", re.IGNORECASE),
+        re.compile(
+            r"三棵\s*(?:独立(?:的)?\s*)?(?:(?:构建|发布|producer)\s*)?树"
+            r"|three[- ]tree",
+            re.IGNORECASE,
+        ),
         CURRENT_RELEASE_DOC_PATHS,
     ),
     (

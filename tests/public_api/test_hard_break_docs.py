@@ -29,6 +29,8 @@ from tests.public_api import run_public_api_checks as public_api
             "removed QCWebSocketPool pointer release contract",
         ),
         ("CHANGELOG.md", "three-tree release", "legacy three-tree release topology"),
+        ("CHANGELOG.md", "使用三棵构建树。", "legacy three-tree release topology"),
+        ("CHANGELOG.md", "使用三棵独立的发布树。", "legacy three-tree release topology"),
         (
             "CHANGELOG.md",
             "python3 scripts/run_release_gate.py --build-dir build",
@@ -108,6 +110,7 @@ def test_relocated_docs_reject_previous_contract_violations(
     "relative",
     [
         "CHANGELOG.md",
+        "docs/dev/release/release-procedure.md",
         "docs/dev/architecture/public-header-boundary.md",
         "docs/dev/uce/README.md",
         "docs/user/migration-2.0.md",
@@ -123,6 +126,25 @@ def test_relocated_current_documentation_passes_without_old_copies(
     destination = tmp_path / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(source.read_bytes())
+
+    assert public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path)) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "发布使用五棵构建树，其中三棵 ON 树使用固定 bundled curl。",
+        "两棵 release OFF 树验证最低 libcurl；三棵 ON 树验证固定 provider。",
+        "Five-tree release uses two OFF trees and three ON trees.",
+    ],
+)
+def test_five_tree_provider_subsets_are_not_legacy_topologies(
+    tmp_path: Path, capsys, content: str
+) -> None:
+    path = tmp_path / "docs/dev/release/release-procedure.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(content + "\n", encoding="utf-8")
 
     assert public_api.scan_hard_break_guards(Namespace(repo_root=tmp_path)) == 0
     assert capsys.readouterr().err == ""
