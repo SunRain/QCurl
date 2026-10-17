@@ -14,6 +14,8 @@
 #include <QPointer>
 
 #include <functional>
+#include <memory>
+#include <optional>
 
 namespace QCurl {
 
@@ -31,6 +33,13 @@ class Q_DECL_HIDDEN QCNetworkAccessManagerPrivate
 public:
     using ReplyFactory = std::function<QCNetworkReply *()>;
 
+    /** @brief 表示一次可失效的中间件借用注册，供各请求共享注销状态。 */
+    struct MiddlewareEntry
+    {
+        QCNetworkMiddleware *middleware = nullptr; ///< 仅借用；注销时置空，使旧请求立即失效。
+    };
+    using MiddlewareSnapshot = QList<std::shared_ptr<MiddlewareEntry>>;
+
     /// 构造 access manager 的私有状态对象。
     explicit QCNetworkAccessManagerPrivate(QCNetworkAccessManager *self)
         : cookieModeFlag(QCNetworkAccessManager::NotOpen)
@@ -47,8 +56,11 @@ public:
     /// 释放私有状态对象本身，底层资源由各成员生命周期负责。
     ~QCNetworkAccessManagerPrivate() = default;
 
-    [[nodiscard]] QCNetworkRequest prepareManagedRequest(
-        const QCNetworkRequest &request, const QList<QCNetworkMiddleware *> &middlewares) const;
+    /// 空值表示中间件回调已销毁 manager 或本次请求的消费对象。
+    [[nodiscard]] std::optional<QCNetworkRequest> prepareManagedRequest(
+        const QCNetworkRequest &request,
+        const MiddlewareSnapshot &middlewares,
+        QObject *context) const;
     [[nodiscard]] QCCookieOperationResult importCookiesOnOwnerThread(const QList<QCCookie> &cookies,
                                                                      const QUrl &originUrl);
     [[nodiscard]] QCCookieExportResult exportCookiesOnOwnerThread(const QUrl &filterUrl) const;
@@ -62,7 +74,8 @@ public:
         HttpMethod method,
         const Internal::RequestBody &requestBodySource,
         const QByteArray &body,
-        const QList<QCNetworkMiddleware *> &middlewares);
+        const MiddlewareSnapshot &middlewares,
+        QObject *context);
     void startPreparedReply(QCNetworkReply *reply, const QCNetworkRequest &request) const;
     void connectSchedulerSignals();
 
@@ -77,12 +90,7 @@ public:
     // 高级功能成员
     QCNetworkLoggerHandle logger;   ///< 当前注入的 opaque 日志句柄
     bool debugTraceEnabled = false; ///< 是否启用 debug trace
-    struct MiddlewareEntry
-    {
-        QCNetworkMiddleware *middleware = nullptr; ///< 调用方持有，中间件析构时会注销
-    };
-
-    QList<MiddlewareEntry> middlewares; ///< 按注册顺序保存的中间件链
+    MiddlewareSnapshot middlewares; ///< 注册记录共享生命期，不延长中间件对象生命期。
 
     [[nodiscard]] QCNetworkReply *dispatchSendRequest(const QCNetworkRequest &request,
                                                       HttpMethod method,
@@ -105,7 +113,7 @@ public:
                                                      HttpMethod method,
                                                      const Internal::RequestBody &requestBodySource,
                                                      const QByteArray &body,
-                                                     const QList<QCNetworkMiddleware *> &middlewares);
+                                                     const MiddlewareSnapshot &middlewares);
     [[nodiscard]] QCNetworkReply *createNoEventLoopErrorReply(
         const QCNetworkRequest &request,
         HttpMethod method,
@@ -113,13 +121,19 @@ public:
         const QByteArray &body,
         QObject *parent,
         const char *apiName);
+    [[nodiscard]] QCNetworkReply *createCacheAwareReply(
+        const QCNetworkRequest &request,
+        HttpMethod method,
+        const Internal::RequestBody &requestBodySource,
+        const QByteArray &body);
     [[nodiscard]] QCNetworkReply *createInvalidRequestReply(const QCNetworkRequest &request,
                                                             HttpMethod method,
                                                             const QString &message,
                                                             QObject *parent);
     void applyReplyDefaults(QCNetworkReply *reply) const;
     void prepareManagedReply(QCNetworkReply *reply,
-                             const QList<QCNetworkMiddleware *> &middlewares) const;
+                             const MiddlewareSnapshot &middlewares,
+                             QObject *context) const;
     [[nodiscard]] bool rejectOffOwnerThread(QString *error, const char *apiName) const;
 
 private:

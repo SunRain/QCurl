@@ -74,10 +74,15 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::dispatchManagedSendRequest(
                                body,
                                apiName,
                                [this, request, method, requestBodySource, body]() {
-                                   const auto middlewaresSnapshot = q_func()->middlewares();
-                                   const QCNetworkRequest modifiedRequest
-                                       = prepareManagedRequest(request, middlewaresSnapshot);
-                                   return createManagedReply(modifiedRequest,
+                                   const auto middlewaresSnapshot = middlewares;
+                                   const auto modifiedRequest
+                                       = prepareManagedRequest(request,
+                                                               middlewaresSnapshot,
+                                                               q_func());
+                                   if (!modifiedRequest) {
+                                       return static_cast<QCNetworkReply *>(nullptr);
+                                   }
+                                   return createManagedReply(*modifiedRequest,
                                                              method,
                                                              requestBodySource,
                                                              body,

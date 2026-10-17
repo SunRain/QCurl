@@ -306,10 +306,10 @@ public:
     /// 添加请求/响应中间件（manager 不持有所有权）。
     void addMiddleware(QCNetworkMiddleware *middleware);
 
-    /// 移除中间件。
+    /// 立即结束本次注册；已开始的请求也跳过其尚未执行的回调。
     void removeMiddleware(QCNetworkMiddleware *middleware);
 
-    /// 清空所有中间件。
+    /// 立即结束全部当前注册，不撤销已完成的请求修改。
     void clearMiddlewares();
 
     /// 获取当前中间件列表。

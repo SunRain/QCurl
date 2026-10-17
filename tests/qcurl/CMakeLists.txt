@@ -387,6 +387,10 @@ add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测�
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）
 target_compile_definitions(tst_QCNetworkMiddlewareIntegration PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test(tst_QCNetworkMiddlewareLifetime tst_QCNetworkMiddlewareLifetime.cpp)
+target_compile_definitions(tst_QCNetworkMiddlewareLifetime PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test(tst_QCNetworkMiddlewareConsumers tst_QCNetworkMiddlewareConsumers.cpp)
+target_compile_definitions(tst_QCNetworkMiddlewareConsumers PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkUnifiedPolicyMiddlewareOffline tst_QCNetworkUnifiedPolicyMiddlewareOffline.cpp) # 统一重试/脱敏日志/观测埋点（离线门禁）
 target_link_libraries(tst_QCNetworkUnifiedPolicyMiddlewareOffline
     PRIVATE ${QCURL_QTTEST_OTHER_EXTRAS_TARGET})

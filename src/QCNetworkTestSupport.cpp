@@ -21,8 +21,8 @@ namespace {
 struct MockBindingRegistry
 {
     QMutex mutex;
-    QHash<const QCNetworkAccessManager *, QCNetworkMockHandler *> handlers;
-    QSet<const QCNetworkAccessManager *> connectedManagers;
+    QHash<const QObject *, QCNetworkMockHandler *> handlers;
+    QSet<const QObject *> connectedManagers;
 };
 
 MockBindingRegistry &bindingRegistry()
@@ -127,9 +127,9 @@ void setMockHandler(QCNetworkAccessManager *manager, QCNetworkMockHandler *handl
         QObject::connect(manager, &QObject::destroyed, [](QObject *object) {
             auto &registry = bindingRegistry();
             QMutexLocker locker(&registry.mutex);
-            const auto *manager = static_cast<QCNetworkAccessManager *>(object);
-            registry.handlers.remove(manager);
-            registry.connectedManagers.remove(manager);
+            // destroyed() 在 QObject 基类析构阶段发出，只能按 QObject 身份清理注册表。
+            registry.handlers.remove(object);
+            registry.connectedManagers.remove(object);
         });
     }
 }

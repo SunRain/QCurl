@@ -77,6 +77,9 @@ private:
 
     /// 在 start() 之后执行校验、reply 创建和信号连接。
     void doStart();
+    Q_DECL_HIDDEN bool validateStart();
+    Q_DECL_HIDDEN void attachDownloadReply(QCNetworkReply *networkReply);
+    Q_DECL_HIDDEN void writeAvailableData();
 
     Q_DECLARE_PRIVATE(QCNetworkDownloadToDeviceJob)
     QScopedPointer<QCNetworkDownloadToDeviceJobPrivate> d_ptr;

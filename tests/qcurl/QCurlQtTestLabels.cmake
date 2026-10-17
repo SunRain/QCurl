@@ -22,6 +22,8 @@ set_tests_properties(tst_QCNetworkCache PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkLogger PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkMiddleware PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkMiddlewareIntegration PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkMiddlewareLifetime PROPERTIES LABELS "offline")
+set_tests_properties(tst_QCNetworkMiddlewareConsumers PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkUnifiedPolicyMiddlewareOffline PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCookieBridge PROPERTIES LABELS "offline")
 set_tests_properties(tst_QCNetworkCancelToken PROPERTIES LABELS "offline")
@@ -118,6 +120,8 @@ set(_qcurl_qttest_targets
     tst_QCNetworkLogger
     tst_QCNetworkMiddleware
     tst_QCNetworkMiddlewareIntegration
+    tst_QCNetworkMiddlewareLifetime
+    tst_QCNetworkMiddlewareConsumers
     tst_QCNetworkUnifiedPolicyMiddlewareOffline
     tst_QCNetworkCookieBridge
     tst_QCNetworkCancelToken

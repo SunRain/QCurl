@@ -87,30 +87,32 @@ void QCNetworkResumableDownloadJob::start()
     QTimer::singleShot(0, this, &QCNetworkResumableDownloadJob::doStart);
 }
 
-void QCNetworkResumableDownloadJob::doStart()
+bool QCNetworkResumableDownloadJob::validateStart()
 {
     Q_D(QCNetworkResumableDownloadJob);
-    if (isFinished()) {
-        return;
-    }
-
     if (!d->manager) {
         fail(NetworkError::InvalidRequest,
              QStringLiteral("QCNetworkResumableDownloadJob: manager 为空"));
-        return;
+        return false;
     }
 
     auto *manager = d->manager.data();
     if (thread() != manager->thread()) {
         fail(NetworkError::InvalidRequest,
              QStringLiteral("QCNetworkResumableDownloadJob: job 与 manager 不在同一线程"));
-        return;
+        return false;
     }
 
+    return true;
+}
+
+QCNetworkRequest QCNetworkResumableDownloadJob::prepareDownloadRequest(bool *hadExistingFile)
+{
+    Q_D(QCNetworkResumableDownloadJob);
     QFile file(d->savePath);
-    const bool hadExistingFile = file.exists();
-    d->existingSize            = 0;
-    if (!d->overwrite && hadExistingFile) {
+    *hadExistingFile = file.exists();
+    d->existingSize  = 0;
+    if (!d->overwrite && *hadExistingFile) {
         d->existingSize = file.size();
     }
 
@@ -120,24 +122,54 @@ void QCNetworkResumableDownloadJob::doStart()
                                      QStringLiteral("bytes=%1-").arg(d->existingSize).toUtf8());
     }
 
-    auto *managerPrivate           = manager->d_func();
-    const auto middlewaresSnapshot = manager->middlewares();
-    const QCNetworkRequest preparedRequest
-        = managerPrivate->prepareManagedRequest(downloadRequest, middlewaresSnapshot);
-    auto *networkReply = managerPrivate->createPreparedManagedReply(preparedRequest,
-                                                                    HttpMethod::Get,
-                                                                    Internal::makeEmptyRequestBody(),
-                                                                    QByteArray(),
-                                                                    middlewaresSnapshot);
-    if (!networkReply) {
+    return downloadRequest;
+}
+
+void QCNetworkResumableDownloadJob::doStart()
+{
+    Q_D(QCNetworkResumableDownloadJob);
+    if (isFinished() || !validateStart()) {
+        return;
+    }
+    bool hadExistingFile       = false;
+    const auto downloadRequest = prepareDownloadRequest(&hadExistingFile);
+    auto *manager              = d->manager.data();
+    const QPointer<QCNetworkResumableDownloadJob> safeJob(this);
+    const QPointer<QCNetworkAccessManager> safeManager(manager);
+    const auto middlewaresSnapshot = manager->d_func()->middlewares;
+    const auto preparedRequest     = manager->d_func()->prepareManagedRequest(downloadRequest,
+                                                                              middlewaresSnapshot,
+                                                                              this);
+    if (!safeJob || isFinished()) {
+        return;
+    }
+    if (!safeManager || !preparedRequest) {
         fail(NetworkError::InvalidRequest,
-             QStringLiteral("QCNetworkResumableDownloadJob: 无法创建 reply"));
+             QStringLiteral("QCNetworkResumableDownloadJob: manager 在请求准备期间失效"));
+        return;
+    }
+    auto *networkReply = safeManager->d_func()
+                             ->createPreparedManagedReply(*preparedRequest,
+                                                          HttpMethod::Get,
+                                                          Internal::makeEmptyRequestBody(),
+                                                          QByteArray(),
+                                                          middlewaresSnapshot,
+                                                          this);
+    if (!safeJob || isFinished()) {
+        return;
+    }
+    if (!networkReply) {
+        fail(NetworkError::OperationCancelled,
+             QStringLiteral("QCNetworkResumableDownloadJob: reply 在中间件回调中失效"));
         return;
     }
 
+    const QPointer<QCNetworkReply> safeReply(networkReply);
     attachDownloadReply(networkReply, hadExistingFile);
 
-    managerPrivate->startPreparedReply(networkReply, preparedRequest);
+    if (safeJob && !isFinished() && safeManager && safeReply) {
+        safeManager->d_func()->startPreparedReply(safeReply.data(), *preparedRequest);
+    }
 }
 
 void QCNetworkResumableDownloadJob::attachDownloadReply(QCNetworkReply *networkReply,

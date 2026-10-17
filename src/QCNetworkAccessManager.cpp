@@ -7,6 +7,7 @@
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "private/QCNetworkCacheIntegration_p.h"
+#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkRequestScheduler_p.h"
 #include "private/QCThreading_p.h"
 
@@ -28,14 +29,18 @@ void queueReplyFailure(QCNetworkReply *reply, NetworkError error, const QString 
 }
 
 void runReplyCreatedMiddlewares(QCNetworkReply *reply,
-                                const QList<QCNetworkMiddleware *> &middlewares)
+                                QCNetworkAccessManager *manager,
+                                const QCNetworkAccessManagerPrivate::MiddlewareSnapshot &middlewares,
+                                QObject *context)
 {
-    if (!reply || middlewares.isEmpty()) {
-        return;
-    }
-
-    for (auto *middleware : middlewares) {
-        if (middleware) {
+    const QPointer<QCNetworkReply> safeReply(reply);
+    const QPointer<QCNetworkAccessManager> safeManager(manager);
+    const QPointer<QObject> safeContext(context);
+    for (const auto &entry : middlewares) {
+        if (!safeReply || !safeManager || !safeContext) {
+            return;
+        }
+        if (auto *middleware = entry->middleware) {
             middleware->onReplyCreated(reply);
         }
     }
@@ -43,9 +48,13 @@ void runReplyCreatedMiddlewares(QCNetworkReply *reply,
 
 void runResponseMiddlewaresOnce(QCNetworkReply *reply,
                                 QCNetworkAccessManager *manager,
-                                const QList<QCNetworkMiddleware *> &middlewares)
+                                const QCNetworkAccessManagerPrivate::MiddlewareSnapshot &middlewares,
+                                QObject *context)
 {
     if (!reply || !manager || middlewares.isEmpty()) {
+        return;
+    }
+    if (reply->property(Internal::replyproperties::kDestroying).toBool()) {
         return;
     }
 
@@ -55,12 +64,14 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply,
     // finished 可能被已完成 reply 触发多次探测，这里用属性做幂等保护。
     reply->setProperty(kMiddlewareResponseInvokedProperty, true);
 
-    const QList<QCNetworkMiddleware *> activeMiddlewares = manager->middlewares();
-    for (auto *middleware : middlewares) {
-        if (!activeMiddlewares.contains(middleware)) {
-            continue;
+    const QPointer<QCNetworkReply> safeReply(reply);
+    const QPointer<QCNetworkAccessManager> safeManager(manager);
+    const QPointer<QObject> safeContext(context);
+    for (const auto &entry : middlewares) {
+        if (!safeReply || !safeManager || !safeContext) {
+            return;
         }
-        if (middleware) {
+        if (auto *middleware = entry->middleware) {
             middleware->onResponseReceived(reply);
         }
     }
@@ -68,7 +79,8 @@ void runResponseMiddlewaresOnce(QCNetworkReply *reply,
 
 void wireResponseMiddlewares(QCNetworkAccessManager *manager,
                              QCNetworkReply *reply,
-                             const QList<QCNetworkMiddleware *> &middlewares)
+                             const QCNetworkAccessManagerPrivate::MiddlewareSnapshot &middlewares,
+                             QObject *context)
 {
     if (!manager || !reply || middlewares.isEmpty()) {
         return;
@@ -76,41 +88,44 @@ void wireResponseMiddlewares(QCNetworkAccessManager *manager,
 
     QPointer<QCNetworkReply> safeReply(reply);
     QPointer<QCNetworkAccessManager> safeManager(manager);
+    const QPointer<QObject> safeContext(context);
     QObject::connect(reply,
                      &QCNetworkReply::finished,
                      manager,
-                     [safeReply, safeManager, middlewares]() {
-                         if (!safeManager) {
-                             return;
-                         }
-                         if (!safeReply) {
+                     [safeReply, safeManager, safeContext, middlewares]() {
+                         if (!safeManager || !safeReply || !safeContext) {
                              return;
                          }
                          runResponseMiddlewaresOnce(safeReply.data(),
                                                     safeManager.data(),
-                                                    middlewares);
+                                                    middlewares,
+                                                    safeContext.data());
                      });
 
     // 对已完成 reply 立即补跑一次，避免“先 finished、后接线”导致漏掉响应中间件。
     if (reply->isFinished()) {
-        runResponseMiddlewaresOnce(reply, manager, middlewares);
+        runResponseMiddlewaresOnce(reply, manager, middlewares, context);
     }
 }
 
 } // namespace
 
-QCNetworkRequest QCNetworkAccessManagerPrivate::prepareManagedRequest(
-    const QCNetworkRequest &request, const QList<QCNetworkMiddleware *> &middlewares) const
+std::optional<QCNetworkRequest> QCNetworkAccessManagerPrivate::prepareManagedRequest(
+    const QCNetworkRequest &request, const MiddlewareSnapshot &middlewares, QObject *context) const
 {
-    if (middlewares.isEmpty()) {
-        return request;
-    }
-
+    const QPointer<const QCNetworkAccessManager> safeManager(q_func());
+    const QPointer<QObject> safeContext(context);
     QCNetworkRequest modifiedRequest = request;
-    for (auto *middleware : middlewares) {
-        if (middleware) {
+    for (const auto &entry : middlewares) {
+        if (!safeManager || !safeContext) {
+            return std::nullopt;
+        }
+        if (auto *middleware = entry->middleware) {
             middleware->onRequestPreSend(modifiedRequest);
         }
+    }
+    if (!safeManager || !safeContext) {
+        return std::nullopt;
     }
     return modifiedRequest;
 }
@@ -155,12 +170,21 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createManagedReply(
     HttpMethod method,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
-    const QList<QCNetworkMiddleware *> &middlewares)
+    const MiddlewareSnapshot &middlewares)
 {
-    auto *reply = createPreparedManagedReply(request, method, requestBodySource, body, middlewares);
+    const QPointer<const QCNetworkAccessManager> safeManager(q_func());
+    auto *reply = createPreparedManagedReply(request,
+                                             method,
+                                             requestBodySource,
+                                             body,
+                                             middlewares,
+                                             q_func());
+    if (!safeManager || !reply) {
+        return nullptr;
+    }
     QPointer<QCNetworkReply> safeReply(reply);
     startPreparedReply(reply, request);
-    return safeReply.data();
+    return safeManager ? safeReply.data() : nullptr;
 }
 
 QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
@@ -168,7 +192,28 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
     HttpMethod method,
     const Internal::RequestBody &requestBodySource,
     const QByteArray &body,
-    const QList<QCNetworkMiddleware *> &middlewares)
+    const MiddlewareSnapshot &middlewares,
+    QObject *context)
+{
+    const QPointer<const QCNetworkAccessManager> safeManager(q_func());
+    const QPointer<QObject> safeContext(context);
+    auto *reply = createCacheAwareReply(request, method, requestBodySource, body);
+    const QPointer<QCNetworkReply> safeReply(reply);
+    prepareManagedReply(reply, middlewares, context);
+    if (!safeManager || !safeContext) {
+        if (safeReply) {
+            safeReply->deleteLater();
+        }
+        return nullptr;
+    }
+    return safeReply.data();
+}
+
+QCNetworkReply *QCNetworkAccessManagerPrivate::createCacheAwareReply(
+    const QCNetworkRequest &request,
+    HttpMethod method,
+    const Internal::RequestBody &requestBodySource,
+    const QByteArray &body)
 {
     const bool managerUsesCookies = shareHandleConfig.shareCookies() || !cookieFilePath.isEmpty();
     const QCNetworkCacheRequestKey cacheKey = Internal::buildCacheRequestKey(request,
@@ -195,7 +240,6 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createPreparedManagedReply(
         replyPrivate->staleCacheEntry            = staleEntry;
         replyPrivate->cacheRevalidation          = cacheRevalidation;
     }
-    prepareManagedReply(reply, middlewares);
     return reply;
 }
 
@@ -256,12 +300,18 @@ void QCNetworkAccessManagerPrivate::applyReplyDefaults(QCNetworkReply *reply) co
     }
 }
 
-void QCNetworkAccessManagerPrivate::prepareManagedReply(
-    QCNetworkReply *reply, const QList<QCNetworkMiddleware *> &middlewares) const
+void QCNetworkAccessManagerPrivate::prepareManagedReply(QCNetworkReply *reply,
+                                                        const MiddlewareSnapshot &middlewares,
+                                                        QObject *context) const
 {
     Q_Q(const QCNetworkAccessManager);
-    wireResponseMiddlewares(const_cast<QCNetworkAccessManager *>(q), reply, middlewares);
-    runReplyCreatedMiddlewares(reply, middlewares);
+    const QPointer<QCNetworkAccessManager> safeManager(const_cast<QCNetworkAccessManager *>(q));
+    const QPointer<QCNetworkReply> safeReply(reply);
+    const QPointer<QObject> safeContext(context);
+    wireResponseMiddlewares(safeManager.data(), reply, middlewares, context);
+    if (safeManager && safeReply && safeContext) {
+        runReplyCreatedMiddlewares(reply, safeManager.data(), middlewares, context);
+    }
 }
 
 void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
@@ -271,6 +321,8 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
         return;
     }
 
+    const QPointer<QCNetworkReply> safeReply(reply);
+    const QPointer<const QCNetworkAccessManager> safeManager(q_func());
     if (schedulerEnabled) {
         // lane/priority 会在 scheduler 入队时快照，后续信号与 lane 级取消都以该快照为准。
         if (!request.lane().isValid()) {
@@ -292,6 +344,9 @@ void QCNetworkAccessManagerPrivate::startPreparedReply(QCNetworkReply *reply,
             const SchedulerCommandResult result = scheduler->scheduleReply(reply,
                                                                            request.lane(),
                                                                            request.priority());
+            if (!safeManager || !safeReply) {
+                return;
+            }
             if (result != SchedulerCommandResult::Applied) {
                 queueReplyFailure(
                     reply,

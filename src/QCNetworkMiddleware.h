@@ -45,6 +45,8 @@ class QCNetworkReply;
  * @note QObject 借用合同：回调中的 reply 裸指针只在当次 manager owner-thread 调用内有效，
  * 不得跨异步边界保存。manager 对 middleware 本身也是 non-owning 借用，调用方必须保活至
  * unregister 或 manager 销毁。
+ * 每个请求在首次回调前固定注册关系和顺序。注销立即结束尚未开始及后续阶段的回调；
+ * 再次注册（即使地址相同）仅参与新请求。回调中新增中间件可参与嵌套的新请求。
  */
 class QCURL_EXPORT QCNetworkMiddleware
 {

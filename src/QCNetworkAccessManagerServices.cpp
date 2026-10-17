@@ -4,33 +4,9 @@
 #include "QCNetworkLogger.h"
 #include "QCNetworkMiddleware.h"
 
+#include <utility>
+
 namespace QCurl {
-namespace {
-
-QList<QCNetworkMiddleware *> sanitizeMiddlewares(const QList<QCNetworkMiddleware *> &middlewares)
-{
-    QList<QCNetworkMiddleware *> alive;
-    alive.reserve(middlewares.size());
-    for (auto *middleware : middlewares) {
-        if (middleware) {
-            alive.append(middleware);
-        }
-    }
-    return alive;
-}
-
-QCNetworkMiddleware *middlewareFromEntry(const QCNetworkAccessManagerPrivate::MiddlewareEntry &entry)
-{
-    return entry.middleware;
-}
-
-bool middlewareEntryMatches(const QCNetworkAccessManagerPrivate::MiddlewareEntry &entry,
-                            QCNetworkMiddleware *middleware)
-{
-    return entry.middleware == middleware;
-}
-
-} // namespace
 
 void QCNetworkAccessManager::setCache(QCNetworkCache *cache)
 {
@@ -76,12 +52,13 @@ void QCNetworkAccessManager::addMiddleware(QCNetworkMiddleware *middleware)
     }
 
     for (const auto &entry : d->middlewares) {
-        if (middlewareEntryMatches(entry, middleware)) {
+        if (entry->middleware == middleware) {
             return;
         }
     }
 
-    d->middlewares.append(QCNetworkAccessManagerPrivate::MiddlewareEntry{middleware});
+    d->middlewares.append(std::make_shared<QCNetworkAccessManagerPrivate::MiddlewareEntry>(
+        QCNetworkAccessManagerPrivate::MiddlewareEntry{middleware}));
     middleware->registerManager(this);
 }
 
@@ -93,7 +70,8 @@ void QCNetworkAccessManager::removeMiddleware(QCNetworkMiddleware *middleware)
     }
 
     for (qsizetype i = d->middlewares.size() - 1; i >= 0; --i) {
-        if (middlewareEntryMatches(d->middlewares.at(i), middleware)) {
+        if (d->middlewares.at(i)->middleware == middleware) {
+            d->middlewares.at(i)->middleware = nullptr;
             d->middlewares.removeAt(i);
         }
     }
@@ -104,7 +82,7 @@ void QCNetworkAccessManager::clearMiddlewares()
 {
     Q_D(QCNetworkAccessManager);
     for (const auto &entry : d->middlewares) {
-        if (auto *middleware = middlewareFromEntry(entry)) {
+        if (auto *middleware = std::exchange(entry->middleware, nullptr)) {
             middleware->unregisterManager(this);
         }
     }
@@ -117,11 +95,11 @@ QList<QCNetworkMiddleware *> QCNetworkAccessManager::middlewares() const
     QList<QCNetworkMiddleware *> result;
     result.reserve(d->middlewares.size());
     for (const auto &entry : d->middlewares) {
-        if (auto *middleware = middlewareFromEntry(entry)) {
+        if (auto *middleware = entry->middleware) {
             result.append(middleware);
         }
     }
-    return sanitizeMiddlewares(result);
+    return result;
 }
 
 } // namespace QCurl
