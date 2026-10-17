@@ -89,6 +89,7 @@ set(QCURL_WEBSOCKET_PREVIEW_SOURCES
     QCWebSocketPool.cpp                 # Other Extras（Preview）: WebSocket 连接池
     QCWebSocketPoolMutators.cpp         # Other Extras（Preview）: WebSocket 连接池同步变更
     QCWebSocketPoolMaintenance.cpp      # Other Extras（Preview）: WebSocket 连接池维护逻辑
+    QCWebSocketPoolCompletion.cpp       # Other Extras（Preview）: 连接状态提交和 future 完成
     QCWebSocketPoolValues.cpp           # Other Extras（Preview）: WebSocket 连接池值类型
     private/QCWebSocketCloseCode.cpp
     private/QCWebSocketCurlOptions.cpp

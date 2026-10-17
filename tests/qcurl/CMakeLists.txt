@@ -444,6 +444,11 @@ if(QCURL_WEBSOCKET_SUPPORT)
         tst_QCWebSocketPool.cpp
     ) # WebSocket 连接池测试
     target_link_libraries(tst_QCWebSocketPool PRIVATE ${QCURL_QTTEST_OTHER_EXTRAS_TARGET})
+    add_qcurl_test_with_preflight(tst_QCWebSocketPoolReentry
+        REQUIRE_LOCAL_PORT
+        REQUIRE_NODE
+        SOURCES tst_QCWebSocketPoolReentry.cpp)
+    target_link_libraries(tst_QCWebSocketPoolReentry PRIVATE ${QCURL_QTTEST_OTHER_EXTRAS_TARGET})
 endif()
 
 add_qcurl_test_with_preflight(

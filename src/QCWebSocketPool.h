@@ -181,6 +181,8 @@ public:
      *
      * @note 成功结果只携带 lease id。调用方必须在连接池 owner thread 使用
      * resolveLease() 临时解析连接，并在使用结束后通过 release() 归还同一 lease。
+     * future 完成前已提交连接、容量和 lease 状态；owner thread 的同步 continuation
+     * 可查询、清池、再次 acquire 或销毁 owner。清池只处理当次选中的旧连接。
      */
     [[nodiscard]] QFuture<QCWebSocketAcquireResult> acquire(const QUrl &url);
 
@@ -323,6 +325,8 @@ private:
     void sendKeepAlive();
     bool canCreateConnection(const QUrl &url) const;
     int totalConnectionCount() const;
+    Q_DECL_HIDDEN QFuture<QCWebSocketPreWarmResult> startPreWarm(const QUrl &url, int count);
+    Q_DECL_HIDDEN QFuture<QCWebSocketAcquireResult> createPendingAcquire(const QUrl &url);
 };
 
 } // namespace QCurl

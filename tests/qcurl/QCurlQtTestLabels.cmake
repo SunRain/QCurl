@@ -74,6 +74,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
     set_tests_properties(tst_QCWebSocketSendQueue PROPERTIES LABELS "offline;websocket")
     set_tests_properties(tst_QCWebSocket PROPERTIES LABELS "env;local_port;node;websocket")
     set_tests_properties(tst_QCWebSocketPool PROPERTIES LABELS "env;local_port;node;websocket")
+    set_tests_properties(tst_QCWebSocketPoolReentry PROPERTIES LABELS "env;local_port;node;websocket")
 endif()
 
 # 统计本测试目录的主要 QtTest 目标，不包含 libcurl_consistency 的 pytest 执行器。
@@ -140,6 +141,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
     tst_QCWebSocket
     tst_QCWebSocketSendQueue
     tst_QCWebSocketPool
+    tst_QCWebSocketPoolReentry
     )
 endif()
 list(LENGTH _qcurl_qttest_targets _qcurl_qttest_count)

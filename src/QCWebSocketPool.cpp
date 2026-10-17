@@ -56,28 +56,19 @@ QCWebSocketPool::QCWebSocketPool(QObject *parent)
 QCWebSocketPool::~QCWebSocketPool()
 {
     d_ptr->lifecycleState = QCWebSocketPoolPrivate::LifecycleState::Destroying;
-    for (auto &pool : d_ptr->pools) {
-        for (auto &conn : pool) {
-            if (conn.acquirePromise) {
-                conn.acquirePromise->addResult(
-                    QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::PoolDestroyed,
-                                                      QStringLiteral("pool destroyed")));
-                conn.acquirePromise->finish();
-                conn.acquirePromise.reset();
-            }
-        }
+    auto operations       = std::move(d_ptr->preWarmOperations);
+    for (const auto &operation : operations) {
+        operation->finished = true;
     }
-    d_ptr->clearConnections(this, QUrl());
-    for (auto &operation : d_ptr->preWarmOperations) {
-        if (!operation->finished) {
-            operation->finished = true;
-            operation->promise->addResult(
-                QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::PoolDestroyed,
-                                                  operation->requested,
-                                                  operation->warmed,
-                                                  QStringLiteral("pool destroyed")));
-            operation->promise->finish();
-        }
+    d_ptr->clearConnections(this, QUrl(), QCWebSocketAcquireResult::Status::PoolDestroyed);
+    for (const auto &operation : operations) {
+        auto promise = std::move(operation->promise);
+        promise->addResult(
+            QCWebSocketPreWarmResult::failure(QCWebSocketPreWarmResult::Status::PoolDestroyed,
+                                              operation->requested,
+                                              operation->warmed,
+                                              QStringLiteral("pool destroyed")));
+        promise->finish();
     }
 }
 
@@ -94,43 +85,43 @@ QFuture<QCWebSocketAcquireResult> QCWebSocketPool::acquire(const QUrl &url)
             QStringLiteral("QCWebSocketPool::acquire requires the owner thread")));
     }
 
-    auto promise = std::make_shared<QPromise<QCWebSocketAcquireResult>>();
-    promise->start();
-    const auto future = promise->future();
-
     auto &pool = d_ptr->pools[url];
     for (auto &conn : pool) {
         if (conn.socket && !conn.inUse && conn.socket->state() == QCWebSocket::State::Connected) {
             const auto leaseId = d_ptr->issueLease(conn.identity);
             if (!leaseId.has_value()) {
-                promise->addResult(QCWebSocketAcquireResult::failure(
+                return finishedFuture(QCWebSocketAcquireResult::failure(
                     QCWebSocketAcquireResult::Status::ConnectionFailed,
                     QStringLiteral("WebSocket lease id space exhausted")));
-                promise->finish();
-                return future;
             }
             conn.inUse        = true;
             conn.leaseId      = leaseId.value();
             conn.lastUsedTime = QDateTime::currentDateTime();
             conn.reuseCount++;
             d_ptr->hitCounts[url]++;
-            promise->addResult(QCWebSocketAcquireResult::success(leaseId.value()));
-            promise->finish();
+            const auto future = finishedFuture(QCWebSocketAcquireResult::success(leaseId.value()));
             Q_EMIT connectionReused(url);
             return future;
         }
     }
 
     if (!canCreateConnection(url)) {
-        promise->addResult(
+        const auto future = finishedFuture(
             QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::PoolLimitReached,
                                               QStringLiteral("connection pool limit reached")));
-        promise->finish();
         Q_EMIT poolLimitReached(url);
         return future;
     }
 
-    auto *socket = createNewConnection(url);
+    return createPendingAcquire(url);
+}
+
+QFuture<QCWebSocketAcquireResult> QCWebSocketPool::createPendingAcquire(const QUrl &url)
+{
+    auto promise = std::make_shared<QPromise<QCWebSocketAcquireResult>>();
+    promise->start();
+    const auto future = promise->future();
+    auto *socket      = createNewConnection(url);
     if (!socket) {
         promise->addResult(
             QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::ConnectionFailed,
@@ -157,7 +148,7 @@ QFuture<QCWebSocketAcquireResult> QCWebSocketPool::acquire(const QUrl &url)
     conn.inUse          = true;
     conn.leaseId        = leaseId.value();
     conn.acquirePromise = promise;
-    pool.append(conn);
+    d_ptr->pools[url].append(conn);
     d_ptr->socketToUrl.insert(socket, url);
     d_ptr->missCounts[url]++;
     static_cast<void>(socket->open());
@@ -209,7 +200,11 @@ QFuture<QCWebSocketPreWarmResult> QCWebSocketPool::preWarm(const QUrl &url, int 
     if (count == 0) {
         return finishedFuture(QCWebSocketPreWarmResult::success(count, 0));
     }
+    return startPreWarm(url, count);
+}
 
+QFuture<QCWebSocketPreWarmResult> QCWebSocketPool::startPreWarm(const QUrl &url, int count)
+{
     auto operation     = std::make_shared<QCWebSocketPoolPrivate::PreWarmOperation>();
     operation->promise = std::make_shared<QPromise<QCWebSocketPreWarmResult>>();
     operation->promise->start();
@@ -217,8 +212,14 @@ QFuture<QCWebSocketPreWarmResult> QCWebSocketPool::preWarm(const QUrl &url, int 
     d_ptr->preWarmOperations.append(operation);
 
     operation->pending = count;
+    const auto future  = operation->promise->future();
+    const QPointer<QCWebSocketPool> safePool(this);
     for (int i = 0; i < count; ++i) {
-        acquire(url).then(this, [this, operation](QCWebSocketAcquireResult result) {
+        auto acquired = acquire(url);
+        if (!safePool) {
+            return future;
+        }
+        acquired.then(this, [this, operation](QCWebSocketAcquireResult result) {
             /**
              * @brief 在当前信号回调结束后结算预热归还结果。
              *
@@ -240,7 +241,7 @@ QFuture<QCWebSocketPreWarmResult> QCWebSocketPool::preWarm(const QUrl &url, int 
                 Qt::QueuedConnection);
         });
     }
-    return operation->promise->future();
+    return future;
 }
 
 QCWebSocketPoolConfig QCWebSocketPool::config() const

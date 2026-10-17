@@ -139,46 +139,6 @@ std::optional<int> QCWebSocketPoolPrivate::keepAliveIntervalMilliseconds(const i
     return static_cast<int>(milliseconds);
 }
 
-void QCWebSocketPoolPrivate::clearConnections(QCWebSocketPool *poolOwner, const QUrl &url)
-{
-    const auto clearOne = [poolOwner, this](const QUrl &key) {
-        auto it = pools.find(key);
-        if (it == pools.end()) {
-            return;
-        }
-        auto connections = std::move(it.value());
-        pools.erase(it);
-        hitCounts.remove(key);
-        missCounts.remove(key);
-        for (auto &conn : connections) {
-            invalidateLease(conn.leaseId);
-            if (conn.acquirePromise) {
-                conn.acquirePromise->addResult(
-                    QCWebSocketAcquireResult::failure(QCWebSocketAcquireResult::Status::Cancelled,
-                                                      QStringLiteral("pool cleared")));
-                conn.acquirePromise->finish();
-            }
-            socketToUrl.remove(conn.identity);
-            if (conn.socket && conn.socket->state() != QCWebSocket::State::Unconnected) {
-                static_cast<void>(conn.socket->close());
-            }
-            if (conn.socket) {
-                conn.socket->deleteLater();
-            }
-            Q_EMIT poolOwner->connectionClosed(key);
-        }
-    };
-
-    if (url.isEmpty()) {
-        const auto keys = pools.keys();
-        for (const auto &key : keys) {
-            clearOne(key);
-        }
-        return;
-    }
-    clearOne(url);
-}
-
 QCWebSocketPool::LeaseResult QCWebSocketPool::resolveLease(const LeaseId leaseId,
                                                            QCWebSocket **socket) const
 {

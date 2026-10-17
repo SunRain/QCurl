@@ -57,6 +57,12 @@ public:
         QDateTime keepAliveDeadline;
     };
 
+    struct RemovedConnection
+    {
+        QUrl url;
+        PooledConnection connection;
+    };
+
     /// URL 到连接列表的主索引；仅由 pool owner thread 访问。
     QMap<QUrl, QList<PooledConnection>> pools;
     /// QObject 到 URL 的反向索引；仅由 pool owner thread 访问。
@@ -116,7 +122,13 @@ public:
      */
     [[nodiscard]] bool wasLeaseIssued(QCWebSocketAcquireResult::LeaseId leaseId) const noexcept;
     /// 清理指定 URL 的连接和索引；空 URL 表示清理全部连接。
-    void clearConnections(QCWebSocketPool *poolOwner, const QUrl &url);
+    void clearConnections(
+        QCWebSocketPool *poolOwner,
+        const QUrl &url,
+        QCWebSocketAcquireResult::Status status = QCWebSocketAcquireResult::Status::Cancelled);
+
+    /// 先从主索引、反向索引和 lease 中移除，再由调用方在容器外完成 promise。
+    [[nodiscard]] std::optional<RemovedConnection> takeConnection(QObject *identity);
 
     /// 收口 preWarm 单条 acquire 的完成状态，并在最后一条完成时结算 operation promise。
     void completePreWarmAcquire(const std::shared_ptr<PreWarmOperation> &operation,
