@@ -930,7 +930,7 @@ def test_pkg_config_contract_rejects_core_zlib(tmp_path, capsys) -> None:
     pc_dir.mkdir(parents=True)
     (pc_dir / "qcurl.pc").write_text(
         "Requires: Qt6Core >= 6.10.3\n"
-        "Requires.private: libcurl >= 7.85.0\n"
+        "Requires.private: libcurl >= 8.14.1\n"
         "Libs: -L${libdir} -lQCurl\n"
         "Libs.private: -lz\n",
         encoding="utf-8",
@@ -955,7 +955,7 @@ def test_pkg_config_contract_rejects_core_qtnetwork(tmp_path, capsys) -> None:
     pc_dir.mkdir(parents=True)
     (pc_dir / "qcurl.pc").write_text(
         "Requires: Qt6Core >= 6.10.3, Qt6Network >= 6.10.3\n"
-        "Requires.private: libcurl >= 7.85.0\n"
+        "Requires.private: libcurl >= 8.14.1\n"
         "Libs: -L${libdir} -lQCurl\n",
         encoding="utf-8",
     )
@@ -979,7 +979,7 @@ def test_pkg_config_contract_requires_other_extras_pc(tmp_path, capsys) -> None:
     pc_dir.mkdir(parents=True)
     (pc_dir / "qcurl.pc").write_text(
         "Requires: Qt6Core >= 6.10.3\n"
-        "Requires.private: libcurl >= 7.85.0\n"
+        "Requires.private: libcurl >= 8.14.1\n"
         "Libs: -L${libdir} -lQCurl\n",
         encoding="utf-8",
     )

@@ -4,6 +4,12 @@ set(QCURL_PUBLIC_API_CONSUMER_CACHE
 set(_qcurl_consumer_profile_variables
     CMAKE_CXX_COMPILER CMAKE_CXX_COMPILER_ARG1 CMAKE_BUILD_TYPE
     CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
+# 独立 provider 的安装消费必须发现相同的头和库，不能悄悄落回系统高版本。
+foreach(variable IN ITEMS CURL_ROOT CURL_DIR)
+    if(DEFINED ${variable} AND NOT "${${variable}}" STREQUAL "")
+        list(APPEND _qcurl_consumer_profile_variables "${variable}")
+    endif()
+endforeach()
 set(_qcurl_consumer_configurations
     Debug Release RelWithDebInfo MinSizeRel ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE})
 list(REMOVE_DUPLICATES _qcurl_consumer_configurations)

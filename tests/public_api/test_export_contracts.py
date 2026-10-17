@@ -34,7 +34,7 @@ def test_check_export_contract_accepts_static_libcurl_with_find_dependency(tmp_p
         encoding="utf-8",
     )
     (target_dir / "QCurlConfig.cmake").write_text(
-        "find_dependency(CURL 7.85.0 REQUIRED)\n",
+        "find_dependency(CURL 8.14.1 REQUIRED)\n",
         encoding="utf-8",
     )
 
@@ -79,7 +79,7 @@ def test_check_export_contract_rejects_core_zlib_export(tmp_path, capsys) -> Non
         encoding="utf-8",
     )
     (target_dir / "QCurlConfig.cmake").write_text(
-        "find_dependency(CURL 7.85.0 REQUIRED)\n",
+        "find_dependency(CURL 8.14.1 REQUIRED)\n",
         encoding="utf-8",
     )
 
@@ -105,7 +105,7 @@ def test_check_export_contract_rejects_unconditional_zlib_find_dependency(tmp_pa
         encoding="utf-8",
     )
     (target_dir / "QCurlConfig.cmake").write_text(
-        "find_dependency(CURL 7.85.0 REQUIRED)\n"
+        "find_dependency(CURL 8.14.1 REQUIRED)\n"
         "find_dependency(ZLIB REQUIRED)\n",
         encoding="utf-8",
     )
@@ -134,7 +134,7 @@ def test_check_export_contract_rejects_other_extras_gated_zlib_find_dependency(t
         encoding="utf-8",
     )
     (target_dir / "QCurlConfig.cmake").write_text(
-        "find_dependency(CURL 7.85.0 REQUIRED)\n"
+        "find_dependency(CURL 8.14.1 REQUIRED)\n"
         'if("OtherExtras" IN_LIST QCurl_FIND_COMPONENTS)\n'
         "  find_dependency(ZLIB REQUIRED)\n"
         "endif()\n",

@@ -6,7 +6,7 @@
 
 ## 1. 依赖、请求构造与可失败配置
 
-- 最低依赖是 Qt **6.10.3**、libcurl 7.85.0，源码构建、安装包发现和公开头均执行同一下限。Qt 6.10.0–6.10.2 不受支持。
+- 最低依赖是 Qt **6.10.3**、libcurl **8.14.1**；源码配置、编译、运行库及安装依赖声明统一使用该下限。同一 multi 的 easy handles 使用原生隐式 TLS session 缓存，不再支持旧版本缓存路径。过旧运行库在请求发送前拒绝并返回升级诊断；Qt 6.10.0–6.10.2 不受支持。
 - `QCNetworkRequest(const QUrl &)` 改为 explicit；依赖 QUrl 隐式转换的调用改为 `QCNetworkRequest{url}`。
 - Request redirect/transfer 配置的可失败 setter 返回 `QCNetworkConfigUpdateResult`。检查 Applied/InvalidArgument，拒绝时保留旧状态，不再依赖负值清除配置或非法水位回退默认值。
 - RetryPolicy 的带参构造改用 `create()` validated factory，setter 返回显式更新结果。TLS/Proxy accessor 本身不是本次新增。
@@ -69,7 +69,7 @@ request.setAllowedProtocols({}); // 清除显式设置，恢复 HTTP 与 HTTPS�
 - QCNetworkHttpHeaders.h 在 QCurl::httpheaders 下提供 owning QByteArray 头名，例如 kContentType、kAuthorization；现有 raw-header API 直接接受它们。
 - QCNetworkContentEncoding.h 在 QCurl::contentencoding 下提供 QString 名称，包括 kGzip/kDeflate/kBrotli/kZstd/kIdentity。自定义头和编码字符串仍开放，头名查找/替换仍忽略大小写，有序响应头仍保留重复字段。
 - setAcceptedEncodings 的空列表禁用解码；无编码列表时显式启用 auto-decompression 请求 libcurl 支持的全部算法。raw Accept-Encoding 优先，但不因手写该头自动启用解码；异步冲突警告仍保留。命名常量不保证某个 libcurl 构建实际支持解码。
-- Http3Only 额外要求编译头与运行时 libcurl 7.88.0+ 及 HTTP/3 特性，不做降级；Http3 允许回退。能力预检查与无请求边界见[HTTP 版本配置](configuration.md#http-version)。
+- Http3Only 额外要求运行时 libcurl 的 HTTP/3/QUIC 能力，不做降级；满足 8.14.1 下限并不保证启用该能力。Http3 允许回退。能力预检查与无请求边界见[HTTP 版本配置](configuration.md#http-version)。
 
 ## 8. WebSocket 与 pool（Other Extras / Preview）
 

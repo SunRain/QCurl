@@ -4,7 +4,11 @@
 
 ## 1. 开发构建
 
-最低 Qt **6.10.3**、C++17、libcurl 7.85.0；源码构建需要 QtCore/QtNetwork 与 zlib 开发包。测试需要 QtTest、Python 3/pytest，具体本地服务见下节。使用独立 Qt SDK 时加 `-DCMAKE_PREFIX_PATH=/path/to/Qt/6.10.3/gcc_64`；Qt 6.10.0–6.10.2 不受支持。
+最低 Qt **6.10.3**、C++17、libcurl **8.14.1**；源码构建需要 QtCore/QtNetwork 与 zlib 开发包。system/bundled 的配置、编译头及运行库均执行同一下限，不能以较新的头掩盖旧运行库。测试需要 QtTest、Python 3/pytest，具体本地服务见下节。使用独立 Qt SDK 时加 `-DCMAKE_PREFIX_PATH=/path/to/Qt/6.10.3/gcc_64`；Qt 6.10.0–6.10.2 不受支持。
+
+libcurl 8.14.0 虽已提供 `CURLWS_NOAUTOPONG`，但仍会在 Ping/Pong 打断分片消息后错误拒绝
+continuation 帧。8.14.1 包含上游 `d3594be6531` 修复，因此它是统一最低版本；不得通过跳过
+交错控制帧用例、关闭 WebSocket 或添加旧版替代帧栈来接受 8.14.0。
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -14,6 +18,8 @@ cmake --build build --parallel
 ```
 
 仓库默认打开 tests/examples/benchmarks；上面只关闭与日常库测试无关的示例和基准。默认使用 system libcurl；bundled 一致性构建见后文。Ubuntu/Debian CI 的 Qt SDK 由[setup-qt action](../../.github/actions/setup-qt/action.yml)读取 `QCURL_MIN_QT_VERSION`，Arch 快照也须满足同一下限。
+
+验证 libcurl 最低版本时使用独立安装的 8.14.1 前缀和新构建目录，通过 `-DCURL_ROOT=/path/to/curl-8.14.1` 选择 system/find_package 分支，不切换 `curl/` 子模块或覆盖系统库。检查配置选中的头/库、生成头中记录的实际编译版本，以及运行进程的 `curl_version_info()`；安装消费者也须使用同一前缀。版本注入只验证拒绝阈值，不能替代真实 8.14.1 的构建、消费与 TLS session 行为。
 
 ## 2. QtTest 与本地服务
 

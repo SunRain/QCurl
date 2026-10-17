@@ -6,8 +6,8 @@ namespace QCurl {
 
 namespace {
 
-constexpr int kMinimumRuntimeCurlVersionNum = 0x075500;
-constexpr auto kMinimumRuntimeCurlVersionString = "7.85.0";
+constexpr int kMinimumRuntimeCurlVersionNum     = 0x080e01;
+constexpr auto kMinimumRuntimeCurlVersionString = "8.14.1";
 
 QString versionNumToString(int versionNum)
 {
@@ -29,7 +29,7 @@ int forcedRuntimeValue(const char *variable, int detectedValue)
         return detectedValue;
     }
 
-    bool ok = false;
+    bool ok               = false;
     const int forcedValue = QString::fromLatin1(raw.trimmed()).toInt(&ok, 0);
     return ok ? forcedValue : detectedValue;
 }
@@ -38,7 +38,7 @@ int forcedRuntimeValue(const char *variable, int detectedValue)
 } // namespace
 
 static_assert(LIBCURL_VERSION_NUM >= kMinimumRuntimeCurlVersionNum,
-              "QCurl requires libcurl >= 7.85.0");
+              "QCurl requires libcurl >= 8.14.1");
 
 CurlFeatureProbe &CurlFeatureProbe::instance()
 {

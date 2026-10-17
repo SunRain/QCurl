@@ -6,7 +6,7 @@
 
 ## 1. 依赖与构建
 
-需要 Arch `base-devel` 环境、CMake 3.19+、Ninja、pkgconf，以及 `qt6-base>=6.10.3`、`curl>=7.85.0`、`zlib`。包检查脚本使用 CMake 的 JSON 读取能力，因此此打包入口比库本身的 CMake 3.16 下限稍高。Python 只用于下文可选的维护者回归，不是打包依赖。
+需要 Arch `base-devel` 环境、CMake 3.19+、Ninja、pkgconf，以及 `qt6-base>=6.10.3`、`curl>=8.14.1`、`zlib`。包检查脚本使用 CMake 的 JSON 读取能力，因此此打包入口比库本身的 CMake 3.16 下限稍高。Python 只用于下文可选的维护者回归，不是打包依赖。
 
 在 QCurl 仓库根执行：
 

@@ -19,7 +19,7 @@ Preview 是成熟度，Internal 是可见性，不是额外组件。精确安装
 
 - CMake 3.16+、C++17 编译器（GCC 11+ / Clang 14+ / MSVC 2019+）。
 - **Qt 6.10.3+**；源码构建需要 QtCore、QtNetwork，默认 Core consumer 只依赖 QtCore。Qt 6.10.0–6.10.2 不受支持。
-- libcurl 7.85.0+、zlib 开发包；WebSocket 需要 libcurl 7.86.0+，HTTP/3 还取决于 QUIC backend 与服务端能力，见[HTTP 版本配置](docs/user/configuration.md#http-version)。
+- **libcurl 8.14.1+**、zlib 开发包；源码配置、编译和运行库均执行同一下限。WebSocket 需 libcurl 启用对应协议；HTTP/3 还取决于 QUIC backend 与服务端能力，见[HTTP 版本配置](docs/user/configuration.md#http-version)。
 
 ## 用法预览
 

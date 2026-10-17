@@ -6,7 +6,7 @@ Arch Linux 用户也可从当前工作区生成由 pacman 管理的完整开发�
 
 ## 1. 准备与安装
 
-需要 CMake 3.16+、C++17 编译器、Qt **6.10.3+**（源码构建需要 Core、Network）、libcurl 7.85.0+ 与 zlib 开发包。Core consumer 不需要 QtNetwork；WebSocket 需 libcurl 7.86.0+，HTTP/3 能力边界见[配置](configuration.md#http-version)。
+需要 CMake 3.16+、C++17 编译器、Qt **6.10.3+**（源码构建需要 Core、Network）、libcurl **8.14.1+** 与 zlib 开发包。Core consumer 不需要 QtNetwork；WebSocket 需 libcurl 启用对应协议，HTTP/3 能力边界见[配置](configuration.md#http-version)。构建头与运行库均须满足下限；仅更新开发包、仍加载旧 libcurl 的部署会在请求发送前被拒绝。
 
 尚未检出源码时：
 

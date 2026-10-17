@@ -30,7 +30,7 @@ if(NOT QCURL_BUILD_SHARED_LIBS)
     set(QCURL_OTHER_EXTRAS_STATIC_DEFINE ON)
 endif()
 
-set(QCURL_MIN_LIBCURL_VERSION "7.85.0")
+set(QCURL_MIN_LIBCURL_VERSION "8.14.1")
 set(QCURL_MIN_QT_VERSION "6.10.3")
 string(REPLACE "." ", " QCURL_MIN_QT_VERSION_COMPONENTS "${QCURL_MIN_QT_VERSION}")
 
@@ -180,29 +180,22 @@ message(STATUS "Qt6 version: ${Qt6_VERSION}")
 message(STATUS "libcurl provider: ${QCURL_LIBCURL_PROVIDER}")
 message(STATUS "libcurl version: ${QCURL_LIBCURL_VERSION_STRING}")
 
-# 检查 libcurl 版本和特性
+# 统一依赖下限已包含手动 Pong 所需的 CURLWS_NOAUTOPONG；
+# 显式关闭 WebSocket 只控制 API 是否构建，不降低项目依赖下限。
 option(QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT
-       "Force disable QCurl WebSocket API even if libcurl is new enough"
+       "Force disable QCurl WebSocket API"
        OFF)
 
 if(QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT)
     set(QCURL_WEBSOCKET_SUPPORT OFF)
     message(STATUS "⏭️ WebSocket support forced OFF (QCURL_FORCE_DISABLE_WEBSOCKET_SUPPORT=ON)")
-elseif(QCURL_LIBCURL_VERSION_STRING VERSION_GREATER_EQUAL "7.86.0")
+else()
     set(QCURL_WEBSOCKET_SUPPORT ON)
     message(STATUS "✅ WebSocket support enabled (libcurl ${QCURL_LIBCURL_VERSION_STRING})")
-else()
-    set(QCURL_WEBSOCKET_SUPPORT OFF)
-    message(STATUS "❌ WebSocket support disabled (requires libcurl >= 7.86.0)")
 endif()
 
-if(QCURL_LIBCURL_VERSION_STRING VERSION_GREATER_EQUAL "7.66.0")
-    set(QCURL_HTTP2_SUPPORT ON)
-    message(STATUS "✅ HTTP/2 support available")
-else()
-    set(QCURL_HTTP2_SUPPORT OFF)
-    message(STATUS "❌ HTTP/2 support unavailable (requires libcurl >= 7.66.0)")
-endif()
+set(QCURL_HTTP2_SUPPORT ON)
+message(STATUS "✅ HTTP/2 API available (runtime backend support checked separately)")
 
 # 配置头文件
 configure_file(src/QCurlConfig.h.in src/QCurlConfig.h)

@@ -113,7 +113,7 @@ HTTP 版本是请求级偏好，QCurl 将其交给 libcurl，不保证每个环�
 | `Http3` | 优先尝试 HTTP/3，允许按 libcurl 能力和服务端协商降级 |
 | `Http3Only` | 只接受 HTTP/3；能力或服务端不满足时失败，不静默降级 |
 
-最低 libcurl 仍为 7.85.0；`Http3Only` 额外要求编译头与运行时均达到 7.88.0，且运行时带 HTTP/3/QUIC 支持。缺少 `CURL_HTTP_VERSION_3ONLY` 不能改用可降级的 Http3。能力预检查拒绝时，**Core 返回 InvalidRequest，Blocking Extras 返回 UnsupportedCapability，均保留诊断且不发送请求**。协商阶段的传输失败另按相应执行器报告。
+所有组件的 libcurl 最低依赖统一为 8.14.1；`Http3Only` 仍要求实际运行库带 HTTP/3/QUIC 支持。缺少 `CURL_HTTP_VERSION_3ONLY` 不能改用可降级的 Http3。能力预检查拒绝时，**Core 返回 InvalidRequest，Blocking Extras 返回 UnsupportedCapability，均保留诊断且不发送请求**。协商阶段的传输失败另按相应执行器报告。
 
 在 Quickstart 的请求创建后、`manager.get()` 之前设置：
 

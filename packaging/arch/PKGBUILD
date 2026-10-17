@@ -9,7 +9,7 @@ pkgdesc='Qt6 libcurl library with opt-in extras and development test support'
 arch=('x86_64')
 url='https://github.com/SunRain/QCurl'
 license=('MIT')
-depends=('qt6-base>=6.10.3' 'curl>=7.85.0' 'zlib')
+depends=('qt6-base>=6.10.3' 'curl>=8.14.1' 'zlib')
 makedepends=('cmake>=3.19' 'ninja' 'pkgconf')
 # TestSupport 必须保留原生代码；makepkg strip 会破坏 GCC 的瘦 LTO 静态对象。
 # 不生成第二个 debug 包，也不让下游链接依赖打包时的 LTO 工具链。

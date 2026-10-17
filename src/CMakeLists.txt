@@ -115,7 +115,7 @@ if(QCURL_WEBSOCKET_SUPPORT)
     )
     message(STATUS "✅ WebSocket 支持已启用（libcurl ${QCURL_LIBCURL_VERSION_STRING} + Other Extras（Preview））")
 else()
-    message(STATUS "⏭️ WebSocket 支持未启用（需要 libcurl 7.86.0+）")
+    message(STATUS "⏭️ WebSocket 支持已显式关闭；libcurl 最低依赖仍为 ${QCURL_MIN_LIBCURL_VERSION}")
 endif()
 
 # 合并所有源文件和头文件
