@@ -7,6 +7,8 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 from tests.public_api import run_public_api_checks as public_api
 from tests.public_api.consumer_contracts import validate_consumer_fixture
 from tests.public_api.consumer_contracts import validate_scheduler_core_contract_fixture
@@ -1093,11 +1095,33 @@ def test_release_metadata_scan_rejects_current_v1_candidate_identity(tmp_path, c
     assert "current release identity" in capsys.readouterr().err
 
 
-def test_production_targets_never_enable_test_hooks() -> None:
-    """验证正式目标的编译命令不携带白盒测试宏。"""
+@pytest.fixture(scope="module")
+def configured_project_builds(tmp_path_factory) -> tuple[Path, Path]:
+    """配置真实生产/测试目标，不依赖工作区中约定名称的历史构建。"""
 
     repo_root = Path(__file__).resolve().parents[2]
-    compile_commands = repo_root / "build-test-shared-gcc" / "compile_commands.json"
+    root = tmp_path_factory.mktemp("qcurl-target-isolation")
+    builds = (root / "production", root / "with-tests")
+    for build_dir, testing in zip(builds, ("OFF", "ON")):
+        result = subprocess.run(
+            [
+                "cmake", "-S", str(repo_root), "-B", str(build_dir), "-G", "Ninja",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DQCURL_BUILD_SHARED_LIBS=ON",
+                "-DQCURL_BUILD_LIBCURL_CONSISTENCY=OFF",
+                f"-DBUILD_TESTING={testing}",
+                "-DBUILD_EXAMPLES=OFF", "-DBUILD_BENCHMARKS=OFF",
+            ],
+            capture_output=True, text=True, check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    return builds
+
+
+def test_production_targets_never_enable_test_hooks(configured_project_builds) -> None:
+    """验证正式目标的编译命令不携带白盒测试宏。"""
+
+    compile_commands = configured_project_builds[1] / "compile_commands.json"
     assert compile_commands.is_file(), f"缺少编译数据库：{compile_commands}"
 
     entries = json.loads(compile_commands.read_text(encoding="utf-8"))
@@ -1118,7 +1142,7 @@ def test_production_targets_never_enable_test_hooks() -> None:
     )
 
 
-def test_test_internals_are_non_installable() -> None:
+def test_test_internals_are_non_installable(configured_project_builds) -> None:
     """验证白盒 companion 只参与测试构建且不会进入安装脚本。"""
 
     repo_root = Path(__file__).resolve().parents[2]
@@ -1135,11 +1159,7 @@ def test_test_internals_are_non_installable() -> None:
             rf"install\s*\([^)]*\b{target}\b", source, flags=re.DOTALL
         ), f"companion 不得出现在 install 规则中：{target}"
 
-    build_dirs = (
-        repo_root / "build-release-shared",
-        repo_root / "build-test-shared-gcc",
-    )
-    for build_dir in build_dirs:
+    for build_dir in configured_project_builds:
         install_scripts = sorted(build_dir.rglob("cmake_install.cmake"))
         assert install_scripts, f"缺少生成的安装脚本：{build_dir}"
         install_text = "\n".join(
