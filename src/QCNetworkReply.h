@@ -203,7 +203,8 @@ public:
     [[nodiscard]] QUrl url() const;
     /// 返回当前 reply 对应的 HTTP 方法。
     [[nodiscard]] HttpMethod method() const noexcept;
-    /// 返回响应状态码；无响应时通常为 0。
+    /// 返回响应状态码；原生传输终态采用 CURLINFO_RESPONSE_CODE，不以代理 CONNECT 状态码替代。
+    /// 未收到目标响应时为 0；缓存和模拟路径使用各自的响应元数据。
     [[nodiscard]] int httpStatusCode() const noexcept;
     /// 返回请求耗时（毫秒）。
     [[nodiscard]] qint64 durationMs() const noexcept;

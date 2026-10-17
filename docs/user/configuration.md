@@ -229,3 +229,6 @@ cookie store。设备线程、重放能力与详细结果约束见[Blocking 公�
 负值或溢出的 Retry-After 返回 `nullopt`；HTTP-date 按查询时刻计算，过去日期为 0。
 getter 不依赖是否开启重试，不增加计数或预算；调度仅在原有 429 分支使用相同解析算法。
 预算检查先于输出回滚，其既有策略优先关系保持不变。
+
+原生传输终态的 `httpStatusCode()` 采用 `CURLINFO_RESPONSE_CODE`；代理 CONNECT 被拒绝、
+尚未收到目标响应时为 0，不把代理的 403 冒充目标状态。原始头仍可用于诊断。

@@ -183,7 +183,15 @@ std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
 
 void parseReplyHeaders(QCNetworkReplyPrivate *reply)
 {
-    parseReplyHeaders(reply ? reply->transferState.data() : nullptr);
+    if (!reply) {
+        return;
+    }
+
+    // 完成、重试及缓存路径已取得权威状态码；重解析头只能更新头集合。
+    // CONNECT 被代理拒绝时，原生 RESPONSE_CODE 为 0，不能用代理的 403 覆盖它。
+    const int responseCode = reply->httpStatusCode;
+    parseReplyHeaders(reply->transferState.data());
+    reply->httpStatusCode = responseCode;
 }
 
 void parseReplyHeaders(QCNetworkReplyTransferState *state)

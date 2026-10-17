@@ -29,8 +29,7 @@ namespace {
                                                                     managerUsesCookies(manager));
 }
 
-[[nodiscard]] QByteArray responseHeaderBlock(
-    int statusCode, const QList<RawHeaderPair> &headers)
+[[nodiscard]] QByteArray responseHeaderBlock(int statusCode, const QList<RawHeaderPair> &headers)
 {
     QByteArray block = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode)
                        + QByteArrayLiteral(" Revalidated\r\n");
@@ -328,6 +327,7 @@ bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
     const auto meta       = cached.metadata();
     const QByteArray data = d->httpMethod == HttpMethod::Head ? QByteArray() : cached.body();
 
+    d->httpStatusCode = meta.statusCode();
     d->bodyBuffer.append(data);
     d->cacheBodyBuffer = data;
     d->headerData      = cacheResponseHeaderBlock(meta);
