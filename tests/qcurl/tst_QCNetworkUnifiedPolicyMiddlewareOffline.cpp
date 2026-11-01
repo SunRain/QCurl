@@ -5,6 +5,7 @@
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkDefaultLogger.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkMiddlewareExtras.h"
 #include "QCNetworkMockHandler.h"
@@ -17,6 +18,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QtTest/QtTest>
 
@@ -37,6 +39,8 @@ private Q_SLOTS:
     void testRedactingLoggingNoLeak();
     void testReplyUsesLoggerSnapshotAfterManagerReplacement();
     void testObservabilityFieldsAndRetryCount();
+    void testDiagnosticQueryPolicyAcrossExtras_data();
+    void testDiagnosticQueryPolicyAcrossExtras();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -161,6 +165,70 @@ void TestQCNetworkUnifiedPolicyMiddlewareOffline::testRedactingLoggingNoLeak()
 
     m_manager->clearMiddlewares();
     m_manager->setLogger({});
+    reply->deleteLater();
+}
+
+void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDiagnosticQueryPolicyAcrossExtras_data()
+{
+    QTest::addColumn<QCNetworkDiagnosticQueryPolicy>("policy");
+    QTest::addColumn<int>("status");
+    for (const auto policy :
+         {QCNetworkDiagnosticQueryPolicy::Redacted, QCNetworkDiagnosticQueryPolicy::Full}) {
+        for (const int status : {200, 503}) {
+            QTest::newRow(qPrintable(
+                QStringLiteral("policy-%1-status-%2").arg(static_cast<int>(policy)).arg(status)))
+                << policy << status;
+        }
+    }
+}
+
+void TestQCNetworkUnifiedPolicyMiddlewareOffline::testDiagnosticQueryPolicyAcrossExtras()
+{
+    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
+    QFETCH(int, status);
+    QCNetworkDefaultLogger *capture = nullptr;
+    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
+    capture->enableConsoleOutput(false);
+    capture->setMinLogLevel(NetworkLogLevel::Debug);
+    m_manager->setLogger(logger);
+    QCRedactingLoggingMiddleware logging;
+    QCObservabilityMiddleware observability;
+    m_manager->addMiddleware(&logging);
+    m_manager->addMiddleware(&observability);
+    const auto clear = qScopeGuard([this] { m_manager->clearMiddlewares(); });
+    const QUrl url(QStringLiteral("http://synthetic-user:synthetic-url-secret@example.invalid/"
+                                  "route?page=2&encoded=%2B#fragment-marker"));
+    m_mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("OK"), status);
+    QCNetworkRequest request(url);
+    request.setDiagnosticQueryPolicy(policy);
+    auto *reply = m_manager->get(request);
+    request.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Redacted);
+    QSignalSpy finished(reply, &QCNetworkReply::finished);
+    QVERIFY(finished.wait(2000));
+    QCOMPARE(reply->diagnosticQueryPolicy(), policy);
+    QCOMPARE(reply->url(), url);
+    QCOMPARE(reply->httpStatusCode(), status);
+    QCOMPARE(reply->error() == NetworkError::NoError, status == 200);
+    const QString safeUrl = policy == QCNetworkDiagnosticQueryPolicy::Full
+                                ? QStringLiteral("http://example.invalid/route?page=2&encoded=%2B")
+                                : QStringLiteral("http://example.invalid/route?[REDACTED]");
+    QSet<QString> categories;
+    for (const auto &entry : capture->entries()) {
+        const QString message = entry.message();
+        QVERIFY(!message.contains(QStringLiteral("synthetic-url-secret")));
+        QVERIFY(!message.contains(QStringLiteral("fragment-marker")));
+        categories.insert(entry.category());
+        if (entry.category() == QStringLiteral("Observability")) {
+            const auto object = QJsonDocument::fromJson(message.toUtf8()).object();
+            QCOMPARE(object.value(QStringLiteral("url")).toString(), safeUrl);
+        } else if (entry.category() == QStringLiteral("Request")
+                   || entry.category() == QStringLiteral("Response")) {
+            QVERIFY2(message.contains(QStringLiteral("url=") + safeUrl), qPrintable(message));
+        }
+    }
+    QVERIFY(categories.contains(QStringLiteral("Request")));
+    QVERIFY(categories.contains(QStringLiteral("Response")));
+    QVERIFY(categories.contains(QStringLiteral("Observability")));
     reply->deleteLater();
 }
 

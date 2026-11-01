@@ -57,7 +57,8 @@ void QCRedactingLoggingMiddleware::onReplyCreated(QCNetworkReply *reply)
     }
 
     const QString method = httpMethodToString(reply->method());
-    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url(),
+                                                            reply->diagnosticQueryPolicy());
 
     static_cast<void>(logger->log(NetworkLogLevel::Debug,
                                   QStringLiteral("Request"),
@@ -76,7 +77,8 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
     }
 
     const QString method = httpMethodToString(reply->method());
-    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url(),
+                                                            reply->diagnosticQueryPolicy());
 
     const int httpStatus  = reply->httpStatusCode();
     const qint64 duration = reply->durationMs();
@@ -90,10 +92,11 @@ void QCRedactingLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
         logger->log(level,
                     QStringLiteral("Response"),
                     QStringLiteral("method=%1 url=%2 status=%3 durationMs=%4 error=%5")
-                        .arg(method, url)
-                        .arg(httpStatus)
-                        .arg(duration)
-                        .arg(errorCode)));
+                        .arg(method,
+                             url,
+                             QString::number(httpStatus),
+                             QString::number(duration),
+                             QString::number(errorCode))));
 }
 
 void QCObservabilityMiddleware::onReplyCreated(QCNetworkReply *reply)
@@ -126,7 +129,8 @@ void QCObservabilityMiddleware::onResponseReceived(QCNetworkReply *reply)
         return;
     }
 
-    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url());
+    const QString url    = QCNetworkLogRedaction::redactUrl(reply->url(),
+                                                            reply->diagnosticQueryPolicy());
     const QString method = httpMethodToString(reply->method());
 
     const int retryCount = reply->property(kObservabilityRetryCountProperty).toInt();

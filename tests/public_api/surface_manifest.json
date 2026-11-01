@@ -238,6 +238,15 @@
       "rationale": "Core manager-level admission policy, command results and scheduler statistics value types."
     },
     {
+      "path": "QCNetworkDiagnosticQueryPolicy.h",
+      "component": "Core",
+      "maturity": "Stable",
+      "visibility": "Public",
+      "currentInstall": "core-component",
+      "targetInstall": "core-component",
+      "rationale": "Request-scoped diagnostic query policy referenced by QCNetworkRequest and QCNetworkReply."
+    },
+    {
       "path": "QCNetworkCachePolicy.h",
       "component": "Core",
       "maturity": "Stable",

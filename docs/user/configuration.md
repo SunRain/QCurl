@@ -71,7 +71,7 @@ auto *uploadReply = manager.post(request, body.data());
 ### 值语义与 `operator==`
 
 - `QCNetworkRequest` 是值语义配置对象，但 `operator==` 当前只比较 URL、follow redirect、raw headers、Range、HTTP version 与 `lane`。
-- `sslConfig()` / `proxyConfig()` / `timeoutConfig()` / `retryPolicy()` / `httpAuth()` 以及 `priority`、cache 等执行配置族 **不参与** `operator==`。
+- `sslConfig()` / `proxyConfig()` / `timeoutConfig()` / `retryPolicy()` / `httpAuth()` / `diagnosticQueryPolicy()` 以及 `priority`、cache 等执行配置族 **不参与** `operator==`。
 - 如果你需要判断“完整执行配置是否一致”，请分别读取这些 config family，而不要把 `operator==` 当作全量 diff。
 
 ### 调度
@@ -97,8 +97,24 @@ manager.setLogger(logger);
 `implementation` 是非 owning 借用，只能在至少一个同控制块 handle 存活期间使用。文件输出配置和
 日志写入均返回 `[[nodiscard]] QCNetworkLogResult`，调用方必须检查失败或显式声明丢弃。
 
-内建 Qt 日志、请求调试输出、内建 logger 与 trace 统一隐藏敏感查询值；URL 用户信息也不进入
-常规 URL 诊断。重定向地址与 Basic-over-HTTP 警告同样脱敏，不依赖是否注入 logger。
+内建 Qt 日志、request 调试输出、logger 与 trace 默认隐藏整个 query（`?[REDACTED]`）。
+若已确认初始 query 不含凭据，可对单个 request 显式设置 Full，查看路由/分页等参数：
+
+```cpp
+#include <QCNetworkDiagnosticQueryPolicy.h>
+
+request.setDiagnosticQueryPolicy(QCurl::QCNetworkDiagnosticQueryPolicy::Full);
+```
+
+Full **仅解开调用方初始请求 query**，不解开 userinfo、fragment、敏感头、服务器
+Location/重定向目标或自由文本错误。两档都移除 fragment；fragment-only 日志相对旧输出
+更严格。成功/错误 middleware 的初始 URL 字段和 Basic-over-HTTP 警告跟随 request 档位，
+错误文本仍脱敏。
+
+`setDebugTraceEnabled()` 控制是否开启 trace，`setLogger()` 决定输出目标，request 的
+`setDiagnosticQueryPolicy()` 决定初始 query 怎么呈现，三者互不隐含。reply 保留创建时的
+策略快照；后改原 request 不影响它。该配置不改变传输、cache key、equality 或 raw accessor；
+应用主动打印 raw 数据仍需自行治理，Full 不应设为全局默认。
 
 ## 3. HTTP、重试和缓存边界
 

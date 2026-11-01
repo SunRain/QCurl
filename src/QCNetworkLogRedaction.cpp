@@ -146,9 +146,17 @@ QString redactSensitiveTraceLine(const QByteArray &line)
     return redactSensitiveQueryParams(QString::fromUtf8(trimmed));
 }
 
-QString redactUrl(const QUrl &url)
+QString redactUrl(const QUrl &url, QCNetworkDiagnosticQueryPolicy policy)
 {
-    return redactSensitiveQueryParams(url.toString(QUrl::RemoveUserInfo));
+    if (policy == QCNetworkDiagnosticQueryPolicy::Full) {
+        return url.toString(QUrl::RemoveUserInfo | QUrl::RemoveFragment | QUrl::FullyEncoded);
+    }
+    QString result = url.toString(QUrl::RemoveUserInfo | QUrl::RemoveFragment | QUrl::RemoveQuery
+                                  | QUrl::FullyEncoded);
+    if (url.hasQuery()) {
+        result += QStringLiteral("?[REDACTED]");
+    }
+    return result;
 }
 
 } // namespace QCNetworkLogRedaction

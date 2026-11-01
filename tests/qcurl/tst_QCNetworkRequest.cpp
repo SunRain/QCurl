@@ -3,9 +3,10 @@
  * @brief QCNetworkRequest 单元测试
  */
 
-#include "QCNetworkRequest.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 #include "QCNetworkLaneKey.h"
 #include "QCNetworkProxyConfig.h"
+#include "QCNetworkRequest.h"
 #include "QCNetworkRequestPriority.h"
 #include "QCNetworkRetryPolicy.h"
 #include "QCNetworkSslConfig.h"
@@ -56,6 +57,7 @@ private Q_SLOTS:
     void testSetLaneAcceptsInvalidLaneAsFailClosedSnapshot();
     void testCopyAndEqualityPreserveLane();
     void testEqualityIgnoresExecutionConfigFamily();
+    void testDiagnosticQueryPolicyValueSemantics();
 
     // P1：Expect: 100-continue
     void testExpect100ContinueTimeoutDefaults();
@@ -76,6 +78,22 @@ void TestQCNetworkRequest::testConstructor()
 {
     QCNetworkRequest request;
     QVERIFY(request.url().isEmpty());
+}
+
+void TestQCNetworkRequest::testDiagnosticQueryPolicyValueSemantics()
+{
+    QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid/path?page=2#fragment")));
+    QCOMPARE(request.diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Redacted);
+    auto copy = request;
+    QCOMPARE(&copy.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Full), &copy);
+    QCOMPARE(copy.diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Full);
+    QCOMPARE(request.diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Redacted);
+    QCOMPARE(request, copy);
+    QCOMPARE(request.url(), copy.url());
+    QCNetworkRequest assigned;
+    assigned = copy;
+    copy.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Redacted);
+    QCOMPARE(assigned.diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Full);
 }
 
 void TestQCNetworkRequest::testConstructorWithUrl()
@@ -209,10 +227,8 @@ void TestQCNetworkRequest::testTransferConfig()
     config.setAcceptedEncodings({QStringLiteral("gzip"), QStringLiteral("br")});
     QCOMPARE(config.setMaxDownloadBytesPerSec(4096), QCNetworkConfigUpdateResult::Applied);
     QCOMPARE(config.setMaxUploadBytesPerSec(2048), QCNetworkConfigUpdateResult::Applied);
-    QCOMPARE(config.setBackpressureLimitBytes(32 * 1024),
-             QCNetworkConfigUpdateResult::Applied);
-    QCOMPARE(config.setBackpressureResumeBytes(8 * 1024),
-             QCNetworkConfigUpdateResult::Applied);
+    QCOMPARE(config.setBackpressureLimitBytes(32 * 1024), QCNetworkConfigUpdateResult::Applied);
+    QCOMPARE(config.setBackpressureResumeBytes(8 * 1024), QCNetworkConfigUpdateResult::Applied);
     QCOMPARE(config.setExpect100ContinueTimeout(std::chrono::milliseconds(250)),
              QCNetworkConfigUpdateResult::Applied);
     config.setIpResolve(QCNetworkIpResolve::Ipv6);
@@ -222,7 +238,8 @@ void TestQCNetworkRequest::testTransferConfig()
     request.setTransferConfig(config);
 
     QVERIFY(request.autoDecompressionEnabled());
-    QCOMPARE(request.acceptedEncodings(), QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
+    QCOMPARE(request.acceptedEncodings(),
+             QStringList({QStringLiteral("gzip"), QStringLiteral("br")}));
     QCOMPARE(request.maxDownloadBytesPerSec().value_or(-1), 4096);
     QCOMPARE(request.maxUploadBytesPerSec().value_or(-1), 2048);
     QCOMPARE(request.backpressureLimitBytes(), qint64(32 * 1024));
@@ -236,10 +253,8 @@ void TestQCNetworkRequest::testTransferConfig()
 
     request.setAcceptedEncodings({});
     QVERIFY(!request.autoDecompressionEnabled());
-    QCOMPARE(request.setMaxDownloadBytesPerSec(-1),
-             QCNetworkConfigUpdateResult::InvalidArgument);
-    QCOMPARE(request.setMaxUploadBytesPerSec(-1),
-             QCNetworkConfigUpdateResult::InvalidArgument);
+    QCOMPARE(request.setMaxDownloadBytesPerSec(-1), QCNetworkConfigUpdateResult::InvalidArgument);
+    QCOMPARE(request.setMaxUploadBytesPerSec(-1), QCNetworkConfigUpdateResult::InvalidArgument);
     QCOMPARE(request.setExpect100ContinueTimeout(std::chrono::milliseconds(-1)),
              QCNetworkConfigUpdateResult::InvalidArgument);
     QCOMPARE(request.maxDownloadBytesPerSec(), std::optional<qint64>(4096));
@@ -272,8 +287,7 @@ void TestQCNetworkRequest::testRequestConfigRejectsInvalidValuesTransactionally(
     QCOMPARE(transferConfig.setBackpressureLimitBytes(-1), UpdateResult::InvalidArgument);
     QCOMPARE(transferConfig.backpressureLimitBytes(), qint64(32 * 1024));
     QCOMPARE(transferConfig.backpressureResumeBytes(), qint64(8 * 1024));
-    QCOMPARE(transferConfig.setBackpressureResumeBytes(32 * 1024),
-             UpdateResult::InvalidArgument);
+    QCOMPARE(transferConfig.setBackpressureResumeBytes(32 * 1024), UpdateResult::InvalidArgument);
     QCOMPARE(transferConfig.backpressureResumeBytes(), qint64(8 * 1024));
     QCOMPARE(transferConfig.setExpect100ContinueTimeout(std::chrono::milliseconds(-1)),
              UpdateResult::InvalidArgument);
@@ -371,10 +385,7 @@ void TestQCNetworkRequest::testEqualityIgnoresExecutionConfigFamily()
     rhs.setTimeoutConfig(timeoutConfig);
 
     QCNetworkRetryPolicy retryPolicy;
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(3,
-                                             std::chrono::milliseconds(250),
-                                             2.0,
-                                             &retryPolicy),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(3, std::chrono::milliseconds(250), 2.0, &retryPolicy),
              QCNetworkRetryPolicy::UpdateResult::Applied);
     rhs.setRetryPolicy(retryPolicy);
     rhs.setPriority(QCNetworkRequestPriority::High);

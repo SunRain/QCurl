@@ -53,7 +53,8 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
         return;
     }
     qDebug() << "QCNetworkReply::execute: Started async request for"
-             << QCNetworkLogRedaction::redactUrl(d->request.url());
+             << QCNetworkLogRedaction::redactUrl(d->request.url(),
+                                                 d->request.diagnosticQueryPolicy());
     QCCurlMultiManager::instance()->addReply(reply);
 }
 

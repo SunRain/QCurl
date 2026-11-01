@@ -10,6 +10,7 @@
 #define QCNETWORKLOGREDACTION_P_H
 
 #include "QCGlobal.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 
 #include <QByteArray>
 #include <QString>
@@ -60,9 +61,12 @@ namespace QCNetworkLogRedaction {
 /**
  * @brief 脱敏 URL
  * @param url 原始 URL
- * @return 移除用户信息并隐藏敏感查询值的 URL 字符串
+ * @param policy 请求级 query 策略；默认隐藏，Full 仅用于调用方初始 URL。
+ * @return 移除 userinfo/fragment 的编码 URL；Redacted 的 query 显示为 ?[REDACTED]。
  */
-[[nodiscard]] QString redactUrl(const QUrl &url);
+[[nodiscard]] QString redactUrl(
+    const QUrl &url,
+    QCNetworkDiagnosticQueryPolicy policy = QCNetworkDiagnosticQueryPolicy::Redacted);
 
 } // namespace QCNetworkLogRedaction
 } // namespace QCurl

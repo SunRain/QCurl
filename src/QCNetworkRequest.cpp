@@ -324,6 +324,17 @@ QCNetworkCachePolicy QCNetworkRequest::cachePolicy() const
     return d.constData()->cachePolicy;
 }
 
+QCNetworkRequest &QCNetworkRequest::setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy policy)
+{
+    d.data()->diagnosticQueryPolicy = policy;
+    return *this;
+}
+
+QCNetworkDiagnosticQueryPolicy QCNetworkRequest::diagnosticQueryPolicy() const
+{
+    return d.constData()->diagnosticQueryPolicy;
+}
+
 QCNetworkRequest &QCNetworkRequest::setCachePartitionKey(const QByteArray &partitionKey)
 {
     d.data()->cachePartitionKey = partitionKey;
@@ -338,7 +349,8 @@ QByteArray QCNetworkRequest::cachePartitionKey() const
 QDebug operator<<(QDebug dbg, const QCNetworkRequest &req)
 {
     dbg.nospace() << "QCNetworkRequest("
-                  << "url=" << QCNetworkLogRedaction::redactUrl(req.url())
+                  << "url="
+                  << QCNetworkLogRedaction::redactUrl(req.url(), req.diagnosticQueryPolicy())
                   << ", followLocation=" << req.followLocation() << ", range=" << req.rangeStart()
                   << "-" << req.rangeEnd() << ", lane=" << req.lane().name()
                   << ", httpVersion=" << static_cast<int>(req.httpVersion()) << ")";

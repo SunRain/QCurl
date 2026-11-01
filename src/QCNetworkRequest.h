@@ -30,6 +30,7 @@ class QCNetworkRetryPolicy;
 enum class QCNetworkHttpVersion;
 enum class QCNetworkRequestPriority;
 enum class QCNetworkCachePolicy;
+enum class QCNetworkDiagnosticQueryPolicy;
 
 /** HTTP 请求值语义配置对象。 */
 class QCURL_EXPORT QCNetworkRequest
@@ -235,6 +236,14 @@ public:
 
     QCNetworkRequest &setCachePolicy(QCNetworkCachePolicy policy);
     [[nodiscard]] QCNetworkCachePolicy cachePolicy() const;
+
+    /**
+     * @brief 设置初始请求 query 的诊断可见性；默认 Redacted，不改变传输或缓存身份。
+     * @return 当前请求，供链式配置使用。
+     */
+    QCNetworkRequest &setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy policy);
+    /// 返回请求级诊断策略；Full 不开放 userinfo、fragment、敏感头或重定向 query。
+    [[nodiscard]] QCNetworkDiagnosticQueryPolicy diagnosticQueryPolicy() const;
 
     /**
      * @brief 设置认证缓存的 opaque 分区标识。

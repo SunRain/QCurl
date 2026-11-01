@@ -2,6 +2,7 @@
 #define QCNETWORKREQUESTPRIVATE_P_H
 
 #include "QCNetworkCachePolicy.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 #include "QCNetworkHttpVersion.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkRequest.h"
@@ -70,8 +71,9 @@ public:
 
     std::optional<QCNetworkHttpAuthConfig> httpAuthConfig;
     QCNetworkLaneKey lane;
-    QCNetworkRequestPriority requestPriority = QCNetworkRequestPriority::Normal;
-    QCNetworkCachePolicy cachePolicy         = QCNetworkCachePolicy::PreferCache;
+    QCNetworkRequestPriority requestPriority             = QCNetworkRequestPriority::Normal;
+    QCNetworkCachePolicy cachePolicy                     = QCNetworkCachePolicy::PreferCache;
+    QCNetworkDiagnosticQueryPolicy diagnosticQueryPolicy = QCNetworkDiagnosticQueryPolicy::Redacted;
     QByteArray cachePartitionKey;
 };
 

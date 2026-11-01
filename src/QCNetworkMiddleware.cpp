@@ -56,7 +56,7 @@ void QCNetworkMiddleware::unregisterManager(QCNetworkAccessManager *manager)
 void QCLoggingMiddleware::onRequestPreSend(QCNetworkRequest &request)
 {
     qDebug() << "[QCurl Middleware] Sending request:"
-             << QCNetworkLogRedaction::redactUrl(request.url());
+             << QCNetworkLogRedaction::redactUrl(request.url(), request.diagnosticQueryPolicy());
 }
 
 void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
@@ -67,10 +67,11 @@ void QCLoggingMiddleware::onResponseReceived(QCNetworkReply *reply)
 
     if (reply->error() == NetworkError::NoError) {
         qDebug() << "[QCurl Middleware] Response received:"
-                 << QCNetworkLogRedaction::redactUrl(reply->url());
+                 << QCNetworkLogRedaction::redactUrl(reply->url(), reply->diagnosticQueryPolicy());
     } else {
         qWarning() << "[QCurl Middleware] Response error:"
-                   << QCNetworkLogRedaction::redactUrl(reply->url()) << "Error:"
+                   << QCNetworkLogRedaction::redactUrl(reply->url(), reply->diagnosticQueryPolicy())
+                   << "Error:"
                    << QCNetworkLogRedaction::redactSensitiveQueryParams(reply->errorString());
     }
 }

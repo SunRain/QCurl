@@ -1,26 +1,125 @@
+#include <QCNetworkAccessManager.h>
+#include <QCNetworkCachePolicy.h>
+#include <QCNetworkDefaultLogger.h>
+#include <QCNetworkDiagnosticQueryPolicy.h>
 #include <QCNetworkDiagnostics.h>
+#include <QCNetworkMemoryCache.h>
 #include <QCNetworkMiddlewareExtras.h>
+#include <QCNetworkReply.h>
+#include <QCNetworkRequest.h>
 
 #ifdef QCURL_WEBSOCKET_SUPPORT
-#include <QCWebSocketCommandResult.h>
 #include <QCWebSocket.h>
+#include <QCWebSocketCommandResult.h>
 #include <QCWebSocketPool.h>
 #endif
 
 #include <QCoreApplication>
+#include <QDebug>
+#include <QEventLoop>
 #include <QFuture>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMetaObject>
 #include <QMetaProperty>
+#include <QSet>
 #include <QString>
+#include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
 
 #include <chrono>
 #include <type_traits>
 
+// 使用 OnlyCache 未命中产生本地终态，走完整的安装后 OtherExtras 日志链而不访问网络。
+static bool diagnosticQueryPolicyContract(QCurl::QCNetworkDiagnosticQueryPolicy policy)
+{
+    QCurl::QCRedactingLoggingMiddleware logging;
+    QCurl::QCObservabilityMiddleware observability;
+    QCurl::QCNetworkMemoryCache cache;
+    QCurl::QCNetworkAccessManager manager;
+    QCurl::QCNetworkDefaultLogger *capture = nullptr;
+    const auto logger = QCurl::QCNetworkLoggerHandle::createWithBorrow(&capture);
+    capture->enableConsoleOutput(false);
+    capture->setMinLogLevel(QCurl::NetworkLogLevel::Debug);
+    manager.setLogger(logger);
+    manager.setCache(&cache);
+    manager.addMiddleware(&logging);
+    manager.addMiddleware(&observability);
+
+    const QUrl url(QStringLiteral("http://synthetic-user:synthetic-secret@example.invalid/"
+                                  "route?page=2&encoded=%2B#fragment-marker"));
+    QCurl::QCNetworkRequest request(url);
+    request.setCachePolicy(QCurl::QCNetworkCachePolicy::OnlyCache);
+    request.setDiagnosticQueryPolicy(policy);
+    auto *reply = manager.get(request);
+    request.setDiagnosticQueryPolicy(policy == QCurl::QCNetworkDiagnosticQueryPolicy::Full
+                                         ? QCurl::QCNetworkDiagnosticQueryPolicy::Redacted
+                                         : QCurl::QCNetworkDiagnosticQueryPolicy::Full);
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(reply, &QCurl::QCNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(2000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+    if (!reply->isFinished() || reply->error() == QCurl::NetworkError::NoError
+        || reply->url() != url || reply->diagnosticQueryPolicy() != policy) {
+        qWarning() << "diagnostic policy smoke: terminal/snapshot mismatch" << reply->isFinished()
+                   << static_cast<int>(reply->error()) << (reply->url() == url)
+                   << (reply->diagnosticQueryPolicy() == policy);
+        return false;
+    }
+
+    const QString safeUrl = policy == QCurl::QCNetworkDiagnosticQueryPolicy::Full
+                                ? QStringLiteral("http://example.invalid/route?page=2&encoded=%2B")
+                                : QStringLiteral("http://example.invalid/route?[REDACTED]");
+    QSet<QString> categories;
+    for (const auto &entry : capture->entries()) {
+        const QString message = entry.message();
+        if (message.contains(QStringLiteral("synthetic-user"))
+            || message.contains(QStringLiteral("synthetic-secret"))
+            || message.contains(QStringLiteral("fragment-marker"))) {
+            qWarning() << "diagnostic policy smoke: credential/fragment leak" << entry.category();
+            return false;
+        }
+        categories.insert(entry.category());
+        if (entry.category() == QStringLiteral("Observability")) {
+            const auto object = QJsonDocument::fromJson(message.toUtf8()).object();
+            if (object.value(QStringLiteral("url")).toString() != safeUrl) {
+                qWarning() << "diagnostic policy smoke: observability URL mismatch";
+                return false;
+            }
+        } else if (entry.category() == QStringLiteral("Request")
+                   || entry.category() == QStringLiteral("Response")) {
+            if (!message.contains(QStringLiteral("url=") + safeUrl)) {
+                qWarning() << "diagnostic policy smoke: URL field mismatch" << entry.category();
+                return false;
+            }
+            if (entry.category() == QStringLiteral("Response")
+                && !message.endsWith(QStringLiteral("error=")
+                                     + QString::number(static_cast<int>(reply->error())))) {
+                qWarning() << "diagnostic policy smoke: response error field mismatch";
+                return false;
+            }
+        }
+    }
+    const bool complete = categories.contains(QStringLiteral("Request"))
+                          && categories.contains(QStringLiteral("Response"))
+                          && categories.contains(QStringLiteral("Observability"));
+    if (!complete) {
+        qWarning() << "diagnostic policy smoke: missing log categories" << categories;
+    }
+    return complete;
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+
+    if (!diagnosticQueryPolicyContract(QCurl::QCNetworkDiagnosticQueryPolicy::Redacted)
+        || !diagnosticQueryPolicyContract(QCurl::QCNetworkDiagnosticQueryPolicy::Full)) {
+        return 11;
+    }
 
     QCurl::DiagResult result;
     result.setSuccess(true);
@@ -78,8 +177,8 @@ int main(int argc, char **argv)
     QCurl::QCWebSocket socket(QUrl(QStringLiteral("wss://example.invalid")), socketOptions);
     static_assert(std::is_same_v<decltype(socket.open()), QCurl::QCWebSocketCommandResult>);
     static_assert(std::is_same_v<decltype(socket.close()), QCurl::QCWebSocketCommandResult>);
-    static_assert(std::is_same_v<decltype(socket.sendTextMessage(QString{})),
-                                 QCurl::QCWebSocketCommandResult>);
+    static_assert(
+        std::is_same_v<decltype(socket.sendTextMessage(QString{})), QCurl::QCWebSocketCommandResult>);
     static_assert(std::is_same_v<decltype(socket.sendBinaryMessage(QByteArray{})),
                                  QCurl::QCWebSocketCommandResult>);
     static_assert(std::is_same_v<decltype(socket.ping()), QCurl::QCWebSocketCommandResult>);

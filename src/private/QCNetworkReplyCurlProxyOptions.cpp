@@ -81,7 +81,8 @@ unsigned long curlHttpAuthMethod(QCNetworkHttpAuthMethod method)
         && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
         qWarning() << "QCNetworkReply: Basic authentication over HTTP is insecure, consider "
                       "HTTPS. url="
-                   << QCNetworkLogRedaction::redactUrl(request.url());
+                   << QCNetworkLogRedaction::redactUrl(request.url(),
+                                                       request.diagnosticQueryPolicy());
     }
     if (hasExplicitAuthorization) {
         return true;

@@ -11,6 +11,7 @@
 #include <QCNetworkConnectionPoolConfig.h>
 #include <QCNetworkConnectionPoolManager.h>
 #include <QCNetworkDefaultLogger.h>
+#include <QCNetworkDiagnosticQueryPolicy.h>
 #include <QCNetworkDiskCache.h>
 #include <QCNetworkDownloadToDeviceJob.h>
 #include <QCNetworkHttpMethod.h>
@@ -50,8 +51,12 @@ static_assert(noexcept(std::declval<const QCurl::QCNetworkReply &>().diagnosticC
 
 static bool nativeDiagnosticContract(QCurl::QCNetworkAccessManager &manager)
 {
-    auto *reply = manager.get(QCurl::QCNetworkRequest(QUrl()));
-    if (reply->diagnosticCurlCode() != 0) {
+    QCurl::QCNetworkRequest request{QUrl()};
+    request.setDiagnosticQueryPolicy(QCurl::QCNetworkDiagnosticQueryPolicy::Full);
+    auto *reply = manager.get(request);
+    request.setDiagnosticQueryPolicy(QCurl::QCNetworkDiagnosticQueryPolicy::Redacted);
+    if (reply->diagnosticCurlCode() != 0
+        || reply->diagnosticQueryPolicy() != QCurl::QCNetworkDiagnosticQueryPolicy::Full) {
         return false;
     }
     QEventLoop loop;
@@ -59,7 +64,8 @@ static bool nativeDiagnosticContract(QCurl::QCNetworkAccessManager &manager)
     QTimer::singleShot(1000, &loop, &QEventLoop::quit);
     loop.exec();
     return reply->isFinished() && reply->error() != QCurl::NetworkError::NoError
-           && reply->diagnosticCurlCode() == 0;
+           && reply->diagnosticCurlCode() == 0
+           && reply->diagnosticQueryPolicy() == QCurl::QCNetworkDiagnosticQueryPolicy::Full;
 }
 
 class ConsumerSmokeLogger : public QCurl::QCNetworkLogger
@@ -95,6 +101,13 @@ int main(int argc, char **argv)
         return 30;
     }
     QCurl::QCNetworkRequest request(QUrl(QStringLiteral("https://example.invalid")));
+    if (request.diagnosticQueryPolicy() != QCurl::QCNetworkDiagnosticQueryPolicy::Redacted) {
+        return 31;
+    }
+    request.setDiagnosticQueryPolicy(QCurl::QCNetworkDiagnosticQueryPolicy::Full);
+    if (request.diagnosticQueryPolicy() != QCurl::QCNetworkDiagnosticQueryPolicy::Full) {
+        return 32;
+    }
     request.setFollowLocation(true);
     request.setLane(QCurl::QCNetworkLaneKey::control());
 

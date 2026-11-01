@@ -21,6 +21,7 @@
 #include <optional>
 
 namespace QCurl {
+enum class QCNetworkDiagnosticQueryPolicy;
 class QCNetworkReply;
 class QCNetworkAccessManagerPrivate;
 class QCNetworkRequest;
@@ -201,6 +202,8 @@ public:
     [[nodiscard]] QByteArray rawHeaderData() const;
     /// 返回请求 URL。
     [[nodiscard]] QUrl url() const;
+    /// 返回构造时捕获的请求级诊断策略；不随调用方后来修改 request 而变化。
+    [[nodiscard]] QCNetworkDiagnosticQueryPolicy diagnosticQueryPolicy() const;
     /// 返回当前 reply 对应的 HTTP 方法。
     [[nodiscard]] HttpMethod method() const noexcept;
     /// 返回响应状态码；原生传输终态采用 CURLINFO_RESPONSE_CODE，不以代理 CONNECT 状态码替代。

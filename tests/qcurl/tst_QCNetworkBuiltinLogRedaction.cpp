@@ -114,8 +114,8 @@ void tst_QCNetworkBuiltinLogRedaction::builtinLogs()
     const QString log = s_messages.join('\n');
     QVERIFY(!log.contains(QStringLiteral("synthetic-secret-417")));
     QVERIFY(!log.contains(QStringLiteral("synthetic-password-913")));
-    QVERIFY(log.contains(QStringLiteral("ordinary=visible")));
     QVERIFY(log.contains(QStringLiteral("[REDACTED]")));
+    QVERIFY(log.contains(QStringLiteral("?[REDACTED]")));
     if (mode == 2 || mode == 7) {
         QVERIFY(log.contains(QStringLiteral("HEADER_OUT")));
     }

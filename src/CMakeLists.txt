@@ -139,11 +139,13 @@ endforeach()
 # - 仅 `QCURL_INSTALL_HEADERS + QCurlConfig.h` 进入 Core component 安装面
 # - `QCNetworkLogger.h` 因 `QCNetworkAccessManager` 的对外接口依赖而进入 Core
 # - `QCNetworkCachePolicy.h` 因 `QCNetworkRequest` 的对外接口依赖而进入 Core
+# - `QCNetworkDiagnosticQueryPolicy.h` 因请求/响应诊断接口依赖而进入 Core
 # - `QCNetworkDefaultLogger.h` / `QCNetworkCancelToken.h` 作为 P1 低风险 Core helper 进入 Core component 安装面
 # - Cache concrete headers 完成 accessor/pimpl 重塑后作为 P2 Core 能力进入 Core component 安装面
 # - `QCMultipartFormData.h` 完成 shared-data 重塑后作为 P2 Core builder 进入 Core component 安装面
 # - ConnectionPool config / statistics 完成 accessor/shared-data 重塑后作为 P3 Core 管理面进入 Core component 安装面
 set(QCURL_INSTALL_HEADERS
+    QCNetworkDiagnosticQueryPolicy.h
     QCGlobal.h
     QCurlRuntime.h
     QCCookie.h

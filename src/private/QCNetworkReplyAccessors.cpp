@@ -119,6 +119,12 @@ QUrl QCNetworkReply::url() const
     return d->request.url();
 }
 
+QCNetworkDiagnosticQueryPolicy QCNetworkReply::diagnosticQueryPolicy() const
+{
+    Q_D(const QCNetworkReply);
+    return d->request.diagnosticQueryPolicy();
+}
+
 HttpMethod QCNetworkReply::method() const noexcept
 {
     Q_D(const QCNetworkReply);
