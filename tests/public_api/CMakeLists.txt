@@ -15,6 +15,7 @@ set_property(GLOBAL PROPERTY QCURL_STANDALONE_CONSUMER_SOURCE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_negative"
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_test_support_smoke"
     "${CMAKE_CURRENT_SOURCE_DIR}/consumer_version"
+    "${CMAKE_CURRENT_SOURCE_DIR}/consumer_trace"
 )
 
 if(NOT DEFINED QCURL_INSTALL_HEADERS OR QCURL_INSTALL_HEADERS STREQUAL "")
@@ -385,6 +386,11 @@ set_tests_properties(qcurl_public_api_other_extras_install_contract PROPERTIES
 )
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/consumer_tests.cmake")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/trace_tests.cmake")
+else()
+    message(STATUS "安装后 trace 的 ELF 来源核对仅在 Linux 注册；其他平台尚未验收")
+endif()
 
 add_test(
     NAME qcurl_public_api_version_contract
