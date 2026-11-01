@@ -13,6 +13,7 @@
 #include "QCNetworkDiagnosticQueryPolicy.h"
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QString>
 #include <QUrl>
 
@@ -27,36 +28,39 @@ namespace QCurl {
 namespace QCNetworkLogRedaction {
 
 /**
- * @brief 判断查询参数 key 是否敏感
- * @param keyLower 已转换为小写的 key
- * @return true 表示需要脱敏
- */
-[[nodiscard]] bool isSensitiveQueryKey(const QString &keyLower);
-
-/**
  * @brief 判断 HTTP 头 key 是否敏感
  * @param keyLower 已转换为小写的 key
  * @return true 表示需要脱敏
  */
 [[nodiscard]] bool isSensitiveHeaderKey(const QByteArray &keyLower);
 
+struct RedactedTraceLine
+{
+    QString text;
+    bool protectContinuation = false;
+    bool credentialRecord    = false;
+};
+
 /**
- * @brief 脱敏 URL 查询参数
+ * @brief 隐藏文本中的完整 URL query
  *
- * @param line 可能包含查询参数的任意文本
- * @return 脱敏后的文本；仅保证处理当前实现识别的敏感 key 集合
+ * @param line 可能包含 URL、request-target 或重定向位置的文本
+ * @return 脱敏后的文本；URL query 统一隐藏，URL userinfo/fragment 移除，不改普通文本中的 #。
+ * URL 记录无法完整判界或解析时仅输出固定安全标记；多行输入逐行处理并保留换行形式。
  */
 [[nodiscard]] QString redactSensitiveQueryParams(const QString &line);
 
 /**
  * @brief 脱敏 libcurl trace 行
  *
- * 支持对 trace 中的 URL 查询参数与 HTTP 头进行脱敏，并去除末尾 CR/LF。
+ * 一次解析同时处理 URL、HTTP 头和 Cookie/认证 TEXT，并决定后续缩进续行是否需保护。
+ * 疑似凭据或敏感头解析失败时只返回固定安全标记，不能按普通文本回退。
+ * 凭据记录另行标记：用户名可含换行和引号，文本行尾不能独自证明其原始记录已结束。
  *
  * @param line trace 行（原始字节）
- * @return 脱敏后的文本
+ * @return 脱敏文本及续行保护分类；不保存借用的原始字节。
  */
-[[nodiscard]] QString redactSensitiveTraceLine(const QByteArray &line);
+[[nodiscard]] RedactedTraceLine redactSensitiveTraceLine(QByteArrayView line);
 
 /**
  * @brief 脱敏 URL

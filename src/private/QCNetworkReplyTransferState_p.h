@@ -9,6 +9,7 @@
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyTrace_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "qbytedata_p.h"
 
@@ -30,6 +31,11 @@ struct QCCurlMultiDomain;
  */
 struct QCNetworkReplyTransferState
 {
+    explicit QCNetworkReplyTransferState(const QUrl &initialUrl,
+                                         QCNetworkDiagnosticQueryPolicy policy)
+        : trace(initialUrl, policy)
+    {}
+
     ~QCNetworkReplyTransferState()
     {
         curl_slist_free_all(resolveSlist);
@@ -65,6 +71,7 @@ struct QCNetworkReplyTransferState
 
     QCNetworkLoggerHandle logger;
     bool debugTraceEnabled = false;
+    Internal::ReplyTraceState trace;
 
     QString cookieFilePath;
     int cookieMode = 0;

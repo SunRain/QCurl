@@ -109,7 +109,22 @@ request.setDiagnosticQueryPolicy(QCurl::QCNetworkDiagnosticQueryPolicy::Full);
 Full **仅解开调用方初始请求 query**，不解开 userinfo、fragment、敏感头、服务器
 Location/重定向目标或自由文本错误。两档都移除 fragment；fragment-only 日志相对旧输出
 更严格。成功/错误 middleware 的初始 URL 字段和 Basic-over-HTTP 警告跟随 request 档位，
-错误文本仍脱敏。
+错误文本仍脱敏；trace 只允许每 QCurl attempt 的首个安全识别目标记录 Full，CONNECT
+不抢占机会，认证重发/重定向保持隐藏。没有该协议/backend 的真实 trace 证据时不能
+宣称全协议支持；普通 request URL 日志不依赖 trace。
+
+URL 内的单引号不代表 TEXT 记录结束。可识别的重定向 TEXT 保留完整脱敏 URL；无法
+完整判界的疑似 URL 记录只显示固定安全标记，不输出原始尾段。普通非 URL 的 `#` 保持
+可见；Full 不会改变这些规则。
+
+Cookie 添加/替换、Server/Proxy 认证的 TEXT 始终隐藏 Cookie 值和认证用户名，Full 不会
+解开它们。用户名可以含换行和引号，不能据此断定凭据记录已结束；后续 TEXT 在真实
+非 TEXT 协议事件提供可信边界前统一显示安全续段标记，未完成尾段仍受保护。这段期间
+正常 TEXT 也可能隐藏，边界之后恢复普通诊断；并非关闭全部 TEXT。
+
+trace 按 libcurl 实际规范化目标显示初始 query，
+因此含 `/./`、`/../` 的路径可能与普通 request URL 字段不同，但 query 编码不会改变。
+匹配失败仍隐藏 query，也不改变实际发送 URL 或为后续目标开放 Full。
 
 `setDebugTraceEnabled()` 控制是否开启 trace，`setLogger()` 决定输出目标，request 的
 `setDiagnosticQueryPolicy()` 决定初始 query 怎么呈现，三者互不隐含。reply 保留创建时的

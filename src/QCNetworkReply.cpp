@@ -26,7 +26,8 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              const QByteArray &body)
     : request(req)
     , httpMethod(method)
-    , transferState(QSharedPointer<QCNetworkReplyTransferState>::create())
+    , transferState(QSharedPointer<QCNetworkReplyTransferState>::create(req.url(),
+                                                                        req.diagnosticQueryPolicy()))
     , curlPlan(transferState->curlPlan)
     , multiProcessor(nullptr)
     , bodyBuffer(transferState->bodyBuffer)
@@ -101,6 +102,7 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
+    transferState->trace.stop();
     finishPoolRequest();
     // 如果正在运行，从多句柄管理器移除。
     // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理。

@@ -384,6 +384,7 @@ add_qcurl_test_with_preflight(
 
 # Logger / middleware / cookie / cancel token 相关测试
 add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测试
+target_compile_definitions(tst_QCNetworkLogger PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）
 target_compile_definitions(tst_QCNetworkMiddlewareIntegration PRIVATE QCURL_ENABLE_TEST_HOOKS)

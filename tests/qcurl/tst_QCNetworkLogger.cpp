@@ -9,7 +9,9 @@
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkTestSupport.h"
-#include "private/QCNetworkReplyCallbacks_p.h"
+#include "private/QCCurlMultiTransferRecord_p.h"
+#include "private/QCNetworkLogRedaction_p.h"
+#include "private/QCNetworkReplyTrace_p.h"
 
 #include <QCoreApplication>
 #include <QDate>
@@ -128,6 +130,18 @@ private Q_SLOTS:
     void testDebugTraceFlag();
     void testDebugTraceRedaction();
     void testDebugTraceSignedUrlRedaction();
+    void testTraceInitialTargetAndConnect();
+    void testTraceSensitiveHeaderChunks();
+    void testTraceBudgetAndTermination();
+    void testTraceTextCredentialsAndFragments();
+    void testTraceQuotedUrlRecordChunks_data();
+    void testTraceQuotedUrlRecordChunks();
+    void testRedactedUrlTextPreservesLineBoundaries();
+    void testTraceAmbiguousHeadersFailClosed();
+    void testTraceBlockPhaseAndStoppedStream();
+    void testTraceCredentialRecordChunks();
+    void testTraceNormalizedTargetMatching();
+    void testTraceCallbacksShareRedactionAndStop();
 
 private:
     QCNetworkAccessManager *m_manager = nullptr;
@@ -718,12 +732,14 @@ void TestQCNetworkLogger::testDebugTraceFlag()
 
 void TestQCNetworkLogger::testDebugTraceRedaction()
 {
-    const QByteArray raw  = QByteArray("GET /path?token=abc&foo=bar HTTP/1.1\r\n"
-                                       "Authorization: Bearer secret_token\r\n"
-                                       "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"
-                                       "Cookie: sessionid=abc\r\n"
-                                       "Set-Cookie: sid=def\r\n");
-    const QString message = Internal::formatReplyDebugTraceMessage(CURLINFO_HEADER_OUT, raw);
+    const QByteArray raw = QByteArray("GET /path?token=abc&foo=bar HTTP/1.1\r\n"
+                                      "Authorization: Bearer secret_token\r\n"
+                                      "Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"
+                                      "Cookie: sessionid=abc\r\n"
+                                      "Set-Cookie: sid=def\r\n");
+    Internal::ReplyTraceState trace;
+    trace.beginNetworkAttempt();
+    const QString message = trace.consume(CURLINFO_HEADER_OUT, raw);
 
     QVERIFY(!message.isEmpty());
     QVERIFY(message.startsWith("HEADER_OUT: "));
@@ -735,8 +751,8 @@ void TestQCNetworkLogger::testDebugTraceRedaction()
     QVERIFY(message.contains("Proxy-Authorization: [REDACTED]"));
     QVERIFY(message.contains("Cookie: [REDACTED]"));
     QVERIFY(message.contains("Set-Cookie: [REDACTED]"));
-    QVERIFY(message.contains("token=[REDACTED]"));
-    QVERIFY(message.contains("foo=bar"));
+    QVERIFY(message.contains("GET /path?[REDACTED] HTTP/1.1"));
+    QVERIFY(!message.contains("foo=bar"));
 }
 
 void TestQCNetworkLogger::testDebugTraceSignedUrlRedaction()
@@ -754,7 +770,9 @@ void TestQCNetworkLogger::testDebugTraceSignedUrlRedaction()
         "GET /normal/path?file=readme.txt&download=1&token=secret-token "
         "HTTP/1.1\r\n");
 
-    const QString message = Internal::formatReplyDebugTraceMessage(CURLINFO_HEADER_OUT, raw);
+    Internal::ReplyTraceState trace;
+    trace.beginNetworkAttempt();
+    const QString message = trace.consume(CURLINFO_HEADER_OUT, raw);
 
     QVERIFY(!message.contains(QStringLiteral("AWS4-HMAC-SHA256")));
     QVERIFY(!message.contains(QStringLiteral("AKIAIOSFODNN7EXAMPLE")));
@@ -770,19 +788,532 @@ void TestQCNetworkLogger::testDebugTraceSignedUrlRedaction()
     QVERIFY(!message.contains(QStringLiteral("text/plain")));
     QVERIFY(!message.contains(QStringLiteral("secret-token")));
 
-    QVERIFY(message.contains(QStringLiteral("X-Amz-Algorithm=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("X-Amz-Credential=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("response-content-disposition=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("Policy=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("Key-Pair-Id=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("X-Goog-Algorithm=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("alt=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("sv=[REDACTED]")));
-    QVERIFY(message.contains(QStringLiteral("rsct=[REDACTED]")));
+    for (const QString &path : {QStringLiteral("/s3/object"),
+                                QStringLiteral("/cf/video.mp4"),
+                                QStringLiteral("/gcs/object"),
+                                QStringLiteral("/azure/blob"),
+                                QStringLiteral("/normal/path")}) {
+        QVERIFY(message.contains(QStringLiteral("GET %1?[REDACTED] HTTP/1.1").arg(path)));
+    }
+    QVERIFY(!message.contains(QStringLiteral("file=readme.txt")));
+    QVERIFY(!message.contains(QStringLiteral("download=1")));
+}
 
-    QVERIFY(message.contains(QStringLiteral("file=readme.txt")));
-    QVERIFY(message.contains(QStringLiteral("download=1")));
-    QVERIFY(message.contains(QStringLiteral("token=[REDACTED]")));
+void TestQCNetworkLogger::testTraceInitialTargetAndConnect()
+{
+    Internal::ReplyTraceState trace(QUrl(QStringLiteral("https://example.invalid/path?page=2")),
+                                    QCNetworkDiagnosticQueryPolicy::Full);
+    trace.beginNetworkAttempt();
+    const auto format = [&trace](const QByteArray &raw) {
+        return trace.consume(CURLINFO_HEADER_OUT, raw);
+    };
+    QVERIFY(format(QByteArrayLiteral("CONNECT example.invalid:443 HTTP/1.1\r\n"
+                                     "Proxy-Authorization: Basic proxy-secret\r\n\r\n"))
+                .contains(QStringLiteral("Proxy-Authorization: [REDACTED]")));
+    format(QByteArrayLiteral("CONNECT example.invalid:443 HTTP/1.1\r\n\r\n"));
+    QVERIFY(format(QByteArrayLiteral("GET /path?page=2 HT")).isEmpty());
+    QVERIFY(format(QByteArrayLiteral("TP/2\r")).isEmpty());
+    const QString initial = format(QByteArrayLiteral("\nAuthorization: Bearer secret\r\n\r\n"));
+    QVERIFY(initial.contains(QStringLiteral("GET /path?page=2 HTTP/2")));
+    QVERIFY(initial.contains(QStringLiteral("Authorization: [REDACTED]")));
+    QVERIFY(!format(QByteArrayLiteral("GET /path?page=2 HTTP/2\r\n\r\n"))
+                 .contains(QStringLiteral("page=2")));
+    QVERIFY(!format(QByteArrayLiteral("GET /redirect?redirect-secret HTTP/2\r\n\r\n"))
+                 .contains(QStringLiteral("redirect-secret")));
+    trace.beginNetworkAttempt();
+    QVERIFY(format(QByteArrayLiteral("GET https://example.invalid/path?page=2 HTTP/1.1\r\n\r\n"))
+                .contains(QStringLiteral("page=2")));
+    trace.beginNetworkAttempt();
+    format(QByteArrayLiteral("NOT-A-TARGET\r\n\r\n"));
+    QVERIFY(!format(QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n"))
+                 .contains(QStringLiteral("page=2")));
+    trace.beginNetworkAttempt();
+    format(QByteArrayLiteral("GET /path HTTP/1.1\r\n\r\n"));
+    QVERIFY(!format(QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n"))
+                 .contains(QStringLiteral("page=2")));
+}
+
+void TestQCNetworkLogger::testTraceSensitiveHeaderChunks()
+{
+    const QByteArray header = QByteArrayLiteral("Authorization: Bearer ")
+                              + QByteArray(66138 - 22, 'x') + QByteArrayLiteral("\r\n");
+    QCOMPARE(header.size(), 66140);
+    Internal::ReplyTraceState trace;
+    trace.beginNetworkAttempt();
+    const QString first  = trace.consume(CURLINFO_HEADER_IN, header.first(65536));
+    const QString second = trace.consume(CURLINFO_HEADER_IN, header.sliced(65536));
+    QVERIFY(!first.contains(QString(20, QLatin1Char('x'))));
+    QVERIFY(!second.contains(QString(20, QLatin1Char('x'))));
+    for (const auto &name : {QByteArrayLiteral("Authorization"),
+                             QByteArrayLiteral("Cookie"),
+                             QByteArrayLiteral("Proxy-Authorization"),
+                             QByteArrayLiteral("Set-Cookie"),
+                             QByteArrayLiteral("X-Custom-Token")}) {
+        const QByteArray line = name + QByteArrayLiteral(": synthetic-secret\r\n");
+        for (qsizetype split = 0; split <= line.size(); ++split) {
+            trace.beginNetworkAttempt();
+            const QString firstPart  = trace.consume(CURLINFO_HEADER_IN, line.first(split));
+            const QString secondPart = trace.consume(CURLINFO_HEADER_IN, line.sliced(split));
+            const QString log        = firstPart + secondPart;
+            QVERIFY(!log.contains(QStringLiteral("synthetic-secret")));
+            QVERIFY(log.contains(QStringLiteral("[REDACTED]")));
+        }
+    }
+    trace.beginNetworkAttempt();
+    const QString folded = trace.consume(CURLINFO_HEADER_IN,
+                                         QByteArrayLiteral(
+                                             "Authorization: first-secret\r\n second-secret\r\n"));
+    QVERIFY(!folded.contains(QStringLiteral("first-secret")));
+    QVERIFY(!folded.contains(QStringLiteral("second-secret")));
+    trace.beginNetworkAttempt();
+    const QString foldedLocation
+        = trace.consume(CURLINFO_HEADER_IN,
+                        QByteArrayLiteral(
+                            "Location: /redirect?query-secret\r\n folded-query-secret\r\n"));
+    QVERIFY2(!foldedLocation.contains(QStringLiteral("query-secret")), qPrintable(foldedLocation));
+}
+
+void TestQCNetworkLogger::testTraceBudgetAndTermination()
+{
+    for (qsizetype size : {4095, 4096, 4097}) {
+        Internal::ReplyTraceState trace;
+        trace.beginNetworkAttempt();
+        QByteArray raw(size, 'a');
+        raw.append('\n');
+        const QString log = trace.consume(CURLINFO_TEXT, raw);
+        QVERIFY(log.size() <= 4096);
+        QCOMPARE(log.contains(QStringLiteral("discarded")), size > 4096);
+    }
+    Internal::ReplyTraceState trace(QUrl(QStringLiteral("https://example.invalid/path?page=2")),
+                                    QCNetworkDiagnosticQueryPolicy::Full);
+    trace.beginNetworkAttempt();
+    QVERIFY(trace.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("Authoriz")).isEmpty());
+    const QString incomingText = trace.consume(CURLINFO_TEXT,
+                                               QByteArrayLiteral("independent text\n"));
+    QCOMPARE(incomingText, QStringLiteral("TEXT: independent text"));
+    QVERIFY(!trace.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("ation: secret\r\n"))
+                 .contains(QStringLiteral("secret")));
+    const QByteArray utf8 = QStringLiteral("中文信息\r\n").toUtf8();
+    QVERIFY(trace.consume(CURLINFO_TEXT, utf8.first(1)).isEmpty());
+    QCOMPARE(trace.consume(CURLINFO_TEXT, utf8.sliced(1)), QStringLiteral("TEXT: 中文信息"));
+    QVERIFY(trace.consume(CURLINFO_HEADER_OUT, QByteArray(4097, 'a'))
+                .contains(QStringLiteral("discarded")));
+    QVERIFY(trace.consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("\n\r\n")).isEmpty());
+    QVERIFY(!trace.consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n"))
+                 .contains(QStringLiteral("page=2")));
+    QVERIFY(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("secret-tail")).isEmpty());
+    trace.stop();
+    QVERIFY(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("-tail\n")).isEmpty());
+    trace.beginNetworkAttempt();
+    QCOMPARE(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("new text\n")),
+             QStringLiteral("TEXT: new text"));
+    QVERIFY(
+        trace.consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+            .contains(QStringLiteral("page=2")));
+}
+
+void TestQCNetworkLogger::testTraceTextCredentialsAndFragments()
+{
+    Internal::ReplyTraceState trace({}, QCNetworkDiagnosticQueryPolicy::Full);
+    trace.beginNetworkAttempt();
+    for (const auto &name : {QByteArrayLiteral("authorization"),
+                             QByteArrayLiteral("cookie"),
+                             QByteArrayLiteral("proxy-authorization"),
+                             QByteArrayLiteral("x-token")}) {
+        const auto raw    = QByteArrayLiteral("[HTTP/2] [1] [") + name
+                            + QByteArrayLiteral(": bracket-secret]\n");
+        const QString log = trace.consume(CURLINFO_TEXT, raw);
+        QVERIFY(!log.contains(QStringLiteral("bracket-secret")));
+        QVERIFY(log.endsWith(QStringLiteral("[REDACTED]]")));
+    }
+    const QString text = trace.consume(
+        CURLINFO_TEXT,
+        QByteArrayLiteral("Issue another request: "
+                          "https://user:pass@example.invalid/path?q=query-secret#fragment-secret\n"
+                          "URL https://user:pass@example.invalid/path#fragment-only-secret\n"
+                          "ordinary issue #123\n"));
+    for (const auto &secret : {QStringLiteral("user:pass"),
+                               QStringLiteral("query-secret"),
+                               QStringLiteral("fragment-secret"),
+                               QStringLiteral("fragment-only-secret")}) {
+        QVERIFY(!text.contains(secret));
+    }
+    QVERIFY(text.contains(QStringLiteral("ordinary issue #123")));
+    const QString location = trace.consume(CURLINFO_HEADER_IN,
+                                           QByteArrayLiteral(
+                                               "Location: redirect#relative-fragment-secret\r\n"));
+    QVERIFY(!location.contains(QStringLiteral("relative-fragment-secret")));
+    for (const auto policy :
+         {QCNetworkDiagnosticQueryPolicy::Redacted, QCNetworkDiagnosticQueryPolicy::Full}) {
+        const QUrl url(
+            QStringLiteral("https://user:pass@example.invalid/path?visible=%2B#fragment-secret"));
+        const QString safe = QCNetworkLogRedaction::redactUrl(url, policy);
+        QVERIFY(!safe.contains(QStringLiteral("user:pass")));
+        QVERIFY(!safe.contains(QStringLiteral("fragment-secret")));
+        QCOMPARE(safe.contains(QStringLiteral("visible=%2B")),
+                 policy == QCNetworkDiagnosticQueryPolicy::Full);
+        const QUrl fragment(QStringLiteral("https://example.invalid/path#fragment-only-secret"));
+        QCOMPARE(QCNetworkLogRedaction::redactUrl(fragment, policy),
+                 QStringLiteral("https://example.invalid/path"));
+    }
+}
+
+void TestQCNetworkLogger::testTraceQuotedUrlRecordChunks_data()
+{
+    QTest::addColumn<QByteArray>("record");
+    QTest::addColumn<QString>("expected");
+    const QString redirectPrefix = QStringLiteral("Issue another request to this URL: '");
+    const QString discarded      = QStringLiteral("[REDACTED: ambiguous URL record]");
+    QTest::newRow("quoted-fragment")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next#prefix'fragment-marker'\r\n")
+        << redirectPrefix + QStringLiteral("http://example.invalid/next'");
+    QTest::newRow("prefixed-quoted-fragment")
+        << QByteArrayLiteral("[0-0] [HTTP] Issue another request to this URL: "
+                             "'http://example.invalid/next#prefix'fragment-marker'\r\n")
+        << redirectPrefix + QStringLiteral("http://example.invalid/next'");
+    QTest::newRow("quoted-userinfo")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://user:prefix'credential-marker@example.invalid/next'\r\n")
+        << redirectPrefix + QStringLiteral("http://example.invalid/next'");
+    QTest::newRow("quoted-query-userinfo-fragment")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://user:prefix'credential-marker@example.invalid/next"
+                             "?route=query-marker#prefix'fragment-marker'\r\n")
+        << redirectPrefix + QStringLiteral("http://example.invalid/next?[REDACTED]'");
+    QTest::newRow("quote-in-path-is-not-a-record-boundary")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next'path#prefix'fragment-marker'\r\n")
+        << redirectPrefix + QStringLiteral("http://example.invalid/next'path'");
+    QTest::newRow("unquoted-fragment")
+        << QByteArrayLiteral("URL http://example.invalid/next#prefix'fragment-marker\r\n")
+        << QStringLiteral("URL http://example.invalid/next");
+    QTest::newRow("unquoted-userinfo")
+        << QByteArrayLiteral("URL http://user:prefix'credential-marker@example.invalid/next\r\n")
+        << QStringLiteral("URL http://example.invalid/next");
+    QTest::newRow("unknown-quoted-url-wrapper")
+        << QByteArrayLiteral("URL 'http://user:prefix'credential-marker@example.invalid/next'\r\n")
+        << discarded;
+    QTest::newRow("bracketed-relative-target")
+        << QByteArrayLiteral("[HTTP/2] [1] [:path: /next#prefix'fragment-marker]\r\n")
+        << QStringLiteral("[HTTP/2] [1] [:path: /next]");
+    QTest::newRow("missing-closing-quote")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next#fragment-marker\r\n")
+        << discarded;
+    QTest::newRow("unexpected-record-suffix")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next#prefix' fragment-marker\r\n")
+        << discarded;
+    QTest::newRow("invalid-quoted-fragment-space")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next#prefix fragment-marker'\r\n")
+        << discarded;
+    QTest::newRow("invalid-quoted-fragment-delimiter")
+        << QByteArrayLiteral("Issue another request to this URL: "
+                             "'http://example.invalid/next#prefix<fragment-marker'\r\n")
+        << discarded;
+    QTest::newRow("unquoted-fragment-ambiguous-tail")
+        << QByteArrayLiteral("URL http://example.invalid/next#prefix fragment-marker\r\n")
+        << discarded;
+    QTest::newRow("ordinary-text-hash")
+        << QByteArrayLiteral("ordinary issue #123\r\n") << QStringLiteral("ordinary issue #123");
+}
+
+void TestQCNetworkLogger::testTraceQuotedUrlRecordChunks()
+{
+    QFETCH(QByteArray, record);
+    QFETCH(QString, expected);
+    for (const auto policy :
+         {QCNetworkDiagnosticQueryPolicy::Redacted, QCNetworkDiagnosticQueryPolicy::Full}) {
+        // 穷举分块位置，包括引号、CR/LF 和秘密中间；未完成记录不能提前输出。
+        for (qsizetype split = 0; split <= record.size(); ++split) {
+            Internal::ReplyTraceState trace({}, policy);
+            trace.beginNetworkAttempt();
+            const QString first  = trace.consume(CURLINFO_TEXT, record.first(split));
+            const QString second = trace.consume(CURLINFO_TEXT, record.sliced(split));
+            const QString log    = first + second;
+            if (split < record.size()) {
+                QVERIFY(first.isEmpty());
+            }
+            QCOMPARE(log, QStringLiteral("TEXT: ") + expected);
+            for (const auto &marker : {QStringLiteral("credential-marker"),
+                                       QStringLiteral("fragment-marker"),
+                                       QStringLiteral("query-marker")}) {
+                QVERIFY2(!log.contains(marker), qPrintable(log));
+            }
+            QCOMPARE(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("ordinary issue #123\r\n")),
+                     QStringLiteral("TEXT: ordinary issue #123"));
+        }
+    }
+}
+
+void TestQCNetworkLogger::testRedactedUrlTextPreservesLineBoundaries()
+{
+    const QString raw = QStringLiteral(
+        "ordinary issue #123\r\n"
+        "Issue another request to this URL: "
+        "'http://example.invalid/next#prefix'fragment-marker'\r\n"
+        "URL 'http://user:prefix'credential-marker@example.invalid/next'\n"
+        "ordinary issue #456");
+    const QString expected = QStringLiteral(
+        "ordinary issue #123\r\n"
+        "Issue another request to this URL: 'http://example.invalid/next'\r\n"
+        "[REDACTED: ambiguous URL record]\n"
+        "ordinary issue #456");
+    // errorString 也可包含多行；一个畸形 URL 不能吞掉后续安全行或把其原文拼回。
+    QCOMPARE(QCNetworkLogRedaction::redactSensitiveQueryParams(raw), expected);
+}
+
+void TestQCNetworkLogger::testTraceAmbiguousHeadersFailClosed()
+{
+    Internal::ReplyTraceState trace({}, QCNetworkDiagnosticQueryPolicy::Full);
+    trace.beginNetworkAttempt();
+    for (const auto &raw : {
+             QByteArrayLiteral("[HTTP/2] [1] [authorization: header-secret]\n folded-secret\n"),
+             QByteArrayLiteral("[HTTP/2] [1] [ authorization : header-secret]\n"),
+             QByteArrayLiteral("[HTTP/2] [1] [x-public: value] [cookie: header-secret]\n"),
+             QByteArrayLiteral("[HTTP/2] [1] [authorization header-secret]\n"),
+             QByteArrayLiteral("Authorization: header-secret [x-public: public-value]\n"),
+             QByteArrayLiteral("Cookie: header-secret [x-public: public-value]\n"),
+             QByteArrayLiteral("Authorization header-secret\n"),
+             QByteArrayLiteral("Cookie\t header-secret\n folded-secret\n"),
+             QByteArrayLiteral("URL https://user:password-secret@example.invalid/#fragment-secret "
+                               "[authorization: header-secret]\n"),
+         }) {
+        trace.beginNetworkAttempt();
+        const QString log = trace.consume(CURLINFO_TEXT, raw);
+        QVERIFY(!log.isEmpty());
+        for (const auto &secret : {QStringLiteral("header-secret"),
+                                   QStringLiteral("folded-secret"),
+                                   QStringLiteral("password-secret"),
+                                   QStringLiteral("fragment-secret")}) {
+            QVERIFY2(!log.contains(secret), qPrintable(log));
+        }
+        QVERIFY(log.contains(QStringLiteral("[REDACTED")));
+    }
+    trace.beginNetworkAttempt();
+    QCOMPARE(trace.consume(CURLINFO_TEXT,
+                           QByteArrayLiteral("[HTTP/2] [1] [:path: /resource?query-secret]\n")),
+             QStringLiteral("TEXT: [HTTP/2] [1] [:path: /resource?[REDACTED]]"));
+}
+
+void TestQCNetworkLogger::testTraceBlockPhaseAndStoppedStream()
+{
+    Internal::ReplyTraceState trace(QUrl(QStringLiteral("https://example.invalid/path?page=2")),
+                                    QCNetworkDiagnosticQueryPolicy::Full);
+    trace.beginNetworkAttempt();
+    const QString misplacedTarget = trace.consume(CURLINFO_HEADER_OUT,
+                                                  QByteArrayLiteral(
+                                                      "CONNECT example.invalid:443 HTTP/1.1\r\n"
+                                                      "GET /path?page=2 HTTP/1.1\r\n\r\n"));
+    QVERIFY(!misplacedTarget.contains(QStringLiteral("page=2")));
+
+    QVERIFY(trace.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("Authorization: secret")).isEmpty());
+    trace.stop();
+    QVERIFY(trace.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("-tail\r\n")).isEmpty());
+    QVERIFY(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("late-secret\n")).isEmpty());
+    QVERIFY(trace.consume(CURLINFO_DATA_IN, QByteArrayLiteral("late-payload")).isEmpty());
+    trace.beginNetworkAttempt();
+    QVERIFY(
+        trace.consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+            .contains(QStringLiteral("page=2")));
+}
+
+void TestQCNetworkLogger::testTraceCredentialRecordChunks()
+{
+    const QList<QByteArray> records = {
+        QByteArrayLiteral("Added cookie session=\"credential-marker\" for domain example.invalid, "
+                          "path /, expire 0\r\n"),
+        QByteArrayLiteral("Replaced cookie session=\"credential-marker\" for domain "
+                          "example.invalid, path /, expire 0\r\n"),
+        QByteArrayLiteral("Server auth using Basic with user 'credential-marker'\r\n"),
+        QByteArrayLiteral("Proxy auth using Digest with user 'credential-marker'\r\n"),
+        QByteArrayLiteral("Added cookie session=credential-marker\r\n"),
+        QByteArrayLiteral("Replaced cookie credential-marker\r\n"),
+        QByteArrayLiteral("Server auth using Basic with user credential-marker\r\n"),
+        QByteArrayLiteral("Proxy auth using credential-marker with user 'name'\r\n"),
+        QByteArrayLiteral("[0-0] Added cookie session=\"credential-marker\" for domain "
+                          "example.invalid, path /, expire 0\r\n"),
+        QByteArrayLiteral("[0-0] [HTTP] Server auth using Basic with user 'credential-marker'\r\n"),
+        QByteArrayLiteral("[0-0] Proxy auth using credential-marker with user 'name'\r\n"),
+        QByteArrayLiteral("\tadded cookie session=credential-marker\r\n"),
+        QByteArrayLiteral("Server auth using Basic with user 'credential-marker\n"
+                          "credential-marker\ncredential-marker'\r\n"),
+        QByteArrayLiteral("Proxy auth using Basic with user 'credential-marker'\n"
+                          "credential-marker'\r\n"),
+    };
+    for (const auto policy :
+         {QCNetworkDiagnosticQueryPolicy::Redacted, QCNetworkDiagnosticQueryPolicy::Full}) {
+        for (const auto &record : records) {
+            for (qsizetype split = 0; split <= record.size(); ++split) {
+                Internal::ReplyTraceState trace({}, policy);
+                trace.beginNetworkAttempt();
+                const QString first  = trace.consume(CURLINFO_TEXT, record.first(split));
+                const QString second = trace.consume(CURLINFO_TEXT, record.sliced(split));
+                const QString log    = first + second;
+                QVERIFY(!log.contains(QStringLiteral("credential-marker")));
+                QVERIFY(log.contains(QStringLiteral("[REDACTED")));
+                const QString continuation = trace.consume(CURLINFO_TEXT,
+                                                           QByteArrayLiteral(
+                                                               " folded-credential-marker\r\n"));
+                QVERIFY(!continuation.contains(QStringLiteral("credential-marker")));
+                // 文本内的引号也可能来自用户名；直到真实协议事件才解除续段保护。
+                QVERIFY(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("credential-marker'\r\n"))
+                            .contains(QStringLiteral("credential continuation")));
+                static_cast<void>(
+                    trace.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("HTTP/1.1 200 OK\r\n")));
+                QCOMPARE(trace.consume(CURLINFO_TEXT, QByteArrayLiteral("ordinary issue #123\r\n")),
+                         QStringLiteral("TEXT: ordinary issue #123"));
+            }
+        }
+        Internal::ReplyTraceState oversized({}, policy);
+        oversized.beginNetworkAttempt();
+        const QByteArray raw = QByteArrayLiteral("Server auth using Basic with user '")
+                               + QByteArray(4097, 'x')
+                               + QByteArrayLiteral("\ncredential-marker'\r\n");
+        const QString log    = oversized.consume(CURLINFO_TEXT, raw);
+        QVERIFY(log.contains(QStringLiteral("discarded")));
+        QVERIFY(!log.contains(QStringLiteral("credential-marker")));
+        QVERIFY(log.size() <= 4096);
+        static_cast<void>(oversized.consume(CURLINFO_HEADER_OUT,
+                                            QByteArrayLiteral("GET /path HTTP/1.1\r\n\r\n")));
+        QCOMPARE(oversized.consume(CURLINFO_TEXT, QByteArrayLiteral("ordinary issue #123\r\n")),
+                 QStringLiteral("TEXT: ordinary issue #123"));
+
+        Internal::ReplyTraceState interleaved({}, policy);
+        interleaved.beginNetworkAttempt();
+        static_cast<void>(
+            interleaved.consume(CURLINFO_TEXT,
+                                QByteArrayLiteral(
+                                    "Server auth using Basic with user 'credential-marker\n")));
+        QVERIFY(interleaved.consume(CURLINFO_TEXT, QByteArrayLiteral("credential-")).isEmpty());
+        static_cast<void>(
+            interleaved.consume(CURLINFO_HEADER_IN, QByteArrayLiteral("HTTP/1.1 200 OK\r\n")));
+        QVERIFY(!interleaved.consume(CURLINFO_TEXT, QByteArrayLiteral("marker'\r\n"))
+                     .contains(QStringLiteral("marker")));
+        static_cast<void>(interleaved.consume(CURLINFO_DATA_IN, QByteArrayLiteral("body")));
+        QCOMPARE(interleaved.consume(CURLINFO_TEXT, QByteArrayLiteral("ordinary issue #123\r\n")),
+                 QStringLiteral("TEXT: ordinary issue #123"));
+    }
+}
+
+void TestQCNetworkLogger::testTraceNormalizedTargetMatching()
+{
+    const QUrl initial(
+        QStringLiteral("http://example.invalid:80/a/../path?encoded=%2B&query=marker"));
+    for (const auto &target :
+         {QByteArrayLiteral("/path?encoded=%2B&query=marker"),
+          QByteArrayLiteral("http://example.invalid/path?encoded=%2B&query=marker")}) {
+        Internal::ReplyTraceState trace(initial, QCNetworkDiagnosticQueryPolicy::Full);
+        trace.beginNetworkAttempt();
+        const QByteArray raw = QByteArrayLiteral("GET ") + target
+                               + QByteArrayLiteral(" HTTP/1.1\r\n\r\n");
+        const QString log    = trace.consume(CURLINFO_HEADER_OUT, raw);
+        QVERIFY(log.contains(QStringLiteral("encoded=%2B&query=marker")));
+        QVERIFY(!trace.consume(CURLINFO_HEADER_OUT, raw).contains(QStringLiteral("query=marker")));
+    }
+    for (const auto &target :
+         {QByteArrayLiteral("/path?encoded=%2B&query=other-secret"),
+          QByteArrayLiteral("/a/../path?encoded=%2B&query=marker"),
+          QByteArrayLiteral("http://other.invalid/path?encoded=%2B&query=marker"),
+          QByteArrayLiteral("/path?encoded=+&query=marker")}) {
+        Internal::ReplyTraceState trace(initial, QCNetworkDiagnosticQueryPolicy::Full);
+        trace.beginNetworkAttempt();
+        const QByteArray raw = QByteArrayLiteral("GET ") + target
+                               + QByteArrayLiteral(" HTTP/1.1\r\n\r\n");
+        const QString log    = trace.consume(CURLINFO_HEADER_OUT, raw);
+        QVERIFY(!log.contains(QStringLiteral("query=")));
+        QVERIFY(
+            !trace
+                 .consume(CURLINFO_HEADER_OUT,
+                          QByteArrayLiteral("GET /path?encoded=%2B&query=marker HTTP/1.1\r\n\r\n"))
+                 .contains(QStringLiteral("query=marker")));
+    }
+    for (bool hasQuery : {false, true}) {
+        QUrl url(QStringLiteral("http://example.invalid/a/../path"));
+        if (hasQuery) {
+            url.setQuery(QStringLiteral(""));
+        }
+        Internal::ReplyTraceState trace(url, QCNetworkDiagnosticQueryPolicy::Full);
+        trace.beginNetworkAttempt();
+        const QString log = trace.consume(CURLINFO_HEADER_OUT,
+                                          QByteArrayLiteral("GET /path? HTTP/1.1\r\n\r\n"));
+        QCOMPARE(log.contains(QStringLiteral("[REDACTED]")), !hasQuery);
+        QVERIFY(!trace
+                     .consume(CURLINFO_HEADER_OUT,
+                              QByteArrayLiteral("GET /path?later-query-marker HTTP/1.1\r\n\r\n"))
+                     .contains(QStringLiteral("later-query-marker")));
+    }
+    Internal::ReplyTraceState invalid(QUrl(QStringLiteral("http://[invalid/path?query=marker")),
+                                      QCNetworkDiagnosticQueryPolicy::Full);
+    invalid.beginNetworkAttempt();
+    const QString unavailable = invalid.consume(CURLINFO_HEADER_OUT,
+                                                QByteArrayLiteral(
+                                                    "GET /path?query=marker HTTP/1.1\r\n\r\n"));
+    QVERIFY(unavailable.contains(QStringLiteral("initial target unavailable")));
+    QVERIFY(!unavailable.contains(QStringLiteral("query=marker")));
+    QVERIFY(!invalid
+                 .consume(CURLINFO_HEADER_OUT,
+                          QByteArrayLiteral("GET /path?query=marker HTTP/1.1\r\n\r\n"))
+                 .contains(QStringLiteral("query=marker")));
+}
+
+void TestQCNetworkLogger::testTraceCallbacksShareRedactionAndStop()
+{
+    for (const auto policy :
+         {QCNetworkDiagnosticQueryPolicy::Redacted, QCNetworkDiagnosticQueryPolicy::Full}) {
+        QCNetworkRequest request(QUrl(QStringLiteral("http://example.invalid/path?query=marker")));
+        request.setDiagnosticQueryPolicy(policy);
+        QCNetworkReply observer(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCNetworkReplyPrivate snapshot(&observer,
+                                       request,
+                                       HttpMethod::Get,
+                                       Internal::makeEmptyRequestBody(),
+                                       {});
+        QCNetworkDefaultLogger *capture = nullptr;
+        const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
+        capture->enableConsoleOutput(false);
+        capture->setMinLogLevel(NetworkLogLevel::Debug);
+        snapshot.logger            = logger;
+        snapshot.debugTraceEnabled = true;
+        QCCurlMultiTransferRecord record{QCCurlHandleManager{}};
+        record.bindObserver(snapshot.transferState, &observer);
+        QByteArray raw  = QByteArrayLiteral("Added cookie session=\"callback-credential-marker\" "
+                                            "for domain example.invalid, path /, expire 0\r\n");
+        QByteArray tail = QByteArrayLiteral(
+            "Server auth using Basic with user 'unfinished-credential");
+        for (bool multi : {false, true}) {
+            snapshot.transferState->trace.beginNetworkAttempt();
+            const auto callback = [&](QByteArray &bytes) {
+                return multi ? QCCurlMultiTransferRecord::debugCallback(nullptr,
+                                                                        CURLINFO_TEXT,
+                                                                        bytes.data(),
+                                                                        static_cast<size_t>(
+                                                                            bytes.size()),
+                                                                        &record)
+                             : QCNetworkReplyPrivate::curlDebugCallback(nullptr,
+                                                                        CURLINFO_TEXT,
+                                                                        bytes.data(),
+                                                                        static_cast<size_t>(
+                                                                            bytes.size()),
+                                                                        &snapshot);
+            };
+            const qsizetype before = capture->entries().size();
+            QCOMPARE(callback(raw), 0);
+            QCOMPARE(capture->entries().size(), before + 1);
+            QCOMPARE(capture->entries().last().message(),
+                     QStringLiteral("TEXT: Added cookie [REDACTED]"));
+            QCOMPARE(callback(tail), 0);
+            QCOMPARE(capture->entries().size(), before + 1);
+            record.clearObserver();
+            QByteArray ending = QByteArrayLiteral("-tail'\r\n");
+            QCOMPARE(callback(ending), 0);
+            QCOMPARE(callback(raw), 0);
+            QCOMPARE(capture->entries().size(), before + 1);
+            record.bindObserver(snapshot.transferState, &observer);
+        }
+    }
 }
 
 QTEST_MAIN(TestQCNetworkLogger)

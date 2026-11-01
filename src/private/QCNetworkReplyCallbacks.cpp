@@ -3,14 +3,12 @@
  * @brief QCNetworkReply curl callbacks 与传输 pause/backpressure 实现。
  */
 
-#include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
 #include "private/QCNetworkReplySignal_p.h"
 #include "private/QCNetworkReplyTransferState_p.h"
 
 #include <QByteArray>
 #include <QDebug>
-#include <QStringList>
 
 namespace QCurl::Internal {
 namespace {
@@ -215,55 +213,6 @@ int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
     }
 
     return 0;
-}
-
-QString formatReplyDebugTraceMessage(curl_infotype type, const QByteArray &raw)
-{
-    const auto redactBlock = [](const QByteArray &block) {
-        QStringList lines;
-        for (const QByteArray &line : block.split('\n')) {
-            if (!line.isEmpty()) {
-                lines.append(QCNetworkLogRedaction::redactSensitiveTraceLine(line));
-            }
-        }
-        return lines.join(QStringLiteral("\n"));
-    };
-
-    QString message;
-    switch (type) {
-        case CURLINFO_TEXT:
-            message = QStringLiteral("TEXT: %1").arg(redactBlock(raw).trimmed());
-            break;
-        case CURLINFO_HEADER_IN:
-            message = QStringLiteral("HEADER_IN: %1").arg(redactBlock(raw).trimmed());
-            break;
-        case CURLINFO_HEADER_OUT:
-            message = QStringLiteral("HEADER_OUT: %1").arg(redactBlock(raw).trimmed());
-            break;
-        case CURLINFO_DATA_IN:
-            message = QStringLiteral("DATA_IN: len=%1").arg(static_cast<qulonglong>(raw.size()));
-            break;
-        case CURLINFO_DATA_OUT:
-            message = QStringLiteral("DATA_OUT: len=%1").arg(static_cast<qulonglong>(raw.size()));
-            break;
-        case CURLINFO_SSL_DATA_IN:
-            message = QStringLiteral("SSL_DATA_IN: len=%1").arg(static_cast<qulonglong>(raw.size()));
-            break;
-        case CURLINFO_SSL_DATA_OUT:
-            message = QStringLiteral("SSL_DATA_OUT: len=%1").arg(static_cast<qulonglong>(raw.size()));
-            break;
-        default:
-            message = QStringLiteral("TRACE_%1: len=%2")
-                          .arg(static_cast<int>(type))
-                          .arg(static_cast<qulonglong>(raw.size()));
-            break;
-    }
-
-    constexpr qsizetype kMaximumTraceLength = 4096;
-    if (message.size() > kMaximumTraceLength) {
-        message = message.left(kMaximumTraceLength) + QStringLiteral("…(truncated)");
-    }
-    return message;
 }
 
 } // namespace QCurl::Internal

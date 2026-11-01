@@ -117,6 +117,8 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     }
 
     d->diagnosticCurlCode = 0;
+    // 本入口也供 mock/chaos 清理；只有真实网络 execute 才重新开放 trace 的目标资格。
+    d->transferState->trace.stop();
     if (setIdleState) {
         d->state     = ReplyState::Idle;
         d->errorCode = NetworkError::NoError;

@@ -60,12 +60,46 @@ pending，改回 applied 撤回 pending。active users 和临时 Cookie 操作�
 
 ## diagnostics 与 public accessor 边界
 
-public accessor 保留调用方主动读取 raw header、raw body 摘要和 error string 的能力，不因脱敏而删除或弱化。自动 diagnostics、logger、持久化证据和下游 facade 则统一使用脱敏逻辑，仅输出 redacted summary，不写出 Authorization、Cookie、token、signed ticket、signed URL query value 或 verbose trace 中的原始敏感数据。
+public accessor 保留调用方主动读取 raw header、raw body 摘要和 error string 的能力，不因脱敏而删除或弱化。自动 diagnostics、logger 和内建 middleware 使用同一脱敏边界；默认不写出 query、Authorization、Cookie、signed ticket 或 verbose trace 中的原始敏感数据。宿主持久化证据与自定义 facade 应遵循各自的敏感数据治理，不属于内建日志自动保证。
 
-URL 脱敏分两种情况：
+请求级 `QCNetworkDiagnosticQueryPolicy` 仅提供 `Redacted`（默认）与 `Full`。Redacted
+隐藏整个 query（包括无等号的不透明授权、普通参数名和值），显示为 `?[REDACTED]`，不
+按参数名黑名单猜测安全性。显式 Full 仅允许调用方初始 URL 的 query 在 request、
+middleware、开始日志与每个 QCurl 网络 attempt 的首个可识别 HEADER_OUT 目标记录可见。
+成功/错误 middleware 的初始 URL 字段跟随策略；错误自由文本不随 Full 放开。
 
-- 命中 AWS S3 / CloudFront、Google Cloud Storage、Azure SAS 或通用 signature marker：脱敏全部 query value，保留 scheme、host、path 和 query key，不将整个 URL 隐藏到不可诊断。
-- 未命中签名 marker：只按 sensitive-key 规则脱敏 token、cookie、secret、password、api key 等参数，保留非敏感 query value 的诊断价值。
+两档都移除 URL userinfo/fragment，隐藏敏感头、TEXT/HEADER_IN、Location、redirect
+完成日志及后续目标 query。fragment-only 的默认日志移除 fragment，是对原输出的安全
+收敛。trace 按逻辑行跨 callback 处理，不把分块边界当行边界；超出每通道 4,096 原始字节
+预算或无法识别时丢弃原始行/续段，结束时不输出未完成尾段。CONNECT/407 不消费初始目标
+机会，origin 认证重发和重定向不重新开放，只有新的 QCurl attempt 复位。最终 message
+总长（含前缀/标记）不超过 4,096 个 QString UTF-16 单元，限长发生在脱敏之后。
+
+TEXT 中的 URL 按完整记录处理，不能把 URL 内的合法单引号当成结束边界。libcurl
+重定向记录先提取完整 URL，再统一隐藏 query 并移除 userinfo/fragment。未知包装、畸形
+URL 或额外尾段无法可靠判界时整条显示固定安全标记，不拼回原文；普通非 URL 文本中的
+`#` 保持可见，不因此关闭全部 TEXT。
+
+Cookie 添加/替换与 Server/Proxy auth 的 TEXT 不是 HTTP 头，仍必须隐藏 Cookie 凭据
+和认证用户名；只保留安全操作/认证方式摘要。疑似凭据记录解析失败时只输出固定标记，
+不能把原片段作为普通 TEXT 回退。用户名可含 LF 和引号，凭据记录后的无缩进尾行也
+必须保护；不能凭行尾或引号猜测记录结束。识别出的凭据或超限 TEXT 启用凭据续段保护，
+直到真实非 TEXT 协议事件且原始尾段已完整消费才解除；跨类型的未完成尾段不丢失状态。
+这段区间内正常 TEXT 也可能统一显示固定安全标记，边界后普通无凭据 TEXT 恢复可见。
+这是有限的诊断可见性取舍，不关闭 trace、Cookie engine 或认证，也不进行任意业务文本
+的通用秘密扫描。敏感头名已出现却缺合法分隔符的记录同样 fail-closed。
+
+trace 初始目标以 libcurl 默认路径规范化后的诊断基准匹配，覆盖 `/./`、`/../` 和代理
+absolute-form 默认端口。匹配仍严格核对编码 query（包括 `%2B`）；不规范化后续目标来
+忽略差异。基准构造失败时显式标记并保持 Redacted，不能给后来的目标重新发放资格。
+这不设置 `CURLOPT_PATH_AS_IS`，普通 URL 字段仍保持原 request 的编码路径，trace 则显示
+实际发送目标。旧状态清理、mock/chaos reset、终态与解绑只停止 trace，只有真实网络执行
+入口开启新 attempt；策略快照与流状态由内部行为类封装，不另建 callback owner。
+
+诊断 URL 使用 `FullyEncoded`；实际请求、cache key、request equality、CurlPlan digest
+和 raw accessor 不变。trace 开关、logger 目标与 request query 策略各自独立。不同协议的
+目标记录必须有真实 callback 证据，不能用 formatter 单元测试宣称 HTTP/3 已通过。宿主／
+自定义 middleware 主动打印原始数据不属于内建日志保证。
 
 ## 发布边界与验证入口
 

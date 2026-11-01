@@ -6,6 +6,7 @@ set(QCURL_FEATURE_SOURCES
     private/QCRequestPipeline.cpp
     private/QCNetworkReplyBodySource.cpp
     private/QCNetworkReplyCallbacks.cpp
+    private/QCNetworkReplyTrace.cpp
     private/QCNetworkReplyFlowControl.cpp
     private/QCNetworkReplyResponse.cpp
     private/QCNetworkReplyRuntime.cpp
@@ -90,6 +91,7 @@ set(QCURL_FEATURE_SOURCES
 )
 
 set(QCURL_FEATURE_HEADERS
+    QCNetworkDiagnosticQueryPolicy.h
     QCGlobal.h
     QCBlockingNetworkClient.h
     QCBlockingNetworkResult.h
@@ -103,6 +105,7 @@ set(QCURL_FEATURE_HEADERS
     private/QCMultipartHeaderEncoding_p.h
     private/QCNetworkReplyBodySource_p.h
     private/QCNetworkReplyCallbacks_p.h
+    private/QCNetworkReplyTrace_p.h
     private/QCNetworkReplyExecution_p.h
     private/QCNetworkReplyFlowControl_p.h
     private/QCNetworkReplyMockChaos_p.h

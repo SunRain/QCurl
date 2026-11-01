@@ -40,7 +40,6 @@ int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
                               curl_off_t dlnow,
                               curl_off_t ultotal,
                               curl_off_t ulnow);
-[[nodiscard]] QString formatReplyDebugTraceMessage(curl_infotype type, const QByteArray &raw);
 
 } // namespace Internal
 

@@ -13,8 +13,11 @@
 #include "QCGlobal.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkConnectionPoolManager.h"
+#include "QCNetworkDefaultLogger.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 #include "QCNetworkError.h"
 #include "QCNetworkHttpVersion.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
@@ -33,7 +36,9 @@
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSet>
+#include <QSharedPointer>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
@@ -63,6 +68,86 @@ bool outputSuggestsLocalListenRestriction(const QString &output)
 
 } // namespace
 
+/// 固定转发到本地 TLS 夹具的 CONNECT 代理；首次 407 用于验证原生认证重发与 trace 资格。
+class ConnectTestProxy final : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit ConnectTestProxy(quint16 upstreamPort)
+        : m_upstreamPort(upstreamPort)
+    {
+        connect(&m_server, &QTcpServer::newConnection, this, [this] {
+            while (auto *client = m_server.nextPendingConnection()) {
+                acceptSocket(client);
+            }
+        });
+    }
+
+    bool start() { return m_server.listen(QHostAddress::LocalHost, 0); }
+    quint16 port() const { return m_server.serverPort(); }
+    QList<QByteArray> requests() const { return m_requests; }
+    QString errorString() const { return m_errorString; }
+
+private:
+    Q_DISABLE_COPY_MOVE(ConnectTestProxy)
+
+    void acceptSocket(QTcpSocket *client)
+    {
+        auto pending = QSharedPointer<QByteArray>::create();
+        connect(client, &QTcpSocket::disconnected, client, &QObject::deleteLater);
+        connect(client, &QTcpSocket::readyRead, this, [this, client, pending] {
+            pending->append(client->readAll());
+            const qsizetype end = pending->indexOf("\r\n\r\n");
+            if (end < 0) {
+                if (pending->size() > 16384) {
+                    m_errorString = QStringLiteral("CONNECT 请求头超过夹具上限");
+                    client->disconnectFromHost();
+                }
+                return;
+            }
+            disconnect(client, &QTcpSocket::readyRead, this, nullptr);
+            const QByteArray request = pending->first(end + 4);
+            m_requests.append(request);
+            if (!request.startsWith("CONNECT ")) {
+                m_errorString = QStringLiteral("代理未收到 CONNECT 请求");
+                client->disconnectFromHost();
+                return;
+            }
+            if (!request.toLower().contains("\r\nproxy-authorization:")) {
+                client->write("HTTP/1.1 407 Proxy Authentication Required\r\n"
+                              "Proxy-Authenticate: Basic realm=\"qcurl-fixture\"\r\n"
+                              "Content-Length: 0\r\nConnection: close\r\n\r\n");
+                client->disconnectFromHost();
+                return;
+            }
+            auto *upstream = new QTcpSocket(client);
+            connect(upstream, &QTcpSocket::connected, client, [client, upstream, pending, end] {
+                client->write("HTTP/1.1 200 Connection established\r\n\r\n");
+                upstream->write(pending->sliced(end + 4));
+                upstream->write(client->readAll());
+                connect(client, &QTcpSocket::readyRead, upstream, [client, upstream] {
+                    upstream->write(client->readAll());
+                });
+            });
+            connect(upstream, &QTcpSocket::readyRead, client, [client, upstream] {
+                client->write(upstream->readAll());
+            });
+            connect(upstream, &QTcpSocket::disconnected, client, &QTcpSocket::disconnectFromHost);
+            connect(upstream, &QTcpSocket::errorOccurred, client, [this, client, upstream] {
+                m_errorString = upstream->errorString();
+                client->disconnectFromHost();
+            });
+            upstream->connectToHost(QHostAddress::LocalHost, m_upstreamPort);
+        });
+    }
+
+    QTcpServer m_server{this};
+    quint16 m_upstreamPort;
+    QList<QByteArray> m_requests;
+    QString m_errorString;
+};
+
 class TestQCNetworkHttp2 : public QObject
 {
     Q_OBJECT
@@ -90,6 +175,10 @@ private Q_SLOTS:
     void testHttp2VsHttp1Performance(); // 性能对比（简化版）
     void testSchedulerAdmissionAndStreamLimit_data();
     void testSchedulerAdmissionAndStreamLimit();
+    void testDiagnosticQueryPolicy_data();
+    void testDiagnosticQueryPolicy();
+    void testDiagnosticQueryPolicyThroughProxy_data();
+    void testDiagnosticQueryPolicyThroughProxy();
 
 private:
     Q_DISABLE_COPY_MOVE(TestQCNetworkHttp2)
@@ -172,6 +261,8 @@ bool TestQCNetworkHttp2::waitForPortReady(quint16 port, int timeoutMs)
 
 bool TestQCNetworkHttp2::startLocalTestServer()
 {
+    const bool usesLocalH2    = m_h2BaseUrl.isEmpty() || m_h2BaseUrl == m_localH2BaseUrl;
+    const bool usesLocalHttp1 = m_http1BaseUrl.isEmpty() || m_http1BaseUrl == m_localHttp1BaseUrl;
     stopLocalTestServer();
     m_serverError.clear();
     m_localH2BaseUrl.clear();
@@ -239,6 +330,13 @@ bool TestQCNetworkHttp2::startLocalTestServer()
                                           .arg(QString::number(h2Port));
                 m_localHttp1BaseUrl = QStringLiteral("https://127.0.0.1:%1")
                                           .arg(QString::number(http1Port));
+                // 重启夹具后同步默认入口；外部覆盖的 URL 不变，不能继续连接已关闭的旧端口。
+                if (usesLocalH2) {
+                    m_h2BaseUrl = m_localH2BaseUrl;
+                }
+                if (usesLocalHttp1) {
+                    m_http1BaseUrl = m_localHttp1BaseUrl;
+                }
                 return true;
             }
         }
@@ -394,6 +492,191 @@ void TestQCNetworkHttp2::testHttp2Support()
     QVERIFY(static_cast<int>(QCNetworkHttpVersion::Http2) > 0);
     QVERIFY(static_cast<int>(QCNetworkHttpVersion::Http2TLS) > 0);
     QVERIFY(checkHttp2Support());
+}
+
+void TestQCNetworkHttp2::testDiagnosticQueryPolicy_data()
+{
+    QTest::addColumn<QCNetworkDiagnosticQueryPolicy>("policy");
+    QTest::addColumn<QString>("path");
+    for (const auto &path : {QStringLiteral("/reqinfo"), QStringLiteral("/a/./../reqinfo")}) {
+        QTest::newRow(qPrintable(path + QStringLiteral("-redacted")))
+            << QCNetworkDiagnosticQueryPolicy::Redacted << path;
+        QTest::newRow(qPrintable(path + QStringLiteral("-full")))
+            << QCNetworkDiagnosticQueryPolicy::Full << path;
+    }
+}
+
+void TestQCNetworkHttp2::testDiagnosticQueryPolicy()
+{
+    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
+    QFETCH(QString, path);
+    auto logger   = QCNetworkLoggerHandle::create<QCNetworkDefaultLogger>();
+    auto *capture = static_cast<QCNetworkDefaultLogger *>(logger.get());
+    capture->enableConsoleOutput(false);
+    capture->setMinLogLevel(NetworkLogLevel::Debug);
+    m_manager->setLogger(logger);
+    m_manager->setDebugTraceEnabled(true);
+    const auto restore = qScopeGuard([this] {
+        m_manager->setDebugTraceEnabled(false);
+        m_manager->setLogger({});
+    });
+
+    QUrl url(m_h2BaseUrl + path);
+    url.setQuery(QStringLiteral("route=initial-query-marker&encoded=%2B"));
+    url.setFragment(QStringLiteral("initial-fragment-marker"));
+    QCNetworkRequest request(url);
+    request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
+    request.setDiagnosticQueryPolicy(policy);
+    request.setRawHeader(QByteArrayLiteral("Authorization"),
+                         QByteArrayLiteral("Bearer auth-marker"));
+    request.setRawHeader(QByteArrayLiteral("Cookie"), QByteArrayLiteral("session=cookie-marker"));
+    request.setRawHeader(QByteArrayLiteral("X-Api-Key"), QByteArrayLiteral("api-key-marker"));
+    auto *reply        = m_manager->get(request);
+    const auto dispose = qScopeGuard([reply] { reply->deleteLater(); });
+    QVERIFY(waitForSignal(reply, QMetaMethod::fromSignal(&QCNetworkReply::finished), 15000));
+    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
+    const auto body = reply->readAll();
+    QVERIFY(body.has_value());
+    const auto echoed = QJsonDocument::fromJson(*body).object();
+    QCOMPARE(echoed.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+    const auto query = echoed.value(QStringLiteral("query")).toObject();
+    QCOMPARE(query.value(QStringLiteral("route")).toString(),
+             QStringLiteral("initial-query-marker"));
+    QCOMPARE(query.value(QStringLiteral("encoded")).toString(), QStringLiteral("+"));
+    QCOMPARE(reply->url(), url);
+    QCOMPARE(reply->diagnosticQueryPolicy(), policy);
+
+    QString trace;
+    QString outgoing;
+    QString text;
+    for (const auto &entry : capture->entries()) {
+        if (entry.category() != QStringLiteral("Trace")) {
+            continue;
+        }
+        QVERIFY(entry.message().size() <= 4096);
+        trace += entry.message() + QLatin1Char('\n');
+        if (entry.message().startsWith(QStringLiteral("HEADER_OUT:"))) {
+            outgoing += entry.message();
+        } else if (entry.message().startsWith(QStringLiteral("TEXT:"))) {
+            text += entry.message();
+        }
+    }
+    QVERIFY2(outgoing.contains(QStringLiteral("GET /reqinfo")), qPrintable(trace));
+    QVERIFY2(outgoing.contains(QStringLiteral("HTTP/2")), qPrintable(outgoing));
+    const QString target = policy == QCNetworkDiagnosticQueryPolicy::Full
+                               ? QStringLiteral(
+                                     "GET /reqinfo?route=initial-query-marker&encoded=%2B HTTP/2")
+                               : QStringLiteral("GET /reqinfo?[REDACTED] HTTP/2");
+    QVERIFY2(outgoing.contains(target), qPrintable(outgoing));
+    QVERIFY(!text.contains(QStringLiteral("initial-query-marker")));
+    for (const auto &secret : {QStringLiteral("auth-marker"),
+                               QStringLiteral("cookie-marker"),
+                               QStringLiteral("api-key-marker"),
+                               QStringLiteral("initial-fragment-marker")}) {
+        QVERIFY2(!trace.contains(secret), qPrintable(trace));
+    }
+    QVERIFY(trace.contains(QStringLiteral("[REDACTED]")));
+}
+
+void TestQCNetworkHttp2::testDiagnosticQueryPolicyThroughProxy_data()
+{
+    testDiagnosticQueryPolicy_data();
+}
+
+void TestQCNetworkHttp2::testDiagnosticQueryPolicyThroughProxy()
+{
+    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
+    QFETCH(QString, path);
+    QVERIFY2(startLocalTestServer(), qPrintable(m_serverError));
+    ConnectTestProxy proxyServer(static_cast<quint16>(QUrl(m_localH2BaseUrl).port()));
+    QVERIFY(proxyServer.start());
+    const QByteArray previousNoProxy      = qgetenv("no_proxy");
+    const QByteArray previousUpperNoProxy = qgetenv("NO_PROXY");
+    const bool hadNoProxy                 = qEnvironmentVariableIsSet("no_proxy");
+    const bool hadUpperNoProxy            = qEnvironmentVariableIsSet("NO_PROXY");
+    const auto restoreEnvironment         = qScopeGuard([&] {
+        if (hadNoProxy) {
+            qputenv("no_proxy", previousNoProxy);
+        } else {
+            qunsetenv("no_proxy");
+        }
+        if (hadUpperNoProxy) {
+            qputenv("NO_PROXY", previousUpperNoProxy);
+        } else {
+            qunsetenv("NO_PROXY");
+        }
+    });
+    qunsetenv("no_proxy");
+    qunsetenv("NO_PROXY");
+    QCNetworkAccessManager manager;
+    QCNetworkDefaultLogger *capture = nullptr;
+    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
+    capture->enableConsoleOutput(false);
+    capture->setMinLogLevel(NetworkLogLevel::Debug);
+    manager.setLogger(logger);
+    manager.setDebugTraceEnabled(true);
+    QCNetworkProxyConfig proxy;
+    proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+    proxy.setHostName(QStringLiteral("127.0.0.1"));
+    proxy.setPort(proxyServer.port());
+    proxy.setUserName(QStringLiteral("synthetic-proxy-user"));
+    proxy.setPassword(QStringLiteral("synthetic-proxy-secret"));
+    QUrl url(m_localH2BaseUrl + path + QStringLiteral("?route=proxy-query-marker"));
+    url.setFragment(QStringLiteral("proxy-fragment-marker"));
+    QCNetworkRequest request(url);
+    request.setProxyConfig(proxy);
+    request.setHttpVersion(QCNetworkHttpVersion::Http2TLS);
+    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
+    request.setDiagnosticQueryPolicy(policy);
+    request.setRawHeader("Authorization", "Bearer origin-header-marker");
+    auto *reply = manager.get(request);
+    QSignalSpy finished(reply, &QCNetworkReply::finished);
+    QVERIFY(finished.wait(15000));
+    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
+    QVERIFY2(proxyServer.errorString().isEmpty(), qPrintable(proxyServer.errorString()));
+    const auto requests = proxyServer.requests();
+    QCOMPARE(requests.size(), 2);
+    QVERIFY(!requests.first().toLower().contains("proxy-authorization:"));
+    const QByteArray credentials = QByteArrayLiteral("synthetic-proxy-user:synthetic-proxy-secret")
+                                       .toBase64();
+    QVERIFY(
+        requests.last().contains(QByteArrayLiteral("Proxy-Authorization: Basic ") + credentials));
+    const auto echoed = QJsonDocument::fromJson(reply->readAll().value_or(QByteArray())).object();
+    QCOMPARE(echoed.value(QStringLiteral("httpVersion")).toString(), QStringLiteral("2.0"));
+    QCOMPARE(echoed.value(QStringLiteral("query"))
+                 .toObject()
+                 .value(QStringLiteral("route"))
+                 .toString(),
+             QStringLiteral("proxy-query-marker"));
+    QString outgoing;
+    bool proxyAuthTextObserved = false;
+    for (const auto &entry : capture->entries()) {
+        if (entry.category() != QStringLiteral("Trace")) {
+            continue;
+        }
+        const QString message = entry.message();
+        QVERIFY(!message.contains(QStringLiteral("origin-header-marker")));
+        QVERIFY(!message.contains(QStringLiteral("synthetic-proxy-user")));
+        QVERIFY(!message.contains(QStringLiteral("synthetic-proxy-secret")));
+        QVERIFY(!message.contains(QString::fromLatin1(credentials)));
+        QVERIFY(!message.contains(QStringLiteral("proxy-fragment-marker")));
+        QVERIFY(message.size() <= 4096);
+        if (message.startsWith(QStringLiteral("HEADER_OUT:"))) {
+            outgoing += message + QLatin1Char('\n');
+        } else {
+            QVERIFY(!message.contains(QStringLiteral("proxy-query-marker")));
+            proxyAuthTextObserved |= message.startsWith(QStringLiteral("TEXT:"))
+                                     && message.contains(QStringLiteral("Proxy auth using Basic"));
+        }
+    }
+    QVERIFY(proxyAuthTextObserved);
+    QCOMPARE(outgoing.count(QStringLiteral("CONNECT ")), 2);
+    QVERIFY(outgoing.contains(QStringLiteral("Proxy-Authorization: [REDACTED]")));
+    const QString target = policy == QCNetworkDiagnosticQueryPolicy::Full
+                               ? QStringLiteral("GET /reqinfo?route=proxy-query-marker HTTP/2")
+                               : QStringLiteral("GET /reqinfo?[REDACTED] HTTP/2");
+    QVERIFY2(outgoing.contains(target), qPrintable(outgoing));
 }
 
 void TestQCNetworkHttp2::testHttp2Negotiation()

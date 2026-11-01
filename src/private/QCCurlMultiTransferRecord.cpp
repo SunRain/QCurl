@@ -86,6 +86,9 @@ void QCCurlMultiTransferRecord::bindObserver(
 
 void QCCurlMultiTransferRecord::clearObserver() noexcept
 {
+    if (m_transferState) {
+        m_transferState->trace.stop();
+    }
     m_observer.clear();
 }
 
@@ -288,8 +291,8 @@ int QCCurlMultiTransferRecord::debugCallback(
         return 0;
     }
 
-    const QString message
-        = Internal::formatReplyDebugTraceMessage(type, QByteArray(data, static_cast<int>(size)));
+    const QString message = state->trace.consume(type,
+                                                 QByteArrayView(data, static_cast<qsizetype>(size)));
     if (!message.isEmpty()) {
         static_cast<void>(logger->log(NetworkLogLevel::Debug, QStringLiteral("Trace"), message));
     }

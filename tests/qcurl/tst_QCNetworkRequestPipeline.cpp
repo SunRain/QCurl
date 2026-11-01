@@ -2,13 +2,17 @@
 // Copyright (c) 2025 QCurl Project
 
 #include "QCNetworkAccessManager.h"
+#include "QCNetworkDiagnosticQueryPolicy.h"
 #include "QCNetworkMockHandler.h"
-#include "qcnetwork_mock_test_support.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRequestPriority.h"
+#include "private/QCNetworkCacheIntegration_p.h"
+#include "private/QCNetworkReplyRuntime_p.h"
+#include "private/QCNetworkReplyTrace_p.h"
 #include "private/QCRequestPipeline_p.h"
+#include "qcnetwork_mock_test_support.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -30,6 +34,7 @@ private Q_SLOTS:
     void testSendGetAndSchedulerShareDigest();
     void testAsyncAndCompiledPostShareDigest();
     void testDigestIgnoresRuntimeBodySource();
+    void testDiagnosticPolicyPreservesIdentityAndSnapshot();
 
 private:
     QByteArray planDigest(QCNetworkReply *reply) const;
@@ -78,15 +83,16 @@ QByteArray TestQCNetworkRequestPipeline::planDigest(QCNetworkReply *reply) const
 }
 
 QByteArray TestQCNetworkRequestPipeline::compiledPlanDigest(const QCNetworkRequest &request,
-                                                           HttpMethod method,
-                                                           const QByteArray &body) const
+                                                            HttpMethod method,
+                                                            const QByteArray &body) const
 {
-    const Internal::RequestBody requestBody = body.isEmpty()
-        ? Internal::makeEmptyRequestBody()
-        : Internal::makeInlineRequestBody(body);
-    const Internal::NormalizedRequest normalized =
-        Internal::normalizeRequest(request, method, requestBody);
-    const Internal::CurlPlan plan = Internal::compileRequest(normalized);
+    const Internal::RequestBody requestBody      = body.isEmpty()
+                                                       ? Internal::makeEmptyRequestBody()
+                                                       : Internal::makeInlineRequestBody(body);
+    const Internal::NormalizedRequest normalized = Internal::normalizeRequest(request,
+                                                                              method,
+                                                                              requestBody);
+    const Internal::CurlPlan plan                = Internal::compileRequest(normalized);
     return Internal::buildCurlPlanDigestForTest(plan);
 }
 
@@ -103,14 +109,14 @@ void TestQCNetworkRequestPipeline::testSendGetAndSchedulerShareDigest()
         .setPriority(QCNetworkRequestPriority::High);
 
     m_manager->enableRequestScheduler(false);
-    auto *directReply = m_manager->get(request);
+    auto *directReply             = m_manager->get(request);
     const QByteArray directDigest = planDigest(directReply);
     QTRY_VERIFY_WITH_TIMEOUT(directReply->isFinished(), 2000);
     QCOMPARE(directReply->error(), NetworkError::NoError);
     directReply->deleteLater();
 
     m_manager->enableRequestScheduler(true);
-    auto *scheduledReply = m_manager->get(request);
+    auto *scheduledReply             = m_manager->get(request);
     const QByteArray scheduledDigest = planDigest(scheduledReply);
     QCOMPARE(scheduledDigest, directDigest);
     QTRY_VERIFY_WITH_TIMEOUT(scheduledReply->isFinished(), 2000);
@@ -129,7 +135,7 @@ void TestQCNetworkRequestPipeline::testAsyncAndCompiledPostShareDigest()
         .setTimeout(std::chrono::seconds(2))
         .setPriority(QCNetworkRequestPriority::Normal);
 
-    auto *asyncReply = m_manager->post(request, body);
+    auto *asyncReply             = m_manager->post(request, body);
     const QByteArray asyncDigest = planDigest(asyncReply);
     QTRY_VERIFY_WITH_TIMEOUT(asyncReply->isFinished(), 2000);
     QCOMPARE(asyncReply->error(), NetworkError::NoError);
@@ -146,7 +152,7 @@ void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()
     m_mock.mockResponse(HttpMethod::Post, url, QByteArray("DEVICE"));
 
     QCNetworkRequest inlineRequest(url);
-    auto *inlineReply = m_manager->post(inlineRequest, QByteArray("inline-body"));
+    auto *inlineReply             = m_manager->post(inlineRequest, QByteArray("inline-body"));
     const QByteArray inlineDigest = planDigest(inlineReply);
     QTRY_VERIFY_WITH_TIMEOUT(inlineReply->isFinished(), 2000);
     QCOMPARE(inlineReply->error(), NetworkError::NoError);
@@ -163,6 +169,53 @@ void TestQCNetworkRequestPipeline::testDigestIgnoresRuntimeBodySource()
     QTRY_VERIFY_WITH_TIMEOUT(deviceReply->isFinished(), 2000);
     QCOMPARE(deviceReply->error(), NetworkError::NoError);
     deviceReply->deleteLater();
+}
+
+void TestQCNetworkRequestPipeline::testDiagnosticPolicyPreservesIdentityAndSnapshot()
+{
+    const QUrl url(QStringLiteral("http://example.invalid/path?page=2#fragment"));
+    QCNetworkRequest request(url);
+    request.setRawHeader(QByteArrayLiteral("X-Route"), QByteArrayLiteral("pagination"));
+    const auto key    = Internal::buildCacheRequestKey(request, HttpMethod::Get, false);
+    const auto digest = compiledPlanDigest(request, HttpMethod::Get, {});
+    request.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Full);
+    const auto fullKey = Internal::buildCacheRequestKey(request, HttpMethod::Get, false);
+    QCOMPARE(fullKey.normalizedUrl(), key.normalizedUrl());
+    QCOMPARE(fullKey.method(), key.method());
+    QCOMPARE(fullKey.requestHeaders(), key.requestHeaders());
+    QCOMPARE(fullKey.cachePartitionKey(), key.cachePartitionKey());
+    QCOMPARE(compiledPlanDigest(request, HttpMethod::Get, {}), digest);
+    m_mock.enqueueResponse(HttpMethod::Get, url, QByteArrayLiteral("OK"));
+    auto *reply = m_manager->get(request);
+    QCNetworkReplyPrivate snapshot(nullptr,
+                                   request,
+                                   HttpMethod::Get,
+                                   Internal::makeEmptyRequestBody(),
+                                   {});
+    request.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Redacted);
+    QCOMPARE(reply->diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Full);
+    for (bool resetIdle : {false, true}) {
+        snapshot.transferState->trace.beginNetworkAttempt();
+        QVERIFY(snapshot.transferState->trace
+                    .consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("GET /path?page=2"))
+                    .isEmpty());
+        Internal::resetReplyForRetry(&snapshot, resetIdle);
+        // reset 也服务模拟路径：旧尾段被丢弃且 trace 停止，不自行开放真实网络资格。
+        QVERIFY(snapshot.transferState->trace
+                    .consume(CURLINFO_HEADER_OUT, QByteArrayLiteral(" HTTP/1.1\r\n\r\n"))
+                    .isEmpty());
+        QVERIFY(snapshot.transferState->trace
+                    .consume(CURLINFO_HEADER_OUT,
+                             QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+                    .isEmpty());
+        snapshot.transferState->trace.beginNetworkAttempt();
+        QVERIFY(snapshot.transferState->trace
+                    .consume(CURLINFO_HEADER_OUT,
+                             QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+                    .contains(QStringLiteral("GET /path?page=2 HTTP/1.1")));
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);
+    QCOMPARE(reply->diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Full);
 }
 
 QTEST_MAIN(TestQCNetworkRequestPipeline)

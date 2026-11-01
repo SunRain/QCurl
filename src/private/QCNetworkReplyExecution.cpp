@@ -49,6 +49,8 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
         return;
     }
 
+    d->transferState->trace.beginNetworkAttempt();
+
     if (d->setState(ReplyState::Running) == SignalEmissionResult::Destroyed) {
         return;
     }

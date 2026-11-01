@@ -141,6 +141,9 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
         }
     }
     state = newState;
+    if (isTerminalState(newState)) {
+        transferState->trace.stop();
+    }
     updateElapsedTime(this, newState);
 
     if (isTerminalState(newState)) {
@@ -291,8 +294,8 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         return 0;
     }
 
-    const QByteArray raw  = QByteArray(data, static_cast<int>(size));
-    const QString message = Internal::formatReplyDebugTraceMessage(type, raw);
+    const QString message = d->transferState->trace
+                                .consume(type, QByteArrayView(data, static_cast<qsizetype>(size)));
     if (message.isEmpty()) {
         return 0;
     }
