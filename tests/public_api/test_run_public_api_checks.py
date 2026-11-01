@@ -1039,6 +1039,27 @@ def test_release_metadata_scan_ignores_generated_build_trees(tmp_path, capsys) -
     assert "metadata scan passed" in capsys.readouterr().out
 
 
+def test_release_metadata_scan_ignores_local_tool_state(tmp_path, capsys) -> None:
+    import scripts.run_release_gate as release_gate
+
+    state = tmp_path / ".unipi" / "config" / "settings-version.json"
+    state.parent.mkdir(parents=True)
+    state.write_text('{"migrated_version": "3.0.0"}\n', encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "current development candidate: v2.1.1\n", encoding="utf-8"
+    )
+    (tmp_path / "docs/dev/architecture").mkdir(parents=True)
+    (tmp_path / "docs/dev/architecture/overview.md").write_text(
+        "QCurl 2.1 architecture\n", encoding="utf-8"
+    )
+    (tmp_path / "CMakeLists.txt").write_text(
+        "project(QCurl VERSION 2.1.1)\n", encoding="utf-8"
+    )
+
+    assert release_gate._scan_metadata(tmp_path) == 0
+    assert "metadata scan passed" in capsys.readouterr().out
+
+
 def test_release_metadata_scan_allows_published_v1_history_and_current_v2(tmp_path, capsys) -> None:
     import scripts.run_release_gate as release_gate
 

@@ -34,17 +34,17 @@ makepkg -D "/绝对路径/QCurl/packaging/arch"
 
 ```bash
 makepkg -D packaging/arch --packagelist
-pacman -Qip packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
-pacman -Qlp packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
+pacman -Qip packaging/arch/qcurl-2.1.1-1-x86_64.pkg.tar.zst
+pacman -Qlp packaging/arch/qcurl-2.1.1-1-x86_64.pkg.tar.zst
 ```
 
-以上文件名对应当前 `2.1.0-1`；更改版本或 `PKGDEST` 后，以 `--packagelist` 输出为准。
+以上文件名对应当前 `2.1.1-1`；更改版本或 `PKGDEST` 后，以 `--packagelist` 输出为准。
 
 | 组件 | 消费 target | 包内物理内容 |
 | --- | --- | --- |
-| Core | `QCurl::QCurl` | `libQCurl.so.2.1.0`、SONAME/开发链接及公共头 |
+| Core | `QCurl::QCurl` | `libQCurl.so.2.1.1`、SONAME/开发链接及公共头 |
 | BlockingExtras | `QCurl::BlockingExtras` | INTERFACE 导出及公共头；实现在 Core 库内，没有独立 Blocking 库 |
-| OtherExtras | `QCurl::OtherExtras` | `libQCurlOtherExtras.so.2.1.0`、链接及公共头；WebSocket 按实际 libcurl 能力启用 |
+| OtherExtras | `QCurl::OtherExtras` | `libQCurlOtherExtras.so.2.1.1`、链接及公共头；WebSocket 按实际 libcurl 能力启用 |
 | TestSupport | `QCurl::TestSupport` | **`libQCurlTestSupport.a`**、mock/capture 公共头及导出，仅供开发测试 |
 
 公共头安装到 `/usr/include/qcurl/`，CMake 配置到 `/usr/lib/cmake/QCurl/`，两个 `.pc` 到 `/usr/lib/pkgconfig/`。`LICENSE` 与 `THIRD_PARTY_NOTICES.md` 安装到 `/usr/share/licenses/qcurl/`。不安装私有头、测试程序、源码、bundled curl 或额外 debug 包。
@@ -52,7 +52,7 @@ pacman -Qlp packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
 用户明确决定安装到当前系统后执行：
 
 ```bash
-sudo pacman -U packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U packaging/arch/qcurl-2.1.1-1-x86_64.pkg.tar.zst
 pacman -Q qcurl
 pacman -Ql qcurl
 ```
@@ -113,8 +113,8 @@ python3 -m pytest -q tests/test_arch_packaging.py
 ```bash
 work="$(mktemp -d -t qcurl-arch-check.XXXXXX)"
 mkdir "$work/unpacked"
-bsdtar -xf packaging/arch/qcurl-2.1.0-1-x86_64.pkg.tar.zst -C "$work/unpacked"
-cmake "-DPACKAGE_ROOT=$work/unpacked" -DPACKAGE_VERSION=2.1.0 \
+bsdtar -xf packaging/arch/qcurl-2.1.1-1-x86_64.pkg.tar.zst -C "$work/unpacked"
+cmake "-DPACKAGE_ROOT=$work/unpacked" -DPACKAGE_VERSION=2.1.1 \
   "-DSOURCE_ROOT=$PWD" "-DBUILD_ROOT=$PWD/packaging/arch/src/qcurl-build" \
   -P packaging/arch/verify_package.cmake
 python3 tests/arch/verify_install.py \

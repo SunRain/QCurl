@@ -300,7 +300,7 @@ def test_old_stable_sanitizer_report_is_rejected_for_new_candidate(
     changed_path = {
         "tracked": repo / "tracked.txt",
         "untracked": repo / "new-source.txt",
-        "authority": repo / "docs/dev/release/2.1.0-release-contract.md",
+        "authority": repo / "docs/dev/release/2.1.1-release-contract.md",
         "submodule": repo / "dependency/subject.txt",
     }[changed]
     changed_path.write_text("new candidate content\n", encoding="utf-8")

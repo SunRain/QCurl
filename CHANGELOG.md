@@ -1,11 +1,43 @@
 # QCurl Changelog
 
-记录当前 `2.1.0` 候选的变化与历史版本说明。2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
+记录当前 `2.1.1` 候选的变化与历史版本说明。`2.1.0` 是本线首版条目，2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
 <a id="current-release"></a>
-## [2.1.0] - Unreleased
+## [2.1.1] - Unreleased
 
-本条目以 `v2.0.0` 公共头、安装面与行为差异为依据。2.1.0 是当前开发候选，发布资格以[2.1 正式合同](docs/dev/release/2.1.0-release-contract.md)绑定的真实机器证据为准；本条目不表示 tag、Release 或资产已经发布。
+2.1.1 是 2.1 线的首个 patch 候选，以 `v2.1.0` 首版参考为兼容输入。`v2.1.0` 只有 tag 与首版参考，没有正式发布资产，因此本候选吸收 2.1.0 tag 之后的诊断行为调整；一旦 2.1.0 被正式分发，这类默认行为改变不能再进入同线 patch。发布资格以[2.1 正式合同](docs/dev/release/2.1.1-release-contract.md)绑定的真实机器证据为准；本条目不表示 tag、Release 或资产已经发布。
+
+### 版本与交付
+
+- `PROJECT_VERSION=2.1.1`；两个运行库使用 `SOVERSION 2.1` / `VERSION 2.1.1`，实体为 `libQCurl.so.2.1.1` 和 `libQCurlOtherExtras.so.2.1.1`，不改变本线 SONAME。
+- Arch 本地完整包为 `qcurl 2.1.1-1`；`pkgver` 在 `prepare()` 阶段与 CMake 项目版本强制一致，包内检查覆盖 SONAME、符号链接、TestSupport 静态库和解包后的四组件 consumer。
+- 本候选用 `current` 与指向 v2.1.0 首版参考的 first/latest 兼容证据；`snapshot` 只属于 2.1.0 首版，不能用于绕过 patch 比较。
+
+### Breaking changes（相对 v2.1.0 tag）
+
+- 内建日志与 trace 默认不再逐 key 显示非敏感 query 值，改为整段 `?[REDACTED]`；需要查看调用方初始 query 的调用方须显式设置为 `Full`。userinfo、fragment、敏感头、重定向目标和自由文本仍按原规则隐藏，策略随 reply 快照。
+
+### 新增能力
+
+- 请求级诊断 query 策略：新增 Core 公共头 `QCNetworkDiagnosticQueryPolicy.h`，默认隐藏 query，`Full` 只解开已确认的 caller 初始目标 query；策略不参与 `operator==`、缓存 key 和传输，raw accessor 不变。
+- libcurl trace 收敛为 transfer-owned 有界流：按逻辑行累积后脱敏，单行最多 4,096 原始字节、单条输出最多 4,096 个 UTF-16 单元；超限、畸形分隔符和无法判界的续段一律 fail-closed 丢弃并输出固定标记。
+- lib-ids 装饰核对：只接受与 `CURLINFO_XFER_ID` / `CONN_ID` 逐字段一致的非负 ID；caller 与 internal handle 分槽，internal 目标始终 `Redacted`，共享 12,288 字节原始预算。
+- public-api 增加安装后 trace consumer：同一 manager 并发 h1/h2，覆盖 lib-ids on/off 四组，并核对实际加载的 QCurl/libcurl 来自安装 stage。
+
+### 缺陷修复
+
+- 修复 trace 把 callback 分块边界当作行边界、可拼出跨分块未脱敏头与 URL 的问题；Cookie/认证 TEXT 续段与缩进续行进入统一分类器，敏感头名缺合法分隔符时不再回退为普通文本。
+- 修复 lib-ids 开启时 `[transfer-conn]` 装饰混入正文、无法用一条消息证明 trace 与实际传输对应的问题。
+
+### 发布证据
+
+- 各提交只记录当时的本机 Debug 构建与定向用例；2.1.1 的发布资格仍须由 clean C1 的 fresh full/final、独立 verify 和真实资产回验推导，本条目不记录 PASS。
+- 后续 patch 使用 `current` 比较 v2.1.0 参考与候选，分别验证旧源码、旧二进制和公开行为；ABI 完整/残余分析固定比较两侧真实 ELF，snapshot 仍为必需归档与语义校验输入。
+
+<a id="2.1.0-release"></a>
+## [2.1.0]
+
+2.1.0 建立 2.1 版本线并已创建 `v2.1.0` tag，但没有正式发布资产。以下条目以 `v2.0.0` 公共头、安装面与行为差异为依据，保留当时的政策、破坏性变更和首版参考口径。
 
 ### 版本与兼容政策
 
@@ -34,7 +66,7 @@
 
 ### 发布证据
 
-- 当前唯一 authority 切换到 2.1 合同。首版 full/final 使用 `snapshot` 捕获两库 ABI、完整安装头、tuple 和四组件预编译 consumer，独立 round-trip 结果为 `REFERENCE_VALIDATED` / `patchCompatibility=false`，不能标成真实 patch 升级 PASS。后续 patch 使用 `current` 比较本线首版与最近正式 patch，并分别验证旧源码、旧二进制和公开行为。ABI 完整/残余分析固定比较两侧真实 ELF，避免 XML snapshot 对纯类方法/虚表变化的漏报；snapshot 仍为必需归档与语义校验输入。
+- 2.1 唯一 authority 是该线正式合同。首版 full/final 使用 `snapshot` 捕获两库 ABI、完整安装头、tuple 和四组件预编译 consumer，独立 round-trip 结果为 `REFERENCE_VALIDATED` / `patchCompatibility=false`，不能标成真实 patch 升级 PASS。后续 patch 使用 `current` 比较本线首版与最近正式 patch，并分别验证旧源码、旧二进制和公开行为。ABI 完整/残余分析固定比较两侧真实 ELF，避免 XML snapshot 对纯类方法/虚表变化的漏报；snapshot 仍为必需归档与语义校验输入。
 - 延续五树产品资格；TSan 在 2.1 为独立非阻断诊断，缺少执行写 NOT_RUN，ASan/UBSan/LSan 和普通线程/生命周期验证仍为必需。文档、工具或局部测试结果不替代 clean C1 的 fresh final、独立 verifier 或实际资产回验。
 
 具体调整与调用方义务见[迁移到 2.1](docs/user/migration-2.1.md)。

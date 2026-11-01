@@ -124,7 +124,7 @@ absolute-form 默认端口。匹配仍严格核对编码 query（包括 `%2B`）
 
 ## 发布边界与验证入口
 
-从 2.1 起，全部已发布 Public 组件（含 Preview）在同 `major.minor` 后续 patch 内保护源码、受支持 shared ABI、安装消费与公开行为。确需破坏时进入新版本线，并同步迁移说明和测试；跨 minor 不保证兼容。规范范围见[版本与兼容政策](../release/versioning-and-compatibility.md)，必需参考/报告见[正式发布合同](../release/2.1.0-release-contract.md)，本页不另维护发布矩阵。历史对比只从[归档索引](../archive/README.md)追溯。
+从 2.1 起，全部已发布 Public 组件（含 Preview）在同 `major.minor` 后续 patch 内保护源码、受支持 shared ABI、安装消费与公开行为。确需破坏时进入新版本线，并同步迁移说明和测试；跨 minor 不保证兼容。规范范围见[版本与兼容政策](../release/versioning-and-compatibility.md)，必需参考/报告见[正式发布合同](../release/2.1.1-release-contract.md)，本页不另维护发布矩阵。历史对比只从[归档索引](../archive/README.md)追溯。
 
 评审按上面的职责检查受影响路径，再选择能验证本次变更的入口，不重复抄写规则清单：
 

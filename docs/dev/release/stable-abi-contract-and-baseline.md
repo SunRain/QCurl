@@ -1,6 +1,6 @@
 # ABI 参考与比较操作
 
-从 2.1 起，本页说明已启用的版本线 ABI 工具操作，规范正文在[版本与兼容政策](versioning-and-compatibility.md)，当前资格输入在唯一 [2.1 发布合同](2.1.0-release-contract.md)。历史 2.0 的 Deferred 决策保留在[当时合同](2.0.0-hard-break-release-contract.md)，不再作为当前发布入口。
+从 2.1 起，本页说明已启用的版本线 ABI 工具操作，规范正文在[版本与兼容政策](versioning-and-compatibility.md)，当前资格输入在唯一 [2.1 发布合同](2.1.1-release-contract.md)。历史 2.0 的 Deferred 决策保留在[当时合同](2.0.0-hard-break-release-contract.md)，不再作为当前发布入口。
 
 完整发布由[发布操作](release-procedure.md)调用同一组工具，不需要手动重复 capture/check。本页的独立命令用于定位参考或兼容检查失败，不能代替五树 full/final。
 
@@ -66,7 +66,7 @@ python3 scripts/qcurl_compatibility.py rebuild-source \
   --output-dir "$QCURL_SOURCE_OUTPUT"
 ```
 
-正式 patch 的 check / rebuild-source 均须 `--require-history`，拒绝同候选 round-trip 冒充升级；成功的历史 check 分类为 `PATCH_COMPATIBLE`、`patchCompatibility=true`，source 报告仍明确 `oldBinaryCompatibility=not-evaluated`。release gate 显式提供 first/latest：first 是正式 `vM.m.0`，latest 是同线候选之前最高正式 patch；2.1.1 的两者可为同一 2.1.0 参考，身份核对后去重。输出为 `evidence/compatibility/check-first/report.json`、`check-latest/report.json` 及 ABI 子报告；源码结果另写 `source-first/report.json` / `source-latest/report.json`。缺输入、错线、错 tuple、缺文件、内容替换或当前候选冒充历史均须失败。
+正式 patch 的 check / rebuild-source 均须 `--require-history`，拒绝同候选 round-trip 冒充升级；成功的历史 check 分类为 `PATCH_COMPATIBLE`、`patchCompatibility=true`，source 报告仍明确 `oldBinaryCompatibility=not-evaluated`。release gate 显式提供 first/latest：first 是正式 `vM.m.0`，latest 是同线候选之前最高正式 patch；本次 2.1.1 的 first/latest 都指向同一份 v2.1.0 首版参考，身份核对后去重。输出为 `evidence/compatibility/check-first/report.json`、`check-latest/report.json` 及 ABI 子报告；源码结果另写 `source-first/report.json` / `source-latest/report.json`。缺输入、错线、错 tuple、缺文件、内容替换或当前候选冒充历史均须失败。
 
 ## 3. 解释两库 ABI 报告
 

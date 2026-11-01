@@ -139,7 +139,7 @@ def package(source: Path) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, target)
     for name in ("QCurl", "QCurlOtherExtras"):
-        library = root / f"usr/lib/lib{name}.so.2.1.0"
+        library = root / f"usr/lib/lib{name}.so.2.1.1"
         result = subprocess.run(
             [
                 "cc",
@@ -178,7 +178,7 @@ def verify(source: Path, package: Path) -> subprocess.CompletedProcess:
     return run(
         "cmake",
         f"-DPACKAGE_ROOT={package}",
-        "-DPACKAGE_VERSION=2.1.0",
+        "-DPACKAGE_VERSION=2.1.1",
         f"-DSOURCE_ROOT={source}",
         "-P",
         str(source / "packaging/arch/verify_package.cmake"),

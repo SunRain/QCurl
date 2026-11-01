@@ -1,6 +1,6 @@
 # QCurl 文档
 
-本文档对应当前 **2.1.0 开发候选**。从 2.1 起，同 `major.minor` 的后续 patch 保护全部已发布 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为；跨 minor 不保证兼容。版本语义和环境边界见[版本与兼容政策](dev/release/versioning-and-compatibility.md)，候选文档不是发布通过证明。
+本文档对应当前 **2.1.1 开发候选**；`v2.1.0` 是本线首版 tag，没有正式发布资产。从 2.1 起，同 `major.minor` 的后续 patch 保护全部已发布 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为；跨 minor 不保证兼容。版本语义和环境边界见[版本与兼容政策](dev/release/versioning-and-compatibility.md)，候选文档不是发布通过证明。
 
 ## 用户
 
@@ -38,7 +38,7 @@
 ### 发布与证据
 
 - [版本与兼容政策](dev/release/versioning-and-compatibility.md)：版本线、Public/Preview、ABI 环境和消费规则。
-- [正式 2.1 发布合同](dev/release/2.1.0-release-contract.md)：唯一当前 release identity authority。
+- [正式 2.1 发布合同](dev/release/2.1.1-release-contract.md)：唯一当前 release identity authority，当前候选 2.1.1。
 - [发布操作](dev/release/release-procedure.md)：五树、阶段、候选验证、打包与远端动作。
 - [UCE 使用与证据](dev/uce/README.md)：启动、tier、schema 入口与归档判据。
 - [供应链安全](dev/release/supply-chain.md)。

@@ -21,7 +21,7 @@ def _source_fixture(tmp_path: Path) -> Path:
 
 
 def test_current_release_has_shared_major_minor_policy() -> None:
-    assert parse_project_version(ROOT) == (2, 1, 0)
+    assert parse_project_version(ROOT) == (2, 1, 1)
     assert validate_version_policy(ROOT) == []
 
 

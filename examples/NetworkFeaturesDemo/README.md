@@ -39,5 +39,5 @@ cmake --build build --target NetworkFeaturesDemo
 ## Related docs
 
 - [HTTP 版本配置](../../docs/user/configuration.md#http-version)
-- [当前发布合同](../../docs/dev/release/2.1.0-release-contract.md)
+- [当前发布合同](../../docs/dev/release/2.1.1-release-contract.md)
 - [当前版本变化](../../CHANGELOG.md#current-release)

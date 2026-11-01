@@ -2,7 +2,7 @@
 
 从 **2.1.0** 起，QCurl 以 `major.minor` 为兼容版本线。后续 patch 必须向后兼容本线所有较早正式 patch 的公共源码、受支持 shared ABI、安装消费和公开行为。改变 major 或 minor 后不承诺兼容，升级前须查阅迁移说明并重建下游。
 
-这是项目自定义版本政策，**不是 SemVer 的 minor 兼容规则**；不能从 major 相同推导兼容。历史 2.0 的合同与 tag 保留原义，不追溯适用本政策。当前发布输入和资格条件见唯一 [2.1 发布合同](2.1.0-release-contract.md)，执行命令见[发布操作](release-procedure.md)。
+这是项目自定义版本政策，**不是 SemVer 的 minor 兼容规则**；不能从 major 相同推导兼容。历史 2.0 的合同与 tag 保留原义，不追溯适用本政策。当前发布输入和资格条件见唯一 [2.1 发布合同](2.1.1-release-contract.md)，执行命令见[发布操作](release-procedure.md)。
 
 ## 1. 版本数字与方向
 

@@ -25,7 +25,7 @@ pkg-config --exists 'qcurl >= 2.1.0' 'qcurl < 2.2.0'
 
 Other Extras 对应 `qcurl-other-extras`。其包内 Core 依赖保持精确同版，完整包内的 Core、Other Extras、TestSupport 不应任意混装。
 
-Linux 两个 shared 库的 SONAME 从 `.so.2` 变为 `.so.2.1`，实体文件为 `libQCurl.so.2.1.0` 和 `libQCurlOtherExtras.so.2.1.0`；不提供旧 SONAME 兼容链接。跨线重建与本线后续 patch 的旧二进制保护是两个不同要求。
+Linux 两个 shared 库的 SONAME 从 `.so.2` 变为 `.so.2.1`，实体文件随 patch 变化（2.1.0 为 `libQCurl.so.2.1.0`，本次 2.1.1 候选为 `libQCurl.so.2.1.1`；Other Extras 同理）；不提供旧 SONAME 兼容链接。跨线重建与本线后续 patch 的旧二进制保护是两个不同要求。
 
 ## 2. 真正需要调整的源码与行为
 
@@ -85,4 +85,4 @@ if (result != QCurl::QCNetworkConfigUpdateResult::Applied) {
 
 在正式支持的 Linux x86_64 GCC/libstdc++ C++17、Release shared、未插桩、相同 Qt/标准库 ABI 与功能配置中，旧 shared consumer 使用后续兼容 patch 无须重编译。static 仍需重建才能获得更新；不同 tuple、降级、任意组件混装不在此承诺内。跨 2.2 等新线须重新核对迁移并重建。
 
-这是自定义版本线政策，不承诺整个 2.x 兼容，也不追溯改变 2.0 历史合同。2.1.0 首版捕获参考并自测可用，不能由此声称一次真实 patch 升级已经验证；资格和已验证边界以[当前发布合同](../dev/release/2.1.0-release-contract.md)绑定的真实机器证据为准。
+这是自定义版本线政策，不承诺整个 2.x 兼容，也不追溯改变 2.0 历史合同。v2.1.0 首版捕获参考并自测可用，不能由此声称一次真实 patch 升级已经验证；2.1.1 是首个同线 patch 候选，资格和已验证边界以[当前发布合同](../dev/release/2.1.1-release-contract.md)绑定的真实机器证据为准。

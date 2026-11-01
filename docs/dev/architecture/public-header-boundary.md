@@ -9,7 +9,7 @@
 - Core 默认消费；Blocking Extras 是显式 INTERFACE target，实现在 Core 库内；Other Extras 独立编译；Test Support 是开发静态库。Preview 与 Internal 都不是额外组件。
 - QCURL_INSTALL_HEADERS_EXTRAS 仅为非默认头的聚合集合，不定义所有权；WebSocket 按 QCURL_WEBSOCKET_SUPPORT 条件安装，不进入 Core。
 
-[版本与兼容政策](../release/versioning-and-compatibility.md)规定从 2.1 起，同 `major.minor` 后续 patch 保护全部已发布 Public 安装面（含 Preview）的源码、受支持 shared ABI、安装消费与公开行为；跨 minor 不保证兼容。[当前正式合同](../release/2.1.0-release-contract.md)定义实际资格输入。机器清单负责枚举，不在正文复制完整头列表。
+[版本与兼容政策](../release/versioning-and-compatibility.md)规定从 2.1 起，同 `major.minor` 后续 patch 保护全部已发布 Public 安装面（含 Preview）的源码、受支持 shared ABI、安装消费与公开行为；跨 minor 不保证兼容。[当前正式合同](../release/2.1.1-release-contract.md)定义实际资格输入。机器清单负责枚举，不在正文复制完整头列表。
 
 ## 2. 公开头约束
 

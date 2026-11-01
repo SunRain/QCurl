@@ -4,7 +4,7 @@
 
 Arch Linux 用户也可从当前工作区生成由 pacman 管理的完整开发包，见 [Arch Linux 本地开发包](archlinux-packaging.md)。安装包后直接从第 2 节开始消费，无需再次源码安装。
 
-当前候选为 2.1.0；从 2.1 起，同 `major.minor` 的后续 patch 保护全部 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费与行为。跨 minor 须核对迁移并重建；二进制支持环境与版本语义见[版本与兼容政策](../dev/release/versioning-and-compatibility.md)。本教程运行成功不代表候选已经取得正式发布资格。
+当前候选为 2.1.1；从 2.1 起，同 `major.minor` 的后续 patch 保护全部 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费与行为。跨 minor 须核对迁移并重建；二进制支持环境与版本语义见[版本与兼容政策](../dev/release/versioning-and-compatibility.md)。本教程运行成功不代表候选已经取得正式发布资格。
 
 ## 1. 准备与安装
 

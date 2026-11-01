@@ -29,7 +29,7 @@ def add_manifest_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         action="append",
         default=[],
-        help="authority input; full requires only docs/dev/release/2.1.0-release-contract.md",
+        help="authority input; full requires only docs/dev/release/2.1.1-release-contract.md",
     )
     parser.add_argument(
         "--snapshot-only",

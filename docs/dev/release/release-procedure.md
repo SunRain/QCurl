@@ -1,10 +1,10 @@
 # 发布操作
 
-维护者用本页准备候选、执行五树资格、打包并在授权后发布。唯一当前 release identity authority 为 [2.1 正式合同](2.1.0-release-contract.md)；长期承诺在[版本与兼容政策](versioning-and-compatibility.md)。本页是操作说明，不以文档校验、历史报告或局部 PASS 代替真实候选证据。命令从仓库根目录执行。
+维护者用本页准备候选、执行五树资格、打包并在授权后发布。唯一当前 release identity authority 为 [2.1 正式合同](2.1.1-release-contract.md)；长期承诺在[版本与兼容政策](versioning-and-compatibility.md)。本页是操作说明，不以文档校验、历史报告或局部 PASS 代替真实候选证据。命令从仓库根目录执行。
 
 ## 1. 前置条件与授权
 
-- 当前候选 2.1.0 建立新线，使用 snapshot 捕获首版参考；同线后续 patch 使用 current 与 first/latest 参考。跨 minor 不保证兼容，不能保留“所有 2.x 兼容”或“所有更新必须重编译”的当前表述。
+- 当前候选 2.1.1 是同线首个 patch，使用 `current` 与指向 v2.1.0 首版参考的 first/latest；`snapshot` 捕获只属于 2.1.0 首版候选。跨 minor 不保证兼容，不能保留“所有 2.x 兼容”或“所有更新必须重编译”的当前表述。
 - 完成源码、文档、失败控制与 remediation 后，经授权形成 clean C1，冻结 CHANGELOG 对应条目、依赖和构建输入。最终资格要求 superproject 与递归子模块干净；dirty 结果不能改名为 final。
 - 准备 Linux x86_64、GCC/libstdc++ C++17、Clang、CMake/Ninja、Python/pytest、Doxygen、libabigail、真实最低 Qt 6.10.3 / libcurl 8.14.1 独立前缀，以及[本地测试服务](../build-and-test.md#2-qttest-与本地服务)。HTTP/3/testenv 依赖见[一致性专题](../../../tests/libcurl_consistency/README.md)。
 - 二进制 tuple 与完整默认功能遵循正式合同；不裁剪 WebSocket。Core、Other Extras 和 TestSupport 使用同一候选，static/Clang/sanitizer 的验证不代表任意二进制互换。
@@ -89,12 +89,16 @@ done
 
 `remediation` 是本地修复验证；`final` 必须显式指定且绑定 clean C1。首版 `M.m.0` 的 full/final 必须使用 `snapshot`；后续 patch 必须使用 `current`。`none` 只允许非 full/final 的局部诊断；没有 promotion 发布阶段。
 
-本次 2.1.0 首版命令：
+本次 2.1.1 patch 候选命令。首版参考已由 v2.1.0 候选捕获，本次 first/latest 都指向这份已核对的参考；gate 会核对身份后去重：
 
 ```bash
+: "${REF_FIRST:?v2.1.0 已核对首版参考目录}"
+: "${REF_LATEST:?最近已核对正式 patch 参考目录}"
 gate=(python3 scripts/run_release_gate.py
-  --tier full --stage final --abi-mode snapshot
-  --authority docs/dev/release/2.1.0-release-contract.md
+  --tier full --stage final --abi-mode current
+  --abi-reference-first "$REF_FIRST"
+  --abi-reference-latest "$REF_LATEST"
+  --authority docs/dev/release/2.1.1-release-contract.md
   --release-shared-build-dir "$B/release-shared"
   --release-static-build-dir "$B/release-static"
   --test-shared-gcc-build-dir "$B/test-shared-gcc"
@@ -110,15 +114,7 @@ git diff --check
 
 remediation 使用不同的新 `B`，并把 stage 改为 remediation；不能复用 final 输出。full 必须且只能提供一份上述 authority；缺失、重复、额外或旧 2.0 authority 均失败。`--dry-run` 只核对步骤选择，不证明实际 authority、参考、consumer 或 final 执行成功。
 
-未来准备真实 patch 时，在相同五树参数集合中把 ABI 部分替换为：
-
-```text
---abi-mode current
---abi-reference-first <已核对的本线首版正式参考目录>
---abi-reference-latest <已核对的最近正式patch参考目录>
-```
-
-相同参数也传给 `--verify-manifest`。first/latest 必须由真实同线正式 tag 和资产核对，不能任意挑一个较老 patch；两者相同则核对身份后去重。缺参考、错线/tuple、候选冒充历史或 patch 选择 snapshot 均阻断。没有真实 patch 与历史参考时，不声称这条产品升级链已经实测。
+2.1.0 首版使用 `--abi-mode snapshot` 捕获首版参考；patch 候选必须使用 `current`，不能用 snapshot 绕过与 v2.1.0 的比较。first/latest 必须由真实同线 tag 和资产核对，不能任意挑一个较老 patch；两者相同则核对身份后去重。缺参考、错线/tuple、候选冒充历史或 patch 选择 snapshot 均阻断。fresh full/final 与独立 verify 完成前，不能声称这条 patch 兼容链已经实测。
 
 ### 结果复核
 
@@ -162,7 +158,7 @@ DEB/RPM 选择相应 generator 并准备工具。Arch 使用[本地完整包入�
 
 ```bash
 cd "$B/release-shared/packages"
-sha256sum QCurl-2.1.0-Linux.tar.gz > SHA256SUMS
+sha256sum QCurl-2.1.1-Linux.tar.gz > SHA256SUMS
 sha256sum --check SHA256SUMS
 ```
 

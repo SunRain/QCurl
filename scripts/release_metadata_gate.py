@@ -12,6 +12,7 @@ def _is_release_identity_scan_target(path: Path) -> bool:
         ".git",
         ".helloagents",
         ".claude",
+        ".unipi",
         "curl",
         "node_modules",
         "__pycache__",
