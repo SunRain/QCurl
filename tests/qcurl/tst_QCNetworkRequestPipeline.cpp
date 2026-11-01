@@ -1,3 +1,4 @@
+#include "qcnetwork_trace_test_helpers.h"
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
@@ -196,22 +197,24 @@ void TestQCNetworkRequestPipeline::testDiagnosticPolicyPreservesIdentityAndSnaps
     QCOMPARE(reply->diagnosticQueryPolicy(), QCNetworkDiagnosticQueryPolicy::Full);
     for (bool resetIdle : {false, true}) {
         snapshot.transferState->trace.beginNetworkAttempt();
-        QVERIFY(snapshot.transferState->trace
-                    .consume(CURLINFO_HEADER_OUT, QByteArrayLiteral("GET /path?page=2"))
+        QVERIFY(TraceTest::consume(snapshot.transferState->trace,
+                                   CURLINFO_HEADER_OUT,
+                                   QByteArrayLiteral("GET /path?page=2"))
                     .isEmpty());
         Internal::resetReplyForRetry(&snapshot, resetIdle);
         // reset 也服务模拟路径：旧尾段被丢弃且 trace 停止，不自行开放真实网络资格。
-        QVERIFY(snapshot.transferState->trace
-                    .consume(CURLINFO_HEADER_OUT, QByteArrayLiteral(" HTTP/1.1\r\n\r\n"))
+        QVERIFY(TraceTest::consume(snapshot.transferState->trace,
+                                   CURLINFO_HEADER_OUT,
+                                   QByteArrayLiteral(" HTTP/1.1\r\n\r\n"))
                     .isEmpty());
-        QVERIFY(snapshot.transferState->trace
-                    .consume(CURLINFO_HEADER_OUT,
-                             QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+        QVERIFY(TraceTest::consume(snapshot.transferState->trace,
+                                   CURLINFO_HEADER_OUT,
+                                   QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
                     .isEmpty());
         snapshot.transferState->trace.beginNetworkAttempt();
-        QVERIFY(snapshot.transferState->trace
-                    .consume(CURLINFO_HEADER_OUT,
-                             QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
+        QVERIFY(TraceTest::consume(snapshot.transferState->trace,
+                                   CURLINFO_HEADER_OUT,
+                                   QByteArrayLiteral("GET /path?page=2 HTTP/1.1\r\n\r\n"))
                     .contains(QStringLiteral("GET /path?page=2 HTTP/1.1")));
     }
     QTRY_VERIFY_WITH_TIMEOUT(reply->isFinished(), 2000);

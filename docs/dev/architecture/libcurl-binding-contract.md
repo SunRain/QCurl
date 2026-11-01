@@ -70,10 +70,30 @@ middleware、开始日志与每个 QCurl 网络 attempt 的首个可识别 HEADE
 
 两档都移除 URL userinfo/fragment，隐藏敏感头、TEXT/HEADER_IN、Location、redirect
 完成日志及后续目标 query。fragment-only 的默认日志移除 fragment，是对原输出的安全
-收敛。trace 按逻辑行跨 callback 处理，不把分块边界当行边界；超出每通道 4,096 原始字节
-预算或无法识别时丢弃原始行/续段，结束时不输出未完成尾段。CONNECT/407 不消费初始目标
-机会，origin 认证重发和重定向不重新开放，只有新的 QCurl attempt 复位。最终 message
-总长（含前缀/标记）不超过 4,096 个 QString UTF-16 单元，限长发生在脱敏之后。
+收敛。trace 按逻辑行跨 callback 处理，不把分块边界当行边界；每行最多缓存 4,096
+原始字节（含 CR，不含结束 LF），全部 caller/internal 通道合计最多 12,288 原始字节。
+超限或无法可靠判界时丢弃受影响的原始行/续段，结束时不输出未完成尾段。CONNECT/407
+不消费初始目标机会，origin 认证重发和重定向不重新开放，只有新的 QCurl attempt 复位。
+最终 message 总长不超过 4,096 个 QString UTF-16 单元，每行类型、ID 与安全标记全部
+计入；先脱敏再限长，不能截出半个 ID 或固定安全标记。
+
+两条生产 debug callback 根据现有 owner 的主 easy handle 区分 caller 与 internal，
+不覆盖 `CURLOPT_PRIVATE`。callback 起始的单层 `[transfer-connection] ` 装饰仅接受非负
+`curl_off_t` 十进制值或小写 `x`，并与实际 callback handle 的 `CURLINFO_XFER_ID`、
+`CURLINFO_CONN_ID` 成功结果逐字段核对，`x` 仅对应 `-1`。合法 ID 在正文分类前分离，
+安全行、脱敏头、凭据摘要与固定标记保留各自可靠 ID；一次 callback 多行时逐行标注。
+跨 callback 的行只使用首片段可靠 ID，后续片段冲突则丢弃该关联及正文。无装饰不补造
+ID；未知来源、非法/嵌套装饰或 getter 失败/不匹配只输出安全标记，不显示未确认 ID。
+transfer ID 仅在相同 connection cache/multi 内用于关联，connection ID 可复用，不是
+全局请求主键。DATA/SSL_DATA 仅输出去装饰后的 callback payload 长度，不回显正文。
+
+caller/internal 分别保存固定的三通道状态，原始缓存预算共同计算。只有确认的 caller
+初始目标可获得 Full；internal 目标始终 Redacted，不能消费 caller 资格或解除其凭据
+保护。internal handle 切换后，该内部槽在本 attempt 持续失步，仅输出安全标记，可附
+本 callback 的可靠 ID；LF、空行、非 TEXT 或切回旧 handle 均不解除。未知事件不能作为
+恢复边界；未知 HEADER_OUT 无法排除初始目标已丢失时关闭 Full 资格。正常 caller 与
+未失步内部记录仍输出安全诊断。疑似上游截断（包括结尾 `...\n`）只保留此前完整安全行，
+末行及不确定续段受保护，补出的 LF 不能解除；TEXT 只在同来源可信协议边界后恢复。
 
 TEXT 中的 URL 按完整记录处理，不能把 URL 内的合法单引号当成结束边界。libcurl
 重定向记录先提取完整 URL，再统一隐藏 query 并移除 userinfo/fragment。未知包装、畸形
@@ -85,7 +105,8 @@ Cookie 添加/替换与 Server/Proxy auth 的 TEXT 不是 HTTP 头，仍必须�
 不能把原片段作为普通 TEXT 回退。用户名可含 LF 和引号，凭据记录后的无缩进尾行也
 必须保护；不能凭行尾或引号猜测记录结束。识别出的凭据或超限 TEXT 启用凭据续段保护，
 直到真实非 TEXT 协议事件且原始尾段已完整消费才解除；跨类型的未完成尾段不丢失状态。
-这段区间内正常 TEXT 也可能统一显示固定安全标记，边界后普通无凭据 TEXT 恢复可见。
+这段区间内正常 TEXT 也可能统一显示固定安全标记，仍可输出统一分类器生成的安全凭据
+摘要；边界后普通无凭据 TEXT 恢复可见。
 这是有限的诊断可见性取舍，不关闭 trace、Cookie engine 或认证，也不进行任意业务文本
 的通用秘密扫描。敏感头名已出现却缺合法分隔符的记录同样 fail-closed。
 

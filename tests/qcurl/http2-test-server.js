@@ -148,6 +148,11 @@ async function main() {
       stream.respond({
         ':status': status,
         'content-type': 'application/json',
+        'set-cookie': 'session=response-secret; Path=/',
+        'x-auth-token': 'response-secret',
+        'x-api-key': 'response-secret',
+        'x-signature': 'response-secret',
+        'x-response-marker': String(headers['x-public-id'] || 'safe-response'),
       });
       stream.end(JSON.stringify(obj));
     };

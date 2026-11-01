@@ -271,8 +271,6 @@ int QCCurlMultiTransferRecord::progressCallback(
 int QCCurlMultiTransferRecord::debugCallback(
     CURL *handle, curl_infotype type, char *data, size_t size, void *userdata)
 {
-    Q_UNUSED(handle);
-
     auto *record = static_cast<QCCurlMultiTransferRecord *>(userdata);
     auto *state  = record ? record->m_transferState.data() : nullptr;
     if (!state) {
@@ -291,8 +289,11 @@ int QCCurlMultiTransferRecord::debugCallback(
         return 0;
     }
 
-    const QString message = state->trace.consume(type,
-                                                 QByteArrayView(data, static_cast<qsizetype>(size)));
+    const auto callback
+        = Internal::inspectTraceCallback(handle,
+                                         record->handle(),
+                                         QByteArrayView(data, static_cast<qsizetype>(size)));
+    const QString message = state->trace.consume(type, callback);
     if (!message.isEmpty()) {
         static_cast<void>(logger->log(NetworkLogLevel::Debug, QStringLiteral("Trace"), message));
     }

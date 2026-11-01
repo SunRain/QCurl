@@ -7,10 +7,14 @@
 #include "QCNetworkRequest.h"
 #include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCNetworkMiddlewareInternal_p.h"
+#include "qcnetwork_builtin_log_test.h"
+#include "qcnetwork_no_proxy_guard.h"
 #include "qcnetwork_retry_policy_test_helper.h"
+#include "qcnetwork_trace_mode.h"
 #include "qcurl_http_script_server.h"
 
 #include <QLoggingCategory>
+#include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QtTest>
@@ -46,6 +50,60 @@ QCNetworkRequest loggingRequest(QUrl url, int mode, const QString &query)
     return request;
 }
 
+void verifyBuiltinSecrets(const QString &log, QCNetworkDiagnosticQueryPolicy policy)
+{
+    if (policy == QCNetworkDiagnosticQueryPolicy::Redacted) {
+        QVERIFY(!log.contains(QStringLiteral("synthetic-opaque-authorization-417-unique-marker")));
+        QVERIFY(!log.contains(QStringLiteral("%2B%2F%26%3D")));
+        QVERIFY(!log.contains(QStringLiteral("synthetic-space-authorization-515-unique-marker")));
+    }
+    for (const auto &secret : {QStringLiteral("synthetic-redirect-authorization-913-unique-marker"),
+                               QStringLiteral("synthetic-password-913"),
+                               QStringLiteral("synthetic-fragment-secret"),
+                               QStringLiteral("header-secret"),
+                               QStringLiteral("cookie-secret")}) {
+        QVERIFY(!log.contains(secret));
+    }
+}
+
+void verifyBuiltinWireTarget(const QList<QByteArray> &requests,
+                             const QByteArray &target,
+                             const QUrl &url,
+                             const QString &query,
+                             QCNetworkDiagnosticQueryPolicy policy,
+                             const QString &log)
+{
+    QCOMPARE(requests.size(), 1);
+    QVERIFY(requests.constFirst().startsWith(QByteArrayLiteral("GET ") + target
+                                             + QByteArrayLiteral(" HTTP/1.1\r\n")));
+    if (!query.isEmpty()) {
+        if (policy == QCNetworkDiagnosticQueryPolicy::Full) {
+            QVERIFY(log.contains(url.query(QUrl::FullyEncoded)));
+        } else {
+            QVERIFY(log.contains(QStringLiteral("?[REDACTED]")));
+        }
+    }
+}
+
+void verifyQuotedRedirectTrace(const QCNetworkDefaultLogger &capture, const QString &expectedText)
+{
+    bool redirectTextObserved = false;
+    for (const auto &entry : capture.entries()) {
+        for (const auto &marker : {QStringLiteral("credential-marker"),
+                                   QStringLiteral("fragment-marker"),
+                                   QStringLiteral("query-marker")}) {
+            QVERIFY2(!entry.message().contains(marker), qPrintable(entry.message()));
+        }
+        if (entry.category() == QStringLiteral("Trace")
+            && entry.message().startsWith(QStringLiteral("TEXT: "))
+            && entry.message().endsWith(expectedText)) {
+            redirectTextObserved = true;
+        }
+    }
+    // 必须实际观察到安全 URL，而不是因关闭 trace 或丢掉全部 TEXT 使断言假绿。
+    QVERIFY(redirectTextObserved);
+}
+
 void configureLogger(QCNetworkAccessManager &manager, int mode)
 {
     if (mode != 1 && mode != 2 && mode != 7) {
@@ -57,33 +115,6 @@ void configureLogger(QCNetworkAccessManager &manager, int mode)
     manager.setDebugTraceEnabled(mode != 1);
 }
 } // namespace
-
-class tst_QCNetworkBuiltinLogRedaction : public QObject
-{
-    Q_OBJECT
-    Q_DISABLE_COPY_MOVE(tst_QCNetworkBuiltinLogRedaction)
-
-public:
-    tst_QCNetworkBuiltinLogRedaction() = default;
-
-private Q_SLOTS:
-    void builtinLogs_data();
-    void builtinLogs();
-    void redactsOpaqueQueries();
-    void transportFailureKeepsSafeDiagnostics();
-    void fullRedirectAndWireIdentity();
-    void quotedRedirectUrlsKeepSecretsPrivate_data();
-    void quotedRedirectUrlsKeepSecretsPrivate();
-    void fullTransportFailureKeepsUrlField();
-    void authenticationResendDoesNotReopenFull_data();
-    void authenticationResendDoesNotReopenFull();
-    void retryStartsNewFullAttempt_data();
-    void retryStartsNewFullAttempt();
-    void cookieTextKeepsCredentialsPrivate_data();
-    void cookieTextKeepsCredentialsPrivate();
-    void normalizedInitialTargetPreservesWireAndQuery_data();
-    void normalizedInitialTargetPreservesWireAndQuery();
-};
 
 void tst_QCNetworkBuiltinLogRedaction::builtinLogs_data()
 {
@@ -159,35 +190,16 @@ void tst_QCNetworkBuiltinLogRedaction::builtinLogs()
     QCOMPARE(reply->httpStatusCode(), status);
     QCOMPARE(reply->error() == NetworkError::NoError, status < 400);
     const QString log = s_messages.join('\n');
-    const bool full   = policy == QCNetworkDiagnosticQueryPolicy::Full;
-    if (!full) {
-        QVERIFY(!log.contains(QStringLiteral("synthetic-opaque-authorization-417-unique-marker")));
-        QVERIFY(!log.contains(QStringLiteral("%2B%2F%26%3D")));
-        QVERIFY(!log.contains(QStringLiteral("synthetic-space-authorization-515-unique-marker")));
-    }
-    QVERIFY(!log.contains(QStringLiteral("synthetic-redirect-authorization-913-unique-marker")));
-    QVERIFY(!log.contains(QStringLiteral("synthetic-password-913")));
-    QVERIFY(!log.contains(QStringLiteral("synthetic-fragment-secret")));
-    QVERIFY(!log.contains(QStringLiteral("header-secret")));
-    QVERIFY(!log.contains(QStringLiteral("cookie-secret")));
+    verifyBuiltinSecrets(log, policy);
     QCOMPARE(reply->url(), request.url());
     QCOMPARE(reply->diagnosticQueryPolicy(), policy);
     QVERIFY(log.contains(QStringLiteral("/resource")));
     QVERIFY(log.contains(QStringLiteral("127.0.0.1")));
     const QList<QByteArray> requests = server.requests();
-    QCOMPARE(requests.size(), 1);
     const QByteArray target = QByteArrayLiteral("/resource")
                               + (query.isEmpty() ? QByteArray()
                                                  : QByteArrayLiteral("?") + query.toLatin1());
-    QVERIFY(requests.constFirst().startsWith(QByteArrayLiteral("GET ") + target
-                                             + QByteArrayLiteral(" HTTP/1.1\r\n")));
-    if (!query.isEmpty()) {
-        if (full) {
-            QVERIFY(log.contains(request.url().query(QUrl::FullyEncoded)));
-        } else {
-            QVERIFY(log.contains(QStringLiteral("?[REDACTED]")));
-        }
-    }
+    verifyBuiltinWireTarget(requests, target, request.url(), query, policy, log);
     if (mode == 2 || mode == 7) {
         QVERIFY(log.contains(QStringLiteral("HEADER_OUT")));
     }
@@ -322,24 +334,7 @@ void tst_QCNetworkBuiltinLogRedaction::quotedRedirectUrlsKeepSecretsPrivate()
                              HttpScriptServer::response(200, QByteArrayLiteral("OK")),
                              HttpScriptServer::response(302, {}, headers)});
     QVERIFY(server.start());
-    const QByteArray previousNoProxy      = qgetenv("no_proxy");
-    const QByteArray previousUpperNoProxy = qgetenv("NO_PROXY");
-    const bool hadNoProxy                 = qEnvironmentVariableIsSet("no_proxy");
-    const bool hadUpperNoProxy            = qEnvironmentVariableIsSet("NO_PROXY");
-    const auto restoreEnvironment         = qScopeGuard([&] {
-        if (hadNoProxy) {
-            qputenv("no_proxy", previousNoProxy);
-        } else {
-            qunsetenv("no_proxy");
-        }
-        if (hadUpperNoProxy) {
-            qputenv("NO_PROXY", previousUpperNoProxy);
-        } else {
-            qunsetenv("NO_PROXY");
-        }
-    });
-    qunsetenv("no_proxy");
-    qunsetenv("NO_PROXY");
+    const NoProxyGuard environment;
     QCNetworkDefaultLogger *capture = nullptr;
     const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
     capture->enableConsoleOutput(false);
@@ -371,8 +366,8 @@ void tst_QCNetworkBuiltinLogRedaction::quotedRedirectUrlsKeepSecretsPrivate()
     QCOMPARE(requests.last().split('\n').first(),
              QByteArrayLiteral("GET ") + wireTarget + QByteArrayLiteral(" HTTP/1.1\r"));
     const QString safeTarget   = QCNetworkLogRedaction::redactUrl(targetUrl);
-    const QString expectedText = QStringLiteral("TEXT: Issue another request to this URL: '")
-                                 + safeTarget + QLatin1Char('\'');
+    const QString expectedText = QStringLiteral("Issue another request to this URL: '") + safeTarget
+                                 + QLatin1Char('\'');
     request.setFollowLocation(false);
     reply = manager.get(request);
     QSignalSpy rawFinished(reply, &QCNetworkReply::finished);
@@ -382,19 +377,7 @@ void tst_QCNetworkBuiltinLogRedaction::quotedRedirectUrlsKeepSecretsPrivate()
     QCOMPARE(reply->rawHeader(QByteArrayLiteral("Location")), location);
     QCOMPARE(server.requests().size(), 3);
     QCOMPARE(server.requests().last().split('\n').first(), requests.first().split('\n').first());
-    bool redirectTextObserved = false;
-    for (const auto &entry : capture->entries()) {
-        for (const auto &marker : {QStringLiteral("credential-marker"),
-                                   QStringLiteral("fragment-marker"),
-                                   QStringLiteral("query-marker")}) {
-            QVERIFY2(!entry.message().contains(marker), qPrintable(entry.message()));
-        }
-        if (entry.category() == QStringLiteral("Trace") && entry.message() == expectedText) {
-            redirectTextObserved = true;
-        }
-    }
-    // 必须实际观察到安全 URL，而不是因关闭 trace 或丢掉全部 TEXT 使断言假绿。
-    QVERIFY(redirectTextObserved);
+    verifyQuotedRedirectTrace(*capture, expectedText);
 }
 
 void tst_QCNetworkBuiltinLogRedaction::fullTransportFailureKeepsUrlField()
@@ -431,310 +414,14 @@ void tst_QCNetworkBuiltinLogRedaction::fullTransportFailureKeepsUrlField()
     }
 }
 
-void tst_QCNetworkBuiltinLogRedaction::authenticationResendDoesNotReopenFull_data()
+int main(int argc, char **argv)
 {
-    QTest::addColumn<QCNetworkDiagnosticQueryPolicy>("policy");
-    QTest::addColumn<QString>("userName");
-    for (const auto &userName :
-         {QStringLiteral("synthetic-auth-user"),
-          QStringLiteral("synthetic-auth-user\nsynthetic-auth-tail-marker")}) {
-        const QString suffix = userName.contains(QLatin1Char('\n')) ? QStringLiteral("-multiline")
-                                                                    : QString();
-        QTest::newRow(qPrintable(QStringLiteral("redacted") + suffix))
-            << QCNetworkDiagnosticQueryPolicy::Redacted << userName;
-        QTest::newRow(qPrintable(QStringLiteral("full") + suffix))
-            << QCNetworkDiagnosticQueryPolicy::Full << userName;
+    QCoreApplication application(argc, argv);
+    if (!configureTraceMode()) {
+        return 1;
     }
+    tst_QCNetworkBuiltinLogRedaction test;
+    const int result = QTest::qExec(&test, argc, argv);
+    curl_global_cleanup();
+    return result;
 }
-
-void tst_QCNetworkBuiltinLogRedaction::authenticationResendDoesNotReopenFull()
-{
-    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
-    QFETCH(QString, userName);
-    HttpScriptServer server({
-        HttpScriptServer::response(401,
-                                   {},
-                                   QByteArrayLiteral(
-                                       "WWW-Authenticate: Basic realm=\"qcurl-fixture\"\r\n")),
-        HttpScriptServer::response(200, QByteArrayLiteral("OK")),
-    });
-    QVERIFY(server.start());
-    QCNetworkDefaultLogger *capture = nullptr;
-    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
-    capture->enableConsoleOutput(false);
-    capture->setMinLogLevel(NetworkLogLevel::Debug);
-    QCNetworkAccessManager manager;
-    manager.setLogger(logger);
-    manager.setDebugTraceEnabled(true);
-    auto url = server.url();
-    url.setQuery(QStringLiteral("route=auth-query-marker"));
-    QCNetworkRequest request(url);
-    request.setDiagnosticQueryPolicy(policy);
-    QCNetworkHttpAuthConfig auth;
-    auth.setMethod(QCNetworkHttpAuthMethod::Any);
-    auth.setUserName(userName);
-    auth.setPassword(QStringLiteral("synthetic-auth-secret"));
-    request.setHttpAuth(auth);
-    auto *reply = manager.get(request);
-    QSignalSpy finished(reply, &QCNetworkReply::finished);
-    QVERIFY(finished.wait(5000));
-    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
-    QCOMPARE(reply->retryAttemptCount(), 0);
-    const auto requests = server.requests();
-    QCOMPARE(requests.size(), 2);
-    QVERIFY(!requests.first().contains("Authorization:"));
-    const auto credentials = (userName.toUtf8() + QByteArrayLiteral(":synthetic-auth-secret"))
-                                 .toBase64();
-    QVERIFY(requests.last().contains(QByteArrayLiteral("Authorization: Basic ") + credentials));
-    QCOMPARE(requests.first().split('\n').first(), requests.last().split('\n').first());
-    QString outgoing;
-    bool authTextObserved     = false;
-    const bool multiline      = userName.contains(QLatin1Char('\n'));
-    const QString authSummary = multiline ? QStringLiteral("[REDACTED: credential record]")
-                                          : QStringLiteral("Server auth using Basic");
-    bool continuationObserved = false;
-    for (const auto &entry : capture->entries()) {
-        const QString message = entry.message();
-        QVERIFY(!message.contains(QStringLiteral("synthetic-auth-user")));
-        QVERIFY(!message.contains(QStringLiteral("synthetic-auth-tail-marker")));
-        QVERIFY(!message.contains(QStringLiteral("synthetic-auth-secret")));
-        QVERIFY(!message.contains(QString::fromLatin1(credentials)));
-        if (entry.category() == QStringLiteral("Trace")
-            && message.startsWith(QStringLiteral("TEXT:"))) {
-            authTextObserved |= message.contains(authSummary);
-            continuationObserved |= message.contains(
-                QStringLiteral("[REDACTED: credential continuation]"));
-        }
-        if (entry.category() == QStringLiteral("Trace")
-            && message.startsWith(QStringLiteral("HEADER_OUT:"))) {
-            outgoing += message + QLatin1Char('\n');
-        }
-    }
-    QVERIFY(authTextObserved);
-    QCOMPARE(continuationObserved, multiline);
-    QCOMPARE(outgoing.count(QStringLiteral("GET /resource")), 2);
-    const bool full = policy == QCNetworkDiagnosticQueryPolicy::Full;
-    QCOMPARE(outgoing.count(QStringLiteral("GET /resource?route=auth-query-marker HTTP/1.1")),
-             full ? 1 : 0);
-    QCOMPARE(outgoing.count(QStringLiteral("GET /resource?[REDACTED] HTTP/1.1")), full ? 1 : 2);
-    QVERIFY(outgoing.contains(QStringLiteral("Authorization: [REDACTED]")));
-}
-
-void tst_QCNetworkBuiltinLogRedaction::retryStartsNewFullAttempt_data()
-{
-    QTest::addColumn<QCNetworkDiagnosticQueryPolicy>("policy");
-    QTest::newRow("redacted") << QCNetworkDiagnosticQueryPolicy::Redacted;
-    QTest::newRow("full") << QCNetworkDiagnosticQueryPolicy::Full;
-}
-
-void tst_QCNetworkBuiltinLogRedaction::retryStartsNewFullAttempt()
-{
-    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
-    HttpScriptServer server({HttpScriptServer::response(503, {}),
-                             HttpScriptServer::response(200, QByteArrayLiteral("OK"))});
-    QVERIFY(server.start());
-    QCNetworkDefaultLogger *capture = nullptr;
-    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
-    capture->enableConsoleOutput(false);
-    capture->setMinLogLevel(NetworkLogLevel::Debug);
-    QCNetworkAccessManager manager;
-    manager.setLogger(logger);
-    manager.setDebugTraceEnabled(true);
-    auto url = server.url();
-    url.setQuery(QStringLiteral("route=retry-query-marker"));
-    QCNetworkRequest request(url);
-    request.setDiagnosticQueryPolicy(policy);
-    request.setRetryPolicy(TestSupport::makeRetryPolicyOrFail(1, std::chrono::milliseconds(1)));
-    request.setRawHeader("Authorization", "Bearer retry-header-marker");
-    auto *reply = manager.get(request);
-    request.setDiagnosticQueryPolicy(QCNetworkDiagnosticQueryPolicy::Redacted);
-    QSignalSpy retry(reply, &QCNetworkReply::retryAttempt);
-    QSignalSpy finished(reply, &QCNetworkReply::finished);
-    QVERIFY(finished.wait(5000));
-    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
-    QCOMPARE(retry.size(), 1);
-    QCOMPARE(reply->retryAttemptCount(), 1);
-    QCOMPARE(reply->diagnosticQueryPolicy(), policy);
-    const auto requests = server.requests();
-    QCOMPARE(requests.size(), 2);
-    QCOMPARE(requests.first().split('\n').first(), requests.last().split('\n').first());
-    QString outgoing;
-    for (const auto &entry : capture->entries()) {
-        const QString message = entry.message();
-        QVERIFY(!message.contains(QStringLiteral("retry-header-marker")));
-        if (entry.category() == QStringLiteral("Trace")
-            && message.startsWith(QStringLiteral("HEADER_OUT:"))) {
-            outgoing += message + QLatin1Char('\n');
-        }
-    }
-    const QString target = policy == QCNetworkDiagnosticQueryPolicy::Full
-                               ? QStringLiteral("GET /resource?route=retry-query-marker HTTP/1.1")
-                               : QStringLiteral("GET /resource?[REDACTED] HTTP/1.1");
-    QCOMPARE(outgoing.count(target), 2);
-    QVERIFY(outgoing.contains(QStringLiteral("Authorization: [REDACTED]")));
-}
-
-void tst_QCNetworkBuiltinLogRedaction::cookieTextKeepsCredentialsPrivate_data()
-{
-    retryStartsNewFullAttempt_data();
-}
-
-void tst_QCNetworkBuiltinLogRedaction::cookieTextKeepsCredentialsPrivate()
-{
-    QFETCH(QCNetworkDiagnosticQueryPolicy, policy);
-    HttpScriptServer server({
-        HttpScriptServer::response(
-            200,
-            QByteArrayLiteral("OK"),
-            QByteArrayLiteral("Set-Cookie: session=synthetic-cookie-added-marker; Path=/\r\n")),
-        HttpScriptServer::response(
-            200,
-            QByteArrayLiteral("OK"),
-            QByteArrayLiteral("Set-Cookie: session=synthetic-cookie-replaced-marker; Path=/\r\n")),
-        HttpScriptServer::response(200, QByteArrayLiteral("OK")),
-    });
-    QVERIFY(server.start());
-    QCNetworkDefaultLogger *capture = nullptr;
-    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
-    capture->enableConsoleOutput(false);
-    capture->setMinLogLevel(NetworkLogLevel::Debug);
-    QCNetworkAccessManager manager;
-    manager.setLogger(logger);
-    manager.setDebugTraceEnabled(true);
-    QCNetworkAccessManager::ShareHandleConfig share;
-    share.setShareCookies(true);
-    manager.setShareHandleConfig(share);
-    QCNetworkRequest request(server.url());
-    request.setDiagnosticQueryPolicy(policy);
-    for (int index = 0; index < 3; ++index) {
-        auto *reply = manager.get(request);
-        QSignalSpy finished(reply, &QCNetworkReply::finished);
-        QVERIFY(finished.wait(5000));
-        QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
-        if (index < 2) {
-            const QByteArray value = index == 0
-                                         ? QByteArrayLiteral("synthetic-cookie-added-marker")
-                                         : QByteArrayLiteral("synthetic-cookie-replaced-marker");
-            QVERIFY(reply->rawHeader("Set-Cookie").contains(value));
-        }
-    }
-    const auto requests = server.requests();
-    QCOMPARE(requests.size(), 3);
-    QVERIFY(!requests.first().contains("Cookie:"));
-    QVERIFY(requests.at(1).contains("Cookie: session=synthetic-cookie-added-marker"));
-    QVERIFY(requests.last().contains("Cookie: session=synthetic-cookie-replaced-marker"));
-    QString text;
-    for (const auto &entry : capture->entries()) {
-        QVERIFY(!entry.message().contains(QStringLiteral("synthetic-cookie-added-marker")));
-        QVERIFY(!entry.message().contains(QStringLiteral("synthetic-cookie-replaced-marker")));
-        if (entry.category() == QStringLiteral("Trace")
-            && entry.message().startsWith(QStringLiteral("TEXT:"))) {
-            text += entry.message() + QLatin1Char('\n');
-        }
-    }
-    // 操作摘要证明 Cookie engine 的真实 TEXT 经过日志链，不能用关闭输出造成假绿。
-    QVERIFY(text.contains(QStringLiteral("Added cookie [REDACTED]")));
-    QVERIFY(text.contains(QStringLiteral("Replaced cookie [REDACTED]")));
-}
-
-void tst_QCNetworkBuiltinLogRedaction::normalizedInitialTargetPreservesWireAndQuery_data()
-{
-    QTest::addColumn<QString>("path");
-    QTest::addColumn<QString>("normalizedPath");
-    QTest::addColumn<bool>("absoluteForm");
-    for (const auto &path : {QStringLiteral("/resource"),
-                             QStringLiteral("/a/./resource"),
-                             QStringLiteral("/a/../resource")}) {
-        for (bool absoluteForm : {false, true}) {
-            QTest::newRow(qPrintable(
-                path + (absoluteForm ? QStringLiteral("-absolute") : QStringLiteral("-origin"))))
-                << path
-                << (path == QStringLiteral("/a/./resource") ? QStringLiteral("/a/resource")
-                                                            : QStringLiteral("/resource"))
-                << absoluteForm;
-        }
-    }
-}
-
-void tst_QCNetworkBuiltinLogRedaction::normalizedInitialTargetPreservesWireAndQuery()
-{
-    QFETCH(QString, path);
-    QFETCH(QString, normalizedPath);
-    QFETCH(bool, absoluteForm);
-    HttpScriptServer server({HttpScriptServer::response(200, QByteArrayLiteral("OK")),
-                             HttpScriptServer::response(200, QByteArrayLiteral("OK"))});
-    QVERIFY(server.start());
-    const QByteArray previousNoProxy      = qgetenv("no_proxy");
-    const QByteArray previousUpperNoProxy = qgetenv("NO_PROXY");
-    const bool hadNoProxy                 = qEnvironmentVariableIsSet("no_proxy");
-    const bool hadUpperNoProxy            = qEnvironmentVariableIsSet("NO_PROXY");
-    const auto restoreEnvironment         = qScopeGuard([&] {
-        if (hadNoProxy) {
-            qputenv("no_proxy", previousNoProxy);
-        } else {
-            qunsetenv("no_proxy");
-        }
-        if (hadUpperNoProxy) {
-            qputenv("NO_PROXY", previousUpperNoProxy);
-        } else {
-            qunsetenv("NO_PROXY");
-        }
-    });
-    qunsetenv("no_proxy");
-    qunsetenv("NO_PROXY");
-    QCNetworkDefaultLogger *capture = nullptr;
-    const auto logger               = QCNetworkLoggerHandle::createWithBorrow(&capture);
-    capture->enableConsoleOutput(false);
-    capture->setMinLogLevel(NetworkLogLevel::Debug);
-    QCNetworkAccessManager manager;
-    manager.setLogger(logger);
-    manager.setDebugTraceEnabled(true);
-    QUrl url = absoluteForm ? QUrl(QStringLiteral("http://diagnostic-target.invalid:80"))
-                            : server.url();
-    url.setPath(path);
-    url.setQuery(QStringLiteral("route=normalized-query-marker&encoded=%2B"));
-    url.setFragment(QStringLiteral("normalized-fragment-marker"));
-    QCNetworkRequest request(url);
-    if (absoluteForm) {
-        // 夹具扮演 HTTP 代理，直接回复；目标域名无需解析，也不访问任何外部服务。
-        QCNetworkProxyConfig proxy;
-        proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
-        proxy.setHostName(QStringLiteral("127.0.0.1"));
-        proxy.setPort(static_cast<quint16>(server.url().port()));
-        request.setProxyConfig(proxy);
-    }
-    for (const auto policy :
-         {QCNetworkDiagnosticQueryPolicy::Full, QCNetworkDiagnosticQueryPolicy::Redacted}) {
-        request.setDiagnosticQueryPolicy(policy);
-        auto *reply = manager.get(request);
-        QSignalSpy finished(reply, &QCNetworkReply::finished);
-        QVERIFY(finished.wait(5000));
-        QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(reply->errorString()));
-        QCOMPARE(reply->url(), url);
-    }
-    const auto requests = server.requests();
-    QCOMPARE(requests.size(), 2);
-    const QByteArray target = (absoluteForm ? QByteArrayLiteral("http://diagnostic-target.invalid")
-                                            : QByteArray())
-                              + normalizedPath.toLatin1();
-    const QByteArray initialLine = QByteArrayLiteral("GET ") + target
-                                   + QByteArrayLiteral(
-                                       "?route=normalized-query-marker&encoded=%2B HTTP/1.1\r");
-    QCOMPARE(requests.first().split('\n').first(), initialLine);
-    QCOMPARE(requests.last().split('\n').first(), initialLine);
-    QString outgoing;
-    for (const auto &entry : capture->entries()) {
-        QVERIFY(!entry.message().contains(QStringLiteral("normalized-fragment-marker")));
-        if (entry.category() == QStringLiteral("Trace")
-            && entry.message().startsWith(QStringLiteral("HEADER_OUT:"))) {
-            outgoing += entry.message() + QLatin1Char('\n');
-        }
-    }
-    QCOMPARE(outgoing.count(QString::fromLatin1(initialLine.chopped(1))), 1);
-    QCOMPARE(outgoing.count(QStringLiteral("GET ") + QString::fromLatin1(target)
-                            + QStringLiteral("?[REDACTED] HTTP/1.1")),
-             1);
-}
-
-QTEST_GUILESS_MAIN(tst_QCNetworkBuiltinLogRedaction)
-#include "tst_QCNetworkBuiltinLogRedaction.moc"

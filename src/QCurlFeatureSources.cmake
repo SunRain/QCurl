@@ -7,6 +7,8 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyBodySource.cpp
     private/QCNetworkReplyCallbacks.cpp
     private/QCNetworkReplyTrace.cpp
+    private/QCNetworkReplyTraceTargets.cpp
+    private/QCNetworkTraceCallback.cpp
     private/QCNetworkReplyFlowControl.cpp
     private/QCNetworkReplyResponse.cpp
     private/QCNetworkReplyRuntime.cpp
@@ -106,6 +108,7 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkReplyBodySource_p.h
     private/QCNetworkReplyCallbacks_p.h
     private/QCNetworkReplyTrace_p.h
+    private/QCNetworkTraceCallback_p.h
     private/QCNetworkReplyExecution_p.h
     private/QCNetworkReplyFlowControl_p.h
     private/QCNetworkReplyMockChaos_p.h

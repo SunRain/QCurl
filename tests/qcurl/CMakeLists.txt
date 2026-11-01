@@ -215,7 +215,14 @@ add_qcurl_test_with_preflight(
     REQUIRE_HTTP2_SUITE
     HTTP2_PROBE_BIN "$<TARGET_FILE:qcurl_http2_capability_probe>"
     SOURCES
+    qcnetwork_http2_test.h
+    qcnetwork_connect_test_proxy.h
+    qcnetwork_no_proxy_guard.h
     tst_QCNetworkHttp2.cpp
+    qcnetwork_http2_fixture.cpp
+    qcnetwork_http2_trace_tests.cpp
+    qcnetwork_http2_protocol_tests.cpp
+    qcnetwork_http2_scheduling_tests.cpp
 ) # HTTP/2 功能测试
 add_qcurl_test(tst_QCNetworkSchedulerPolicy tst_QCNetworkSchedulerPolicy.cpp) # lane key / scheduler policy 值类型测试
 add_qcurl_test(tst_QCNetworkAdmissionCore tst_QCNetworkAdmissionCore.cpp)
@@ -281,8 +288,11 @@ target_compile_definitions(tst_QCNetworkStreamingCache PRIVATE QCURL_ENABLE_TEST
 set_tests_properties(tst_QCNetworkStreamingCache PROPERTIES LABELS "env;local_port")
 add_qcurl_test_with_preflight(tst_QCNetworkBuiltinLogRedaction
     REQUIRE_LOCAL_PORT
-    SOURCES tst_QCNetworkBuiltinLogRedaction.cpp qcurl_http_script_server.h)
+    SOURCES qcnetwork_builtin_log_test.h tst_QCNetworkBuiltinLogRedaction.cpp
+        qcnetwork_builtin_credentials_tests.cpp qcnetwork_builtin_trace_tests.cpp
+        qcnetwork_no_proxy_guard.h qcurl_http_script_server.h)
 set_tests_properties(tst_QCNetworkBuiltinLogRedaction PROPERTIES LABELS "env;local_port")
+include("${CMAKE_CURRENT_LIST_DIR}/QCurlTraceTests.cmake")
 add_qcurl_test_with_preflight(tst_QCNetworkPoolContract
     REQUIRE_LOCAL_PORT
     SOURCES tst_QCNetworkPoolContract.cpp qcurl_http_script_server.h)
@@ -383,7 +393,17 @@ add_qcurl_test_with_preflight(
 ) # multi share handle（M6+）
 
 # Logger / middleware / cookie / cancel token 相关测试
-add_qcurl_test(tst_QCNetworkLogger tst_QCNetworkLogger.cpp) # Logger 系统测试
+add_qcurl_test(tst_QCNetworkLogger
+    qcnetwork_logger_test.h
+    tst_QCNetworkLogger.cpp
+    qcnetwork_logger_output_tests.cpp
+    qcnetwork_logger_manager_tests.cpp
+    qcnetwork_trace_stream_tests.cpp
+    qcnetwork_trace_url_tests.cpp
+    qcnetwork_trace_lifecycle_tests.cpp
+    qcnetwork_trace_ids_tests.cpp
+    qcnetwork_trace_source_tests.cpp
+) # 保留一个 Logger executable，按职责拆分测试实现
 target_compile_definitions(tst_QCNetworkLogger PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCNetworkMiddleware tst_QCNetworkMiddleware.cpp) # 中间件测试
 add_qcurl_test(tst_QCNetworkMiddlewareIntegration tst_QCNetworkMiddlewareIntegration.cpp) # middleware 自动接入执行链路（离线门禁）

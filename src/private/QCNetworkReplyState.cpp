@@ -274,8 +274,6 @@ int QCNetworkReplyPrivate::curlProgressCallback(
 int QCNetworkReplyPrivate::curlDebugCallback(
     CURL *handle, curl_infotype type, char *data, size_t size, void *userptr)
 {
-    Q_UNUSED(handle);
-
     auto *d = static_cast<QCNetworkReplyPrivate *>(userptr);
     if (!d || !d->q_ptr) {
         return 0;
@@ -294,8 +292,11 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         return 0;
     }
 
-    const QString message = d->transferState->trace
-                                .consume(type, QByteArrayView(data, static_cast<qsizetype>(size)));
+    const auto callback
+        = Internal::inspectTraceCallback(handle,
+                                         d->curlManager.handle(),
+                                         QByteArrayView(data, static_cast<qsizetype>(size)));
+    const QString message = d->transferState->trace.consume(type, callback);
     if (message.isEmpty()) {
         return 0;
     }
