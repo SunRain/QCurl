@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief 保存 multi transfer record 拥有的异步传输状态。
+ * @brief 保存 reply、活动 record 与 detached handle 共享的异步传输状态。
  */
 
 #ifndef QCNETWORKREPLYTRANSFERSTATE_P_H
@@ -26,8 +26,8 @@ struct QCCurlMultiDomain;
 /**
  * @brief 保存活动 easy handle 借用的回调数据与选项存储。
  *
- * Reply 存活期间观察本状态；easy handle 进入 multi 后，transfer record 也持有本状态，
- * 直至 detach 完成。两个原生列表分别持有，不能在仍被 libcurl 使用时释放。
+ * Reply 与活动 transfer record 共享本状态；detached handle 守卫继续持有同一状态直到
+ * cleanup，防止 queued completion 被丢弃时先释放仍被 libcurl 借用的列表或请求体。
  */
 struct QCNetworkReplyTransferState
 {
@@ -45,6 +45,10 @@ struct QCNetworkReplyTransferState
     Internal::CurlPlan curlPlan;
     // 重试等待期间固定原域；终态归还。活动 record 另持有引用直到原生 detach 成功。
     std::shared_ptr<QCCurlMultiDomain> transportDomain;
+    // 仅在 add 提交后、detach 成功前于 owner thread 或允许的 libcurl 回调内借用。
+    CURL *activeEasyHandle       = nullptr;
+    bool readCallbackConfigured  = false;
+    bool debugCallbackConfigured = false;
 
     ReplyState state = ReplyState::Idle;
     QCByteDataBuffer bodyBuffer;

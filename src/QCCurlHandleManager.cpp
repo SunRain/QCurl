@@ -1,13 +1,21 @@
 #include "QCCurlHandleManager.h"
 
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkReplyTransferState_p.h"
 
 #include <QDebug>
 
-#include <utility> // for std::exchange
+#ifdef QCURL_ENABLE_TEST_HOOKS
+#include <atomic>
+#endif
+#include <utility>
 
 namespace QCurl {
 namespace {
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+std::atomic<int> s_easyCleanupCount{0};
+#endif
 
 CURL *createEasyHandle(const Internal::RuntimeLease &runtimeLease, QString *error)
 {
@@ -50,23 +58,42 @@ QCCurlHandleManager::QCCurlHandleManager()
     // 调用者应该通过 isValid() 或检查 handle() != nullptr 来验证
 }
 
+QCCurlHandleManager::QCCurlHandleManager(std::nullptr_t) noexcept {}
+
 QCCurlHandleManager::~QCCurlHandleManager()
 {
-    // 清理 header 列表
-    if (m_headerList) {
-        curl_slist_free_all(m_headerList);
-        m_headerList = nullptr;
-    }
-
-    // 清理 curl 句柄
-    if (m_curlHandle) {
-        curl_easy_cleanup(m_curlHandle);
-        m_curlHandle = nullptr;
-    }
+    cleanup();
 }
+
+void QCCurlHandleManager::cleanup() noexcept
+{
+    // easy cleanup 仍可使用借用数据，因此先释放 easy，再释放 header list。
+    if (m_curlHandle) {
+        curl_easy_cleanup(std::exchange(m_curlHandle, nullptr));
+#ifdef QCURL_ENABLE_TEST_HOOKS
+        s_easyCleanupCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+    }
+    curl_slist_free_all(std::exchange(m_headerList, nullptr));
+    m_transferState.clear();
+}
+
+void QCCurlHandleManager::retainTransferState(
+    const QSharedPointer<QCNetworkReplyTransferState> &state) noexcept
+{
+    m_transferState = state;
+}
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+int QCCurlHandleManager::cleanupCountForTest() noexcept
+{
+    return s_easyCleanupCount.load(std::memory_order_relaxed);
+}
+#endif
 
 QCCurlHandleManager::QCCurlHandleManager(QCCurlHandleManager &&other) noexcept
     : m_runtimeLease(std::move(other.m_runtimeLease))
+    , m_transferState(std::move(other.m_transferState))
     , m_curlHandle(std::exchange(other.m_curlHandle, nullptr))
     , m_headerList(std::exchange(other.m_headerList, nullptr))
     , m_initializationError(std::move(other.m_initializationError))
@@ -75,16 +102,11 @@ QCCurlHandleManager::QCCurlHandleManager(QCCurlHandleManager &&other) noexcept
 QCCurlHandleManager &QCCurlHandleManager::operator=(QCCurlHandleManager &&other) noexcept
 {
     if (this != &other) {
-        // 清理当前资源
-        if (m_headerList) {
-            curl_slist_free_all(m_headerList);
-        }
-        if (m_curlHandle) {
-            curl_easy_cleanup(m_curlHandle);
-        }
+        cleanup();
 
         // 转移所有权
         m_runtimeLease        = std::move(other.m_runtimeLease);
+        m_transferState       = std::move(other.m_transferState);
         m_curlHandle          = std::exchange(other.m_curlHandle, nullptr);
         m_headerList          = std::exchange(other.m_headerList, nullptr);
         m_initializationError = std::move(other.m_initializationError);

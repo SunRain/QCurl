@@ -27,7 +27,7 @@ def test_lsan_suppression_is_limited_to_permanent_poison_cases() -> None:
     assert poison_declaration is not None
     assert tuple(poison_declaration.group("body").split()) == POISON_CASES
     assert (
-        "foreach(_ownership_case IN ITEMS recursive-once owner-thread-rejection "
+        "foreach(_ownership_case IN ITEMS recursive-once "
         "${_qcurl_multi_poison_cases}"
         in cmake_source
     )

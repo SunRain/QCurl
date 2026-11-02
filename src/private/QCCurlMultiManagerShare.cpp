@@ -1,8 +1,6 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkReply_p.h"
 #include "private/QCCookiePolicyCode_p.h"
-#include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
 #include <QByteArray>

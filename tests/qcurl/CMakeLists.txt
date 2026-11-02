@@ -75,6 +75,14 @@ target_link_libraries(tst_CurlGlobalInitialization
     PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 add_qcurl_test(tst_QCurlRuntime tst_QCurlRuntime.cpp)
 target_compile_definitions(tst_QCurlRuntime PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test_with_preflight(tst_QCCurlHttpAdmission
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCCurlHttpAdmission.cpp tst_QCCurlHttpAdmission.h
+            tst_QCNetworkReplyCompletion.cpp tst_QCNetworkReplyTransferLifecycle.cpp
+            qcurl_http_script_server.h)
+target_compile_definitions(tst_QCCurlHttpAdmission PRIVATE QCURL_ENABLE_TEST_HOOKS)
+set_tests_properties(tst_QCCurlHttpAdmission PROPERTIES LABELS "env;local_port;multi_ownership")
+
 add_executable(tst_QCCurlMultiDetachOwnership tst_QCCurlMultiDetachOwnership.cpp)
 qcurl_enable_qt_no_keywords(tst_QCCurlMultiDetachOwnership)
 target_link_libraries(tst_QCCurlMultiDetachOwnership
@@ -112,7 +120,19 @@ set(_qcurl_multi_share_cases
 set(_qcurl_multi_poison_lsan_options
     "print_suppressions=1:suppressions=${CMAKE_CURRENT_SOURCE_DIR}/multi_ownership_lsan.supp"
 )
-foreach(_ownership_case IN ITEMS recursive-once owner-thread-rejection ${_qcurl_multi_poison_cases}
+add_qcurl_test(tst_QCCurlHttpAdmissionPoison tst_QCCurlHttpAdmissionPoison.cpp)
+target_compile_definitions(tst_QCCurlHttpAdmissionPoison PRIVATE QCURL_ENABLE_TEST_HOOKS)
+set_tests_properties(tst_QCCurlHttpAdmissionPoison PROPERTIES
+    LABELS "offline;multi_ownership"
+    ENVIRONMENT "QCURL_TEST_HTTP_ADMISSION_POISON=rollback;LSAN_OPTIONS=${_qcurl_multi_poison_lsan_options}")
+add_test(NAME tst_QCCurlHttpAdmissionPoison_active
+    COMMAND ${CMAKE_COMMAND} -E env QCURL_TEST_HTTP_ADMISSION_POISON=active
+            "LSAN_OPTIONS=${_qcurl_multi_poison_lsan_options}"
+            $<TARGET_FILE:tst_QCCurlHttpAdmissionPoison>)
+set_tests_properties(tst_QCCurlHttpAdmissionPoison_active PROPERTIES
+    LABELS "offline;multi_ownership" FAIL_REGULAR_EXPRESSION "SKIP *:")
+
+foreach(_ownership_case IN ITEMS recursive-once ${_qcurl_multi_poison_cases}
                                   ${_qcurl_multi_share_cases})
     set(_ownership_env "QCURL_TEST_MULTI_OWNERSHIP_CASE=${_ownership_case}")
     if(NOT _ownership_case STREQUAL "unknown-done"

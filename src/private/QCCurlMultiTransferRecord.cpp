@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Stable callback userdata for active curl multi transfers.
+ * @brief 维护活动 curl multi 传输的回调上下文与共享状态。
  */
 
 #include "QCNetworkAccessManager.h"
@@ -45,6 +45,8 @@ QCCurlMultiTransferRecord::QCCurlMultiTransferRecord(QCCurlHandleManager &&handl
 QCCurlMultiTransferRecord::~QCCurlMultiTransferRecord()
 {
     clearObserver();
+    // 即使仍持有未注册的 handle，cleanup 也必须先于 callback backing state 的析构。
+    m_handle.reset();
 }
 
 CURL *QCCurlMultiTransferRecord::handle() const noexcept
@@ -82,6 +84,8 @@ void QCCurlMultiTransferRecord::bindObserver(
 {
     m_transferState = state;
     m_observer      = observer;
+    // detached handle 也借用 POSTFIELDS/RESOLVE 等状态，queued completion 不能先释放这些数据。
+    m_handle->retainTransferState(state);
 }
 
 void QCCurlMultiTransferRecord::clearObserver() noexcept
@@ -97,10 +101,24 @@ QCNetworkReply *QCCurlMultiTransferRecord::observer() const noexcept
     return m_observer.data();
 }
 
-bool QCCurlMultiTransferRecord::ownsTransferState(
-    const QSharedPointer<QCNetworkReplyTransferState> &state) const noexcept
+const QSharedPointer<QCNetworkReplyTransferState> &QCCurlMultiTransferRecord::transferState()
+    const noexcept
 {
-    return m_transferState && m_transferState.data() == state.data();
+    return m_transferState;
+}
+
+void QCCurlMultiTransferRecord::publishActiveHandle() noexcept
+{
+    if (m_transferState) {
+        m_transferState->activeEasyHandle = handle();
+    }
+}
+
+void QCCurlMultiTransferRecord::clearActiveHandle() noexcept
+{
+    if (m_transferState) {
+        m_transferState->activeEasyHandle = nullptr;
+    }
 }
 
 void QCCurlMultiTransferRecord::bindCompletionHandler(CompletionHandler handler)
@@ -158,9 +176,7 @@ bool QCCurlMultiTransferRecord::bindPrivate(QString *errorMessage)
     return false;
 }
 
-bool QCCurlMultiTransferRecord::bindCallbacks(bool readCallbackConfigured,
-                                              bool debugCallbackConfigured,
-                                              QString *errorMessage)
+bool QCCurlMultiTransferRecord::bindCallbacks(QString *errorMessage)
 {
     CURL *easy = handle();
     if (!easy || !m_transferState) {
@@ -190,21 +206,63 @@ bool QCCurlMultiTransferRecord::bindCallbacks(bool readCallbackConfigured,
         return false;
     }
 
-    if (readCallbackConfigured
+    if (m_transferState->readCallbackConfigured
         && (!setOption(QCURL_CURL_OPTION(CURLOPT_READFUNCTION),
                        &QCCurlMultiTransferRecord::readCallback)
             || !setOption(QCURL_CURL_OPTION(CURLOPT_READDATA), static_cast<void *>(this)))) {
         return false;
     }
 
-    if (debugCallbackConfigured
+    if (m_transferState->debugCallbackConfigured
         && (!setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGFUNCTION),
                        &QCCurlMultiTransferRecord::debugCallback)
             || !setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGDATA), static_cast<void *>(this)))) {
         return false;
     }
 
-    return bindPrivate(errorMessage);
+    // detach 为 cleanup 禁用 progress；每次 admission 必须在回调绑定后重新启用。
+    return setOption(QCURL_CURL_OPTION(CURLOPT_NOPROGRESS), Internal::CurlOptions::kDisabled)
+           && bindPrivate(errorMessage);
+}
+
+bool QCCurlMultiTransferRecord::unbindCallbacks(QString *errorMessage)
+{
+    if (!handle() || !m_transferState) {
+        return true;
+    }
+
+    // cleanup 也可能调用 progress/header/debug；先关闭函数，再解除全部 userdata。
+    const auto setOption = [this, errorMessage](Internal::CurlOptions::Option option, auto value) {
+        // setup 的故障注入不代表 rollback 也失败；回滚以原生返回码裁决。
+        const CURLcode code = curl_easy_setopt(handle(), option.id, value);
+        if (code != CURLE_OK && errorMessage) {
+            *errorMessage = QStringLiteral("解除 %1 失败（%2）")
+                                .arg(QString::fromUtf8(option.name),
+                                     QString::fromUtf8(curl_easy_strerror(code)));
+        }
+        return code == CURLE_OK;
+    };
+    return setOption(QCURL_CURL_OPTION(CURLOPT_VERBOSE), Internal::CurlOptions::kDisabled)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_NOPROGRESS), Internal::CurlOptions::kEnabled)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_WRITEFUNCTION),
+                        static_cast<curl_write_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_HEADERFUNCTION),
+                        static_cast<curl_write_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_SEEKFUNCTION),
+                        static_cast<curl_seek_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_XFERINFOFUNCTION),
+                        static_cast<curl_xferinfo_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_READFUNCTION),
+                        static_cast<curl_read_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGFUNCTION),
+                        static_cast<curl_debug_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_WRITEDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_HEADERDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_SEEKDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_XFERINFODATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_READDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_PRIVATE), nullptr);
 }
 
 size_t QCCurlMultiTransferRecord::writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata)

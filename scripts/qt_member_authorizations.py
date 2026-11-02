@@ -83,7 +83,8 @@ RECORD_AUTHORIZATIONS = (
     *_entries(
         "record",
         "src/QCCurlMultiManager.h",
-        "AddReplyResult",
+        "HttpAdmission",
+        "HttpAdmissionResult",
         "FinishedTransfer",
     ),
     *_entries(

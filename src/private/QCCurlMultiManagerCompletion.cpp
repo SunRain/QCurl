@@ -1,6 +1,5 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
@@ -62,17 +61,8 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::takeFini
         transfer.httpStatusCode       = responseCode;
         return transfer;
     }
-    if (record->hasCompletionHandler()) {
-        return detachTransferRecordLocked(record,
-                                          message->data.result,
-                                          "QCCurlMultiManager::checkMultiInfo");
-    }
     QPointer<QCNetworkReply> safeReply = record->observer();
-    if (!safeReply) {
-        qWarning() << "QCCurlMultiManager::checkMultiInfo: Reply object already destroyed";
-    }
-
-    long responseCode = 0;
+    long responseCode                  = 0;
     curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &responseCode);
 
     logFinishedReply(easy, safeReply.data(), message->data.result, responseCode);
@@ -102,31 +92,33 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::detachTr
 
     CURL *easy            = transferIt.key();
     const bool persistent = record->hasPersistentCompletionHandler();
+    long responseCode     = 0;
+    curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &responseCode);
     if (!removeTransferHandleLocked(transferIt.value(), result, context)) {
         return std::nullopt;
     }
+    record->clearActiveHandle();
 
     releaseShareForEasyHandleLocked(easy);
     if (m_isPoisoned.load(std::memory_order_relaxed)) {
         return std::nullopt;
     }
 
+    QString callbackError;
+    if (record->hasCompletionHandler() && !record->unbindCallbacks(&callbackError)) {
+        poisonLocked(context, CURLM_INTERNAL_ERROR);
+        return std::nullopt;
+    }
     FinishedTransfer transfer;
-    transfer.curlCode = result;
+    transfer.curlCode       = result;
+    transfer.httpStatusCode = responseCode;
     if (persistent) {
         transfer.persistentRecord     = transferIt.value();
         transfer.persistentCompletion = transferIt.value()->takePersistentCompletionHandler();
     } else {
-        transfer.completion = transferIt.value()->takeCompletionHandler();
-        if (QCNetworkReply *observer = transferIt.value()->observer()) {
-            QCNetworkReplyPrivate *target = observer->d_func();
-            target->curlManager           = transferIt.value()->takeHandle();
-            target->multiTransferRecord   = nullptr;
-            // 主动取消/中止的意图必须保留到完成分发；否则同步 detach 会抢先进入 Error。
-            transfer.reply = observer;
-        } else {
-            transfer.detachedHandle = transferIt.value()->takeHandle();
-        }
+        transfer.completion     = transferIt.value()->takeCompletionHandler();
+        transfer.reply          = transferIt.value()->observer();
+        transfer.detachedHandle = transferIt.value()->takeHandle();
     }
     transferIt.value()->clearObserver();
     m_activeTransfers.erase(transferIt);
@@ -192,34 +184,14 @@ void QCCurlMultiManager::dispatchFinishedTransfer(FinishedTransfer &&transfer)
                                       transfer.httpStatusCode);
         return;
     }
-    if (!transfer.reply) {
-        if (transfer.completion) {
-            if (transfer.detachedHandle.has_value()) {
-                transfer.completion(std::move(transfer.detachedHandle.value()),
-                                    transfer.curlCode,
-                                    transfer.httpStatusCode);
-            } else {
-                transfer.completion(QCCurlHandleManager{},
-                                    transfer.curlCode,
-                                    transfer.httpStatusCode);
-            }
+    if (transfer.completion) {
+        transfer.completion(std::move(transfer.detachedHandle.value()),
+                            transfer.curlCode,
+                            transfer.httpStatusCode);
+        if (transfer.reply) {
+            Q_EMIT requestFinished(transfer.reply.data(), static_cast<int>(transfer.curlCode));
         }
         return;
-    }
-
-    QPointer<QCNetworkReply> safeReply = transfer.reply;
-    const CURLcode curlCode            = transfer.curlCode;
-    const long httpStatusCode          = transfer.httpStatusCode;
-    QMetaObject::invokeMethod(
-        safeReply.data(),
-        [safeReply, curlCode, httpStatusCode]() {
-            if (safeReply) {
-                safeReply->d_func()->onCurlMultiFinished(curlCode, httpStatusCode);
-            }
-        },
-        Qt::AutoConnection);
-    if (safeReply) {
-        Q_EMIT requestFinished(safeReply.data(), static_cast<int>(curlCode));
     }
 }
 

@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief QCNetworkReply cancellation and pause/resume controls.
+ * @brief 实现 QCNetworkReply 的取消、中止与传输暂停控制。
  */
 
 #include "QCCurlMultiManager.h"
@@ -33,29 +33,12 @@ void QCNetworkReply::cancel()
     }
 
     d->diagnosticCurlCode = 0;
-    // 从多句柄管理器移除（Running/Paused 状态）。
-    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
-        // ⚠️ cancel 可能在 libcurl 回调栈内触发（例如在 downloadProgress 槽函数中）。
-        // 直接调用 curl_multi_remove_handle 会引入重入风险，并可能触发 CURLM_BAD_EASY_HANDLE。
-        // manager 会先保活 transfer record，并在 callback 栈退出后执行移除。
-        auto *multiManager = QCCurlMultiManager::instance();
-        if (d->multiTransferRecord) {
-            auto *record                = d->multiTransferRecord;
-            d->transferRemovalRequested = true;
-            multiManager->removeTransferRecord(record);
-            if (!observer) {
-                return;
-            }
-        } else {
-            QPointer<QCNetworkReply> safeThis(this);
-            QMetaObject::invokeMethod(
-                multiManager,
-                [multiManager, safeThis]() {
-                    if (safeThis) {
-                        multiManager->removeReply(safeThis.data());
-                    }
-                },
-                Qt::QueuedConnection);
+    if (d->transferToken != 0) {
+        // 回调内取消由 manager 延迟 detach；token 保留到 completion 完成所有权回收。
+        d->transferRemovalRequested = true;
+        QCCurlMultiManager::instance()->removeTransfer(d->transferToken);
+        if (!observer) {
+            return;
         }
     }
     // 取消属于可观测错误语义：外部应能稳定区分“用户取消”与“空 body / 尚无数据”等情况
@@ -91,25 +74,11 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
     }
 
     d->diagnosticCurlCode = 0;
-    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
-        auto *multiManager = QCCurlMultiManager::instance();
-        if (d->multiTransferRecord) {
-            auto *record                = d->multiTransferRecord;
-            d->transferRemovalRequested = true;
-            multiManager->removeTransferRecord(record);
-            if (!observer) {
-                return;
-            }
-        } else {
-            QPointer<QCNetworkReply> safeThis(this);
-            QMetaObject::invokeMethod(
-                multiManager,
-                [multiManager, safeThis]() {
-                    if (safeThis) {
-                        multiManager->removeReply(safeThis.data());
-                    }
-                },
-                Qt::QueuedConnection);
+    if (d->transferToken != 0) {
+        d->transferRemovalRequested = true;
+        QCCurlMultiManager::instance()->removeTransfer(d->transferToken);
+        if (!observer) {
+            return;
         }
     }
 

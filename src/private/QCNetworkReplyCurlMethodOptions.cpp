@@ -99,7 +99,7 @@ struct HeaderFacts
         || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_READDATA), reply)) {
         return false;
     }
-    reply->readCallbackConfigured = true;
+    reply->transferState->readCallbackConfigured = true;
 
     const curl_off_t size = static_cast<curl_off_t>(reply->requestBodySource.sizeBytes);
     if (plan.setPost) {

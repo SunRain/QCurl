@@ -66,31 +66,6 @@ def test_cookie_destroyed_functor_uses_manager_context_and_direct_delivery() -> 
     )
 
 
-def test_multimanager_reply_entrypoints_are_owner_thread_only() -> None:
-    manager_header = _source("src/QCCurlMultiManager.h")
-    manager_source = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((REPO_ROOT / "src").rglob("QCCurlMultiManager*.cpp"))
-    )
-
-    assert "接受跨线程投递的管理操作" not in manager_header
-    assert "@note 线程安全\n" not in manager_header
-    assert manager_header.count("@note 线程合同：仅允许在 manager owner thread 调用") == 2
-    assert "marshalAddReplyIfNeeded" not in manager_header
-    assert "marshalAddReplyIfNeeded" not in manager_source
-
-    for function_name in ("addReply", "removeReply"):
-        definition = _function_definition(
-            manager_source, f"QCCurlMultiManager::{function_name}"
-        )
-        thread_guard = definition.find("QThread::currentThread() != thread()")
-        null_guard = definition.find("if (!reply)")
-        assert thread_guard >= 0, f"{function_name} 缺少 manager owner-thread 门禁"
-        assert null_guard >= 0, f"{function_name} 缺少空参数门禁"
-        assert thread_guard < null_guard, f"{function_name} 必须在读取 reply 前拒绝错误线程"
-        assert "QMetaObject::invokeMethod" not in definition
-
-
 def test_scheduler_owner_thread_internal_paths_do_not_marshal_qobject_pointers() -> None:
     source = _source("src/private/QCNetworkRequestSchedulerControl.cpp")
     definition = _function_definition(source, "QCNetworkRequestScheduler::validateCommand")

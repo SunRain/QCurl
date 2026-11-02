@@ -8,12 +8,16 @@
 
 #include "private/QCurlRuntimeState_p.h"
 
+#include <QSharedPointer>
 #include <QString>
 #include <QtGlobal>
 
+#include <cstddef>
 #include <curl/curl.h>
 
 namespace QCurl {
+
+struct QCNetworkReplyTransferState;
 
 /**
  * @brief internal easy handle / header list 生命周期守卫
@@ -29,6 +33,9 @@ public:
      * 若 `curl_easy_init()` 失败，`handle()` 返回 `nullptr`。
      */
     QCCurlHandleManager();
+
+    /// 构造不创建原生资源的空守卫，用于不可归还 handle 的完成通知。
+    explicit QCCurlHandleManager(std::nullptr_t) noexcept;
 
     /**
      * @brief 释放 easy handle 与 header list
@@ -78,11 +85,21 @@ public:
     /// 返回句柄创建失败诊断；全局初始化失败时与所有入口保持一致。
     [[nodiscard]] QString initializationError() const { return m_initializationError; }
 
+    /// 让原生借用数据随 handle 移动并存活至 cleanup；不延长 reply 的 QObject 寿命。
+    void retainTransferState(const QSharedPointer<QCNetworkReplyTransferState> &state) noexcept;
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 返回实际完成 easy cleanup 的累计次数，用于验证移动与事件丢弃时的单次释放。
+    [[nodiscard]] static int cleanupCountForTest() noexcept;
+#endif
+
 private:
+    void cleanup() noexcept;
     Internal::RuntimeLease m_runtimeLease; ///< 覆盖 easy/header 对象图的进程运行时 lease。
-    CURL *m_curlHandle       = nullptr;    ///< curl easy handle
-    curl_slist *m_headerList = nullptr;    ///< HTTP header 列表
-    QString m_initializationError;         ///< easy/global 初始化失败诊断
+    QSharedPointer<QCNetworkReplyTransferState> m_transferState;
+    CURL *m_curlHandle       = nullptr; ///< curl easy handle
+    curl_slist *m_headerList = nullptr; ///< HTTP header 列表
+    QString m_initializationError;      ///< easy/global 初始化失败诊断
 };
 
 } // namespace QCurl

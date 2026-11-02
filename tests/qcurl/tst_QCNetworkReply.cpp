@@ -1371,10 +1371,6 @@ void TestQCNetworkReply::testRealMultiReplyDeleteLaterDuringCallback()
     QCNetworkReply *reply = m_manager->get(request);
     QVERIFY(reply != nullptr);
 
-#ifdef QCURL_ENABLE_TEST_HOOKS
-    QTRY_VERIFY_WITH_TIMEOUT(reply->property("_qcurl_transfer_record_owns_state").toBool(), 5000);
-#endif
-
     QPointer<QCNetworkReply> guardedReply(reply);
     QSignalSpy destroyedSpy(reply, &QObject::destroyed);
     bool deleteIssued = false;

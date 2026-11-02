@@ -20,7 +20,13 @@ Core async、Blocking Extras、WebSocket 和 cookie helper 统一继承这些默
 
 ### multi transfer ownership
 
-`curl_multi_add_handle()` 成功后，multi transfer record 独占 easy handle、callback userdata 和 transfer backing storage，直到 `curl_multi_remove_handle()` 完成。`QCNetworkReply` 仅观察传输；析构时清空 observer 并请求 owner thread 延迟 detach，不提前销毁仍注册的 handle 或 callback target。
+HTTP admission 显式接收 observer、manager、现有 transfer state 和 easy handle 的所有权，返回 accepted/rejected/quarantined 结果、opaque `TransferToken`、warnings 及可安全归还的 handle。multi manager 不读写 `QCNetworkReplyPrivate`，不从 observer 的 parent 推导 manager，也不复制 state；reply 与 record 共享同一个 `QCNetworkReplyTransferState`，record 从中读取 reply setup 写入的 callback 配置标志。
+
+`curl_multi_add_handle()` 成功后，multi transfer record 独占 easy handle 和 callback userdata，并持有共享 backing state。reply 只保存 token；`activeEasyHandle` 是 add commit 后才发布的非 owning 观察值，仅能在 owner thread／libcurl callback 合同允许的时段使用。cancel、abort、析构仅请求 `removeTransfer(token)`，跨线程或 callback 内延迟 detach，不提前清零 token 或释放 callback target。
+
+安全 detach 按 `curl_multi_remove_handle()`、清除 active handle 观察值、解除 share 与 record callbacks/userdata、移交 handle、释放 record 的顺序执行。detach 同时关闭 progress/verbose，避免 cleanup 调用旧回调或退回默认输出；后续 admission 重新启用 progress，verbose 由每次 reply setup 按 trace 配置启用。reply-side completion adapter 经同线程 manager 作为投递上下文，以 `Qt::AutoConnection` 回到 owner thread；只在目标线程检查 `QPointer`，先回收 detached handle、清零 token，再处理终态或 retry。reply 已销毁时只释放安全 detached handle，不再访问 QObject。ownership 无法证明时撤销 active handle 观察并 quarantine/poison，不归还或 cleanup 原 handle，也不清零活动 token。
+
+admission warnings 由 reply 在 owner thread 消费；安全失败固定先恢复 handle、再写 warnings、最后 queued `abortWithError()`。连接池统计由 reply-side 在首次 admission 成功后开始，retry 不重复开始，终态或析构继续通过 `finishPoolRequest()` 完成一次逻辑请求统计。
 
 WebSocket 握手复用同一 multi driver，不回退到 owner-thread `curl_easy_perform()` 或新增 worker transport。CONNECT_ONLY easy handle 在 `curl_easy_send()` / `curl_easy_recv()` 使用期间持续留在 multi 中。
 
@@ -56,7 +62,7 @@ pending，改回 applied 撤回 pending。active users 和临时 Cookie 操作�
 
 借给 libcurl 的 `curl_slist`、header/body buffer、upload device、callback userdata 和 TLS/proxy/URL 字符串缓冲必须覆盖相关 transfer 生命周期。
 
-`QCCurlHandleManager` 负责 easy handle 和内部 header list 的释放。其他外部借用对象由对应 owner 持有，不能依赖临时对象、悬挂 lambda 引用或跨线程裸指针。进入 multi 后的释放时机遵循上面的 transfer ownership。
+`QCCurlHandleManager` 负责 easy handle 和内部 header list 的释放；HTTP handle 还保留同一 transfer state，使 POSTFIELDS/RESOLVE 等借用数据在 detach 后随 handle 移动，覆盖 completion 排队、事件丢弃和 reply 先销毁的路径。释放顺序必须是 easy cleanup、header list、共享 state，不能因 record 已销毁就提前释放 backing storage。其他外部借用对象由对应 owner 持有，不能依赖临时对象、悬挂 lambda 引用或跨线程裸指针。进入 multi 后的释放时机遵循上面的 transfer ownership。
 
 ## diagnostics 与 public accessor 边界
 

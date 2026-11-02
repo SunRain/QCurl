@@ -8,6 +8,7 @@
 
 #include "QCCookie.h"
 #include "QCCurlHandleManager.h"
+#include "QCNetworkError.h"
 #include "private/QCCookieStoreResult_p.h"
 #include "private/QCCurlMultiManagerShareState_p.h"
 #include "private/QCCurlPersistentTransferBridge_p.h"
@@ -28,7 +29,6 @@
 #include <atomic>
 #include <curl/curl.h>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <optional>
 
@@ -41,6 +41,7 @@ class QCNetworkReply;                // 前向声明
 class QCNetworkAccessManager;        // 前向声明
 class QCNetworkConnectionPoolConfig; // 前向声明
 class QCCurlMultiTransferRecord;
+struct QCNetworkReplyTransferState;
 struct QCCurlMultiDomain;
 class QCNetworkRequest;
 class QCCurlMultiManagerTestAccess;
@@ -60,31 +61,50 @@ public:
     /// 返回当前线程绑定的 manager 实例。
     static QCCurlMultiManager *instance();
 
-    /**
-     * @brief 添加异步请求到管理器
-     *
-     * 将 QCNetworkReply 的 curl easy handle 注册到 multi handle，
-     * 开始异步执行网络请求。
-     *
-     * @param reply 网络响应对象（必须是异步模式）
-     *
-     * @note 线程合同：仅允许在 manager owner thread 调用；错误线程调用同步返回，且不会读取
-     * reply 或改变 manager 状态。
-     * @note reply 必须有有效的 curl easy handle
-     * @note 同一 reply 不能重复添加
-     */
-    void addReply(QCNetworkReply *reply);
-
-    /**
-     * @brief 注册不绑定 QCNetworkReply 的 multi 传输。
-     *
-     * 传输完成或被延迟移除后，manager 在完成 multi detach 后把 easy handle
-     * 移交给 completion handler。调用方不得在回调前销毁传输上下文。
-     */
+    /// 接收安全 detached handle；HTTP 隔离通知以无效 handle 表示不转移所有权。
     using TransferCompletionHandler
         = std::function<void(QCCurlHandleManager &&handle, CURLcode result, long httpStatus)>;
     using TransferToken                       = QCCurlTransferToken;
     using TransferPersistentCompletionHandler = QCCurlPersistentTransferCompletionHandler;
+
+    /// 仅组织本次 HTTP admission 的依赖；state 与 reply 共享，不复制请求快照。
+    struct HttpAdmission
+    {
+        QCNetworkReply *observer              = nullptr;
+        const QCNetworkAccessManager *manager = nullptr;
+        QSharedPointer<QCNetworkReplyTransferState> state;
+    };
+
+    enum class HttpAdmissionState {
+        Accepted,
+        Rejected,
+        Quarantined,
+    };
+
+    /// 拒绝时仅归还已证明安全的 handle；隔离结果不携带 handle。
+    struct HttpAdmissionResult
+    {
+        HttpAdmissionState state = HttpAdmissionState::Rejected;
+        NetworkError error       = NetworkError::InvalidRequest;
+        QString errorMessage;
+        QStringList warnings;
+        TransferToken token = 0;
+        std::optional<QCCurlHandleManager> returnedHandle;
+    };
+
+    /**
+     * @brief 在 owner thread 接管 HTTP easy handle，返回注册事实而不修改 reply。
+     *
+     * observer、manager（可空）与调用者必须同属本线程；拒绝错误线程时不读取它们。
+     * completion 只接收已 detach 且已解除 record 回调的 handle；无效 handle 表示
+     * ownership 不可证明，此时不得清零活动 token 或 cleanup 原 handle。
+     */
+    [[nodiscard]] Q_DECL_HIDDEN HttpAdmissionResult
+    admitHttpReply(QCCurlHandleManager &&handle,
+                   const HttpAdmission &admission,
+                   TransferCompletionHandler completion);
+
+    /// 注册不绑定 reply 的传输；调用方须保持自己的回调上下文存活至完成 detach。
     [[nodiscard]] Q_DECL_HIDDEN bool addTransfer(QCCurlHandleManager &&handle,
                                                  TransferCompletionHandler completion,
                                                  TransferToken *token = nullptr,
@@ -103,29 +123,8 @@ public:
         TransferToken *token = nullptr,
         QString *error       = nullptr);
 
-    /// 按 opaque token 请求移除 manager-owned 传输。
+    /// 按 opaque token 请求移除；跨线程或 libcurl 回调内仅排队，成功 detach 后才交还所有权。
     Q_DECL_HIDDEN void removeTransfer(TransferToken token);
-
-    /**
-     * @brief 从管理器移除请求
-     *
-     * 从 multi handle 移除 curl easy handle，停止请求处理。
-     * 通常在请求完成、取消或对象销毁时调用。
-     *
-     * @param reply 网络响应对象
-     *
-     * @note 线程合同：仅允许在 manager owner thread 调用；错误线程调用同步返回，且不会读取
-     * reply 或改变 manager 状态。
-     * @note 如果 reply 不在管理器中，操作无效
-     */
-    void removeReply(QCNetworkReply *reply);
-
-    /**
-     * @brief 按 manager-owned transfer record 请求 deferred detach。
-     *
-     * 该入口不依赖 reply 仍然存活，供 reply 析构和取消路径使用。
-     */
-    Q_DECL_HIDDEN void removeTransferRecord(QCCurlMultiTransferRecord *record);
 
     /**
      * @brief 获取当前活动请求数量
@@ -269,12 +268,6 @@ private:
     void reclaimIdleDomains();
     void wakeupDomain(const Domain &domain);
 
-    struct AddReplyResult
-    {
-        bool success = false;
-        QString errorMessage;
-    };
-
     /// 描述 share 配置后 easy 是否仍允许进入 libcurl multi。
     enum class ShareApplyState {
         Callable,
@@ -289,21 +282,14 @@ private:
         QString errorMessage;
     };
 
-    [[nodiscard]] Q_DECL_HIDDEN AddReplyResult tryAddReplyOnOwnerThread(QCNetworkReply *reply);
-    [[nodiscard]] AddReplyResult admitReplyRecordLocked(
-        QCNetworkReply *reply,
-        const Domain &domain,
-        QSharedPointer<QCCurlMultiTransferRecord> record);
-    [[nodiscard]] AddReplyResult rejectReplyAdmissionLocked(
-        QCNetworkReply *reply,
+    [[nodiscard]] HttpAdmissionResult admitHttpRecordLocked(
+        const QCNetworkAccessManager *manager, QSharedPointer<QCCurlMultiTransferRecord> record);
+    [[nodiscard]] HttpAdmissionResult rejectHttpAdmissionLocked(
         QSharedPointer<QCCurlMultiTransferRecord> record,
         Internal::QCCurlMultiManagerShareContext *context,
-        const QString &error);
-    void commitReplyAdmissionLocked(QCNetworkReply *reply,
-                                    const Domain &domain,
-                                    const QSharedPointer<QCCurlMultiTransferRecord> &record);
-    Q_DECL_HIDDEN void queueAddReplyFailure(const QPointer<QCNetworkReply> &reply,
-                                            const QString &message);
+        HttpAdmissionResult result);
+    [[nodiscard]] TransferToken commitTransferRecordLocked(
+        const QSharedPointer<QCCurlMultiTransferRecord> &record);
 
     struct FinishedTransfer
     {
@@ -371,16 +357,16 @@ private:
     [[nodiscard]] bool detachShareBindingLocked(CURL *easy, const char *operation);
     void maybeFinalizeShareContextLocked(ShareContext *context);
 
-    [[nodiscard]] CURL *validatedEasyHandle(QCNetworkReply *reply) const;
     [[nodiscard]] bool addEasyToMultiLocked(QCCurlMultiDomain *domain, CURL *easy, QString *error);
     [[nodiscard]] Q_DECL_HIDDEN bool registerTransferRecord(
         const QSharedPointer<QCCurlMultiTransferRecord> &transfer,
         TransferToken *tokenOut,
         QString *error);
 
-    [[nodiscard]] ShareContext *prepareShareForReplyLocked(QCNetworkReply *reply, CURL *easy);
-    [[nodiscard]] ShareApplyResult applyShareToEasyLocked(QCNetworkReply *reply,
-                                                          CURL *easy,
+    [[nodiscard]] ShareContext *prepareShareForHttpLocked(const QCNetworkAccessManager *manager,
+                                                          QStringList *warnings);
+    [[nodiscard]] ShareApplyResult applyShareToHttpLocked(const QCNetworkAccessManager *manager,
+                                                          const QCCurlMultiTransferRecord &record,
                                                           ShareContext *shareContext);
     void resetShareOnEasyIfNeeded(CURL *easy);
     [[nodiscard]] ShareContext *prepareCookieContextLocked(const QCNetworkAccessManager *manager,

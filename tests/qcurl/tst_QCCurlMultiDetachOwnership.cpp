@@ -14,7 +14,6 @@
 #include <QtTest>
 
 #include <atomic>
-#include <thread>
 #include <utility>
 
 using namespace QCurl;
@@ -27,55 +26,11 @@ private Q_SLOTS:
     void detachOwnershipContract();
 
 private:
-    /// 通过真实 add-reply 路径验证 share rollback poison 的 admission 合同。
+    /// 通过真实 HTTP 工厂路径验证 share rollback poison 的 admission 合同。
     void verifyAddReplyRollbackPoison();
     /// 通过独立线程析构 manager 验证 quarantine registry 的并发追加合同。
     void verifyConcurrentQuarantineAppend();
-    /**
-     * @brief 验证错误线程的 reply 管理命令同步拒绝且不产生延迟副作用。
-     *
-     * 仅处理排队调用事件，以发现旧的 queued fallback，同时避免运行合法的 curl timer。
-     */
-    void verifyReplyCommandsRejectWrongThread();
 };
-
-void tst_QCCurlMultiDetachOwnership::verifyReplyCommandsRejectWrongThread()
-{
-    QCurlRuntime runtime;
-    QVERIFY(runtime.isProcessOwner());
-
-    QCCurlMultiManager *manager = QCCurlMultiManager::instance();
-    QVERIFY(manager->isReady());
-    const int initialActive  = manager->activeRepliesCountForTest();
-    const int initialRunning = manager->runningRequestsCount();
-
-    QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/owner-thread-contract")));
-    auto *reply = new QCNetworkReply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
-    QCOMPARE(reply->thread(), manager->thread());
-
-    std::thread addWorker([manager, reply]() { manager->addReply(reply); });
-    addWorker.join();
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
-    QCOMPARE(manager->activeRepliesCountForTest(), initialActive);
-    QCOMPARE(manager->runningRequestsCount(), initialRunning);
-
-    manager->addReply(reply);
-    QCOMPARE(manager->activeRepliesCountForTest(), initialActive + 1);
-    QCOMPARE(manager->runningRequestsCount(), initialRunning + 1);
-    // 清除 owner-thread add 产生的合法唤醒，只保留后续错误线程命令的排队副作用观察窗口。
-    QCoreApplication::removePostedEvents(manager, QEvent::MetaCall);
-
-    std::thread removeWorker([manager, reply]() { manager->removeReply(reply); });
-    removeWorker.join();
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
-    QCOMPARE(manager->activeRepliesCountForTest(), initialActive + 1);
-    QCOMPARE(manager->runningRequestsCount(), initialRunning + 1);
-
-    manager->removeReply(reply);
-    QTRY_COMPARE_WITH_TIMEOUT(manager->activeRepliesCountForTest(), initialActive, 1000);
-    QTRY_COMPARE_WITH_TIMEOUT(manager->runningRequestsCount(), initialRunning, 1000);
-    delete reply;
-}
 
 void tst_QCCurlMultiDetachOwnership::verifyConcurrentQuarantineAppend()
 {
@@ -189,10 +144,6 @@ void tst_QCCurlMultiDetachOwnership::detachOwnershipContract()
     }
     if (scenario == "concurrent-quarantine") {
         verifyConcurrentQuarantineAppend();
-        return;
-    }
-    if (scenario == "owner-thread-rejection") {
-        verifyReplyCommandsRejectWrongThread();
         return;
     }
 

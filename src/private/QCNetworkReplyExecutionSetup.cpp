@@ -114,7 +114,7 @@ void inheritManagerCookieConfig(QCNetworkReplyPrivate *reply, const QCNetworkAcc
         || !setRequiredExecutionOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_DEBUGDATA), reply)) {
         return false;
     }
-    reply->debugCallbackConfigured = true;
+    reply->transferState->debugCallbackConfigured = true;
     return true;
 }
 

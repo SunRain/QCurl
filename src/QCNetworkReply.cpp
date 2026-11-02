@@ -3,7 +3,6 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkReply_p.h"
-#include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
@@ -29,7 +28,6 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
     , transferState(QSharedPointer<QCNetworkReplyTransferState>::create(req.url(),
                                                                         req.diagnosticQueryPolicy()))
     , curlPlan(transferState->curlPlan)
-    , multiProcessor(nullptr)
     , bodyBuffer(transferState->bodyBuffer)
     , cacheBodyBuffer(transferState->cacheBodyBuffer)
     , headerData(transferState->headerData)
@@ -103,20 +101,16 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
     transferState->trace.stop();
-    finishPoolRequest();
-    // 如果正在运行，从多句柄管理器移除。
-    // 注意：cancel() 会在 ~QCNetworkReply() 中被调用，所以这里通常不需要额外处理。
-    // 但为安全起见，如果对象直接销毁且状态仍为 Running，确保清理。
-    if (multiTransferRecord && !transferRemovalRequested && q_ptr) {
+    if (transferToken != 0 && !transferRemovalRequested && q_ptr) {
         if (QThread::currentThread() == q_ptr->thread()) {
-            QCCurlMultiManager::instance()->removeTransferRecord(multiTransferRecord);
+            transferRemovalRequested = true;
+            QCCurlMultiManager::instance()->removeTransfer(transferToken);
         } else {
             qWarning() << "QCNetworkReplyPrivate: reply 在非所属线程销毁，无法安全从 multi engine "
                           "移除（请使用 deleteLater 或在 reply 线程销毁）";
         }
     }
-
-    multiTransferRecord = nullptr;
+    finishPoolRequest();
 }
 
 void QCNetworkReplyPrivate::finishPoolRequest()
@@ -130,7 +124,8 @@ void QCNetworkReplyPrivate::finishPoolRequest()
 
 CURL *QCNetworkReplyPrivate::activeCurlHandle() const noexcept
 {
-    return multiTransferRecord ? multiTransferRecord->handle() : curlManager.handle();
+    Q_ASSERT(q_ptr && QThread::currentThread() == q_ptr->thread());
+    return transferToken != 0 ? transferState->activeEasyHandle : curlManager.handle();
 }
 
 // ==================

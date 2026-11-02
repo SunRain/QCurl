@@ -2,16 +2,15 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkConnectionPoolManager_p.h"
-#include "QCNetworkReply_p.h"
+#include "QCNetworkReply.h"
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 
-#include <QDebug>
+#include <QMutexLocker>
 #include <QThread>
 
 namespace QCurl {
-
 namespace {
 
 [[nodiscard]] bool isTerminalReplyState(ReplyState state)
@@ -20,229 +19,112 @@ namespace {
            || state == ReplyState::Finished;
 }
 
-[[nodiscard]] QString managerReadinessError(bool isReady,
-                                            CURLM *multiHandle,
-                                            const QString &initializationError)
-{
-    if (isReady && multiHandle) {
-        return {};
-    }
-
-    return initializationError.isEmpty() ? QStringLiteral("curl multi manager 未就绪")
-                                         : initializationError;
-}
-
-[[nodiscard]] QSharedPointer<QCCurlMultiTransferRecord> createBoundTransferRecord(
-    QCNetworkReplyPrivate *replyPrivate, QCNetworkReply *reply, QString *errorMessage)
-{
-    auto record = QSharedPointer<QCCurlMultiTransferRecord>::create(
-        std::move(replyPrivate->curlManager));
-    record->bindObserver(replyPrivate->transferState, reply);
-    if (record->bindCallbacks(replyPrivate->readCallbackConfigured,
-                              replyPrivate->debugCallbackConfigured,
-                              errorMessage)) {
-        return record;
-    }
-
-    replyPrivate->curlManager = record->takeHandle();
-    record->clearObserver();
-    return {};
-}
-
 } // namespace
 
-void QCCurlMultiManager::addReply(QCNetworkReply *reply)
+QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpReply(
+    QCCurlHandleManager &&handle,
+    const HttpAdmission &admission,
+    TransferCompletionHandler completion)
 {
+    HttpAdmissionResult result;
+    result.returnedHandle.emplace(std::move(handle));
     if (QThread::currentThread() != thread()) {
-        qWarning() << "QCCurlMultiManager::addReply: owner thread required";
-        return;
+        result.errorMessage = QStringLiteral("HTTP admission 必须在 multi owner thread 执行");
+        return result;
     }
-    Q_ASSERT_X(QThread::currentThread() == thread(),
-               "QCCurlMultiManager::addReply",
-               "manager owner thread required");
-
-    if (!reply) {
-        qWarning() << "QCCurlMultiManager::addReply: reply is null";
-        return;
+    if (m_isShuttingDown.load(std::memory_order_relaxed) || !m_isReady || !m_baseDomain) {
+        result.errorMessage = m_initializationError.isEmpty()
+                                  ? QStringLiteral("curl multi manager 未就绪或正在关闭")
+                                  : m_initializationError;
+        return result;
     }
-
-    QPointer<QCNetworkReply> safeReply(reply);
-    const AddReplyResult result = tryAddReplyOnOwnerThread(reply);
-    if (!result.success) {
-        queueAddReplyFailure(safeReply, result.errorMessage);
+    if (!admission.observer || admission.observer->thread() != thread()
+        || (admission.manager && admission.manager->thread() != thread()) || !admission.state
+        || !completion || !result.returnedHandle->isValid()) {
+        result.errorMessage = QStringLiteral(
+            "HTTP admission 的 observer、线程、state 或 handle 无效");
+        return result;
     }
-}
-
-QCCurlMultiManager::AddReplyResult QCCurlMultiManager::tryAddReplyOnOwnerThread(QCNetworkReply *reply)
-{
-    Q_ASSERT(QThread::currentThread() == thread());
-
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
-        return {false, QStringLiteral("curl multi manager 正在关闭")};
-    }
-    if (const QString reason = managerReadinessError(m_isReady,
-                                                     m_baseDomain ? m_baseDomain->multi : nullptr,
-                                                     m_initializationError);
-        !reason.isEmpty()) {
-        return {false, reason};
+    if (admission.state->activeEasyHandle || isTerminalReplyState(admission.state->state)) {
+        result.errorMessage = QStringLiteral("HTTP transfer 已注册或 reply 已进入终态");
+        return result;
     }
 
     QMutexLocker locker(&m_mutex);
-    QCNetworkReplyPrivate *replyPrivate = reply->d_func();
-    if (isTerminalReplyState(replyPrivate->state)) {
-        return {true, QString()};
-    }
-
-    CURL *easy = validatedEasyHandle(reply);
-    if (!easy) {
-        return {false, QStringLiteral("reply 的 curl easy handle 无效")};
-    }
-    if (m_activeTransfers.contains(easy)) {
-        qWarning() << "QCCurlMultiManager::addReply: easy handle already registered";
-        return {false, QStringLiteral("curl easy handle 已注册")};
-    }
-
-    QString domainError;
-    auto domain = replyPrivate->transferState->transportDomain;
-    if (!domain) {
-        domain = selectDomain(replyPrivate->request, &domainError);
-    }
-    if (!domain || !domain->multi) {
-        return {false, domainError};
-    }
-    replyPrivate->transferState->transportDomain = domain;
-    domain->idleSince.reset();
-
-    QString callbackError;
-    auto record = createBoundTransferRecord(replyPrivate, reply, &callbackError);
-    if (!record) {
-        return {false, callbackError};
-    }
-
-    return admitReplyRecordLocked(reply, domain, std::move(record));
+    auto record = QSharedPointer<QCCurlMultiTransferRecord>::create(
+        std::move(result.returnedHandle.value()));
+    record->bindObserver(admission.state, admission.observer);
+    record->bindCompletionHandler(std::move(completion));
+    return admitHttpRecordLocked(admission.manager, std::move(record));
 }
 
-QCCurlMultiManager::AddReplyResult QCCurlMultiManager::rejectReplyAdmissionLocked(
-    QCNetworkReply *reply,
+QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpRecordLocked(
+    const QCNetworkAccessManager *manager, QSharedPointer<QCCurlMultiTransferRecord> record)
+{
+    HttpAdmissionResult result;
+    auto &state = *record->transferState();
+    auto domain = state.transportDomain;
+    if (!domain) {
+        domain = selectDomain(state.curlPlan.normalized.request, &result.errorMessage);
+    }
+    if (!domain || !domain->multi || domain->owner != this) {
+        if (result.errorMessage.isEmpty()) {
+            result.errorMessage = QStringLiteral("HTTP transfer 的 transport domain 不可用");
+        }
+        result.returnedHandle.emplace(record->takeHandle());
+        return result;
+    }
+    state.transportDomain = domain;
+    domain->idleSince.reset();
+    record->bindDomain(domain);
+    if (!record->bindCallbacks(&result.errorMessage)) {
+        return rejectHttpAdmissionLocked(std::move(record), nullptr, std::move(result));
+    }
+
+    ShareContext *context = prepareShareForHttpLocked(manager, &result.warnings);
+    const auto share      = applyShareToHttpLocked(manager, *record, context);
+    if (share.state != ShareApplyState::Callable) {
+        result.errorMessage = share.errorMessage;
+        return rejectHttpAdmissionLocked(std::move(record), context, std::move(result));
+    }
+    const auto config = QCNetworkConnectionPoolManager::instance()->config();
+    if (!applyLimitsConfig(domain.get(), config, &result.errorMessage)
+        || !Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(
+            record->handle(), config, &result.errorMessage)
+        || !addEasyToMultiLocked(domain.get(), record->handle(), &result.errorMessage)) {
+        return rejectHttpAdmissionLocked(std::move(record), context, std::move(result));
+    }
+
+    result.token = commitTransferRecordLocked(record);
+    result.state = HttpAdmissionState::Accepted;
+    result.error = NetworkError::NoError;
+    return result;
+}
+
+QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::rejectHttpAdmissionLocked(
     QSharedPointer<QCCurlMultiTransferRecord> record,
     ShareContext *context,
-    const QString &error)
+    HttpAdmissionResult result)
 {
-    // limits/add 失败也可能遇到 share 解绑失败；此时不能把 handle 交还普通析构路径。
-    if (!detachShareBindingLocked(record->handle(),
-                                  "QCCurlMultiManager::rejectReplyAdmissionLocked")) {
-        CURL *easy = record->handle();
-        quarantineUnregisteredTransferLocked(std::move(record), easy, context);
-    } else {
-        reply->d_func()->curlManager = record->takeHandle();
+    QString callbackError;
+    const char *operation = "QCCurlMultiManager::rejectHttpAdmissionLocked";
+    if (!m_isPoisoned.load(std::memory_order_relaxed)
+        && detachShareBindingLocked(record->handle(), operation)
+        && record->unbindCallbacks(&callbackError)) {
+        result.returnedHandle.emplace(record->takeHandle());
         record->clearObserver();
-    }
-    return {false, error};
-}
-
-QCCurlMultiManager::AddReplyResult QCCurlMultiManager::admitReplyRecordLocked(
-    QCNetworkReply *reply, const Domain &domain, QSharedPointer<QCCurlMultiTransferRecord> record)
-{
-    CURL *easy = record->handle();
-    record->bindDomain(domain);
-    ShareContext *context  = prepareShareForReplyLocked(reply, easy);
-    const auto shareResult = applyShareToEasyLocked(reply, easy, context);
-    if (shareResult.state == ShareApplyState::NonCallable) {
-        quarantineUnregisteredTransferLocked(std::move(record), easy, context);
-        return {false, shareResult.errorMessage};
-    }
-    if (shareResult.state == ShareApplyState::Rejected) {
-        return rejectReplyAdmissionLocked(reply,
-                                          std::move(record),
-                                          context,
-                                          shareResult.errorMessage);
+        return result;
     }
 
-    QString error;
-    const auto config = QCNetworkConnectionPoolManager::instance()->config();
-    if (!applyLimitsConfig(domain.get(), config, &error)
-        || !Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(easy,
-                                                                                  config,
-                                                                                  &error)
-        || !addEasyToMultiLocked(domain.get(), easy, &error)) {
-        return rejectReplyAdmissionLocked(reply, std::move(record), context, error);
+    // 任何回滚不确定性都保留整个对象图，不把仍有原生借用的 handle 交给 reply。
+    if (!m_isPoisoned.load(std::memory_order_relaxed)) {
+        poisonLocked(operation, CURLM_INTERNAL_ERROR);
     }
-    commitReplyAdmissionLocked(reply, domain, record);
-    return {true, QString()};
-}
-
-void QCCurlMultiManager::commitReplyAdmissionLocked(
-    QCNetworkReply *reply,
-    const Domain &domain,
-    const QSharedPointer<QCCurlMultiTransferRecord> &record)
-{
-    auto *replyPrivate                = reply->d_func();
-    CURL *easy                        = record->handle();
-    replyPrivate->multiTransferRecord = record.data();
-    if (!replyPrivate->poolRequestActive) {
-        replyPrivate->poolRequestActive = true;
-        Internal::QCNetworkConnectionPoolManagerInternal::recordRequestStarted();
-    }
-    m_activeTransfers.insert(easy, record);
-    m_runningRequests.fetch_add(1, std::memory_order_relaxed);
-#ifdef QCURL_ENABLE_TEST_HOOKS
-    reply->setProperty("_qcurl_transfer_record_owns_state",
-                       record->ownsTransferState(replyPrivate->transferState));
-#endif
-    // scheduler 的 start handoff 依赖 multi loop 及时被唤醒，否则 execute() 后可能延迟首轮 poll。
-    wakeupDomain(domain);
-
-    qDebug() << "QCCurlMultiManager::addReply: Added reply" << reply
-             << "Total running:" << m_runningRequests.load();
-}
-
-void QCCurlMultiManager::queueAddReplyFailure(const QPointer<QCNetworkReply> &reply,
-                                              const QString &message)
-{
-    if (!reply) {
-        return;
-    }
-
-    const QString resolvedMessage = message.isEmpty() ? QStringLiteral("curl multi 注册失败")
-                                                      : message;
-    QMetaObject::invokeMethod(
-        reply.data(),
-        [reply, resolvedMessage]() {
-            if (reply) {
-                reply->abortWithError(NetworkError::InvalidRequest, resolvedMessage);
-            }
-        },
-        Qt::QueuedConnection);
-}
-
-void QCCurlMultiManager::removeReply(QCNetworkReply *reply)
-{
-    if (QThread::currentThread() != thread()) {
-        qWarning() << "QCCurlMultiManager::removeReply: owner thread required";
-        return;
-    }
-    Q_ASSERT_X(QThread::currentThread() == thread(),
-               "QCCurlMultiManager::removeReply",
-               "manager owner thread required");
-
-    if (!reply) {
-        return;
-    }
-
-    if (m_isShuttingDown.load(std::memory_order_relaxed)) {
-        return;
-    }
-
-    removeTransferRecord(reply->d_func()->multiTransferRecord);
-}
-
-CURL *QCCurlMultiManager::validatedEasyHandle(QCNetworkReply *reply) const
-{
-    CURL *easy = reply->d_func()->curlManager.handle();
-    if (!easy) {
-        qCritical() << "QCCurlMultiManager::addReply: reply has invalid curl handle";
-    }
-    return easy;
+    result.state        = HttpAdmissionState::Quarantined;
+    result.errorMessage = callbackError.isEmpty() ? m_initializationError : callbackError;
+    CURL *easy          = record->handle();
+    quarantineUnregisteredTransferLocked(std::move(record), easy, context);
+    return result;
 }
 
 bool QCCurlMultiManager::addEasyToMultiLocked(QCCurlMultiDomain *domain, CURL *easy, QString *error)

@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Owns an easy handle after it enters a curl multi handle.
+ * @brief 持有进入 curl multi 的 easy handle 与回调上下文。
  */
 
 #ifndef QCCURLMULTITRANSFERRECORD_P_H
@@ -21,16 +21,15 @@
 namespace QCurl {
 
 /**
- * @brief Stable callback userdata and owner for an active multi transfer.
+ * @brief 为活动传输持有稳定的回调上下文与独占 easy handle。
  *
- * The record is created before `curl_multi_add_handle()` and remains the
- * callback userdata until the easy handle has been detached.  The reply is
- * only a fallible observer. Callback and option-backing state is owned by
- * this record independently of the observer lifetime.
+ * record 在 add 前创建，直到 detach 并解除回调后才归还 handle。
+ * reply 仅作为弱观察者；共享状态覆盖原生回调和选项借用存储的使用期。
  */
 class Q_DECL_HIDDEN QCCurlMultiTransferRecord final
 {
 public:
+    // 有效 handle 已 detach 并解除 record 回调；无效 handle 仅通知不可恢复的隔离失败。
     using CompletionHandler
         = std::function<void(QCCurlHandleManager &&handle, CURLcode result, long httpStatus)>;
     using PersistentCompletionHandler
@@ -54,8 +53,12 @@ public:
                       QCNetworkReply *observer) noexcept;
     void clearObserver() noexcept;
     [[nodiscard]] QCNetworkReply *observer() const noexcept;
-    [[nodiscard]] bool ownsTransferState(
-        const QSharedPointer<QCNetworkReplyTransferState> &state) const noexcept;
+    /// 返回与 reply 共享的状态；只允许所属线程读取或修改其中的原生借用数据。
+    [[nodiscard]] const QSharedPointer<QCNetworkReplyTransferState> &transferState() const noexcept;
+    /// add 成功提交后发布非 owning handle 观察值。
+    void publishActiveHandle() noexcept;
+    /// detach 成功或进入隔离时撤销观察值，不改变 handle 的所有权。
+    void clearActiveHandle() noexcept;
 
     void bindCompletionHandler(CompletionHandler handler);
     [[nodiscard]] bool hasCompletionHandler() const noexcept;
@@ -65,15 +68,10 @@ public:
     [[nodiscard]] bool hasPersistentCompletionHandler() const noexcept;
     [[nodiscard]] PersistentCompletionHandler takePersistentCompletionHandler() noexcept;
 
-    /**
-     * @brief Install this record as every libcurl callback data pointer.
-     *
-     * Callback functions are configured while the reply still owns the easy
-     * handle.  The data pointers are rebound immediately before multi add.
-     */
-    [[nodiscard]] bool bindCallbacks(bool readCallbackConfigured,
-                                     bool debugCallbackConfigured,
-                                     QString *errorMessage);
+    /// 从共享 state 读取配置，仅为实际启用的回调绑定本 record。
+    [[nodiscard]] bool bindCallbacks(QString *errorMessage);
+    /// detach 或安全回滚后解除回调，防止后续 easy cleanup 访问已释放的 record。
+    [[nodiscard]] bool unbindCallbacks(QString *errorMessage);
     [[nodiscard]] bool bindPrivate(QString *errorMessage);
 
     static size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata);

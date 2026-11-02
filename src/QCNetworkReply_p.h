@@ -21,6 +21,7 @@
 #include "QCNetworkCache.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
+#include "private/QCCurlPersistentTransferBridge_p.h"
 #include "private/QCNetworkReplySignal_p.h"
 #include "private/QCNetworkReplyTransferState_p.h"
 #include "private/QCRequestPipeline_p.h"
@@ -38,9 +39,6 @@ namespace QCurl {
 namespace Internal {
 QByteArray testCurlPlanDigest(const QCNetworkReply *reply);
 }
-
-class CurlMultiHandleProcesser; // 前向声明
-class QCCurlMultiTransferRecord;
 
 /**
  * @brief QCNetworkReply 私有实现类
@@ -93,13 +91,10 @@ public:
 
     // Curl 管理
 
-    QCCurlHandleManager curlManager; ///< add 前以及 multi detach 后的句柄管理器
-    QCCurlMultiTransferRecord *multiTransferRecord = nullptr; ///< manager-owned active transfer
-    CurlMultiHandleProcesser *multiProcessor;                 ///< 多句柄管理器（异步模式使用）
-    bool readCallbackConfigured   = false;
-    bool debugCallbackConfigured  = false;
-    bool transferRemovalRequested = false;
-    bool poolRequestActive        = false;
+    QCCurlHandleManager curlManager;       ///< add 前以及 multi detach 后的句柄管理器
+    QCCurlTransferToken transferToken = 0; ///< 仅 completion 或 admission 回滚可清零。
+    bool transferRemovalRequested     = false;
+    bool poolRequestActive            = false;
 
     // 数据缓冲
 
@@ -277,8 +272,8 @@ public:
     /**
      * @brief 异步 multi 完成入口（点对点投递到 reply 线程）
      *
-     * 该方法由 QCCurlMultiManager 在收到 CURLMSG_DONE 后，通过 invokeMethod 投递到
-     * Reply 所在线程执行，用于处理完成/重试/终态收敛逻辑。
+     * reply-side completion adapter 先回收 detached handle、清零 token，再在
+     * reply 所在线程调用本方法，处理完成、重试和终态收敛。
      *
      * @note 必须在 Reply 线程执行；调用方应保证在解锁 multi manager 后再投递回调。
      */

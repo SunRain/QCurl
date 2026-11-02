@@ -1,13 +1,7 @@
 #include "QCCurlMultiManager.h"
 
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkConnectionPoolManager.h"
-#include "QCNetworkConnectionPoolManager_p.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
-#include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCurlRuntimeState_p.h"
 
 #include <QDebug>
@@ -192,14 +186,17 @@ void QCCurlMultiManager::poisonLocked(const char *context, CURLMcode code)
 
     const QString message = m_initializationError;
     for (const auto &transfer : std::as_const(m_activeTransfers)) {
-        if (QCNetworkReply *observer = transfer ? transfer->observer() : nullptr) {
-            QPointer<QCNetworkReply> safeObserver(observer);
+        if (transfer) {
+            // 隔离不转移 ownership，但必须撤销借用，阻止控制路径继续调用原生 handle。
+            transfer->clearActiveHandle();
+        }
+        if (transfer && transfer->observer() && transfer->hasCompletionHandler()) {
+            auto completion = transfer->takeCompletionHandler();
+            // 不归还隔离的 handle；解锁并离开原生调用栈后交由 reply-side adapter 报错。
             QMetaObject::invokeMethod(
-                observer,
-                [safeObserver, message]() {
-                    if (safeObserver) {
-                        safeObserver->abortWithError(NetworkError::Unknown, message);
-                    }
+                this,
+                [completion = std::move(completion)]() {
+                    completion(QCCurlHandleManager(nullptr), CURLE_FAILED_INIT, 0);
                 },
                 Qt::QueuedConnection);
         }

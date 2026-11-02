@@ -5,8 +5,6 @@
 
 #include "QCCurlMultiManager.h"
 #include "QCNetworkConnectionPoolManager.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
@@ -202,93 +200,56 @@ bool QCCurlMultiManager::registerTransferRecord(
         return false;
     }
 
-    TransferToken token = m_nextTransferToken++;
-    if (m_nextTransferToken == 0) {
-        m_nextTransferToken = 1;
-    }
-    transfer->setToken(token);
-    m_activeTransfers.insert(easy, transfer);
-    m_runningRequests.fetch_add(1, std::memory_order_relaxed);
+    const TransferToken token = commitTransferRecordLocked(transfer);
     if (tokenOut) {
         *tokenOut = token;
     }
-    wakeup();
     return true;
+}
+
+QCCurlMultiManager::TransferToken QCCurlMultiManager::commitTransferRecordLocked(
+    const QSharedPointer<QCCurlMultiTransferRecord> &record)
+{
+    const TransferToken token = m_nextTransferToken++;
+    if (m_nextTransferToken == 0) {
+        m_nextTransferToken = 1;
+    }
+    record->setToken(token);
+    m_activeTransfers.insert(record->handle(), record);
+    record->publishActiveHandle();
+    m_runningRequests.fetch_add(1, std::memory_order_relaxed);
+    wakeupDomain(record->domain());
+    return token;
 }
 
 void QCCurlMultiManager::removeTransfer(TransferToken token)
 {
-    if (token == 0 || m_isShuttingDown.load(std::memory_order_relaxed)) {
+    if (token == 0 || m_isShuttingDown.load(std::memory_order_relaxed)
+        || m_isPoisoned.load(std::memory_order_relaxed)) {
         return;
     }
-
-    QCCurlMultiTransferRecord *record = nullptr;
-    {
-        QMutexLocker locker(&m_mutex);
-        for (auto it = m_activeTransfers.cbegin(); it != m_activeTransfers.cend(); ++it) {
-            if (it.value()->token() == token) {
-                record = it.value().data();
-                break;
-            }
-        }
-    }
-    removeTransferRecord(record);
-}
-
-void QCCurlMultiManager::removeTransferRecord(QCCurlMultiTransferRecord *record)
-{
-    if (!record || m_isPoisoned.load(std::memory_order_relaxed)
-        || m_isShuttingDown.load(std::memory_order_relaxed)) {
-        return;
-    }
-
-    QSharedPointer<QCCurlMultiTransferRecord> retainedRecord;
-    {
-        QMutexLocker locker(&m_mutex);
-        for (auto it = m_activeTransfers.cbegin(); it != m_activeTransfers.cend(); ++it) {
-            if (it.value().data() == record) {
-                retainedRecord = it.value();
-                break;
-            }
-        }
-    }
-    if (!retainedRecord) {
-        return;
-    }
-
     if (QThread::currentThread() != thread() || Internal::isInReplyCurlCallback()) {
+        // 跨线程只投递值；回调内也延迟到安全点，不跨边界暴露 record 地址。
         QMetaObject::invokeMethod(
-            this,
-            [this, retainedRecord]() { removeTransferRecord(retainedRecord.data()); },
-            Qt::QueuedConnection);
+            this, [this, token]() { removeTransfer(token); }, Qt::QueuedConnection);
         return;
     }
 
     std::optional<FinishedTransfer> detached;
     {
         QMutexLocker locker(&m_mutex);
-        CURL *easy = nullptr;
         for (auto it = m_activeTransfers.cbegin(); it != m_activeTransfers.cend(); ++it) {
-            if (it.value().data() == retainedRecord.data()) {
-                easy = it.key();
+            if (it.value()->token() == token) {
+                detached = detachTransferRecordLocked(it.value().data(),
+                                                      CURLE_ABORTED_BY_CALLBACK,
+                                                      "QCCurlMultiManager::removeTransfer");
                 break;
             }
         }
-        if (!easy) {
-            return;
-        }
-
-        detached = detachTransferRecordLocked(retainedRecord.data(),
-                                              CURLE_ABORTED_BY_CALLBACK,
-                                              "QCCurlMultiManager::removeTransferRecord");
     }
-
-    if (!detached.has_value()) {
-        return;
+    if (detached) {
+        dispatchFinishedTransfer(std::move(detached.value()));
     }
-    dispatchFinishedTransfer(std::move(detached.value()));
-    qDebug() << "QCCurlMultiManager::removeTransferRecord: Removed transfer"
-             << retainedRecord.data() << "Remaining:" << m_runningRequests.load();
 }
 
 } // namespace QCurl

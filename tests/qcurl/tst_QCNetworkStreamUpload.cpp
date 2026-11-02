@@ -149,9 +149,9 @@ private:
                     const QByteArray line  = lines[i].trimmed();
                     const QByteArray lower = line.toLower();
                     if (lower.startsWith("content-length:")) {
-                        const QByteArray v = line.mid(static_cast<int>(
-                                                          QByteArray("Content-Length:").size()))
-                                                 .trimmed();
+                        const QByteArray v  = line.mid(static_cast<int>(
+                                                           QByteArray("Content-Length:").size()))
+                                                  .trimmed();
                         bool ok             = false;
                         const qint64 parsed = v.toLongLong(&ok);
                         if (ok && parsed >= 0) {
@@ -207,11 +207,11 @@ private:
                                                  : QByteArrayLiteral("/echo_post"));
                 const QByteArray resp     = "HTTP/1.1 307 Temporary Redirect\r\n"
                                             "Location: "
-                                        + location
-                                        + "\r\n"
-                                          "Content-Length: 0\r\n"
-                                          "Connection: close\r\n"
-                                          "\r\n";
+                                            + location
+                                            + "\r\n"
+                                              "Content-Length: 0\r\n"
+                                              "Connection: close\r\n"
+                                              "\r\n";
                 safeSocket->write(resp);
                 safeSocket->flush();
                 safeSocket->disconnectFromHost();
@@ -524,11 +524,7 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
     ObservedUploadBuffer *device = nullptr;
 
     QMetaObject::invokeMethod(
-        &ctx,
-        [&]() {
-            device = new ObservedUploadBuffer(payload);
-        },
-        Qt::BlockingQueuedConnection);
+        &ctx, [&]() { device = new ObservedUploadBuffer(payload); }, Qt::BlockingQueuedConnection);
 
     QVERIFY(device != nullptr);
     QPointer<ObservedUploadBuffer> safeDevice(device);
@@ -540,9 +536,9 @@ void TestQCNetworkStreamUpload::testUploadDeviceThreadMismatchFailsFast()
     QCNetworkReply *reply = manager.put(request, device, payload.size());
     QVERIFY(reply);
 
-    const NetworkError error = reply->error();
-    const QString errorString = reply->errorString();
-    const int metadataProbeCount = device->metadataProbeCount();
+    const NetworkError error                = reply->error();
+    const QString errorString               = reply->errorString();
+    const int metadataProbeCount            = device->metadataProbeCount();
     const int crossThreadMetadataProbeCount = device->crossThreadMetadataProbeCount();
 
     reply->deleteLater();
@@ -569,9 +565,7 @@ void TestQCNetworkStreamUpload::testDeviceOverloadFromNonOwnerThreadFailsBeforeD
 
     QCNetworkAccessManager *manager = nullptr;
     QMetaObject::invokeMethod(
-        &ctx,
-        [&]() { manager = new QCNetworkAccessManager(); },
-        Qt::BlockingQueuedConnection);
+        &ctx, [&]() { manager = new QCNetworkAccessManager(); }, Qt::BlockingQueuedConnection);
     QVERIFY(manager != nullptr);
     QCOMPARE(manager->thread(), &worker);
 
@@ -584,9 +578,9 @@ void TestQCNetworkStreamUpload::testDeviceOverloadFromNonOwnerThreadFailsBeforeD
 
     QCNetworkReply *reply = manager->put(request, &device, payload.size());
     QVERIFY(reply);
-    const NetworkError error = reply->error();
-    const QString errorString = reply->errorString();
-    const int metadataProbeCount = device.metadataProbeCount();
+    const NetworkError error                = reply->error();
+    const QString errorString               = reply->errorString();
+    const int metadataProbeCount            = device.metadataProbeCount();
     const int crossThreadMetadataProbeCount = device.crossThreadMetadataProbeCount();
 
     if (reply->thread() == QThread::currentThread()) {
@@ -648,13 +642,9 @@ void TestQCNetworkStreamUpload::testNonSeekableRetryPolicyFailsFast()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false); // 避免被“自动重定向”约束抢先命中
     QCNetworkRetryPolicy policy;
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1,
-                                             std::chrono::milliseconds(1),
-                                             2.0,
-                                             &policy),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1, std::chrono::milliseconds(1), 2.0, &policy),
              QCNetworkRetryPolicy::UpdateResult::Applied);
-    QCOMPARE(policy.setRetryMethodPolicy(
-                 QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
+    QCOMPARE(policy.setRetryMethodPolicy(QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
              QCNetworkRetryPolicy::UpdateResult::Applied);
     request.setRawHeader(QByteArrayLiteral("Idempotency-Key"), QByteArrayLiteral("stream-1"));
     request.setRetryPolicy(policy);
@@ -678,13 +668,9 @@ void TestQCNetworkStreamUpload::testSeekableRetryPreSeekFailureIsDiagnosable()
     QCNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:1/")));
     request.setFollowLocation(false);
     QCNetworkRetryPolicy policy;
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1,
-                                             std::chrono::milliseconds(1),
-                                             2.0,
-                                             &policy),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(1, std::chrono::milliseconds(1), 2.0, &policy),
              QCNetworkRetryPolicy::UpdateResult::Applied);
-    QCOMPARE(policy.setRetryMethodPolicy(
-                 QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
+    QCOMPARE(policy.setRetryMethodPolicy(QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
              QCNetworkRetryPolicy::UpdateResult::Applied);
     request.setRawHeader(QByteArrayLiteral("Idempotency-Key"), QByteArrayLiteral("seek-fail-1"));
     request.setRetryPolicy(policy);
@@ -873,7 +859,7 @@ void TestQCNetworkStreamUpload::testCancelStopsFurtherDeviceReads()
     QCOMPARE(reply->state(), ReplyState::Cancelled);
     QCOMPARE(reply->error(), NetworkError::OperationCancelled);
 
-    // 等待 queued removeReply 生效，并断言短窗口内不会继续读取 device。
+    // 观察取消后的短窗口，确认 token 移除生效后不会继续读取 device。
     // 这里不是完成条件等待；真正终态仍由 waitForFinished() 断言。
     QTest::qWait(200);
     QCOMPARE(buffer->readCalls(), readsBefore);

@@ -84,8 +84,6 @@ class QCURL_EXPORT QCNetworkReply : public QObject
 {
     Q_OBJECT
     friend class QCNetworkAccessManager;
-    friend class CurlMultiHandleProcesser;
-    friend class QCCurlMultiManager;
 
 public:
     // ==================
@@ -162,7 +160,7 @@ public:
      * 语义：
      * - 仅允许 `Running → Paused`（幂等）
      * - 跨线程调用会自动 marshal 到 reply 线程
-     * - 不影响调度层（不会 cancel / removeReply / 出队）
+     * - 不影响调度层（不会取消、移除活动传输或出队）
      */
     void pauseTransport(PauseMode mode = PauseMode::All);
 

@@ -1,7 +1,6 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
+#include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlRequiredOptionAdapter_p.h"
 
 #include <QByteArray>
@@ -172,10 +171,9 @@ void QCCurlMultiManager::synchronizeShareConfig(const QCNetworkAccessManager *ma
     }
 }
 
-QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareShareForReplyLocked(
-    QCNetworkReply *reply, CURL *)
+QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareShareForHttpLocked(
+    const QCNetworkAccessManager *manager, QStringList *warnings)
 {
-    auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
     if (!manager) {
         return nullptr;
     }
@@ -194,25 +192,27 @@ QCCurlMultiManager::ShareContext *QCCurlMultiManager::prepareShareForReplyLocked
     }
     if (context->hasUsers()) {
         context->pending = desired;
-        reply->d_func()->capabilityWarnings.append(
+        warnings->append(
             QStringLiteral("share handle 配置变更延迟生效：期望 %1，实际 %2；仍有在途用户")
                 .arg(shareConfigSummary(desired), shareConfigSummary(context->applied)));
         return context;
     }
     QString error;
     if (!applyShareConfigIfIdleLocked(context, desired, &error)) {
-        reply->d_func()->capabilityWarnings.append(error);
+        warnings->append(error);
     }
     return context;
 }
 
-QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
-    QCNetworkReply *reply, CURL *easy, ShareContext *context)
+QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToHttpLocked(
+    const QCNetworkAccessManager *manager,
+    const QCCurlMultiTransferRecord &record,
+    ShareContext *context)
 {
     if (m_isPoisoned.load(std::memory_order_relaxed)) {
         return {ShareApplyState::NonCallable, m_initializationError};
     }
-    auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
+    CURL *easy = record.handle();
     if (!toShareConfig(manager).enabled()) {
         resetShareOnEasyIfNeeded(easy);
         return m_isPoisoned.load(std::memory_order_relaxed)
@@ -237,7 +237,7 @@ QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
     context->activeUsers += 1;
     m_easyToShareContext.insert(easy, context);
     m_easyShareOptionSet.insert(easy, true);
-    const auto *state       = reply->d_func();
+    const auto *state       = record.transferState().data();
     const bool hasCookieJar = state->cookieMode != 0 && !state->cookieFilePath.isEmpty();
     if (!context->applied.cookies || hasCookieJar) {
         return {};
@@ -249,7 +249,7 @@ QCCurlMultiManager::ShareApplyResult QCCurlMultiManager::applyShareToEasyLocked(
     if (cookie.isSuccess()) {
         return {};
     }
-    if (!detachShareBindingLocked(easy, "QCCurlMultiManager::applyShareToEasyLocked/rollback")) {
+    if (!detachShareBindingLocked(easy, "QCCurlMultiManager::applyShareToHttpLocked/rollback")) {
         return {ShareApplyState::NonCallable, m_initializationError};
     }
     return {ShareApplyState::Rejected, cookie.message};
