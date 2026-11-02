@@ -115,6 +115,7 @@ def test_script_entrypoint_verifies_candidate_without_pythonpath(
         f"sys.path.insert(0, {str(Path(run_release_gate.__file__).parent)!r}); "
         f"entry = runpy.run_path({run_release_gate.__file__!r}); "
         f"args = entry['build_parser']().parse_args({argv!r}); "
+        f"entry['_resolve_paths'](args, Path({str(repo)!r})); "
         "raise SystemExit(entry['_verify_manifest'](args, "
         f"Path({str(repo)!r}), entry['_selected_steps'](args)))"
     )
