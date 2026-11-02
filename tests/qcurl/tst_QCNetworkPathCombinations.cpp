@@ -160,8 +160,13 @@ void TestQCNetworkNetworkPath::addressFamiliesMatchNative()
     QVERIFY2(v6.start(QStringLiteral("::1"), v4.serverPort()), qPrintable(v6.errorString()));
     v4.setKeepAlive(false);
     v6.setKeepAlive(false);
-    const auto input = PathScenario{{QStringLiteral("localhost:%1:127.0.0.1").arg(v4.serverPort())},
-                                    {}};
+    // 公共解析覆盖仅支持 IPv4；强制地址族用 localhost 的固定双栈回环解析。
+    // Any 显式限定 IPv4，避免选址顺序影响期望。
+    const auto resolve
+        = family == QCNetworkIpResolve::Any
+              ? QStringList{QStringLiteral("localhost:%1:127.0.0.1").arg(v4.serverPort())}
+              : QStringList{};
+    const auto input = PathScenario{resolve, {}};
     for (const auto isolation :
          {QCNetworkResolveIsolation::Isolated, QCNetworkResolveIsolation::NativeShared}) {
         auto request = makeRequest(v4.serverPort(), input, isolation, false);
@@ -176,4 +181,6 @@ void TestQCNetworkNetworkPath::addressFamiliesMatchNative()
         compareResult(NetworkPathProbe::asynchronous(&manager, request), baseline);
         compareResult(NetworkPathProbe::blocking(request), baseline);
     }
+    QCOMPARE(v4.requests().size(), family == QCNetworkIpResolve::Ipv6 ? 0 : 6);
+    QCOMPARE(v6.requests().size(), family == QCNetworkIpResolve::Ipv6 ? 6 : 0);
 }

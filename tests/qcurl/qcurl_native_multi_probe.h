@@ -23,9 +23,10 @@ struct NativeProbeOptions
 
 struct NativeProbeResult
 {
-    CURLcode code       = CURLE_FAILED_INIT;
-    long status         = 0;
-    long newConnections = 0;
+    CURLcode code           = CURLE_FAILED_INIT;
+    long status             = 0;
+    long newConnections     = 0;
+    long proxyConnectStatus = 0;
     QByteArray body;
 };
 
@@ -91,6 +92,8 @@ public:
         }
         if (curl_easy_getinfo(easy.get(), CURLINFO_RESPONSE_CODE, &result.status) != CURLE_OK
             || curl_easy_getinfo(easy.get(), CURLINFO_NUM_CONNECTS, &result.newConnections)
+                   != CURLE_OK
+            || curl_easy_getinfo(easy.get(), CURLINFO_HTTP_CONNECTCODE, &result.proxyConnectStatus)
                    != CURLE_OK) {
             result.code = CURLE_FAILED_INIT;
         }

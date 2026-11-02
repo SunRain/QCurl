@@ -36,6 +36,21 @@ QCNetworkRequest requestFor(quint16 port, QCNetworkResolveIsolation isolation)
     return request;
 }
 
+void verifyProxyBaseline(const NativeProbeResult &result, bool connectTo, bool acceptTunnel)
+{
+    QCOMPARE(result.proxyConnectStatus, connectTo ? (acceptTunnel ? 200L : 403L) : 0L);
+    if (connectTo && !acceptTunnel) {
+        // CONNECT 被拒绝的 CURLcode 随 libcurl 版本变化；协议结果固定为 403。
+        QVERIFY(result.code != CURLE_OK);
+        QCOMPARE(result.status, 0L);
+        QVERIFY(result.body.isEmpty());
+    } else {
+        QCOMPARE(result.code, CURLE_OK);
+        QCOMPARE(result.status, 200L);
+        QCOMPARE(result.body, QByteArrayLiteral("remote-proxy-answer"));
+    }
+}
+
 } // namespace
 
 void TestQCNetworkNetworkPath::combinedTlsIdentityMatchesNative_data()
@@ -172,8 +187,12 @@ void TestQCNetworkNetworkPath::proxyFormsMatchNative()
     options.resolve     = request.resolveOverride().value();
     options.connectTo   = request.connectTo().value_or(QStringList{});
     const auto baseline = NetworkPathProbe::nativeEasy(request.url(), options);
-    QCOMPARE(baseline.code, connectTo && !acceptTunnel ? CURLE_RECV_ERROR : CURLE_OK);
+    verifyProxyBaseline(baseline, connectTo, acceptTunnel);
     const auto firstWire = proxy.requests();
+    QCOMPARE(firstWire.size(), connectTo && acceptTunnel ? 2 : 1);
+    if (connectTo && acceptTunnel) {
+        QVERIFY(firstWire.at(1).startsWith("GET /lifecycle HTTP/1.1\r\n"));
+    }
     QCNetworkAccessManager manager;
     const auto asyncResult = NetworkPathProbe::asynchronous(&manager, request);
     const auto blocking    = NetworkPathProbe::blocking(request);
