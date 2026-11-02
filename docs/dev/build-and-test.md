@@ -61,7 +61,30 @@ ctest --test-dir build --output-on-failure
 - 非 `external_*` QtTest 用 `FAIL_REGULAR_EXPRESSION` 将 QSKIP 判为失败；严格 wrapper 另核对 skip 计数。仅有 CTest 退出 0 不能证明未执行/禁用的目标通过。
 - coverage map 的 `contract` / `regression` / `smoke` / `diagnostic` 含义与标签表见[测试目录](../../tests/README.md)；`tests/coverage-map.yaml` 关联代表测试。
 - `tst_QCNetworkDiagnosticsLocal` 是 deterministic env provider：覆盖本地 DNS、HTTP 200/404、TLS fixture、heartbeat/deadline、取消/析构/并发的恰好一次 Future 完成。`checkSSL()` 没有显式 CA 注入入口，本地 TLS 用例证明证书校验及明确结果，不保证默认信任 fixture。
-- 公网 `tst_QCNetworkDiagnostics` 与 `external_heavy` 只作显式 smoke。大文件 smoke 可用 `QCURL_RUN_EXTERNAL_HEAVY=1` 选择；URL 与长度通过 `QCURL_LARGE_FILE_URL` / `QCURL_LARGE_FILE_EXPECTED_BYTES` 设置，HEAD preflight 失败可 QSKIP，不进入 deterministic 通过证明。
+- 公网 `tst_QCNetworkDiagnostics` 与 `external_heavy` 只作显式 smoke，不进入 deterministic 通过证明。
+
+### 外部大文件 smoke
+
+`tst_LargeFileDownload` 默认关闭，没有内置下载 URL 或预期长度。启用前选择可达的 HTTPS 文件，
+并从发布方确认该文件的精确字节数；`latest` 等可变路径需要在每次执行前重新确认对应大小。
+`QCURL_LARGE_FILE_URL` 必须是有效 HTTPS URL，`QCURL_LARGE_FILE_EXPECTED_BYTES` 必须是
+`qint64` 范围内的十进制正整数。显式启用后的配置缺失或无效直接失败，不以跳过代替配置检查。
+
+下面的命令要求调用方预先设置两个变量，并将它们显式传给测试进程：
+
+```bash
+LC_ALL=C QCURL_RUN_EXTERNAL_HEAVY=1 \
+  QCURL_LARGE_FILE_URL="${QCURL_LARGE_FILE_URL:?请设置有效 HTTPS 下载 URL}" \
+  QCURL_LARGE_FILE_EXPECTED_BYTES="${QCURL_LARGE_FILE_EXPECTED_BYTES:?请设置该文件的精确字节数}" \
+  python3 scripts/ctest_strict.py --build-dir build --label-regex '' --max-skips 0 -- \
+    -R '^tst_LargeFileDownload$' --output-on-failure
+```
+
+HEAD 与 GET 均发送 `User-Agent: QCurl/<当前版本>`，这是测试请求配置，不改变库的默认行为。
+HEAD preflight 仍使用 15 秒请求超时和 20 秒等待上限，远端不可用时可 QSKIP；上面的严格命令会将
+skip 判为失败，因此跳过不构成下载通过证据。GET 保留 120 秒请求超时、150 秒等待上限及完整长度
+校验，不自动重试、换镜像或使用 HEAD 长度替代外部给定的期望值；结果记录已接收字节数与耗时。
+测试沿用禁用证书校验的传输 smoke 配置，其成功不证明外部 TLS 证书验证。
 
 <a id="public-api"></a>
 ## 3. Public API 与安装消费检查

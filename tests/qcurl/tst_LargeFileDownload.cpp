@@ -7,6 +7,7 @@
  * - 仅用于在具备出口网络的环境中做“真实 HTTPS + 大体量传输”回归验证。
  */
 
+#include "QCGlobal.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkReply.h"
@@ -14,15 +15,19 @@
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
 
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QString>
 #include <QtTest/QtTest>
 
+#include <algorithm>
+#include <chrono>
+#include <memory>
+
 using namespace QCurl;
 
 namespace {
-
-constexpr qint64 kDefaultExpectedBytes = 144969772;
 
 bool isTruthyEnvValue(const QByteArray &value)
 {
@@ -30,39 +35,51 @@ bool isTruthyEnvValue(const QByteArray &value)
     if (normalized.isEmpty()) {
         return false;
     }
-    return normalized != "0" && normalized != "false" && normalized != "no"
-           && normalized != "off";
+    return normalized != "0" && normalized != "false" && normalized != "no" && normalized != "off";
 }
 
 QUrl largeFileUrlFromEnv()
 {
-    const QByteArray url = qgetenv("QCURL_LARGE_FILE_URL");
-    if (!url.isEmpty()) {
-        return QUrl(QString::fromUtf8(url));
-    }
-
-    return QUrl(QStringLiteral("https://mirrors.ustc.edu.cn/archlinux/iso/2025.11.01/"
-                               "archlinux-bootstrap-2025.11.01-x86_64.tar.zst"));
+    return QUrl(QString::fromUtf8(qgetenv("QCURL_LARGE_FILE_URL").trimmed()), QUrl::StrictMode);
 }
 
 qint64 expectedBytesFromEnv()
 {
-    const QByteArray rawValue = qgetenv("QCURL_LARGE_FILE_EXPECTED_BYTES");
-    if (rawValue.isEmpty()) {
-        return qgetenv("QCURL_LARGE_FILE_URL").isEmpty() ? kDefaultExpectedBytes : -1;
+    const QByteArray rawValue = qgetenv("QCURL_LARGE_FILE_EXPECTED_BYTES").trimmed();
+    if (rawValue.isEmpty() || !std::all_of(rawValue.cbegin(), rawValue.cend(), [](char ch) {
+            return ch >= '0' && ch <= '9';
+        })) {
+        return -1;
     }
-
     bool ok             = false;
-    const qint64 parsed = QString::fromUtf8(rawValue.trimmed()).toLongLong(&ok);
+    const qint64 parsed = rawValue.toLongLong(&ok);
     return (ok && parsed > 0) ? parsed : -1;
 }
 
-QString replySummary(QCNetworkReply *reply)
+QCNetworkRequest largeFileRequest(const QUrl &url, std::chrono::seconds totalTimeout)
 {
-    return QStringLiteral("error=%1, errorString=%2, httpStatus=%3")
+    QCNetworkRequest request(url);
+    request.setRawHeader(QByteArrayLiteral("User-Agent"),
+                         QByteArrayLiteral("QCurl/") + versionString());
+    // 仅验证 HTTPS 大体量传输，不以外部环境的 CA 链作为本 smoke 的通过前提。
+    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
+    QCNetworkTimeoutConfig timeout;
+    timeout.setTotalTimeout(totalTimeout);
+    request.setTimeoutConfig(timeout);
+    return request;
+}
+
+QString replySummary(const QCNetworkReply *reply, qint64 elapsedMs, qint64 expectedBytes)
+{
+    return QStringLiteral("error=%1, errorString=%2, httpStatus=%3, curlCode=%4, "
+                          "receivedBytes=%5/%6, elapsedMs=%7")
         .arg(static_cast<int>(reply->error()))
         .arg(reply->errorString())
-        .arg(reply->httpStatusCode());
+        .arg(reply->httpStatusCode())
+        .arg(reply->diagnosticCurlCode())
+        .arg(reply->bytesAvailable())
+        .arg(expectedBytes)
+        .arg(elapsedMs);
 }
 
 } // namespace
@@ -78,93 +95,85 @@ private Q_SLOTS:
     void testHttpsLargeFileDownload();
 
 private:
-    bool isExternalHeavyAllowed() const;
-    QCNetworkAccessManager *m_manager = nullptr;
+    void verifyPreflight(const QUrl &url);
+    void verifyDownload(const QUrl &url, qint64 expectedBytes);
+    std::unique_ptr<QCNetworkAccessManager> m_manager;
 };
 
 void TestLargeFileDownload::initTestCase()
 {
-    m_manager = new QCNetworkAccessManager(this);
+    m_manager = std::make_unique<QCNetworkAccessManager>();
 }
 
 void TestLargeFileDownload::cleanupTestCase()
 {
-    m_manager = nullptr;
-}
-
-bool TestLargeFileDownload::isExternalHeavyAllowed() const
-{
-    return isTruthyEnvValue(qgetenv("QCURL_RUN_EXTERNAL_HEAVY"));
+    m_manager.reset();
 }
 
 void TestLargeFileDownload::testHttpsLargeFileDownload()
 {
-    if (!isExternalHeavyAllowed()) {
+    if (!isTruthyEnvValue(qgetenv("QCURL_RUN_EXTERNAL_HEAVY"))) {
         QSKIP("外部 heavy smoke 默认关闭；设置 QCURL_RUN_EXTERNAL_HEAVY=1 后才执行真实大文件下载");
     }
 
     const QUrl url = largeFileUrlFromEnv();
-    if (!url.isValid() || url.isEmpty()) {
-        const QByteArray skipReason
-            = QStringLiteral("QCURL_LARGE_FILE_URL 无效: %1").arg(url.toString()).toUtf8();
-        QSKIP(skipReason.constData());
-    }
-
+    QVERIFY2(url.isValid() && !url.isEmpty() && url.scheme() == QStringLiteral("https")
+                 && !url.host().isEmpty(),
+             "启用外部 heavy smoke 时必须通过 QCURL_LARGE_FILE_URL 提供有效 HTTPS URL");
     const qint64 expectedBytes = expectedBytesFromEnv();
+    QVERIFY2(expectedBytes > 0,
+             "QCURL_LARGE_FILE_EXPECTED_BYTES 必须是该文件的十进制正整数字节数，且不能超出 qint64");
 
-    QCNetworkRequest preflightRequest(url);
-    preflightRequest.setSslConfig(QCNetworkSslConfig::insecureConfig());
-
-    QCNetworkTimeoutConfig preflightTimeout;
-    preflightTimeout.setTotalTimeout(std::chrono::seconds(15));
-    preflightRequest.setTimeoutConfig(preflightTimeout);
-
-    auto *preflightReply = m_manager->head(preflightRequest);
-    QVERIFY(preflightReply != nullptr);
-
-    QSignalSpy preflightFinishedSpy(preflightReply, &QCNetworkReply::finished);
-    if (!preflightFinishedSpy.wait(20000)) {
-        preflightReply->deleteLater();
-        QSKIP("外部 large file HEAD preflight 超时，跳过以避免把远端不可用误判为产品失败");
+    verifyPreflight(url);
+    if (QTest::currentTestResolved()) {
+        return;
     }
+    verifyDownload(url, expectedBytes);
+}
 
-    const int preflightStatus = preflightReply->httpStatusCode();
-    if (preflightReply->error() != NetworkError::NoError || preflightStatus < 200
-        || preflightStatus >= 300) {
-        const QByteArray skipReason
-            = QStringLiteral("外部 large file HEAD preflight 未通过，跳过 heavy smoke: %1")
-                  .arg(replySummary(preflightReply))
-                  .toUtf8();
-        preflightReply->deleteLater();
-        QSKIP(skipReason.constData());
-    }
-    preflightReply->deleteLater();
-
-    QCNetworkRequest request(url);
-
-    // 外部环境可能缺少 CA 链；此用例仅验证“真实 HTTPS + 大体量传输”链路，临时禁用校验以避免误报。
-    request.setSslConfig(QCNetworkSslConfig::insecureConfig());
-
-    QCNetworkTimeoutConfig timeout;
-    timeout.setTotalTimeout(std::chrono::seconds(120));
-    request.setTimeoutConfig(timeout);
-
-    auto *reply = m_manager->get(request);
+void TestLargeFileDownload::verifyPreflight(const QUrl &url)
+{
+    QElapsedTimer timer;
+    timer.start();
+    auto *reply = m_manager->head(largeFileRequest(url, std::chrono::seconds(15)));
+    QVERIFY(reply != nullptr);
+    const auto cleanup = qScopeGuard([reply]() { reply->deleteLater(); });
     QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
-    QVERIFY(finishedSpy.wait(150000));
-
-    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(replySummary(reply)));
-    const auto data = reply->readAll();
-    QVERIFY2(data.has_value(), qPrintable(replySummary(reply)));
-
-    if (expectedBytes > 0) {
-        QCOMPARE(data->size(), expectedBytes);
-    } else {
-        QVERIFY2(!data->isEmpty(),
-                 "未提供 QCURL_LARGE_FILE_EXPECTED_BYTES 时，至少应成功下载到非空响应体");
+    if (!reply->isFinished() && !finishedSpy.wait(20000)) {
+        const auto reason = QStringLiteral(
+                                "外部 large file HEAD preflight 超时，跳过 heavy smoke: %1")
+                                .arg(replySummary(reply, timer.elapsed(), 0));
+        reply->cancel();
+        QSKIP(qPrintable(reason));
     }
+    const int status = reply->httpStatusCode();
+    if (reply->error() != NetworkError::NoError || status < 200 || status >= 300) {
+        const auto reason = QStringLiteral(
+                                "外部 large file HEAD preflight 未通过，跳过 heavy smoke: %1")
+                                .arg(replySummary(reply, timer.elapsed(), 0));
+        QSKIP(qPrintable(reason));
+    }
+}
 
-    reply->deleteLater();
+void TestLargeFileDownload::verifyDownload(const QUrl &url, qint64 expectedBytes)
+{
+    QElapsedTimer timer;
+    timer.start();
+    auto *reply = m_manager->get(largeFileRequest(url, std::chrono::seconds(120)));
+    QVERIFY(reply != nullptr);
+    const auto cleanup = qScopeGuard([reply]() { reply->deleteLater(); });
+    QSignalSpy finishedSpy(reply, &QCNetworkReply::finished);
+    const bool finished = reply->isFinished() || finishedSpy.wait(150000);
+    const auto summary  = replySummary(reply, timer.elapsed(), expectedBytes);
+    qInfo().noquote() << "外部大文件下载:" << summary;
+    if (!finished) {
+        reply->cancel();
+    }
+    QVERIFY2(finished, qPrintable(summary));
+    QVERIFY2(reply->error() == NetworkError::NoError, qPrintable(summary));
+    const auto data = reply->readAll();
+    QVERIFY2(data.has_value(), qPrintable(summary));
+    QCOMPARE(data->size(), expectedBytes);
 }
 
 QTEST_MAIN(TestLargeFileDownload)
