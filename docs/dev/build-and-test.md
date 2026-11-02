@@ -146,6 +146,18 @@ python3 scripts/validate_policy_violations_dictionary.py
 python3 tests/public_api/run_public_api_checks.py hard-break-guards --repo-root .
 ```
 
+成员命名的 AST 门禁还需要 `clang-query` 和 `compile_commands.json`；配置构建树时使用
+`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`，再执行：
+
+```bash
+python3 scripts/check_qt_member_naming.py --source-root . --compile-commands build
+```
+
+门禁逐文件串行扫描；同一文件的全部编译配置分成每进程最多 8 条命令，不能把 8 个文件
+当成 8 个 AST。未单独登记的头文件仍使用 Clang 原生编译命令推断。每批先核对 stdout
+摘要与原始字段绑定数量，再跨批去重；摘要缺失、字段无法映射、编译错误或超时均判失败。
+进程退出释放该批 AST，以降低峰值内存；AST 大小随源码变化，8 条命令不是固定内存上限。
+
 检查文档时还需核对有效链接/章节、仓内路径、命令参数和前置条件。词法扫描不会编译 C++ 示例；修改 Quickstart/README 示例时从最终正文取用代码，在安装前缀上独立 configure、build 并核对实际响应。API 文档生成与产物检查见[Doxygen 正文](api-docs.md)。
 
 ## 6. 失败处理
