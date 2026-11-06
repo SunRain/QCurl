@@ -1,4 +1,5 @@
 #include "QCCurlHandleManager.h"
+#include "QCNetworkRequest.h"
 #include "private/QCTlsConfiguration_p.h"
 
 #include <QScopeGuard>
@@ -44,6 +45,16 @@ ProxyTlsInput proxyInput(const QByteArray &option, QCUnsupportedSecurityOptionPo
         config.setTls13Ciphers(QStringLiteral("proxy-tls13-marker"));
     }
     return {QCNetworkProxyConfig::ProxyType::Https, CURLPROXY_HTTPS, config};
+}
+
+TlsConfigurationResult applyEndpoint(QCTlsConfiguration &configuration,
+                                     CURL *easy,
+                                     const QCNetworkSslConfig &config)
+{
+    QCNetworkRequest request(QUrl(QStringLiteral("https://example.test/")));
+    request.setSslConfig(config);
+    const auto compiled = compileRequestPolicy(request);
+    return configuration.applyEndpoint(easy, compiled.policy->endpointTls, config);
 }
 
 void verifyFailure(const TlsConfigurationResult &result, const QByteArray &option, CURLcode code)
@@ -131,8 +142,9 @@ void tst_QCTlsConfiguration::optionPolicy()
                               : QCUnsupportedSecurityOptionPolicy::Fail;
     const auto result  = option.startsWith("CURLOPT_PROXY_")
                              ? configuration.applyProxy(easy.handle(), proxyInput(option, policy))
-                             : configuration.applyEndpoint(easy.handle(),
-                                                           endpointInput(option, policy));
+                             : applyEndpoint(configuration,
+                                             easy.handle(),
+                                             endpointInput(option, policy));
     const bool shouldWarn = !required && warn && capabilityError;
     QCOMPARE(result.warnings.size(), shouldWarn ? 1 : 0);
     QCOMPARE(result.failure.has_value(), !shouldWarn);
@@ -181,7 +193,7 @@ void tst_QCTlsConfiguration::unmappedMinimum()
         QCNetworkSslConfig config;
         config.setMinTlsVersion(static_cast<QCNetworkTlsVersion>(version));
         config.setUnsupportedSecurityPolicy(policy);
-        result = configuration.applyEndpoint(easy.handle(), config);
+        result = applyEndpoint(configuration, easy.handle(), config);
     }
     const QString message = QStringLiteral("不支持的 TLS 版本配置（%1）")
                                 .arg(proxy ? QStringLiteral("proxy") : QStringLiteral("ssl"));
@@ -210,7 +222,7 @@ void tst_QCTlsConfiguration::warningsSurviveLaterFailure()
         qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
         qunsetenv("QCURL_TEST_FORCE_SETOPT_ERROR");
     });
-    const auto result  = configuration.applyEndpoint(easy.handle(), config);
+    const auto result  = applyEndpoint(configuration, easy.handle(), config);
     QCOMPARE(result.warnings.size(), 2);
     QVERIFY(result.warnings[0].contains(QStringLiteral("CURLOPT_PINNEDPUBLICKEY")));
     QVERIFY(result.warnings[1].contains(QStringLiteral("CURLOPT_SSLVERSION")));

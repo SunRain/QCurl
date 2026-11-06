@@ -12,22 +12,20 @@ namespace QCurl::Internal {
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyTimeouts(CURL *easy) const
 {
     ReplyCurlConfigurationResult result;
+    const auto &policy = requestPolicy().timeout;
+    if ((policy.connectMilliseconds
+         && !requiredOption(easy,
+                            QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS),
+                            *policy.connectMilliseconds,
+                            result))
+        || (policy.totalMilliseconds
+            && !requiredOption(easy,
+                               QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
+                               *policy.totalMilliseconds,
+                               result))) {
+        return result;
+    }
     const auto timeout = m_plan.normalized.request.timeoutConfig();
-    if (const auto value = timeout.connectTimeout(); value && value->count() > 0) {
-        if (!required(CurlOptions::setConnectTimeout(easy, *value),
-                      QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name,
-                      result)) {
-            return result;
-        }
-    }
-    if (const auto value = timeout.totalTimeout(); value && value->count() > 0) {
-        if (!requiredOption(easy,
-                            QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
-                            static_cast<long>(value->count()),
-                            result)) {
-            return result;
-        }
-    }
     if (const auto value = timeout.lowSpeedTime(); value && value->count() > 0) {
         if (!requiredOption(easy,
                             QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_TIME),

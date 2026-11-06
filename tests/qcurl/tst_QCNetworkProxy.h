@@ -23,6 +23,10 @@ private Q_SLOTS:
     void testProxyWithSsl();
     void testProxyAppliedToCurlHandle();
     void testProxyEnvironmentDisabledByDefault();
+    void explicitProxyPolicy_data();
+    void explicitProxyPolicy();
+    void httpsProxyTransport_data();
+    void httpsProxyTransport();
     void testSslConfigValueSemantics();
     void testTimeoutConfigOptionalLifecycle();
     void testProxyTlsConfigBraceInitSetter();

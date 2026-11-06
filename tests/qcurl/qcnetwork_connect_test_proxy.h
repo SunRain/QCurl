@@ -104,7 +104,6 @@ private:
                 }
                 return;
             }
-            disconnect(client, &QTcpSocket::readyRead, this, nullptr);
             const QByteArray request = pending->first(end + 4);
             m_requests.append(request);
             if (!request.startsWith("CONNECT ")) {
@@ -113,12 +112,14 @@ private:
                 return;
             }
             if (!request.toLower().contains("\r\nproxy-authorization:")) {
+                // 保留连接以隔离认证协商；关闭后重连属于原生 libcurl 的独立传输行为。
                 client->write("HTTP/1.1 407 Proxy Authentication Required\r\n"
                               "Proxy-Authenticate: Basic realm=\"qcurl-fixture\"\r\n"
-                              "Content-Length: 0\r\nConnection: close\r\n\r\n");
-                client->disconnectFromHost();
+                              "Content-Length: 0\r\n\r\n");
+                pending->clear();
                 return;
             }
+            disconnect(client, &QTcpSocket::readyRead, this, nullptr);
             forward(client, pending, end);
         });
     }

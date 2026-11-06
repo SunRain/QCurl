@@ -12,9 +12,7 @@
 namespace QCurl {
 namespace {
 
-bool configureBaseAndBody(QCNetworkReplyPrivate *reply,
-                          CURL *easy,
-                          Internal::ReplyCurlHeaderFacts &facts)
+bool configureBaseAndBody(QCNetworkReplyPrivate *reply, CURL *easy)
 {
     using namespace Internal;
     auto &configuration = reply->transferState->configuration;
@@ -28,14 +26,11 @@ bool configureBaseAndBody(QCNetworkReplyPrivate *reply,
                reply,
                configuration.applyTransferBody(easy, reply->transferState->bodySource.sizeBytes()))
            && publishReplyCurlConfigurationResult(reply,
-                                                  configuration
-                                                      .applyHeadersAndLimits(reply->curlManager,
-                                                                             facts));
+                                                  configuration.applyHeadersAndLimits(
+                                                      reply->curlManager));
 }
 
-bool configureProxyTlsAndTimeouts(QCNetworkReplyPrivate *reply,
-                                  CURL *easy,
-                                  const Internal::ReplyCurlHeaderFacts &facts)
+bool configureProxyTlsAndTimeouts(QCNetworkReplyPrivate *reply, CURL *easy)
 {
     using namespace Internal;
     auto &configuration = reply->transferState->configuration;
@@ -43,7 +38,6 @@ bool configureProxyTlsAndTimeouts(QCNetworkReplyPrivate *reply,
     std::optional<ProxyTlsInput> proxyTls;
     if (!publishReplyCurlConfigurationResult(reply,
                                              configuration.applyAuthenticationAndProxy(easy,
-                                                                                       facts,
                                                                                        proxyTls))) {
         return false;
     }
@@ -52,7 +46,10 @@ bool configureProxyTlsAndTimeouts(QCNetworkReplyPrivate *reply,
     }
     return publishReplyCurlConfigurationResult(reply, configuration.applyHttpVersion(easy))
            && publishReplyTlsConfigurationResult(
-               reply, tls.applyEndpoint(easy, configuration.plan().normalized.request.sslConfig()))
+               reply,
+               tls.applyEndpoint(easy,
+                                 configuration.requestPolicy().endpointTls,
+                                 configuration.plan().normalized.request.sslConfig()))
            && publishReplyCurlConfigurationResult(reply, configuration.applyTimeouts(easy));
 }
 
@@ -74,9 +71,10 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
         setError(NetworkError::InvalidRequest, availability.reason);
         return false;
     }
-    Internal::ReplyCurlHeaderFacts facts;
-    return configureBaseAndBody(this, easy, facts)
-           && configureProxyTlsAndTimeouts(this, easy, facts)
+    return Internal::publishReplyCurlConfigurationResult(this,
+                                                         transferState->configuration
+                                                             .validationResult())
+           && configureBaseAndBody(this, easy) && configureProxyTlsAndTimeouts(this, easy)
            && Internal::configureReplyResponseCallbacks(this, easy)
            && Internal::configureReplyTransferCallbacks(this, easy);
 }

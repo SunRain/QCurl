@@ -1,3 +1,4 @@
+#include "QCBlockingNetworkClient.h"
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
@@ -14,6 +15,7 @@
 #include <QtTest>
 
 #include <curl/curl.h>
+#include <future>
 
 using namespace QCurl;
 using namespace std::chrono_literals;
@@ -47,7 +49,10 @@ void verifyExchange(QCNetworkReply *reply, LocalTlsServer &server, bool succeeds
     QSignalSpy finished(reply, &QCNetworkReply::finished);
     QSignalSpy errors(reply, qOverload<NetworkError>(&QCNetworkReply::error));
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 4000);
-    QCOMPARE(reply->error() == NetworkError::NoError, succeeds);
+    QVERIFY2((reply->error() == NetworkError::NoError) == succeeds,
+             qPrintable(QStringLiteral("curl=%1: %2")
+                            .arg(reply->diagnosticCurlCode())
+                            .arg(reply->errorString())));
     QCOMPARE(errors.count(), succeeds ? 0 : 1);
     QCOMPARE(server.requests().size(), succeeds ? 1 : 0);
     if (succeeds) {
@@ -113,6 +118,17 @@ void TestQCNetworkProxy::endpointTlsVerification()
         QCOMPARE(reply->diagnosticCurlCode(),
                  int(scenario == QStringLiteral("pin-mismatch") ? CURLE_SSL_PINNEDPUBKEYNOTMATCH
                                                                 : CURLE_PEER_FAILED_VERIFICATION));
+    }
+    if (!scenario.startsWith(QStringLiteral("pin-"))) {
+        auto pending = std::async(std::launch::async,
+                                  [request]() { return QCBlockingNetworkClient().get(request); });
+        QTRY_VERIFY(pending.wait_for(0ms) == std::future_status::ready);
+        const auto result = pending.get();
+        QCOMPARE(result.isSuccess(), succeeds);
+        QCOMPARE(server.requests().size(), succeeds ? 2 : 0);
+        if (!succeeds) {
+            QCOMPARE(result.diagnosticCurlCode(), int(CURLE_PEER_FAILED_VERIFICATION));
+        }
     }
 }
 
@@ -280,6 +296,12 @@ void TestQCNetworkProxy::httpsProxyTlsIsolation()
         QCOMPARE(reply->diagnosticCurlCode(), int(CURLE_PEER_FAILED_VERIFICATION));
     } else {
         QVERIFY(!proxy.requests().isEmpty());
+        if (succeeds) {
+            QCOMPARE(proxy.requests().size(), 2);
+            QVERIFY(!proxy.requests().first().toLower().contains("\r\nproxy-authorization:"));
+            QVERIFY(proxy.requests().last().contains(
+                "Proxy-Authorization: Basic " + QByteArray("test-user:test-password").toBase64()));
+        }
     }
 }
 

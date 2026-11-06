@@ -55,6 +55,8 @@ QCNetworkRequest mixedWarningRequest()
     request.setHttpAuth(auth);
     QCNetworkProxyConfig proxy;
     proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+    proxy.setHostName(QStringLiteral("127.0.0.1"));
+    proxy.setPort(9);
     request.setProxyConfig(proxy);
     return request;
 }
@@ -98,6 +100,9 @@ void TestQCNetworkRequestWarningsOffline::mixedConfigurationWarningsPrecedeFirst
 {
     QTest::addColumn<QByteArray>("forcedOptions");
     QTest::addColumn<QString>("firstFatal");
+    QTest::newRow("unrestricted-before-proxy")
+        << QByteArray("CURLOPT_UNRESTRICTED_AUTH,CURLOPT_PROXY,CURLOPT_HTTP_VERSION")
+        << QStringLiteral("CURLOPT_UNRESTRICTED_AUTH");
     QTest::newRow("proxy-before-http-version")
         << QByteArray("CURLOPT_PROXY,CURLOPT_HTTP_VERSION") << QStringLiteral("CURLOPT_PROXY");
     QTest::newRow("http-version") << QByteArray("CURLOPT_HTTP_VERSION")
@@ -117,7 +122,7 @@ void TestQCNetworkRequestWarningsOffline::mixedConfigurationWarningsPrecedeFirst
         restoreEnvironment("QCURL_TEST_FORCE_SETOPT_ERROR", oldSetopt);
     });
     s_messages.clear();
-    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", "CURLOPT_UNRESTRICTED_AUTH");
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", "");
     qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", forcedOptions);
     QCNetworkAccessManager manager;
     auto *reply = manager.get(mixedWarningRequest());
@@ -133,14 +138,12 @@ void TestQCNetworkRequestWarningsOffline::mixedConfigurationWarningsPrecedeFirst
     QCOMPARE(reply->state(), ReplyState::Error);
     QCOMPARE(reply->error(), NetworkError::InvalidRequest);
     QVERIFY(reply->errorString().contains(firstFatal));
-    QCOMPARE(reply->capabilityWarnings().size(), 2);
+    QCOMPARE(reply->capabilityWarnings().size(), 1);
     QCOMPARE(warningsAtError, reply->capabilityWarnings());
-    QCOMPARE(s_messages.size(), 5);
+    QCOMPARE(s_messages.size(), 3);
     QVERIFY(s_messages[0].startsWith(QStringLiteral("QCNetworkReply: Basic authentication")));
     QVERIFY(s_messages[1].contains(QStringLiteral("安全风险")));
-    QVERIFY(s_messages[2].contains(QStringLiteral("libcurl 不支持 CURLOPT_UNRESTRICTED_AUTH")));
-    QCOMPARE(s_messages[3], QStringLiteral("QCNetworkReply: invalid proxy configuration ignored"));
-    QCOMPARE(s_messages[4], QStringLiteral("terminal-error"));
+    QCOMPARE(s_messages[2], QStringLiteral("terminal-error"));
     const QString diagnostics = s_messages.join(QLatin1Char('\n')) + reply->errorString();
     for (const auto &secret : {"user-marker", "credential-marker", "query-marker"}) {
         QVERIFY2(!diagnostics.contains(QString::fromLatin1(secret)), qPrintable(diagnostics));

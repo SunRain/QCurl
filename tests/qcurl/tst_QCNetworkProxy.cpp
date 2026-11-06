@@ -7,6 +7,7 @@
 
 #include "tst_QCNetworkProxy.h"
 
+#include "QCBlockingNetworkClient.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
 #include "QCNetworkProxyConfig.h"
@@ -25,13 +26,17 @@
 #include <QTcpServer>
 #include <QtTest>
 
-#include <curl/curlver.h>
+#include <curl/curl.h>
+#include <future>
 
 using namespace QCurl;
 
 void TestQCNetworkProxy::initTestCase()
 {
     qDebug() << "Contract: proxy 配置、真实 TLS 应用与错误路径";
+    const auto *runtime = curl_version_info(CURLVERSION_NOW);
+    qInfo().noquote() << "libcurl compile=" << LIBCURL_VERSION << "runtime=" << runtime->version
+                      << "TLS=" << runtime->ssl_version;
 
     m_manager = new QCNetworkAccessManager(this);
 }
@@ -215,13 +220,26 @@ void TestQCNetworkProxy::testProxyEnvironmentDisabledByDefault()
             config.setPort(8080);
             request.setProxyConfig(config);
         }
+        request.setTimeout(std::chrono::seconds(3));
         auto *reply = m_manager->get(request);
         QVERIFY(waitForReply(reply));
-        QCOMPARE(reply->error(), NetworkError::NoError);
-        QCOMPARE(reply->readAll().value(), QByteArrayLiteral("direct"));
+        auto blocking = std::async(std::launch::async,
+                                   [request]() { return QCBlockingNetworkClient().get(request); });
+        QTRY_VERIFY(blocking.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready);
+        const auto result = blocking.get();
+        if (mode == 2) {
+            QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+            QCOMPARE(result.error(), NetworkError::InvalidRequest);
+            QVERIFY(reply->errorString().contains(QStringLiteral("代理")));
+        } else {
+            QCOMPARE(reply->error(), NetworkError::NoError);
+            QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+            QCOMPARE(reply->readAll().value(), QByteArrayLiteral("direct"));
+            QCOMPARE(result.body(), QByteArrayLiteral("direct"));
+        }
         reply->deleteLater();
     }
-    QCOMPARE(server.requests().size(), 3);
+    QCOMPARE(server.requests().size(), 4);
     QCOMPARE(unwantedProxy.requests().size(), 0);
     QCOMPARE(unwantedProxy.connectionCount(), 0);
 }

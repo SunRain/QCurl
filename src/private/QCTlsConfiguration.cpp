@@ -5,8 +5,6 @@
 #include "QCTlsConfigurationPolicy_p.h"
 #include "QCTlsConfiguration_p.h"
 
-#include <QFileInfo>
-
 namespace QCurl::Internal {
 
 bool QCTlsConfiguration::requiredString(CURL *easy,
@@ -38,28 +36,15 @@ bool QCTlsConfiguration::securityString(CURL *easy,
 }
 
 bool QCTlsConfiguration::configureCa(CURL *easy,
-                                     const QCNetworkSslConfig &config,
+                                     const RequestEndpointTlsPolicy &common,
                                      TlsConfigurationResult &result)
 {
-    const auto option = QCURL_CURL_OPTION(CURLOPT_CAINFO);
-    if (!config.caCertPath().isEmpty()) {
-        return requiredString(easy, option, config.caCertPath(), m_sslCaCertPathBytes, result);
-    }
-    static const char *systemCaPaths[] = {
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-        "/etc/ssl/cert.pem",
-        "/usr/local/share/certs/ca-root-nss.crt",
-    };
-    for (const char *path : systemCaPaths) {
-        const QFileInfo candidate{QLatin1StringView(path)};
-        if (candidate.exists() && candidate.isReadable()) {
-            return TlsPolicy::required(result,
-                                       CurlOptions::setWithTestHook(easy, option, path),
-                                       option);
-        }
-    }
-    return requiredString(easy, option, QString(), m_sslCaCertPathBytes, result);
+    return common.caCertPath.isEmpty()
+           || requiredString(easy,
+                             QCURL_CURL_OPTION(CURLOPT_CAINFO),
+                             common.caCertPath,
+                             m_sslCaCertPathBytes,
+                             result);
 }
 
 bool QCTlsConfiguration::configureCredentials(CURL *easy,
@@ -84,19 +69,19 @@ bool QCTlsConfiguration::configureCredentials(CURL *easy,
 }
 
 TlsConfigurationResult QCTlsConfiguration::applyEndpoint(CURL *easy,
+                                                         const RequestEndpointTlsPolicy &common,
                                                          const QCNetworkSslConfig &config)
 {
     TlsConfigurationResult result;
     const auto policy = config.unsupportedSecurityPolicy();
     const bool configured
         = TlsPolicy::required(result,
-                              CurlOptions::setSslVerifyPeerWithTestHook(easy, config.verifyPeer()),
+                              CurlOptions::setSslVerifyPeerWithTestHook(easy, common.verifyPeer),
                               QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER))
           && TlsPolicy::required(result,
-                                 CurlOptions::setSslVerifyHostWithTestHook(easy,
-                                                                           config.verifyHost()),
+                                 CurlOptions::setSslVerifyHostWithTestHook(easy, common.verifyHost),
                                  QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST))
-          && configureCa(easy, config, result) && configureCredentials(easy, config, result)
+          && configureCa(easy, common, result) && configureCredentials(easy, config, result)
           && securityString(easy,
                             QCURL_CURL_OPTION(CURLOPT_PINNEDPUBLICKEY),
                             config.pinnedPublicKey(),

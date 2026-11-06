@@ -4,66 +4,33 @@
  */
 
 #include "private/QCNetworkIpResolve_p.h"
-#include "private/QCNetworkProtocolPolicy_p.h"
 #include "private/QCReplyCurlConfiguration_p.h"
 
 #include <QUrl>
 
 namespace QCurl::Internal {
-namespace {
-
-std::optional<long> postRedirectValue(QCNetworkPostRedirectPolicy policy)
-{
-    switch (policy) {
-        case QCNetworkPostRedirectPolicy::Default:
-            return std::nullopt;
-        case QCNetworkPostRedirectPolicy::KeepPost301:
-            return CURL_REDIR_POST_301;
-        case QCNetworkPostRedirectPolicy::KeepPost302:
-            return CURL_REDIR_POST_302;
-        case QCNetworkPostRedirectPolicy::KeepPost303:
-            return CURL_REDIR_POST_303;
-        case QCNetworkPostRedirectPolicy::KeepPostAll:
-            return CURL_REDIR_POST_ALL;
-    }
-    return std::nullopt;
-}
-
-} // namespace
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyUrl(CURL *easy) const
 {
     ReplyCurlConfigurationResult result;
-    const auto &request = m_plan.normalized.request;
-    QString error;
-    if (!QCNetworkProtocolPolicy::validateCoreUrl(request.url(), &error)) {
-        result.failure = error;
-        return result;
-    }
-    const QByteArray bytes = request.url().toEncoded(QUrl::FullyEncoded);
+    const auto &bytes = requestPolicy().url;
     Q_UNUSED(requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_URL), bytes.constData(), result));
     return result;
 }
 
-void QCReplyCurlConfiguration::configureRedirects(CURL *easy,
+bool QCReplyCurlConfiguration::configureRedirects(CURL *easy,
                                                   ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (!request.followLocation()) {
-        return;
-    }
-    if (const auto limit = request.maxRedirects()) {
-        optionalOption(easy,
-                       QCURL_CURL_OPTION(CURLOPT_MAXREDIRS),
-                       static_cast<long>(*limit),
-                       result);
-    }
-    if (const auto value = postRedirectValue(request.postRedirectPolicy())) {
-        optionalOption(easy, QCURL_CURL_OPTION(CURLOPT_POSTREDIR), *value, result);
-    }
-    if (request.autoRefererEnabled()) {
-        optionalOption(easy, QCURL_CURL_OPTION(CURLOPT_AUTOREFERER), CurlOptions::kEnabled, result);
-    }
+    const auto &redirect = requestPolicy().redirect;
+    return (!redirect.maximum
+            || requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_MAXREDIRS), *redirect.maximum, result))
+           && (!redirect.post
+               || requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_POSTREDIR), *redirect.post, result))
+           && (!redirect.autoReferer
+               || requiredOption(easy,
+                                 QCURL_CURL_OPTION(CURLOPT_AUTOREFERER),
+                                 CurlOptions::kEnabled,
+                                 result));
 }
 
 bool QCReplyCurlConfiguration::configureSlist(CURL *easy,
@@ -137,14 +104,12 @@ void QCReplyCurlConfiguration::configureDnsTransport(CURL *easy,
 #endif
 
 bool QCReplyCurlConfiguration::configureProtocolList(CURL *easy,
-                                                     const QStringList &protocols,
-                                                     QByteArray &storage,
+                                                     const QByteArray &protocols,
                                                      CurlOptions::Option option,
                                                      const QString &unsupportedMessage,
-                                                     ReplyCurlConfigurationResult &result)
+                                                     ReplyCurlConfigurationResult &result) const
 {
-    storage             = protocols.join(QStringLiteral(",")).toUtf8();
-    const CURLcode code = CurlOptions::setWithTestHook(easy, option, storage.constData());
+    const CURLcode code = CurlOptions::setWithTestHook(easy, option, protocols.constData());
     if (CurlOptions::isCapabilityRelatedError(code)) {
         result.failure = unsupportedMessage.arg(QString::fromUtf8(curl_easy_strerror(code)));
         return false;
@@ -155,51 +120,38 @@ bool QCReplyCurlConfiguration::configureProtocolList(CURL *easy,
 bool QCReplyCurlConfiguration::configureProtocolRestrictions(CURL *easy,
                                                              ReplyCurlConfigurationResult &result)
 {
-    const auto &request = m_plan.normalized.request;
-    QStringList protocols;
-    QString error;
-    if (!QCNetworkProtocolPolicy::resolveInitialProtocols(request.allowedProtocols(),
-                                                          &protocols,
-                                                          &error)) {
-        result.failure = error;
-        return false;
-    }
+    const auto &protocols = requestPolicy().protocols;
     if (!configureProtocolList(
             easy,
-            protocols,
-            m_allowedProtocolsBytes,
+            protocols.initial,
             QCURL_CURL_OPTION(CURLOPT_PROTOCOLS_STR),
             QStringLiteral("QCurl Core initial protocol allowlist could not be applied because "
                            "libcurl does not support CURLOPT_PROTOCOLS_STR (%1)"),
             result)) {
         return false;
     }
-    if (!QCNetworkProtocolPolicy::resolveRedirectProtocols(request.allowedRedirectProtocols(),
-                                                           &protocols,
-                                                           &error)) {
-        result.failure = error;
-        return false;
-    }
-    return configureProtocolList(
-        easy,
-        protocols,
-        m_allowedRedirectProtocolsBytes,
-        QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
-        QStringLiteral("QCurl Core redirect protocol allowlist could not be applied because "
-                       "libcurl does not support CURLOPT_REDIR_PROTOCOLS_STR (%1)"),
-        result);
+    return !protocols.redirect
+           || configureProtocolList(
+               easy,
+               *protocols.redirect,
+               QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
+               QStringLiteral("QCurl Core redirect protocol allowlist could not be applied because "
+                              "libcurl does not support CURLOPT_REDIR_PROTOCOLS_STR (%1)"),
+               result);
 }
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyNetworkPath(CURL *easy)
 {
     ReplyCurlConfigurationResult result;
     const auto &request = m_plan.normalized.request;
-    if (!required(CurlOptions::setEnabled(easy, CURLOPT_FOLLOWLOCATION, request.followLocation()),
-                  QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION).name,
-                  result)) {
+    if (!requiredOption(easy,
+                        QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION),
+                        requestPolicy().redirect.follow ? CurlOptions::kEnabled
+                                                        : CurlOptions::kDisabled,
+                        result)
+        || !configureRedirects(easy, result)) {
         return result;
     }
-    configureRedirects(easy, result);
     if (!requiredOption(easy,
                         QCURL_CURL_OPTION(CURLOPT_IPRESOLVE),
                         curlIpResolveValue(request.ipResolve().value_or(QCNetworkIpResolve::Any)),

@@ -7,6 +7,7 @@
 #define QCREPLYCURLCONFIGURATION_P_H
 
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkRequestPolicy_p.h"
 #include "private/QCRequestPipeline_p.h"
 #include "private/QCTlsConfiguration_p.h"
 
@@ -37,16 +38,8 @@ struct ReplyCurlConfigurationResult
     std::optional<QString> failure;
 };
 
-struct ReplyCurlHeaderFacts
-{
-    bool hasExplicitAuthorization  = false;
-    bool hasExplicitReferer        = false;
-    bool hasExplicitAcceptEncoding = false;
-    bool hasSensitive              = false;
-};
-
 /**
- * @brief 拥有请求计划与非 TLS 配置行为。
+ * @brief 拥有请求计划、共同策略结果与原生配置行为。
  *
  * 计划构造后只读；本对象不可复制或移动。shared transfer holder 让计划、字节和列表
  * 保活至 easy cleanup 之后，配置段只借用当次 easy，不保存其他 module 或执行对象。
@@ -59,6 +52,13 @@ public:
 
     /// 返回 capture/digest 和执行所用的同一份只读计划。
     [[nodiscard]] const CurlPlan &plan() const noexcept { return m_plan; }
+    [[nodiscard]] ReplyCurlConfigurationResult validationResult() const;
+    /// 只在 validationResult 成功后借用，存储与 transfer holder 同寿命。
+    [[nodiscard]] const RequestPolicy &requestPolicy() const noexcept
+    {
+        Q_ASSERT(m_policy.policy);
+        return *m_policy.policy;
+    }
 
     /// URL 与 FOLLOWLOCATION 分段，留出原 PRIVATE 注册插点。
     [[nodiscard]] ReplyCurlConfigurationResult applyUrl(CURL *easy) const;
@@ -67,12 +67,11 @@ public:
     [[nodiscard]] ReplyCurlConfigurationResult applyMethod(CURL *easy) const;
     [[nodiscard]] ReplyCurlConfigurationResult applyTransferBody(CURL *easy,
                                                                  qint64 bodySourceSize) const;
-    /// header list 仍由现有 easy 守卫拥有；输出仅为后续认证段需要的头事实。
-    [[nodiscard]] ReplyCurlConfigurationResult applyHeadersAndLimits(QCCurlHandleManager &handle,
-                                                                     ReplyCurlHeaderFacts &facts);
+    /// header list 仍由现有 easy 守卫拥有，覆盖规则已由纯值策略决定。
+    [[nodiscard]] ReplyCurlConfigurationResult applyHeadersAndLimits(QCCurlHandleManager &handle);
     /// 完成认证、range、proxy endpoint/credentials，交回原 proxy TLS 插点的窄事实。
     [[nodiscard]] ReplyCurlConfigurationResult applyAuthenticationAndProxy(
-        CURL *easy, const ReplyCurlHeaderFacts &facts, std::optional<ProxyTlsInput> &proxyTls);
+        CURL *easy, std::optional<ProxyTlsInput> &proxyTls);
     [[nodiscard]] ReplyCurlConfigurationResult applyHttpVersion(CURL *easy) const;
     [[nodiscard]] ReplyCurlConfigurationResult applyTimeouts(CURL *easy) const;
 
@@ -123,7 +122,7 @@ private:
                && optional(CurlOptions::setWithTestHook(easy, option, value), option.name, result);
     }
 
-    void configureRedirects(CURL *easy, ReplyCurlConfigurationResult &result) const;
+    [[nodiscard]] bool configureRedirects(CURL *easy, ReplyCurlConfigurationResult &result) const;
     void configureLocalNetworkBinding(CURL *easy, ReplyCurlConfigurationResult &result);
     void configureDnsTransport(CURL *easy, ReplyCurlConfigurationResult &result);
     [[nodiscard]] bool configureSlist(CURL *easy,
@@ -132,69 +131,50 @@ private:
                                       CurlOptions::Option option,
                                       ReplyCurlConfigurationResult &result);
     [[nodiscard]] bool configureProtocolList(CURL *easy,
-                                             const QStringList &protocols,
-                                             QByteArray &storage,
+                                             const QByteArray &protocols,
                                              CurlOptions::Option option,
                                              const QString &unsupportedMessage,
-                                             ReplyCurlConfigurationResult &result);
+                                             ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureProtocolRestrictions(CURL *easy,
                                                      ReplyCurlConfigurationResult &result);
     void configureExpectContinueTimeout(CURL *easy, ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool appendRequestHeaders(QCCurlHandleManager &handle,
-                                            ReplyCurlHeaderFacts &facts,
                                             ReplyCurlConfigurationResult &result) const;
-    void configureReferer(CURL *easy,
-                          const ReplyCurlHeaderFacts &facts,
-                          ReplyCurlConfigurationResult &result);
-    void configureAcceptEncoding(CURL *easy,
-                                 const ReplyCurlHeaderFacts &facts,
-                                 ReplyCurlConfigurationResult &result);
-    void appendAcceptEncodingConflictWarning(const ReplyCurlHeaderFacts &facts,
-                                             ReplyCurlConfigurationResult &result) const;
-    void configureTransferLimits(CURL *easy, ReplyCurlConfigurationResult &result) const;
+    [[nodiscard]] bool configureReferer(CURL *easy, ReplyCurlConfigurationResult &result) const;
+    [[nodiscard]] bool configureAcceptEncoding(CURL *easy,
+                                               ReplyCurlConfigurationResult &result) const;
+    void appendAcceptEncodingConflictWarning(ReplyCurlConfigurationResult &result) const;
+    [[nodiscard]] bool configureTransferLimits(CURL *easy,
+                                               ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureHttpCredentials(CURL *easy,
-                                                const QCNetworkHttpAuthConfig &config,
-                                                ReplyCurlConfigurationResult &result);
+                                                const RequestHttpCredentials &credentials,
+                                                ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureHttpAuthentication(CURL *easy,
-                                                   bool hasExplicitAuthorization,
-                                                   bool &hasSensitiveHeader,
-                                                   bool &wantsUnrestrictedHeaders,
-                                                   ReplyCurlConfigurationResult &result);
-    void configureSensitiveRedirectPolicy(CURL *easy,
-                                          bool hasSensitiveHeader,
-                                          bool wantsUnrestrictedHeaders,
-                                          ReplyCurlConfigurationResult &result) const;
+                                                   ReplyCurlConfigurationResult &result) const;
+    [[nodiscard]] bool configureSensitiveRedirectPolicy(CURL *easy,
+                                                        ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureRange(CURL *easy, ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureProxyEndpoint(CURL *easy,
-                                              const QCNetworkProxyConfig &config,
-                                              long &curlProxyType,
-                                              ReplyCurlConfigurationResult &result);
+                                              const RequestProxyEndpoint &proxy,
+                                              ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureProxyCredentials(CURL *easy,
-                                                 const QCNetworkProxyConfig &config,
-                                                 ReplyCurlConfigurationResult &result);
+                                                 const RequestProxyEndpoint &proxy,
+                                                 ReplyCurlConfigurationResult &result) const;
     [[nodiscard]] bool configureProxy(CURL *easy,
                                       std::optional<ProxyTlsInput> &proxyTls,
-                                      ReplyCurlConfigurationResult &result);
+                                      ReplyCurlConfigurationResult &result) const;
 
     const CurlPlan m_plan;
+    const RequestPolicyResult m_policy;
     int m_cookieMode = 0;
     QByteArray m_cookiePathBytes;
     QByteArray m_hstsCachePathBytes;
     QByteArray m_altSvcCachePathBytes;
-    QByteArray m_proxyHostBytes;
-    QByteArray m_proxyUserBytes;
-    QByteArray m_proxyPasswordBytes;
-    QByteArray m_httpAuthUserBytes;
-    QByteArray m_httpAuthPasswordBytes;
-    QByteArray m_refererBytes;
-    QByteArray m_acceptEncodingBytes;
     QByteArray m_interfaceBytes;
     QByteArray m_dnsServersBytes;
     QByteArray m_dohUrlBytes;
     CurlOptions::CurlSlistOwner m_resolveSlist;
     CurlOptions::CurlSlistOwner m_connectToSlist;
-    QByteArray m_allowedProtocolsBytes;
-    QByteArray m_allowedRedirectProtocolsBytes;
 };
 
 } // namespace Internal

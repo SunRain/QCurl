@@ -118,28 +118,17 @@ void TestQCNetworkHttp3::testRuntimeCapabilityMatrix()
     QFETCH(bool, only);
     QFETCH(bool, required);
     QFETCH(bool, accepted);
-    const QByteArray oldVersion  = qgetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM");
-    const QByteArray oldFeatures = qgetenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_FEATURES");
-    const QByteArray oldRequired = qgetenv("QCURL_REQUIRE_HTTP3");
-    const auto restore           = qScopeGuard([&]() {
-        qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM", oldVersion);
-        qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_FEATURES", oldFeatures);
-        qputenv("QCURL_REQUIRE_HTTP3", oldRequired);
-        CurlFeatureProbe::instance().refreshForTesting();
-    });
-    qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_VERSION_NUM", QByteArray::number(version));
-    qputenv("QCURL_TEST_FORCE_RUNTIME_LIBCURL_FEATURES", QByteArray::number(features));
-    qputenv("QCURL_REQUIRE_HTTP3", required ? "1" : "0");
-    CurlFeatureProbe::instance().refreshForTesting();
     const auto requested = only ? QCNetworkHttpVersion::Http3Only : QCNetworkHttpVersion::Http3;
-    QCNetworkHttpVersion effective = QCNetworkHttpVersion::HttpAny;
-    QString error;
-    QString warning;
-    QCOMPARE(detail::resolveHttpVersion(requested, &effective, &error, &warning), accepted);
-    QCOMPARE(error.isEmpty(), accepted);
+    const auto decision  = Internal::decideHttpVersionPolicy({requested, true},
+                                                             {version,
+                                                              (features & CURL_VERSION_HTTP3) != 0,
+                                                              required});
+    QCOMPARE(decision.nativeVersion.has_value(), accepted);
+    QCOMPARE(decision.failure.isEmpty(), accepted);
     if (accepted) {
-        QCOMPARE(effective, features ? requested : QCNetworkHttpVersion::Http2TLS);
-        QCOMPARE(warning.isEmpty(), features != 0);
+        QCOMPARE(*decision.nativeVersion,
+                 detail::toCurlHttpVersion(features ? requested : QCNetworkHttpVersion::Http2TLS));
+        QCOMPARE(decision.downgraded, features == 0);
     }
 }
 

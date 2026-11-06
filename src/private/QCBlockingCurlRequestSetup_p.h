@@ -8,6 +8,8 @@
 
 #include "QCBlockingCookieStore.h"
 #include "QCBlockingNetworkResult.h"
+#include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkRequestPolicy_p.h"
 
 #include <QByteArray>
 
@@ -22,18 +24,8 @@ namespace Internal {
 /// 保存一次阻塞请求配置期间必须保持存活的 libcurl 选项数据。
 struct RequestOptionStorage
 {
-    QByteArray url;
-    QByteArray range;
-    QByteArray proxyHost;
-    QByteArray proxyUser;
-    QByteArray proxyPassword;
+    std::optional<RequestPolicy> policy;
     QByteArray caInfo;
-    QByteArray referer;
-    QByteArray acceptEncoding;
-    QByteArray allowedProtocols;
-    QByteArray allowedRedirectProtocols;
-    QByteArray httpAuthUser;
-    QByteArray httpAuthPassword;
     // easy handle 结束后由 Blocking 适配器分别释放；两个原生选项不能共用同一列表。
     curl_slist *resolveList   = nullptr;
     curl_slist *connectToList = nullptr;
@@ -41,17 +33,34 @@ struct RequestOptionStorage
     bool unsupportedCapability = false;
 };
 
+/// 在各执行插点应用必需选项，失败只记录原生选项名和错误，不回显输入值。
+template<typename T>
+[[nodiscard]] bool applyBlockingRequestOption(CURL *handle,
+                                              RequestOptionStorage *storage,
+                                              CurlOptions::Option option,
+                                              T value)
+{
+    const auto code = CurlOptions::setWithTestHook(handle, option, value);
+    if (code == CURLE_OK) {
+        return true;
+    }
+    storage->failureMessage = QStringLiteral("Blocking Extras failed to set %1: %2")
+                                  .arg(QString::fromUtf8(option.name),
+                                       QString::fromUtf8(curl_easy_strerror(code)));
+    return false;
+}
+
 [[nodiscard]] bool configureRequestOptions(CURL *handle,
                                            const QCNetworkRequest &request,
                                            RequestOptionStorage *storage);
 [[nodiscard]] bool configureProxyOptions(CURL *handle,
-                                         const QCNetworkRequest &request,
+                                         const RequestPolicy &policy,
                                          RequestOptionStorage *storage);
 [[nodiscard]] bool configureTransferOptions(CURL *handle,
-                                            const QCNetworkRequest &request,
+                                            const RequestPolicy &policy,
                                             RequestOptionStorage *storage);
 [[nodiscard]] bool configureAuthOptions(CURL *handle,
-                                        const QCNetworkRequest &request,
+                                        const RequestPolicy &policy,
                                         RequestOptionStorage *storage);
 [[nodiscard]] bool appendRequestHeaders(CURL *handle,
                                         const QCNetworkRequest &request,

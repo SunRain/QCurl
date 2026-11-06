@@ -9,6 +9,7 @@
 #include "QCNetworkProxyConfig.h"
 #include "QCNetworkSslConfig.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkRequestPolicy_p.h"
 
 #include <QStringList>
 
@@ -48,13 +49,15 @@ public:
     Q_DISABLE_COPY_MOVE(QCTlsConfiguration)
 
     /// 在原配置时点应用 endpoint TLS，required 失败不能降级为 warning。
-    [[nodiscard]] TlsConfigurationResult applyEndpoint(CURL *easy, const QCNetworkSslConfig &config);
+    [[nodiscard]] TlsConfigurationResult applyEndpoint(CURL *easy,
+                                                       const RequestEndpointTlsPolicy &common,
+                                                       const QCNetworkSslConfig &config);
     /// 仅对实际 HTTPS proxy 应用可选 TLS 配置，策略与 endpoint 独立。
     [[nodiscard]] TlsConfigurationResult applyProxy(CURL *easy, const ProxyTlsInput &input);
 
 private:
     [[nodiscard]] bool configureCa(CURL *easy,
-                                   const QCNetworkSslConfig &config,
+                                   const RequestEndpointTlsPolicy &common,
                                    TlsConfigurationResult &result);
     [[nodiscard]] bool configureCredentials(CURL *easy,
                                             const QCNetworkSslConfig &config,

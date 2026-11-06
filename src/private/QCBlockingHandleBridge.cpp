@@ -1,13 +1,11 @@
 /**
  * @file
- * @brief 实现 Blocking Extras 复用 Core 句柄与协议策略的最小私有桥接。
+ * @brief 实现 Blocking Extras 复用 Core 句柄与运行时能力的私有桥接。
  */
-
-#include "private/QCBlockingHandleBridge_p.h"
 
 #include "CurlFeatureProbe.h"
 #include "QCCurlHandleManager.h"
-#include "private/QCNetworkProtocolPolicy_p.h"
+#include "private/QCBlockingHandleBridge_p.h"
 
 namespace QCurl {
 
@@ -31,25 +29,6 @@ QCBlockingRuntimeAvailability blockingRuntimeAvailability()
 {
     const auto availability = CurlFeatureProbe::instance().minimumRuntimeAvailability();
     return {availability.supported, availability.reason};
-}
-
-bool validateBlockingUrl(const QUrl &url, QString *error)
-{
-    return Internal::QCNetworkProtocolPolicy::validateCoreUrl(url, error);
-}
-
-bool resolveBlockingInitialProtocols(std::optional<QCNetworkProtocols> requested,
-                                     QStringList *effective,
-                                     QString *error)
-{
-    return Internal::QCNetworkProtocolPolicy::resolveInitialProtocols(requested, effective, error);
-}
-
-bool resolveBlockingRedirectProtocols(std::optional<QCNetworkProtocols> requested,
-                                      QStringList *effective,
-                                      QString *error)
-{
-    return Internal::QCNetworkProtocolPolicy::resolveRedirectProtocols(requested, effective, error);
 }
 
 } // namespace QCurl

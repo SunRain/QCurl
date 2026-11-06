@@ -6,19 +6,14 @@
 #ifndef QCNETWORKHTTPVERSION_P_H
 #define QCNETWORKHTTPVERSION_P_H
 
-#include "QCNetworkHttpVersion.h"
-
-#include <QString>
+#include "private/QCNetworkRequestPolicy_p.h"
 
 namespace QCurl::detail {
 
 [[nodiscard]] long toCurlHttpVersion(QCNetworkHttpVersion version) noexcept;
 
-/// 共享 Core 与 Blocking 的 HTTP/3 能力判定；仅 Http3 允许协商降级。
-[[nodiscard]] bool resolveHttpVersion(QCNetworkHttpVersion requested,
-                                      QCNetworkHttpVersion *effective,
-                                      QString *error,
-                                      QString *warning);
+/// 在调用方的既有 HTTP 检查点采样能力；策略判断由纯值模块负责。
+[[nodiscard]] Internal::HttpVersionFacts sampleHttpVersionFacts();
 
 } // namespace QCurl::detail
 

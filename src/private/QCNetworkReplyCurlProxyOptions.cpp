@@ -1,84 +1,35 @@
 /**
  * @file
- * @brief 应用认证、敏感头重定向策略与 proxy endpoint/credentials。
+ * @brief 在原有插点绑定认证、重定向、range 与代理策略。
  */
-
 #include "private/QCNetworkLogRedaction_p.h"
 #include "private/QCReplyCurlConfiguration_p.h"
 
 #include <QDebug>
 
 namespace QCurl::Internal {
-namespace {
-
-unsigned long curlHttpAuthMethod(QCNetworkHttpAuthMethod method)
-{
-    switch (method) {
-        case QCNetworkHttpAuthMethod::Basic:
-            return CURLAUTH_BASIC;
-        case QCNetworkHttpAuthMethod::Any:
-            return CURLAUTH_ANY;
-        case QCNetworkHttpAuthMethod::AnySafe:
-            return CURLAUTH_ANYSAFE;
-    }
-    return CURLAUTH_BASIC;
-}
-
-long curlProxyType(QCNetworkProxyConfig::ProxyType type)
-{
-    switch (type) {
-        case QCNetworkProxyConfig::ProxyType::Https:
-            return CURLPROXY_HTTPS;
-        case QCNetworkProxyConfig::ProxyType::Socks4:
-            return CURLPROXY_SOCKS4;
-        case QCNetworkProxyConfig::ProxyType::Socks4A:
-            return CURLPROXY_SOCKS4A;
-        case QCNetworkProxyConfig::ProxyType::Socks5:
-            return CURLPROXY_SOCKS5;
-        case QCNetworkProxyConfig::ProxyType::Socks5Hostname:
-            return CURLPROXY_SOCKS5_HOSTNAME;
-        case QCNetworkProxyConfig::ProxyType::Http:
-        case QCNetworkProxyConfig::ProxyType::None:
-            return CURLPROXY_HTTP;
-    }
-    return CURLPROXY_HTTP;
-}
-
-} // namespace
 
 bool QCReplyCurlConfiguration::configureHttpCredentials(CURL *easy,
-                                                        const QCNetworkHttpAuthConfig &config,
-                                                        ReplyCurlConfigurationResult &result)
+                                                        const RequestHttpCredentials &credentials,
+                                                        ReplyCurlConfigurationResult &result) const
 {
-    m_httpAuthUserBytes     = config.userName().toUtf8();
-    m_httpAuthPasswordBytes = config.password().toUtf8();
     return requiredOption(easy,
                           QCURL_CURL_OPTION(CURLOPT_USERNAME),
-                          m_httpAuthUserBytes.constData(),
+                          credentials.user.constData(),
                           result)
            && requiredOption(easy,
                              QCURL_CURL_OPTION(CURLOPT_PASSWORD),
-                             m_httpAuthPasswordBytes.constData(),
+                             credentials.password.constData(),
                              result)
-           && requiredOption(easy,
-                             QCURL_CURL_OPTION(CURLOPT_HTTPAUTH),
-                             curlHttpAuthMethod(config.method()),
-                             result);
+           && requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_HTTPAUTH), credentials.method, result);
 }
 
-bool QCReplyCurlConfiguration::configureHttpAuthentication(CURL *easy,
-                                                           bool hasExplicitAuthorization,
-                                                           bool &hasSensitiveHeader,
-                                                           bool &wantsUnrestrictedHeaders,
-                                                           ReplyCurlConfigurationResult &result)
+bool QCReplyCurlConfiguration::configureHttpAuthentication(
+    CURL *easy, ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    const auto auth     = request.httpAuth();
-    if (!auth) {
-        return true;
-    }
-    if (auth->method() == QCNetworkHttpAuthMethod::Basic && auth->warnIfBasicOverHttp()
-        && request.url().scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0) {
+    const auto &headers = requestPolicy().headers;
+    if (m_policy.diagnostics.basicOverHttp) {
+        const auto &request = m_plan.normalized.request;
         QString message;
         QDebug(&message) << "QCNetworkReply: Basic authentication over HTTP is insecure, consider "
                             "HTTPS. url="
@@ -86,136 +37,90 @@ bool QCReplyCurlConfiguration::configureHttpAuthentication(CURL *easy,
                                                              request.diagnosticQueryPolicy());
         result.warnings.append({ReplyCurlWarningKind::LogOnly, message.trimmed()});
     }
-    if (hasExplicitAuthorization) {
-        return true;
-    }
-    hasSensitiveHeader = true;
-    if (auth->allowUnrestrictedAuth() && request.followLocation()) {
-        wantsUnrestrictedHeaders = true;
-    }
-    return configureHttpCredentials(easy, *auth, result);
+    return !headers.credentials || configureHttpCredentials(easy, *headers.credentials, result);
 }
 
-void QCReplyCurlConfiguration::configureSensitiveRedirectPolicy(
-    CURL *easy,
-    bool hasSensitiveHeader,
-    bool wantsUnrestrictedHeaders,
-    ReplyCurlConfigurationResult &result) const
+bool QCReplyCurlConfiguration::configureSensitiveRedirectPolicy(
+    CURL *easy, ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (!request.followLocation() || !wantsUnrestrictedHeaders || !hasSensitiveHeader) {
-        return;
+    if (!requestPolicy().headers.unrestrictedAuth) {
+        return true;
     }
     warn(result,
          QStringLiteral("安全风险：已启用跨站发送敏感头（CURLOPT_"
                         "UNRESTRICTED_AUTH=1），请确认重定向目标可信"));
-    optionalOption(easy,
-                   QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH),
-                   CurlOptions::kEnabled,
-                   result);
+    return requiredOption(easy,
+                          QCURL_CURL_OPTION(CURLOPT_UNRESTRICTED_AUTH),
+                          CurlOptions::kEnabled,
+                          result);
 }
 
 bool QCReplyCurlConfiguration::configureRange(CURL *easy, ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (request.rangeStart() < 0 || request.rangeEnd() <= request.rangeStart()) {
-        return true;
-    }
-    const QByteArray range
-        = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd()).toUtf8();
-    return requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_RANGE), range.constData(), result);
+    const auto &range = requestPolicy().transfer.range;
+    return !range
+           || requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_RANGE), range->constData(), result);
 }
 
 bool QCReplyCurlConfiguration::configureProxyEndpoint(CURL *easy,
-                                                      const QCNetworkProxyConfig &config,
-                                                      long &effectiveType,
-                                                      ReplyCurlConfigurationResult &result)
+                                                      const RequestProxyEndpoint &proxy,
+                                                      ReplyCurlConfigurationResult &result) const
 {
-    m_proxyHostBytes = config.hostName().toUtf8();
-    if (!requiredOption(easy,
-                        QCURL_CURL_OPTION(CURLOPT_PROXY),
-                        m_proxyHostBytes.constData(),
-                        result)) {
-        return false;
-    }
-    if (config.port() > 0
-        && !requiredOption(easy,
-                           QCURL_CURL_OPTION(CURLOPT_PROXYPORT),
-                           static_cast<long>(config.port()),
-                           result)) {
-        return false;
-    }
-    effectiveType = curlProxyType(config.type());
-    return requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXYTYPE), effectiveType, result);
+    return requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXY), proxy.host.constData(), result)
+           && requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXYPORT), proxy.port, result)
+           && requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXYTYPE), proxy.type, result)
+           && requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_NOPROXY), "", result);
 }
 
 bool QCReplyCurlConfiguration::configureProxyCredentials(CURL *easy,
-                                                         const QCNetworkProxyConfig &config,
-                                                         ReplyCurlConfigurationResult &result)
+                                                         const RequestProxyEndpoint &proxy,
+                                                         ReplyCurlConfigurationResult &result) const
 {
-    m_proxyUserBytes     = config.userName().toUtf8();
-    m_proxyPasswordBytes = config.password().toUtf8();
-    if (!config.userName().isEmpty()
-        && !requiredOption(easy,
-                           QCURL_CURL_OPTION(CURLOPT_PROXYUSERNAME),
-                           m_proxyUserBytes.constData(),
-                           result)) {
-        return false;
-    }
-    if (!config.password().isEmpty()
-        && !requiredOption(easy,
-                           QCURL_CURL_OPTION(CURLOPT_PROXYPASSWORD),
-                           m_proxyPasswordBytes.constData(),
-                           result)) {
-        return false;
-    }
-    return (config.userName().isEmpty() && config.password().isEmpty())
-           || requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXYAUTH), CURLAUTH_ANY, result);
+    return (!proxy.user
+            || requiredOption(easy,
+                              QCURL_CURL_OPTION(CURLOPT_PROXYUSERNAME),
+                              proxy.user->constData(),
+                              result))
+           && (!proxy.password
+               || requiredOption(easy,
+                                 QCURL_CURL_OPTION(CURLOPT_PROXYPASSWORD),
+                                 proxy.password->constData(),
+                                 result))
+           && (!proxy.negotiateHttpAuth
+               || requiredOption(easy,
+                                 QCURL_CURL_OPTION(CURLOPT_PROXYAUTH),
+                                 static_cast<long>(CURLAUTH_ANY),
+                                 result));
 }
 
 bool QCReplyCurlConfiguration::configureProxy(CURL *easy,
                                               std::optional<ProxyTlsInput> &proxyTls,
-                                              ReplyCurlConfigurationResult &result)
+                                              ReplyCurlConfigurationResult &result) const
 {
-    const auto proxy = m_plan.normalized.request.proxyConfig();
-    if (proxy && proxy->type() != QCNetworkProxyConfig::ProxyType::None && proxy->isValid()) {
-        long effectiveType = CURLPROXY_HTTP;
-        if (!configureProxyEndpoint(easy, *proxy, effectiveType, result)
-            || !configureProxyCredentials(easy, *proxy, result)) {
-            return false;
-        }
-        proxyTls = ProxyTlsInput{proxy->type(), effectiveType, proxy->tlsConfig()};
-        return true;
+    const auto &proxy = requestPolicy().proxy;
+    if (!proxy) {
+        return requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXY), "", result);
     }
-    if (proxy && proxy->type() != QCNetworkProxyConfig::ProxyType::None && !proxy->isValid()) {
-        result.warnings.append(
-            {ReplyCurlWarningKind::LogOnly,
-             QStringLiteral("QCNetworkReply: invalid proxy configuration ignored")});
+    if (!configureProxyEndpoint(easy, *proxy, result)
+        || !configureProxyCredentials(easy, *proxy, result)) {
+        return false;
     }
-    m_proxyHostBytes.clear();
-    m_proxyUserBytes.clear();
-    m_proxyPasswordBytes.clear();
-    return requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_PROXY), "", result);
+    proxyTls = ProxyTlsInput{proxy->requestedType,
+                             proxy->type,
+                             m_plan.normalized.request.proxyConfig()->tlsConfig()};
+    return true;
 }
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyAuthenticationAndProxy(
-    CURL *easy, const ReplyCurlHeaderFacts &facts, std::optional<ProxyTlsInput> &proxyTls)
+    CURL *easy, std::optional<ProxyTlsInput> &proxyTls)
 {
     ReplyCurlConfigurationResult result;
     proxyTls.reset();
-    bool sensitive    = facts.hasSensitive;
-    bool unrestricted = m_plan.normalized.request.allowUnrestrictedSensitiveHeadersOnRedirect();
-    if (!configureHttpAuthentication(easy,
-                                     facts.hasExplicitAuthorization,
-                                     sensitive,
-                                     unrestricted,
-                                     result)) {
-        return result;
-    }
-    configureSensitiveRedirectPolicy(easy, sensitive, unrestricted, result);
-    if (configureRange(easy, result)) {
-        Q_UNUSED(configureProxy(easy, proxyTls, result));
-    }
+    const bool configured = configureHttpAuthentication(easy, result)
+                            && configureSensitiveRedirectPolicy(easy, result)
+                            && configureRange(easy, result)
+                            && configureProxy(easy, proxyTls, result);
+    Q_UNUSED(configured);
     return result;
 }
 

@@ -54,7 +54,12 @@ bool configureTlsBacking(QCNetworkReplyTransferState &state, QCCurlHandleManager
     proxy.setCaCertPath(prefix + QStringLiteral("localhost.crt"));
     proxy.setCipherList(endpoint.cipherList());
     proxy.setTls13Ciphers(endpoint.tls13Ciphers());
-    const auto endpointResult = state.tlsConfiguration.applyEndpoint(handle.handle(), endpoint);
+    QCNetworkRequest request(QUrl(QStringLiteral("https://localhost/backing")));
+    request.setSslConfig(endpoint);
+    const auto compiled       = Internal::compileRequestPolicy(request);
+    const auto endpointResult = state.tlsConfiguration.applyEndpoint(handle.handle(),
+                                                                     compiled.policy->endpointTls,
+                                                                     endpoint);
     const auto proxyResult    = state.tlsConfiguration.applyProxy(
         handle.handle(), {QCNetworkProxyConfig::ProxyType::Https, CURLPROXY_HTTPS, proxy});
     return !endpointResult.failure.has_value() && !proxyResult.failure.has_value();

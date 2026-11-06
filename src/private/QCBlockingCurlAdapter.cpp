@@ -1,8 +1,8 @@
 #include "QCNetworkError.h"
-#include "private/QCBlockingHandleBridge_p.h"
 #include "private/QCBlockingCurlAdapter_p.h"
 #include "private/QCBlockingCurlMethodSetup_p.h"
 #include "private/QCBlockingCurlRequestSetup_p.h"
+#include "private/QCBlockingHandleBridge_p.h"
 #include "private/QCBlockingResponseSink_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 
@@ -37,13 +37,12 @@ struct BlockingExecution
 
 struct BlockingRequestContext
 {
-    BlockingRequestContext(CURL *curlHandle,
+    BlockingRequestContext(RequestPolicy policy,
                            QCBlockingRequestBody body,
                            const QCBlockingRequestOptions &options,
                            QIODevice *output,
                            qint64 abortAfterBytes)
-        : handle(curlHandle)
-        , responseSink{&execution.responseBody,
+        : responseSink{&execution.responseBody,
                        output,
                        output ? -1 : options.maxInMemoryBodyBytes(),
                        0,
@@ -54,7 +53,9 @@ struct BlockingRequestContext
         , progressState{options.progressCallback(), options.progressCallbackUserData(), QString()}
         , readState{std::move(body), 0, QString()}
         , downloadOutput(output)
-    {}
+    {
+        storage.policy = std::move(policy);
+    }
 
     ~BlockingRequestContext()
     {
@@ -240,9 +241,9 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                QIODevice *downloadOutput,
                                                qint64 abortAfterBytes = -1)
 {
-    QString protocolError;
-    if (!validateBlockingUrl(request.url(), &protocolError)) {
-        return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest, protocolError);
+    auto compiled = compileRequestPolicy(request);
+    if (!compiled.policy) {
+        return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest, compiled.failure);
     }
 
     const auto availability = blockingRuntimeAvailability();
@@ -252,7 +253,7 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
     }
 
     // 借用存储先构造、后析构，使 easy cleanup 仍可访问列表、凭据和 callbacks。
-    BlockingRequestContext context(nullptr,
+    BlockingRequestContext context(std::move(*compiled.policy),
                                    std::move(body),
                                    options,
                                    downloadOutput,

@@ -48,6 +48,8 @@ public:
 private Q_SLOTS:
     void methodAndHeaders_data();
     void methodAndHeaders();
+    void redirectCredentials_data();
+    void redirectCredentials();
 };
 
 void tst_QCNetworkHttpSemantics::methodAndHeaders_data()
@@ -98,6 +100,61 @@ void tst_QCNetworkHttpSemantics::methodAndHeaders()
             }
         }
         QCOMPARE(headerCount, 1);
+    }
+}
+
+void tst_QCNetworkHttpSemantics::redirectCredentials_data()
+{
+    QTest::addColumn<bool>("authorized");
+    QTest::addColumn<bool>("configuredAuth");
+    for (bool authorized : {false, true}) {
+        for (bool configuredAuth : {false, true}) {
+            QTest::newRow(QByteArray(authorized ? "authorized" : "restricted")
+                          + (configuredAuth ? "-configured" : "-raw"))
+                << authorized << configuredAuth;
+        }
+    }
+}
+
+void tst_QCNetworkHttpSemantics::redirectCredentials()
+{
+    QFETCH(bool, authorized);
+    QFETCH(bool, configuredAuth);
+    HttpScriptServer target({HttpScriptServer::response(200, "ok")});
+    QVERIFY(target.start());
+    HttpScriptServer origin(
+        {HttpScriptServer::response(302, "", "Location: " + target.url().toEncoded() + "\r\n")});
+    QVERIFY(origin.start());
+    QCNetworkRequest request(origin.url());
+    request.setRawHeader("Cookie", "session=private-marker");
+    request.setAllowUnrestrictedSensitiveHeadersOnRedirect(authorized);
+    if (configuredAuth) {
+        QCNetworkHttpAuthConfig auth;
+        auth.setUserName(QStringLiteral("user"));
+        auth.setPassword(QStringLiteral("private-marker"));
+        request.setHttpAuth(auth);
+    } else {
+        request.setRawHeader("Authorization", "Bearer private-marker");
+    }
+    QCNetworkAccessManager manager;
+    auto *reply = manager.get(request);
+    QSignalSpy done(reply, &QCNetworkReply::finished);
+    QVERIFY(done.wait());
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    auto pending = std::async(std::launch::async,
+                              [request]() { return QCBlockingNetworkClient().get(request); });
+    QTRY_VERIFY(pending.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready);
+    const auto result = pending.get();
+    QVERIFY2(result.isSuccess(), qPrintable(result.errorMessage()));
+    QCOMPARE(origin.requests().size(), 2);
+    QCOMPARE(target.requests().size(), 2);
+    for (const auto &wire : origin.requests()) {
+        QVERIFY(wire.toLower().contains("\r\nauthorization:"));
+        QVERIFY(wire.contains("session=private-marker"));
+    }
+    for (const auto &wire : target.requests()) {
+        QCOMPARE(wire.toLower().contains("\r\nauthorization:"), authorized);
+        QCOMPARE(wire.contains("session=private-marker"), authorized);
     }
 }
 

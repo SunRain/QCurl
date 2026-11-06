@@ -13,7 +13,7 @@
 ```text
 QCNetworkRequest + method/body
   -> QCNetworkAccessManagerSend 的请求入口与执行上下文
-  -> Reply 配置 owner 的只读 NormalizedRequest / CurlPlan
+  -> Reply 配置 owner 的只读 NormalizedRequest / CurlPlan 与共同 RequestPolicy
   -> 可选的 manager-owned scheduler（私有 admission core）
   -> owner-thread QCCurlMultiManager 的 socket/timer 驱动
   -> reply 的状态、响应头、数据、进度和终态通知
@@ -33,7 +33,7 @@ TLS 与 trace，覆盖 active record 和 detached handle 的原生借用；retry
 
 传输 pause/resume 保留同一次传输；scheduler defer 只管理未启动请求，不是恢复已运行传输的入口。下载 backpressure 与上传 source pause 各有原因位，不冒充用户 Paused 状态；[传输实现](transport-pause-resume.md)负责 callback 安全与恢复推进。
 
-Blocking Extras 以配置快照和值结果工作，不借用 live manager 的跨线程状态；cookie 通过快照/delta 交付。不要增加透明 blocking getter、嵌套事件循环或第二网络执行路线。
+Blocking Extras 以配置快照和值结果工作，不借用 live manager 的跨线程状态；cookie 通过快照/delta 交付。Core async 与 Blocking 使用同一纯值请求策略解释共同配置，HTTP 能力由各自原检查点采样后交给同一决策函数；具体 option 绑定、错误呈现和执行仍由各自 adapter 承担。Blocking 不消费异步 method/body CurlPlan，局部 backing 保活到 easy cleanup 之后。不要增加透明 blocking getter、嵌套事件循环或第二网络执行路线。
 
 QCurlRuntime 只协调进程期手动 libcurl cleanup；外部 libcurl 使用者先停止、排空并 join，owner loops 运行时排空内部 lease。它不提供 QCurl 动态卸载。
 

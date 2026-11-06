@@ -17,40 +17,8 @@
 #include <QDebug>
 #include <QStringList>
 
-#include <utility>
-
 namespace QCurl::Internal {
 namespace {
-
-bool setStringOption(CURL *handle,
-                     QCurl::Internal::CurlOptions::Option option,
-                     const QByteArray &value)
-{
-    return CurlOptions::setWithTestHook(handle, option, value.constData()) == CURLE_OK;
-}
-
-bool setLongOption(CURL *handle, QCurl::Internal::CurlOptions::Option option, long value)
-{
-    return CurlOptions::setWithTestHook(handle, option, value) == CURLE_OK;
-}
-
-long curlPostRedirectPolicy(QCNetworkPostRedirectPolicy policy)
-{
-    switch (policy) {
-        case QCNetworkPostRedirectPolicy::Default:
-            return Internal::CurlOptions::kDisabled;
-        case QCNetworkPostRedirectPolicy::KeepPost301:
-            return CURL_REDIR_POST_301;
-        case QCNetworkPostRedirectPolicy::KeepPost302:
-            return CURL_REDIR_POST_302;
-        case QCNetworkPostRedirectPolicy::KeepPost303:
-            return CURL_REDIR_POST_303;
-        case QCNetworkPostRedirectPolicy::KeepPostAll:
-            return CURL_REDIR_POST_ALL;
-    }
-
-    return Internal::CurlOptions::kDisabled;
-}
 
 bool failOption(RequestOptionStorage *storage, const char *optionName)
 {
@@ -162,110 +130,105 @@ bool appendRequestHeaders(CURL *handle,
 }
 
 [[nodiscard]] bool configureRedirectOptions(CURL *handle,
-                                            const QCNetworkRequest &request,
+                                            const RequestPolicy &policy,
                                             RequestOptionStorage *storage)
 {
-    if (Internal::CurlOptions::setEnabled(handle, CURLOPT_FOLLOWLOCATION, request.followLocation())
-        != CURLE_OK) {
-        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION).name);
-    }
-    if (const auto redirects = request.maxRedirects(); redirects.has_value()) {
-        if (!setLongOption(handle,
-                           QCURL_CURL_OPTION(CURLOPT_MAXREDIRS),
-                           static_cast<long>(redirects.value()))) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_MAXREDIRS).name);
-        }
-    }
-    if (request.followLocation()
-        && request.postRedirectPolicy() != QCNetworkPostRedirectPolicy::Default) {
-        if (!setLongOption(handle,
-                           QCURL_CURL_OPTION(CURLOPT_POSTREDIR),
-                           curlPostRedirectPolicy(request.postRedirectPolicy()))) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_POSTREDIR).name);
-        }
-    }
-    if (request.followLocation() && request.autoRefererEnabled()) {
-        if (!setLongOption(handle,
-                           QCURL_CURL_OPTION(CURLOPT_AUTOREFERER),
-                           Internal::CurlOptions::kEnabled)) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_AUTOREFERER).name);
-        }
-    }
-    return true;
+    const auto &redirect = policy.redirect;
+    return applyBlockingRequestOption(handle,
+                                      storage,
+                                      QCURL_CURL_OPTION(CURLOPT_FOLLOWLOCATION),
+                                      redirect.follow ? CurlOptions::kEnabled
+                                                      : CurlOptions::kDisabled)
+           && (!redirect.maximum
+               || applyBlockingRequestOption(handle,
+                                             storage,
+                                             QCURL_CURL_OPTION(CURLOPT_MAXREDIRS),
+                                             *redirect.maximum))
+           && (!redirect.post
+               || applyBlockingRequestOption(handle,
+                                             storage,
+                                             QCURL_CURL_OPTION(CURLOPT_POSTREDIR),
+                                             *redirect.post))
+           && (!redirect.autoReferer
+               || applyBlockingRequestOption(handle,
+                                             storage,
+                                             QCURL_CURL_OPTION(CURLOPT_AUTOREFERER),
+                                             CurlOptions::kEnabled));
 }
 
-[[nodiscard]] bool configureTransportOptions(CURL *handle,
-                                             const QCNetworkRequest &request,
-                                             RequestOptionStorage *storage)
+[[nodiscard]] bool configureHttpVersion(CURL *handle,
+                                        const RequestPolicy &policy,
+                                        RequestOptionStorage *storage)
 {
-    QCNetworkHttpVersion effective;
-    QString warning;
-    if (!detail::resolveHttpVersion(request.httpVersion(),
-                                    &effective,
-                                    &storage->failureMessage,
-                                    &warning)) {
+    const auto decision = decideHttpVersionPolicy(policy.httpVersion,
+                                                  detail::sampleHttpVersionFacts());
+    if (!decision.failure.isEmpty()) {
+        storage->failureMessage        = decision.failure;
         storage->unsupportedCapability = true;
         return false;
     }
-    if (!warning.isEmpty()) {
-        qWarning().noquote() << warning;
+    if (decision.downgraded) {
+        qWarning().noquote() << QStringLiteral("运行时 libcurl 不支持 HTTP/3，已降级为 HTTP/2TLS");
     }
-    if (!setLongOption(handle,
-                       QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
-                       detail::toCurlHttpVersion(effective))) {
-        return failOption(storage, QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION).name);
+    return !decision.nativeVersion
+           || applyBlockingRequestOption(handle,
+                                         storage,
+                                         QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
+                                         *decision.nativeVersion);
+}
+
+[[nodiscard]] bool configureTransportOptions(CURL *handle,
+                                             const RequestPolicy &policy,
+                                             RequestOptionStorage *storage)
+{
+    if (!configureHttpVersion(handle, policy, storage)) {
+        return false;
     }
-    if (Internal::CurlOptions::setSslVerifyPeer(handle, request.sslConfig().verifyPeer())
+    if (CurlOptions::setSslVerifyPeerWithTestHook(handle, policy.endpointTls.verifyPeer)
         != CURLE_OK) {
         return failOption(storage, QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER).name);
     }
-    if (Internal::CurlOptions::setSslVerifyHost(handle, request.sslConfig().verifyHost())
+    if (CurlOptions::setSslVerifyHostWithTestHook(handle, policy.endpointTls.verifyHost)
         != CURLE_OK) {
         return failOption(storage, QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST).name);
     }
-    if (request.rangeStart() >= 0 && request.rangeEnd() > request.rangeStart()) {
-        storage->range
-            = QStringLiteral("%1-%2").arg(request.rangeStart()).arg(request.rangeEnd()).toUtf8();
-        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_RANGE), storage->range)) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_RANGE).name);
-        }
-    }
-    return true;
+    return !policy.transfer.range
+           || applyBlockingRequestOption(handle,
+                                         storage,
+                                         QCURL_CURL_OPTION(CURLOPT_RANGE),
+                                         policy.transfer.range->constData());
 }
 
 [[nodiscard]] bool configureTimeoutOptions(CURL *handle,
-                                           const QCNetworkRequest &request,
+                                           const RequestPolicy &policy,
                                            RequestOptionStorage *storage)
 {
-    const auto timeout = request.timeoutConfig();
-    if (timeout.connectTimeout().has_value()) {
-        if (Internal::CurlOptions::setConnectTimeout(handle, timeout.connectTimeout().value())
-            != CURLE_OK) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name);
-        }
-    }
-    if (timeout.totalTimeout().has_value()) {
-        if (!setLongOption(handle,
-                           QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
-                           static_cast<long>(timeout.totalTimeout()->count()))) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS).name);
-        }
-    }
-    return true;
+    const auto &timeout = policy.timeout;
+    return (!timeout.connectMilliseconds
+            || applyBlockingRequestOption(handle,
+                                          storage,
+                                          QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS),
+                                          *timeout.connectMilliseconds))
+           && (!timeout.totalMilliseconds
+               || applyBlockingRequestOption(handle,
+                                             storage,
+                                             QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
+                                             *timeout.totalMilliseconds));
 }
 
 bool configureBasicRequestOptions(CURL *handle,
                                   const QCNetworkRequest &request,
                                   RequestOptionStorage *storage)
 {
-    storage->url = request.url().toEncoded(QUrl::FullyEncoded);
-    if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_URL), storage->url)) {
-        return false;
-    }
-    return configureRedirectOptions(handle, request, storage)
-           && configureTransportOptions(handle, request, storage)
+    const auto &policy = *storage->policy;
+    return applyBlockingRequestOption(handle,
+                                      storage,
+                                      QCURL_CURL_OPTION(CURLOPT_URL),
+                                      policy.url.constData())
+           && configureRedirectOptions(handle, policy, storage)
+           && configureTransportOptions(handle, policy, storage)
            && configureIpResolution(handle, request, storage)
-           && configureTimeoutOptions(handle, request, storage);
+           && configureTimeoutOptions(handle, policy, storage);
 }
 
 bool configureAdvancedPathOptions(CURL *handle,
@@ -295,23 +258,23 @@ bool configureRequestOptions(CURL *handle,
                              const QCNetworkRequest &request,
                              RequestOptionStorage *storage)
 {
+    Q_ASSERT(storage->policy);
+    const auto &policy = *storage->policy;
     if (!configureBasicRequestOptions(handle, request, storage)
-        || !configureProtocolOptions(handle, request, storage)
+        || !configureProtocolOptions(handle, policy, storage)
         || !configureAdvancedPathOptions(handle, request, storage)
-        || !configureProxyOptions(handle, request, storage)
-        || !configureTransferOptions(handle, request, storage)
-        || !configureAuthOptions(handle, request, storage)) {
+        || !configureProxyOptions(handle, policy, storage)
+        || !configureTransferOptions(handle, policy, storage)
+        || !configureAuthOptions(handle, policy, storage)) {
         return false;
     }
 
-    storage->caInfo = request.sslConfig().caCertPath().toUtf8();
-    if (!storage->caInfo.isEmpty()) {
-        if (!setStringOption(handle, QCURL_CURL_OPTION(CURLOPT_CAINFO), storage->caInfo)) {
-            return failOption(storage, QCURL_CURL_OPTION(CURLOPT_CAINFO).name);
-        }
-    }
-
-    return true;
+    storage->caInfo = policy.endpointTls.caCertPath.toUtf8();
+    return storage->caInfo.isEmpty()
+           || applyBlockingRequestOption(handle,
+                                         storage,
+                                         QCURL_CURL_OPTION(CURLOPT_CAINFO),
+                                         storage->caInfo.constData());
 }
 
 } // namespace QCurl::Internal

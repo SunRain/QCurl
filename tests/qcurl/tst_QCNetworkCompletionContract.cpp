@@ -1,7 +1,9 @@
 #include "CurlFeatureProbe.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMemoryCache.h"
+#include "QCNetworkMiddleware.h"
 #include "QCNetworkMockHandler.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "qcnetwork_mock_test_support.h"
@@ -33,6 +35,8 @@ private Q_SLOTS:
     void readyReadCancellationPreservesTerminal();
     void cacheServiceIsBorrowedAtEachCheckpoint_data();
     void cacheServiceIsBorrowedAtEachCheckpoint();
+    void rejectsPreparedPolicy_data();
+    void rejectsPreparedPolicy();
 };
 
 void tst_QCNetworkCompletionContract::returnedReply_data()
@@ -241,6 +245,87 @@ void tst_QCNetworkCompletionContract::cacheServiceIsBorrowedAtEachCheckpoint()
             QVERIFY(!original->lookup(key, QCNetworkCacheReadMode::AllowStale).hit());
         }
     }
+}
+
+void tst_QCNetworkCompletionContract::rejectsPreparedPolicy_data()
+{
+    QTest::addColumn<bool>("cached");
+    QTest::addColumn<bool>("scheduled");
+    QTest::addColumn<bool>("invalidProxy");
+    for (bool cached : {false, true}) {
+        for (bool scheduled : {false, true}) {
+            for (bool invalidProxy : {false, true}) {
+                const auto row = QByteArray(cached ? "cache" : "mock")
+                                 + (scheduled ? "-scheduled" : "-direct")
+                                 + (invalidProxy ? "-proxy" : "-timeout");
+                QTest::newRow(row) << cached << scheduled << invalidProxy;
+            }
+        }
+    }
+}
+
+namespace {
+class InvalidPolicyMiddleware final : public QCNetworkMiddleware
+{
+public:
+    explicit InvalidPolicyMiddleware(bool invalidProxy)
+        : m_invalidProxy(invalidProxy)
+    {}
+    void onRequestPreSend(QCNetworkRequest &request) override
+    {
+        request.setTimeout(std::chrono::milliseconds(-1));
+        if (m_invalidProxy) {
+            QCNetworkProxyConfig proxy;
+            proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+            request.setProxyConfig(proxy);
+        }
+    }
+
+private:
+    bool m_invalidProxy;
+};
+} // namespace
+
+void tst_QCNetworkCompletionContract::rejectsPreparedPolicy()
+{
+    QFETCH(bool, cached);
+    QFETCH(bool, scheduled);
+    QFETCH(bool, invalidProxy);
+    HttpScriptServer server(
+        {HttpScriptServer::response(200, "cached", "Cache-Control: max-age=300\r\n")});
+    QVERIFY(server.start());
+    QCNetworkMemoryCache cache;
+    QCNetworkMockHandler mock;
+    QCNetworkAccessManager manager;
+    const QCNetworkRequest request(server.url());
+    if (cached) {
+        manager.setCache(&cache);
+        auto *first = manager.get(request);
+        QSignalSpy done(first, &QCNetworkReply::finished);
+        QVERIFY(done.wait());
+        QCOMPARE(first->error(), NetworkError::NoError);
+        delete first;
+    } else {
+        mock.mockResponse(HttpMethod::Get, request.url(), "unexpected", 200);
+        mock.setCaptureEnabled(true);
+        TestSupport::setMockHandler(manager, &mock);
+    }
+    InvalidPolicyMiddleware middleware(invalidProxy);
+    manager.addMiddleware(&middleware);
+    manager.enableRequestScheduler(scheduled);
+    auto *reply = manager.get(request);
+    QVERIFY(!reply->isFinished());
+    QSignalSpy done(reply, &QCNetworkReply::finished);
+    QSignalSpy failed(reply, qOverload<NetworkError>(&QCNetworkReply::error));
+    QVERIFY(done.wait());
+    QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+    QVERIFY(reply->errorString().contains(invalidProxy ? QStringLiteral("代理")
+                                                       : QStringLiteral("total timeout")));
+    QCOMPARE(done.size(), 1);
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(server.requests().size(), cached ? 1 : 0);
+    QVERIFY(mock.takeCapturedRequests().isEmpty());
+    QVERIFY(reply->capabilityWarnings().isEmpty());
 }
 
 QTEST_GUILESS_MAIN(tst_QCNetworkCompletionContract)

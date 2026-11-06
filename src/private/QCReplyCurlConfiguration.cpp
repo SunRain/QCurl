@@ -11,7 +11,17 @@ namespace QCurl::Internal {
 
 QCReplyCurlConfiguration::QCReplyCurlConfiguration(CurlPlan plan)
     : m_plan(std::move(plan))
+    , m_policy(compileRequestPolicy(m_plan.normalized.request))
 {}
+
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::validationResult() const
+{
+    ReplyCurlConfigurationResult result;
+    if (!m_policy.policy) {
+        result.failure = m_policy.failure;
+    }
+    return result;
+}
 
 bool QCReplyCurlConfiguration::required(CURLcode code,
                                         const char *optionName,

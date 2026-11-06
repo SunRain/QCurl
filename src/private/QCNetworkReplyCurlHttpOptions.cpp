@@ -11,22 +11,19 @@ namespace QCurl::Internal {
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyHttpVersion(CURL *easy) const
 {
     ReplyCurlConfigurationResult result;
-    const auto &request                  = m_plan.normalized.request;
-    const QCNetworkHttpVersion requested = request.httpVersion();
-    QCNetworkHttpVersion effective       = requested;
-    QString error;
-    QString warning;
-    if (!detail::resolveHttpVersion(requested, &effective, &error, &warning)) {
-        result.failure = error;
+    const auto decision = decideHttpVersionPolicy(requestPolicy().httpVersion,
+                                                  detail::sampleHttpVersionFacts());
+    if (!decision.failure.isEmpty()) {
+        result.failure = decision.failure;
         return result;
     }
-    if (!warning.isEmpty()) {
-        warn(result, warning);
+    if (decision.downgraded) {
+        warn(result, QStringLiteral("运行时 libcurl 不支持 HTTP/3，已降级为 HTTP/2TLS"));
     }
-    if (effective != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
+    if (decision.nativeVersion) {
         Q_UNUSED(requiredOption(easy,
                                 QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
-                                detail::toCurlHttpVersion(effective),
+                                *decision.nativeVersion,
                                 result));
     }
     return result;

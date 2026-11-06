@@ -9,15 +9,13 @@
 #include <curl/curl.h>
 
 namespace QCurl {
-
-class QCNetworkRequest;
-
 namespace Internal {
 
+struct RequestPolicy;
 struct RequestOptionStorage;
 
 [[nodiscard]] bool configureProtocolOptions(CURL *handle,
-                                            const QCNetworkRequest &request,
+                                            const RequestPolicy &policy,
                                             RequestOptionStorage *storage);
 
 } // namespace Internal

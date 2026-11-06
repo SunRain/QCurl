@@ -4,6 +4,7 @@ set(QCURL_FEATURE_SOURCES
     QCCurlHandleManager.cpp
     CurlFeatureProbe.cpp
     private/QCRequestPipeline.cpp
+    private/QCNetworkRequestPolicy.cpp
     private/QCNetworkReplyBodySource.cpp
     private/QCNetworkReplyCallbacks.cpp
     private/QCNetworkReplyTrace.cpp
@@ -134,6 +135,7 @@ set(QCURL_FEATURE_HEADERS
     private/QCReplyRetry_p.h
     private/QCNetworkRetryPolicy_p.h
     private/QCNetworkProtocolPolicy_p.h
+    private/QCNetworkRequestPolicy_p.h
     private/QCReplyCurlConfiguration_p.h
     private/QCNetworkReplyConfigurationExecution_p.h
     private/QCTlsConfiguration_p.h

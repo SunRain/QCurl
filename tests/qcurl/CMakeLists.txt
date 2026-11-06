@@ -187,6 +187,7 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCBlockingRequestConfig.cpp
     qcblocking_upload_echo_server.cpp
+    qcurl_http_script_server.h
 )
 target_link_libraries(tst_QCBlockingRequestConfig PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 target_compile_definitions(tst_QCBlockingRequestConfig PRIVATE
@@ -286,12 +287,15 @@ add_qcurl_test_with_preflight(
     SOURCES
     tst_QCNetworkProxy.cpp
     tst_QCNetworkProxy.h
+    tst_QCNetworkProxyPolicy.cpp
     tst_QCNetworkTlsConfigurationIntegration.cpp
     tst_QCNetworkTlsConfigurationDiagnostics.cpp
     qcurl_tls_test_server.h
     qcnetwork_connect_test_proxy.h
     qcurl_http_script_server.h
 ) # 代理配置与真实 TLS 应用测试
+target_compile_definitions(tst_QCNetworkProxy PRIVATE QCURL_ENABLE_TEST_HOOKS)
+target_link_libraries(tst_QCNetworkProxy PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
 add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归
 add_qcurl_test(tst_QCNetworkBody tst_QCNetworkBody.cpp) # request body helper 测试

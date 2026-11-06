@@ -2,6 +2,23 @@
 
 记录当前 `2.1.1` 候选的变化与历史版本说明。`2.1.0` 是本线首版条目，2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
+## 请求策略收敛（未发布，版本归属未定）
+
+Core async 与 Blocking Extras 共用内部请求策略，保持两个执行器和现有 public API。下表按修改前的正式配置合同及实际实现分类；本地 `v2.1.0`/`v2.1.1` tag 和开发版本号不能证明正式分发状态，也不自动确定这些变化可以进入 2.1 patch。
+
+| 可观察变化 | 分类与依据 |
+| --- | --- |
+| Blocking 无代理/None 不再继承环境代理 | 修复违反既有用户配置及 2.0 以来默认直连合同的缺陷。 |
+| Blocking 在 libcurl 8.14.1 下正确使用 HTTPS proxy，移除 enum 宏探测的 HTTP 回退 | 修复违反显式 HTTPS 类型含义的缺陷；旧实现真实线路发送明文，修复后发送 TLS ClientHello。 |
+| 显式代理清空 `no_proxy`/`NO_PROXY`；HTTP/HTTPS 代理凭据使用 ANY 挑战协商 | 明确并改变原实现的路由/认证默认；先前正文没有完整承诺，不能据此宣称同线兼容。SOCKS 不据 HTTP 测试外推。 |
+| 无效显式代理、负超时及超出原生类型范围的生效数值在发送前拒绝；纯值首错固定 | 收紧原先忽略/截断/延迟失败的行为。零 timeout 沿用 native 默认；如果此前合法调用依赖这些结果，须进入新版本线。 |
+| 生效共同 redirect/Referer/encoding/限速/UNRESTRICTED_AUTH 设置失败由 warning 继续改为终止 | 有意改变失败语义，保留 HTTP/3 明确允许的降级；不可仅凭 ABI 无变化认定 patch 兼容。 |
+| Blocking 隐式 HTTP 版本不再强制 HTTP/1.1；async 空 CA 不再扫描系统路径 | 有意改变协商/信任源默认，改为 libcurl/backend 默认；默认链/主机名验证保持开启，显式设置保持意图。 |
+| 关闭重定向时不校验/设置 redirect-only 字段；raw header 含空值覆盖；敏感集合含 Set-Cookie | 生效性与授权条件集中；Set-Cookie/Proxy-Authorization 分类不构成通用敏感头过滤承诺。 |
+| middleware 后非法快照不能被 cache/mock 命中掩盖；Blocking backing 覆盖 easy cleanup | 执行一致性与借用寿命修复，保留异步返回后单终态和调用线程合同。 |
+
+正式行为见[用户配置](docs/user/configuration.md)，内部边界见[binding 合同](docs/dev/architecture/libcurl-binding-contract.md#共同请求策略)。发行前按[版本政策](docs/dev/release/versioning-and-compatibility.md)核实已发布合法行为；需要新线时另行调整版本、SONAME 和包元数据。本次内部实现、当前 ABI 前后比较与局部验收均不构成历史 patch 兼容或发布资格结论。
+
 <a id="current-release"></a>
 ## [2.1.1] - Unreleased
 

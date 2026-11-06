@@ -17,8 +17,7 @@ namespace {
 bool setProtocolListOption(CURL *handle,
                            RequestOptionStorage *storage,
                            QCurl::Internal::CurlOptions::Option option,
-                           const QStringList &protocols,
-                           QByteArray *bytes)
+                           const QByteArray &protocols)
 {
 #ifdef QCURL_ENABLE_TEST_HOOKS
     const QList<QByteArray> forcedOptions = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR").split(',');
@@ -35,8 +34,7 @@ bool setProtocolListOption(CURL *handle,
     }
 #endif
 
-    *bytes = protocols.join(QLatin1Char(',')).toUtf8();
-    const CURLcode rc = CurlOptions::setWithTestHook(handle, option, bytes->constData());
+    const CURLcode rc = CurlOptions::setWithTestHook(handle, option, protocols.constData());
     if (rc == CURLE_OK) {
         return true;
     }
@@ -60,36 +58,18 @@ bool setProtocolListOption(CURL *handle,
 } // namespace
 
 bool configureProtocolOptions(CURL *handle,
-                              const QCNetworkRequest &request,
+                              const RequestPolicy &policy,
                               RequestOptionStorage *storage)
 {
-    QStringList allowedProtocols;
-    if (!resolveBlockingInitialProtocols(request.allowedProtocols(),
-                                         &allowedProtocols,
-                                         &storage->failureMessage)) {
-        return false;
-    }
-
-    if (!setProtocolListOption(handle,
-                               storage,
-                               QCURL_CURL_OPTION(CURLOPT_PROTOCOLS_STR),
-                               allowedProtocols,
-                               &storage->allowedProtocols)) {
-        return false;
-    }
-
-    QStringList redirectProtocols;
-    if (!resolveBlockingRedirectProtocols(request.allowedRedirectProtocols(),
-                                          &redirectProtocols,
-                                          &storage->failureMessage)) {
-        return false;
-    }
-
     return setProtocolListOption(handle,
                                  storage,
-                                 QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
-                                 redirectProtocols,
-                                 &storage->allowedRedirectProtocols);
+                                 QCURL_CURL_OPTION(CURLOPT_PROTOCOLS_STR),
+                                 policy.protocols.initial)
+           && (!policy.protocols.redirect
+               || setProtocolListOption(handle,
+                                        storage,
+                                        QCURL_CURL_OPTION(CURLOPT_REDIR_PROTOCOLS_STR),
+                                        *policy.protocols.redirect));
 }
 
 } // namespace QCurl::Internal

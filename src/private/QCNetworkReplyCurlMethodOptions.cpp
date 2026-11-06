@@ -4,44 +4,11 @@
  */
 
 #include "QCCurlHandleManager.h"
-#include "QCNetworkHttpHeaders.h"
 #include "private/QCReplyCurlConfiguration_p.h"
 
 #include <limits>
 
 namespace QCurl::Internal {
-namespace {
-
-void recordHeaderFact(const QByteArray &name, ReplyCurlHeaderFacts &facts)
-{
-    if (name == httpheaders::kAuthorization.toLower()) {
-        facts.hasExplicitAuthorization = true;
-        facts.hasSensitive             = true;
-    } else if (name == httpheaders::kProxyAuthorization.toLower()
-               || name == httpheaders::kCookie.toLower()
-               || name == httpheaders::kSetCookie.toLower()) {
-        facts.hasSensitive = true;
-    } else if (name == httpheaders::kReferer.toLower()) {
-        facts.hasExplicitReferer = true;
-    } else if (name == httpheaders::kAcceptEncoding.toLower()) {
-        facts.hasExplicitAcceptEncoding = true;
-    }
-}
-
-QStringList normalizedAcceptedEncodings(const QStringList &encodings)
-{
-    QStringList result;
-    result.reserve(encodings.size());
-    for (const QString &encoding : encodings) {
-        const QString trimmed = encoding.trimmed();
-        if (!trimmed.isEmpty()) {
-            result.append(trimmed);
-        }
-    }
-    return result;
-}
-
-} // namespace
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyMethod(CURL *easy) const
 {
@@ -137,12 +104,10 @@ void QCReplyCurlConfiguration::configureExpectContinueTimeout(
 }
 
 bool QCReplyCurlConfiguration::appendRequestHeaders(QCCurlHandleManager &handle,
-                                                    ReplyCurlHeaderFacts &facts,
                                                     ReplyCurlConfigurationResult &result) const
 {
     const auto &request = m_plan.normalized.request;
     for (const QByteArray &name : request.rawHeaderList()) {
-        recordHeaderFact(name.trimmed().toLower(), facts);
         const QString line = QString::fromUtf8(name) + QStringLiteral(": ")
                              + QString::fromUtf8(request.rawHeader(name));
         if (!handle.appendHeader(line)) {
@@ -157,99 +122,74 @@ bool QCReplyCurlConfiguration::appendRequestHeaders(QCCurlHandleManager &handle,
                              result);
 }
 
-void QCReplyCurlConfiguration::configureReferer(CURL *easy,
-                                                const ReplyCurlHeaderFacts &facts,
-                                                ReplyCurlConfigurationResult &result)
+bool QCReplyCurlConfiguration::configureReferer(CURL *easy,
+                                                ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (!facts.hasExplicitReferer && !request.referer().isEmpty()) {
-        m_refererBytes = request.referer().toUtf8();
-        optionalOption(easy, QCURL_CURL_OPTION(CURLOPT_REFERER), m_refererBytes.constData(), result);
-    } else if (facts.hasExplicitReferer && !request.referer().isEmpty()) {
+    if (m_policy.diagnostics.refererConflict) {
         warn(result,
              QStringLiteral("请求配置冲突：已显式设置 Referer header，将忽略 "
                             "request.setReferer(...)"));
     }
+    const auto &referer = requestPolicy().headers.referer;
+    return !referer
+           || requiredOption(easy, QCURL_CURL_OPTION(CURLOPT_REFERER), referer->constData(), result);
 }
 
 void QCReplyCurlConfiguration::appendAcceptEncodingConflictWarning(
-    const ReplyCurlHeaderFacts &facts, ReplyCurlConfigurationResult &result) const
+    ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (facts.hasExplicitAcceptEncoding
-        && (request.autoDecompressionEnabled() || !request.acceptedEncodings().isEmpty())) {
+    if (m_policy.diagnostics.encodingConflict) {
         warn(result,
              QStringLiteral("请求配置冲突：已显式设置 Accept-Encoding header，将忽略 "
                             "autoDecompression/acceptedEncodings（不会自动解压）"));
     }
 }
 
-void QCReplyCurlConfiguration::configureAcceptEncoding(CURL *easy,
-                                                       const ReplyCurlHeaderFacts &facts,
-                                                       ReplyCurlConfigurationResult &result)
-{
-    const auto &request = m_plan.normalized.request;
-    if (facts.hasExplicitAcceptEncoding) {
-        appendAcceptEncodingConflictWarning(facts, result);
-        return;
-    }
-    if (!request.autoDecompressionEnabled()) {
-        return;
-    }
-    const QStringList configured = request.acceptedEncodings();
-    const QStringList encodings  = normalizedAcceptedEncodings(configured);
-    if (!configured.isEmpty() && encodings.isEmpty()) {
-        return;
-    }
-    m_acceptEncodingBytes = configured.isEmpty() ? QByteArray("")
-                                                 : encodings.join(QLatin1Char(',')).toUtf8();
-    optionalOption(easy,
-                   QCURL_CURL_OPTION(CURLOPT_ACCEPT_ENCODING),
-                   m_acceptEncodingBytes.constData(),
-                   result);
-}
-
-void QCReplyCurlConfiguration::configureTransferLimits(CURL *easy,
+bool QCReplyCurlConfiguration::configureAcceptEncoding(CURL *easy,
                                                        ReplyCurlConfigurationResult &result) const
 {
-    const auto &request = m_plan.normalized.request;
-    if (const auto limit = request.maxDownloadBytesPerSec(); limit && *limit > 0) {
-        optionalOption(easy,
-                       QCURL_CURL_OPTION(CURLOPT_MAX_RECV_SPEED_LARGE),
-                       static_cast<curl_off_t>(*limit),
-                       result);
-    }
-    if (const auto limit = request.maxUploadBytesPerSec(); limit && *limit > 0) {
-        optionalOption(easy,
-                       QCURL_CURL_OPTION(CURLOPT_MAX_SEND_SPEED_LARGE),
-                       static_cast<curl_off_t>(*limit),
-                       result);
-    }
+    appendAcceptEncodingConflictWarning(result);
+    const auto &encoding = requestPolicy().headers.acceptEncoding;
+    return !encoding
+           || requiredOption(easy,
+                             QCURL_CURL_OPTION(CURLOPT_ACCEPT_ENCODING),
+                             encoding->constData(),
+                             result);
+}
+
+bool QCReplyCurlConfiguration::configureTransferLimits(CURL *easy,
+                                                       ReplyCurlConfigurationResult &result) const
+{
+    const auto &transfer = requestPolicy().transfer;
+    return (!transfer.downloadBytesPerSecond
+            || requiredOption(easy,
+                              QCURL_CURL_OPTION(CURLOPT_MAX_RECV_SPEED_LARGE),
+                              *transfer.downloadBytesPerSecond,
+                              result))
+           && (!transfer.uploadBytesPerSecond
+               || requiredOption(easy,
+                                 QCURL_CURL_OPTION(CURLOPT_MAX_SEND_SPEED_LARGE),
+                                 *transfer.uploadBytesPerSecond,
+                                 result));
 }
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyHeadersAndLimits(
-    QCCurlHandleManager &handle, ReplyCurlHeaderFacts &facts)
+    QCCurlHandleManager &handle)
 {
     ReplyCurlConfigurationResult result;
     configureExpectContinueTimeout(handle.handle(), result);
-    facts = {};
-    if (!appendRequestHeaders(handle, facts, result)) {
-        return result;
-    }
-    configureReferer(handle.handle(), facts, result);
-    configureAcceptEncoding(handle.handle(), facts, result);
-    configureTransferLimits(handle.handle(), result);
+    const bool configured = appendRequestHeaders(handle, result)
+                            && configureReferer(handle.handle(), result)
+                            && configureAcceptEncoding(handle.handle(), result)
+                            && configureTransferLimits(handle.handle(), result);
+    Q_UNUSED(configured);
     return result;
 }
 
 ReplyCurlConfigurationResult QCReplyCurlConfiguration::mockConflictWarnings() const
 {
-    ReplyCurlHeaderFacts facts;
-    for (const QByteArray &name : m_plan.normalized.request.rawHeaderList()) {
-        recordHeaderFact(name.trimmed().toLower(), facts);
-    }
     ReplyCurlConfigurationResult result;
-    appendAcceptEncodingConflictWarning(facts, result);
+    appendAcceptEncodingConflictWarning(result);
     return result;
 }
 

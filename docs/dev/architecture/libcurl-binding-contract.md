@@ -45,7 +45,17 @@ bridge 声明留在 `_p.h`，不进入 public install manifest。transfer record
 
 ### Core HTTP protocol boundary
 
-Core 请求入口在创建 easy handle 前只接受 `http` / `https`。异步与 Blocking Extras 均显式设置初始请求及重定向协议白名单为 `http,https`；调用方只能收窄，不能恢复 libcurl 的全部协议默认值。
+Core 请求入口在创建 easy handle 前只接受 `http` / `https`。异步与 Blocking Extras 均显式设置初始请求白名单为 `http,https`，开启重定向时才应用重定向白名单；调用方只能收窄，不能恢复 libcurl 的全部协议默认值。
+
+## 共同请求策略
+
+隐藏的 `compileRequestPolicy` 从准备后的请求快照编译纯值结果，集中协议、重定向、raw header 覆盖、认证、proxy、range、限速、endpoint verify/CA、connect/total timeout 和 HTTP version intent。它不保存 request/body、CurlPlan、执行对象或 CURLOPT 指令序列，不读取环境/probe、不调用 native/QObject、不发布诊断。只有全部校验通过才给出可应用结果。
+
+先确定字段是否生效，再按 URL/协议 → 生效代理 → connect timeout → total timeout → 其余生效共同数值选择首错。零 timeout 不覆盖原生默认，负值和超出实际 `long`/`curl_off_t` 范围的数值拒绝，不截断。raw header 含空值仍优先；None、关闭重定向及被覆盖的配置不新增拒绝。HTTP 版本由 `decideHttpVersionPolicy` 接收 adapter 在原检查点采样的窄能力事实，隐式版本不设置选项，Http3/Http3Only 保持既有降级与错误分类。
+
+两个 adapter 只把共同决策绑定到各自原生插点。所有生效的必需共同选项失败即终止，默认直连、显式代理 `NOPROXY=""`、协议/验证及原 optional 的 redirect、Referer、Accept-Encoding、限速、UNRESTRICTED_AUTH 均遵循该规则。无代理/None 使用 `PROXY=""` 禁用环境代理；显式 HTTP/HTTPS 代理凭据使用原生 ANY 认证协商，HTTPS 类型直接使用最低依赖支持的 enum，不进行宏探测或明文回退。
+
+Core 纯值及配置拒绝为 InvalidRequest；Blocking 保留协议能力/HTTP3 预检查的 UnsupportedCapability，其余配置错误仍为 InvalidRequest。新失败只描述类别、选项和原生静态错误，不输出输入值。敏感集合只控制 libcurl UNRESTRICTED_AUTH，不提供通用自定义敏感头过滤器，具体用户义务见[配置合同](../../user/configuration.md)。
 
 ## share handle 合同
 
@@ -79,6 +89,8 @@ runtime shutdown 先关闭事件入口，再使 module 进入 Draining；在途 
 借给 libcurl 的 `curl_slist`、header/body buffer、upload device、callback userdata 和 TLS/proxy/URL 字符串缓冲必须覆盖相关 transfer 生命周期。
 
 `QCCurlHandleManager` 负责 easy handle 和内部 header list 的释放；HTTP handle 还保留同一 transfer state，使 POSTFIELDS/RESOLVE 等借用数据在 detach 后随 handle 移动，覆盖 completion 排队、事件丢弃和 reply 先销毁的路径。释放顺序必须是 easy cleanup、header list、共享 state，不能因 record 已销毁就提前释放 backing storage。其他外部借用对象由对应 owner 持有，不能依赖临时对象、悬挂 lambda 引用或跨线程裸指针。进入 multi 后的释放时机遵循上面的 transfer ownership。
+
+Blocking 的共同策略结果和字符串/list/callback backing 保存在调用线程的局部 context；context 先于 easy 守卫构造，后于 easy cleanup 析构，配置失败路径也遵循这一顺序。没有新增共享 holder 或第二执行器。
 
 ## Reply 生命周期与响应
 
@@ -131,13 +143,13 @@ response 只接受回放数据与上限，不判断缓存资格；流式消费�
 
 ## Reply 非 TLS 配置与请求编排
 
-`QCReplyCurlConfiguration` 按值保存在同一 transfer state，拥有不可变 CurlPlan 与非 TLS
+`QCReplyCurlConfiguration` 按值保存在同一 transfer state，拥有不可变 CurlPlan、共同策略结果与非 TLS
 字节、resolve/connect-to 列表及 Cookie/HSTS/Alt-Svc 配置。capture、digest 和 admission
 读取同一只读计划；没有可写 backing getter，也不接收 Private、holder、设备或服务对象。
 列表先构建 candidate，required setopt 成功后才接管；easy cleanup 早于配置存储释放。
 HTTP header list 继续由 `QCCurlHandleManager` 唯一持有，不新增第二份 body/method 存储。
 
-配置按实际插点分段：URL → PRIVATE → network → 设备准备 → method → 设备 READ → body
+共同纯值校验在共同 setopt 之前执行；配置按实际插点分段：URL → PRIVATE → network → 设备准备 → method → 设备 READ → body
 size/headers/limits → auth/proxy → proxy TLS → HTTP version → endpoint TLS → timeouts →
 response/seek/progress callbacks。debug 仍在网络 prepare 注册；callback、Qt 信号、timer、
 multi 以及跨 module 的存活/终态检查由 adapter 负责，TLS/share store 不退回 Reply 内部。
@@ -160,7 +172,7 @@ prepare 借用当前配置，module 不保留 manager。CookieJAR FLUSH 在成�
 `QCTlsConfiguration` 封装 endpoint 与 HTTPS proxy 的 TLS 配置解释、选项顺序、Fail/Warn
 策略和全部 TLS 字节存储。它按值保存在既有 `QCNetworkReplyTransferState` 中，不依赖
 Reply、整个 Request 或反向回调；规则测试通过同一行为接口使用真实 easy handle。
-生产调用方只传 endpoint config 或 requested/effective proxy type 与可选 proxy TLS config。
+生产调用方传入共同 endpoint verify/CA 决策及高级 endpoint config，或 requested/effective proxy type 与可选 proxy TLS config。空 CA 不探测硬编码路径，也不覆盖 backend 默认。Blocking 仅消费共同 endpoint 子集，未补齐高级 endpoint/proxy TLS 能力。
 
 proxy TLS 在代理 endpoint/credentials 之后、HTTP version 之前应用；endpoint TLS 保持原
 配置位置。endpoint verify、CA 和客户端凭据是 required；proxy TLS 及 endpoint 的 pin、

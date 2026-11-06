@@ -2,10 +2,13 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkContentEncoding.h"
 #include "QCNetworkHttpHeaders.h"
+#include "QCNetworkProxyConfig.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkTimeoutConfig.h"
 #include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkProtocolPolicy_p.h"
+#include "private/QCNetworkRequestPolicy_p.h"
 #include "qcurl_http_script_server.h"
 
 #include <QScopeGuard>
@@ -13,6 +16,7 @@
 
 #include <curl/curl.h>
 #include <future>
+#include <limits>
 #include <type_traits>
 
 using namespace QCurl;
@@ -59,6 +63,10 @@ private Q_SLOTS:
     void redirectProtocolRestriction();
     void encodingStates_data();
     void encodingStates();
+    void policyValidation_data();
+    void policyValidation();
+    void sensitiveRedirectAuthorization_data();
+    void sensitiveRedirectAuthorization();
 
 private:
     Q_DISABLE_COPY_MOVE(TestQCStringContracts)
@@ -333,6 +341,129 @@ void TestQCStringContracts::encodingStates()
             QCOMPARE(encoding, expectedHeader);
         }
     }
+}
+
+void TestQCStringContracts::policyValidation_data()
+{
+    QTest::addColumn<int>("scenario");
+    QTest::addColumn<QString>("failure");
+    QTest::newRow("url-first") << 0 << QStringLiteral("HTTP/HTTPS");
+    QTest::newRow("protocol-first") << 1 << QStringLiteral("HTTP/HTTPS");
+    QTest::newRow("proxy-first") << 2 << QStringLiteral("代理");
+    QTest::newRow("connect-first") << 3 << QStringLiteral("connect timeout");
+    QTest::newRow("total") << 4 << QStringLiteral("total timeout");
+    QTest::newRow("inactive-redirect-and-none-proxy") << 5 << QString();
+    QTest::newRow("zero-timeouts") << 6 << QString();
+    QTest::newRow("native-boundaries") << 7 << QString();
+    if constexpr (std::numeric_limits<long>::digits
+                  < std::numeric_limits<std::chrono::milliseconds::rep>::digits) {
+        QTest::newRow("connect-overflow") << 8 << QStringLiteral("connect timeout");
+        QTest::newRow("total-overflow") << 9 << QStringLiteral("total timeout");
+    }
+}
+
+void TestQCStringContracts::policyValidation()
+{
+    QFETCH(int, scenario);
+    QFETCH(QString, failure);
+    QCNetworkRequest request(QUrl(QStringLiteral("https://example.test/?private-query")));
+    QCNetworkProxyConfig proxy;
+    proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+    proxy.setUserName(QStringLiteral("private-user"));
+    if (scenario <= 2) {
+        request.setProxyConfig(proxy);
+    }
+    if (scenario == 0) {
+        request.setUrl(QUrl(QStringLiteral("file:///private-path")));
+    }
+    if (scenario == 1 || scenario == 5) {
+        request.setAllowedRedirectProtocols(QCNetworkProtocols::fromInt(4));
+    }
+    if (scenario <= 3) {
+        request.setConnectTimeout(std::chrono::milliseconds(-1));
+    }
+    if (scenario <= 4) {
+        request.setTimeout(std::chrono::milliseconds(-1));
+    }
+    if (scenario == 5) {
+        proxy.setType(QCNetworkProxyConfig::ProxyType::None);
+        request.setProxyConfig(proxy);
+        request.setFollowLocation(false);
+    }
+    if (scenario == 6) {
+        request.setConnectTimeout(std::chrono::milliseconds(0));
+        request.setTimeout(std::chrono::milliseconds(0));
+    }
+    if (scenario == 7) {
+        request.setConnectTimeout(std::chrono::milliseconds(std::numeric_limits<long>::max()));
+        request.setTimeout(std::chrono::milliseconds(std::numeric_limits<long>::max()));
+        QCOMPARE(request.setMaxDownloadBytesPerSec(std::numeric_limits<qint64>::max()),
+                 QCNetworkConfigUpdateResult::Applied);
+    }
+    if (scenario >= 8) {
+        const auto value = std::chrono::milliseconds::max();
+        if (scenario == 8) {
+            request.setConnectTimeout(value);
+        } else {
+            request.setTimeout(value);
+        }
+    }
+    const auto result = Internal::compileRequestPolicy(request);
+    QCOMPARE(result.policy.has_value(), failure.isEmpty());
+    QVERIFY2(result.failure.contains(failure), qPrintable(result.failure));
+    QVERIFY(!result.failure.contains(QStringLiteral("private-")));
+    if (scenario == 6) {
+        QVERIFY(!result.policy->timeout.connectMilliseconds);
+        QVERIFY(!result.policy->timeout.totalMilliseconds);
+    }
+    if (scenario == 7) {
+        QCOMPARE(result.policy->timeout.totalMilliseconds.value(), std::numeric_limits<long>::max());
+        QCOMPARE(result.policy->transfer.downloadBytesPerSecond.value(),
+                 static_cast<curl_off_t>(std::numeric_limits<qint64>::max()));
+    }
+}
+
+void TestQCStringContracts::sensitiveRedirectAuthorization_data()
+{
+    QTest::addColumn<QByteArray>("header");
+    QTest::addColumn<bool>("follow");
+    QTest::addColumn<bool>("requestConsent");
+    QTest::addColumn<bool>("authConsent");
+    QTest::addColumn<bool>("unrestricted");
+    QTest::newRow("no-sensitive") << QByteArray() << true << true << false << false;
+    QTest::newRow("effective-auth") << QByteArray() << true << false << true << true;
+    QTest::newRow("raw-auth-overrides-consent")
+        << QByteArray("Authorization") << true << false << true << false;
+    for (const auto &name : {"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie"}) {
+        QTest::newRow(name) << QByteArray(name) << true << true << false << true;
+    }
+    QTest::newRow("redirect-disabled") << QByteArray("Cookie") << false << true << false << false;
+    QTest::newRow("consent-missing") << QByteArray("Cookie") << true << false << false << false;
+}
+
+void TestQCStringContracts::sensitiveRedirectAuthorization()
+{
+    QFETCH(QByteArray, header);
+    QFETCH(bool, follow);
+    QFETCH(bool, requestConsent);
+    QFETCH(bool, authConsent);
+    QFETCH(bool, unrestricted);
+    QCNetworkRequest request(QUrl(QStringLiteral("https://example.test/")));
+    request.setFollowLocation(follow);
+    request.setAllowUnrestrictedSensitiveHeadersOnRedirect(requestConsent);
+    if (!header.isEmpty()) {
+        request.setRawHeader(header, {});
+    }
+    if (authConsent) {
+        QCNetworkHttpAuthConfig auth;
+        auth.setUserName(QStringLiteral("user"));
+        auth.setAllowUnrestrictedAuth(true);
+        request.setHttpAuth(auth);
+    }
+    const auto result = Internal::compileRequestPolicy(request);
+    QVERIFY(result.policy);
+    QCOMPARE(result.policy->headers.unrestrictedAuth, unrestricted);
+    QCOMPARE(result.policy->headers.credentials.has_value(), authConsent && header.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestQCStringContracts)

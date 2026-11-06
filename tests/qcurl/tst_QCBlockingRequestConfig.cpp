@@ -4,14 +4,19 @@
  */
 
 #include "QCBlockingNetworkClient.h"
+#include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
+#include "QCNetworkProxyConfig.h"
+#include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "qcblocking_upload_echo_server.h"
+#include "qcurl_http_script_server.h"
 
 #include <QCoreApplication>
 #include <QtTest/QtTest>
 
 #include <curl/curl.h>
+#include <future>
 
 using namespace QCurl;
 
@@ -88,6 +93,8 @@ private Q_SLOTS:
     void rejectsSlistAppendFailure();
     void rejectsHeaderAppendFailure();
     void rejectsRequiredSetoptFailure();
+    void commonNativePolicy_data();
+    void commonNativePolicy();
 
 private:
     Q_DISABLE_COPY_MOVE(tst_QCBlockingRequestConfig)
@@ -261,6 +268,142 @@ void tst_QCBlockingRequestConfig::rejectsRequiredSetoptFailure()
     QCOMPARE(result.error(), NetworkError::InvalidRequest);
     QVERIFY2(result.errorMessage().contains(QStringLiteral("CURLOPT_WRITEFUNCTION")),
              qPrintable(result.errorMessage()));
+}
+
+namespace {
+QCNetworkRequest nativePolicyRequest(const QUrl &url, const QByteArray &option, bool effective)
+{
+    auto request = makeRequest(url);
+    if (!effective) {
+        request.setFollowLocation(false);
+        request.setTimeout(std::chrono::milliseconds(0));
+        request.setConnectTimeout(std::chrono::milliseconds(0));
+        request.setReferer(QStringLiteral("private-marker"));
+        request.setRawHeader("Referer", {});
+        request.setAcceptedEncodings({QStringLiteral("gzip")});
+        request.setRawHeader("Accept-Encoding", {});
+        QCNetworkHttpAuthConfig auth;
+        auth.setUserName(QStringLiteral("private-marker"));
+        request.setHttpAuth(auth);
+        request.setRawHeader("Authorization", {});
+        return request;
+    }
+    request.setReferer(QStringLiteral("private-marker"));
+    request.setAutoDecompressionEnabled(true);
+    Q_UNUSED(request.setMaxRedirects(3));
+    request.setPostRedirectPolicy(QCNetworkPostRedirectPolicy::KeepPostAll);
+    request.setAutoRefererEnabled(true);
+    request.setTimeout(std::chrono::seconds(3));
+    request.setConnectTimeout(std::chrono::seconds(1));
+    Q_UNUSED(request.setMaxDownloadBytesPerSec(1024));
+    Q_UNUSED(request.setMaxUploadBytesPerSec(1024));
+    request.setRange(1, 3);
+    request.setRawHeader("Authorization", "private-marker");
+    request.setAllowUnrestrictedSensitiveHeadersOnRedirect(true);
+    if (option == "CURLOPT_NOPROXY") {
+        QCNetworkProxyConfig proxy;
+        proxy.setType(QCNetworkProxyConfig::ProxyType::Http);
+        proxy.setHostName(QStringLiteral("127.0.0.1"));
+        proxy.setPort(quint16(url.port()));
+        request.setProxyConfig(proxy);
+    }
+    if (option == "CURLOPT_CAINFO") {
+        auto tls = request.sslConfig();
+        tls.setCaCertPath(QStringLiteral("private-marker"));
+        request.setSslConfig(tls);
+    }
+    return request;
+}
+} // namespace
+
+void tst_QCBlockingRequestConfig::commonNativePolicy_data()
+{
+    QTest::addColumn<QByteArray>("option");
+    QTest::addColumn<bool>("effective");
+    QTest::addColumn<bool>("capability");
+    const QList<QByteArray> required = {"CURLOPT_PROXY",
+                                        "CURLOPT_NOPROXY",
+                                        "CURLOPT_PROTOCOLS_STR",
+                                        "CURLOPT_REDIR_PROTOCOLS_STR",
+                                        "CURLOPT_FOLLOWLOCATION",
+                                        "CURLOPT_MAXREDIRS",
+                                        "CURLOPT_POSTREDIR",
+                                        "CURLOPT_AUTOREFERER",
+                                        "CURLOPT_REFERER",
+                                        "CURLOPT_ACCEPT_ENCODING",
+                                        "CURLOPT_RANGE",
+                                        "CURLOPT_MAX_RECV_SPEED_LARGE",
+                                        "CURLOPT_MAX_SEND_SPEED_LARGE",
+                                        "CURLOPT_UNRESTRICTED_AUTH",
+                                        "CURLOPT_SSL_VERIFYPEER",
+                                        "CURLOPT_SSL_VERIFYHOST",
+                                        "CURLOPT_CAINFO",
+                                        "CURLOPT_CONNECTTIMEOUT_MS",
+                                        "CURLOPT_TIMEOUT_MS"};
+    for (const auto &option : required) {
+        for (bool capability : {false, true}) {
+            QTest::newRow(option + (capability ? "-capability" : "-argument"))
+                << option << true << capability;
+        }
+    }
+    for (const auto &option : {"CURLOPT_HTTP_VERSION",
+                               "CURLOPT_CAINFO",
+                               "CURLOPT_CONNECTTIMEOUT_MS",
+                               "CURLOPT_TIMEOUT_MS",
+                               "CURLOPT_MAXREDIRS",
+                               "CURLOPT_REDIR_PROTOCOLS_STR",
+                               "CURLOPT_REFERER",
+                               "CURLOPT_ACCEPT_ENCODING",
+                               "CURLOPT_USERNAME",
+                               "CURLOPT_HTTPAUTH",
+                               "CURLOPT_UNRESTRICTED_AUTH"}) {
+        QTest::newRow(QByteArray(option) + "-inactive") << QByteArray(option) << false << false;
+    }
+}
+
+void tst_QCBlockingRequestConfig::commonNativePolicy()
+{
+    QFETCH(QByteArray, option);
+    QFETCH(bool, effective);
+    QFETCH(bool, capability);
+    ScopedEnvVar forced(capability ? "QCURL_TEST_FORCE_CAPABILITY_ERROR"
+                                   : "QCURL_TEST_FORCE_SETOPT_ERROR",
+                        option);
+    HttpScriptServer server({HttpScriptServer::response(200, "ok")});
+    QVERIFY(server.start());
+    const auto request = nativePolicyRequest(server.url(), option, effective);
+    auto pending       = std::async(std::launch::async,
+                                    [request]() { return QCBlockingNetworkClient().get(request); });
+    QTRY_VERIFY(pending.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready);
+    const auto result = pending.get();
+    QCNetworkAccessManager manager;
+    auto *reply = manager.get(request);
+    QSignalSpy done(reply, &QCNetworkReply::finished);
+    QVERIFY(done.wait());
+    QCOMPARE(result.isSuccess(), !effective);
+    QCOMPARE(reply->error() == NetworkError::NoError, !effective);
+    if (effective) {
+        const bool protocol = option == "CURLOPT_PROTOCOLS_STR"
+                              || option == "CURLOPT_REDIR_PROTOCOLS_STR";
+        QCOMPARE(result.error(),
+                 capability && protocol ? NetworkError::UnsupportedCapability
+                                        : NetworkError::InvalidRequest);
+        QCOMPARE(reply->error(), NetworkError::InvalidRequest);
+        QVERIFY2(result.errorMessage().contains(QString::fromLatin1(option)),
+                 qPrintable(result.errorMessage()));
+        QVERIFY2(reply->errorString().contains(QString::fromLatin1(option)),
+                 qPrintable(reply->errorString()));
+        QVERIFY(!result.errorMessage().contains(QStringLiteral("private-")));
+        QVERIFY(!reply->errorString().contains(QStringLiteral("private-")));
+        QCOMPARE(server.connectionCount(), 0);
+    } else {
+        QCOMPARE(server.requests().size(), 2);
+        for (const auto &wire : server.requests()) {
+            QVERIFY(!wire.toLower().contains("\r\nreferer:"));
+            QVERIFY(!wire.toLower().contains("\r\naccept-encoding:"));
+            QVERIFY(!wire.toLower().contains("\r\nauthorization:"));
+        }
+    }
 }
 
 QTEST_MAIN(tst_QCBlockingRequestConfig)

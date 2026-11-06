@@ -1,20 +1,15 @@
 /**
  * @file
- * @brief 声明 Blocking Extras 复用 Core 句柄与协议策略的最小私有桥接。
+ * @brief 声明 Blocking Extras 复用 Core 句柄与运行时能力的私有桥接。
  */
 
 #ifndef QCBLOCKINGHANDLEBRIDGE_P_H
 #define QCBLOCKINGHANDLEBRIDGE_P_H
 
 #include "QCGlobal.h"
-#include "QCNetworkProtocol.h"
 
 #include <QScopedPointer>
 #include <QString>
-#include <QStringList>
-#include <QUrl>
-
-#include <optional>
 
 typedef void CURL;
 
@@ -45,13 +40,6 @@ private:
 };
 
 [[nodiscard]] QCBlockingRuntimeAvailability blockingRuntimeAvailability();
-[[nodiscard]] bool validateBlockingUrl(const QUrl &url, QString *error);
-[[nodiscard]] bool resolveBlockingInitialProtocols(std::optional<QCNetworkProtocols> requested,
-                                                   QStringList *effective,
-                                                   QString *error);
-[[nodiscard]] bool resolveBlockingRedirectProtocols(std::optional<QCNetworkProtocols> requested,
-                                                    QStringList *effective,
-                                                    QString *error);
 
 } // namespace QCurl
 

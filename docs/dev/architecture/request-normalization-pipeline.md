@@ -24,7 +24,11 @@ QCNetworkRequest + HttpMethod + RequestBody
 
 `compileRequest()` 只决定 method flags、customRequest、transferMode、bodySize 与 hasRequestBody。HEAD/GET/POST 与 device PUT 的 flag 区分、custom method 原字节、内联/设备 body 选择由这一纯计划表达。
 
-headers/slist、TLS/代理、重试、运行时 lease、callback 和具体 option 安装仍由 reply/Blocking 执行器及共用 helper 承担。Blocking Extras 使用独立同步 value-result 路径，**当前不调用这份异步 CurlPlan**；不把两执行器虚写为同一实现路径。
+共同请求配置由独立纯值模块 [QCNetworkRequestPolicy](../../../src/private/QCNetworkRequestPolicy_p.h) 解释，覆盖协议、redirect、header/auth、proxy、range、限速、verify/CA、connect/total timeout 及 HTTP version intent。`compileRequestPolicy()` 在准备后的快照上确定生效性与首错，成功才产生可绑定结果；`decideHttpVersionPolicy()` 只接收调用方在原 HTTP 检查点采样的运行时事实，不采样环境或持有 probe。
+
+async 的 `QCReplyCurlConfiguration` 在现有 holder 内同时持有 method/body CurlPlan 和共同策略结果；Blocking 的本地 context 只消费共同策略，**不调用异步 CurlPlan**。两个执行器保留各自 setopt 顺序、线程、错误呈现和 native backing。策略不拥有整个请求、body、执行对象或通用 CURLOPT 指令列表。headers/slist、TLS 高级配置、callback、重试和 runtime lease 仍由原模块/adapter 应用。
+
+middleware、认证头与缓存准备先完成，纯值校验随后作用于实际快照；cache/mock 命中不能绕过拒绝。纯值失败在任何共同 option 之前返回，native 首错在各执行器原插点停止。默认值、生效条件、诊断脱敏与原生重定向保护边界见 [binding 合同](libcurl-binding-contract.md#共同请求策略) 和[用户配置](../../user/configuration.md)。
 
 ## 3. 维护边界
 
@@ -35,4 +39,4 @@ headers/slist、TLS/代理、重试、运行时 lease、callback 和具体 optio
 
 ## 4. 验证
 
-[RequestPipeline QtTest](../../../tests/qcurl/tst_QCNetworkRequestPipeline.cpp)验证计划字段和摘要；其范围是异步 direct/scheduler method/body 一致性，不是 Blocking 全路径或全部 libcurl options 的证明。跨执行器外部表现用[libcurl 一致性专题](../../../tests/libcurl_consistency/README.md)及对应 QtTest 检查，命令见[构建与测试](../build-and-test.md)。
+[RequestPipeline QtTest](../../../tests/qcurl/tst_QCNetworkRequestPipeline.cpp)验证计划字段和摘要；其范围是异步 direct/scheduler method/body 一致性。[StringContracts](../../../tests/qcurl/tst_QCStringContracts.cpp) 通过生产策略 seam 验证首错、生效性和原生数值边界；BlockingRequestConfig、Proxy、CompletionContract 及 HttpSemantics 使用真实线路、故障注入和生产工厂时序验证两个 adapter。跨执行器外部表现另见[libcurl 一致性专题](../../../tests/libcurl_consistency/README.md)，命令见[构建与测试](../build-and-test.md)。

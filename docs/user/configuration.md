@@ -31,7 +31,18 @@
 代理默认行为：
 
 - 未设置 `setProxyConfig(...)` 或显式设置 `QCNetworkProxyConfig::ProxyType::None` 时，请求不会继承 libcurl 的 `HTTP_PROXY` / `HTTPS_PROXY` 等环境代理。
-- 需要代理时，必须显式设置 `QCNetworkProxyConfig` 的类型、地址、端口和认证信息。
+- 需要代理时，必须显式设置非 None 类型、非空主机名和非零端口；无效显式代理在发送前以 `InvalidRequest` 拒绝，不回退直连。
+- 显式代理不受 `no_proxy` / `NO_PROXY` 绕过列表影响（包括 `*`）。带凭据的 HTTP/HTTPS 代理使用 libcurl 原生 `CURLAUTH_ANY` 挑战协商；无凭据不设置认证选项，SOCKS 保留其原生认证语义。
+
+### 共同配置的生效与失败
+
+Core async 与 Blocking Extras 对准备后的请求快照采用同一策略。纯值拒绝的首错顺序为 URL/协议、有效代理、连接超时、总超时、其余生效共同数值；异步在返回 reply 后由原启动队列发布终态，middleware 产生的非法配置不能被 cache/mock 命中掩盖。
+
+连接/总超时的零值与未设置相同，沿用 libcurl 默认，不代表无限等待。负值或超出本机原生 `long` 范围的毫秒值在发送前拒绝；限速按 `curl_off_t` 检查，不截断或饱和。关闭重定向时，不应用重定向协议、上限、POST 保留及自动 Referer 配置。
+
+显式 raw `Authorization`、`Referer`、`Accept-Encoding`（包括空值）优先于对应认证、Referer、自动解压配置。空 `Accept-Encoding` 会抑制该请求头，且不启用自动解压。被覆盖或未生效的配置不会额外触发原生设置。生效且必需的共同选项无法应用时终止，包括重定向、Referer、解压、限速和敏感头授权；只有下文明确允许的 HTTP/3 降级仍可告警继续。
+
+跨 origin 发送敏感认证须同时满足重定向开启、存在生效敏感内容和明确授权。raw Authorization 覆盖认证配置时，被覆盖配置的 `allowUnrestrictedAuth` 不授予权限；可由请求级 `allowUnrestrictedSensitiveHeadersOnRedirect` 显式授权。敏感集合含 Authorization、Proxy-Authorization、Cookie、Set-Cookie 及实际生效的 HTTP 认证，但这只决定原生 `UNRESTRICTED_AUTH`。libcurl 的默认保护覆盖目标 Authorization/显式 Cookie 等其定义的范围，**不承诺过滤任意自定义敏感头**；调用方应审慎选择允许重定向的头和目标。
 
 ### 内存 body 与 Multipart
 
@@ -148,7 +159,7 @@ trace 按 libcurl 实际规范化目标显示初始 query，
 <a id="http-version"></a>
 ### HTTP 版本与 HTTP/3
 
-HTTP 版本是请求级偏好，QCurl 将其交给 libcurl，不保证每个环境都使用 HTTP/3。
+HTTP 版本是请求级偏好，QCurl 将其交给 libcurl，不保证每个环境都使用 HTTP/3。未调用 `setHttpVersion()` 时，两个执行器均不覆盖 libcurl 默认；显式 `Http1_1` 则设置 HTTP/1.1 意图。连接复用和后端协商仍可能影响最终版本，不能要求两执行器实际协商结果完全相同。
 
 | 配置 | 协商与拒绝边界 |
 | --- | --- |
@@ -172,9 +183,11 @@ HTTP/3 不一定更快，首次握手、UDP 可达性和服务端实现都会影
 
 ### TLS 与代理
 
-默认保持证书链与主机名验证。通过 `QCNetworkSslConfig` 设置 CA、客户端证书与 TLS 范围，再交给 `request.setSslConfig()`；不要用关闭校验作为生产修复。
+默认保持证书链与主机名验证。空 CA 路径沿用 libcurl/TLS backend 的默认信任源，不扫描硬编码系统 CA 文件；显式 CA 路径覆盖 CAINFO。通过 `QCNetworkSslConfig` 设置 CA、客户端证书与 TLS 范围，再交给 `request.setSslConfig()`；不要用关闭校验作为生产修复。Blocking Extras 共用 endpoint verify/CA 子集，当前不因此获得客户端凭据、pin、TLS 范围/cipher 或代理 TLS 配置能力。
 
 代理通过 `QCNetworkProxyConfig` 显式设置，支持 HTTP/HTTPS/SOCKS；HTTPS proxy 的 TLS 配置与目标站点 TLS 配置分开，清除代理 TLS 使用 `clearTlsConfig()`。默认 None 禁止隐式环境代理。
+
+已确认 libcurl 8.14.1/OpenSSL 在 HTTPS 代理返回 `407` 并关闭连接后，原生认证重连可能以 `CURLE_SEND_ERROR (55)` 失败；同一连接内的挑战/重发可正常完成。QCurl 保留原生传输错误，不回退明文代理，也不为该依赖限制增加另一条认证执行路径。
 
 ### HTTP 方法、重试与缓存
 
