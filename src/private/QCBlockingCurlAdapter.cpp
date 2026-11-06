@@ -251,6 +251,12 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                 availability.reason);
     }
 
+    // 借用存储先构造、后析构，使 easy cleanup 仍可访问列表、凭据和 callbacks。
+    BlockingRequestContext context(nullptr,
+                                   std::move(body),
+                                   options,
+                                   downloadOutput,
+                                   abortAfterBytes);
     QCBlockingHandleBridge curlManager;
     CURL *handle = curlManager.handle();
     if (!handle) {
@@ -258,7 +264,7 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
                                                 curlManager.initializationError());
     }
 
-    BlockingRequestContext context(handle, std::move(body), options, downloadOutput, abortAfterBytes);
+    context.handle = handle;
     if (const auto failure = configureRequestAndHeaders(&context, request)) {
         return *failure;
     }
