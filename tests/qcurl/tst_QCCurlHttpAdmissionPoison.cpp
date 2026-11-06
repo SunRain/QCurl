@@ -36,11 +36,9 @@ void tst_QCCurlHttpAdmissionPoison::verifyRejectedOwnership()
     manager.setShareHandleConfig(config);
     const QUrl url(QStringLiteral("http://127.0.0.1:1/rollback"));
     auto state = QSharedPointer<QCNetworkReplyTransferState>::create(
-        url, QCNetworkDiagnosticQueryPolicy::Redacted);
-    state->curlPlan = Internal::compileRequest(
-        Internal::normalizeRequest(QCNetworkRequest(url),
-                                   HttpMethod::Get,
-                                   Internal::makeEmptyRequestBody()));
+        Internal::compileRequest(Internal::normalizeRequest(QCNetworkRequest(url),
+                                                            HttpMethod::Get,
+                                                            Internal::makeEmptyRequestBody())));
     QWeakPointer<QCNetworkReplyTransferState> weakState(state);
     auto *reply = new QCNetworkReply(QCNetworkReply::TestOnlyKey{},
                                      QCNetworkRequest(url),

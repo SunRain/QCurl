@@ -1,12 +1,11 @@
 /**
  * @file
- * @brief QCNetworkReply 公共访问器与响应头读取。
+ * @brief 将公共查询与消费操作连接到领域模块。
  */
 
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "private/QCNetworkReplyFlowControl_p.h"
-#include "private/QCNetworkReplyResponse_p.h"
+#include "private/QCNetworkReplyFlowControlExecution_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 
 #include <QDebug>
@@ -15,102 +14,63 @@
 
 namespace QCurl {
 
-namespace {
-
-[[nodiscard]] QByteArray joinedHeaderSegments(const QList<QByteArray> &segments)
-{
-    QByteArray value;
-    for (const QByteArray &segment : segments) {
-        const QByteArray part = segment.trimmed();
-        if (part.isEmpty()) {
-            continue;
-        }
-        if (!value.isEmpty()) {
-            value.append(' ');
-        }
-        value.append(part);
-    }
-    return value;
-}
-
-} // namespace
-
-// ==================
-// 数据访问（现代 C++17 风格）
-// ==================
-
 std::optional<QByteArray> QCNetworkReply::readAll()
 {
     Q_D(QCNetworkReply);
-
-    if (d->bodyBuffer.isEmpty()) {
-        // 约定：在“终态且响应体为空”的场景下，返回空 QByteArray（而不是
-        // std::nullopt）， 否则会把“空
-        // body”与“尚无数据可读”混为一谈，导致可观测层面不可区分。
-        if (d->state == ReplyState::Finished || d->state == ReplyState::Error
-            || d->state == ReplyState::Cancelled) {
-            return QByteArray();
-        }
-        return std::nullopt;
+    auto &response = d->transferState->response;
+    if (response.bytesAvailable() == 0) {
+        // 终态空 body 与运行中尚无数据必须可区分。
+        return d->transferState->lifecycle.isTerminal() ? std::optional<QByteArray>(QByteArray())
+                                                        : std::nullopt;
     }
-
-    // 注意：这会清空当前 reply 缓冲区。
-    QByteArray out           = d->bodyBuffer.readAll();
-    d->responseBodyDelivered = true;
-
+    QByteArray body = response.takeAvailableBody();
     Internal::scheduleReplyBackpressureResumeAfterRead(this, d);
-    return out;
+    return body;
 }
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
 qint64 QCNetworkReply::retainedCacheBodyBytesForTesting() const
 {
     Q_D(const QCNetworkReply);
-    return d->cacheBodyBuffer.size();
+    return d->transferState->response.retainedCacheBodyBytes();
 }
 #endif
 
 QList<RawHeaderPair> QCNetworkReply::rawHeaders() const
 {
     Q_D(const QCNetworkReply);
-
-    if (!d || d->state == ReplyState::Idle) {
+    if (!d || d->transferState->lifecycle.state() == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaders: Invalid state"
-                   << (d ? static_cast<int>(d->state) : -1);
-        return QList<RawHeaderPair>();
+                   << (d ? static_cast<int>(d->transferState->lifecycle.state()) : -1);
+        return {};
     }
-
-    return d->finalHeaderList;
+    return d->transferState->response.rawHeaders();
 }
 
 QByteArray QCNetworkReply::rawHeader(const QByteArray &name) const
 {
     Q_D(const QCNetworkReply);
-    if (!d || d->state == ReplyState::Idle) {
+    if (!d || d->transferState->lifecycle.state() == ReplyState::Idle) {
         return {};
     }
-    return d->finalHeaderMap.value(name.trimmed().toLower());
+    return d->transferState->response.rawHeader(name);
 }
 
 bool QCNetworkReply::hasRawHeader(const QByteArray &name) const
 {
     Q_D(const QCNetworkReply);
-    if (!d || d->state == ReplyState::Idle) {
-        return false;
-    }
-    return d->finalHeaderMap.contains(name.trimmed().toLower());
+    return d && d->transferState->lifecycle.state() != ReplyState::Idle
+           && d->transferState->response.hasRawHeader(name);
 }
 
 QByteArray QCNetworkReply::rawHeaderData() const
 {
     Q_D(const QCNetworkReply);
-
-    if (!d || d->state == ReplyState::Idle) {
+    if (!d || d->transferState->lifecycle.state() == ReplyState::Idle) {
         qWarning() << "QCNetworkReply::rawHeaderData: Invalid state";
-        return QByteArray();
+        return {};
     }
-
-    return d->headerData;
+    return d->transferState->response.rawHeaderData();
 }
 
 QUrl QCNetworkReply::url() const
@@ -134,207 +94,145 @@ HttpMethod QCNetworkReply::method() const noexcept
 int QCNetworkReply::httpStatusCode() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->httpStatusCode;
+    return d->transferState->response.status();
 }
 
 qint64 QCNetworkReply::durationMs() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->durationMs;
+    return d->transferState->lifecycle.durationMs();
 }
 
 std::optional<std::chrono::milliseconds> QCNetworkReply::retryAfterDelay() const
 {
     Q_D(const QCNetworkReply);
-    return Internal::parseReplyRetryAfterDelay(d->finalHeaderList, std::time(nullptr));
+    return d->transferState->response.retryAfterDelay(std::time(nullptr));
 }
 
 int QCNetworkReply::retryAttemptCount() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->attemptCount;
+    return d->retry.attemptCount();
 }
 
 std::chrono::milliseconds QCNetworkReply::cumulativeRetryDelay() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->cumulativeRetryDelay;
+    return d->retry.cumulativeDelay();
 }
 
 qint64 QCNetworkReply::bytesAvailable() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->bodyBuffer.byteAmount();
+    return d->transferState->response.bytesAvailable();
 }
 
 QStringList QCNetworkReply::capabilityWarnings() const
 {
     Q_D(const QCNetworkReply);
-    return d->capabilityWarnings;
+    return d->transferState->lifecycle.warnings();
 }
-
-// ==================
-// 状态查询
-// ==================
 
 ReplyState QCNetworkReply::state() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->state;
+    return d->transferState->lifecycle.state();
 }
 
 NetworkError QCNetworkReply::error() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->errorCode;
+    return d->transferState->lifecycle.error();
 }
 
 QString QCNetworkReply::errorString() const
 {
     Q_D(const QCNetworkReply);
-    return d->errorMessage;
+    return d->transferState->lifecycle.errorMessage();
 }
 
 int QCNetworkReply::diagnosticCurlCode() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return isFinished() ? d->diagnosticCurlCode : 0;
+    return d->transferState->lifecycle.diagnosticCurlCode();
 }
 
 bool QCNetworkReply::isFinished() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->state == ReplyState::Finished || d->state == ReplyState::Cancelled
-           || d->state == ReplyState::Error;
+    return d->transferState->lifecycle.isTerminal();
 }
 
 bool QCNetworkReply::isRunning() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->state == ReplyState::Running;
+    return d->transferState->lifecycle.state() == ReplyState::Running;
 }
 
 bool QCNetworkReply::isPaused() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->state == ReplyState::Paused;
+    return d->transferState->lifecycle.state() == ReplyState::Paused;
 }
 
 bool QCNetworkReply::isBackpressureActive() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->backpressureLimitBytes > 0 && d->backpressureActive;
+    return d->transferState->flow.backpressureActive();
 }
 
 bool QCNetworkReply::isUploadSendPaused() const noexcept
 {
     Q_D(const QCNetworkReply);
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
-        || d->state == ReplyState::Finished) {
-        return false;
-    }
-    return d->uploadSendPaused && ((d->internalPauseMask & CURLPAUSE_SEND) != 0);
+    return !d->transferState->lifecycle.isTerminal() && d->transferState->flow.uploadSendPaused();
 }
 
 qint64 QCNetworkReply::backpressureLimitBytes() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->backpressureLimitBytes > 0 ? d->backpressureLimitBytes : 0;
+    return d->transferState->flow.limitBytes();
 }
 
 qint64 QCNetworkReply::backpressureResumeBytes() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->backpressureLimitBytes > 0 ? d->backpressureResumeBytes : 0;
+    return d->transferState->flow.resumeBytes();
 }
 
 qint64 QCNetworkReply::backpressureBufferedBytesPeak() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->backpressureLimitBytes > 0 ? d->backpressurePeakBufferedBytes : 0;
+    return d->transferState->flow.peakBufferedBytes();
 }
 
 qint64 QCNetworkReply::bytesReceived() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->bytesDownloaded;
+    return d->transferState->lifecycle.bytesDownloaded();
 }
 
 qint64 QCNetworkReply::bytesTotal() const noexcept
 {
     Q_D(const QCNetworkReply);
-    return d->downloadTotal;
+    return d->transferState->lifecycle.downloadTotal();
 }
 
 QByteArray Internal::testCurlPlanDigest(const QCNetworkReply *reply)
 {
     if (!reply) {
-        return QByteArray();
+        return {};
     }
-
 #ifdef QCURL_ENABLE_TEST_HOOKS
     return reply->property(Internal::kTestCurlPlanDigestProperty).toByteArray();
 #else
-    return QByteArray();
+    return {};
 #endif
-}
-
-QMap<QByteArray, QByteArray> QCNetworkReplyPrivate::parsedResponseHeaders() const
-{
-    QMap<QByteArray, QByteArray> headers;
-    auto flushCurrent = [&](const QByteArray &name, const QList<QByteArray> &segments) {
-        if (name.isEmpty()) {
-            return;
-        }
-        headers.insert(name, joinedHeaderSegments(segments));
-    };
-
-    QByteArray currentName;
-    QList<QByteArray> currentSegments;
-
-    const QList<QByteArray> lines = headerData.split('\n');
-    for (QByteArray line : lines) {
-        if (line.endsWith('\r')) {
-            line.chop(1);
-        }
-        if (line.isEmpty()) {
-            flushCurrent(currentName, currentSegments);
-            currentName.clear();
-            currentSegments.clear();
-            continue;
-        }
-        if (line.startsWith("HTTP/")) {
-            flushCurrent(currentName, currentSegments);
-            currentName.clear();
-            currentSegments.clear();
-            continue;
-        }
-        const bool isContinuation = !currentName.isEmpty()
-                                    && (line.startsWith(' ') || line.startsWith('\t'));
-        if (isContinuation) {
-            currentSegments.append(line);
-            continue;
-        }
-
-        const int colonPos = line.indexOf(':');
-        if (colonPos <= 0) {
-            continue;
-        }
-        flushCurrent(currentName, currentSegments);
-        currentName = line.left(colonPos).trimmed();
-        currentSegments.clear();
-        currentSegments.append(line.mid(colonPos + 1));
-    }
-
-    flushCurrent(currentName, currentSegments);
-
-    return headers;
 }
 
 QMap<QByteArray, QByteArray> QCNetworkReply::parseResponseHeaders()
 {
     Q_D(QCNetworkReply);
-    return d->parsedResponseHeaders();
+    return d->transferState->response.parsedResponseHeaders();
 }
 
 } // namespace QCurl

@@ -1,136 +1,131 @@
 /**
  * @file
- * @brief QCNetworkReply timeout and callback curl options.
+ * @brief 应用超时、Cookie 文件和 HSTS/Alt-Svc 持久化选项。
  */
 
-#include "CurlFeatureProbe.h"
-#include "QCNetworkConnectionPoolManager_p.h"
-#include "QCNetworkError.h"
-#include "QCNetworkHttpVersion.h"
-#include "QCNetworkProxyConfig.h"
-#include "QCNetworkReply_p.h"
-#include "QCNetworkRequest.h"
-#include "QCNetworkRetryPolicy.h"
-#include "QCNetworkSslConfig.h"
+#include "QCNetworkAccessManager.h"
 #include "QCNetworkTimeoutConfig.h"
-#include "private/QCNetworkHttpVersion_p.h"
-#include "private/QCNetworkReplyCurlOptions_p.h"
-#include "private/QCNetworkReplyRuntime_p.h"
+#include "private/QCReplyCurlConfiguration_p.h"
 
-#include <QDebug>
-#include <QFileInfo>
-#include <QIODevice>
-#include <QUrl>
+namespace QCurl::Internal {
 
-#include <limits>
-#include <optional>
-
-namespace QCurl::Internal::ReplyCurlOptions {
-
-using namespace Detail;
-
-namespace {
-
-[[nodiscard]] bool configureTimeouts(QCNetworkReplyPrivate *reply,
-                                     CURL *handle,
-                                     const QCNetworkTimeoutConfig &timeout)
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyTimeouts(CURL *easy) const
 {
-    if (timeout.connectTimeout().has_value() && timeout.connectTimeout()->count() > 0) {
-        if (!setRequiredOption(reply,
-                               Internal::CurlOptions::setConnectTimeout(handle,
-                                                                        timeout.connectTimeout()
-                                                                            .value()),
-                               QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name)) {
-            return false;
+    ReplyCurlConfigurationResult result;
+    const auto timeout = m_plan.normalized.request.timeoutConfig();
+    if (const auto value = timeout.connectTimeout(); value && value->count() > 0) {
+        if (!required(CurlOptions::setConnectTimeout(easy, *value),
+                      QCURL_CURL_OPTION(CURLOPT_CONNECTTIMEOUT_MS).name,
+                      result)) {
+            return result;
         }
     }
-
-    if (timeout.totalTimeout().has_value() && timeout.totalTimeout()->count() > 0) {
-        if (!setRequiredCurlOption(reply,
-                                   handle,
-                                   QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
-                                   static_cast<long>(timeout.totalTimeout()->count()))) {
-            return false;
+    if (const auto value = timeout.totalTimeout(); value && value->count() > 0) {
+        if (!requiredOption(easy,
+                            QCURL_CURL_OPTION(CURLOPT_TIMEOUT_MS),
+                            static_cast<long>(value->count()),
+                            result)) {
+            return result;
         }
     }
-
-    if (timeout.lowSpeedTime().has_value() && timeout.lowSpeedTime()->count() > 0) {
-        if (!setRequiredCurlOption(reply,
-                                   handle,
-                                   QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_TIME),
-                                   static_cast<long>(timeout.lowSpeedTime()->count()))) {
-            return false;
+    if (const auto value = timeout.lowSpeedTime(); value && value->count() > 0) {
+        if (!requiredOption(easy,
+                            QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_TIME),
+                            static_cast<long>(value->count()),
+                            result)) {
+            return result;
         }
     }
-
-    if (timeout.lowSpeedLimit().has_value() && *timeout.lowSpeedLimit() > 0) {
-        if (!setRequiredCurlOption(reply,
-                                   handle,
-                                   QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_LIMIT),
-                                   static_cast<long>(*timeout.lowSpeedLimit()))) {
-            return false;
-        }
+    if (const auto value = timeout.lowSpeedLimit(); value && *value > 0) {
+        Q_UNUSED(requiredOption(easy,
+                                QCURL_CURL_OPTION(CURLOPT_LOW_SPEED_LIMIT),
+                                static_cast<long>(*value),
+                                result));
     }
-
-    return true;
+    return result;
 }
 
-[[nodiscard]] bool configureResponseCallbacks(QCNetworkReplyPrivate *reply, CURL *handle)
+void QCReplyCurlConfiguration::inheritCookieFile(int mode, const QString &path)
 {
-    if (!setRequiredCurlOption(reply,
-                               handle,
-                               QCURL_CURL_OPTION(CURLOPT_WRITEFUNCTION),
-                               QCNetworkReplyPrivate::curlWriteCallback)
-        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_WRITEDATA), reply)) {
-        return false;
+    if (m_cookieMode == 0 && m_cookiePathBytes.isEmpty() && mode != 0 && !path.isEmpty()) {
+        m_cookieMode      = mode;
+        m_cookiePathBytes = path.toUtf8();
     }
-
-    if (!setRequiredCurlOption(reply,
-                               handle,
-                               QCURL_CURL_OPTION(CURLOPT_HEADERFUNCTION),
-                               QCNetworkReplyPrivate::curlHeaderCallback)
-        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_HEADERDATA), reply)) {
-        return false;
-    }
-
-    return true;
 }
 
-[[nodiscard]] bool configureTransferCallbacks(QCNetworkReplyPrivate *reply, CURL *handle)
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyCookieFile(CURL *easy) const
 {
-    if (!setRequiredCurlOption(reply,
-                               handle,
-                               QCURL_CURL_OPTION(CURLOPT_SEEKFUNCTION),
-                               QCNetworkReplyPrivate::curlSeekCallback)
-        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_SEEKDATA), reply)) {
-        return false;
+    ReplyCurlConfigurationResult result;
+    if (!easy || m_cookieMode == 0 || m_cookiePathBytes.isEmpty()) {
+        return result;
     }
-
-    if (!setRequiredCurlOption(reply,
-                               handle,
-                               QCURL_CURL_OPTION(CURLOPT_XFERINFOFUNCTION),
-                               QCNetworkReplyPrivate::curlProgressCallback)
-        || !setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_XFERINFODATA), reply)) {
-        return false;
+    const int read  = static_cast<int>(QCNetworkAccessManager::ReadOnly);
+    const int write = static_cast<int>(QCNetworkAccessManager::WriteOnly);
+    if ((m_cookieMode & read)
+        && !requiredOption(easy,
+                           QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
+                           m_cookiePathBytes.constData(),
+                           result)) {
+        return result;
     }
-    if (!setRequiredOption(reply,
-                           Internal::CurlOptions::setEnabled(handle, CURLOPT_NOPROGRESS, false),
-                           QCURL_CURL_OPTION(CURLOPT_NOPROGRESS).name)) {
-        return false;
+    if (m_cookieMode & write) {
+        Q_UNUSED(requiredOption(easy,
+                                QCURL_CURL_OPTION(CURLOPT_COOKIEJAR),
+                                m_cookiePathBytes.constData(),
+                                result));
     }
-
-    return true;
+    return result;
 }
 
-} // namespace
-
-[[nodiscard]] bool configureReplyTimeoutsAndCallbacks(QCNetworkReplyPrivate *reply,
-                                                      CURL *handle,
-                                                      const QCNetworkRequest &request)
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyHttpStateFiles(CURL *easy,
+                                                                           const QString &hstsPath,
+                                                                           const QString &altSvcPath)
 {
-    return configureTimeouts(reply, handle, request.timeoutConfig())
-           && configureResponseCallbacks(reply, handle)
-           && configureTransferCallbacks(reply, handle);
+    ReplyCurlConfigurationResult result;
+    if (!easy) {
+        return result;
+    }
+    m_hstsCachePathBytes   = hstsPath.toUtf8();
+    m_altSvcCachePathBytes = altSvcPath.toUtf8();
+    if (!m_hstsCachePathBytes.isEmpty()
+        && !requiredOption(easy,
+                           QCURL_CURL_OPTION(CURLOPT_HSTS),
+                           m_hstsCachePathBytes.constData(),
+                           result)) {
+        return result;
+    }
+    if (!m_altSvcCachePathBytes.isEmpty()) {
+        Q_UNUSED(requiredOption(easy,
+                                QCURL_CURL_OPTION(CURLOPT_ALTSVC),
+                                m_altSvcCachePathBytes.constData(),
+                                result));
+    }
+    return result;
 }
 
-} // namespace QCurl::Internal::ReplyCurlOptions
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::flushCookieJar(CURL *easy) const
+{
+    ReplyCurlConfigurationResult result;
+    if (!easy || !(m_cookieMode & static_cast<int>(QCNetworkAccessManager::WriteOnly))
+        || m_cookiePathBytes.isEmpty()) {
+        return result;
+    }
+    // FLUSH 沿用真实原生调用，不改变 share/Cookie store 的事务或故障注入合同。
+    const CURLcode code = curl_easy_setopt(easy, CURLOPT_COOKIELIST, "FLUSH");
+    if (code == CURLE_OK) {
+        return result;
+    }
+    if (CurlOptions::isCapabilityRelatedError(code)) {
+        warn(result,
+             QStringLiteral("libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST，%1），CookieJAR "
+                            "可能不会立即落盘")
+                 .arg(QString::fromUtf8(curl_easy_strerror(code))));
+    } else {
+        warn(result,
+             QStringLiteral("Cookie flush 失败（%1）")
+                 .arg(QString::fromUtf8(curl_easy_strerror(code))));
+    }
+    return result;
+}
+
+} // namespace QCurl::Internal

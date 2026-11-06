@@ -12,6 +12,8 @@
 #include <QSignalSpy>
 #include <QtTest>
 
+#include <memory>
+
 using namespace QCurl;
 
 class tst_QCNetworkCompletionContract : public QObject
@@ -27,6 +29,10 @@ private Q_SLOTS:
     void returnedReply();
     void managerDestructionBeforeDispatch();
     void directDeletionOnFailure();
+    void readyReadCancellationPreservesTerminal_data();
+    void readyReadCancellationPreservesTerminal();
+    void cacheServiceIsBorrowedAtEachCheckpoint_data();
+    void cacheServiceIsBorrowedAtEachCheckpoint();
 };
 
 void tst_QCNetworkCompletionContract::returnedReply_data()
@@ -120,6 +126,121 @@ void tst_QCNetworkCompletionContract::directDeletionOnFailure()
     QTRY_VERIFY(safeManager.isNull());
     QVERIFY(reply.isNull());
     QCOMPARE(errors, 1);
+}
+
+void tst_QCNetworkCompletionContract::readyReadCancellationPreservesTerminal_data()
+{
+    QTest::addColumn<bool>("revalidate");
+    QTest::newRow("cache-hit") << false;
+    QTest::newRow("cache-304") << true;
+}
+
+void tst_QCNetworkCompletionContract::readyReadCancellationPreservesTerminal()
+{
+    QFETCH(bool, revalidate);
+    const QByteArray firstHeaders = revalidate
+                                        ? QByteArrayLiteral(
+                                              "Cache-Control: max-age=0\r\nETag: \"entity\"\r\n")
+                                        : QByteArrayLiteral("Cache-Control: max-age=300\r\n");
+    HttpScriptServer server({HttpScriptServer::response(200, "cached", firstHeaders),
+                             HttpScriptServer::response(304, "", "Cache-Control: max-age=300\r\n")});
+    QVERIFY(server.start());
+    QCNetworkMemoryCache cache;
+    QCNetworkAccessManager manager;
+    manager.setCache(&cache);
+    QCNetworkRequest request(server.url());
+    auto *first = manager.get(request);
+    QSignalSpy firstDone(first, &QCNetworkReply::finished);
+    QVERIFY(firstDone.wait());
+    QCOMPARE(first->error(), NetworkError::NoError);
+    delete first;
+
+    auto *reply = manager.get(request);
+    QSignalSpy finished(reply, &QCNetworkReply::finished);
+    QSignalSpy cancelled(reply, &QCNetworkReply::cancelled);
+    QSignalSpy states(reply, &QCNetworkReply::stateChanged);
+    connect(reply, &QCNetworkReply::readyRead, reply, &QCNetworkReply::cancel);
+    QVERIFY(finished.wait());
+    QCoreApplication::processEvents();
+    QCOMPARE(reply->state(), ReplyState::Cancelled);
+    QCOMPARE(reply->error(), NetworkError::OperationCancelled);
+    QCOMPARE(reply->diagnosticCurlCode(), 0);
+    QCOMPARE(cancelled.size(), 1);
+    QCOMPARE(finished.size(), 1);
+    QVERIFY(!states.isEmpty());
+    QCOMPARE(qvariant_cast<ReplyState>(states.last().at(0)), ReplyState::Cancelled);
+}
+
+void tst_QCNetworkCompletionContract::cacheServiceIsBorrowedAtEachCheckpoint_data()
+{
+    QTest::addColumn<bool>("atStore");
+    QTest::addColumn<int>("change");
+    QTest::newRow("execute-replace") << false << 0;
+    QTest::newRow("execute-unregister") << false << 1;
+    QTest::newRow("execute-destroy") << false << 2;
+    QTest::newRow("store-replace") << true << 0;
+    QTest::newRow("store-unregister") << true << 1;
+    QTest::newRow("store-destroy") << true << 2;
+}
+
+void tst_QCNetworkCompletionContract::cacheServiceIsBorrowedAtEachCheckpoint()
+{
+    QFETCH(bool, atStore);
+    QFETCH(int, change);
+    HttpScriptServer server(
+        {HttpScriptServer::response(200, "old", "Cache-Control: max-age=300\r\n"),
+         HttpScriptServer::response(200, "new", "Cache-Control: max-age=300\r\n")});
+    QVERIFY(server.start());
+    auto original = std::make_unique<QCNetworkMemoryCache>();
+    QCNetworkMemoryCache replacement;
+    QCNetworkAccessManager manager;
+    manager.setCache(original.get());
+    const QCNetworkRequest request(server.url());
+    const QCNetworkCacheRequestKey key(HttpMethod::Get, server.url());
+    if (!atStore) {
+        auto *first = manager.get(request);
+        QSignalSpy done(first, &QCNetworkReply::finished);
+        QVERIFY(done.wait());
+        QCOMPARE(first->error(), NetworkError::NoError);
+        delete first;
+        const auto cached = original->lookup(key, QCNetworkCacheReadMode::FreshOnly);
+        QVERIFY(cached.hit());
+        replacement.insert(key, "replacement", cached.metadata());
+    }
+    const auto changeService = [&]() {
+        if (change == 0) {
+            manager.setCache(&replacement);
+        } else if (change == 1) {
+            manager.setCache(nullptr);
+        } else {
+            original.reset();
+        }
+    };
+    auto *reply = manager.get(request);
+    if (atStore) {
+        connect(reply, &QCNetworkReply::readyRead, reply, changeService);
+    } else {
+        changeService();
+    }
+    QSignalSpy done(reply, &QCNetworkReply::finished);
+    QVERIFY(done.wait());
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(reply->readAll().value(),
+             QByteArray(atStore       ? "old"
+                        : change == 0 ? "replacement"
+                                      : "new"));
+    QCOMPARE(manager.cache(), change == 0 ? &replacement : nullptr);
+    QCOMPARE(server.requests().size(), atStore || change == 0 ? 1 : 2);
+    if (atStore) {
+        const auto cached = replacement.lookup(key, QCNetworkCacheReadMode::FreshOnly);
+        QCOMPARE(cached.hit(), change == 0);
+        if (cached.hit()) {
+            QCOMPARE(cached.body(), QByteArrayLiteral("old"));
+        }
+        if (original) {
+            QVERIFY(!original->lookup(key, QCNetworkCacheReadMode::AllowStale).hit());
+        }
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_QCNetworkCompletionContract)

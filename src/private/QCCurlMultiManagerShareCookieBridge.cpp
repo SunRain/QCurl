@@ -1,6 +1,5 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkAccessManager.h"
-#include "private/QCCookiePolicyCode_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlShareCookieStore_p.h"
 
@@ -61,8 +60,7 @@ Internal::ShareCallResult QCCurlMultiManager::bindShareToHttpLocked(
     auto result       = m_shareCookieStore->bindHttp(manager,
                                                      config,
                                                      record.handle(),
-                                                     state.cookieMode != 0
-                                                         && !state.cookieFilePath.isEmpty());
+                                                     state.configuration.usesCookieFile());
     if (result.state == Internal::ShareCallState::NonCallable) {
         static_cast<void>(consumeShareResultLocked(result));
     }

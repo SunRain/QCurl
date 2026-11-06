@@ -1,63 +1,78 @@
 /**
  * @file
- * @brief QCNetworkReply request-body source 状态与 curl 回调辅助。
+ * @brief 封装调用方设备的读取、定位与请求重放规则。
  */
 
 #ifndef QCNETWORKREPLYBODYSOURCE_P_H
 #define QCNETWORKREPLYBODYSOURCE_P_H
 
-#include "QCNetworkError.h"
-#include "QCNetworkReply.h"
+#include "QCNetworkHttpVersion.h"
+#include "private/QCReplyLifecycle_p.h"
 #include "private/QCRequestPipeline_p.h"
 
 #include <QPointer>
-#include <QString>
-
-#include <curl/curl.h>
 
 class QIODevice;
 
-namespace QCurl {
+namespace QCurl::Internal {
 
-class QCNetworkReplyPrivate;
-struct QCNetworkReplyTransferState;
-
-namespace Internal {
-
-struct ReplyBodySourceState
-{
-    QPointer<QIODevice> device;
-    qint64 basePos   = 0;
-    qint64 sizeBytes = -1;
-    qint64 bytesRead = 0;
-    bool seekable    = false;
-
-    bool hasErrorOverride          = false;
-    NetworkError errorOverrideCode = NetworkError::NoError;
-    QString errorOverrideMessage;
+/** @brief 一次设备读取的结果；Wait 表示暂不可读，不等同于 EOF。 */
+enum class ReplyBodyReadKind {
+    Data,
+    Wait,
+    End,
+    Error,
 };
 
-void resetReplyBodySource(ReplyBodySourceState &state);
-void clearReplyBodySourceError(ReplyBodySourceState &state);
-[[nodiscard]] bool hasReplyBodySourceError(const ReplyBodySourceState &state) noexcept;
-[[nodiscard]] NetworkError replyBodySourceErrorCode(const ReplyBodySourceState &state) noexcept;
-[[nodiscard]] QString replyBodySourceErrorMessage(const ReplyBodySourceState &state);
+/** @brief 设备读取结果，只有 Data 的 bytes 表示有效载荷长度。 */
+struct ReplyBodyReadResult
+{
+    ReplyBodyReadKind kind = ReplyBodyReadKind::End;
+    qint64 bytes           = 0;
+};
 
-[[nodiscard]] bool prepareReplyBodySource(QCNetworkReplyPrivate *reply,
-                                          const RequestBody &bodySpec,
-                                          QString *errorMessage);
-[[nodiscard]] bool rewindReplyBodySourceForRetry(QCNetworkReplyPrivate *reply,
-                                                 QString *errorMessage);
+/**
+ * @brief 借用外部设备的请求体来源，不持有 Reply 或传输驱动。
+ *
+ * prepare 前由 adapter 完成设备线程检查；本对象不关闭、不接管设备，所有 I/O 在 owner
+ * thread 执行。原生 callback 和 readyRead 将结果连接到 flow，不在此处发布信号。
+ */
+class Q_DECL_HIDDEN QCReplyBodySource
+{
+public:
+    [[nodiscard]] bool prepare(const RequestBody &body,
+                               HttpMethod method,
+                               QCNetworkHttpVersion version,
+                               bool retryEnabled,
+                               QString *error);
+    [[nodiscard]] ReplyBodyReadResult readInto(char *buffer, qint64 capacity);
+    [[nodiscard]] int seek(curl_off_t offset, int origin);
+    [[nodiscard]] bool rewindForRetry(QString *error);
+    void clearFailure();
 
-size_t readReplyBodySourceCallback(char *ptr,
-                                   size_t size,
-                                   size_t nmemb,
-                                   QCNetworkReplyTransferState *state,
-                                   const QPointer<QCNetworkReply> &observer);
-int seekReplyBodySourceCallback(QCNetworkReplyTransferState *state, curl_off_t offset, int origin);
+    [[nodiscard]] QIODevice *device() const noexcept;
+    [[nodiscard]] bool replayable() const noexcept;
+    [[nodiscard]] qint64 sizeBytes() const noexcept { return m_sizeBytes; }
+    [[nodiscard]] bool readiness() const;
+    [[nodiscard]] std::optional<ReplyAttemptErrorInfo> failure() const { return m_failure; }
 
-} // namespace Internal
+private:
+    [[nodiscard]] bool validateConfiguration(const RequestBody &body,
+                                             HttpMethod method,
+                                             QCNetworkHttpVersion version,
+                                             bool retryEnabled,
+                                             QString *error) const;
+    void recordFailure(const QString &message);
+    [[nodiscard]] std::optional<qint64> seekTarget(curl_off_t offset, int origin);
 
-} // namespace QCurl
+    QPointer<QIODevice> m_device;
+    qint64 m_basePos   = 0;
+    qint64 m_sizeBytes = -1;
+    qint64 m_bytesRead = 0;
+    bool m_seekable    = false;
+    std::optional<ReplyAttemptErrorInfo> m_failure;
+};
+
+} // namespace QCurl::Internal
 
 #endif // QCNETWORKREPLYBODYSOURCE_P_H

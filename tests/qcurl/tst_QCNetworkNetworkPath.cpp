@@ -6,9 +6,7 @@
 #include "CurlFeatureProbe.h"
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
-#include "QCNetworkSslConfig.h"
 #include "qcurl_resolve_test_server.h"
 
 #include <QScopeGuard>
@@ -188,17 +186,12 @@ void TestQCNetworkNetworkPath::testConfigureCurlOptionsSmoke()
     request.setAllowedProtocols(QCurl::QCNetworkProtocol::Http | QCurl::QCNetworkProtocol::Https);
     request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
 
-    // 触发 configureCurlOptions（不发起网络请求）
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
+    // 仅构造并读取公开配置结果，不发起网络请求。
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.error(), NetworkError::NoError);
 
     // 不应包含敏感明文
-    const QStringList warnings = replyPrivate.capabilityWarnings;
+    const QStringList warnings = reply.capabilityWarnings();
     for (const QString &w : warnings) {
         QVERIFY2(!w.contains(QStringLiteral("Authorization"), Qt::CaseInsensitive),
                  qPrintable(QStringLiteral("capability warning contains sensitive key: %1").arg(w)));
@@ -227,15 +220,10 @@ void TestQCNetworkNetworkPath::testSlistBuildFailureIsTerminal()
              }),
              QCNetworkConfigUpdateResult::Applied);
 
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_RESOLVE")));
-    QVERIFY(replyPrivate.resolveSlist == nullptr);
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.state(), ReplyState::Error);
+    QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+    QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_RESOLVE")));
 }
 
 void TestQCNetworkNetworkPath::testHeaderAppendFailureIsTerminal()
@@ -254,15 +242,10 @@ void TestQCNetworkNetworkPath::testHeaderAppendFailureIsTerminal()
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
     request.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("redacted"));
 
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_HTTPHEADER")));
-    QVERIFY(replyPrivate.curlManager.headerList() == nullptr);
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.state(), ReplyState::Error);
+    QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+    QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_HTTPHEADER")));
 }
 
 void TestQCNetworkNetworkPath::testRequiredSetoptFailureIsTerminal()
@@ -285,15 +268,11 @@ void TestQCNetworkNetworkPath::testRequiredSetoptFailureIsTerminal()
         qputenv("QCURL_TEST_FORCE_SETOPT_ERROR", optionName);
 
         QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-        QCNetworkReplyPrivate replyPrivate(nullptr,
-                                           request,
-                                           HttpMethod::Get,
-                                           Internal::makeEmptyRequestBody(),
-                                           QByteArray());
-        QVERIFY2(!replyPrivate.configureCurlOptions(), optionName.constData());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY2(replyPrivate.errorMessage.contains(QString::fromUtf8(optionName)),
-                 qPrintable(replyPrivate.errorMessage));
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCOMPARE(reply.state(), ReplyState::Error);
+        QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+        QVERIFY2(reply.errorString().contains(QString::fromUtf8(optionName)),
+                 qPrintable(reply.errorString()));
     }
 }
 
@@ -309,14 +288,10 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
-        QCNetworkReplyPrivate replyPrivate(nullptr,
-                                           request,
-                                           HttpMethod::Get,
-                                           Internal::makeEmptyRequestBody(),
-                                           QByteArray());
-        QVERIFY(!replyPrivate.configureCurlOptions());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCOMPARE(reply.state(), ReplyState::Error);
+        QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+        QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
     }
 
     {
@@ -327,14 +302,10 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
 
-        QCNetworkReplyPrivate replyPrivate(nullptr,
-                                           request,
-                                           HttpMethod::Get,
-                                           Internal::makeEmptyRequestBody(),
-                                           QByteArray());
-        QVERIFY(!replyPrivate.configureCurlOptions());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCOMPARE(reply.state(), ReplyState::Error);
+        QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+        QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
     }
 
     {
@@ -345,14 +316,10 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Fail);
 
-        QCNetworkReplyPrivate replyPrivate(nullptr,
-                                           request,
-                                           HttpMethod::Get,
-                                           Internal::makeEmptyRequestBody(),
-                                           QByteArray());
-        QVERIFY(!replyPrivate.configureCurlOptions());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCOMPARE(reply.state(), ReplyState::Error);
+        QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+        QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
     }
 
     {
@@ -363,14 +330,10 @@ void TestQCNetworkNetworkPath::testProtocolAllowlistCapabilityPolicy()
         request.setAllowedRedirectProtocols(QCurl::QCNetworkProtocol::Https);
         request.setUnsupportedSecurityOptionPolicy(QCUnsupportedSecurityOptionPolicy::Warn);
 
-        QCNetworkReplyPrivate replyPrivate(nullptr,
-                                           request,
-                                           HttpMethod::Get,
-                                           Internal::makeEmptyRequestBody(),
-                                           QByteArray());
-        QVERIFY(!replyPrivate.configureCurlOptions());
-        QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-        QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
+        QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+        QCOMPARE(reply.state(), ReplyState::Error);
+        QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+        QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
     }
 
     if (oldEnv.isEmpty()) {
@@ -393,25 +356,16 @@ void TestQCNetworkNetworkPath::testCoreProtocolOptionsAreMandatory()
 
     qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArrayLiteral("CURLOPT_PROTOCOLS_STR"));
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.state(), ReplyState::Error);
+    QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+    QVERIFY(reply.errorString().contains(QStringLiteral("CURLOPT_PROTOCOLS_STR")));
 
     qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArrayLiteral("CURLOPT_REDIR_PROTOCOLS_STR"));
-    QCNetworkReplyPrivate redirectReplyPrivate(nullptr,
-                                               request,
-                                               HttpMethod::Get,
-                                               Internal::makeEmptyRequestBody(),
-                                               QByteArray());
-    QVERIFY(!redirectReplyPrivate.configureCurlOptions());
-    QCOMPARE(redirectReplyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(
-        redirectReplyPrivate.errorMessage.contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
+    QCNetworkReply redirectReply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(redirectReply.state(), ReplyState::Error);
+    QCOMPARE(redirectReply.error(), NetworkError::InvalidRequest);
+    QVERIFY(redirectReply.errorString().contains(QStringLiteral("CURLOPT_REDIR_PROTOCOLS_STR")));
 }
 
 void TestQCNetworkNetworkPath::testCoreEntryRejectsNonHttpScheme()
@@ -432,14 +386,10 @@ void TestQCNetworkNetworkPath::testExplicitProtocolCannotExpandCore()
     request.setAllowedProtocols(QCurl::QCNetworkProtocol::Https
                                 | static_cast<QCurl::QCNetworkProtocol>(0x4));
 
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("HTTP/HTTPS")));
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.state(), ReplyState::Error);
+    QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+    QVERIFY(reply.errorString().contains(QStringLiteral("HTTP/HTTPS")));
 }
 
 void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
@@ -459,15 +409,11 @@ void TestQCNetworkNetworkPath::testMinimumRuntimeGate()
     probe.refreshForTesting();
 
     QCNetworkRequest request(QUrl(QStringLiteral("https://example.com/")));
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("8.14.1")));
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("请升级运行时 libcurl")));
+    QCNetworkReply reply(QCNetworkReply::TestOnlyKey{}, request, HttpMethod::Get);
+    QCOMPARE(reply.state(), ReplyState::Error);
+    QCOMPARE(reply.error(), NetworkError::InvalidRequest);
+    QVERIFY(reply.errorString().contains(QStringLiteral("8.14.1")));
+    QVERIFY(reply.errorString().contains(QStringLiteral("请升级运行时 libcurl")));
 }
 
 QTEST_MAIN(TestQCNetworkNetworkPath)

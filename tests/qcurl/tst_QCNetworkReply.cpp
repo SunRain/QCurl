@@ -19,10 +19,11 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkSchedulerPolicy.h"
+#include "private/QCNetworkReplyExecution_p.h"
+#include "private/QCNetworkReplyFlowControl_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
 #include "qcnetwork_mock_test_support.h"
 #include "test_httpbin_env.h"
-#include "test_source_paths.h"
 #include "test_wait_utils.h"
 
 #include <QCoreApplication>
@@ -95,7 +96,9 @@ private Q_SLOTS:
     void testAsyncMockSynchronousDeleteDuringReadyRead();
     void testAsyncMockSynchronousDeleteParentDuringReadyRead();
     void testRealMultiReplyDeleteLaterDuringCallback();
-    void testPauseFlowControlOwnerThreadSourceContract();
+    void testPauseFlowControlOwnerThreadContract();
+    void testPauseNativeTransactions_data();
+    void testPauseNativeTransactions();
     void testWaitedAsyncPauseResumeNoOp();
     void testAsyncTransferPauseResumeCrossThread();
     void testAsyncDownloadBackpressure();
@@ -1394,44 +1397,143 @@ void TestQCNetworkReply::testRealMultiReplyDeleteLaterDuringCallback()
 #endif
 }
 
-void TestQCNetworkReply::testPauseFlowControlOwnerThreadSourceContract()
+namespace {
+
+thread_local std::function<CURLcode(CURL *, int)> s_observePause;
+
+CURLcode observePause(CURL *handle, int mask)
 {
-    const QString flowControlPath = QCurl::TestSourcePaths::sourcePath(
-        QStringLiteral("src/private/QCNetworkReplyFlowControl.cpp"));
-    QVERIFY2(!flowControlPath.isEmpty(), "QCurl source root is unavailable");
+    return s_observePause(handle, mask);
+}
 
-    QFile sourceFile(flowControlPath);
-    QVERIFY2(sourceFile.open(QIODevice::ReadOnly | QIODevice::Text),
-             qPrintable(QStringLiteral("Cannot read %1").arg(flowControlPath)));
-    const QByteArray source = sourceFile.readAll();
+Internal::ReplyFlowChange runPauseTransaction(Internal::QCReplyFlowControl &flow,
+                                              CURL *handle,
+                                              int scenario)
+{
+    if (scenario == 0) {
+        return flow.pauseUser(handle, PauseMode::Recv, false);
+    }
+    if (scenario == 1) {
+        return flow.resumeUser(handle);
+    }
+    if (scenario == 2) {
+        return flow.afterReadyRead(handle, 8, false);
+    }
+    if (scenario == 3 || scenario == 5) {
+        return flow.resumeAfterRead(handle, 0, false);
+    }
+    return flow.resumeReadySource(handle, true, false);
+}
 
-    const QByteArray signature  = "bool pauseCurlEasy(QCNetworkReplyPrivate *reply, int flags)";
-    const qsizetype helperStart = source.indexOf(signature);
-    QVERIFY2(helperStart >= 0, "pauseCurlEasy helper is missing");
-    const qsizetype helperEnd = source.indexOf("\n}\n\n} // namespace", helperStart);
-    QVERIFY2(helperEnd > helperStart, "pauseCurlEasy helper boundary is missing");
+} // namespace
 
-    const QByteArray helper   = source.mid(helperStart, helperEnd - helperStart);
-    const qsizetype bodyStart = helper.indexOf('{');
-    QVERIFY2(bodyStart >= 0, "pauseCurlEasy helper body is missing");
-    const QByteArray body = helper.mid(bodyStart + 1).trimmed();
-    const QByteArray observerLookup
-        = "QCNetworkReply *const publicReply = reply ? reply->qObject() : nullptr;";
-    const QByteArray ownerCheck
-        = "if (!publicReply || QThread::currentThread() != publicReply->thread()) {";
-    QVERIFY2(body.startsWith(observerLookup), "pauseCurlEasy must resolve the reply QObject first");
-    QVERIFY2(body.contains(ownerCheck), "pauseCurlEasy must validate the reply owner thread");
+void TestQCNetworkReply::testPauseFlowControlOwnerThreadContract()
+{
+    const QUrl url(QStringLiteral("http://example.invalid/flow-owner-thread"));
+    QCNetworkMockHandler mock;
+    mock.setGlobalDelay(10000);
+    mock.mockResponse(HttpMethod::Get, url, QByteArrayLiteral("OK"));
+    QCNetworkAccessManager manager;
+    manager.enableRequestScheduler(false);
+    QCurl::TestSupport::setMockHandler(manager, &mock);
+    auto *reply = manager.get(QCNetworkRequest(url));
+    QVERIFY(reply);
+    QTRY_COMPARE(reply->state(), ReplyState::Running);
 
-    QVERIFY(!helper.contains("BlockingQueuedConnection"));
-    QVERIFY(!helper.contains("QMetaObject::invokeMethod"));
-    QVERIFY(!helper.contains("QCCurlMultiManager::instance()"));
-    QVERIFY(!helper.contains("CURL *"));
-    QVERIFY(!helper.contains("&result"));
+    int ownerCalls  = 0;
+    bool wrongOwner = false;
+    s_observePause  = [&](CURL *handle, int) {
+        ++ownerCalls;
+        wrongOwner = wrongOwner || !handle || QThread::currentThread() != reply->thread();
+        return CURLE_OK;
+    };
+    Internal::setReplyPauseTestHook(observePause);
+    const auto reset = qScopeGuard([]() {
+        Internal::setReplyPauseTestHook(nullptr);
+        s_observePause = {};
+    });
+    int foreignCalls = 0;
+    std::thread foreign([&]() {
+        s_observePause = [&](CURL *, int) {
+            ++foreignCalls;
+            return CURLE_OK;
+        };
+        Internal::setReplyPauseTestHook(observePause);
+        Internal::QCNetworkReplyExecution::pauseOnCurrentThreadForTest(reply, PauseMode::All);
+        Internal::setReplyPauseTestHook(nullptr);
+        s_observePause = {};
+        reply->pauseTransport(PauseMode::All);
+    });
+    foreign.join();
+    QCOMPARE(foreignCalls, 0);
+    QCOMPARE(ownerCalls, 0);
+    QTRY_COMPARE(reply->state(), ReplyState::Paused);
+    QCOMPARE(ownerCalls, 1);
+    std::thread resume([reply]() { reply->resumeTransport(); });
+    resume.join();
+    QTRY_COMPARE(reply->state(), ReplyState::Running);
+    QCOMPARE(ownerCalls, 2);
+    QVERIFY(!wrongOwner);
+    reply->cancel();
+}
 
-    const qsizetype failClosedReturn = helper.indexOf("return false;");
-    const qsizetype pauseCall        = helper.indexOf("curl_easy_pause(");
-    QVERIFY2(failClosedReturn >= 0 && failClosedReturn < pauseCall,
-             "owner-thread violation must fail closed before curl_easy_pause");
+void TestQCNetworkReply::testPauseNativeTransactions_data()
+{
+    QTest::addColumn<int>("scenario");
+    QTest::newRow("user-pause-failure") << 0;
+    QTest::newRow("user-resume-failure") << 1;
+    QTest::newRow("backpressure-pause-failure") << 2;
+    QTest::newRow("backpressure-resume-failure") << 3;
+    QTest::newRow("upload-resume-failure") << 4;
+    QTest::newRow("resume-reenters-receive-pause") << 5;
+    QTest::newRow("resume-reenters-source-wait") << 6;
+}
+
+void TestQCNetworkReply::testPauseNativeTransactions()
+{
+    QFETCH(int, scenario);
+    Internal::QCReplyFlowControl flow(8, 4);
+    QCCurlHandleManager handle;
+    QVERIFY(handle.isValid());
+    s_observePause = [](CURL *, int) { return CURLE_OK; };
+    Internal::setReplyPauseTestHook(observePause);
+    const auto reset = qScopeGuard([]() {
+        Internal::setReplyPauseTestHook(nullptr);
+        s_observePause = {};
+    });
+    if (scenario == 1) {
+        QVERIFY(flow.pauseUser(handle.handle(), PauseMode::Recv, false).accepted);
+    } else if (scenario == 3 || scenario == 5) {
+        QVERIFY(flow.afterReadyRead(handle.handle(), 8, false).backpressureChanged);
+    } else if (scenario == 4 || scenario == 6) {
+        QVERIFY(flow.sourceWait());
+    }
+    s_observePause = [&](CURL *easy, int mask) {
+        if (scenario < 5) {
+            return CURLE_BAD_FUNCTION_ARGUMENT;
+        }
+        if (mask == CURLPAUSE_CONT) {
+            if (scenario == 5) {
+                Q_UNUSED(flow.afterReadyRead(easy, 8, false));
+            } else {
+                Q_UNUSED(flow.sourceWait());
+            }
+        }
+        return CURLE_OK;
+    };
+    const auto result  = runPauseTransaction(flow, handle.handle(), scenario);
+    const int expected = scenario == 0 || scenario == 2   ? 0
+                         : scenario == 4 || scenario == 6 ? CURLPAUSE_SEND
+                                                          : CURLPAUSE_RECV;
+    QCOMPARE(result.accepted, scenario >= 5);
+    QCOMPARE(result.error, scenario < 5 ? CURLE_BAD_FUNCTION_ARGUMENT : CURLE_OK);
+    QCOMPARE(flow.desiredMask(), expected);
+    QCOMPARE(flow.appliedMask(), expected);
+    QCOMPARE(flow.backpressureActive(), scenario == 3 || scenario == 5);
+    QCOMPARE(flow.uploadSendPaused(), scenario == 4 || scenario == 6);
+    QVERIFY(!result.backpressureChanged);
+    QVERIFY(!result.uploadPauseChanged);
+    QVERIFY(!result.wake);
 }
 
 void TestQCNetworkReply::testWaitedAsyncPauseResumeNoOp()

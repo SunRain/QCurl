@@ -15,8 +15,12 @@
 #include "QCNetworkRequest.h"
 #include "QCNetworkSslConfig.h"
 #include "QCNetworkTimeoutConfig.h"
+#include "qcnetwork_connect_test_proxy.h"
+#include "qcurl_http_script_server.h"
+#include "test_source_paths.h"
 
 #include <QHostAddress>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QtTest>
@@ -143,75 +147,83 @@ void TestQCNetworkProxy::testProxyAuthentication()
 
 void TestQCNetworkProxy::testProxyAppliedToCurlHandle()
 {
-    qDebug() << "Verifying proxy config is propagated into curl handle state";
-
-    QCNetworkRequest request(QUrl("https://example.com"));
-    QCNetworkProxyConfig proxyConfig;
-    proxyConfig.setType(QCNetworkProxyConfig::ProxyType::Socks5Hostname);
-    proxyConfig.setHostName("proxy.example.com");
-    proxyConfig.setPort(1080);
-    proxyConfig.setUserName("user");
-    proxyConfig.setPassword("secret");
-    request.setProxyConfig(proxyConfig);
-
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-
-    QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.proxyHostBytes, proxyConfig.hostName().toUtf8());
-    QCOMPARE(replyPrivate.proxyUserBytes, proxyConfig.userName().toUtf8());
-    QCOMPARE(replyPrivate.proxyPasswordBytes, proxyConfig.password().toUtf8());
-
-    // 无效配置应被忽略
-    QCNetworkRequest invalidReq(QUrl("https://example.com"));
-    QCNetworkProxyConfig invalidProxy;
-    invalidProxy.setType(QCNetworkProxyConfig::ProxyType::Http);
-    invalidProxy.setPort(8080);
-    invalidReq.setProxyConfig(invalidProxy);
-
-    QCNetworkReplyPrivate invalidPrivate(nullptr,
-                                         invalidReq,
-                                         HttpMethod::Get,
-                                         Internal::makeEmptyRequestBody(),
-                                         QByteArray());
-
-    QVERIFY(invalidPrivate.configureCurlOptions());
-    QVERIFY(invalidPrivate.proxyHostBytes.isEmpty());
-    QVERIFY(invalidPrivate.proxyUserBytes.isEmpty());
-    QVERIFY(invalidPrivate.proxyPasswordBytes.isEmpty());
-
-    qDebug() << "Proxy config propagation verified";
+    const QString prefix = TestSourcePaths::sourcePath(
+        QStringLiteral("tests/qcurl/testdata/http2/"));
+    LocalTlsServer server(prefix + QStringLiteral("localhost.crt"),
+                          prefix + QStringLiteral("localhost.key"));
+    server.setHttpResponseEnabled(true);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
+    ConnectTestProxy proxy(server.port());
+    QVERIFY(proxy.start());
+    QCNetworkProxyConfig config;
+    config.setType(QCNetworkProxyConfig::ProxyType::Http);
+    config.setHostName(QStringLiteral("127.0.0.1"));
+    config.setPort(proxy.port());
+    config.setUserName(QStringLiteral("user"));
+    config.setPassword(QStringLiteral("fixture-password"));
+    QCNetworkRequest request(QUrl(QStringLiteral("https://localhost:%1/").arg(server.port())));
+    QCNetworkSslConfig ssl;
+    ssl.setCaCertPath(prefix + QStringLiteral("localhost.crt"));
+    request.setSslConfig(ssl);
+    request.setProxyConfig(config);
+    auto *reply = m_manager->get(request);
+    QVERIFY(waitForReply(reply));
+    QCOMPARE(reply->error(), NetworkError::NoError);
+    QCOMPARE(server.requests().size(), 1);
+    const auto requests = proxy.requests();
+    QCOMPARE(requests.size(), 2);
+    QVERIFY(!requests.first().toLower().contains("\r\nproxy-authorization:"));
+    const QByteArray credentials = QByteArrayLiteral("user:fixture-password").toBase64();
+    QVERIFY(
+        requests.last().contains(QByteArrayLiteral("Proxy-Authorization: Basic ") + credentials));
+    reply->deleteLater();
 }
 
 void TestQCNetworkProxy::testProxyEnvironmentDisabledByDefault()
 {
-    QCNetworkRequest defaultRequest(QUrl(QStringLiteral("https://example.com")));
-    QCNetworkReplyPrivate defaultPrivate(nullptr,
-                                         defaultRequest,
-                                         HttpMethod::Get,
-                                         Internal::makeEmptyRequestBody(),
-                                         QByteArray());
-
-    QVERIFY(defaultPrivate.configureCurlOptions());
-    QVERIFY(defaultPrivate.proxyEnvironmentDisabled);
-    QVERIFY(defaultPrivate.proxyHostBytes.isEmpty());
-
-    QCNetworkRequest noneRequest(QUrl(QStringLiteral("https://example.com")));
-    QCNetworkProxyConfig noneProxy;
-    noneProxy.setType(QCNetworkProxyConfig::ProxyType::None);
-    noneRequest.setProxyConfig(noneProxy);
-    QCNetworkReplyPrivate nonePrivate(nullptr,
-                                      noneRequest,
-                                      HttpMethod::Get,
-                                      Internal::makeEmptyRequestBody(),
-                                      QByteArray());
-
-    QVERIFY(nonePrivate.configureCurlOptions());
-    QVERIFY(nonePrivate.proxyEnvironmentDisabled);
-    QVERIFY(nonePrivate.proxyHostBytes.isEmpty());
+    HttpScriptServer server({HttpScriptServer::response(200, QByteArrayLiteral("direct"))});
+    QVERIFY(server.start());
+    HttpScriptServer unwantedProxy({HttpScriptServer::response(502, QByteArrayLiteral("proxy"))});
+    QVERIFY(unwantedProxy.start());
+    const QList<QByteArray> variables{QByteArrayLiteral("http_proxy"),
+                                      QByteArrayLiteral("HTTP_PROXY"),
+                                      QByteArrayLiteral("ALL_PROXY"),
+                                      QByteArrayLiteral("all_proxy"),
+                                      QByteArrayLiteral("NO_PROXY"),
+                                      QByteArrayLiteral("no_proxy")};
+    QList<QByteArray> previous;
+    for (const auto &name : variables) {
+        previous.append(qgetenv(name.constData()));
+        qputenv(name.constData(),
+                name.toLower() == "no_proxy" ? QByteArray("") : unwantedProxy.url().toEncoded());
+    }
+    const auto restore = qScopeGuard([variables, previous]() {
+        for (qsizetype i = 0; i < variables.size(); ++i) {
+            if (previous.at(i).isNull()) {
+                qunsetenv(variables.at(i).constData());
+            } else {
+                qputenv(variables.at(i).constData(), previous.at(i));
+            }
+        }
+    });
+    for (int mode = 0; mode < 3; ++mode) {
+        QCNetworkRequest request(server.url());
+        if (mode != 0) {
+            QCNetworkProxyConfig config;
+            config.setType(mode == 1 ? QCNetworkProxyConfig::ProxyType::None
+                                     : QCNetworkProxyConfig::ProxyType::Http);
+            config.setPort(8080);
+            request.setProxyConfig(config);
+        }
+        auto *reply = m_manager->get(request);
+        QVERIFY(waitForReply(reply));
+        QCOMPARE(reply->error(), NetworkError::NoError);
+        QCOMPARE(reply->readAll().value(), QByteArrayLiteral("direct"));
+        reply->deleteLater();
+    }
+    QCOMPARE(server.requests().size(), 3);
+    QCOMPARE(unwantedProxy.requests().size(), 0);
+    QCOMPARE(unwantedProxy.connectionCount(), 0);
 }
 
 void TestQCNetworkProxy::testSslConfigValueSemantics()
@@ -325,11 +337,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
     qDebug() << "Verifying proxy TLS capability failure path";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
-    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-#else
-    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#endif
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArrayLiteral("CURLOPT_PROXY_SSL_CIPHER_LIST"));
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
@@ -349,21 +357,12 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedFail()
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
-#if !defined(CURLPROXY_HTTPS)
     QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains("CURLPROXY_HTTPS"));
-#elif LIBCURL_VERSION_NUM < 0x073400 /* 7.52.0 */
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("当前构建的 libcurl 不支持")));
-#else
-    QVERIFY(!replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::InvalidRequest);
-    QVERIFY(replyPrivate.errorMessage.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-    QVERIFY(replyPrivate.errorMessage.contains(QStringLiteral("libcurl 不支持")));
-#endif
+    QCOMPARE(replyPrivate.transferState->lifecycle.error(), NetworkError::InvalidRequest);
+    QVERIFY(replyPrivate.transferState->lifecycle.errorMessage().contains(
+        "CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(replyPrivate.transferState->lifecycle.errorMessage().contains(
+        QStringLiteral("libcurl 不支持")));
 
     if (oldEnv.isEmpty()) {
         qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
@@ -377,11 +376,7 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
     qDebug() << "Verifying proxy TLS capability warning path";
 
     const QByteArray oldEnv = qgetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#if defined(CURLPROXY_HTTPS) && (LIBCURL_VERSION_NUM >= 0x073400) /* 7.52.0 */
-    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArray("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-#else
-    qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");
-#endif
+    qputenv("QCURL_TEST_FORCE_CAPABILITY_ERROR", QByteArrayLiteral("CURLOPT_PROXY_SSL_CIPHER_LIST"));
 
     QCNetworkRequest request(QUrl("https://example.com"));
     QCNetworkProxyConfig proxy;
@@ -401,22 +396,11 @@ void TestQCNetworkProxy::testProxyTlsUnsupportedWarn()
                                        Internal::makeEmptyRequestBody(),
                                        QByteArray());
 
-#if !defined(CURLPROXY_HTTPS)
     QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLPROXY_HTTPS"));
-#elif LIBCURL_VERSION_NUM < 0x073400 /* 7.52.0 */
-    QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(
-        QStringLiteral("当前构建的 libcurl 不支持")));
-#else
-    QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.errorCode, NetworkError::NoError);
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
-    QVERIFY(replyPrivate.capabilityWarnings.join("\n").contains(QStringLiteral("libcurl 不支持")));
-#endif
+    QCOMPARE(replyPrivate.transferState->lifecycle.error(), NetworkError::NoError);
+    const auto warnings = replyPrivate.transferState->lifecycle.warnings().join("\n");
+    QVERIFY(warnings.contains("CURLOPT_PROXY_SSL_CIPHER_LIST"));
+    QVERIFY(warnings.contains(QStringLiteral("libcurl 不支持")));
 
     if (oldEnv.isEmpty()) {
         qunsetenv("QCURL_TEST_FORCE_CAPABILITY_ERROR");

@@ -7,6 +7,7 @@
 #define QCNETWORKREPLYEXECUTION_P_H
 
 #include "QCCurlMultiManager.h"
+#include "private/QCNetworkReplySignal_p.h"
 
 namespace QCurl {
 
@@ -26,6 +27,14 @@ public:
     static void consumeAdmission(QCNetworkReply *reply,
                                  QCCurlMultiManager::HttpAdmissionResult result);
     [[nodiscard]] static bool tryPreferNetworkCacheFallback(QCNetworkReply *reply);
+    /// 在原缓存检查点借用 manager 的当前服务，跨领域的应用与信号仍留在 adapter。
+    static void prepareCacheCollection(QCNetworkReply *reply, QCNetworkAccessManager *manager);
+    [[nodiscard]] static SignalEmissionResult restoreRevalidatedCacheResponse(QCNetworkReply *reply);
+    static void storeCacheResponse(QCNetworkReply *reply);
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    /// 仅测试直接进入 adapter 的错误线程拒绝，不经公共入口的排队投递。
+    static void pauseOnCurrentThreadForTest(QCNetworkReply *reply, PauseMode mode);
+#endif
 
 private:
     [[nodiscard]] static bool completeFromCache(QCNetworkReply *reply,

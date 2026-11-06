@@ -245,6 +245,7 @@ add_qcurl_test_with_preflight(
     SOURCES
     qcnetwork_http2_test.h
     qcnetwork_connect_test_proxy.h
+    qcurl_tls_test_server.h
     qcnetwork_no_proxy_guard.h
     tst_QCNetworkHttp2.cpp
     qcnetwork_http2_fixture.cpp
@@ -289,6 +290,7 @@ add_qcurl_test_with_preflight(
     tst_QCNetworkTlsConfigurationDiagnostics.cpp
     qcurl_tls_test_server.h
     qcnetwork_connect_test_proxy.h
+    qcurl_http_script_server.h
 ) # 代理配置与真实 TLS 应用测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
 add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归

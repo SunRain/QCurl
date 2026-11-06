@@ -6,11 +6,10 @@
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
-#include "private/QCNetworkReplyRuntime_p.h"
 #include "private/QCNetworkRetryPolicy_p.h"
+#include "private/QCReplyRetry_p.h"
 #include "qcnetwork_mock_test_support.h"
 #include "qcnetwork_retry_policy_test_helper.h"
 
@@ -84,25 +83,37 @@ void TestQCNetworkRetryBudgetOffline::budgetArithmetic()
     QFETCH(qint64, used);
     QFETCH(qint64, limit);
     QFETCH(bool, accepted);
+    Internal::QCReplyRetry retry;
+    Internal::ReplyRetryAttemptFacts facts;
+    facts.error = NetworkError::HttpServiceUnavailable;
+    const QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/budget-arithmetic")));
+    Internal::setRetryJitterFractionForTest(1.0);
+    const auto initial = TestSupport::makeRetryPolicyOrFail(2,
+                                                            std::chrono::milliseconds(used),
+                                                            1.0,
+                                                            std::chrono::milliseconds(used));
+    const auto seed    = retry.evaluate(initial, HttpMethod::Get, request, facts);
+    QVERIFY(seed);
+    retry.commit(*seed);
+    QCOMPARE(retry.cumulativeDelay(), std::chrono::milliseconds(used));
+
+    Internal::setRetryJitterFractionForTest(0.0);
     auto policy = TestSupport::makeRetryPolicyOrFail(2, 10ms, 1.0, 10ms);
     if (limit >= 0) {
         QCOMPARE(policy.setMaxCumulativeDelay(std::chrono::milliseconds(limit)),
                  QCNetworkRetryPolicy::UpdateResult::Applied);
     }
-    QCNetworkRequest request(QUrl(QStringLiteral("http://example.com/budget-arithmetic")));
-    request.setRetryPolicy(policy);
-    QCNetworkReplyPrivate state(nullptr,
-                                request,
-                                HttpMethod::Get,
-                                Internal::makeEmptyRequestBody(),
-                                {});
-    state.cumulativeRetryDelay = std::chrono::milliseconds(used);
-    static_cast<void>(
-        Internal::advanceReplyRetryIfNeeded(&state, NetworkError::HttpServiceUnavailable));
-    QCOMPARE(state.attemptCount, accepted ? 1 : 0);
-    const auto expected = accepted ? std::chrono::milliseconds::max()
-                                   : std::chrono::milliseconds(used);
-    QCOMPARE(state.cumulativeRetryDelay, expected);
+    const auto proposal = retry.evaluate(policy, HttpMethod::Get, request, facts);
+    QCOMPARE(proposal.has_value(), accepted);
+    QCOMPARE(retry.attemptCount(), 1);
+    QCOMPARE(retry.cumulativeDelay(), std::chrono::milliseconds(used));
+    if (proposal) {
+        QCOMPARE(proposal->delay, 5ms);
+        retry.commit(*proposal);
+    }
+    QCOMPARE(retry.attemptCount(), accepted ? 2 : 1);
+    QCOMPARE(retry.cumulativeDelay(),
+             accepted ? std::chrono::milliseconds::max() : std::chrono::milliseconds(used));
 }
 
 void TestQCNetworkRetryBudgetOffline::budgetUpdatesAreTransactional()

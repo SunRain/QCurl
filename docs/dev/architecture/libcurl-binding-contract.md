@@ -80,6 +80,81 @@ runtime shutdown 先关闭事件入口，再使 module 进入 Draining；在途 
 
 `QCCurlHandleManager` 负责 easy handle 和内部 header list 的释放；HTTP handle 还保留同一 transfer state，使 POSTFIELDS/RESOLVE 等借用数据在 detach 后随 handle 移动，覆盖 completion 排队、事件丢弃和 reply 先销毁的路径。释放顺序必须是 easy cleanup、header list、共享 state，不能因 record 已销毁就提前释放 backing storage。其他外部借用对象由对应 owner 持有，不能依赖临时对象、悬挂 lambda 引用或跨线程裸指针。进入 multi 后的释放时机遵循上面的 transfer ownership。
 
+## Reply 生命周期与响应
+
+`QCReplyLifecycle` 与 `QCReplyResponse` 按值保存在同一个共享 transfer state 中。
+生命周期集中 phase、错误、实际原生诊断、公开进度、warnings 和首次 Running 起算的
+请求时钟；显式 retry 只清 attempt 观察，终态后的迟到 completion、回放及普通转换无操作。
+响应集中最终头块、权威 status、消费数据、已交付事实与有界缓存候选。消费不会截断候选，
+候选超限立即释放；completion 的 status=0 不被代理 CONNECT 头覆盖。
+
+Reply 编排终态前的缓存恢复、提交、trace/domain/pool 收尾、flow 退出及安全信号发布。
+304 恢复可同步触发 readyRead；发布后必须重查终态，不能覆盖槽中已完成的取消。网络、
+cache、mock/chaos、retry 与 public accessor 使用同一领域接口；module 不反向访问 Private
+或共享 holder，也不发布 Qt 信号。原生 callback 和跨信号检查仍由现有 adapter 承接。
+
+## Reply 请求体与流控
+
+`QCReplyBodySource` 借用调用方设备，集中长度、EOF/Wait、读错、定位与重放规则；
+设备探测前由 adapter 验证 owner/device thread，readyRead 连接以 Reply 为 context。
+`QCReplyFlowControl` 独占 user/internal/applied pause 原因、背压阈值/峰值与上传暂停事实，
+每次只借用有效 easy，原生成功才提交，失败回滚，不把用户原因与内部原因互相覆盖。
+
+write callback 在 readyRead 前更新峰值，发布后重读消费量决定背压；readAll 后恢复排到
+下一轮，以免回调内解除接收暂停。curl_easy_pause 可同步重入 callback，adapter 跨原生
+调用保留同一 holder，flow 返回后保留重入提交的最新原因，随后按存活/终态重查发布与
+multi wake。终态只清内部原因，不调用已 detach 的 easy；mock/chaos 仅使用逻辑回放操作。
+
+## Reply 请求级重试
+
+`QCReplyRetry` 独占资格、次数与累计等待预算，复用公共 policy 和 jitter；它只接收方法、
+幂等 key、来源可重放、输出交付/恢复能力、elapsed 与 Retry-After 等窄事实，不执行
+输出 I/O、Qt 信号或 timer。预算评估不提交状态，使用减法边界拒绝溢出，累计等待饱和。
+
+adapter 在原检查点解析 429 的最终头并采样查询时钟，允许提案才调用独占 writer 恢复；
+恢复失败保留实际原生诊断并提交 OutputDeviceError，不计数、不等待、不发下一请求。
+恢复 callback 和 retryAttempt 后重查存活与终态，成功恢复后才提交次数及等待。
+timer 到期才 reset/execute；跨 attempt 的时钟、warnings 和累计预算保留，上传来源
+回卷仍在下一网络 prepare 发生。已向通用消费者交付响应且无恢复合同则禁止重试。
+
+## Reply 请求级缓存
+
+`QCReplyCache` 持有 key、stale entry、重验证与一次回退资格；manager 构造前调用
+prepareRequest，整体移交有效请求及上下文，不重新解释 key/validator。module 复用
+cache integration 合同，集中五类执行策略、认证分区、no-store、候选容量、partial
+response 禁止回退、304 raw headers 合并与 HEAD/GET 存储规则。
+
+module 不保存 manager/cache 指针，每个原执行和终态检查点借用当前服务，保留替换、
+注销和 QPointer 销毁语义。响应应用、readyRead→Finished、OnlyCache miss 排队以及
+304 恢复后的终态重查由 adapter 负责；缓存命中包括空 body，Age 和敏感头过滤不变。
+response 只接受回放数据与上限，不判断缓存资格；流式消费与完整候选依然独立。
+
+## Reply 非 TLS 配置与请求编排
+
+`QCReplyCurlConfiguration` 按值保存在同一 transfer state，拥有不可变 CurlPlan 与非 TLS
+字节、resolve/connect-to 列表及 Cookie/HSTS/Alt-Svc 配置。capture、digest 和 admission
+读取同一只读计划；没有可写 backing getter，也不接收 Private、holder、设备或服务对象。
+列表先构建 candidate，required setopt 成功后才接管；easy cleanup 早于配置存储释放。
+HTTP header list 继续由 `QCCurlHandleManager` 唯一持有，不新增第二份 body/method 存储。
+
+配置按实际插点分段：URL → PRIVATE → network → 设备准备 → method → 设备 READ → body
+size/headers/limits → auth/proxy → proxy TLS → HTTP version → endpoint TLS → timeouts →
+response/seek/progress callbacks。debug 仍在网络 prepare 注册；callback、Qt 信号、timer、
+multi 以及跨 module 的存活/终态检查由 adapter 负责，TLS/share store 不退回 Reply 内部。
+
+每段返回保序的普通日志与 capability warnings，再返回首次 fatal；publisher 不分组、
+去重或重解释策略，普通日志不进入公开 warnings。mock 调用同一 encoding 冲突规则，
+保留 setup 与 dispatch 各一次的发布。协议白名单始终 required，失败不启动网络请求。
+
+manager 的 Cookie 配置仅在没有已继承文件时按原检查点传值；HSTS/Alt-Svc 在每次网络
+prepare 借用当前配置，module 不保留 manager。CookieJAR FLUSH 在成功终态的 stateChanged
+之后、cache store/finished 之前执行，失败仍只产生 warning；share adapter 只查询是否
+同时启用文件，事务、ownership 与 store poison 仍归 `QCCurlShareCookieStore`。
+
+`QCNetworkReplyPrivate` 仅持有请求快照、同一 holder、easy/token/removal、一次逻辑 pool
+统计、请求级 retry/cache 与独占 writer 恢复 callback，协调以上跨 module 顺序。
+生命周期、响应、设备、pause、资格/预算、缓存策略及非 TLS 选项规则不再摊平为 aliases。
+
 ## TLS 配置与诊断
 
 `QCTlsConfiguration` 封装 endpoint 与 HTTPS proxy 的 TLS 配置解释、选项顺序、Fail/Warn
@@ -93,7 +168,7 @@ minimum version、cipher 保持各自的 security policy。只有 `CURLE_UNKNOWN
 `CURLE_NOT_BUILT_IN` 可在 Warn 下继续，其它失败始终终止。HTTPS proxy 使用受支持
 libcurl 的原生类型，不回落明文代理。
 
-module 只返回有序 warnings 与首次 fatal；Reply 的 `publishTlsConfigurationResult` 在原
+module 只返回有序 warnings 与首次 fatal；Reply 的 `publishReplyTlsConfigurationResult` 在原
 调用点先发布 warnings，再设置一次错误，不重解释策略、不清空既有诊断。诊断只包含
 选项名、错误类别与原生静态描述，不回显路径、密码、pin 或 cipher 输入。TLS 对象不
 复制或移动；active record、detached handle 与 queued/dropped completion 沿用同一

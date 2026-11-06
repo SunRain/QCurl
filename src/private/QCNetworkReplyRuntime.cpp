@@ -1,13 +1,12 @@
 /**
  * @file
- * @brief QCNetworkReply retry/capability runtime helpers.
+ * @brief 编排重试输出恢复、信号、等待与 capability 发布。
  */
 
 #include "QCNetworkReply_p.h"
-#include "QCNetworkRetryPolicy.h"
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
-#include "private/QCNetworkRetryDecision_p.h"
+#include "private/QCReplyRetry_p.h"
 
 #include <QDebug>
 #include <QTimer>
@@ -22,78 +21,49 @@ void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &m
         return;
     }
 
-    reply->capabilityWarnings.append(message);
+    reply->transferState->lifecycle.appendWarnings({message});
     // 同时写入 capabilityWarnings 与日志，便于测试断言和现场排障复用同一事实源。
     qWarning() << "QCNetworkReply capability warning:" << message;
 }
-
-namespace {
-
-bool exceedsRetryBudget(std::chrono::milliseconds used,
-                        std::chrono::milliseconds next,
-                        std::optional<std::chrono::milliseconds> limit)
-{
-    return limit && (used > *limit || next > *limit - used);
-}
-
-std::optional<std::chrono::milliseconds> retryDelayWithinBudget(QCNetworkReplyPrivate *reply,
-                                                                const QCNetworkRetryPolicy &policy,
-                                                                NetworkError error)
-{
-    std::optional<std::chrono::milliseconds> retryAfter;
-    if (error == NetworkError::HttpTooManyRequests) {
-        reply->parseHeaders();
-        retryAfter = parseReplyRetryAfterDelay(reply->finalHeaderList, std::time(nullptr));
-    }
-    const auto delay   = policy.delayForAttempt(reply->attemptCount, retryAfter);
-    const auto elapsed = std::chrono::milliseconds(
-        reply->elapsedTimerStarted ? reply->elapsedTimer.elapsed() : 0);
-    if (exceedsRetryBudget(reply->cumulativeRetryDelay, delay, policy.maxCumulativeDelay())
-        || exceedsRetryBudget(elapsed, delay, policy.maxElapsedTime())) {
-        return std::nullopt;
-    }
-    return delay;
-}
-
-} // namespace
 
 ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, NetworkError error)
 {
     if (!d) {
         return {};
     }
-
-    const QCNetworkRetryPolicy policy = d->request.retryPolicy();
-    const bool bodyReplayable = !d->requestBodySource.device || d->requestBodySource.seekable;
-    const auto decision       = Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                                           d->httpMethod,
-                                                                           d->request,
-                                                                           bodyReplayable,
-                                                                           error,
-                                                                           d->attemptCount);
-    if (!decision.allowed) {
+    const auto holder = d->transferState;
+    ReplyRetryAttemptFacts facts;
+    facts.error            = error;
+    facts.bodyReplayable   = holder->bodySource.replayable();
+    facts.bodyDelivered    = holder->response.bodyDelivered();
+    facts.outputRestorable = bool(d->restoreResponseBeforeRetry);
+    facts.elapsed          = std::chrono::milliseconds(holder->lifecycle.elapsedMs());
+    if (error == NetworkError::HttpTooManyRequests) {
+        holder->response.parseHeaders();
+        facts.retryAfter = holder->response.retryAfterDelay(std::time(nullptr));
+    }
+    const auto proposal = d->retry.evaluate(d->request.retryPolicy(),
+                                            d->httpMethod,
+                                            d->request,
+                                            facts);
+    if (!proposal) {
         return {};
     }
-    if (d->responseBodyDelivered && !d->restoreResponseBeforeRetry) {
-        return {};
-    }
-    const auto delay = retryDelayWithinBudget(d, policy, error);
-    if (!delay.has_value()) {
-        return {};
-    }
-    // 预算拒绝不得截断已写出的响应；只有决定重试后才回滚本次输出。
-    if (d->restoreResponseBeforeRetry) {
-        if (const auto outputError = d->restoreResponseBeforeRetry(); outputError.has_value()) {
-            d->setError(NetworkError::OutputDeviceError, outputError.value());
-            return {d->setState(ReplyState::Error), std::nullopt};
-        }
-    }
-
-    d->attemptCount++;
-    const auto remaining = std::chrono::milliseconds::max() - d->cumulativeRetryDelay;
-    d->cumulativeRetryDelay += std::min(delay.value(), remaining);
-    const int attemptCount = d->attemptCount;
     const QPointer<QCNetworkReply> observer(d->qObject());
+    const auto restoreOutput = d->restoreResponseBeforeRetry;
+    const auto outputError   = restoreOutput ? restoreOutput() : std::nullopt;
+    if (!observer) {
+        return {SignalEmissionResult::Destroyed, std::nullopt};
+    }
+    if (holder->lifecycle.isTerminal()) {
+        return {};
+    }
+    if (outputError) {
+        d->setError(NetworkError::OutputDeviceError, *outputError);
+        return {d->setState(ReplyState::Error), std::nullopt};
+    }
+    d->retry.commit(*proposal);
+    const int attemptCount = d->retry.attemptCount();
     if (emitReplySignal(observer,
                         [attemptCount, error](QCNetworkReply *reply) {
                             Q_EMIT reply->retryAttempt(attemptCount, error);
@@ -101,8 +71,8 @@ ReplyRetryAdvanceResult advanceReplyRetryIfNeeded(QCNetworkReplyPrivate *d, Netw
         == SignalEmissionResult::Destroyed) {
         return {SignalEmissionResult::Destroyed, std::nullopt};
     }
-
-    return {SignalEmissionResult::Alive, delay};
+    return {SignalEmissionResult::Alive,
+            holder->lifecycle.isTerminal() ? std::nullopt : std::optional(proposal->delay)};
 }
 
 void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
@@ -111,26 +81,18 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
         return;
     }
 
-    d->diagnosticCurlCode = 0;
-    // 本入口也供 mock/chaos 清理；只有真实网络 execute 才重新开放 trace 的目标资格。
-    d->transferState->trace.stop();
-    if (setIdleState) {
-        d->state     = ReplyState::Idle;
-        d->errorCode = NetworkError::NoError;
-        d->errorMessage.clear();
+    const auto holder = d->transferState;
+    if (holder->lifecycle.isTerminal()) {
+        return;
     }
-
-    d->bodyBuffer.clear();
-    d->responseBodyDelivered = false;
-    d->cacheBodyBuffer.clear();
-    d->headerData.clear();
-    d->finalHeaderList.clear();
-    d->finalHeaderMap.clear();
-    d->bytesDownloaded = 0;
-    d->bytesUploaded   = 0;
-    d->downloadTotal   = -1;
-    d->uploadTotal     = -1;
-    d->httpStatusCode  = 0;
+    // 回放只清观察事实；重试才允许回到 Idle，跨 attempt 的时钟和 warning 不清零。
+    holder->trace.stop();
+    if (setIdleState) {
+        holder->lifecycle.resetForRetry();
+    } else {
+        holder->lifecycle.resetReplayObservations();
+    }
+    holder->response.resetForAttempt();
 }
 
 void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,
@@ -146,8 +108,7 @@ void scheduleAsyncReplyRetry(QPointer<QCNetworkReply> safeReply,
             return;
         }
 
-        if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
-            || d->state == ReplyState::Error) {
+        if (d->transferState->lifecycle.isTerminal()) {
             return;
         }
 

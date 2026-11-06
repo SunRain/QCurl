@@ -1,363 +1,95 @@
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkCache.h"
+/**
+ * @file
+ * @brief 实现请求级缓存上下文、执行策略与候选上限。
+ */
+
 #include "QCNetworkCachePolicy.h"
-#include "QCNetworkHttpHeaders.h"
-#include "QCNetworkReply.h"
-#include "QCNetworkReply_p.h"
 #include "private/QCNetworkCacheIntegration_p.h"
 #include "private/QCNetworkReplyCache_p.h"
-#include "private/QCNetworkReplyExecution_p.h"
-
-#include <QPointer>
-#include <QTimer>
 
 namespace QCurl::Internal {
-namespace {
 
-[[nodiscard]] bool managerUsesCookies(const QCNetworkAccessManager *manager)
+ReplyCachePreparation QCReplyCache::prepareRequest(const QCNetworkRequest &request,
+                                                   HttpMethod method,
+                                                   bool managerUsesCookies,
+                                                   QCNetworkCache *cache)
 {
-    return manager
-           && (manager->shareHandleConfig().shareCookies() || !manager->cookieFilePath().isEmpty());
-}
-
-[[nodiscard]] QCNetworkCacheRequestKey replyCacheKey(const QCNetworkReplyPrivate *reply,
-                                                     const QCNetworkAccessManager *manager)
-{
-    return reply->cacheRequestKeyInitialized ? reply->cacheRequestKey
-                                             : buildCacheRequestKey(reply->request,
-                                                                    reply->httpMethod,
-                                                                    managerUsesCookies(manager));
-}
-
-[[nodiscard]] QByteArray responseHeaderBlock(int statusCode, const QList<RawHeaderPair> &headers)
-{
-    QByteArray block = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(statusCode)
-                       + QByteArrayLiteral(" Revalidated\r\n");
-    for (const auto &[name, value] : headers) {
-        block += name + QByteArrayLiteral(": ") + value + QByteArrayLiteral("\r\n");
-    }
-    return block + QByteArrayLiteral("\r\n");
-}
-
-[[nodiscard]] bool cachedHeaderMatchesIfPresent(const QMap<QByteArray, QByteArray> &cached,
-                                                const QMap<QByteArray, QByteArray> &current,
-                                                const QByteArray &name)
-{
-    const auto headerValue = [&name](const QMap<QByteArray, QByteArray> &headers) {
-        for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-            if (QByteArrayView(it.key()).compare(name, Qt::CaseInsensitive) == 0) {
-                return it.value().trimmed();
-            }
+    ReplyCachePreparation prepared{request, {}};
+    auto &context            = prepared.cache;
+    context.m_key            = buildCacheRequestKey(request, method, managerUsesCookies);
+    context.m_keyInitialized = true;
+    if (cache && request.cachePolicy() == QCNetworkCachePolicy::PreferCache
+        && (method == HttpMethod::Get || method == HttpMethod::Head)) {
+        context.m_staleEntry = cache->lookup(context.m_key, QCNetworkCacheReadMode::AllowStale);
+        if (context.m_staleEntry.status() == QCNetworkCacheLookupStatus::StaleHit
+            && cacheMetadataHasValidator(context.m_staleEntry.metadata())) {
+            prepared.request = requestWithCacheValidators(request, context.m_staleEntry.metadata());
+            context.m_revalidation = true;
         }
-        return QByteArray();
-    };
-
-    const QByteArray currentValue = headerValue(current);
-    if (currentValue.isEmpty()) {
-        return true;
     }
-    const QByteArray cachedValue = headerValue(cached);
-    return !cachedValue.isEmpty() && cachedValue == currentValue;
+    return prepared;
 }
 
-[[nodiscard]] bool headMetadataMatchesCachedEntity(const QMap<QByteArray, QByteArray> &cachedHeaders,
-                                                   const QMap<QByteArray, QByteArray> &headHeaders)
+QCNetworkCacheRequestKey QCReplyCache::requestKey(const QCNetworkRequest &request,
+                                                  HttpMethod method,
+                                                  bool managerUsesCookies) const
 {
-    return cachedHeaderMatchesIfPresent(cachedHeaders,
-                                        headHeaders,
-                                        QCurl::httpheaders::kETag.toLower())
-           && cachedHeaderMatchesIfPresent(cachedHeaders,
-                                           headHeaders,
-                                           QCurl::httpheaders::kLastModified.toLower())
-           && cachedHeaderMatchesIfPresent(cachedHeaders,
-                                           headHeaders,
-                                           QCurl::httpheaders::kContentLength.toLower());
+    return m_keyInitialized ? m_key : buildCacheRequestKey(request, method, managerUsesCookies);
 }
 
-void storeGetResponse(QCNetworkReplyPrivate *reply,
-                      QCNetworkCache *cache,
-                      const QCNetworkCacheRequestKey &key)
+ReplyCacheExecutionDecision QCReplyCache::lookupForExecution(const QCNetworkRequest &request,
+                                                             bool cacheAvailable)
 {
-    if (reply->transferState->cacheBodyLimit < 0 || reply->httpStatusCode != 200
-        || reply->cacheBodyBuffer.size() > cache->maxCacheSize()
-        || !responseHeadersAreCacheable(reply->finalHeaderList)
-        || (key.hasAuthenticationContext() && key.cachePartitionKey().isEmpty())) {
-        return;
+    if (!cacheAvailable) {
+        return {};
     }
-
-    QCNetworkCacheMetadata metadata = buildCacheMetadata(key,
-                                                         reply->httpStatusCode,
-                                                         reply->finalHeaderList,
-                                                         reply->durationMs);
-    cache->insert(key, reply->cacheBodyBuffer, metadata);
-}
-
-void updateGetMetadataFromHead(QCNetworkReplyPrivate *reply,
-                               QCNetworkCache *cache,
-                               const QCNetworkCacheRequestKey &key,
-                               const QMap<QByteArray, QByteArray> &headers)
-{
-    if (reply->httpStatusCode != 200 || !responseHeadersAreCacheable(reply->finalHeaderList)) {
-        return;
-    }
-
-    QCNetworkCacheLookupResult existing = reply->staleCacheEntry;
-    if (!existing.hit()) {
-        existing = cache->lookup(key, QCNetworkCacheReadMode::AllowStale);
-    }
-    if (!existing.hit()) {
-        return;
-    }
-
-    const auto existingHeaders = existing.metadata().headers();
-    if (!headMetadataMatchesCachedEntity(existingHeaders, headers)) {
-        return;
-    }
-
-    const auto mergedRawHeaders     = mergeRevalidatedRawHeaders(existing.metadata().rawHeaders(),
-                                                                 reply->finalHeaderList);
-    QCNetworkCacheMetadata metadata = buildCacheMetadata(key,
-                                                         200,
-                                                         mergedRawHeaders,
-                                                         reply->durationMs);
-    cache->insert(key, existing.body(), metadata);
-}
-
-void scheduleOnlyCacheMiss(QCNetworkReply *reply, QCNetworkReplyPrivate *replyPrivate)
-{
-    QPointer<QCNetworkReply> safeReply(reply);
-    replyPrivate->setError(NetworkError::InvalidRequest,
-                           QStringLiteral("Cache miss with OnlyCache policy"));
-    QTimer::singleShot(0, reply, [safeReply, replyPrivate]() {
-        if (safeReply) {
-            Q_UNUSED(replyPrivate->setState(ReplyState::Error));
-        }
-    });
-}
-
-} // namespace
-
-void prepareReplyCacheCollection(QCNetworkReplyPrivate *reply, QCNetworkAccessManager *manager)
-{
-    reply->cacheBodyBuffer               = QByteArray();
-    reply->transferState->cacheBodyLimit = -1;
-    auto *cache                          = manager ? manager->cache() : nullptr;
-    if (!cache || reply->httpMethod != HttpMethod::Get
-        || reply->request.cachePolicy() == QCNetworkCachePolicy::OnlyNetwork
-        || requestForbidsCacheStorage(reply->request)) {
-        return;
-    }
-    const auto key = replyCacheKey(reply, manager);
-    if (!key.hasAuthenticationContext() || !key.cachePartitionKey().isEmpty()) {
-        reply->transferState->cacheBodyLimit = qMax<qint64>(0, cache->maxCacheSize());
-    }
-}
-
-bool QCNetworkReplyExecution::completeFromCache(QCNetworkReply *reply,
-                                                QCNetworkAccessManager *manager)
-{
-    auto *d               = reply->d_func();
-    QCNetworkCache *cache = manager ? manager->cache() : nullptr;
-    if (!cache) {
-        return false;
-    }
-
-    const bool requiresRevalidation = requestRequiresCacheRevalidation(d->request);
-    switch (d->request.cachePolicy()) {
+    const bool requiresRevalidation = requestRequiresCacheRevalidation(request);
+    switch (request.cachePolicy()) {
         case QCNetworkCachePolicy::OnlyNetwork:
-            return false;
+            return {};
         case QCNetworkCachePolicy::OnlyCache:
-            if (requiresRevalidation || !reply->loadFromCache(true)) {
-                scheduleOnlyCacheMiss(reply, d);
-            }
-            return true;
+            return {requiresRevalidation ? std::nullopt
+                                         : std::optional(QCNetworkCacheReadMode::AllowStale),
+                    true};
         case QCNetworkCachePolicy::PreferCache:
-            return !requiresRevalidation && reply->loadFromCache(false);
+            return {requiresRevalidation ? std::nullopt
+                                         : std::optional(QCNetworkCacheReadMode::FreshOnly),
+                    false};
         case QCNetworkCachePolicy::AlwaysCache:
-            return !requiresRevalidation && reply->loadFromCache(true);
+            return {requiresRevalidation ? std::nullopt
+                                         : std::optional(QCNetworkCacheReadMode::AllowStale),
+                    false};
         case QCNetworkCachePolicy::PreferNetwork:
-            d->fallbackToCache = true;
-            return false;
+            m_fallback = true;
+            return {};
     }
-    return false;
+    return {};
 }
 
-bool QCNetworkReplyExecution::tryPreferNetworkCacheFallback(QCNetworkReply *reply)
+qint64 QCReplyCache::collectionLimit(const QCNetworkRequest &request,
+                                     HttpMethod method,
+                                     bool managerUsesCookies,
+                                     const QCNetworkCache *cache) const
 {
-    if (!reply) {
+    if (!cache || method != HttpMethod::Get
+        || request.cachePolicy() == QCNetworkCachePolicy::OnlyNetwork
+        || requestForbidsCacheStorage(request)) {
+        return -1;
+    }
+    const auto key = requestKey(request, method, managerUsesCookies);
+    return key.hasAuthenticationContext() && key.cachePartitionKey().isEmpty()
+               ? -1
+               : qMax<qint64>(0, cache->maxCacheSize());
+}
+
+bool QCReplyCache::allowFallback(const ReplyCacheNetworkFacts &facts)
+{
+    if (!m_fallback || facts.hasHeaders || facts.downloadedBytes != 0 || facts.availableBytes != 0
+        || facts.retainedCandidateBytes != 0) {
         return false;
     }
-
-    auto *d = reply->d_func();
-    if (!d->fallbackToCache || !d->headerData.isEmpty() || d->bytesDownloaded != 0
-        || !d->bodyBuffer.isEmpty() || !d->cacheBodyBuffer.isEmpty()) {
-        return false;
-    }
-
-    d->fallbackToCache = false;
-    d->errorCode       = NetworkError::NoError;
-    d->errorMessage.clear();
-    return reply->loadFromCache(true);
-}
-
-SignalEmissionResult restoreRevalidatedCacheResponse(QCNetworkReplyPrivate *reply)
-{
-    if (!reply || !reply->cacheRevalidation || reply->httpStatusCode != 304
-        || !reply->staleCacheEntry.hit()) {
-        return SignalEmissionResult::Alive;
-    }
-
-    const QPointer<QCNetworkReply> observer(reply->qObject());
-    if (!observer) {
-        return SignalEmissionResult::Destroyed;
-    }
-
-    const QCNetworkCacheMetadata cachedMetadata = reply->staleCacheEntry.metadata();
-    const auto mergedRawHeaders     = mergeRevalidatedRawHeaders(cachedMetadata.rawHeaders(),
-                                                                 reply->finalHeaderList);
-    QCNetworkCacheMetadata metadata = buildCacheMetadata(reply->cacheRequestKey,
-                                                         cachedMetadata.statusCode(),
-                                                         mergedRawHeaders,
-                                                         reply->durationMs);
-    reply->staleCacheEntry.setMetadata(metadata);
-    reply->headerData     = responseHeaderBlock(metadata.statusCode(), mergedRawHeaders);
-    reply->httpStatusCode = metadata.statusCode();
-    reply->parseHeaders();
-
-    if (reply->httpMethod == HttpMethod::Get) {
-        reply->bodyBuffer.clear();
-        reply->bodyBuffer.append(reply->staleCacheEntry.body());
-        reply->cacheBodyBuffer = reply->staleCacheEntry.body();
-        reply->bytesDownloaded = reply->staleCacheEntry.body().size();
-        if (!reply->staleCacheEntry.body().isEmpty()) {
-            return emitReplySignal(observer, [](QCNetworkReply *q) { Q_EMIT q->readyRead(); });
-        }
-    }
-    return SignalEmissionResult::Alive;
-}
-
-void storeReplyInCache(QCNetworkReplyPrivate *reply)
-{
-    if (!reply || reply->errorCode != NetworkError::NoError) {
-        return;
-    }
-
-    QCNetworkReply *q     = reply->qObject();
-    auto *manager         = q ? qobject_cast<QCNetworkAccessManager *>(q->parent()) : nullptr;
-    QCNetworkCache *cache = manager ? manager->cache() : nullptr;
-    if (!cache || reply->request.cachePolicy() == QCNetworkCachePolicy::OnlyNetwork
-        || requestForbidsCacheStorage(reply->request)) {
-        return;
-    }
-
-    const auto key     = replyCacheKey(reply, manager);
-    const auto headers = reply->parsedResponseHeaders();
-    if (reply->httpMethod == HttpMethod::Get) {
-        storeGetResponse(reply, cache, key);
-    } else if (reply->httpMethod == HttpMethod::Head) {
-        updateGetMetadataFromHead(reply, cache, key, headers);
-    }
-}
-
-} // namespace QCurl::Internal
-
-namespace QCurl {
-namespace {
-
-[[nodiscard]] bool cacheReplayHeaderIsForbidden(const QByteArray &name)
-{
-    const QByteArray normalized = name.trimmed().toLower();
-    return normalized == QCurl::httpheaders::kSetCookie.toLower()
-           || normalized == QByteArrayLiteral("set-cookie2")
-           || normalized == QCurl::httpheaders::kAuthorization.toLower()
-           || normalized == QCurl::httpheaders::kProxyAuthorization.toLower();
-}
-
-[[nodiscard]] QByteArray cacheResponseHeaderBlock(const QCNetworkCacheMetadata &metadata)
-{
-    QByteArray headerBlock      = QByteArrayLiteral("HTTP/1.1 ")
-                                  + QByteArray::number(metadata.statusCode())
-                                  + QByteArrayLiteral(" Cached\r\n");
-    const auto rawHeaders       = metadata.rawHeaders();
-    const QByteArray currentAge = QByteArray::number(metadata.currentAgeSeconds());
-    bool ageWritten             = false;
-    for (const auto &[name, value] : rawHeaders) {
-        if (cacheReplayHeaderIsForbidden(name)) {
-            continue;
-        }
-        const bool isAge = QByteArrayView(name).compare(QByteArrayView("age"), Qt::CaseInsensitive)
-                           == 0;
-        headerBlock += name + QByteArrayLiteral(": ") + (isAge ? currentAge : value)
-                       + QByteArrayLiteral("\r\n");
-        ageWritten = ageWritten || isAge;
-    }
-    if (!ageWritten) {
-        headerBlock += QByteArrayLiteral("Age: ") + currentAge + QByteArrayLiteral("\r\n");
-    }
-    return headerBlock + QByteArrayLiteral("\r\n");
-}
-
-} // namespace
-
-bool QCNetworkReply::loadFromCache(bool ignoreExpiry)
-{
-    Q_D(QCNetworkReply);
-
-    QCNetworkAccessManager *manager = qobject_cast<QCNetworkAccessManager *>(parent());
-    QCNetworkCache *cache           = manager ? manager->cache() : nullptr;
-    if (!cache) {
-        return false;
-    }
-
-    const bool managerUsesCookies = manager->shareHandleConfig().shareCookies()
-                                    || !manager->cookieFilePath().isEmpty();
-    const auto key                = d->cacheRequestKeyInitialized
-                                        ? d->cacheRequestKey
-                                        : Internal::buildCacheRequestKey(d->request,
-                                                                         d->httpMethod,
-                                                                         managerUsesCookies);
-    const auto mode               = ignoreExpiry ? QCNetworkCacheReadMode::AllowStale
-                                                 : QCNetworkCacheReadMode::FreshOnly;
-    const auto cached             = cache->lookup(key, mode);
-    if (!cached.hit()) {
-        return false;
-    }
-
-    d->diagnosticCurlCode = 0;
-    const auto meta       = cached.metadata();
-    const QByteArray data = d->httpMethod == HttpMethod::Head ? QByteArray() : cached.body();
-
-    d->httpStatusCode = meta.statusCode();
-    d->bodyBuffer.append(data);
-    d->cacheBodyBuffer = data;
-    d->headerData      = cacheResponseHeaderBlock(meta);
-    d->parseHeaders();
-    d->errorCode = NetworkError::NoError;
-
-    const bool hasBody = !data.isEmpty();
-    QPointer<QCNetworkReply> safeThis(this);
-    QTimer::singleShot(0, this, [safeThis, hasBody]() {
-        if (!safeThis) {
-            return;
-        }
-
-        auto *d = safeThis->d_func();
-        if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error
-            || d->state == ReplyState::Finished) {
-            return;
-        }
-
-        if (hasBody) {
-            if (Internal::emitReplySignal(safeThis,
-                                          [](QCNetworkReply *reply) { Q_EMIT reply->readyRead(); })
-                == Internal::SignalEmissionResult::Destroyed) {
-                return;
-            }
-        }
-        Q_UNUSED(d->setState(ReplyState::Finished));
-    });
-
+    m_fallback = false;
     return true;
 }
 
-} // namespace QCurl
+} // namespace QCurl::Internal

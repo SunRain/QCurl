@@ -1,12 +1,11 @@
 #include "QCNetworkAccessManager.h"
 
 #include "QCNetworkAccessManager_p.h"
-#include "QCNetworkCachePolicy.h"
 #include "QCNetworkMiddleware.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkRequest.h"
-#include "private/QCNetworkCacheIntegration_p.h"
+#include "private/QCNetworkReplyCache_p.h"
 #include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkRequestScheduler_p.h"
 #include "private/QCThreading_p.h"
@@ -216,29 +215,13 @@ QCNetworkReply *QCNetworkAccessManagerPrivate::createCacheAwareReply(
     const QByteArray &body)
 {
     const bool managerUsesCookies = shareHandleConfig.shareCookies() || !cookieFilePath.isEmpty();
-    const QCNetworkCacheRequestKey cacheKey = Internal::buildCacheRequestKey(request,
-                                                                             method,
-                                                                             managerUsesCookies);
-    QCNetworkRequest effectiveRequest       = request;
-    QCNetworkCacheLookupResult staleEntry;
-    bool cacheRevalidation = false;
-    if (cache && request.cachePolicy() == QCNetworkCachePolicy::PreferCache
-        && (method == HttpMethod::Get || method == HttpMethod::Head)) {
-        staleEntry = cache->lookup(cacheKey, QCNetworkCacheReadMode::AllowStale);
-        if (staleEntry.status() == QCNetworkCacheLookupStatus::StaleHit
-            && Internal::cacheMetadataHasValidator(staleEntry.metadata())) {
-            effectiveRequest = Internal::requestWithCacheValidators(request, staleEntry.metadata());
-            cacheRevalidation = true;
-        }
-    }
-
-    auto *reply = createReply(effectiveRequest, method, requestBodySource, body, q_func());
+    auto prepared                 = Internal::QCReplyCache::prepareRequest(request,
+                                                                           method,
+                                                                           managerUsesCookies,
+                                                                           cache.data());
+    auto *reply = createReply(prepared.request, method, requestBodySource, body, q_func());
     if (reply) {
-        auto *replyPrivate                       = reply->d_func();
-        replyPrivate->cacheRequestKey            = cacheKey;
-        replyPrivate->cacheRequestKeyInitialized = true;
-        replyPrivate->staleCacheEntry            = staleEntry;
-        replyPrivate->cacheRevalidation          = cacheRevalidation;
+        reply->d_func()->cache = std::move(prepared.cache);
     }
     return reply;
 }
@@ -294,10 +277,7 @@ void QCNetworkAccessManagerPrivate::applyReplyDefaults(QCNetworkReply *reply) co
     replyPrivate->logger            = logger;
     replyPrivate->debugTraceEnabled = debugTraceEnabled;
 
-    if (cookieModeFlag != QCNetworkAccessManager::NotOpen && !cookieFilePath.isEmpty()) {
-        replyPrivate->cookieFilePath = cookieFilePath;
-        replyPrivate->cookieMode     = cookieModeFlag;
-    }
+    replyPrivate->transferState->configuration.inheritCookieFile(cookieModeFlag, cookieFilePath);
 }
 
 void QCNetworkAccessManagerPrivate::prepareManagedReply(QCNetworkReply *reply,

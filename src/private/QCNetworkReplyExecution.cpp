@@ -31,16 +31,16 @@ void QCNetworkReply::execute()
 void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
 {
     auto *d = reply->d_func();
-    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
+    if (d->transferState->lifecycle.state() == ReplyState::Running
+        || d->transferState->lifecycle.state() == ReplyState::Paused) {
         qWarning() << "QCNetworkReply::execute() called while already running";
         return;
     }
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
-        || d->state == ReplyState::Error) {
+    if (d->transferState->lifecycle.isTerminal()) {
         return;
     }
 
-    if (d->errorCode != NetworkError::NoError) {
+    if (d->transferState->lifecycle.error() != NetworkError::NoError) {
         Q_UNUSED(d->setState(ReplyState::Error));
         return;
     }
@@ -60,7 +60,8 @@ void Internal::QCNetworkReplyExecution::run(QCNetworkReply *reply)
              << QCNetworkLogRedaction::redactUrl(d->request.url(),
                                                  d->request.diagnosticQueryPolicy());
     // stateChanged 的同步槽可取消请求；admission 前必须重新确认状态。
-    if (d->state != ReplyState::Running && d->state != ReplyState::Paused) {
+    if (d->transferState->lifecycle.state() != ReplyState::Running
+        && d->transferState->lifecycle.state() != ReplyState::Paused) {
         return;
     }
     auto result = QCCurlMultiManager::instance()->admitHttpReply(std::move(d->curlManager),
@@ -118,7 +119,7 @@ void Internal::QCNetworkReplyExecution::consumeAdmission(
         }
         d->transferToken = 0;
     }
-    d->capabilityWarnings.append(result.warnings);
+    d->transferState->lifecycle.appendWarnings(result.warnings);
     if (accepted) {
         return;
     }

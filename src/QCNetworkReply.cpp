@@ -3,7 +3,6 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkReply_p.h"
-#include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 #include "private/QCRequestPipeline_p.h"
@@ -25,67 +24,13 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
                                              const QByteArray &body)
     : request(req)
     , httpMethod(method)
-    , transferState(QSharedPointer<QCNetworkReplyTransferState>::create(req.url(),
-                                                                        req.diagnosticQueryPolicy()))
-    , curlPlan(transferState->curlPlan)
-    , bodyBuffer(transferState->bodyBuffer)
-    , cacheBodyBuffer(transferState->cacheBodyBuffer)
-    , headerData(transferState->headerData)
-    , finalHeaderList(transferState->finalHeaderList)
-    , finalHeaderMap(transferState->finalHeaderMap)
-    , state(transferState->state)
-    , errorCode(NetworkError::NoError)
-    , httpStatusCode(transferState->httpStatusCode)
-    , userPauseMask(transferState->userPauseMask)
-    , internalPauseMask(transferState->internalPauseMask)
-    , appliedPauseMask(transferState->appliedPauseMask)
-    , backpressureLimitBytes(transferState->backpressureLimitBytes)
-    , backpressureResumeBytes(transferState->backpressureResumeBytes)
-    , backpressurePeakBufferedBytes(transferState->backpressurePeakBufferedBytes)
-    , backpressureActive(transferState->backpressureActive)
-    , uploadSendPaused(transferState->uploadSendPaused)
-    , bytesDownloaded(transferState->bytesDownloaded)
-    , bytesUploaded(transferState->bytesUploaded)
-    , downloadTotal(transferState->downloadTotal)
-    , uploadTotal(transferState->uploadTotal)
-    , attemptCount(0)
+    , transferState(QSharedPointer<QCNetworkReplyTransferState>::create(
+          Internal::compileRequest(Internal::normalizeRequest(req, method, requestBodySource))))
     , logger(transferState->logger)
     , debugTraceEnabled(transferState->debugTraceEnabled)
-    , cookieFilePath(transferState->cookieFilePath)
-    , cookieMode(transferState->cookieMode)
-    , hstsCachePathBytes(transferState->hstsCachePathBytes)
-    , altSvcCachePathBytes(transferState->altSvcCachePathBytes)
-    , proxyHostBytes(transferState->proxyHostBytes)
-    , proxyUserBytes(transferState->proxyUserBytes)
-    , proxyPasswordBytes(transferState->proxyPasswordBytes)
-    , proxyEnvironmentDisabled(transferState->proxyEnvironmentDisabled)
-    , httpAuthUserBytes(transferState->httpAuthUserBytes)
-    , httpAuthPasswordBytes(transferState->httpAuthPasswordBytes)
-    , refererBytes(transferState->refererBytes)
-    , acceptEncodingBytes(transferState->acceptEncodingBytes)
-    , interfaceBytes(transferState->interfaceBytes)
-    , dnsServersBytes(transferState->dnsServersBytes)
-    , dohUrlBytes(transferState->dohUrlBytes)
-    , resolveSlist(transferState->resolveSlist)
-    , connectToSlist(transferState->connectToSlist)
-    , allowedProtocolsBytes(transferState->allowedProtocolsBytes)
-    , allowedRedirectProtocolsBytes(transferState->allowedRedirectProtocolsBytes)
-    , requestBodySource(transferState->requestBodySource)
     , q_ptr(q)
 {
     Q_UNUSED(body);
-    curlPlan = Internal::compileRequest(Internal::normalizeRequest(req, method, requestBodySource));
-
-    const qint64 limitBytes = request.backpressureLimitBytes();
-    if (limitBytes > 0) {
-        backpressureLimitBytes   = limitBytes;
-        const qint64 resumeBytes = request.backpressureResumeBytes();
-        if (resumeBytes > 0 && resumeBytes < limitBytes) {
-            backpressureResumeBytes = resumeBytes;
-        } else {
-            backpressureResumeBytes = limitBytes / 2;
-        }
-    }
 }
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
@@ -108,7 +53,8 @@ void QCNetworkReplyPrivate::finishPoolRequest()
     if (poolRequestActive) {
         poolRequestActive = false;
         Internal::QCNetworkConnectionPoolManagerInternal::recordRequestCompleted(
-            state == ReplyState::Finished ? curlManager.handle() : nullptr);
+            transferState->lifecycle.state() == ReplyState::Finished ? curlManager.handle()
+                                                                     : nullptr);
     }
 }
 
@@ -141,12 +87,12 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
     setProperty(Internal::kTestCurlPlanDigestProperty,
-                Internal::buildCurlPlanDigestForTest(d->curlPlan));
+                Internal::buildCurlPlanDigestForTest(d->transferState->configuration.plan()));
 #endif
 
     // 配置 curl 选项
     if (!d->configureCurlOptions()) {
-        if (d->errorCode == NetworkError::NoError) {
+        if (d->transferState->lifecycle.error() == NetworkError::NoError) {
             d->setError(NetworkError::InvalidRequest,
                         QStringLiteral("Failed to configure curl options"));
         }
@@ -167,11 +113,11 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
     Q_D(QCNetworkReply);
 
     setProperty(Internal::kTestCurlPlanDigestProperty,
-                Internal::buildCurlPlanDigestForTest(d->curlPlan));
+                Internal::buildCurlPlanDigestForTest(d->transferState->configuration.plan()));
 
     // 配置 curl 选项
     if (!d->configureCurlOptions()) {
-        if (d->errorCode == NetworkError::NoError) {
+        if (d->transferState->lifecycle.error() == NetworkError::NoError) {
             d->setError(NetworkError::InvalidRequest,
                         QStringLiteral("Failed to configure curl options"));
         }
@@ -199,7 +145,8 @@ QCNetworkReply::~QCNetworkReply()
     Q_D(QCNetworkReply);
 
     // 如果正在运行，先取消
-    if (d->state == ReplyState::Running || d->state == ReplyState::Paused) {
+    if (d->transferState->lifecycle.state() == ReplyState::Running
+        || d->transferState->lifecycle.state() == ReplyState::Paused) {
         setProperty(Internal::replyproperties::kDestroying, true);
         cancel();
     }

@@ -19,8 +19,8 @@
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
 #include "QCNetworkRetryPolicy.h"
-#include "private/QCNetworkRetryDecision_p.h"
 #include "private/QCNetworkRetryPolicy_p.h"
+#include "private/QCReplyRetry_p.h"
 #include "qcnetwork_managed_reply_wait_helper.h"
 #include "test_httpbin_env.h"
 
@@ -205,10 +205,7 @@ void TestQCNetworkRetry::testRetryPolicyFactoryMethods()
 void TestQCNetworkRetry::testRetryPolicyValidatedFactoryAndCopyDetach()
 {
     QCNetworkRetryPolicy policy;
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
-                                             std::chrono::milliseconds(250),
-                                             1.5,
-                                             &policy),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2, std::chrono::milliseconds(250), 1.5, &policy),
              QCNetworkRetryPolicy::UpdateResult::Applied);
     QCOMPARE(policy.maxRetries(), 2);
     QCOMPARE(policy.initialDelay().count(), 250);
@@ -254,7 +251,8 @@ void TestQCNetworkRetry::testRetryPolicyShouldRetry()
 {
     QCNetworkRetryPolicy policy;
     QCOMPARE(policy.setMaxRetries(3), QCNetworkRetryPolicy::UpdateResult::Applied);
-    policy.setRetryableErrors({NetworkError::ConnectionTimeout, NetworkError::HttpServiceUnavailable});
+    policy.setRetryableErrors(
+        {NetworkError::ConnectionTimeout, NetworkError::HttpServiceUnavailable});
 
     // 测试可重试错误
     QVERIFY(policy.shouldRetry(NetworkError::ConnectionTimeout, 0));
@@ -282,8 +280,7 @@ void TestQCNetworkRetry::testRetryPolicyRejectsInvalidValues()
     QCOMPARE(policy.maxRetries(), 0);
     QCOMPARE(policy.setMaxRetries(2), UpdateResult::Applied);
 
-    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(-1)),
-             UpdateResult::InvalidArgument);
+    QCOMPARE(policy.setInitialDelay(std::chrono::milliseconds(-1)), UpdateResult::InvalidArgument);
     QCOMPARE(policy.initialDelay().count(), 1000);
     QCOMPARE(policy.setMaxDelay(std::chrono::milliseconds(-1)), UpdateResult::InvalidArgument);
     QCOMPARE(policy.maxDelay().count(), 30000);
@@ -307,22 +304,16 @@ void TestQCNetworkRetry::testRetryPolicyValidatedFactory()
 {
     using UpdateResult = QCNetworkRetryPolicy::UpdateResult;
 
-    QCNetworkRetryPolicy output = QCNetworkRetryPolicy::aggressiveRetry();
+    QCNetworkRetryPolicy output         = QCNetworkRetryPolicy::aggressiveRetry();
     const QCNetworkRetryPolicy original = output;
 
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(-1,
-                                             std::chrono::milliseconds(250),
-                                             1.5,
-                                             &output),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(-1, std::chrono::milliseconds(250), 1.5, &output),
              UpdateResult::InvalidArgument);
     QCOMPARE(output.maxRetries(), original.maxRetries());
     QCOMPARE(output.initialDelay(), original.initialDelay());
     QCOMPARE(output.backoffMultiplier(), original.backoffMultiplier());
 
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
-                                             std::chrono::milliseconds(-1),
-                                             1.5,
-                                             &output),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2, std::chrono::milliseconds(-1), 1.5, &output),
              UpdateResult::InvalidArgument);
     QCOMPARE(output.maxRetries(), original.maxRetries());
 
@@ -333,16 +324,10 @@ void TestQCNetworkRetry::testRetryPolicyValidatedFactory()
              UpdateResult::InvalidArgument);
     QCOMPARE(output.maxRetries(), original.maxRetries());
 
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
-                                             std::chrono::milliseconds(250),
-                                             1.5,
-                                             nullptr),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2, std::chrono::milliseconds(250), 1.5, nullptr),
              UpdateResult::InvalidArgument);
 
-    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2,
-                                             std::chrono::milliseconds(250),
-                                             1.5,
-                                             &output),
+    QCOMPARE(QCNetworkRetryPolicy::tryCreate(2, std::chrono::milliseconds(250), 1.5, &output),
              UpdateResult::Applied);
     QCOMPARE(output.maxRetries(), 2);
     QCOMPARE(output.initialDelay(), std::chrono::milliseconds(250));
@@ -357,54 +342,23 @@ void TestQCNetworkRetry::testRetryDecisionUsesUnifiedMethodGate()
     const QCNetworkRequest getRequest(QUrl(QStringLiteral("http://example.com/get")));
     const QCNetworkRequest postRequest(QUrl(QStringLiteral("http://example.com/post")));
 
-    QVERIFY(Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                       HttpMethod::Get,
-                                                       getRequest,
-                                                       true,
-                                                       NetworkError::HttpServiceUnavailable,
-                                                       0)
-                .allowed);
-    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                        HttpMethod::Post,
-                                                        postRequest,
-                                                        true,
-                                                        NetworkError::HttpServiceUnavailable,
-                                                        0)
-                 .allowed);
-    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                        HttpMethod::Post,
-                                                        postRequest,
-                                                        true,
-                                                        NetworkError::ConnectionRefused,
-                                                        0)
-                 .allowed);
+    const Internal::QCReplyRetry retry;
+    Internal::ReplyRetryAttemptFacts facts;
+    facts.error = NetworkError::HttpServiceUnavailable;
+    QVERIFY(retry.evaluate(policy, HttpMethod::Get, getRequest, facts));
+    QVERIFY(!retry.evaluate(policy, HttpMethod::Post, postRequest, facts));
+    facts.error = NetworkError::ConnectionRefused;
+    QVERIFY(!retry.evaluate(policy, HttpMethod::Post, postRequest, facts));
 
     QCOMPARE(policy.setRetryMethodPolicy(QCNetworkRetryMethodPolicy::AllowExplicitIdempotencyKey),
              QCNetworkRetryPolicy::UpdateResult::Applied);
-    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                        HttpMethod::Post,
-                                                        postRequest,
-                                                        true,
-                                                        NetworkError::ConnectionRefused,
-                                                        0)
-                 .allowed);
+    QVERIFY(!retry.evaluate(policy, HttpMethod::Post, postRequest, facts));
 
     QCNetworkRequest keyedRequest = postRequest;
     keyedRequest.setRawHeader(QByteArrayLiteral("idempotency-key"), QByteArrayLiteral("stable-1"));
-    QVERIFY(Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                       HttpMethod::Post,
-                                                       keyedRequest,
-                                                       true,
-                                                       NetworkError::ConnectionRefused,
-                                                       0)
-                .allowed);
-    QVERIFY(!Internal::QCNetworkRetryDecision::evaluate(policy,
-                                                        HttpMethod::Post,
-                                                        keyedRequest,
-                                                        false,
-                                                        NetworkError::ConnectionRefused,
-                                                        0)
-                 .allowed);
+    QVERIFY(retry.evaluate(policy, HttpMethod::Post, keyedRequest, facts));
+    facts.bodyReplayable = false;
+    QVERIFY(!retry.evaluate(policy, HttpMethod::Post, keyedRequest, facts));
 }
 
 // ============================================================================

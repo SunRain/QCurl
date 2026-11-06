@@ -1,334 +1,171 @@
 /**
  * @file
- * @brief QCNetworkReply response header 与 attempt error 实现。
+ * @brief 统一解析原始头和最终响应块，不覆盖已提交的权威状态码。
  */
 
 #include "QCNetworkHttpHeaders.h"
-#include "QCNetworkMockHandler_p.h"
-#include "QCNetworkReply_p.h"
-#include "private/QCNetworkReplyBodySource_p.h"
-#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
-#include "private/QCNetworkReplyTransferState_p.h"
-
-#include <QDebug>
-#include <QList>
-#include <QVariant>
-
-#include <cmath>
-#include <limits>
 
 namespace QCurl::Internal {
 namespace {
 
-std::optional<std::chrono::milliseconds> retryAfterSecondsToDelay(qint64 seconds)
+QByteArray joinedSegments(const QList<QByteArray> &segments)
 {
-    if (seconds < 0) {
-        qWarning() << "QCurl ignored negative Retry-After header";
-        return std::nullopt;
+    QByteArray value;
+    for (const QByteArray &segment : segments) {
+        const QByteArray part = segment.trimmed();
+        if (!part.isEmpty()) {
+            if (!value.isEmpty()) {
+                value.append(' ');
+            }
+            value.append(part);
+        }
     }
-    if (seconds > std::numeric_limits<qint64>::max() / 1000) {
-        qWarning() << "QCurl ignored overflowing Retry-After header";
-        return std::nullopt;
-    }
-    return std::chrono::milliseconds(seconds * 1000);
+    return value;
 }
 
-std::optional<std::chrono::milliseconds> retryAfterDateToDelay(const QString &raw, std::time_t now)
+void flushHeader(QList<RawHeaderPair> &headers,
+                 const QByteArray &name,
+                 const QList<QByteArray> &segments)
 {
-    const QByteArray dateBytes = raw.toUtf8();
-    const std::time_t parsed   = curl_getdate(dateBytes.constData(), nullptr);
-    if (parsed < 0) {
-        qWarning() << "QCurl ignored invalid Retry-After HTTP-date";
-        return std::nullopt;
+    if (!name.isEmpty()) {
+        headers.append({name, joinedSegments(segments)});
     }
-    if (parsed <= now) {
-        return std::chrono::milliseconds(0);
-    }
-    const long double delta = static_cast<long double>(parsed) - static_cast<long double>(now);
-    if (!std::isfinite(delta)
-        || delta > static_cast<long double>(std::numeric_limits<qint64>::max()) / 1000.0L) {
-        qWarning() << "QCurl ignored overflowing Retry-After HTTP-date";
-        return std::nullopt;
-    }
-    return std::chrono::milliseconds(static_cast<qint64>(delta * 1000.0L));
 }
 
-std::optional<qint64> parseContentRangeCompleteSize(const QByteArray &headerValue)
+void parseStatusLine(const QByteArray &line, int *status)
 {
-    const QByteArray trimmed = headerValue.trimmed();
-    const QByteArray prefix  = QByteArrayLiteral("bytes */");
-    if (!trimmed.startsWith(prefix)) {
-        return std::nullopt;
-    }
-
-    bool ok                = false;
-    const qint64 totalSize = trimmed.mid(prefix.size()).toLongLong(&ok);
-    if (!ok || totalSize < 0) {
-        return std::nullopt;
-    }
-    return totalSize;
-}
-
-void clearParsedHeaders(QCNetworkReplyTransferState *state)
-{
-    state->finalHeaderList.clear();
-    state->finalHeaderMap.clear();
-}
-
-void flushCurrentHeader(QCNetworkReplyTransferState *state,
-                        const QByteArray &name,
-                        const QList<QByteArray> &segments)
-{
-    if (name.isEmpty()) {
+    if (!status) {
         return;
     }
+    const auto parts = line.split(' ');
+    if (parts.size() >= 2) {
+        bool ok          = false;
+        const int parsed = parts.at(1).trimmed().toInt(&ok);
+        if (ok) {
+            *status = parsed;
+        }
+    }
+}
 
-    QByteArray value;
-    for (const QByteArray &seg : segments) {
-        const QByteArray part = seg.trimmed();
-        if (part.isEmpty()) {
+QList<RawHeaderPair> parseHeaderPairs(const QByteArray &data, bool finalOnly, int *status)
+{
+    QList<RawHeaderPair> headers;
+    QByteArray name;
+    QList<QByteArray> segments;
+    for (QByteArray line : data.split('\n')) {
+        if (line.endsWith('\r')) {
+            line.chop(1);
+        }
+        if (line.isEmpty() || line.startsWith("HTTP/")) {
+            flushHeader(headers, name, segments);
+            name.clear();
+            segments.clear();
+            if (line.startsWith("HTTP/")) {
+                if (finalOnly) {
+                    headers.clear();
+                }
+                parseStatusLine(line, status);
+            }
             continue;
         }
-        if (!value.isEmpty()) {
-            value.append(' ');
+        if (!name.isEmpty() && (line.startsWith(' ') || line.startsWith('\t'))) {
+            segments.append(line);
+            continue;
         }
-        value.append(part);
+        const qsizetype colon = line.indexOf(':');
+        if (colon > 0) {
+            flushHeader(headers, name, segments);
+            name     = line.first(colon).trimmed();
+            segments = {line.sliced(colon + 1)};
+        }
     }
-
-    state->finalHeaderList.append(qMakePair(name, value));
-    state->finalHeaderMap.insert(name.trimmed().toLower(), value);
-}
-
-void parseStatusLine(QCNetworkReplyTransferState *state, const QByteArray &line)
-{
-    const QList<QByteArray> parts = line.split(' ');
-    if (parts.size() < 2) {
-        return;
-    }
-
-    bool ok                = false;
-    const int parsedStatus = parts.at(1).trimmed().toInt(&ok);
-    if (ok) {
-        state->httpStatusCode = parsedStatus;
-    }
-}
-
-void applyBodySourceErrorOverride(QCNetworkReplyPrivate *reply, ReplyAttemptErrorInfo *info)
-{
-    if (!hasReplyBodySourceError(reply->requestBodySource)) {
-        return;
-    }
-
-    info->error   = replyBodySourceErrorCode(reply->requestBodySource);
-    info->message = replyBodySourceErrorMessage(reply->requestBodySource);
-}
-
-void applySendFailRewindOverride(QCNetworkReplyPrivate *reply,
-                                 CURLcode curlCode,
-                                 ReplyAttemptErrorInfo *info)
-{
-#if defined(CURLE_SEND_FAIL_REWIND)
-    if (curlCode != CURLE_SEND_FAIL_REWIND || !reply->requestBodySource.device) {
-        return;
-    }
-    if (hasReplyBodySourceError(reply->requestBodySource)) {
-        return;
-    }
-
-    info->error   = NetworkError::InvalidRequest;
-    info->message = QStringLiteral("request body source: 无法重发 body（seek/rewind 失败：%1）")
-                        .arg(QString::fromUtf8(curl_easy_strerror(curlCode)));
-#else
-    Q_UNUSED(reply);
-    Q_UNUSED(curlCode);
-    Q_UNUSED(info);
-#endif
-}
-
-bool isSatisfiedRangeCompletion(QCNetworkReplyPrivate *reply)
-{
-    parseReplyHeaders(reply);
-
-    const QVariant existingSizeVar = reply->qObject()->property(
-        Internal::replyproperties::kResumableExistingSize);
-    bool ok                   = false;
-    const qint64 existingSize = existingSizeVar.toLongLong(&ok);
-    const auto completeSize   = parseContentRangeCompleteSize(
-        reply->finalHeaderMap.value(QCurl::httpheaders::kContentRange.toLower()));
-    return ok && existingSize >= 0 && completeSize.has_value()
-           && completeSize.value() == existingSize;
+    flushHeader(headers, name, segments);
+    return headers;
 }
 
 } // namespace
 
-std::optional<std::chrono::milliseconds> parseReplyRetryAfterDelay(
-    const QList<RawHeaderPair> &headers, std::time_t now)
+void QCReplyResponse::appendHeaders(QByteArrayView bytes)
 {
-    for (const RawHeaderPair &header : headers) {
-        if (header.first.compare(httpheaders::kRetryAfter, Qt::CaseInsensitive) != 0) {
-            continue;
-        }
-        const QString raw = QString::fromUtf8(header.second).trimmed();
-        if (raw.isEmpty()) {
-            qWarning() << "QCurl ignored empty Retry-After header";
-            return std::nullopt;
-        }
-        bool ok              = false;
-        const qint64 seconds = raw.toLongLong(&ok);
-        return ok ? retryAfterSecondsToDelay(seconds) : retryAfterDateToDelay(raw, now);
+    m_headerData.append(bytes.data(), bytes.size());
+    if (m_headerData.endsWith("\r\n\r\n") || m_headerData.endsWith("\n\n")) {
+        parseHeaders();
     }
-    return std::nullopt;
 }
 
-void parseReplyHeaders(QCNetworkReplyPrivate *reply)
+void QCReplyResponse::parseHeaders()
 {
-    if (!reply) {
+    int parsedStatus = m_status;
+    m_finalHeaders   = parseHeaderPairs(m_headerData, true, &parsedStatus);
+    m_finalHeaderMap.clear();
+    for (const auto &[name, value] : m_finalHeaders) {
+        m_finalHeaderMap.insert(name.trimmed().toLower(), value);
+    }
+    // CONNECT 拒绝时 RESPONSE_CODE=0；原始头的 403 不能替换 completion 的事实。
+    if (!m_authoritativeStatus) {
+        m_status = parsedStatus;
+    }
+}
+
+void QCReplyResponse::commitStatus(int status)
+{
+    m_status              = status;
+    m_authoritativeStatus = true;
+}
+
+QByteArray QCReplyResponse::rawHeader(const QByteArray &name) const
+{
+    return m_finalHeaderMap.value(name.trimmed().toLower());
+}
+
+bool QCReplyResponse::hasRawHeader(const QByteArray &name) const
+{
+    return m_finalHeaderMap.contains(name.trimmed().toLower());
+}
+
+QMap<QByteArray, QByteArray> QCReplyResponse::parsedResponseHeaders() const
+{
+    QMap<QByteArray, QByteArray> headers;
+    // 此查询保留旧接口对所有原始块及字段名的语义，最终块查询另由 rawHeaders 提供。
+    for (const auto &[name, value] : parseHeaderPairs(m_headerData, false, nullptr)) {
+        headers.insert(name, value);
+    }
+    return headers;
+}
+
+bool QCReplyResponse::rangeAlreadyComplete(qint64 existingSize) const
+{
+    const QByteArray value  = rawHeader(httpheaders::kContentRange).trimmed();
+    const QByteArray prefix = QByteArrayLiteral("bytes */");
+    if (existingSize < 0 || !value.startsWith(prefix)) {
+        return false;
+    }
+    bool ok            = false;
+    const qint64 total = value.sliced(prefix.size()).toLongLong(&ok);
+    return ok && total >= 0 && total == existingSize;
+}
+
+void QCReplyResponse::applyReplayHeaders(const QMap<QByteArray, QByteArray> &headers,
+                                         const std::optional<QByteArray> &rawHeaders)
+{
+    if (rawHeaders) {
+        m_headerData = *rawHeaders;
         return;
     }
-
-    // 完成、重试及缓存路径已取得权威状态码；重解析头只能更新头集合。
-    // CONNECT 被代理拒绝时，原生 RESPONSE_CODE 为 0，不能用代理的 403 覆盖它。
-    const int responseCode = reply->httpStatusCode;
-    parseReplyHeaders(reply->transferState.data());
-    reply->httpStatusCode = responseCode;
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        m_headerData.append(it.key());
+        m_headerData.append(": ");
+        m_headerData.append(it.value());
+        m_headerData.append('\n');
+    }
 }
 
-void parseReplyHeaders(QCNetworkReplyTransferState *state)
+void QCReplyResponse::applyResponseHeaders(int status, const QByteArray &headers)
 {
-    if (!state) {
-        return;
-    }
-
-    clearParsedHeaders(state);
-
-    QByteArray currentName;
-    QList<QByteArray> currentSegments;
-    const QList<QByteArray> lines = state->headerData.split('\n');
-
-    for (QByteArray line : lines) {
-        if (line.endsWith('\r')) {
-            line.chop(1);
-        }
-        if (line.isEmpty()) {
-            flushCurrentHeader(state, currentName, currentSegments);
-            currentName.clear();
-            currentSegments.clear();
-            continue;
-        }
-        if (line.startsWith("HTTP/")) {
-            flushCurrentHeader(state, currentName, currentSegments);
-            clearParsedHeaders(state);
-            currentName.clear();
-            currentSegments.clear();
-            parseStatusLine(state, line);
-            continue;
-        }
-
-        const bool isContinuation = !currentName.isEmpty()
-                                    && (line.startsWith(' ') || line.startsWith('\t'));
-        if (isContinuation) {
-            currentSegments.append(line);
-            continue;
-        }
-
-        const int colonPos = line.indexOf(':');
-        if (colonPos <= 0) {
-            continue;
-        }
-
-        flushCurrentHeader(state, currentName, currentSegments);
-        currentName = line.left(colonPos).trimmed();
-        currentSegments.clear();
-        currentSegments.append(line.mid(colonPos + 1));
-    }
-
-    flushCurrentHeader(state, currentName, currentSegments);
-}
-
-size_t headerReplyCurlCallback(char *ptr,
-                               size_t size,
-                               size_t nmemb,
-                               QCNetworkReplyTransferState *state)
-{
-    if (!state) {
-        return 0;
-    }
-
-    const size_t totalSize = size * nmemb;
-    state->headerData.append(ptr, static_cast<int>(totalSize));
-    if (state->headerData.endsWith(QByteArrayLiteral("\r\n\r\n"))
-        || state->headerData.endsWith(QByteArrayLiteral("\n\n"))) {
-        parseReplyHeaders(state);
-    }
-
-    return totalSize;
-}
-
-ReplyAttemptErrorInfo attemptErrorFromCurlAndHttp(QCNetworkReplyPrivate *reply,
-                                                  CURLcode curlCode,
-                                                  long httpCode)
-{
-    if (!reply) {
-        return {};
-    }
-
-    reply->httpStatusCode = static_cast<int>(httpCode);
-    ReplyAttemptErrorInfo info;
-    if (curlCode != CURLE_OK) {
-        info.error   = fromCurlCode(static_cast<int>(curlCode));
-        info.message = QString::fromUtf8(curl_easy_strerror(curlCode));
-        applySendFailRewindOverride(reply, curlCode, &info);
-    } else if (httpCode == 416 && !isSatisfiedRangeCompletion(reply)) {
-        info.error   = fromHttpCode(httpCode);
-        info.message = QStringLiteral("HTTP error %1").arg(httpCode);
-    } else if (httpCode >= 400 && httpCode != 416) {
-        info.error   = fromHttpCode(httpCode);
-        info.message = QStringLiteral("HTTP error %1").arg(httpCode);
-    }
-
-    applyBodySourceErrorOverride(reply, &info);
-    return info;
-}
-
-ReplyAttemptErrorInfo attemptErrorFromMockData(QCNetworkReplyPrivate *reply,
-                                               const QCNetworkMockData &mockData)
-{
-    if (!reply) {
-        return {};
-    }
-
-    reply->httpStatusCode = mockData.statusCode;
-    ReplyAttemptErrorInfo info;
-    if (mockData.isError && mockData.error != NetworkError::NoError) {
-        info.error   = mockData.error;
-        info.message = QCurl::errorString(info.error);
-    } else if (mockData.statusCode >= 400) {
-        info.error   = fromHttpCode(mockData.statusCode);
-        info.message = QStringLiteral("HTTP error %1").arg(mockData.statusCode);
-    }
-
-    applyBodySourceErrorOverride(reply, &info);
-    return info;
-}
-
-void applyMockResponseHeaders(QCNetworkReplyPrivate *reply, const QCNetworkMockData &mockData)
-{
-    if (!reply) {
-        return;
-    }
-
-    if (mockData.rawHeaderData.has_value()) {
-        reply->headerData = mockData.rawHeaderData.value();
-        return;
-    }
-
-    for (auto it = mockData.headers.cbegin(); it != mockData.headers.cend(); ++it) {
-        reply->headerData.append(it.key());
-        reply->headerData.append(": ");
-        reply->headerData.append(it.value());
-        reply->headerData.append('\n');
-    }
+    commitStatus(status);
+    m_headerData = headers;
+    parseHeaders();
 }
 
 } // namespace QCurl::Internal

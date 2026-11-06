@@ -4,11 +4,12 @@
  */
 
 #include "QCNetworkAccessManager.h"
-#include "QCNetworkHttpHeaders.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
 #include "QCNetworkTimeoutConfig.h"
 #include "private/QCNetworkMockProvider_p.h"
+#include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyConfigurationExecution_p.h"
 #include "private/QCNetworkReplyExecution_p.h"
 #include "private/QCNetworkReplyMockChaos_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
@@ -28,7 +29,7 @@ void captureMockRequest(const QCNetworkMockProvider &provider,
         return;
     }
 
-    const auto &normalized = reply->curlPlan.normalized;
+    const auto &normalized = reply->transferState->configuration.plan().normalized;
     const auto &body       = normalized.body;
     QCNetworkCapturedRequestSnapshot captured;
     captured.url    = normalized.request.url();
@@ -37,7 +38,7 @@ void captureMockRequest(const QCNetworkMockProvider &provider,
         captured.customMethod = body.customMethod;
     }
     captured.followLocation = normalized.request.followLocation();
-    const auto timeouts = normalized.request.timeoutConfig();
+    const auto timeouts     = normalized.request.timeoutConfig();
     if (timeouts.connectTimeout().has_value()) {
         captured.connectTimeoutMs = timeouts.connectTimeout()->count();
     }
@@ -48,37 +49,17 @@ void captureMockRequest(const QCNetworkMockProvider &provider,
         captured.headers.append({name, normalized.request.rawHeader(name)});
     }
 
-    captured.bodySize = body.hasKnownSize()
-                            ? static_cast<qsizetype>(qMax<qint64>(0, body.sizeBytes))
-                            : body.inlineBytes.size();
+    captured.bodySize      = body.hasKnownSize()
+                                 ? static_cast<qsizetype>(qMax<qint64>(0, body.sizeBytes))
+                                 : body.inlineBytes.size();
     const int previewLimit = provider.captureBodyPreviewLimit(handler);
-    captured.bodyPreview = previewLimit > 0 ? body.inlineBytes.left(previewLimit) : QByteArray();
+    captured.bodyPreview   = previewLimit > 0 ? body.inlineBytes.left(previewLimit) : QByteArray();
     provider.recordRequest(handler, captured);
-}
-
-void appendAcceptEncodingConflictWarning(QCNetworkReplyPrivate *reply)
-{
-    const auto &request = reply->curlPlan.normalized.request;
-    bool explicitHeader = false;
-    for (const QByteArray &name : request.rawHeaderList()) {
-        if (name.trimmed().toLower() == QCurl::httpheaders::kAcceptEncoding.toLower()) {
-            explicitHeader = true;
-            break;
-        }
-    }
-    if (explicitHeader
-        && (request.autoDecompressionEnabled() || !request.acceptedEncodings().isEmpty())) {
-        appendReplyCapabilityWarning(reply,
-                                     QStringLiteral(
-                                         "请求配置冲突：已显式设置 Accept-Encoding header，将忽略 "
-                                         "autoDecompression/acceptedEncodings（不会自动解压）"));
-    }
 }
 
 [[nodiscard]] bool isTerminal(const QCNetworkReplyPrivate *reply)
 {
-    return reply->state == ReplyState::Cancelled || reply->state == ReplyState::Finished
-           || reply->state == ReplyState::Error;
+    return reply->transferState->lifecycle.isTerminal();
 }
 
 SignalEmissionResult applyMockPayload(const QPointer<QCNetworkReply> &reply,
@@ -86,10 +67,11 @@ SignalEmissionResult applyMockPayload(const QPointer<QCNetworkReply> &reply,
                                       const QCNetworkMockData &mockData)
 {
     resetReplyForRetry(replyPrivate, false);
-    applyMockResponseHeaders(replyPrivate, mockData);
+    auto &response = replyPrivate->transferState->response;
+    response.applyReplayHeaders(mockData.headers, mockData.rawHeaderData);
     if (!mockData.response.isEmpty()) {
-        replyPrivate->bodyBuffer.append(mockData.response);
-        replyPrivate->bytesDownloaded = mockData.response.size();
+        response.appendBody(mockData.response);
+        replyPrivate->transferState->lifecycle.observeReplayedBody(mockData.response.size());
         if (emitReplySignal(reply, [](QCNetworkReply *observer) { Q_EMIT observer->readyRead(); })
             == SignalEmissionResult::Destroyed) {
             return SignalEmissionResult::Destroyed;
@@ -102,7 +84,15 @@ void finishMockAttempt(const QPointer<QCNetworkReply> &reply,
                        QCNetworkReplyPrivate *replyPrivate,
                        const QCNetworkMockData &mockData)
 {
-    const auto info = attemptErrorFromMockData(replyPrivate, mockData);
+    auto &lifecycle = replyPrivate->transferState->lifecycle;
+    if (lifecycle.isTerminal()) {
+        return;
+    }
+    replyPrivate->transferState->response.commitStatus(mockData.statusCode);
+    const auto info = lifecycle.classifyMockResult(mockData.isError,
+                                                   mockData.error,
+                                                   mockData.statusCode,
+                                                   replyPrivate->transferState->bodySource.failure());
     if (info.error == NetworkError::NoError) {
         Q_UNUSED(replyPrivate->setState(ReplyState::Finished));
         return;
@@ -128,9 +118,9 @@ void replayMockResponse(const QPointer<QCNetworkReply> &reply,
         return;
     }
 
-    auto *manager = qobject_cast<QCNetworkAccessManager *>(reply->parent());
+    auto *manager        = qobject_cast<QCNetworkAccessManager *>(reply->parent());
     const auto *provider = networkMockProvider();
-    void *handler = provider && manager ? provider->handlerForManager(manager) : nullptr;
+    void *handler        = provider && manager ? provider->handlerForManager(manager) : nullptr;
     if (!handler) {
         replyPrivate->setError(NetworkError::InvalidRequest, QStringLiteral("MockHandler: not set"));
         Q_UNUSED(replyPrivate->setState(ReplyState::Error));
@@ -160,28 +150,32 @@ void replayMockResponse(const QPointer<QCNetworkReply> &reply,
 bool QCNetworkReplyExecution::dispatchMock(QCNetworkReply *reply, QCNetworkAccessManager *manager)
 {
     const auto *provider = networkMockProvider();
-    void *handler = provider && manager ? provider->handlerForManager(manager) : nullptr;
+    void *handler        = provider && manager ? provider->handlerForManager(manager) : nullptr;
     if (!handler) {
         return false;
     }
 
     auto *d                = reply->d_func();
-    const auto &normalized = d->curlPlan.normalized;
+    const auto &normalized = d->transferState->configuration.plan().normalized;
     captureMockRequest(*provider, handler, d);
     if (!provider->hasMock(handler, normalized.method, normalized.request.url())) {
         return false;
     }
 
-    appendAcceptEncodingConflictWarning(d);
+    Q_UNUSED(
+        publishReplyCurlConfigurationResult(d,
+                                            d->transferState->configuration.mockConflictWarnings()));
     if (d->setState(ReplyState::Running) == SignalEmissionResult::Destroyed) {
         return true;
     }
     QPointer<QCNetworkReply> safeReply(reply);
     const HttpMethod method = normalized.method;
     const QUrl url          = normalized.request.url();
-    QTimer::singleShot(qMax(0, provider->globalDelay(handler)), reply, [safeReply, d, method, url]() {
-        replayMockResponse(safeReply, d, method, url);
-    });
+    QTimer::singleShot(qMax(0, provider->globalDelay(handler)),
+                       reply,
+                       [safeReply, d, method, url]() {
+                           replayMockResponse(safeReply, d, method, url);
+                       });
     return true;
 }
 

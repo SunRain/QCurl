@@ -7,7 +7,7 @@
 #include "QCNetworkError.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkReply_p.h"
-#include "private/QCNetworkReplyFlowControl_p.h"
+#include "private/QCNetworkReplyFlowControlExecution_p.h"
 #include "private/QCNetworkReplyProperties_p.h"
 
 #include <QMetaObject>
@@ -27,12 +27,11 @@ void QCNetworkReply::cancel()
     const QPointer<QCNetworkReply> observer(this);
 
     // 如果已经取消或已完成，不需要再操作
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
-        || d->state == ReplyState::Error) {
+    if (d->transferState->lifecycle.isTerminal()) {
         return;
     }
 
-    d->diagnosticCurlCode = 0;
+    d->transferState->lifecycle.clearNativeDiagnostic();
     if (d->transferToken != 0) {
         // 回调内取消由 manager 延迟 detach；token 保留到 completion 完成所有权回收。
         d->transferRemovalRequested = true;
@@ -46,7 +45,7 @@ void QCNetworkReply::cancel()
                 QCurl::errorString(NetworkError::OperationCancelled));
 
     if (property(Internal::replyproperties::kDestroying).toBool()) {
-        d->state = ReplyState::Cancelled;
+        d->transferState->lifecycle.cancelSilently();
         return;
     }
 
@@ -68,12 +67,11 @@ void QCNetworkReply::abortWithError(NetworkError error, const QString &message)
     Q_D(QCNetworkReply);
     const QPointer<QCNetworkReply> observer(this);
 
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Finished
-        || d->state == ReplyState::Error) {
+    if (d->transferState->lifecycle.isTerminal()) {
         return;
     }
 
-    d->diagnosticCurlCode = 0;
+    d->transferState->lifecycle.clearNativeDiagnostic();
     if (d->transferToken != 0) {
         d->transferRemovalRequested = true;
         QCCurlMultiManager::instance()->removeTransfer(d->transferToken);

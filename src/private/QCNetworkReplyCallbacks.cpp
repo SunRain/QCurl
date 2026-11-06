@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief QCNetworkReply curl callbacks 与传输 pause/backpressure 实现。
+ * @brief 将原生回调连接到生命周期、响应、请求体与流控模块。
  */
 
 #include "private/QCNetworkReplyCallbacks_p.h"
@@ -9,90 +9,42 @@
 
 #include <QByteArray>
 #include <QDebug>
+#include <QThread>
+
+#include <limits>
 
 namespace QCurl::Internal {
 namespace {
 
 thread_local int s_replyCurlCallbackDepth = 0;
 
-[[nodiscard]] bool isTerminalState(ReplyState state)
+bool callbackOnOwnerThread(const QPointer<QCNetworkReply> &observer)
 {
-    return state == ReplyState::Cancelled || state == ReplyState::Error
-           || state == ReplyState::Finished;
-}
-
-void appendReplyBody(QCNetworkReplyTransferState *state, char *ptr, size_t totalSize)
-{
-    const QByteArray chunk(ptr, static_cast<int>(totalSize));
-    state->bodyBuffer.append(chunk);
-    if (state->cacheBodyLimit >= 0) {
-        if (chunk.size() <= state->cacheBodyLimit - state->cacheBodyBuffer.size()) {
-            state->cacheBodyBuffer.append(chunk);
-        } else {
-            state->cacheBodyBuffer = QByteArray();
-            state->cacheBodyLimit  = -1;
-        }
-    }
-    state->bytesDownloaded += static_cast<qint64>(totalSize);
-}
-
-void updateBackpressurePeak(QCNetworkReplyTransferState *state)
-{
-    if (state->backpressureLimitBytes <= 0) {
-        return;
-    }
-
-    state->backpressurePeakBufferedBytes = qMax(state->backpressurePeakBufferedBytes,
-                                                state->bodyBuffer.byteAmount());
-}
-
-[[nodiscard]] bool applyCallbackPauseMask(QCNetworkReplyTransferState *state,
-                                          CURL *handle,
-                                          int desiredMask)
-{
-    if (!handle) {
-        return false;
-    }
-
-    const int normalized = desiredMask & (CURLPAUSE_RECV | CURLPAUSE_SEND);
-    if (normalized == state->appliedPauseMask) {
+    if (observer && QThread::currentThread() == observer->thread()) {
         return true;
     }
-
-    const CURLcode result = curl_easy_pause(handle, normalized == 0 ? CURLPAUSE_CONT : normalized);
-    if (result != CURLE_OK) {
-        qWarning() << "QCCurlMultiTransferRecord: curl_easy_pause failed:"
-                   << curl_easy_strerror(result) << "desiredMask=" << normalized;
-        return false;
-    }
-    state->appliedPauseMask = normalized;
-    return true;
+    qWarning() << "QCNetworkReply: callback must run on the reply owner thread";
+    return false;
 }
 
 SignalEmissionResult activateBackpressureIfNeeded(QCNetworkReplyTransferState *state,
                                                   const QPointer<QCNetworkReply> &observer,
                                                   CURL *handle)
 {
-    if (state->backpressureLimitBytes <= 0
-        || state->bodyBuffer.byteAmount() < state->backpressureLimitBytes
-        || (state->userPauseMask & CURLPAUSE_RECV)) {
-        return SignalEmissionResult::Alive;
+    const auto change = state->flow.afterReadyRead(handle,
+                                                   state->response.bytesAvailable(),
+                                                   state->lifecycle.isTerminal());
+    if (change.error != CURLE_OK) {
+        qWarning() << "QCCurlMultiTransferRecord: curl_easy_pause failed:"
+                   << curl_easy_strerror(change.error) << "desiredMask=" << change.nativeMask;
     }
-
-    const bool alreadyPaused = (state->internalPauseMask & CURLPAUSE_RECV) != 0;
-    const int desiredBase    = state->userPauseMask | state->internalPauseMask;
-    const int desiredMask    = alreadyPaused ? desiredBase : (desiredBase | CURLPAUSE_RECV);
-    if (applyCallbackPauseMask(state, handle, desiredMask) && !alreadyPaused) {
-        state->internalPauseMask |= CURLPAUSE_RECV;
-        state->backpressureActive  = true;
-        const qint64 bufferedBytes = state->bodyBuffer.byteAmount();
-        const qint64 limitBytes    = state->backpressureLimitBytes;
-        return Internal::emitReplySignal(observer,
-                                         [bufferedBytes, limitBytes](QCNetworkReply *reply) {
-                                             Q_EMIT reply->backpressureStateChanged(true,
-                                                                                    bufferedBytes,
-                                                                                    limitBytes);
-                                         });
+    if (change.backpressureChanged && !state->lifecycle.isTerminal()) {
+        const bool active  = state->flow.backpressureActive();
+        const qint64 bytes = state->response.bytesAvailable();
+        const qint64 limit = state->flow.limitBytes();
+        return emitReplySignal(observer, [active, bytes, limit](QCNetworkReply *reply) {
+            Q_EMIT reply->backpressureStateChanged(active, bytes, limit);
+        });
     }
     return SignalEmissionResult::Alive;
 }
@@ -103,14 +55,13 @@ size_t writeAsyncReplyBody(QCNetworkReplyTransferState *state,
                            char *ptr,
                            size_t totalSize)
 {
-    if ((state->userPauseMask & CURLPAUSE_RECV)
-        && ((state->appliedPauseMask & CURLPAUSE_RECV) == 0)) {
-        state->appliedPauseMask |= CURLPAUSE_RECV;
+    if (state->flow.pauseWriteIfRequested()) {
         return CURL_WRITEFUNC_PAUSE;
     }
 
-    appendReplyBody(state, ptr, totalSize);
-    updateBackpressurePeak(state);
+    state->response.appendBody(QByteArrayView(ptr, static_cast<qsizetype>(totalSize)));
+    state->lifecycle.observeBodyChunk(static_cast<qint64>(totalSize));
+    state->flow.observeBufferedBytes(state->response.bytesAvailable());
     const auto readyReadResult = Internal::emitReplySignal(observer, [](QCNetworkReply *reply) {
         Q_EMIT reply->readyRead();
     });
@@ -126,8 +77,8 @@ size_t writeAsyncReplyBody(QCNetworkReplyTransferState *state,
 SignalEmissionResult emitAsyncProgress(QCNetworkReplyTransferState *state,
                                        const QPointer<QCNetworkReply> &observer)
 {
-    const qint64 bytesDownloaded = state->bytesDownloaded;
-    const qint64 downloadTotal   = state->downloadTotal;
+    const qint64 bytesDownloaded = state->lifecycle.bytesDownloaded();
+    const qint64 downloadTotal   = state->lifecycle.downloadTotal();
     if (Internal::emitReplySignal(observer,
                                   [bytesDownloaded, downloadTotal](QCNetworkReply *reply) {
                                       Q_EMIT reply->downloadProgress(bytesDownloaded, downloadTotal);
@@ -136,8 +87,8 @@ SignalEmissionResult emitAsyncProgress(QCNetworkReplyTransferState *state,
         return SignalEmissionResult::Destroyed;
     }
 
-    const qint64 bytesUploaded = state->bytesUploaded;
-    const qint64 uploadTotal   = state->uploadTotal;
+    const qint64 bytesUploaded = state->lifecycle.bytesUploaded();
+    const qint64 uploadTotal   = state->lifecycle.uploadTotal();
     return Internal::emitReplySignal(observer, [bytesUploaded, uploadTotal](QCNetworkReply *reply) {
         Q_EMIT reply->uploadProgress(bytesUploaded, uploadTotal);
     });
@@ -160,6 +111,21 @@ bool isInReplyCurlCallback() noexcept
     return s_replyCurlCallbackDepth > 0;
 }
 
+size_t headerReplyCurlCallback(char *ptr,
+                               size_t size,
+                               size_t nmemb,
+                               QCNetworkReplyTransferState *state)
+{
+    if (!state) {
+        return 0;
+    }
+    const size_t totalSize = size * nmemb;
+    if (!state->lifecycle.isTerminal()) {
+        state->response.appendHeaders(QByteArrayView(ptr, static_cast<qsizetype>(totalSize)));
+    }
+    return totalSize;
+}
+
 size_t writeReplyCurlCallback(char *ptr,
                               size_t size,
                               size_t nmemb,
@@ -174,14 +140,51 @@ size_t writeReplyCurlCallback(char *ptr,
     }
 
     const size_t totalSize = size * nmemb;
-    if (isTerminalState(state->state)) {
+    if (state->lifecycle.isTerminal()) {
         return totalSize;
     }
-    if (!observer) {
+    if (!callbackOnOwnerThread(observer)) {
         return 0;
     }
 
     return writeAsyncReplyBody(state, observer, handle, ptr, totalSize);
+}
+
+size_t readReplyBodySourceCallback(char *ptr,
+                                   size_t size,
+                                   size_t nmemb,
+                                   QCNetworkReplyTransferState *state,
+                                   const QPointer<QCNetworkReply> &observer)
+{
+    ReplyCurlCallbackScope callbackScope;
+    if (!state || !callbackOnOwnerThread(observer) || state->lifecycle.isTerminal()) {
+        return CURL_READFUNC_ABORT;
+    }
+    const size_t capacity = size * nmemb;
+    const auto result     = state->bodySource.readInto(
+        ptr, static_cast<qint64>(qMin(capacity, size_t(std::numeric_limits<qint64>::max()))));
+    switch (result.kind) {
+        case ReplyBodyReadKind::Data:
+            return static_cast<size_t>(result.bytes);
+        case ReplyBodyReadKind::End:
+            return 0;
+        case ReplyBodyReadKind::Error:
+            return CURL_READFUNC_ABORT;
+        case ReplyBodyReadKind::Wait:
+            if (state->flow.sourceWait() && emitReplySignal(observer, [](QCNetworkReply *reply) {
+                                                Q_EMIT reply->uploadSendPausedChanged(true);
+                                            }) == SignalEmissionResult::Destroyed) {
+                return CURL_READFUNC_ABORT;
+            }
+            return CURL_READFUNC_PAUSE;
+    }
+    return CURL_READFUNC_ABORT;
+}
+
+int seekReplyBodySourceCallback(QCNetworkReplyTransferState *state, curl_off_t offset, int origin)
+{
+    return !state || state->lifecycle.isTerminal() ? CURL_SEEKFUNC_FAIL
+                                                   : state->bodySource.seek(offset, origin);
 }
 
 int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
@@ -196,17 +199,17 @@ int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
     if (!state) {
         return 1;
     }
-    if (isTerminalState(state->state)) {
+    if (state->lifecycle.isTerminal()) {
         return 0;
     }
     if (!observer) {
         return 1;
     }
 
-    state->downloadTotal   = static_cast<qint64>(dltotal);
-    state->bytesDownloaded = static_cast<qint64>(dlnow);
-    state->uploadTotal     = static_cast<qint64>(ultotal);
-    state->bytesUploaded   = static_cast<qint64>(ulnow);
+    state->lifecycle.observeNetworkProgress(static_cast<qint64>(dltotal),
+                                            static_cast<qint64>(dlnow),
+                                            static_cast<qint64>(ultotal),
+                                            static_cast<qint64>(ulnow));
 
     if (emitAsyncProgress(state, observer) == SignalEmissionResult::Destroyed) {
         return 1;

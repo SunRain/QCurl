@@ -11,16 +11,6 @@
 #include <QThread>
 
 namespace QCurl {
-namespace {
-
-[[nodiscard]] bool isTerminalReplyState(ReplyState state)
-{
-    return state == ReplyState::Cancelled || state == ReplyState::Error
-           || state == ReplyState::Finished;
-}
-
-} // namespace
-
 QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpReply(
     QCCurlHandleManager &&handle,
     const HttpAdmission &admission,
@@ -45,7 +35,7 @@ QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpReply(
             "HTTP admission 的 observer、线程、state 或 handle 无效");
         return result;
     }
-    if (admission.state->activeEasyHandle || isTerminalReplyState(admission.state->state)) {
+    if (admission.state->activeEasyHandle || admission.state->lifecycle.isTerminal()) {
         result.errorMessage = QStringLiteral("HTTP transfer 已注册或 reply 已进入终态");
         return result;
     }
@@ -65,7 +55,7 @@ QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpRecordLocke
     auto &state = *record->transferState();
     auto domain = state.transportDomain;
     if (!domain) {
-        domain = selectDomain(state.curlPlan.normalized.request, &result.errorMessage);
+        domain = selectDomain(state.configuration.plan().normalized.request, &result.errorMessage);
     }
     if (!domain || !domain->multi || domain->owner != this) {
         if (result.errorMessage.isEmpty()) {

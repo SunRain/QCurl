@@ -9,16 +9,16 @@
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
 #include "private/QCNetworkReplyBodySource_p.h"
+#include "private/QCNetworkReplyFlowControl_p.h"
+#include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyTrace_p.h"
-#include "private/QCRequestPipeline_p.h"
+#include "private/QCReplyCurlConfiguration_p.h"
+#include "private/QCReplyLifecycle_p.h"
 #include "private/QCTlsConfiguration_p.h"
-#include "qbytedata_p.h"
-
-#include <QMap>
-#include <QString>
 
 #include <curl/curl.h>
 #include <memory>
+#include <utility>
 
 namespace QCurl {
 
@@ -32,18 +32,15 @@ struct QCCurlMultiDomain;
  */
 struct Q_DECL_HIDDEN QCNetworkReplyTransferState
 {
-    explicit QCNetworkReplyTransferState(const QUrl &initialUrl,
-                                         QCNetworkDiagnosticQueryPolicy policy)
-        : trace(initialUrl, policy)
+    explicit QCNetworkReplyTransferState(Internal::CurlPlan plan)
+        : configuration(std::move(plan))
+        , flow(configuration.plan().normalized.request.backpressureLimitBytes(),
+               configuration.plan().normalized.request.backpressureResumeBytes())
+        , trace(configuration.plan().normalized.request.url(),
+                configuration.plan().normalized.request.diagnosticQueryPolicy())
     {}
 
-    ~QCNetworkReplyTransferState()
-    {
-        curl_slist_free_all(resolveSlist);
-        curl_slist_free_all(connectToSlist);
-    }
-
-    Internal::CurlPlan curlPlan;
+    Internal::QCReplyCurlConfiguration configuration;
     // 重试等待期间固定原域；终态归还。活动 record 另持有引用直到原生 detach 成功。
     std::shared_ptr<QCCurlMultiDomain> transportDomain;
     // 仅在 add 提交后、detach 成功前于 owner thread 或允许的 libcurl 回调内借用。
@@ -51,58 +48,17 @@ struct Q_DECL_HIDDEN QCNetworkReplyTransferState
     bool readCallbackConfigured  = false;
     bool debugCallbackConfigured = false;
 
-    ReplyState state = ReplyState::Idle;
-    QCByteDataBuffer bodyBuffer;
-    QByteArray cacheBodyBuffer;
-    qint64 cacheBodyLimit = -1; ///< -1 表示本次响应不再收集缓存候选。
-    QByteArray headerData;
-    QList<RawHeaderPair> finalHeaderList;
-    QMap<QByteArray, QByteArray> finalHeaderMap;
-    int httpStatusCode = 0;
+    Internal::QCReplyLifecycle lifecycle;
+    Internal::QCReplyResponse response;
 
-    int userPauseMask                    = 0;
-    int internalPauseMask                = 0;
-    int appliedPauseMask                 = 0;
-    qint64 backpressureLimitBytes        = 0;
-    qint64 backpressureResumeBytes       = 0;
-    qint64 backpressurePeakBufferedBytes = 0;
-    bool backpressureActive              = false;
-    bool uploadSendPaused                = false;
-
-    qint64 bytesDownloaded = 0;
-    qint64 bytesUploaded   = 0;
-    qint64 downloadTotal   = -1;
-    qint64 uploadTotal     = -1;
+    Internal::QCReplyFlowControl flow;
+    Internal::QCReplyBodySource bodySource;
 
     QCNetworkLoggerHandle logger;
     bool debugTraceEnabled = false;
     Internal::ReplyTraceState trace;
 
-    QString cookieFilePath;
-    int cookieMode = 0;
-    QByteArray hstsCachePathBytes;
-    QByteArray altSvcCachePathBytes;
-
-    QByteArray proxyHostBytes;
-    QByteArray proxyUserBytes;
-    QByteArray proxyPasswordBytes;
-    bool proxyEnvironmentDisabled = false;
-    QByteArray httpAuthUserBytes;
-    QByteArray httpAuthPasswordBytes;
-    QByteArray refererBytes;
-    QByteArray acceptEncodingBytes;
-
-    QByteArray interfaceBytes;
-    QByteArray dnsServersBytes;
-    QByteArray dohUrlBytes;
-    curl_slist *resolveSlist   = nullptr; ///< CURLOPT_RESOLVE 原始规范化列表。
-    curl_slist *connectToSlist = nullptr; ///< 独立的 CURLOPT_CONNECT_TO 列表。
-
-    QByteArray allowedProtocolsBytes;
-    QByteArray allowedRedirectProtocolsBytes;
     Internal::QCTlsConfiguration tlsConfiguration;
-
-    Internal::ReplyBodySourceState requestBodySource;
 };
 
 } // namespace QCurl

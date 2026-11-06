@@ -24,13 +24,10 @@ namespace {
 QSharedPointer<QCNetworkReplyTransferState> makeState()
 {
     const QUrl url(QStringLiteral("http://127.0.0.1:1/admission"));
-    auto state = QSharedPointer<QCNetworkReplyTransferState>::create(
-        url, QCNetworkDiagnosticQueryPolicy::Redacted);
-    state->curlPlan = Internal::compileRequest(
-        Internal::normalizeRequest(QCNetworkRequest(url),
-                                   HttpMethod::Get,
-                                   Internal::makeEmptyRequestBody()));
-    return state;
+    return QSharedPointer<QCNetworkReplyTransferState>::create(
+        Internal::compileRequest(Internal::normalizeRequest(QCNetworkRequest(url),
+                                                            HttpMethod::Get,
+                                                            Internal::makeEmptyRequestBody())));
 }
 
 } // namespace
@@ -48,7 +45,7 @@ void tst_QCCurlHttpAdmission::acceptedReturnsTokenAndDetachedHandle()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QSignalSpy observed(engine, &QCCurlMultiManager::requestFinished);
     QCCurlHandleManager handle;
@@ -100,7 +97,7 @@ void tst_QCCurlHttpAdmission::rejectionReturnsSafeHandle()
     QFETCH(QByteArray, option);
     auto state = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QCCurlHandleManager handle;
     CURL *easy                = handle.handle();
@@ -156,7 +153,7 @@ void tst_QCCurlHttpAdmission::callbackFlagsUseSharedState()
     QFETCH(bool, enabled);
     auto state = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     state->readCallbackConfigured  = enabled && option.contains("READ");
     state->debugCallbackConfigured = enabled && option.contains("DEBUG");
@@ -186,7 +183,7 @@ void tst_QCCurlHttpAdmission::explicitManagerControlsShare()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QCCurlHandleManager handle;
     const auto result = engine->admitHttpReply(std::move(handle),
@@ -209,10 +206,10 @@ void tst_QCCurlHttpAdmission::warningsStayInAdmissionResult()
     auto firstState  = makeState();
     auto secondState = makeState();
     QCNetworkReply first(QCNetworkReply::TestOnlyKey{},
-                         firstState->curlPlan.normalized.request,
+                         firstState->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QCNetworkReply second(QCNetworkReply::TestOnlyKey{},
-                          secondState->curlPlan.normalized.request,
+                          secondState->configuration.plan().normalized.request,
                           HttpMethod::Get);
     QCCurlHandleManager firstHandle;
     QCCurlHandleManager secondHandle;
@@ -239,7 +236,7 @@ void tst_QCCurlHttpAdmission::wrongThreadAdmissionIsRejected()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QCCurlHandleManager handle;
     CURL *easy = handle.handle();
@@ -264,7 +261,7 @@ void tst_QCCurlHttpAdmission::tokenRemovalFromAnotherThreadIsQueued()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QCCurlHandleManager handle;
     int completions           = 0;
@@ -291,7 +288,7 @@ void tst_QCCurlHttpAdmission::callbackRemovalPreservesStateUntilDetach()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     QCNetworkReply reply(QCNetworkReply::TestOnlyKey{},
-                         state->curlPlan.normalized.request,
+                         state->configuration.plan().normalized.request,
                          HttpMethod::Get);
     QWeakPointer<QCNetworkReplyTransferState> weakState(state);
     QCCurlHandleManager handle;
@@ -328,7 +325,7 @@ void tst_QCCurlHttpAdmission::stateOutlivesDestroyedObserver()
     auto *engine = QCCurlMultiManager::instance();
     auto state   = makeState();
     auto *reply  = new QCNetworkReply(QCNetworkReply::TestOnlyKey{},
-                                      state->curlPlan.normalized.request,
+                                      state->configuration.plan().normalized.request,
                                       HttpMethod::Get);
     QWeakPointer<QCNetworkReplyTransferState> weakState(state);
     QCCurlHandleManager handle;

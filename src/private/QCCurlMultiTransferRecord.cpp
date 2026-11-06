@@ -7,9 +7,7 @@
 #include "QCNetworkLogger.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
-#include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
-#include "private/QCNetworkReplyResponse_p.h"
 
 #include <QDebug>
 
@@ -334,7 +332,7 @@ int QCCurlMultiTransferRecord::debugCallback(
     if (!state) {
         return 0;
     }
-    if (state->state == ReplyState::Cancelled || state->state == ReplyState::Error) {
+    if (state->lifecycle.isTerminal()) {
         return 0;
     }
 

@@ -155,24 +155,28 @@ void TestQCNetworkResponseHeadersOffline::retryAfterParsing()
 {
     QFETCH(QByteArray, value);
     QFETCH(qint64, expectedMs);
-    const QList<RawHeaderPair> headers{{QByteArrayLiteral("rEtRy-AfTeR"), value}};
-    const auto result = Internal::parseReplyRetryAfterDelay(headers, 1700000000);
+    Internal::QCReplyResponse response;
+    response.appendHeaders(QByteArrayLiteral("HTTP/1.1 429 Too Many Requests\r\nrEtRy-AfTeR: ")
+                           + value + QByteArrayLiteral("\r\n\r\n"));
+    const auto result = response.retryAfterDelay(1700000000);
     QCOMPARE(result.has_value(), expectedMs >= 0);
     if (result) {
         QCOMPARE(result->count(), expectedMs);
     }
-    QVERIFY(!Internal::parseReplyRetryAfterDelay({}, 1700000000));
+    response.resetForAttempt();
+    QVERIFY(!response.retryAfterDelay(1700000000));
 }
 
 void TestQCNetworkResponseHeadersOffline::retryAfterHttpDateUsesQueryClock()
 {
-    const QList<RawHeaderPair> headers{
-        {QByteArrayLiteral("Retry-After"), QByteArrayLiteral("Wed, 21 Oct 2015 07:28:00 GMT")}};
+    Internal::QCReplyResponse response;
+    response.appendHeaders(QByteArrayLiteral("HTTP/1.1 429 Too Many Requests\r\n"
+                                             "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT\r\n\r\n"));
     constexpr std::time_t kDate = 1445412480;
-    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate - 3)->count(), 3000);
-    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate - 1)->count(), 1000);
-    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate)->count(), 0);
-    QCOMPARE(Internal::parseReplyRetryAfterDelay(headers, kDate + 1)->count(), 0);
+    QCOMPARE(response.retryAfterDelay(kDate - 3)->count(), 3000);
+    QCOMPARE(response.retryAfterDelay(kDate - 1)->count(), 1000);
+    QCOMPARE(response.retryAfterDelay(kDate)->count(), 0);
+    QCOMPARE(response.retryAfterDelay(kDate + 1)->count(), 0);
 }
 
 QTEST_MAIN(TestQCNetworkResponseHeadersOffline)

@@ -28,12 +28,24 @@ public:
 
 [[nodiscard]] bool isInReplyCurlCallback() noexcept;
 
+size_t headerReplyCurlCallback(char *ptr,
+                               size_t size,
+                               size_t nmemb,
+                               QCNetworkReplyTransferState *state);
+
 size_t writeReplyCurlCallback(char *ptr,
                               size_t size,
                               size_t nmemb,
                               QCNetworkReplyTransferState *state,
                               const QPointer<QCNetworkReply> &observer,
                               CURL *handle);
+size_t readReplyBodySourceCallback(char *ptr,
+                                   size_t size,
+                                   size_t nmemb,
+                                   QCNetworkReplyTransferState *state,
+                                   const QPointer<QCNetworkReply> &observer);
+int seekReplyBodySourceCallback(QCNetworkReplyTransferState *state, curl_off_t offset, int origin);
+
 int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
                               const QPointer<QCNetworkReply> &observer,
                               curl_off_t dltotal,

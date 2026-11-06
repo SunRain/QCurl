@@ -1,22 +1,17 @@
 /**
  * @file
- * @brief QCNetworkReply private state transitions and curl callbacks.
+ * @brief 编排 QCNetworkReply 终态发布与原生回调适配。
  */
 
 #include "QCCurlMultiManager.h"
-#include "QCNetworkAccessManager.h"
-#include "QCNetworkCache.h"
-#include "QCNetworkCachePolicy.h"
-#include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply_p.h"
-#include "private/QCCurlOptionAdapter_p.h"
-#include "private/QCNetworkCacheIntegration_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
-#include "private/QCNetworkReplyCache_p.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
+#include "private/QCNetworkReplyConfigurationExecution_p.h"
 #include "private/QCNetworkReplyExecution_p.h"
-#include "private/QCNetworkReplyFlowControl_p.h"
+#include "private/QCNetworkReplyFlowControlExecution_p.h"
+#include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 
@@ -26,76 +21,18 @@ namespace QCurl {
 
 namespace {
 
-constexpr int kCookieWriteMode = static_cast<int>(QCNetworkAccessManager::WriteOnly);
-
-[[nodiscard]] bool isTerminalState(ReplyState state)
-{
-    return state == ReplyState::Finished || state == ReplyState::Error
-           || state == ReplyState::Cancelled;
-}
-
 [[nodiscard]] QPointer<QCNetworkReply> callbackObserver(QCNetworkReplyPrivate *reply)
 {
     return reply ? QPointer<QCNetworkReply>(reply->qObject()) : QPointer<QCNetworkReply>();
 }
 
-[[nodiscard]] ReplyState resolveFinishTransition(QCNetworkReplyPrivate *reply,
-                                                 ReplyState requestedState)
-{
-    if (requestedState != ReplyState::Finished || !reply->beforeFinishTransition) {
-        return requestedState;
-    }
-    if (const auto error = reply->beforeFinishTransition(); error.has_value()) {
-        reply->setError(NetworkError::InvalidRequest, error.value());
-        requestedState = ReplyState::Error;
-    }
-    reply->beforeFinishTransition = nullptr;
-    return requestedState;
-}
-
-void updateElapsedTime(QCNetworkReplyPrivate *reply, ReplyState newState)
-{
-    if (newState == ReplyState::Running && !reply->elapsedTimerStarted) {
-        reply->elapsedTimer.start();
-        reply->elapsedTimerStarted = true;
-        reply->durationMs          = -1;
-        return;
-    }
-    if (isTerminalState(newState) && reply->elapsedTimerStarted && reply->durationMs < 0) {
-        reply->durationMs = reply->elapsedTimer.elapsed();
-    }
-}
-
-void flushCookieJar(QCNetworkReplyPrivate *reply)
-{
-    CURL *handle = reply->curlManager.handle();
-    if (!handle || !(reply->cookieMode & kCookieWriteMode) || reply->cookieFilePath.isEmpty()) {
-        return;
-    }
-
-    const CURLcode result = curl_easy_setopt(handle, CURLOPT_COOKIELIST, "FLUSH");
-    if (result == CURLE_OK) {
-        return;
-    }
-    if (Internal::CurlOptions::isCapabilityRelatedError(result)) {
-        Internal::appendReplyCapabilityWarning(
-            reply,
-            QStringLiteral("libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST，%1），CookieJAR "
-                           "可能不会立即落盘")
-                .arg(QString::fromUtf8(curl_easy_strerror(result))));
-        return;
-    }
-    Internal::appendReplyCapabilityWarning(reply,
-                                           QStringLiteral("Cookie flush 失败（%1）")
-                                               .arg(QString::fromUtf8(curl_easy_strerror(result))));
-}
-
 Internal::SignalEmissionResult completeFinishedReply(QCNetworkReplyPrivate *reply,
                                                      const QPointer<QCNetworkReply> &observer)
 {
-    flushCookieJar(reply);
-    Internal::storeReplyInCache(reply);
-    reply->cacheBodyBuffer = QByteArray();
+    Q_UNUSED(Internal::publishReplyCurlConfigurationResult(
+        reply, reply->transferState->configuration.flushCookieJar(reply->curlManager.handle())));
+    Internal::QCNetworkReplyExecution::storeCacheResponse(reply->qObject());
+    reply->transferState->response.releaseCacheCandidate();
     return Internal::emitReplySignal(observer, [](QCNetworkReply *q) { Q_EMIT q->finished(); });
 }
 
@@ -106,7 +43,7 @@ Internal::SignalEmissionResult emitTerminalSignals(QCNetworkReplyPrivate *reply,
     if (newState == ReplyState::Finished) {
         return completeFinishedReply(reply, observer);
     } else if (newState == ReplyState::Error) {
-        const NetworkError errorCode = reply->errorCode;
+        const NetworkError errorCode = reply->transferState->lifecycle.error();
         if (Internal::emitReplySignal(observer,
                                       [errorCode](QCNetworkReply *q) { Q_EMIT q->error(errorCode); })
             == Internal::SignalEmissionResult::Destroyed) {
@@ -130,28 +67,28 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
     Q_Q(QCNetworkReply);
     const QPointer<QCNetworkReply> observer(q);
 
-    if (state == newState || isTerminalState(state)) {
+    const auto holder = transferState;
+    auto &lifecycle   = holder->lifecycle;
+    if (lifecycle.state() == newState || lifecycle.isTerminal()) {
         return Internal::SignalEmissionResult::Alive;
     }
 
-    newState = resolveFinishTransition(this, newState);
     if (newState == ReplyState::Finished) {
-        if (Internal::restoreRevalidatedCacheResponse(this)
+        if (Internal::QCNetworkReplyExecution::restoreRevalidatedCacheResponse(q)
             == Internal::SignalEmissionResult::Destroyed) {
             return Internal::SignalEmissionResult::Destroyed;
         }
     }
-    state = newState;
-    if (isTerminalState(newState)) {
-        transferState->trace.stop();
+    // 304 恢复会发布 readyRead；同步取消已经完成请求时不能再次提交 Finished。
+    if (!lifecycle.transition(newState)) {
+        return Internal::SignalEmissionResult::Alive;
     }
-    updateElapsedTime(this, newState);
-
-    if (isTerminalState(newState)) {
-        transferState->transportDomain.reset();
+    if (lifecycle.isTerminal()) {
+        holder->trace.stop();
+        holder->transportDomain.reset();
         finishPoolRequest();
         if (newState != ReplyState::Finished) {
-            cacheBodyBuffer = QByteArray();
+            holder->response.releaseCacheCandidate();
         }
         if (Internal::clearReplyFlowControlOnTerminalState(this)
             == Internal::SignalEmissionResult::Destroyed) {
@@ -159,7 +96,7 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
         }
     }
     if (newState == ReplyState::Finished || newState == ReplyState::Error) {
-        parseHeaders();
+        holder->response.parseHeaders();
     }
     if (Internal::emitReplySignal(observer,
                                   [newState](QCNetworkReply *reply) {
@@ -174,43 +111,7 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
 
 void QCNetworkReplyPrivate::setError(NetworkError error, const QString &message)
 {
-    errorCode    = error;
-    errorMessage = message;
-}
-
-void QCNetworkReplyPrivate::parseHeaders()
-{
-    Internal::parseReplyHeaders(this);
-}
-
-bool QCNetworkReplyPrivate::applyPauseMask(int desiredMask)
-{
-    return Internal::applyReplyPauseMask(this, desiredMask);
-}
-
-int QCNetworkReplyPrivate::desiredPauseMask() const
-{
-    return Internal::desiredReplyPauseMask(this);
-}
-
-Internal::SignalEmissionResult QCNetworkReplyPrivate::setBackpressureActive(bool active)
-{
-    return Internal::setReplyBackpressureActive(this, active);
-}
-
-Internal::SignalEmissionResult QCNetworkReplyPrivate::setUploadSendPaused(bool paused)
-{
-    return Internal::setReplyUploadSendPaused(this, paused);
-}
-
-Internal::SignalEmissionResult QCNetworkReplyPrivate::maybeResumeRecvFromBackpressure()
-{
-    return Internal::maybeResumeReplyRecvFromBackpressure(this);
-}
-
-Internal::SignalEmissionResult QCNetworkReplyPrivate::resumeSendFromRequestBodySourceIfNeeded()
-{
-    return Internal::resumeReplySendFromRequestBodySourceIfNeeded(this);
+    transferState->lifecycle.recordError(error, message);
 }
 
 // ==================
@@ -280,7 +181,7 @@ int QCNetworkReplyPrivate::curlDebugCallback(
         return 0;
     }
 
-    if (d->state == ReplyState::Cancelled || d->state == ReplyState::Error) {
+    if (d->transferState->lifecycle.isTerminal()) {
         return 0;
     }
 
@@ -310,15 +211,25 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
 {
     Q_Q(QCNetworkReply);
 
-    // 已取消/已错误：保持既有可观测语义，不允许完成回调覆盖状态
-    if (transferRemovalRequested || state == ReplyState::Cancelled || state == ReplyState::Error
-        || state == ReplyState::Finished) {
+    const auto holder = transferState;
+    auto &lifecycle   = holder->lifecycle;
+    if (transferRemovalRequested || lifecycle.isTerminal()) {
         return;
     }
 
-    // 重试恢复可能直接发出终态，必须先保留此次实际传输的返回码。
-    diagnosticCurlCode = static_cast<int>(curlCode);
-    const auto info    = Internal::attemptErrorFromCurlAndHttp(this, curlCode, httpStatusCode);
+    auto &response = holder->response;
+    response.commitStatus(static_cast<int>(httpStatusCode));
+    response.parseHeaders();
+    bool ok                   = false;
+    const qint64 existingSize = q->property(Internal::replyproperties::kResumableExistingSize)
+                                    .toLongLong(&ok);
+    const auto info = lifecycle.classifyNetworkResult(curlCode,
+                                                      response.status(),
+                                                      holder->bodySource.failure(),
+                                                      holder->bodySource.device() != nullptr,
+                                                      ok
+                                                          && response.rangeAlreadyComplete(
+                                                              existingSize));
 
     if (info.error == NetworkError::NoError) {
         Q_UNUSED(setState(ReplyState::Finished));
@@ -327,7 +238,7 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
 
     const auto retry = Internal::advanceReplyRetryIfNeeded(this, info.error);
     if (retry.emissionResult == Internal::SignalEmissionResult::Destroyed
-        || isTerminalState(state)) {
+        || lifecycle.isTerminal()) {
         return;
     }
     if (retry.delay.has_value()) {

@@ -10,9 +10,16 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyTraceTargets.cpp
     private/QCNetworkTraceCallback.cpp
     private/QCNetworkReplyFlowControl.cpp
+    private/QCNetworkReplyFlowControlExecution.cpp
     private/QCNetworkReplyResponse.cpp
+    private/QCNetworkReplyResponseBody.cpp
+    private/QCNetworkReplyResponseRetryAfter.cpp
+    private/QCReplyLifecycle.cpp
+    private/QCReplyLifecycleOutcome.cpp
     private/QCNetworkReplyRuntime.cpp
-    private/QCNetworkRetryDecision.cpp
+    private/QCReplyRetry.cpp
+    private/QCReplyCurlConfiguration.cpp
+    private/QCNetworkReplyConfigurationExecution.cpp
     private/QCNetworkReplyCurlOptions.cpp
     private/QCNetworkReplyCurlBaseOptions.cpp
     private/QCNetworkReplyCurlMethodOptions.cpp
@@ -79,6 +86,9 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkDiskCacheEntryRead.cpp
     private/QCNetworkCacheIntegration.cpp
     private/QCNetworkReplyCache.cpp
+    private/QCNetworkReplyCacheResponse.cpp
+    private/QCNetworkReplyCacheStore.cpp
+    private/QCNetworkReplyCacheExecution.cpp
     QCNetworkConnectionPoolConfig.cpp
     QCNetworkConnectionPoolStatistics.cpp
     QCNetworkConnectionPoolManager.cpp  # Core / Stable: 连接池管理器
@@ -112,16 +122,20 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkTraceCallback_p.h
     private/QCNetworkReplyExecution_p.h
     private/QCNetworkReplyFlowControl_p.h
+    private/QCNetworkReplyFlowControlExecution_p.h
     private/QCNetworkReplyMockChaos_p.h
     private/QCNetworkReplyResponse_p.h
+    private/QCNetworkReplyCache_p.h
+    private/QCReplyLifecycle_p.h
     private/QCNetworkReplyRuntime_p.h
     private/QCHttpDate_p.h
     private/QCNetworkReplySignal_p.h
     private/QCNetworkReplyTransferState_p.h
-    private/QCNetworkRetryDecision_p.h
+    private/QCReplyRetry_p.h
     private/QCNetworkRetryPolicy_p.h
     private/QCNetworkProtocolPolicy_p.h
-    private/QCNetworkReplyCurlOptions_p.h
+    private/QCReplyCurlConfiguration_p.h
+    private/QCNetworkReplyConfigurationExecution_p.h
     private/QCTlsConfiguration_p.h
     private/QCTlsConfigurationPolicy_p.h
     private/QCNetworkAdmissionCore_p.h

@@ -13,7 +13,7 @@
 ```text
 QCNetworkRequest + method/body
   -> QCNetworkAccessManagerSend 的请求入口与执行上下文
-  -> QCNetworkReply 的 NormalizedRequest / CurlPlan 快照
+  -> Reply 配置 owner 的只读 NormalizedRequest / CurlPlan
   -> 可选的 manager-owned scheduler（私有 admission core）
   -> owner-thread QCCurlMultiManager 的 socket/timer 驱动
   -> reply 的状态、响应头、数据、进度和终态通知
@@ -21,7 +21,13 @@ QCNetworkRequest + method/body
 
 [请求管线](request-normalization-pipeline.md)固化 method/body 计划；具体 curl options 与 callback 安装仍在执行器内部，不能把计划 digest 当作全部传输语义的证明。scheduler 配置/通知/命令只通过 manager，对调用方的排序和生命周期语义见[用户合同](../../user/lane-scheduler.md)。
 
-成功注册到 multi 后，transfer record 持有 easy handle、callback target 与 backing storage，reply 是 observer。reply 析构不能提前释放仍注册的传输；owner thread 完成 detach 后再回收。线程、libcurl 创建和 package bridge 的细则见[binding 合同](libcurl-binding-contract.md)。
+成功注册到 multi 后，transfer record 持有 easy handle、callback target 与 backing storage，reply 是 observer。reply 析构不能提前释放仍注册的传输；owner thread 完成 detach 后再回收。
+
+`QCNetworkReplyPrivate` 是请求级编排器：保留快照、资源关系和跨模块顺序，不摊平领域状态。
+同一个共享 transfer holder 按值组合 lifecycle、response、body source、flow、非 TLS 配置、
+TLS 与 trace，覆盖 active record 和 detached handle 的原生借用；retry/cache 则由 Private
+按请求持有。领域对象只解释自己的规则，callback、信号、timer、线程和 multi 在 adapter
+协作。具体职责、选项插点、终态重查及 package bridge 见[binding 合同](libcurl-binding-contract.md)。
 
 ## 流控与同步路径
 

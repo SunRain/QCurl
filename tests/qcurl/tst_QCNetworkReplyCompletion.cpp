@@ -26,8 +26,11 @@ QSharedPointer<QCNetworkReplyTransferState> makeObservedState(
     const QSharedPointer<int> &cleanupsAtRelease)
 {
     return QSharedPointer<QCNetworkReplyTransferState>(
-        new QCNetworkReplyTransferState(QUrl(QStringLiteral("https://localhost/backing")),
-                                        QCNetworkDiagnosticQueryPolicy::Redacted),
+        new QCNetworkReplyTransferState(Internal::compileRequest(
+            Internal::normalizeRequest(QCNetworkRequest(
+                                           QUrl(QStringLiteral("https://localhost/backing"))),
+                                       HttpMethod::Get,
+                                       Internal::makeEmptyRequestBody()))),
         [cleanupsAtRelease](QCNetworkReplyTransferState *state) {
             *cleanupsAtRelease = QCCurlHandleManager::cleanupCountForTest();
             delete state;

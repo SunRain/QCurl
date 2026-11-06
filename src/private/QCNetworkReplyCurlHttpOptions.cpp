@@ -1,42 +1,35 @@
 /**
  * @file
- * @brief QCNetworkReply connection-pool and HTTP-version curl options.
+ * @brief 应用请求 HTTP 版本及原有能力诊断。
  */
 
-#include "CurlFeatureProbe.h"
-#include "QCNetworkConnectionPoolManager_p.h"
-#include "QCNetworkError.h"
-#include "QCNetworkHttpVersion.h"
-#include "QCNetworkReply_p.h"
-#include "QCNetworkRequest.h"
 #include "private/QCNetworkHttpVersion_p.h"
-#include "private/QCNetworkReplyCurlOptions_p.h"
+#include "private/QCReplyCurlConfiguration_p.h"
 
-namespace QCurl::Internal::ReplyCurlOptions {
+namespace QCurl::Internal {
 
-using namespace Detail;
-
-[[nodiscard]] bool configureReplyHttpVersionOptions(QCNetworkReplyPrivate *reply,
-                                                    CURL *handle,
-                                                    const QCNetworkRequest &request)
+ReplyCurlConfigurationResult QCReplyCurlConfiguration::applyHttpVersion(CURL *easy) const
 {
+    ReplyCurlConfigurationResult result;
+    const auto &request                  = m_plan.normalized.request;
     const QCNetworkHttpVersion requested = request.httpVersion();
     QCNetworkHttpVersion effective       = requested;
     QString error;
     QString warning;
     if (!detail::resolveHttpVersion(requested, &effective, &error, &warning)) {
-        reply->setError(NetworkError::InvalidRequest, error);
-        return false;
+        result.failure = error;
+        return result;
     }
     if (!warning.isEmpty()) {
-        appendCapabilityWarning(reply, warning);
+        warn(result, warning);
     }
-
-    return (effective == QCNetworkHttpVersion::Http1_1 && !request.isHttpVersionExplicit())
-           || setRequiredCurlOption(reply,
-                                    handle,
-                                    QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
-                                    detail::toCurlHttpVersion(effective));
+    if (effective != QCNetworkHttpVersion::Http1_1 || request.isHttpVersionExplicit()) {
+        Q_UNUSED(requiredOption(easy,
+                                QCURL_CURL_OPTION(CURLOPT_HTTP_VERSION),
+                                detail::toCurlHttpVersion(effective),
+                                result));
+    }
+    return result;
 }
 
-} // namespace QCurl::Internal::ReplyCurlOptions
+} // namespace QCurl::Internal
