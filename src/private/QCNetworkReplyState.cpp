@@ -10,6 +10,7 @@
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCCurlOptionAdapter_p.h"
 #include "private/QCNetworkCacheIntegration_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyCache_p.h"
@@ -76,7 +77,7 @@ void flushCookieJar(QCNetworkReplyPrivate *reply)
     if (result == CURLE_OK) {
         return;
     }
-    if (Internal::isReplyCapabilityRelatedCurlError(result)) {
+    if (Internal::CurlOptions::isCapabilityRelatedError(result)) {
         Internal::appendReplyCapabilityWarning(
             reply,
             QStringLiteral("libcurl 不支持 Cookie flush（CURLOPT_COOKIELIST，%1），CookieJAR "

@@ -11,6 +11,7 @@
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyTrace_p.h"
 #include "private/QCRequestPipeline_p.h"
+#include "private/QCTlsConfiguration_p.h"
 #include "qbytedata_p.h"
 
 #include <QMap>
@@ -29,7 +30,7 @@ struct QCCurlMultiDomain;
  * Reply 与活动 transfer record 共享本状态；detached handle 守卫继续持有同一状态直到
  * cleanup，防止 queued completion 被丢弃时先释放仍被 libcurl 借用的列表或请求体。
  */
-struct QCNetworkReplyTransferState
+struct Q_DECL_HIDDEN QCNetworkReplyTransferState
 {
     explicit QCNetworkReplyTransferState(const QUrl &initialUrl,
                                          QCNetworkDiagnosticQueryPolicy policy)
@@ -99,16 +100,7 @@ struct QCNetworkReplyTransferState
 
     QByteArray allowedProtocolsBytes;
     QByteArray allowedRedirectProtocolsBytes;
-    QByteArray sslCaCertPathBytes;
-    QByteArray sslClientCertPathBytes;
-    QByteArray sslClientKeyPathBytes;
-    QByteArray sslClientKeyPasswordBytes;
-    QByteArray sslPinnedPublicKeyBytes;
-    QByteArray sslCipherListBytes;
-    QByteArray sslTls13CiphersBytes;
-    QByteArray proxySslCaCertPathBytes;
-    QByteArray proxySslCipherListBytes;
-    QByteArray proxySslTls13CiphersBytes;
+    Internal::QCTlsConfiguration tlsConfiguration;
 
     Internal::ReplyBodySourceState requestBodySource;
 };

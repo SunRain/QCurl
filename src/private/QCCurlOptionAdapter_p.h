@@ -51,6 +51,12 @@ constexpr long kDisabled         = 0L;
 constexpr long kEnabled          = 1L;
 constexpr long kVerifyHostStrict = 2L;
 
+/// 仅这两个原生错误表示选项或构建能力缺失，不包含参数和传输错误。
+[[nodiscard]] inline bool isCapabilityRelatedError(CURLcode code) noexcept
+{
+    return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
+}
+
 [[nodiscard]] static inline bool shouldForceMultiFailure(const char *failurePoint)
 {
 #ifdef QCURL_ENABLE_TEST_HOOKS
@@ -264,9 +270,23 @@ template<typename T>
     return setEnabled(handle, CURLOPT_SSL_VERIFYPEER, enabled);
 }
 
+[[nodiscard]] inline CURLcode setSslVerifyPeerWithTestHook(CURL *handle, bool enabled)
+{
+    return setWithTestHook(handle,
+                           QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYPEER),
+                           enabled ? kEnabled : kDisabled);
+}
+
 [[nodiscard]] inline CURLcode setSslVerifyHost(CURL *handle, bool enabled)
 {
     return setLong(handle, CURLOPT_SSL_VERIFYHOST, enabled ? kVerifyHostStrict : kDisabled);
+}
+
+[[nodiscard]] inline CURLcode setSslVerifyHostWithTestHook(CURL *handle, bool enabled)
+{
+    return setWithTestHook(handle,
+                           QCURL_CURL_OPTION(CURLOPT_SSL_VERIFYHOST),
+                           enabled ? kVerifyHostStrict : kDisabled);
 }
 
 [[nodiscard]] inline CURLcode setProxySslVerifyPeer(CURL *handle, bool enabled)

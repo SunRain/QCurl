@@ -1,6 +1,8 @@
 #ifndef QCNETWORK_CONNECT_TEST_PROXY_H
 #define QCNETWORK_CONNECT_TEST_PROXY_H
 
+#include "qcurl_tls_test_server.h"
+
 #include <QHostAddress>
 #include <QSharedPointer>
 #include <QTcpServer>
@@ -15,6 +17,10 @@ public:
     explicit ConnectTestProxy(quint16 upstreamPort)
         : m_upstreamPort(upstreamPort)
     {
+        connect(&m_tlsServer,
+                &TlsTestTcpServer::socketAccepted,
+                this,
+                &ConnectTestProxy::acceptTlsSocket);
         connect(&m_server, &QTcpServer::newConnection, this, [this] {
             while (auto *client = m_server.nextPendingConnection()) {
                 acceptSocket(client);
@@ -23,12 +29,66 @@ public:
     }
 
     bool start() { return m_server.listen(QHostAddress::LocalHost, 0); }
-    quint16 port() const { return m_server.serverPort(); }
+    /// 用真实 TLS listener 包裹同一 CONNECT parser 与转发路径。
+    bool startTls(const QString &certificatePath,
+                  const QString &keyPath,
+                  const QSslConfiguration &configuration = QSslConfiguration::defaultConfiguration())
+    {
+        const auto certificates = QSslCertificate::fromPath(certificatePath);
+        QFile key(keyPath);
+        if (certificates.isEmpty() || !key.open(QIODevice::ReadOnly)) {
+            m_errorString = QStringLiteral("HTTPS proxy 测试证书不可读");
+            return false;
+        }
+        m_tlsConfiguration = configuration;
+        m_tlsConfiguration.setLocalCertificate(certificates.first());
+        m_tlsConfiguration.setPrivateKey(QSslKey(key.readAll(), QSsl::Rsa, QSsl::Pem));
+        m_tlsConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+        m_tlsEnabled = m_tlsServer.listen(QHostAddress::LocalHost, 0);
+        return m_tlsEnabled;
+    }
+    quint16 port() const { return m_tlsEnabled ? m_tlsServer.serverPort() : m_server.serverPort(); }
     QList<QByteArray> requests() const { return m_requests; }
     QString errorString() const { return m_errorString; }
 
 private:
     Q_DISABLE_COPY_MOVE(ConnectTestProxy)
+
+    void acceptTlsSocket(qintptr descriptor)
+    {
+        auto *socket = new QSslSocket(this);
+        if (!socket->setSocketDescriptor(descriptor)) {
+            m_errorString = socket->errorString();
+            socket->deleteLater();
+            return;
+        }
+        socket->setSslConfiguration(m_tlsConfiguration);
+        connect(socket, &QSslSocket::encrypted, this, [this, socket]() { acceptSocket(socket); });
+        connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        socket->startServerEncryption();
+    }
+
+    void forward(QTcpSocket *client, const QSharedPointer<QByteArray> &pending, qsizetype end)
+    {
+        auto *upstream = new QTcpSocket(client);
+        connect(upstream, &QTcpSocket::connected, client, [client, upstream, pending, end] {
+            client->write("HTTP/1.1 200 Connection established\r\n\r\n");
+            upstream->write(pending->sliced(end + 4));
+            upstream->write(client->readAll());
+            connect(client, &QTcpSocket::readyRead, upstream, [client, upstream] {
+                upstream->write(client->readAll());
+            });
+        });
+        connect(upstream, &QTcpSocket::readyRead, client, [client, upstream] {
+            client->write(upstream->readAll());
+        });
+        connect(upstream, &QTcpSocket::disconnected, client, &QTcpSocket::disconnectFromHost);
+        connect(upstream, &QTcpSocket::errorOccurred, client, [this, client, upstream] {
+            m_errorString = upstream->errorString();
+            client->disconnectFromHost();
+        });
+        upstream->connectToHost(QHostAddress::LocalHost, m_upstreamPort);
+    }
 
     void acceptSocket(QTcpSocket *client)
     {
@@ -59,28 +119,14 @@ private:
                 client->disconnectFromHost();
                 return;
             }
-            auto *upstream = new QTcpSocket(client);
-            connect(upstream, &QTcpSocket::connected, client, [client, upstream, pending, end] {
-                client->write("HTTP/1.1 200 Connection established\r\n\r\n");
-                upstream->write(pending->sliced(end + 4));
-                upstream->write(client->readAll());
-                connect(client, &QTcpSocket::readyRead, upstream, [client, upstream] {
-                    upstream->write(client->readAll());
-                });
-            });
-            connect(upstream, &QTcpSocket::readyRead, client, [client, upstream] {
-                client->write(upstream->readAll());
-            });
-            connect(upstream, &QTcpSocket::disconnected, client, &QTcpSocket::disconnectFromHost);
-            connect(upstream, &QTcpSocket::errorOccurred, client, [this, client, upstream] {
-                m_errorString = upstream->errorString();
-                client->disconnectFromHost();
-            });
-            upstream->connectToHost(QHostAddress::LocalHost, m_upstreamPort);
+            forward(client, pending, end);
         });
     }
 
     QTcpServer m_server{this};
+    TlsTestTcpServer m_tlsServer{this};
+    QSslConfiguration m_tlsConfiguration;
+    bool m_tlsEnabled = false;
     quint16 m_upstreamPort;
     QList<QByteArray> m_requests;
     QString m_errorString;

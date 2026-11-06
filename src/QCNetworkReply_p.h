@@ -198,19 +198,6 @@ public:
     QByteArray &allowedProtocolsBytes;         ///< CURLOPT_PROTOCOLS_STR 缓存
     QByteArray &allowedRedirectProtocolsBytes; ///< CURLOPT_REDIR_PROTOCOLS_STR 缓存
 
-    QByteArray &sslCaCertPathBytes;        ///< CA 证书路径缓存
-    QByteArray &sslClientCertPathBytes;    ///< 客户端证书路径缓存
-    QByteArray &sslClientKeyPathBytes;     ///< 客户端私钥路径缓存
-    QByteArray &sslClientKeyPasswordBytes; ///< 客户端私钥密码缓存
-
-    QByteArray &sslPinnedPublicKeyBytes; ///< CURLOPT_PINNEDPUBLICKEY 缓存
-    QByteArray &sslCipherListBytes;      ///< CURLOPT_SSL_CIPHER_LIST 缓存
-    QByteArray &sslTls13CiphersBytes;    ///< CURLOPT_TLS13_CIPHERS 缓存
-
-    QByteArray &proxySslCaCertPathBytes;   ///< CURLOPT_PROXY_CAINFO 缓存
-    QByteArray &proxySslCipherListBytes;   ///< CURLOPT_PROXY_SSL_CIPHER_LIST 缓存
-    QByteArray &proxySslTls13CiphersBytes; ///< CURLOPT_PROXY_TLS13_CIPHERS 缓存
-
     // 流式上传（M2）
 
     Internal::ReplyBodySourceState &requestBodySource; ///< 请求体设备来源与 curl 回调状态

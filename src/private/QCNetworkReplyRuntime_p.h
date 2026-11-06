@@ -25,7 +25,6 @@ namespace Internal {
 
 inline constexpr const char kTestCurlPlanDigestProperty[] = "_qcurl_testCurlPlanDigest";
 
-[[nodiscard]] bool isReplyCapabilityRelatedCurlError(CURLcode code) noexcept;
 void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &message);
 
 struct ReplyRetryAdvanceResult

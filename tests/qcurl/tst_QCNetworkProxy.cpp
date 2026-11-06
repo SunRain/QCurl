@@ -2,12 +2,10 @@
  * @file tst_QCNetworkProxy.cpp
  * @brief 验证代理配置、TLS 选项和错误路径的稳定合同。
  *
- * 该套件避免依赖真实代理服务，重点覆盖：
- * - request 层 proxy 配置的保存与读取
- * - proxy/TLS 选项向 libcurl 句柄的映射
- * - 不支持能力的 fail/warn 分支
- * - 代理连接失败时的错误语义
+ * 该套件覆盖本地 TLS/HTTPS proxy 正负控制、配置值语义、能力策略及连接失败。
  */
+
+#include "tst_QCNetworkProxy.h"
 
 #include "QCNetworkAccessManager.h"
 #include "QCNetworkError.h"
@@ -27,42 +25,9 @@
 
 using namespace QCurl;
 
-class TestQCNetworkProxy : public QObject
-{
-    Q_OBJECT
-
-private Q_SLOTS:
-    void initTestCase();
-    void cleanupTestCase();
-    void init();
-    void cleanup();
-
-    // 代理配置 API 测试
-    void testProxyConfigBasic();
-    void testProxyTypeValidation();
-    void testProxyAuthentication();
-    void testProxyWithSsl();
-    void testProxyAppliedToCurlHandle();
-    void testProxyEnvironmentDisabledByDefault();
-    void testSslConfigApplied();
-    void testSslConfigValueSemantics();
-    void testTimeoutConfigOptionalLifecycle();
-    void testProxyTlsConfigBraceInitSetter();
-    void testProxyTlsConfigOptionalLifecycle();
-    void testProxyTlsUnsupportedFail();
-    void testProxyTlsUnsupportedWarn();
-
-    // 代理错误处理测试
-    void testProxyConnectionFailed();
-
-private:
-    QCNetworkAccessManager *m_manager = nullptr;
-    bool waitForReply(QCNetworkReply *reply, int timeout = 5000);
-};
-
 void TestQCNetworkProxy::initTestCase()
 {
-    qDebug() << "Contract: config mapping + error paths without a real proxy server";
+    qDebug() << "Contract: proxy 配置、真实 TLS 应用与错误路径";
 
     m_manager = new QCNetworkAccessManager(this);
 }
@@ -247,50 +212,6 @@ void TestQCNetworkProxy::testProxyEnvironmentDisabledByDefault()
     QVERIFY(nonePrivate.configureCurlOptions());
     QVERIFY(nonePrivate.proxyEnvironmentDisabled);
     QVERIFY(nonePrivate.proxyHostBytes.isEmpty());
-}
-
-void TestQCNetworkProxy::testSslConfigApplied()
-{
-    qDebug() << "Verifying SSL config is propagated into curl handle state";
-
-    QCNetworkRequest request(QUrl("https://secure.example.com"));
-    QCNetworkSslConfig sslConfig;
-    sslConfig.setVerifyPeer(false);
-    sslConfig.setVerifyHost(true);
-    sslConfig.setCaCertPath("/etc/ssl/custom-ca.pem");
-    sslConfig.setClientCertPath("/tmp/client.crt");
-    sslConfig.setClientKeyPath("/tmp/client.key");
-    sslConfig.setClientKeyPassword("passphrase");
-    request.setSslConfig(sslConfig);
-
-    QCNetworkReplyPrivate replyPrivate(nullptr,
-                                       request,
-                                       HttpMethod::Get,
-                                       Internal::makeEmptyRequestBody(),
-                                       QByteArray());
-
-    QVERIFY(replyPrivate.configureCurlOptions());
-    QCOMPARE(replyPrivate.sslCaCertPathBytes, sslConfig.caCertPath().toUtf8());
-    QCOMPARE(replyPrivate.sslClientCertPathBytes, sslConfig.clientCertPath().toUtf8());
-    QCOMPARE(replyPrivate.sslClientKeyPathBytes, sslConfig.clientKeyPath().toUtf8());
-    QCOMPARE(replyPrivate.sslClientKeyPasswordBytes, sslConfig.clientKeyPassword().toUtf8());
-
-    // 空路径应清空缓存
-    QCNetworkRequest defaultSslRequest(QUrl("https://example.com"));
-    defaultSslRequest.setSslConfig(QCNetworkSslConfig::defaultConfig());
-    QCNetworkReplyPrivate defaultPrivate(nullptr,
-                                         defaultSslRequest,
-                                         HttpMethod::Get,
-                                         Internal::makeEmptyRequestBody(),
-                                         QByteArray());
-
-    QVERIFY(defaultPrivate.configureCurlOptions());
-    QVERIFY(defaultPrivate.sslCaCertPathBytes.isEmpty());
-    QVERIFY(defaultPrivate.sslClientCertPathBytes.isEmpty());
-    QVERIFY(defaultPrivate.sslClientKeyPathBytes.isEmpty());
-    QVERIFY(defaultPrivate.sslClientKeyPasswordBytes.isEmpty());
-
-    qDebug() << "SSL config propagation verified";
 }
 
 void TestQCNetworkProxy::testSslConfigValueSemantics()
@@ -555,4 +476,4 @@ void TestQCNetworkProxy::testProxyConnectionFailed()
 }
 
 QTEST_MAIN(TestQCNetworkProxy)
-#include "tst_QCNetworkProxy.moc"
+// 测试类的元对象由独立头文件生成。

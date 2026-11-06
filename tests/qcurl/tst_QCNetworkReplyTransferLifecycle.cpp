@@ -3,9 +3,12 @@
 #include "QCNetworkConnectionPoolManager.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkSslConfig.h"
 #include "private/QCNetworkReplyCallbacks_p.h"
 #include "qcnetwork_retry_policy_test_helper.h"
 #include "qcurl_http_script_server.h"
+#include "qcurl_tls_test_server.h"
+#include "test_source_paths.h"
 #include "tst_QCCurlHttpAdmission.h"
 
 #include <QCoreApplication>
@@ -63,13 +66,24 @@ void tst_QCCurlHttpAdmission::callbackCancelAndAbort()
 
 void tst_QCCurlHttpAdmission::replyDestroyedInCallback()
 {
-    HttpScriptServer server({HttpScriptServer::response(200, QByteArrayLiteral("payload"))});
-    QVERIFY(server.start());
+    const QString prefix = TestSourcePaths::sourcePath(
+        QStringLiteral("tests/qcurl/testdata/http2/"));
+    LocalTlsServer server(prefix + QStringLiteral("localhost.crt"),
+                          prefix + QStringLiteral("localhost.key"));
+    server.setHttpResponseEnabled(true);
+    QVERIFY2(server.start(), qPrintable(server.errorString()));
     auto *pool = QCNetworkConnectionPoolManager::instance();
     pool->resetStatistics();
     QCNetworkAccessManager manager;
-    QPointer<QCNetworkReply> reply(manager.get(QCNetworkRequest(server.url())));
-    int callbacks = 0;
+    QCNetworkRequest request(QUrl(QStringLiteral("https://localhost:%1/").arg(server.port())));
+    QCNetworkSslConfig ssl;
+    ssl.setCaCertPath(prefix + QStringLiteral("localhost.crt"));
+    ssl.setCipherList(QStringLiteral("ECDHE-RSA-AES128-GCM-SHA256"));
+    ssl.setTls13Ciphers(QStringLiteral("TLS_AES_128_GCM_SHA256"));
+    request.setSslConfig(ssl);
+    QPointer<QCNetworkReply> reply(manager.get(request));
+    const int cleanupsBeforeCallback = QCCurlHandleManager::cleanupCountForTest();
+    int callbacks                    = 0;
     connect(reply, &QCNetworkReply::readyRead, this, [&]() {
         ++callbacks;
         const int cleanups = QCCurlHandleManager::cleanupCountForTest();
@@ -81,6 +95,8 @@ void tst_QCCurlHttpAdmission::replyDestroyedInCallback()
     QTRY_VERIFY_WITH_TIMEOUT(reply.isNull(), 3000);
     QTRY_COMPARE_WITH_TIMEOUT(QCCurlMultiManager::instance()->runningRequestsCount(), 0, 3000);
     QCOMPARE(callbacks, 1);
+    QCOMPARE(server.requests().size(), 1);
+    QCOMPARE(QCCurlHandleManager::cleanupCountForTest(), cleanupsBeforeCallback + 1);
     QCOMPARE(pool->statistics().activeRequests(), 0);
     QCOMPARE(pool->statistics().totalRequests(), 1);
 }

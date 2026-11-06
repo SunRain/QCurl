@@ -213,7 +213,7 @@ void configureDnsTransport(QCNetworkReplyPrivate *reply,
     if (code == CURLE_OK) {
         return true;
     }
-    if (isCapabilityRelatedCurlError(code)) {
+    if (CurlOptions::isCapabilityRelatedError(code)) {
         const QString message = unsupportedMessage.arg(QString::fromUtf8(curl_easy_strerror(code)));
         if (policy == QCUnsupportedSecurityOptionPolicy::Fail) {
             reply->setError(NetworkError::InvalidRequest, message);

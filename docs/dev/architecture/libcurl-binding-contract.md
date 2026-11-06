@@ -80,6 +80,25 @@ runtime shutdown 先关闭事件入口，再使 module 进入 Draining；在途 
 
 `QCCurlHandleManager` 负责 easy handle 和内部 header list 的释放；HTTP handle 还保留同一 transfer state，使 POSTFIELDS/RESOLVE 等借用数据在 detach 后随 handle 移动，覆盖 completion 排队、事件丢弃和 reply 先销毁的路径。释放顺序必须是 easy cleanup、header list、共享 state，不能因 record 已销毁就提前释放 backing storage。其他外部借用对象由对应 owner 持有，不能依赖临时对象、悬挂 lambda 引用或跨线程裸指针。进入 multi 后的释放时机遵循上面的 transfer ownership。
 
+## TLS 配置与诊断
+
+`QCTlsConfiguration` 封装 endpoint 与 HTTPS proxy 的 TLS 配置解释、选项顺序、Fail/Warn
+策略和全部 TLS 字节存储。它按值保存在既有 `QCNetworkReplyTransferState` 中，不依赖
+Reply、整个 Request 或反向回调；规则测试通过同一行为接口使用真实 easy handle。
+生产调用方只传 endpoint config 或 requested/effective proxy type 与可选 proxy TLS config。
+
+proxy TLS 在代理 endpoint/credentials 之后、HTTP version 之前应用；endpoint TLS 保持原
+配置位置。endpoint verify、CA 和客户端凭据是 required；proxy TLS 及 endpoint 的 pin、
+minimum version、cipher 保持各自的 security policy。只有 `CURLE_UNKNOWN_OPTION` 和
+`CURLE_NOT_BUILT_IN` 可在 Warn 下继续，其它失败始终终止。HTTPS proxy 使用受支持
+libcurl 的原生类型，不回落明文代理。
+
+module 只返回有序 warnings 与首次 fatal；Reply 的 `publishTlsConfigurationResult` 在原
+调用点先发布 warnings，再设置一次错误，不重解释策略、不清空既有诊断。诊断只包含
+选项名、错误类别与原生静态描述，不回显路径、密码、pin 或 cipher 输入。TLS 对象不
+复制或移动；active record、detached handle 与 queued/dropped completion 沿用同一
+backing 的持有链，easy cleanup 早于 TLS 存储释放。配置仅发生在原有安全 setup 时点。
+
 ## diagnostics 与 public accessor 边界
 
 public accessor 保留调用方主动读取 raw header、raw body 摘要和 error string 的能力，不因脱敏而删除或弱化。自动 diagnostics、logger 和内建 middleware 使用同一脱敏边界；默认不写出 query、Authorization、Cookie、signed ticket 或 verbose trace 中的原始敏感数据。宿主持久化证据与自定义 facade 应遵循各自的敏感数据治理，不属于内建日志自动保证。

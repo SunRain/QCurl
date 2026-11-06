@@ -19,30 +19,22 @@ namespace QCurl {
 
 class QCNetworkReplyPrivate;
 class QCNetworkRequest;
-class QCNetworkProxyConfig;
-enum class QCNetworkTlsVersion;
-enum class QCUnsupportedSecurityOptionPolicy;
 
 namespace Internal {
 
 struct CurlPlan;
 struct NormalizedRequest;
 struct RequestBody;
+struct TlsConfigurationResult;
 
 namespace ReplyCurlOptions {
 
 namespace Detail {
 
-[[nodiscard]] Q_DECL_HIDDEN bool isCapabilityRelatedCurlError(CURLcode code);
 Q_DECL_HIDDEN void appendCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &message);
 [[nodiscard]] Q_DECL_HIDDEN bool setRequiredOption(QCNetworkReplyPrivate *reply,
                                                    CURLcode code,
                                                    const char *optionName);
-[[nodiscard]] Q_DECL_HIDDEN bool handleSecurityOptionResult(QCNetworkReplyPrivate *reply,
-                                                            CURLcode code,
-                                                            const char *optionName,
-                                                            QCUnsupportedSecurityOptionPolicy policy);
-
 template<typename T>
 CURLcode curlEasySetoptWithTestHook(CURL *handle,
                                     QCurl::Internal::CurlOptions::Option option,
@@ -80,8 +72,6 @@ Q_DECL_HIDDEN bool setOptionalOffTOption(QCNetworkReplyPrivate *reply,
                                                        QString *error,
                                                        const char *optionName);
 
-Q_DECL_HIDDEN std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version);
-
 } // namespace Detail
 
 [[nodiscard]] Q_DECL_HIDDEN bool configureReplyBaseAndNetworkOptions(
@@ -103,17 +93,12 @@ Q_DECL_HIDDEN std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion versio
     const NormalizedRequest &normalized,
     bool hasExplicitAuthorizationHeader,
     bool hasSensitiveHeader);
-[[nodiscard]] Q_DECL_HIDDEN bool configureReplyProxyTlsOptions(
-    QCNetworkReplyPrivate *reply,
-    CURL *handle,
-    const QCNetworkProxyConfig &proxyConfig,
-    long curlProxyType);
+/// 按原顺序发布全部 TLS warning，再消费首次 fatal；不重解释策略或原生码。
+[[nodiscard]] Q_DECL_HIDDEN bool publishTlsConfigurationResult(QCNetworkReplyPrivate *reply,
+                                                               const TlsConfigurationResult &result);
 [[nodiscard]] Q_DECL_HIDDEN bool configureReplyHttpVersionOptions(QCNetworkReplyPrivate *reply,
                                                                   CURL *handle,
                                                                   const QCNetworkRequest &request);
-[[nodiscard]] Q_DECL_HIDDEN bool configureReplyTlsOptions(QCNetworkReplyPrivate *reply,
-                                                          CURL *handle,
-                                                          const QCNetworkRequest &request);
 [[nodiscard]] Q_DECL_HIDDEN bool configureReplyTimeoutsAndCallbacks(QCNetworkReplyPrivate *reply,
                                                                     CURL *handle,
                                                                     const QCNetworkRequest &request);

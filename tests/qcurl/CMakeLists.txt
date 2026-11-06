@@ -75,13 +75,15 @@ target_link_libraries(tst_CurlGlobalInitialization
     PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
 add_qcurl_test(tst_QCCurlShareCookieStore tst_QCCurlShareCookieStore.cpp)
 target_compile_definitions(tst_QCCurlShareCookieStore PRIVATE QCURL_ENABLE_TEST_HOOKS)
+add_qcurl_test(tst_QCTlsConfiguration tst_QCTlsConfiguration.cpp)
+target_compile_definitions(tst_QCTlsConfiguration PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCurlRuntime tst_QCurlRuntime.cpp)
 target_compile_definitions(tst_QCurlRuntime PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(tst_QCCurlHttpAdmission
     REQUIRE_LOCAL_PORT
     SOURCES tst_QCCurlHttpAdmission.cpp tst_QCCurlHttpAdmission.h
             tst_QCNetworkReplyCompletion.cpp tst_QCNetworkReplyTransferLifecycle.cpp
-            qcurl_http_script_server.h)
+            qcurl_http_script_server.h qcurl_tls_test_server.h)
 target_compile_definitions(tst_QCCurlHttpAdmission PRIVATE QCURL_ENABLE_TEST_HOOKS)
 set_tests_properties(tst_QCCurlHttpAdmission PROPERTIES LABELS "env;local_port;multi_ownership")
 
@@ -282,7 +284,12 @@ add_qcurl_test_with_preflight(
     REQUIRE_LOCAL_PORT
     SOURCES
     tst_QCNetworkProxy.cpp
-) # 代理配置测试
+    tst_QCNetworkProxy.h
+    tst_QCNetworkTlsConfigurationIntegration.cpp
+    tst_QCNetworkTlsConfigurationDiagnostics.cpp
+    qcurl_tls_test_server.h
+    qcnetwork_connect_test_proxy.h
+) # 代理配置与真实 TLS 应用测试
 add_qcurl_test(tst_QCNetworkRequestCanonicalApi tst_QCNetworkRequestCanonicalApi.cpp) # canonical API: QCNetworkRequest + send* 语义回归
 add_qcurl_test(tst_QCNetworkRequestConfigCanonicalApi tst_QCNetworkRequestConfigCanonicalApi.cpp) # canonical API: request config 语义回归
 add_qcurl_test(tst_QCNetworkBody tst_QCNetworkBody.cpp) # request body helper 测试

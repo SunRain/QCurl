@@ -127,38 +127,15 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
     return setRequiredCurlOption(reply, handle, QCURL_CURL_OPTION(CURLOPT_RANGE), range.constData());
 }
 
-[[nodiscard]] bool resolveCurlProxyType(QCNetworkReplyPrivate *reply,
-                                        const QCNetworkProxyConfig &config,
-                                        long *curlProxyType)
+[[nodiscard]] bool resolveCurlProxyType(const QCNetworkProxyConfig &config, long *curlProxyType)
 {
-#ifdef CURLPROXY_HTTPS
-    Q_UNUSED(reply)
-#endif
     switch (config.type()) {
         case QCNetworkProxyConfig::ProxyType::Http:
             *curlProxyType = CURLPROXY_HTTP;
             return true;
         case QCNetworkProxyConfig::ProxyType::Https:
-#ifdef CURLPROXY_HTTPS
             *curlProxyType = CURLPROXY_HTTPS;
             return true;
-#else
-            if (const auto tls = config.tlsConfig();
-                tls.has_value()
-                && tls->unsupportedSecurityPolicy() == QCUnsupportedSecurityOptionPolicy::Fail) {
-                reply->setError(
-                    NetworkError::InvalidRequest,
-                    QStringLiteral(
-                        "当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS 未定义）"));
-                return false;
-            }
-            *curlProxyType = CURLPROXY_HTTP;
-            appendCapabilityWarning(reply,
-                                    QStringLiteral(
-                                        "当前构建的 libcurl 不支持 HTTPS 代理（CURLPROXY_HTTPS "
-                                        "未定义），已按 HTTP 代理处理"));
-            return true;
-#endif
         case QCNetworkProxyConfig::ProxyType::Socks4:
             *curlProxyType = CURLPROXY_SOCKS4;
             return true;
@@ -199,7 +176,7 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
                                   static_cast<long>(config.port()))) {
         return false;
     }
-    return resolveCurlProxyType(reply, config, curlProxyType)
+    return resolveCurlProxyType(config, curlProxyType)
            && setRequiredCurlOption(reply,
                                     handle,
                                     QCURL_CURL_OPTION(CURLOPT_PROXYTYPE),
@@ -240,7 +217,12 @@ void configureSensitiveRedirectPolicy(QCNetworkReplyPrivate *reply,
     long curlProxyType = CURLPROXY_HTTP;
     return configureProxyEndpoint(reply, handle, config, &curlProxyType)
            && configureProxyCredentials(reply, handle, config)
-           && configureReplyProxyTlsOptions(reply, handle, config, curlProxyType);
+           && publishTlsConfigurationResult(reply,
+                                            reply->transferState->tlsConfiguration
+                                                .applyProxy(handle,
+                                                            {config.type(),
+                                                             curlProxyType,
+                                                             config.tlsConfig()}));
 }
 
 [[nodiscard]] bool configureProxy(QCNetworkReplyPrivate *reply,

@@ -16,11 +16,6 @@
 
 namespace QCurl::Internal {
 
-bool isReplyCapabilityRelatedCurlError(CURLcode code) noexcept
-{
-    return code == CURLE_UNKNOWN_OPTION || code == CURLE_NOT_BUILT_IN;
-}
-
 void appendReplyCapabilityWarning(QCNetworkReplyPrivate *reply, const QString &message)
 {
     if (!reply) {

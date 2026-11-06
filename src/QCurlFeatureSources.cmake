@@ -17,9 +17,10 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkReplyCurlBaseOptions.cpp
     private/QCNetworkReplyCurlMethodOptions.cpp
     private/QCNetworkReplyCurlProxyOptions.cpp
-    private/QCNetworkReplyCurlProxyTlsOptions.cpp
     private/QCNetworkReplyCurlHttpOptions.cpp
-    private/QCNetworkReplyCurlTlsOptions.cpp
+    private/QCTlsConfiguration.cpp
+    private/QCTlsConfigurationProxy.cpp
+    private/QCTlsConfigurationPolicy.cpp
     private/QCNetworkReplyCurlRuntimeOptions.cpp
     private/QCNetworkProtocolPolicy.cpp
     private/QCNetworkReplyExecution.cpp
@@ -121,6 +122,8 @@ set(QCURL_FEATURE_HEADERS
     private/QCNetworkRetryPolicy_p.h
     private/QCNetworkProtocolPolicy_p.h
     private/QCNetworkReplyCurlOptions_p.h
+    private/QCTlsConfiguration_p.h
+    private/QCTlsConfigurationPolicy_p.h
     private/QCNetworkAdmissionCore_p.h
     private/QCSingleFileMultipartBodyDevice.h
     QCNetworkBody.h

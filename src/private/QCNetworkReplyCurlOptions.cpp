@@ -27,11 +27,6 @@
 
 namespace QCurl::Internal::ReplyCurlOptions::Detail {
 
-bool isCapabilityRelatedCurlError(CURLcode code)
-{
-    return QCurl::Internal::isReplyCapabilityRelatedCurlError(code);
-}
-
 void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
 {
     QCurl::Internal::appendReplyCapabilityWarning(d, message);
@@ -50,33 +45,6 @@ void appendCapabilityWarning(QCNetworkReplyPrivate *d, const QString &message)
     return false;
 }
 
-[[nodiscard]] bool handleSecurityOptionResult(QCNetworkReplyPrivate *reply,
-                                              CURLcode code,
-                                              const char *optionName,
-                                              QCUnsupportedSecurityOptionPolicy policy)
-{
-    if (code == CURLE_OK) {
-        return true;
-    }
-
-    const QString curlError = QString::fromUtf8(curl_easy_strerror(code));
-    if (isCapabilityRelatedCurlError(code)) {
-        const QString message = QStringLiteral("libcurl 不支持 %1（%2）")
-                                    .arg(QString::fromUtf8(optionName), curlError);
-        if (policy == QCUnsupportedSecurityOptionPolicy::Fail) {
-            reply->setError(NetworkError::InvalidRequest, message);
-            return false;
-        }
-        appendCapabilityWarning(reply, message);
-        return true;
-    }
-
-    reply->setError(NetworkError::InvalidRequest,
-                    QStringLiteral("设置 %1 失败（%2）")
-                        .arg(QString::fromUtf8(optionName), curlError));
-    return false;
-}
-
 bool setOptionalLongOption(QCNetworkReplyPrivate *d,
                            CURL *handle,
                            QCurl::Internal::CurlOptions::Option option,
@@ -91,7 +59,7 @@ bool setOptionalLongOption(QCNetworkReplyPrivate *d,
         return true;
     }
 
-    if (isCapabilityRelatedCurlError(rc)) {
+    if (CurlOptions::isCapabilityRelatedError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
                                     .arg(QString::fromUtf8(option.name))
@@ -120,7 +88,7 @@ bool setOptionalStringOption(QCNetworkReplyPrivate *d,
         return true;
     }
 
-    if (isCapabilityRelatedCurlError(rc)) {
+    if (CurlOptions::isCapabilityRelatedError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
                                     .arg(QString::fromUtf8(option.name))
@@ -149,7 +117,7 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
         return true;
     }
 
-    if (isCapabilityRelatedCurlError(rc)) {
+    if (CurlOptions::isCapabilityRelatedError(rc)) {
         appendCapabilityWarning(d,
                                 QStringLiteral("libcurl 不支持 %1（%2）")
                                     .arg(QString::fromUtf8(option.name))
@@ -181,28 +149,24 @@ bool setOptionalOffTOption(QCNetworkReplyPrivate *d,
     return QCurl::Internal::CurlOptions::buildCurlSlist(entries, output, error, optionName);
 }
 
-std::optional<long> toCurlSslVersionMin(QCNetworkTlsVersion version)
+} // namespace QCurl::Internal::ReplyCurlOptions::Detail
+
+namespace QCurl::Internal::ReplyCurlOptions {
+
+bool publishTlsConfigurationResult(QCNetworkReplyPrivate *reply,
+                                   const TlsConfigurationResult &result)
 {
-    switch (version) {
-        case QCNetworkTlsVersion::Default:
-            return std::nullopt;
-        case QCNetworkTlsVersion::Tls1_0:
-            return static_cast<long>(CURL_SSLVERSION_TLSv1);
-        case QCNetworkTlsVersion::Tls1_1:
-            return static_cast<long>(CURL_SSLVERSION_TLSv1_1);
-        case QCNetworkTlsVersion::Tls1_2:
-            return static_cast<long>(CURL_SSLVERSION_TLSv1_2);
-        case QCNetworkTlsVersion::Tls1_3:
-#ifdef CURL_SSLVERSION_TLSv1_3
-            return static_cast<long>(CURL_SSLVERSION_TLSv1_3);
-#else
-            return std::nullopt;
-#endif
+    for (const QString &warning : result.warnings) {
+        appendReplyCapabilityWarning(reply, warning);
     }
-    return std::nullopt;
+    if (result.failure.has_value()) {
+        reply->setError(result.failure->error, result.failure->message);
+        return false;
+    }
+    return true;
 }
 
-} // namespace QCurl::Internal::ReplyCurlOptions::Detail
+} // namespace QCurl::Internal::ReplyCurlOptions
 
 namespace QCurl {
 
@@ -251,7 +215,8 @@ bool QCNetworkReplyPrivate::configureCurlOptions()
             this, handle, normalized, hasExplicitAuthorizationHeader, hasSensitiveHeader)) {
         return false;
     }
-    if (!Internal::ReplyCurlOptions::configureReplyTlsOptions(this, handle, request)) {
+    if (!Internal::ReplyCurlOptions::publishTlsConfigurationResult(
+            this, transferState->tlsConfiguration.applyEndpoint(handle, request.sslConfig()))) {
         return false;
     }
     if (!Internal::ReplyCurlOptions::configureReplyTimeoutsAndCallbacks(this, handle, request)) {

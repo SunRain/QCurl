@@ -89,6 +89,13 @@ RECORD_AUTHORIZATIONS = (
     ),
     *_entries(
         "record",
+        "src/private/QCTlsConfiguration_p.h",
+        "TlsConfigurationFailure",
+        "TlsConfigurationResult",
+        "ProxyTlsInput",
+    ),
+    *_entries(
+        "record",
         "src/private/QCCurlShareCookieResult_p.h",
         "ShareCallResult",
         "CookieCommandResult",

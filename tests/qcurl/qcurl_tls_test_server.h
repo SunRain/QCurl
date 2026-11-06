@@ -3,7 +3,9 @@
 
 #include <QFile>
 #include <QHostAddress>
+#include <QSharedPointer>
 #include <QSslCertificate>
+#include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslSocket>
 #include <QTcpServer>
@@ -68,6 +70,14 @@ public:
     quint16 port() const { return m_server.serverPort(); }
     int connectionCount() const { return m_connectionCount; }
     QString errorString() const { return m_errorString; }
+    /// 开启有界 HTTP 响应，供配置选项的真实正负控制观测。
+    void setHttpResponseEnabled(bool enabled) { m_httpResponseEnabled = enabled; }
+    /// 在握手前限定协议、cipher 或客户端证书校验。
+    void setTlsConfiguration(const QSslConfiguration &configuration)
+    {
+        m_tlsConfiguration = configuration;
+    }
+    QList<QByteArray> requests() const { return m_requests; }
 
 private:
     Q_DISABLE_COPY_MOVE(LocalTlsServer)
@@ -109,13 +119,33 @@ private:
             socket->disconnectFromHost();
             return;
         }
-        socket->setLocalCertificate(*m_certificate);
-        socket->setPrivateKey(*m_privateKey);
-        // 服务端不请求客户端证书；调用方的服务器证书校验保持开启。
-        socket->setPeerVerifyMode(QSslSocket::VerifyNone);
-        connect(socket, &QSslSocket::encrypted, socket, [socket]() {
-            socket->disconnectFromHost();
+        auto configuration = m_tlsConfiguration.value_or(QSslConfiguration::defaultConfiguration());
+        configuration.setLocalCertificate(*m_certificate);
+        configuration.setPrivateKey(*m_privateKey);
+        if (!m_tlsConfiguration) {
+            configuration.setPeerVerifyMode(QSslSocket::VerifyNone);
+        }
+        socket->setSslConfiguration(configuration);
+        connect(socket, &QSslSocket::encrypted, socket, [this, socket]() {
+            if (!m_httpResponseEnabled) {
+                socket->disconnectFromHost();
+            }
         });
+        if (m_httpResponseEnabled) {
+            auto pending = QSharedPointer<QByteArray>::create();
+            connect(socket, &QSslSocket::readyRead, this, [this, socket, pending]() {
+                pending->append(socket->readAll());
+                if (pending->size() > 16384) {
+                    m_errorString = QStringLiteral("TLS HTTP 请求超过夹具上限");
+                    socket->disconnectFromHost();
+                } else if (pending->contains("\r\n\r\n")) {
+                    m_requests.append(*pending);
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: 6\r\n"
+                                  "Connection: close\r\n\r\ntls-ok");
+                    socket->disconnectFromHost();
+                }
+            });
+        }
         socket->startServerEncryption();
     }
 
@@ -124,8 +154,11 @@ private:
     QString m_keyPath;
     std::optional<QSslCertificate> m_certificate;
     std::optional<QSslKey> m_privateKey;
-    int m_connectionCount = 0;
-    bool m_plaintext      = false;
+    std::optional<QSslConfiguration> m_tlsConfiguration;
+    QList<QByteArray> m_requests;
+    bool m_httpResponseEnabled = false;
+    int m_connectionCount      = 0;
+    bool m_plaintext           = false;
     QString m_errorString;
 };
 
