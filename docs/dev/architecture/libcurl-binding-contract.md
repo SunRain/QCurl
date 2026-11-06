@@ -58,6 +58,22 @@ share 全关后新传输立即不绑定，非空在途变更沿用 applied 并�
 pending，改回 applied 撤回 pending。active users 和临时 Cookie 操作都必须退出后才可配置
 或清理 CURLSH。detach 失败保留原生 ownership，不把未解绑的 easy 交给普通析构路径。
 
+`QCCurlShareCookieStore` 是完整的 share/Cookie 行为边界：持有逻辑 scope、惰性创建的
+context、HTTP bindings、临时 operation、applied/pending、初始化失败及 store poison。
+multi 只保留一个 shared holder，负责 owner-thread 投递、graph mutex、CURLM、token 和
+结果发布；module 不反向调用 multi，也不发布日志。manager 地址仅用作 live identity；
+scope 关闭先移出 live 索引，旧 binding 继续保留原 context，地址复用得到独立 store。
+
+HTTP 原生 SHARE 解绑成功才提交 binding/users 退出；之后 pending 的安全初始化失败只
+产生诊断，不撤销已经安全的 detach。临时 Cookie 命令的退出固定为 SHARE 解绑成功、
+easy cleanup、operation 退出、pending/retired 推进。事务成功与退出 ownership 结果
+分别返回；退出失败不得发布成功。解绑或 cleanup 无法证明安全时，module 停止所有
+native 调用，保留 easy/context/userdata，由 multi 的现有 quarantine 整图持有同一实例。
+
+runtime shutdown 先关闭事件入口，再使 module 进入 Draining；在途 easy 全部安全脱离和
+销毁后统一关闭 share scopes，最后清理 domains。Draining 的最后用户退出不应用 pending。
+任一层 ownership 失败立即停止后续 native cleanup，module 析构不代替显式 shutdown。
+
 ## borrowed lifetime 合同
 
 借给 libcurl 的 `curl_slist`、header/body buffer、upload device、callback userdata 和 TLS/proxy/URL 字符串缓冲必须覆盖相关 transfer 生命周期。

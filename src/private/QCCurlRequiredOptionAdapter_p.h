@@ -27,6 +27,13 @@ enum class CookieOptionStage {
     Export,
 };
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+/// 仅记录当前 owner thread 的原生寿命事件，不保存 handle 或配置值。
+void recordShareCookieLifecycleForTest(const char *event);
+[[nodiscard]] QStringList shareCookieLifecycleForTest();
+void clearShareCookieLifecycleForTest();
+#endif
+
 struct RequiredOptionResult
 {
     CURLcode curlCode    = CURLE_OK;
@@ -83,6 +90,12 @@ public:
         const CURLcode code  = shouldFailEasy(stage, name, occurrence)
                                    ? CURLE_BAD_FUNCTION_ARGUMENT
                                    : curl_easy_setopt(handle, option.id, value);
+#ifdef QCURL_ENABLE_TEST_HOOKS
+        if (code == CURLE_OK && option.id == CURLOPT_SHARE) {
+            recordShareCookieLifecycleForTest(stage == CookieOptionStage::Rollback ? "share-unbind"
+                                                                                   : "share-bind");
+        }
+#endif
         return easyResult(code, name);
     }
 

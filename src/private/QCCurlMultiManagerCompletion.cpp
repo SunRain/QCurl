@@ -99,8 +99,7 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::detachTr
     }
     record->clearActiveHandle();
 
-    releaseShareForEasyHandleLocked(easy);
-    if (m_isPoisoned.load(std::memory_order_relaxed)) {
+    if (!detachShareBindingLocked(easy, context)) {
         return std::nullopt;
     }
 

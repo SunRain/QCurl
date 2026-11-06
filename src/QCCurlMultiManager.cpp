@@ -2,6 +2,11 @@
 
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
+#include "private/QCCurlShareCookieStore_p.h"
+
+#ifdef QCURL_ENABLE_TEST_HOOKS
+#include "private/QCCurlRequiredOptionAdapter_p.h"
+#endif
 #include "private/QCurlRuntimeState_p.h"
 
 #include <QDebug>
@@ -18,6 +23,10 @@ namespace QCurl {
 
 QCCurlMultiManager *QCCurlMultiManager::instance()
 {
+#ifdef QCURL_ENABLE_TEST_HOOKS
+    // 观测器先构造、后析构，覆盖 thread-local manager 的原生资源收尾。
+    static_cast<void>(Internal::shareCookieLifecycleForTest());
+#endif
     // 线程内单例：每个线程拥有独立的 multi engine，避免同一 CURLM* 被跨线程并发访问
     static thread_local QCCurlMultiManager s_instance;
     return &s_instance;
@@ -26,6 +35,7 @@ QCCurlMultiManager *QCCurlMultiManager::instance()
 QCCurlMultiManager::QCCurlMultiManager(QObject *parent)
     : QObject(parent)
     , m_runtimeLease(Internal::acquireRuntimeLease())
+    , m_shareCookieStore(QSharedPointer<Internal::QCCurlShareCookieStore>::create(thread()))
 {
     qDebug() << "QCCurlMultiManager: Initializing global instance";
 
@@ -94,6 +104,7 @@ void QCCurlMultiManager::shutdown(bool retainPoisonedGraph)
             disableMultiCallbacks(domain.get());
         }
     }
+    m_shareCookieStore->beginShutdown();
     if (!m_isPoisoned.load(std::memory_order_relaxed)) {
         shutdownTransportGraph();
     }
@@ -112,11 +123,9 @@ void QCCurlMultiManager::shutdown(bool retainPoisonedGraph)
 void QCCurlMultiManager::shutdownTransportGraph()
 {
     QList<CURL *> activeHandles;
-    QList<QSharedPointer<ShareContext>> shareContexts;
     {
         QMutexLocker locker(&m_mutex);
         activeHandles = m_activeTransfers.keys();
-        shareContexts = m_shareContexts.values() + m_retiredShareContexts;
     }
 
     // 只有前一层安全脱离后才能销毁下一层；失败时保留整个剩余对象图。
@@ -124,17 +133,11 @@ void QCCurlMultiManager::shutdownTransportGraph()
     if (m_isPoisoned.load(std::memory_order_relaxed)) {
         return;
     }
-    cleanupShareContextsForShutdown(shareContexts);
-    if (m_isPoisoned.load(std::memory_order_relaxed)) {
-        return;
-    }
-
     {
         QMutexLocker locker(&m_mutex);
-        m_shareContexts.clear();
-        m_easyToShareContext.clear();
-        m_easyShareOptionSet.clear();
-        m_retiredShareContexts.clear();
+        if (!consumeShareResultLocked(m_shareCookieStore->shutdownScopes())) {
+            return;
+        }
     }
     for (const auto &domain : allDomains()) {
         retireDomain(domain.get());
@@ -170,6 +173,7 @@ void QCCurlMultiManager::poisonLocked(const char *context, CURLMcode code)
         return;
     }
 
+    m_shareCookieStore->makeNonCallable();
     m_isReady = false;
     m_initializationError
         = QStringLiteral("curl multi manager 已永久 poisoned：ownership 无法证明（%1, code=%2）")
@@ -249,28 +253,6 @@ void QCCurlMultiManager::disableSocketsForShutdown(const QList<QSharedPointer<So
         }
         if (info->writeNotifier) {
             info->writeNotifier->setEnabled(false);
-        }
-    }
-}
-
-void QCCurlMultiManager::cleanupShareContextsForShutdown(
-    const QList<QSharedPointer<ShareContext>> &shareContexts)
-{
-    QMutexLocker locker(&m_mutex);
-    for (const auto &contextHolder : shareContexts) {
-        ShareContext *context = contextHolder.data();
-        if (!context) {
-            continue;
-        }
-        if (context->hasUsers()) {
-            poisonLocked("QCCurlMultiManager::cleanupShareContextsForShutdown/active-users",
-                         CURLM_INTERNAL_ERROR);
-            return;
-        }
-        context->pendingDelete = true;
-        maybeFinalizeShareContextLocked(context);
-        if (m_isPoisoned.load(std::memory_order_relaxed)) {
-            return;
         }
     }
 }

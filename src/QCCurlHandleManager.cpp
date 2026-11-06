@@ -6,6 +6,8 @@
 #include <QDebug>
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
+#include "private/QCCurlRequiredOptionAdapter_p.h"
+
 #include <atomic>
 #endif
 #include <utility>
@@ -72,6 +74,7 @@ void QCCurlHandleManager::cleanup() noexcept
         curl_easy_cleanup(std::exchange(m_curlHandle, nullptr));
 #ifdef QCURL_ENABLE_TEST_HOOKS
         s_easyCleanupCount.fetch_add(1, std::memory_order_relaxed);
+        Internal::recordShareCookieLifecycleForTest("easy-cleanup");
 #endif
     }
     curl_slist_free_all(std::exchange(m_headerList, nullptr));

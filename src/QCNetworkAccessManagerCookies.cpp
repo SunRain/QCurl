@@ -34,8 +34,12 @@ QCurl::QCCookieExportResult cookieExportFailure(const QString &error)
                                                 QCurl::Internal::cookiepolicy::kMultiUnavailable);
 }
 
-QCurl::QCCookieOperationResult operationResult(const QCurl::Internal::CookieStoreResult &storeResult)
+QCurl::QCCookieOperationResult operationResult(const QCurl::Internal::CookieCommandResult &command)
 {
+    if (command.lifecycle.state != QCurl::Internal::ShareCallState::Callable) {
+        return cookieOperationFailure(command.lifecycle.message);
+    }
+    const auto &storeResult = command.store;
     return storeResult.isSuccess()
                ? QCurl::QCCookieOperationResult::success()
                : QCurl::QCCookieOperationResult::failure(QCurl::QCCookieAsyncError::BusinessError,
@@ -43,8 +47,12 @@ QCurl::QCCookieOperationResult operationResult(const QCurl::Internal::CookieStor
                                                          storeResult.policyCode);
 }
 
-QCurl::QCCookieExportResult exportResult(const QCurl::Internal::CookieStoreResult &storeResult)
+QCurl::QCCookieExportResult exportResult(const QCurl::Internal::CookieCommandResult &command)
 {
+    if (command.lifecycle.state != QCurl::Internal::ShareCallState::Callable) {
+        return cookieExportFailure(command.lifecycle.message);
+    }
+    const auto &storeResult = command.store;
     return storeResult.isSuccess()
                ? QCurl::QCCookieExportResult::success(storeResult.cookies)
                : QCurl::QCCookieExportResult::failure(QCurl::QCCookieAsyncError::BusinessError,

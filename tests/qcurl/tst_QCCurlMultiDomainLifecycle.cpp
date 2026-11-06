@@ -5,6 +5,7 @@
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiManagerTestAccess_p.h"
 #include "private/QCCurlPersistentTransferBridge_p.h"
+#include "private/QCCurlRequiredOptionAdapter_p.h"
 #include "private/QCNetworkRetryPolicy_p.h"
 #include "qcurl_resolve_test_server.h"
 #include "tst_QCCurlMultiDomains.h"
@@ -134,6 +135,49 @@ void TestQCCurlMultiDomains::retryPinsDomainUntilTerminalState()
     Access::ageIdleDomains(engine);
     Access::reclaimIdleDomains(engine);
     QVERIFY(domain.expired());
+}
+
+void TestQCCurlMultiDomains::cookieOperationEarlyExitKeepsNativeLifetime_data()
+{
+    QTest::addColumn<QByteArray>("failurePoint");
+    QTest::addColumn<bool>("exportCommand");
+    QTest::newRow("success") << QByteArray{} << false;
+    QTest::newRow("setup") << QByteArrayLiteral("setup:CURLOPT_COOKIEFILE") << false;
+    QTest::newRow("snapshot") << QByteArrayLiteral("snapshot:CURLINFO_COOKIELIST") << false;
+    QTest::newRow("export") << QByteArrayLiteral("export:CURLINFO_COOKIELIST") << true;
+    QTest::newRow("persist") << QByteArrayLiteral("persist:CURLOPT_COOKIELIST") << false;
+}
+
+void TestQCCurlMultiDomains::cookieOperationEarlyExitKeepsNativeLifetime()
+{
+    QFETCH(QByteArray, failurePoint);
+    QFETCH(bool, exportCommand);
+    QCNetworkAccessManager manager;
+    manager.setShareHandleConfig(sharing(true, false));
+    QCCookie cookie(QByteArrayLiteral("lifetime"), QByteArrayLiteral("retained"));
+    const QUrl origin(QStringLiteral("https://example.com/"));
+    const auto previous = qgetenv("QCURL_TEST_FORCE_COOKIE_OPTION_ERROR");
+    const auto restore  = qScopeGuard([previous]() {
+        if (previous.isNull()) {
+            qunsetenv("QCURL_TEST_FORCE_COOKIE_OPTION_ERROR");
+        } else {
+            qputenv("QCURL_TEST_FORCE_COOKIE_OPTION_ERROR", previous);
+        }
+    });
+    qputenv("QCURL_TEST_FORCE_COOKIE_OPTION_ERROR", failurePoint);
+    Internal::clearShareCookieLifecycleForTest();
+    QString error;
+    const bool success = exportCommand ? manager.exportCookies(origin, &error).has_value()
+                                       : manager.importCookies({cookie}, origin, &error);
+    QCOMPARE(success, failurePoint.isEmpty());
+    const auto events  = Internal::shareCookieLifecycleForTest();
+    const auto cleanup = events.indexOf(QStringLiteral("easy-cleanup"));
+    const auto exit    = events.indexOf(QStringLiteral("operation-exit"));
+    QVERIFY2(cleanup >= 0 && exit > cleanup, qPrintable(events.join(QLatin1Char(','))));
+    QCOMPARE(events.count(QStringLiteral("easy-cleanup")), 1);
+    QCOMPARE(events.count(QStringLiteral("operation-exit")), 1);
+    qunsetenv("QCURL_TEST_FORCE_COOKIE_OPTION_ERROR");
+    QVERIFY2(manager.exportCookies(origin, &error).has_value(), qPrintable(error));
 }
 
 void TestQCCurlMultiDomains::managerAddressReuseDoesNotInheritRetiredShare()

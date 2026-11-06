@@ -9,9 +9,8 @@
 #include "QCCookie.h"
 #include "QCCurlHandleManager.h"
 #include "QCNetworkError.h"
-#include "private/QCCookieStoreResult_p.h"
-#include "private/QCCurlMultiManagerShareState_p.h"
 #include "private/QCCurlPersistentTransferBridge_p.h"
+#include "private/QCCurlShareCookieResult_p.h"
 
 #include <QHash>
 #include <QList>
@@ -46,6 +45,9 @@ struct QCCurlMultiDomain;
 class QCNetworkRequest;
 class QCCurlMultiManagerTestAccess;
 struct SocketInfo;
+namespace Internal {
+class QCCurlShareCookieStore;
+}
 
 /**
  * @brief 每线程一个的 curl multi manager
@@ -166,7 +168,7 @@ public:
      * 为缺失 domain/path 的 cookie 补全作用域。失败结果区分预校验拒绝、
      * 已回滚、持久化失败和 store poisoned。
      */
-    [[nodiscard]] Internal::CookieStoreResult importCookiesForManager(
+    [[nodiscard]] Q_DECL_HIDDEN Internal::CookieCommandResult importCookiesForManager(
         const QCNetworkAccessManager *manager,
         const QList<QCCookie> &cookies,
         const QUrl &originUrl);
@@ -177,7 +179,7 @@ public:
      * @param filterUrl 可选过滤 URL，用于按 host/path 收敛结果
      * @return 结构化结果；成功时 `cookies` 为空表示没有匹配 cookie
      */
-    [[nodiscard]] Internal::CookieStoreResult exportCookiesForManager(
+    [[nodiscard]] Q_DECL_HIDDEN Internal::CookieCommandResult exportCookiesForManager(
         const QCNetworkAccessManager *manager, const QUrl &filterUrl);
 
     /**
@@ -185,7 +187,7 @@ public:
      *
      * @return 结构化结果；FLUSH 失败明确返回 PersistenceFailed
      */
-    [[nodiscard]] Internal::CookieStoreResult clearAllCookiesForManager(
+    [[nodiscard]] Q_DECL_HIDDEN Internal::CookieCommandResult clearAllCookiesForManager(
         const QCNetworkAccessManager *manager);
 
     /**
@@ -268,26 +270,20 @@ private:
     void reclaimIdleDomains();
     void wakeupDomain(const Domain &domain);
 
-    /// 描述 share 配置后 easy 是否仍允许进入 libcurl multi。
-    enum class ShareApplyState {
-        Callable,
-        Rejected,
-        NonCallable,
-    };
-
-    /// 返回 share apply 的可调用状态与稳定失败诊断。
-    struct ShareApplyResult
-    {
-        ShareApplyState state = ShareApplyState::Callable;
-        QString errorMessage;
-    };
+    [[nodiscard]] bool consumeShareResultLocked(const Internal::ShareCallResult &result);
+    [[nodiscard]] bool prepareCookieCommandLocked(const QCNetworkAccessManager *manager,
+                                                  Internal::CookieCommandResult &result);
+    [[nodiscard]] Internal::CookieCommandResult publishCookieCommandLocked(
+        Internal::CookieCommandResult result);
+    void openShareScopeLocked(const QCNetworkAccessManager *manager);
+    [[nodiscard]] Internal::ShareCallResult bindShareToHttpLocked(
+        const QCNetworkAccessManager *manager, const QCCurlMultiTransferRecord &record);
+    [[nodiscard]] bool detachShareBindingLocked(CURL *easy, const char *operation);
 
     [[nodiscard]] HttpAdmissionResult admitHttpRecordLocked(
         const QCNetworkAccessManager *manager, QSharedPointer<QCCurlMultiTransferRecord> record);
     [[nodiscard]] HttpAdmissionResult rejectHttpAdmissionLocked(
-        QSharedPointer<QCCurlMultiTransferRecord> record,
-        Internal::QCCurlMultiManagerShareContext *context,
-        HttpAdmissionResult result);
+        QSharedPointer<QCCurlMultiTransferRecord> record, HttpAdmissionResult result);
     [[nodiscard]] TransferToken commitTransferRecordLocked(
         const QSharedPointer<QCCurlMultiTransferRecord> &record);
 
@@ -317,9 +313,7 @@ private:
     void poisonLocked(const char *context, CURLMcode code);
     /// 将尚未登记但 ownership 已不可证明的对象图标记为 NonCallable 并隔离。
     void quarantineUnregisteredTransferLocked(
-        QSharedPointer<QCCurlMultiTransferRecord> &&record,
-        CURL *easy,
-        Internal::QCCurlMultiManagerShareContext *shareContext) noexcept;
+        QSharedPointer<QCCurlMultiTransferRecord> &&record) noexcept;
     void retainPoisonedObjectGraph() noexcept;
     void dispatchFinishedTransfer(FinishedTransfer &&transfer);
 
@@ -329,49 +323,14 @@ private:
     void updateReadNotifier(QCCurlMultiDomain *domain, SocketInfo *socketInfo, int what);
     void updateWriteNotifier(QCCurlMultiDomain *domain, SocketInfo *socketInfo, int what);
 
-    using ShareConfig  = Internal::QCCurlMultiManagerShareConfig;
-    using ShareContext = Internal::QCCurlMultiManagerShareContext;
-
-    static void shareLockCallback(CURL *handle,
-                                  curl_lock_data data,
-                                  curl_lock_access access,
-                                  void *userptr);
-    static void shareUnlockCallback(CURL *handle, curl_lock_data data, void *userptr);
-
-    static ShareConfig toShareConfig(const QCNetworkAccessManager *manager);
-    static QString shareConfigSummary(const ShareConfig &config);
-
-    ShareContext *getOrCreateShareContextLocked(const QCNetworkAccessManager *manager);
-    void onAccessManagerDestroyedLocked(const QCNetworkAccessManager *manager);
-    [[nodiscard]] bool applyShareConfigIfIdleLocked(ShareContext *context,
-                                                    const ShareConfig &desired,
-                                                    QString *error);
-    [[nodiscard]] bool initializeShareContextLocked(ShareContext *context,
-                                                    const ShareConfig &desired,
-                                                    QString *error);
-    [[nodiscard]] bool cleanupShareHandleLocked(ShareContext *context, const char *operation);
     void cleanupActiveHandlesForShutdown(const QList<CURL *> &activeHandles);
     void disableSocketsForShutdown(const QList<QSharedPointer<SocketInfo>> &sockets);
-    void cleanupShareContextsForShutdown(const QList<QSharedPointer<ShareContext>> &shareContexts);
-    void releaseShareForEasyHandleLocked(CURL *easy);
-    [[nodiscard]] bool detachShareBindingLocked(CURL *easy, const char *operation);
-    void maybeFinalizeShareContextLocked(ShareContext *context);
 
     [[nodiscard]] bool addEasyToMultiLocked(QCCurlMultiDomain *domain, CURL *easy, QString *error);
     [[nodiscard]] Q_DECL_HIDDEN bool registerTransferRecord(
         const QSharedPointer<QCCurlMultiTransferRecord> &transfer,
         TransferToken *tokenOut,
         QString *error);
-
-    [[nodiscard]] ShareContext *prepareShareForHttpLocked(const QCNetworkAccessManager *manager,
-                                                          QStringList *warnings);
-    [[nodiscard]] ShareApplyResult applyShareToHttpLocked(const QCNetworkAccessManager *manager,
-                                                          const QCCurlMultiTransferRecord &record,
-                                                          ShareContext *shareContext);
-    void resetShareOnEasyIfNeeded(CURL *easy);
-    [[nodiscard]] ShareContext *prepareCookieContextLocked(const QCNetworkAccessManager *manager,
-                                                           const ShareConfig &desired,
-                                                           Internal::CookieStoreResult *failure);
 
     [[nodiscard]] bool applyLimitsConfig(QCCurlMultiDomain *domain,
                                          const QCNetworkConnectionPoolConfig &config,
@@ -410,18 +369,12 @@ private:
     std::atomic<int> m_runningRequests{0}; ///< 运行中的请求计数（原子）
 
     std::atomic<bool> m_isShuttingDown{false}; ///< 析构中标记（避免回调重入导致死锁）
-    std::atomic<bool> m_isPoisoned{false};     ///< ownership cannot be proved after detach failure
+    std::atomic<bool> m_isPoisoned{false};     ///< detach 失败后无法证明原生所有权。
 
     QTimer *m_domainReaper = nullptr; ///< 仅回收历史空闲域，不限制真实活动连接总数。
 
-    // ==================
-    // Share handle（M6+，可选）：按 manager scope 隔离（默认关闭）
-    // ==================
-
-    QHash<const QCNetworkAccessManager *, QSharedPointer<ShareContext>> m_shareContexts;
-    QList<QSharedPointer<ShareContext>> m_retiredShareContexts;
-    QHash<CURL *, ShareContext *> m_easyToShareContext;
-    QHash<CURL *, bool> m_easyShareOptionSet;
+    // 整图保留共享同一模块，使 share、临时 easy 与回调 userdata 一起进入 quarantine。
+    QSharedPointer<Internal::QCCurlShareCookieStore> m_shareCookieStore;
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
     int m_testCompletionCount      = 0;

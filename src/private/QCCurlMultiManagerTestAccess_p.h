@@ -9,6 +9,7 @@
 #include "QCCurlMultiManager.h"
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
+#include "private/QCCurlShareCookieStoreTestAccess_p.h"
 
 namespace QCurl {
 
@@ -73,7 +74,13 @@ public:
     [[nodiscard]] static int isolatedDomainCount(QCCurlMultiManager *engine);
     static void ageIdleDomains(QCCurlMultiManager *engine);
     static void reclaimIdleDomains(QCCurlMultiManager *engine);
-    [[nodiscard]] static Internal::QCCurlMultiManagerShareConfig appliedShareConfig(
+    [[nodiscard]] static bool bindShare(QCCurlMultiManager *engine,
+                                        QCNetworkAccessManager *manager,
+                                        QCCurlMultiManager::TransferToken token);
+    [[nodiscard]] static Internal::ShareCookieSnapshot shareSnapshot(QCCurlMultiManager *manager);
+    [[nodiscard]] static QWeakPointer<Internal::QCCurlShareCookieStore> shareStore(
+        QCCurlMultiManager *manager);
+    [[nodiscard]] static QCNetworkAccessManager::ShareHandleConfig appliedShareConfig(
         QCCurlMultiManager *engine, const QCNetworkAccessManager *manager);
     [[nodiscard]] static bool hasPendingShareConfig(QCCurlMultiManager *engine,
                                                     const QCNetworkAccessManager *manager);

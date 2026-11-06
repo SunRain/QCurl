@@ -3,6 +3,27 @@
 
 namespace QCurl::Internal {
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+namespace {
+thread_local QStringList s_lifecycleEvents;
+}
+
+void recordShareCookieLifecycleForTest(const char *event)
+{
+    s_lifecycleEvents.append(QString::fromLatin1(event));
+}
+
+QStringList shareCookieLifecycleForTest()
+{
+    return s_lifecycleEvents;
+}
+
+void clearShareCookieLifecycleForTest()
+{
+    s_lifecycleEvents.clear();
+}
+#endif
+
 QByteArray CookieOptionAdapter::stageName(CookieOptionStage stage)
 {
     switch (stage) {

@@ -23,6 +23,8 @@ private Q_SLOTS:
     void requiredResourceFailureDoesNotSend();
     void retryPinsDomainUntilTerminalState_data();
     void retryPinsDomainUntilTerminalState();
+    void cookieOperationEarlyExitKeepsNativeLifetime_data();
+    void cookieOperationEarlyExitKeepsNativeLifetime();
     void managerAddressReuseDoesNotInheritRetiredShare();
     void reclamationPreservesCookieStoreAndNativeDomain();
     void persistentConnectionSurvivesIsolatedDomainReclamation();

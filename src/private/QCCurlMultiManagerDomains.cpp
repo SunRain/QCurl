@@ -3,6 +3,10 @@
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
 
+#ifdef QCURL_ENABLE_TEST_HOOKS
+#include "private/QCCurlRequiredOptionAdapter_p.h"
+#endif
+
 #include <QMap>
 #include <QThread>
 
@@ -128,6 +132,9 @@ void QCCurlMultiManager::retireDomain(QCCurlMultiDomain *domain)
             return;
         }
         domain->multi = nullptr;
+#ifdef QCURL_ENABLE_TEST_HOOKS
+        Internal::recordShareCookieLifecycleForTest("domain-cleanup");
+#endif
     }
     domain->owner = nullptr;
 }

@@ -89,9 +89,14 @@ RECORD_AUTHORIZATIONS = (
     ),
     *_entries(
         "record",
-        "src/private/QCCurlMultiManagerShareState_p.h",
-        "QCCurlMultiManagerShareConfig",
-        "QCCurlMultiManagerShareContext",
+        "src/private/QCCurlShareCookieResult_p.h",
+        "ShareCallResult",
+        "CookieCommandResult",
+    ),
+    *_entries(
+        "record",
+        "src/private/QCCurlShareCookieStoreTestAccess_p.h",
+        "ShareCookieSnapshot",
     ),
     *_entries(
         "record",

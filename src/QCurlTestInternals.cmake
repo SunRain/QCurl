@@ -5,6 +5,8 @@ if(BUILD_TESTING AND QCURL_BUILD_SHARED_LIBS)
         ${QCURL_BLOCKING_EXTRAS_ALL_SOURCES}
         ${QCURL_CORE_HEADERS}
         ${QCURL_INSTALL_HEADERS_BLOCKING_EXTRAS}
+        private/QCCurlShareCookieStoreTest.cpp
+        private/QCCurlShareCookieStoreTestAccess_p.h
     )
     add_library(QCurlOtherExtrasTestInternals STATIC EXCLUDE_FROM_ALL
         ${QCURL_OTHER_EXTRAS_ALL_SOURCES}

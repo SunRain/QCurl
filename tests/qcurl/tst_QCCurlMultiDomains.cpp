@@ -96,7 +96,7 @@ void TestQCCurlMultiDomains::shareTransitions()
         }
     }
     const auto applied = Access::appliedShareConfig(engine, &manager);
-    QVERIFY(applied.cookies && !applied.sslSession);
+    QVERIFY(applied.shareCookies() && !applied.shareSslSession());
     first.releaseResponses();
     QTRY_VERIFY_WITH_TIMEOUT(old->isFinished(), 2000);
     QCOMPARE(old->error(), NetworkError::NoError);
@@ -109,8 +109,8 @@ void TestQCCurlMultiDomains::shareTransitions()
         QCOMPARE(next->readAll().value(), QByteArrayLiteral("second"));
     }
     const auto final = Access::appliedShareConfig(engine, &manager);
-    QCOMPARE(final.cookies, bool(desiredFlags & 1));
-    QCOMPARE(final.sslSession, bool(desiredFlags & 2));
+    QCOMPARE(final.shareCookies(), bool(desiredFlags & 1));
+    QCOMPARE(final.shareSslSession(), bool(desiredFlags & 2));
     QVERIFY(!Access::hasPendingShareConfig(engine, &manager));
     verifyCookieSharing(manager, second, desiredFlags & 1);
 }

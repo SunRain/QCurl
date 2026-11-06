@@ -37,18 +37,18 @@ void QCCurlMultiManagerTestAccess::reclaimIdleDomains(QCCurlMultiManager *engine
     engine->reclaimIdleDomains();
 }
 
-Internal::QCCurlMultiManagerShareConfig QCCurlMultiManagerTestAccess::appliedShareConfig(
+QCNetworkAccessManager::ShareHandleConfig QCCurlMultiManagerTestAccess::appliedShareConfig(
     QCCurlMultiManager *engine, const QCNetworkAccessManager *manager)
 {
-    const auto context = engine->m_shareContexts.value(manager);
-    return context ? context->applied : Internal::QCCurlMultiManagerShareConfig{};
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*engine->m_shareCookieStore, manager)
+        .applied;
 }
 
 bool QCCurlMultiManagerTestAccess::hasPendingShareConfig(QCCurlMultiManager *engine,
                                                          const QCNetworkAccessManager *manager)
 {
-    const auto context = engine->m_shareContexts.value(manager);
-    return context && context->pending.has_value();
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*engine->m_shareCookieStore, manager)
+        .pending;
 }
 
 bool QCCurlMultiManagerTestAccess::hasShareBinding(QCCurlMultiManager *engine,
@@ -57,7 +57,8 @@ bool QCCurlMultiManagerTestAccess::hasShareBinding(QCCurlMultiManager *engine,
     for (auto it = engine->m_activeTransfers.cbegin(); it != engine->m_activeTransfers.cend();
          ++it) {
         if (it.value()->observer() == reply) {
-            return engine->m_easyToShareContext.contains(it.key());
+            return Internal::QCCurlShareCookieStoreTestAccess::hasBinding(*engine->m_shareCookieStore,
+                                                                          it.key());
         }
     }
     return false;

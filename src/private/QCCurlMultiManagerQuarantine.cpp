@@ -1,6 +1,7 @@
 #include "QCCurlMultiManager.h"
 #include "private/QCCurlMultiDomain_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
+#include "private/QCCurlShareCookieStore_p.h"
 
 #include <QMutexLocker>
 
@@ -19,12 +20,8 @@ struct QuarantinedObjectGraph final
     QuarantineCallableState state = QuarantineCallableState::NonCallable;
     QHash<CURL *, QSharedPointer<QCCurlMultiTransferRecord>> activeTransfers;
     QList<QSharedPointer<QCCurlMultiTransferRecord>> unregisteredTransfers;
-    QHash<const QCNetworkAccessManager *, QSharedPointer<Internal::QCCurlMultiManagerShareContext>>
-        shareContexts;
-    QHash<CURL *, Internal::QCCurlMultiManagerShareContext *> shareBindings;
-    QHash<CURL *, bool> shareOptions;
+    QSharedPointer<Internal::QCCurlShareCookieStore> shareCookieStore;
     QList<std::shared_ptr<QCCurlMultiDomain>> domains;
-    QList<QSharedPointer<Internal::QCCurlMultiManagerShareContext>> retiredShareContexts;
 };
 
 /// 返回覆盖全部 thread_local manager 析构期的进程级 quarantine registry。
@@ -50,30 +47,11 @@ void appendNonCallableGraph(QuarantinedObjectGraph &&graph) noexcept
 } // namespace
 
 void QCCurlMultiManager::quarantineUnregisteredTransferLocked(
-    QSharedPointer<QCCurlMultiTransferRecord> &&record,
-    CURL *easy,
-    ShareContext *shareContext) noexcept
+    QSharedPointer<QCCurlMultiTransferRecord> &&record) noexcept
 {
     QuarantinedObjectGraph graph;
     graph.unregisteredTransfers.append(std::move(record));
-
-    if (shareContext) {
-        const auto contextIt = m_shareContexts.constFind(shareContext->scopeKey);
-        if (contextIt != m_shareContexts.cend() && contextIt.value().data() == shareContext) {
-            graph.shareContexts.insert(shareContext->scopeKey, contextIt.value());
-        }
-
-        const auto bindingIt = m_easyToShareContext.constFind(easy);
-        if (bindingIt != m_easyToShareContext.cend() && bindingIt.value() == shareContext) {
-            graph.shareBindings.insert(easy, shareContext);
-        }
-
-        const auto optionIt = m_easyShareOptionSet.constFind(easy);
-        if (optionIt != m_easyShareOptionSet.cend()) {
-            graph.shareOptions.insert(easy, optionIt.value());
-        }
-    }
-
+    graph.shareCookieStore = m_shareCookieStore;
     appendNonCallableGraph(std::move(graph));
 }
 
@@ -81,12 +59,9 @@ void QCCurlMultiManager::quarantineUnregisteredTransferLocked(
 void QCCurlMultiManager::retainPoisonedObjectGraph() noexcept
 {
     QuarantinedObjectGraph graph;
-    graph.activeTransfers      = std::move(m_activeTransfers);
-    graph.shareContexts        = std::move(m_shareContexts);
-    graph.shareBindings        = std::move(m_easyToShareContext);
-    graph.shareOptions         = std::move(m_easyShareOptionSet);
-    graph.domains              = allDomains();
-    graph.retiredShareContexts = std::move(m_retiredShareContexts);
+    graph.activeTransfers  = std::move(m_activeTransfers);
+    graph.shareCookieStore = m_shareCookieStore;
+    graph.domains          = allDomains();
     m_baseDomain.reset();
     m_nativeDomain.reset();
     m_isolatedDomains.clear();

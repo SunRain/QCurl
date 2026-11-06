@@ -78,21 +78,21 @@ QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpRecordLocke
     domain->idleSince.reset();
     record->bindDomain(domain);
     if (!record->bindCallbacks(&result.errorMessage)) {
-        return rejectHttpAdmissionLocked(std::move(record), nullptr, std::move(result));
+        return rejectHttpAdmissionLocked(std::move(record), std::move(result));
     }
 
-    ShareContext *context = prepareShareForHttpLocked(manager, &result.warnings);
-    const auto share      = applyShareToHttpLocked(manager, *record, context);
-    if (share.state != ShareApplyState::Callable) {
-        result.errorMessage = share.errorMessage;
-        return rejectHttpAdmissionLocked(std::move(record), context, std::move(result));
+    const auto share = bindShareToHttpLocked(manager, *record);
+    result.warnings.append(share.warnings);
+    if (share.state != Internal::ShareCallState::Callable) {
+        result.errorMessage = share.message;
+        return rejectHttpAdmissionLocked(std::move(record), std::move(result));
     }
     const auto config = QCNetworkConnectionPoolManager::instance()->config();
     if (!applyLimitsConfig(domain.get(), config, &result.errorMessage)
         || !Internal::QCNetworkConnectionPoolManagerInternal::configureCurlHandle(
             record->handle(), config, &result.errorMessage)
         || !addEasyToMultiLocked(domain.get(), record->handle(), &result.errorMessage)) {
-        return rejectHttpAdmissionLocked(std::move(record), context, std::move(result));
+        return rejectHttpAdmissionLocked(std::move(record), std::move(result));
     }
 
     result.token = commitTransferRecordLocked(record);
@@ -102,9 +102,7 @@ QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::admitHttpRecordLocke
 }
 
 QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::rejectHttpAdmissionLocked(
-    QSharedPointer<QCCurlMultiTransferRecord> record,
-    ShareContext *context,
-    HttpAdmissionResult result)
+    QSharedPointer<QCCurlMultiTransferRecord> record, HttpAdmissionResult result)
 {
     QString callbackError;
     const char *operation = "QCCurlMultiManager::rejectHttpAdmissionLocked";
@@ -122,8 +120,7 @@ QCCurlMultiManager::HttpAdmissionResult QCCurlMultiManager::rejectHttpAdmissionL
     }
     result.state        = HttpAdmissionState::Quarantined;
     result.errorMessage = callbackError.isEmpty() ? m_initializationError : callbackError;
-    CURL *easy          = record->handle();
-    quarantineUnregisteredTransferLocked(std::move(record), easy, context);
+    quarantineUnregisteredTransferLocked(std::move(record));
     return result;
 }
 

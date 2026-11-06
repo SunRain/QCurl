@@ -58,12 +58,12 @@ set(QCURL_FEATURE_SOURCES
     private/QCCurlMultiManagerCompletion.cpp
     private/QCCurlMultiManagerTest.cpp
     private/QCCurlMultiManagerDomainTest.cpp
-    private/QCCurlMultiManagerShare.cpp
-    private/QCCurlMultiManagerShareLifecycle.cpp
     private/QCCurlMultiManagerShareTest.cpp
-    private/QCCurlMultiManagerCookieContext.cpp
-    private/QCCurlMultiManagerCookies.cpp
-    private/QCCurlMultiManagerCookieExport.cpp
+    private/QCCurlMultiManagerShareCookieBridge.cpp
+    private/QCCurlShareCookieStore.cpp
+    private/QCCurlShareCookieLifecycle.cpp
+    private/QCCurlShareCookieOperation.cpp
+    private/QCCurlShareCookieCommands.cpp
     private/QCCurlRequiredOptionAdapter.cpp
     private/QCCookieStoreCodec.cpp
     QCNetworkRetryPolicy.cpp
@@ -137,7 +137,9 @@ set(QCURL_FEATURE_HEADERS
     QCNetworkReply.h
     QCNetworkReply_p.h
     private/QCCurlMultiManagerSocketInfo_p.h
-    private/QCCurlMultiManagerShareState_p.h
+    private/QCCurlShareCookieStore_p.h
+    private/QCCurlShareCookieStoreState_p.h
+    private/QCCurlShareCookieResult_p.h
     private/QCCurlMultiManagerTestAccess_p.h
     private/QCCurlPersistentTransferBridge_p.h
     private/QCCurlMultiTransferRecord_p.h

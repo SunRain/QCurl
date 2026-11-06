@@ -4,17 +4,16 @@
 
 #include "private/QCCurlMultiManagerTestAccess_p.h"
 #include "private/QCCurlMultiTransferRecord_p.h"
-#include "private/QCCurlRequiredOptionAdapter_p.h"
+#include "private/QCCurlShareCookieStoreTestAccess_p.h"
 
-#include <QByteArray>
 #include <QMutexLocker>
 
 namespace QCurl {
-
 namespace {
 
-template<typename Transfers, typename Token>
-[[nodiscard]] CURL *easyForToken(const Transfers &transfers, Token token)
+[[nodiscard]] CURL *easyForToken(
+    const QHash<CURL *, QSharedPointer<QCCurlMultiTransferRecord>> &transfers,
+    QCCurlMultiManager::TransferToken token)
 {
     for (auto it = transfers.cbegin(); it != transfers.cend(); ++it) {
         if (it.value() && it.value()->token() == token) {
@@ -32,55 +31,12 @@ bool QCCurlMultiManagerTestAccess::prepareShareDetach(QCCurlMultiManager *manage
 {
     Q_ASSERT(manager);
     QMutexLocker locker(&manager->m_mutex);
-    CURL *easy = easyForToken(manager->m_activeTransfers, token);
-    if (!easy || manager->m_easyToShareContext.contains(easy)
-        || manager->m_shareContexts.contains(nullptr)) {
-        if (error) {
-            *error = easy ? QStringLiteral("测试传输已经绑定 share handle")
-                          : QStringLiteral("未找到测试传输 token");
-        }
-        return false;
-    }
-
-    auto context            = QSharedPointer<QCCurlMultiManager::ShareContext>::create();
-    context->scopeDestroyed = true;
-    context->pendingDelete  = qgetenv("QCURL_TEST_FORCE_SHARE_CLEANUP_ERROR").trimmed()
-                              != QByteArrayLiteral("shutdown-cleanup-failure");
-    manager->m_shareContexts.insert(nullptr, context);
-
-    QCCurlMultiManager::ShareConfig desired;
-    desired.cookies = true;
-    if (!manager->initializeShareContextLocked(context.data(), desired, error)) {
-        if (!manager->m_isPoisoned.load(std::memory_order_relaxed)) {
-            manager->m_shareContexts.remove(nullptr);
-        }
-        return false;
-    }
-
-    Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult bindResult
-        = adapter.setEasy(easy,
-                          QCURL_CURL_OPTION(CURLOPT_SHARE),
-                          Internal::CookieOptionStage::Setup,
-                          context->share);
-    if (!bindResult.isSuccess()) {
-        if (manager->cleanupShareHandleLocked(
-                context.data(), "QCCurlMultiManagerTestAccess::prepareShareDetach/bind-cleanup")) {
-            manager->m_shareContexts.remove(nullptr);
-        }
-        if (error) {
-            *error = bindResult.message;
-        }
-        return false;
-    }
-
-    context->activeUsers = 1;
-    manager->m_easyToShareContext.insert(easy, context.data());
-    manager->m_easyShareOptionSet.insert(easy, true);
+    const auto result = Internal::QCCurlShareCookieStoreTestAccess::prepareDetach(
+        *manager->m_shareCookieStore, easyForToken(manager->m_activeTransfers, token));
     if (error) {
-        error->clear();
+        *error = result.message;
     }
-    return true;
+    return manager->consumeShareResultLocked(result);
 }
 
 bool QCCurlMultiManagerTestAccess::prepareShareRollback(QCCurlMultiManager *manager,
@@ -88,77 +44,65 @@ bool QCCurlMultiManagerTestAccess::prepareShareRollback(QCCurlMultiManager *mana
                                                         QString *error)
 {
     Q_ASSERT(manager);
-    if (!prepareShareDetach(manager, token, error)) {
-        return false;
-    }
-
     QMutexLocker locker(&manager->m_mutex);
-    CURL *easy = easyForToken(manager->m_activeTransfers, token);
-    Internal::CookieOptionAdapter adapter;
-    const Internal::RequiredOptionResult cookieEngine
-        = adapter.setEasy(easy,
-                          QCURL_CURL_OPTION(CURLOPT_COOKIEFILE),
-                          Internal::CookieOptionStage::Setup,
-                          "");
-    if (cookieEngine.isSuccess()) {
-        static_cast<void>(manager->detachShareBindingLocked(
-            easy, "QCCurlMultiManagerTestAccess::prepareShareRollback/unexpected-success"));
-        if (error) {
-            *error = QStringLiteral("未观察到预期的 cookie engine setup 失败");
-        }
-        return false;
+    const auto result = Internal::QCCurlShareCookieStoreTestAccess::prepareRollback(
+        *manager->m_shareCookieStore, easyForToken(manager->m_activeTransfers, token));
+    if (error) {
+        *error = result.message;
     }
-
-    if (manager->detachShareBindingLocked(
-            easy, "QCCurlMultiManagerTestAccess::prepareShareRollback/rollback")) {
-        if (error) {
-            *error = QStringLiteral("未观察到预期的 share rollback 失败");
-        }
-        return false;
-    }
-    return manager->m_isPoisoned.load(std::memory_order_relaxed);
+    static_cast<void>(manager->consumeShareResultLocked(result));
+    return result.state == Internal::ShareCallState::NonCallable;
 }
 
 int QCCurlMultiManagerTestAccess::activeShareBindings(QCCurlMultiManager *manager)
 {
-    Q_ASSERT(manager);
     QMutexLocker locker(&manager->m_mutex);
-    return manager->m_easyToShareContext.size();
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*manager->m_shareCookieStore)
+        .bindings;
 }
 
 int QCCurlMultiManagerTestAccess::activeShareContexts(QCCurlMultiManager *manager)
 {
-    Q_ASSERT(manager);
     QMutexLocker locker(&manager->m_mutex);
-    return manager->m_shareContexts.size();
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*manager->m_shareCookieStore)
+        .contexts;
 }
 
 int QCCurlMultiManagerTestAccess::activeShareContextsWithHandle(QCCurlMultiManager *manager)
 {
-    Q_ASSERT(manager);
     QMutexLocker locker(&manager->m_mutex);
-    int count = 0;
-    for (auto it = manager->m_shareContexts.cbegin(); it != manager->m_shareContexts.cend(); ++it) {
-        if (it.value() && it.value()->share) {
-            ++count;
-        }
-    }
-    return count;
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*manager->m_shareCookieStore).handles;
 }
 
 int QCCurlMultiManagerTestAccess::activeShareUsers(QCCurlMultiManager *manager)
 {
-    Q_ASSERT(manager);
     QMutexLocker locker(&manager->m_mutex);
-    int count = 0;
-    for (auto it = manager->m_shareContexts.cbegin(); it != manager->m_shareContexts.cend(); ++it) {
-        if (it.value()) {
-            count += it.value()->activeUsers;
-        }
-    }
-    return count;
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*manager->m_shareCookieStore).users;
+}
+
+bool QCCurlMultiManagerTestAccess::bindShare(QCCurlMultiManager *engine,
+                                             QCNetworkAccessManager *manager,
+                                             QCCurlMultiManager::TransferToken token)
+{
+    QMutexLocker locker(&engine->m_mutex);
+    return engine->consumeShareResultLocked(
+        engine->m_shareCookieStore->bindHttp(manager,
+                                             manager->shareHandleConfig(),
+                                             easyForToken(engine->m_activeTransfers, token),
+                                             false));
+}
+
+Internal::ShareCookieSnapshot QCCurlMultiManagerTestAccess::shareSnapshot(QCCurlMultiManager *manager)
+{
+    QMutexLocker locker(&manager->m_mutex);
+    return Internal::QCCurlShareCookieStoreTestAccess::snapshot(*manager->m_shareCookieStore);
+}
+
+QWeakPointer<Internal::QCCurlShareCookieStore> QCCurlMultiManagerTestAccess::shareStore(
+    QCCurlMultiManager *manager)
+{
+    return manager->m_shareCookieStore;
 }
 
 } // namespace QCurl
-
-#endif
+#endif // QCURL_ENABLE_TEST_HOOKS

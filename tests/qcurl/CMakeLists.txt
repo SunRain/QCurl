@@ -73,6 +73,8 @@ add_qcurl_test(tst_CurlGlobalInitialization tst_CurlGlobalInitialization.cpp)
 target_compile_definitions(tst_CurlGlobalInitialization PRIVATE QCURL_ENABLE_TEST_HOOKS)
 target_link_libraries(tst_CurlGlobalInitialization
     PRIVATE ${QCURL_QTTEST_BLOCKING_EXTRAS_TARGET})
+add_qcurl_test(tst_QCCurlShareCookieStore tst_QCCurlShareCookieStore.cpp)
+target_compile_definitions(tst_QCCurlShareCookieStore PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test(tst_QCurlRuntime tst_QCurlRuntime.cpp)
 target_compile_definitions(tst_QCurlRuntime PRIVATE QCURL_ENABLE_TEST_HOOKS)
 add_qcurl_test_with_preflight(tst_QCCurlHttpAdmission
@@ -116,6 +118,8 @@ set(_qcurl_multi_share_cases
     rollback-failure
     cleanup-in-use
     shutdown-cleanup-failure
+    cookie-unbind-failure
+    live-scope-shutdown
 )
 set(_qcurl_multi_poison_lsan_options
     "print_suppressions=1:suppressions=${CMAKE_CURRENT_SOURCE_DIR}/multi_ownership_lsan.supp"
@@ -137,6 +141,8 @@ foreach(_ownership_case IN ITEMS recursive-once ${_qcurl_multi_poison_cases}
     set(_ownership_env "QCURL_TEST_MULTI_OWNERSHIP_CASE=${_ownership_case}")
     if(NOT _ownership_case STREQUAL "unknown-done"
        AND NOT _ownership_case STREQUAL "concurrent-quarantine"
+       AND NOT _ownership_case STREQUAL "cookie-unbind-failure"
+       AND NOT _ownership_case STREQUAL "live-scope-shutdown"
        AND NOT _ownership_case STREQUAL "shutdown-cleanup-failure")
         list(APPEND _ownership_env "QCURL_TEST_FORCE_MULTI_REMOVE_ERROR=${_ownership_case}")
     endif()
