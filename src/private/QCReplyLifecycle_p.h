@@ -22,6 +22,7 @@ struct ReplyAttemptErrorInfo
 {
     NetworkError error = NetworkError::NoError;
     QString message;
+    bool receiveIdleTimeout = false;
 };
 
 /**
@@ -38,24 +39,28 @@ public:
     void resetForRetry();
     /// 回放初始化只清原生诊断和进度，不改变当前 phase 或错误。
     void resetReplayObservations();
-    void recordError(NetworkError error, const QString &message);
+    void recordError(NetworkError error, const QString &message, bool receiveIdleTimeout = false);
+    /// 仅真实 CURLMSG_DONE 可以写入；内部 detach 控制码不属于原生结果。
+    void observeNativeResult(CURLcode code);
     void clearNativeDiagnostic();
     void acceptCachedResult();
     void cancelSilently();
 
-    /// 先保存实际原生码，再按来源错误、原生错误与 HTTP 结果的优先级分类。
+    /// 保留独立记录的实际原生码，按来源错误、空闲到期与传输/HTTP 结果分类。
     [[nodiscard]] ReplyAttemptErrorInfo classifyNetworkResult(
         CURLcode code,
         int httpStatus,
         const std::optional<ReplyAttemptErrorInfo> &sourceFailure,
         bool sourcePresent,
-        bool rangeSatisfied);
+        bool rangeSatisfied,
+        bool receiveIdleExpired = false);
     /// 回放不具有原生诊断；显式错误优先于 HTTP status，来源错误优先于两者。
     [[nodiscard]] ReplyAttemptErrorInfo classifyMockResult(
         bool explicitError,
         NetworkError error,
         int httpStatus,
-        const std::optional<ReplyAttemptErrorInfo> &sourceFailure);
+        const std::optional<ReplyAttemptErrorInfo> &sourceFailure,
+        bool receiveIdleExpired = false);
 
     void observeNetworkProgress(qint64 downloadTotal,
                                 qint64 downloaded,
@@ -71,6 +76,10 @@ public:
     [[nodiscard]] NetworkError error() const noexcept { return m_error; }
     [[nodiscard]] QString errorMessage() const { return m_errorMessage; }
     [[nodiscard]] int diagnosticCurlCode() const noexcept;
+    [[nodiscard]] bool isReceiveIdleTimeout() const noexcept
+    {
+        return isTerminal() && m_receiveIdleTimeout;
+    }
     [[nodiscard]] qint64 durationMs() const noexcept { return m_durationMs; }
     [[nodiscard]] qint64 elapsedMs() const noexcept;
     [[nodiscard]] qint64 bytesDownloaded() const noexcept { return m_bytesDownloaded; }
@@ -83,8 +92,9 @@ private:
     ReplyState m_state   = ReplyState::Idle;
     NetworkError m_error = NetworkError::NoError;
     QString m_errorMessage;
-    int m_nativeCode    = 0;
-    qint64 m_durationMs = -1;
+    int m_nativeCode          = 0;
+    bool m_receiveIdleTimeout = false;
+    qint64 m_durationMs       = -1;
     QElapsedTimer m_clock;
     qint64 m_bytesDownloaded = 0;
     qint64 m_bytesUploaded   = 0;

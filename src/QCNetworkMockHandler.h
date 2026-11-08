@@ -77,6 +77,11 @@ public:
     void setConnectTimeoutMs(qint64 timeoutMs);
     void clearConnectTimeoutMs();
 
+    /// 返回请求捕获的接收空闲毫秒值；空值表示未配置。
+    [[nodiscard]] std::optional<qint64> receiveIdleTimeoutMs() const;
+    /// 保存捕获快照的接收空闲毫秒值；nullopt 清除此字段。
+    void setReceiveIdleTimeoutMs(std::optional<qint64> timeoutMs);
+
     /// 空值表示请求未显式配置 total timeout。
     [[nodiscard]] std::optional<qint64> totalTimeoutMs() const;
     void setTotalTimeoutMs(qint64 timeoutMs);

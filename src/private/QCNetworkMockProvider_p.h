@@ -43,26 +43,26 @@ struct QCNetworkCapturedRequestSnapshot
     QByteArray customMethod;
     QList<QPair<QByteArray, QByteArray>> headers;
     QByteArray bodyPreview;
-    qsizetype bodySize = 0;
+    qsizetype bodySize  = 0;
     bool followLocation = false;
     std::optional<qint64> connectTimeoutMs;
     std::optional<qint64> totalTimeoutMs;
+    std::optional<qint64> receiveIdleTimeoutMs;
 };
 
 /** @brief 定义 Test Support 安装到 Core 的进程期回调表。 */
 struct QCNetworkMockProvider
 {
-    void *(*handlerForManager)(const QCNetworkAccessManager *manager) = nullptr;
-    bool (*captureEnabled)(void *handler)                             = nullptr;
-    int (*captureBodyPreviewLimit)(void *handler)                     = nullptr;
-    void (*recordRequest)(void *handler,
-                          const QCNetworkCapturedRequestSnapshot &request) = nullptr;
-    bool (*hasMock)(void *handler, HttpMethod method, const QUrl &url)      = nullptr;
+    void *(*handlerForManager)(const QCNetworkAccessManager *manager)                     = nullptr;
+    bool (*captureEnabled)(void *handler)                                                 = nullptr;
+    int (*captureBodyPreviewLimit)(void *handler)                                         = nullptr;
+    void (*recordRequest)(void *handler, const QCNetworkCapturedRequestSnapshot &request) = nullptr;
+    bool (*hasMock)(void *handler, HttpMethod method, const QUrl &url)                    = nullptr;
     bool (*consumeMock)(void *handler,
                         HttpMethod method,
                         const QUrl &url,
-                        QCNetworkMockData &out) = nullptr;
-    int (*globalDelay)(void *handler) = nullptr;
+                        QCNetworkMockData &out)                                           = nullptr;
+    int (*globalDelay)(void *handler)                                                     = nullptr;
 };
 
 /** @brief 返回已安装的 provider；未链接 Test Support 时返回 nullptr。 */

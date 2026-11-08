@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 QCurl Project
 
-#include "QCNetworkMockHandler.h"
-
 #include "QCNetworkHttpMethod.h"
+#include "QCNetworkMockHandler.h"
 
 #include <QSharedData>
 
@@ -23,14 +22,14 @@ public:
     // 空值表示请求未显式配置对应 timeout。
     std::optional<qint64> connectTimeoutMs;
     std::optional<qint64> totalTimeoutMs;
+    std::optional<qint64> receiveIdleTimeoutMs;
 };
 
 QCNetworkCapturedRequest::QCNetworkCapturedRequest()
     : d(new QCNetworkCapturedRequestData)
 {}
 
-QCNetworkCapturedRequest::QCNetworkCapturedRequest(
-    const QCNetworkCapturedRequest &other) = default;
+QCNetworkCapturedRequest::QCNetworkCapturedRequest(const QCNetworkCapturedRequest &other) = default;
 
 QCNetworkCapturedRequest::QCNetworkCapturedRequest(
     QCNetworkCapturedRequest &&other) noexcept = default;
@@ -131,6 +130,16 @@ void QCNetworkCapturedRequest::setConnectTimeoutMs(qint64 timeoutMs)
 void QCNetworkCapturedRequest::clearConnectTimeoutMs()
 {
     d->connectTimeoutMs.reset();
+}
+
+std::optional<qint64> QCNetworkCapturedRequest::receiveIdleTimeoutMs() const
+{
+    return d->receiveIdleTimeoutMs;
+}
+
+void QCNetworkCapturedRequest::setReceiveIdleTimeoutMs(std::optional<qint64> timeoutMs)
+{
+    d->receiveIdleTimeoutMs = timeoutMs;
 }
 
 std::optional<qint64> QCNetworkCapturedRequest::totalTimeoutMs() const

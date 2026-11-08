@@ -49,13 +49,13 @@ Core 请求入口在创建 easy handle 前只接受 `http` / `https`。异步与
 
 ## 共同请求策略
 
-隐藏的 `compileRequestPolicy` 从准备后的请求快照编译纯值结果，集中协议、重定向、raw header 覆盖、认证、proxy、range、限速、endpoint verify/CA、connect/total timeout 和 HTTP version intent。它不保存 request/body、CurlPlan、执行对象或 CURLOPT 指令序列，不读取环境/probe、不调用 native/QObject、不发布诊断。只有全部校验通过才给出可应用结果。
+隐藏的 `compileRequestPolicy` 从准备后的请求快照编译纯值结果，集中协议、重定向、raw header 覆盖、认证、proxy、range、限速、endpoint verify/CA、connect/total/receive-idle timeout 和 HTTP version intent。它不保存 request/body、CurlPlan、执行对象或 CURLOPT 指令序列，不读取环境/probe、不调用 native/QObject、不发布诊断。只有全部校验通过才给出可应用结果。
 
-先确定字段是否生效，再按 URL/协议 → 生效代理 → connect timeout → total timeout → 其余生效共同数值选择首错。零 timeout 不覆盖原生默认，负值和超出实际 `long`/`curl_off_t` 范围的数值拒绝，不截断。raw header 含空值仍优先；None、关闭重定向及被覆盖的配置不新增拒绝。HTTP 版本由 `decideHttpVersionPolicy` 接收 adapter 在原检查点采样的窄能力事实，隐式版本不设置选项，Http3/Http3Only 保持既有降级与错误分类。
+先确定字段是否生效，再按 URL/协议 → 生效代理 → connect timeout → total timeout → receive-idle timeout → 其余生效共同数值选择首错。连接/总时限的零值不覆盖原生默认；receive-idle 的零值禁用，正值上限为 2,147,483,647ms。负值和超出适用 `long`/`curl_off_t` 或 receive-idle 范围的数值拒绝，不截断。raw header 含空值仍优先；None、关闭重定向及被覆盖的配置不新增拒绝。HTTP 版本由 `decideHttpVersionPolicy` 接收 adapter 在原检查点采样的窄能力事实，隐式版本不设置选项，Http3/Http3Only 保持既有降级与错误分类。
 
 两个 adapter 只把共同决策绑定到各自原生插点。所有生效的必需共同选项失败即终止，默认直连、显式代理 `NOPROXY=""`、协议/验证及原 optional 的 redirect、Referer、Accept-Encoding、限速、UNRESTRICTED_AUTH 均遵循该规则。无代理/None 使用 `PROXY=""` 禁用环境代理；显式 HTTP/HTTPS 代理凭据使用原生 ANY 认证协商，HTTPS 类型直接使用最低依赖支持的 enum，不进行宏探测或明文回退。
 
-Core 纯值及配置拒绝为 InvalidRequest；Blocking 保留协议能力/HTTP3 预检查的 UnsupportedCapability，其余配置错误仍为 InvalidRequest。新失败只描述类别、选项和原生静态错误，不输出输入值。敏感集合只控制 libcurl UNRESTRICTED_AUTH，不提供通用自定义敏感头过滤器，具体用户义务见[配置合同](../../user/configuration.md)。
+Core 纯值及配置拒绝为 InvalidRequest；Blocking 在共同值校验后拒绝生效正 receive-idle，保留协议能力/HTTP3 预检查的 UnsupportedCapability，其余配置错误仍为 InvalidRequest。新失败只描述类别、选项和原生静态错误，不输出输入值。敏感集合只控制 libcurl UNRESTRICTED_AUTH，不提供通用自定义敏感头过滤器，具体用户义务见[配置合同](../../user/configuration.md)。
 
 ## share handle 合同
 
@@ -104,6 +104,21 @@ Reply 编排终态前的缓存恢复、提交、trace/domain/pool 收尾、flow 
 304 恢复可同步触发 readyRead；发布后必须重查终态，不能覆盖槽中已完成的取消。网络、
 cache、mock/chaos、retry 与 public accessor 使用同一领域接口；module 不反向访问 Private
 或共享 holder，也不发布 Qt 信号。原生 callback 和跨信号检查仍由现有 adapter 承接。
+
+## 接收空闲计时
+
+`QCNetworkReceiveIdleTimeout` 只接受单调时间和连接、字节到达、接收暂停等事实，集中
+期限、generation 与到期判定。`QCNetworkReceiveIdleExecution` 在同一 transfer state 中
+连接 Qt timer 与原生阶段采样；timer parent 为 reply，record 仅借用同一 backing。
+PREREQ 确认当前连接/TLS 已完成，SOCKOPT 标记重连，header/body 续期；progress 与 timer
+只采样本请求，socket action 不为此能力遍历全体 active transfers。禁用时不建立该 timer
+或周期唤醒。跨 callback 的完成仍经 queued owner-thread adapter 与安全 detach，重查
+reply、token 和 generation，旧 attempt 不得终结新尝试。
+
+只有真实 `CURLMSG_DONE` 可记录原生完成码；主动 detach 的合成返回值只作内部控制。
+高层 timeout 分类、最终 receive-idle 来源和实际原生码分别保存。mock 没有原生完成码；
+已有原生失败不得被 receive-idle 替换为 28。retry 清除 attempt 来源，成功 cache 回退清除
+失败来源，两项公开诊断在终态信号前冻结。
 
 ## Reply 请求体与流控
 

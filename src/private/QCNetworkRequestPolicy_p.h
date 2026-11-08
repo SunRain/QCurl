@@ -11,6 +11,7 @@
 #include <QByteArray>
 #include <QString>
 
+#include <chrono>
 #include <curl/curl.h>
 #include <optional>
 
@@ -87,6 +88,7 @@ struct RequestTimeoutPolicy
 {
     std::optional<long> connectMilliseconds;
     std::optional<long> totalMilliseconds;
+    std::optional<std::chrono::milliseconds> receiveIdleTimeout;
 };
 
 /// 有效 range 与按 curl_off_t 无损校验的正数限速。

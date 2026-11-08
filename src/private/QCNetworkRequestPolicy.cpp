@@ -172,16 +172,29 @@ template<typename Target, typename Source>
     const auto timeout = request.timeoutConfig();
     const auto connect = timeout.connectTimeout();
     const auto total   = timeout.totalTimeout();
-    return (!connect
-            || positiveNativeValue(connect->count(),
-                                   policy.timeout.connectMilliseconds,
-                                   "connect timeout",
-                                   failure))
-           && (!total
-               || positiveNativeValue(total->count(),
-                                      policy.timeout.totalMilliseconds,
-                                      "total timeout",
-                                      failure));
+    std::optional<int> idleMilliseconds;
+    const auto idle = timeout.receiveIdleTimeout();
+    if ((connect
+         && !positiveNativeValue(connect->count(),
+                                 policy.timeout.connectMilliseconds,
+                                 "connect timeout",
+                                 failure))
+        || (total
+            && !positiveNativeValue(total->count(),
+                                    policy.timeout.totalMilliseconds,
+                                    "total timeout",
+                                    failure))
+        || (idle
+            && !positiveNativeValue(idle->count(),
+                                    idleMilliseconds,
+                                    "receive idle timeout",
+                                    failure))) {
+        return false;
+    }
+    if (idleMilliseconds) {
+        policy.timeout.receiveIdleTimeout = std::chrono::milliseconds(*idleMilliseconds);
+    }
+    return true;
 }
 
 [[nodiscard]] bool compileNumbers(const QCNetworkRequest &request,

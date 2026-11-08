@@ -6,13 +6,17 @@
 #include "QCNetworkMockHandler.h"
 #include "QCNetworkReply.h"
 #include "QCNetworkRequest.h"
+#include "QCNetworkRetryPolicy.h"
+#include "QCNetworkTimeoutConfig.h"
 #include "qcnetwork_mock_test_support.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTimer>
 #include <QUrl>
 #include <QtTest>
 
@@ -52,6 +56,7 @@ private Q_SLOTS:
     void testCapturedRequestAccessorsAndTimeoutClearing();
     void testCapturedRequestSharedDataDetachesOnWrite();
     void testNullClearDoesNotPoisonReusedManagerAddress();
+    void testStaleResumeDoesNotResumeRetry();
 
 private:
     Q_DISABLE_COPY_MOVE(TestQCNetworkMockHandler)
@@ -59,6 +64,44 @@ private:
     QCNetworkAccessManager *m_manager = nullptr;
     QCNetworkMockHandler m_mockHandler;
 };
+
+void TestQCNetworkMockHandler::testStaleResumeDoesNotResumeRetry()
+{
+    using namespace std::chrono_literals;
+    const auto previous = qgetenv("QCURL_TEST_MOCK_CHAOS");
+    const auto restore  = qScopeGuard([&] { qputenv("QCURL_TEST_MOCK_CHAOS", previous); });
+    qputenv("QCURL_TEST_MOCK_CHAOS",
+            "action=pause_recv;action_point=before_finish;resume_delay_ms=1000");
+    TestSupport::setMockHandler(*m_manager, &m_mockHandler);
+    const QUrl url(QStringLiteral("http://mock.invalid/stale-resume"));
+    m_mockHandler.enqueueResponse(HttpMethod::Get, url, {}, 503);
+    m_mockHandler.enqueueResponse(HttpMethod::Get, url, {}, 200);
+    QCNetworkRequest request(url);
+    QCNetworkTimeoutConfig timeout;
+    timeout.setReceiveIdleTimeout(200ms);
+    request.setTimeoutConfig(timeout);
+    QCNetworkRetryPolicy retry;
+    QCOMPARE(retry.setMaxRetries(1), QCNetworkRetryPolicy::UpdateResult::Applied);
+    QCOMPARE(retry.setInitialDelay(500ms), QCNetworkRetryPolicy::UpdateResult::Applied);
+    request.setRetryPolicy(retry);
+    auto *reply = m_manager->get(request);
+    QSignalSpy done(reply, &QCNetworkReply::finished);
+    int pauses = 0;
+    connect(reply, &QCNetworkReply::stateChanged, reply, [&](ReplyState state) {
+        if (state == ReplyState::Paused && ++pauses == 1) {
+            QTimer::singleShot(50, reply, [reply] { reply->resumeTransport(); });
+        }
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(pauses, 2, 2000);
+    // 旧 attempt 的 1s 自动恢复已到期，新 attempt 的恢复尚未到期。
+    QTest::qWait(600);
+    QVERIFY(reply->isPaused());
+    QCOMPARE(reply->retryAttemptCount(), 1);
+    QCOMPARE(done.size(), 0);
+    reply->cancel();
+    QTRY_COMPARE(done.size(), 1);
+    QVERIFY(!reply->isReceiveIdleTimeout());
+}
 
 void TestQCNetworkMockHandler::initTestCase() {}
 

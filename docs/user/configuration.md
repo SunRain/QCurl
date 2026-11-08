@@ -36,13 +36,43 @@
 
 ### 共同配置的生效与失败
 
-Core async 与 Blocking Extras 对准备后的请求快照采用同一策略。纯值拒绝的首错顺序为 URL/协议、有效代理、连接超时、总超时、其余生效共同数值；异步在返回 reply 后由原启动队列发布终态，middleware 产生的非法配置不能被 cache/mock 命中掩盖。
+Core async 与 Blocking Extras 对准备后的请求快照采用同一策略。纯值拒绝的首错顺序为 URL/协议、有效代理、连接超时、总超时、接收空闲超时、其余生效共同数值；异步在返回 reply 后由原启动队列发布终态，middleware 产生的非法配置不能被 cache/mock 命中掩盖。
 
 连接/总超时的零值与未设置相同，沿用 libcurl 默认，不代表无限等待。负值或超出本机原生 `long` 范围的毫秒值在发送前拒绝；限速按 `curl_off_t` 检查，不截断或饱和。关闭重定向时，不应用重定向协议、上限、POST 保留及自动 Referer 配置。
 
 显式 raw `Authorization`、`Referer`、`Accept-Encoding`（包括空值）优先于对应认证、Referer、自动解压配置。空 `Accept-Encoding` 会抑制该请求头，且不启用自动解压。被覆盖或未生效的配置不会额外触发原生设置。生效且必需的共同选项无法应用时终止，包括重定向、Referer、解压、限速和敏感头授权；只有下文明确允许的 HTTP/3 降级仍可告警继续。
 
 跨 origin 发送敏感认证须同时满足重定向开启、存在生效敏感内容和明确授权。raw Authorization 覆盖认证配置时，被覆盖配置的 `allowUnrestrictedAuth` 不授予权限；可由请求级 `allowUnrestrictedSensitiveHeadersOnRedirect` 显式授权。敏感集合含 Authorization、Proxy-Authorization、Cookie、Set-Cookie 及实际生效的 HTTP 认证，但这只决定原生 `UNRESTRICTED_AUTH`。libcurl 的默认保护覆盖目标 Authorization/显式 Cookie 等其定义的范围，**不承诺过滤任意自定义敏感头**；调用方应审慎选择允许重定向的头和目标。
+
+### 接收空闲超时
+
+Core 的 `QCNetworkTimeoutConfig::setReceiveIdleTimeout(...)` 为请求启用独立的接收等待时限。
+默认、`std::nullopt` 和 `0ms` 均禁用；正值范围为 `1..2,147,483,647ms`，负值或超界值
+在发送前以 `InvalidRequest` 拒绝，不截断或饱和。配置采用 middleware 修改后的实际快照，
+cache/mock 命中也不能绕过校验。TestSupport capture 保留未设置、零和正值的配置意图。
+
+```cpp
+QCurl::QCNetworkTimeoutConfig timeout;
+timeout.setConnectTimeout(std::chrono::seconds(10));
+timeout.setReceiveIdleTimeout(std::chrono::seconds(10));
+request.setTimeoutConfig(timeout);
+```
+
+该例允许连接和连接后首个响应字节各自使用完整 10 秒。只有实际响应头或正文到达才续期；
+持续有数据的慢响应可以超过 10 秒，上传活动、空 progress 和消费已缓冲数据均不续期。
+它不隐含总时限或低速阈值；显式 `totalTimeout` 与 `lowSpeedTime/lowSpeedLimit` 仍独立生效。
+排队、重试退避及连接/TLS 阶段不消耗接收预算；重定向或重连重新建立阶段，新 attempt
+不接受旧 timer/mock 回放。用户接收暂停和背压停止计时，恢复后给予完整时限；单独的
+上传暂停或 source-not-ready 不冻结接收等待。直接缓存命中不启动网络接收等待。
+
+接收空闲到期以 `NetworkError::ConnectionTimeout` 完成，`isReceiveIdleTimeout()` 在最终
+错误确由此导致时为真。重试或缓存回退成功、取消、total/low-speed 和其他错误不继承来源。
+该事实与 `diagnosticCurlCode()` 独立：后者只保留最终尝试的实际 libcurl 结果，没有适用
+原生结果（包括 mock 或主动 detach）时为 0，不能将高层超时换算为原生码 28。
+两个查询均在首次终态通知前确定并保持不变，须在 reply 所属线程读取。
+
+Blocking Extras 在完成共同纯值校验后，仅对生效正值返回 `UnsupportedCapability`，且不发送
+请求。默认、空值和零保持既有同步行为；此能力不增加同步事件循环或新的 Blocking 执行器。
 
 ### 内存 body 与 Multipart
 

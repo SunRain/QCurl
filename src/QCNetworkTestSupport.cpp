@@ -56,6 +56,7 @@ void recordRequest(void *handler, const Internal::QCNetworkCapturedRequestSnapsh
     captured.setBodyPreview(snapshot.bodyPreview);
     captured.setBodySize(snapshot.bodySize);
     captured.setFollowLocation(snapshot.followLocation);
+    captured.setReceiveIdleTimeoutMs(snapshot.receiveIdleTimeoutMs);
     if (snapshot.connectTimeoutMs.has_value()) {
         captured.setConnectTimeoutMs(snapshot.connectTimeoutMs.value());
     }
@@ -70,13 +71,13 @@ bool hasMock(void *handler, HttpMethod method, const QUrl &url)
     return static_cast<QCNetworkMockHandler *>(handler)->hasMock(method, url);
 }
 
-bool consumeMock(void *handler,
-                 HttpMethod method,
-                 const QUrl &url,
-                 Internal::QCNetworkMockData &out)
+bool consumeMock(void *handler, HttpMethod method, const QUrl &url, Internal::QCNetworkMockData &out)
 {
-    return Internal::QCNetworkMockHandlerAccess::consumeMock(
-        *static_cast<QCNetworkMockHandler *>(handler), method, url, out);
+    return Internal::QCNetworkMockHandlerAccess::consumeMock(*static_cast<QCNetworkMockHandler *>(
+                                                                 handler),
+                                                             method,
+                                                             url,
+                                                             out);
 }
 
 int globalDelay(void *handler)
@@ -110,7 +111,7 @@ void setMockHandler(QCNetworkAccessManager *manager, QCNetworkMockHandler *handl
     }
 
     ensureProviderInstalled();
-    auto &registry = bindingRegistry();
+    auto &registry                = bindingRegistry();
     bool needsDestroyedConnection = false;
     {
         QMutexLocker locker(&registry.mutex);

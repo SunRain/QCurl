@@ -89,6 +89,7 @@ void QCCurlMultiTransferRecord::bindObserver(
 void QCCurlMultiTransferRecord::clearObserver() noexcept
 {
     if (m_transferState) {
+        m_transferState->receiveIdle.stop();
         m_transferState->trace.stop();
     }
     m_observer.clear();
@@ -115,6 +116,7 @@ void QCCurlMultiTransferRecord::publishActiveHandle() noexcept
 void QCCurlMultiTransferRecord::clearActiveHandle() noexcept
 {
     if (m_transferState) {
+        m_transferState->receiveIdle.stop();
         m_transferState->activeEasyHandle = nullptr;
     }
 }
@@ -220,7 +222,7 @@ bool QCCurlMultiTransferRecord::bindCallbacks(QString *errorMessage)
 
     // detach 为 cleanup 禁用 progress；每次 admission 必须在回调绑定后重新启用。
     return setOption(QCURL_CURL_OPTION(CURLOPT_NOPROGRESS), Internal::CurlOptions::kDisabled)
-           && bindPrivate(errorMessage);
+           && bindReceiveIdleCallback(errorMessage) && bindPrivate(errorMessage);
 }
 
 bool QCCurlMultiTransferRecord::unbindCallbacks(QString *errorMessage)
@@ -254,6 +256,12 @@ bool QCCurlMultiTransferRecord::unbindCallbacks(QString *errorMessage)
                         static_cast<curl_read_callback>(nullptr))
            && setOption(QCURL_CURL_OPTION(CURLOPT_DEBUGFUNCTION),
                         static_cast<curl_debug_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_PREREQFUNCTION),
+                        static_cast<curl_prereq_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_PREREQDATA), nullptr)
+           && setOption(QCURL_CURL_OPTION(CURLOPT_SOCKOPTFUNCTION),
+                        static_cast<curl_sockopt_callback>(nullptr))
+           && setOption(QCURL_CURL_OPTION(CURLOPT_SOCKOPTDATA), nullptr)
            && setOption(QCURL_CURL_OPTION(CURLOPT_WRITEDATA), nullptr)
            && setOption(QCURL_CURL_OPTION(CURLOPT_HEADERDATA), nullptr)
            && setOption(QCURL_CURL_OPTION(CURLOPT_SEEKDATA), nullptr)

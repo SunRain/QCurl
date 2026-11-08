@@ -65,6 +65,16 @@ if(QCURL_WEBSOCKET_SUPPORT)
     set_tests_properties(tst_QCNetworkUrlEncoding PROPERTIES LABELS "env;local_port;node;websocket")
 endif()
 
+add_qcurl_test_with_preflight(tst_QCNetworkReceiveIdleTimeout
+    REQUIRE_LOCAL_PORT
+    SOURCES tst_QCNetworkReceiveIdleTimeout.cpp qcnetwork_receive_idle_server.h
+            qcnetwork_receive_idle_test.h qcnetwork_receive_idle_lifecycle_tests.cpp
+            qcnetwork_receive_idle_contract_tests.cpp qcurl_tls_test_server.h)
+# 新合同必须由正式共享库执行，不能只在测试伴随库成立。
+set_property(TARGET tst_QCNetworkReceiveIdleTimeout PROPERTY LINK_LIBRARIES
+    Qt6::Test Qt6::Network QCurl QCurlBlockingExtras QCurlTestSupport CURL::libcurl qcurl_qttest_paths)
+set_tests_properties(tst_QCNetworkReceiveIdleTimeout PROPERTIES LABELS "env;local_port" TIMEOUT 120)
+
 add_qcurl_test(tst_QCNetworkRequest tst_QCNetworkRequest.cpp)
 add_qcurl_test(tst_QCNetworkError tst_QCNetworkError.cpp)
 add_qcurl_test(tst_CurlFeatureProbe tst_CurlFeatureProbe.cpp)

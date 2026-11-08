@@ -40,6 +40,7 @@ SignalEmissionResult publishFlowChange(const QPointer<QCNetworkReply> &observer,
                                        const ReplyFlowChange &change)
 {
     reportPauseFailure(change);
+    holder->receiveIdle.setReceivePaused((holder->flow.desiredMask() & CURLPAUSE_RECV) != 0);
     if (!observer) {
         return SignalEmissionResult::Destroyed;
     }
@@ -156,6 +157,7 @@ void pauseReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateRe
                                                mode,
                                                isInReplyCurlCallback());
     reportPauseFailure(change);
+    holder->receiveIdle.setReceivePaused((holder->flow.desiredMask() & CURLPAUSE_RECV) != 0);
     if (observer && change.accepted && !holder->lifecycle.isTerminal()) {
         Q_UNUSED(privateReply->setState(ReplyState::Paused));
     }
@@ -173,6 +175,7 @@ void resumeReplyTransport(QCNetworkReply *reply, QCNetworkReplyPrivate *privateR
     const QPointer<QCNetworkReply> observer(reply);
     const auto change = holder->flow.resumeUser(privateReply->activeCurlHandle());
     reportPauseFailure(change);
+    holder->receiveIdle.setReceivePaused((holder->flow.desiredMask() & CURLPAUSE_RECV) != 0);
     if (!observer || !change.accepted || holder->lifecycle.isTerminal()) {
         return;
     }

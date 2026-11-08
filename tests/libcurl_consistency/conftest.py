@@ -221,8 +221,6 @@ def pytest_collection_modifyitems(config, items):
         if item_path.name in _UNIT_TEST_MODULES:
             continue
         item.add_marker(pytest.mark.needs_testenv)
-        # 为集成测试显式添加 autouse fixture 依赖
-        item.add_marker(pytest.mark.usefixtures("lc_seed_http_docs"))
         needs_testenv_items.append(item)
 
     # 仅当存在需要 testenv 的测试时才检查环境
@@ -237,6 +235,13 @@ def pytest_collection_modifyitems(config, items):
                 f"libcurl consistency testenv 初始化失败: {TESTENV_IMPORT_ERROR}",
                 returncode=2,
             )
+
+
+@pytest.fixture(autouse=True)
+def _seed_consistency_docs(request):
+    """在 setup 阶段为已标记的集成项准备资源，保持纯单元测试无环境依赖。"""
+    if request.node.get_closest_marker("needs_testenv") is not None:
+        request.getfixturevalue("lc_seed_http_docs")
 
 
 @pytest.fixture(autouse=True)
@@ -488,7 +493,7 @@ def lc_seed_http_docs(env, httpd):
     """
     为一致性用例准备最小的静态资源文件（对齐上游 test_02_download.py 的 class-scope fixture）。
 
-    注意：不再是 autouse，通过 pytest_collection_modifyitems 为需要 testenv 的测试显式添加。
+    注意：仅由标记为 needs_testenv 的测试在 setup 阶段请求。
     """
     indir = httpd.docs_dir
     env.make_data_file(indir=indir, fname="data-1m", fsize=1024 * 1024)

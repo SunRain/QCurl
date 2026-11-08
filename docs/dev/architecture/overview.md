@@ -25,9 +25,9 @@ QCNetworkRequest + method/body
 
 `QCNetworkReplyPrivate` 是请求级编排器：保留快照、资源关系和跨模块顺序，不摊平领域状态。
 同一个共享 transfer holder 按值组合 lifecycle、response、body source、flow、非 TLS 配置、
-TLS 与 trace，覆盖 active record 和 detached handle 的原生借用；retry/cache 则由 Private
+TLS、trace 与接收空闲计时，覆盖 active record 和 detached handle 的原生借用；retry/cache 则由 Private
 按请求持有。领域对象只解释自己的规则，callback、信号、timer、线程和 multi 在 adapter
-协作。具体职责、选项插点、终态重查及 package bridge 见[binding 合同](libcurl-binding-contract.md)。
+协作。可选 receive-idle 的纯时间规则不持有 QObject/CURL，执行 adapter 按请求观察连接和接收活动；禁用时不增加 timer 或全传输扫描。具体职责、选项插点、终态重查及 package bridge 见[binding 合同](libcurl-binding-contract.md)。
 
 ## 流控与同步路径
 

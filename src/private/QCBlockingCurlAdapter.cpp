@@ -246,6 +246,12 @@ QCBlockingNetworkResult executeBlockingRequest(const QCNetworkRequest &request,
         return QCBlockingNetworkResult::failure(NetworkError::InvalidRequest, compiled.failure);
     }
 
+    if (compiled.policy->timeout.receiveIdleTimeout) {
+        return QCBlockingNetworkResult::failure(
+            NetworkError::UnsupportedCapability,
+            QStringLiteral("Blocking Extras 不支持 receiveIdleTimeout；请使用异步 reply"));
+    }
+
     const auto availability = blockingRuntimeAvailability();
     if (!availability.supported) {
         return QCBlockingNetworkResult::failure(NetworkError::UnsupportedCapability,

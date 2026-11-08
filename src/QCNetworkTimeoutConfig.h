@@ -23,7 +23,8 @@ class QCNetworkTimeoutConfigData;
  * 使用 C++17 std::optional 和 std::chrono 提供类型安全的超时配置。
  *
  * @par 超时类型说明
- * - connectTimeout: 连接建立超时（TCP 三次握手）
+ * - connectTimeout: 连接建立超时（DNS、TCP 与 TLS/QUIC 握手）
+ * - receiveIdleTimeout: 建连后等待响应及接收停滞超时，不限制响应总时长
  * - totalTimeout: 整个请求的总超时时间
  * - lowSpeedTime + lowSpeedLimit: 低速检测（长时间低于某速率则超时）
  *
@@ -61,6 +62,19 @@ public:
      */
     [[nodiscard]] std::optional<std::chrono::milliseconds> connectTimeout() const;
     void setConnectTimeout(const std::optional<std::chrono::milliseconds> &timeout);
+
+    /**
+     * @brief 接收空闲超时；默认未设置，不改变既有行为。
+     *
+     * 建连完成后及每次实际响应头/正文推进后获得完整时限；上传和空进度不续期。
+     * 重试/重定向重新建连不消耗接收时限；接收暂停与背压期间不计时，恢复重新计时。
+     * 未设置、nullopt 和 0ms 均禁用；生效范围为 1..2,147,483,647ms。
+     * 负值或超界值发送前以 InvalidRequest 拒绝，不截断或饱和。
+     * Blocking Extras 在共同值校验后仅对生效正值报 UnsupportedCapability，且不发送请求。
+     */
+    [[nodiscard]] std::optional<std::chrono::milliseconds> receiveIdleTimeout() const;
+    /// 保存可选时限；nullopt 或 0ms 禁用。非法值保留到发送前统一校验。
+    void setReceiveIdleTimeout(std::optional<std::chrono::milliseconds> timeout);
 
     /**
      * @brief 总超时（可选）

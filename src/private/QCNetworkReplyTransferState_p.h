@@ -8,6 +8,7 @@
 
 #include "QCNetworkLogger.h"
 #include "QCNetworkReply.h"
+#include "private/QCNetworkReceiveIdleExecution_p.h"
 #include "private/QCNetworkReplyBodySource_p.h"
 #include "private/QCNetworkReplyFlowControl_p.h"
 #include "private/QCNetworkReplyResponse_p.h"
@@ -48,6 +49,7 @@ struct Q_DECL_HIDDEN QCNetworkReplyTransferState
     bool readCallbackConfigured  = false;
     bool debugCallbackConfigured = false;
 
+    Internal::QCNetworkReceiveIdleExecution receiveIdle;
     Internal::QCReplyLifecycle lifecycle;
     Internal::QCReplyResponse response;
 

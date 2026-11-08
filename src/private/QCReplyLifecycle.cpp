@@ -36,6 +36,7 @@ void QCReplyLifecycle::resetForRetry()
     m_state = ReplyState::Idle;
     m_error = NetworkError::NoError;
     m_errorMessage.clear();
+    m_receiveIdleTimeout = false;
     resetReplayObservations();
 }
 
@@ -51,11 +52,21 @@ void QCReplyLifecycle::resetReplayObservations()
     m_uploadTotal     = -1;
 }
 
-void QCReplyLifecycle::recordError(NetworkError error, const QString &message)
+void QCReplyLifecycle::recordError(NetworkError error,
+                                   const QString &message,
+                                   bool receiveIdleTimeout)
 {
     if (!isTerminal()) {
-        m_error        = error;
-        m_errorMessage = message;
+        m_error              = error;
+        m_errorMessage       = message;
+        m_receiveIdleTimeout = error == NetworkError::ConnectionTimeout && receiveIdleTimeout;
+    }
+}
+
+void QCReplyLifecycle::observeNativeResult(CURLcode code)
+{
+    if (!isTerminal()) {
+        m_nativeCode = static_cast<int>(code);
     }
 }
 

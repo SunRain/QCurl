@@ -20,6 +20,8 @@ class QCNetworkReplyExecution final
 {
 public:
     static void run(QCNetworkReply *reply);
+    static void initializeReceiveIdle(QCNetworkReply *reply);
+    static void expireReceiveIdle(QCNetworkReply *reply);
     /// 在 reply owner thread 创建弱观察 adapter；完成投递负责回收 handle 而非延长 QObject 寿命。
     [[nodiscard]] static QCCurlMultiManager::TransferCompletionHandler completionHandler(
         QCNetworkReply *reply);
@@ -37,6 +39,7 @@ public:
 #endif
 
 private:
+    static void finishReceiveIdleTimeout(QCNetworkReply *reply);
     [[nodiscard]] static bool completeFromCache(QCNetworkReply *reply,
                                                 QCNetworkAccessManager *manager);
     [[nodiscard]] static bool dispatchMock(QCNetworkReply *reply, QCNetworkAccessManager *manager);

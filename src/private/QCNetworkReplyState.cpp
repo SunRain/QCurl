@@ -84,6 +84,7 @@ Internal::SignalEmissionResult QCNetworkReplyPrivate::setState(ReplyState newSta
         return Internal::SignalEmissionResult::Alive;
     }
     if (lifecycle.isTerminal()) {
+        holder->receiveIdle.stop();
         holder->trace.stop();
         holder->transportDomain.reset();
         finishPoolRequest();
@@ -229,8 +230,19 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
                                                       holder->bodySource.device() != nullptr,
                                                       ok
                                                           && response.rangeAlreadyComplete(
-                                                              existingSize));
+                                                              existingSize),
+                                                      holder->receiveIdle.expired());
+    finishAttempt(info);
+}
 
+void QCNetworkReplyPrivate::finishAttempt(const Internal::ReplyAttemptErrorInfo &info)
+{
+    Q_Q(QCNetworkReply);
+    const auto holder = transferState;
+    auto &lifecycle   = holder->lifecycle;
+    if (transferRemovalRequested || lifecycle.isTerminal()) {
+        return;
+    }
     if (info.error == NetworkError::NoError) {
         Q_UNUSED(setState(ReplyState::Finished));
         return;
@@ -249,7 +261,7 @@ void QCNetworkReplyPrivate::onCurlMultiFinished(CURLcode curlCode, long httpStat
         return;
     }
 
-    setError(info.error, info.message);
+    lifecycle.recordError(info.error, info.message, info.receiveIdleTimeout);
     Q_UNUSED(setState(ReplyState::Error));
 }
 

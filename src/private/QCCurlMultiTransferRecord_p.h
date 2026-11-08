@@ -74,6 +74,8 @@ public:
     [[nodiscard]] bool unbindCallbacks(QString *errorMessage);
     [[nodiscard]] bool bindPrivate(QString *errorMessage);
 
+    static int prerequisiteCallback(void *userdata, char *, char *, int, int);
+    static int socketOptionCallback(void *userdata, curl_socket_t socket, curlsocktype purpose);
     static size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata);
     static size_t headerCallback(char *ptr, size_t size, size_t nmemb, void *userdata);
     static size_t readCallback(char *ptr, size_t size, size_t nmemb, void *userdata);
@@ -84,6 +86,7 @@ public:
         CURL *handle, curl_infotype type, char *data, size_t size, void *userdata);
 
 private:
+    [[nodiscard]] bool bindReceiveIdleCallback(QString *errorMessage);
     std::optional<QCCurlHandleManager> m_handle;
     std::shared_ptr<QCCurlMultiDomain> m_domain;
     quintptr m_token = 0;

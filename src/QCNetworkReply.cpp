@@ -3,6 +3,7 @@
 #include "QCCurlMultiManager.h"
 #include "QCNetworkConnectionPoolManager_p.h"
 #include "QCNetworkReply_p.h"
+#include "private/QCNetworkReplyExecution_p.h"
 #include "private/QCNetworkReplyProperties_p.h"
 #include "private/QCNetworkReplyRuntime_p.h"
 #include "private/QCRequestPipeline_p.h"
@@ -35,6 +36,7 @@ QCNetworkReplyPrivate::QCNetworkReplyPrivate(QCNetworkReply *q,
 
 QCNetworkReplyPrivate::~QCNetworkReplyPrivate()
 {
+    transferState->receiveIdle.stop();
     transferState->trace.stop();
     if (transferToken != 0 && !transferRemovalRequested && q_ptr) {
         if (QThread::currentThread() == q_ptr->thread()) {
@@ -98,6 +100,7 @@ QCNetworkReply::QCNetworkReply(FactoryKey,
         }
         // 工厂先返回对象；启动队列统一投递配置失败，调用方可以随后连接终态信号。
     }
+    Internal::QCNetworkReplyExecution::initializeReceiveIdle(this);
 }
 
 #ifdef QCURL_ENABLE_TEST_HOOKS
@@ -123,6 +126,7 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
         }
         Q_UNUSED(d->setState(ReplyState::Error));
     }
+    Internal::QCNetworkReplyExecution::initializeReceiveIdle(this);
 }
 
 QCNetworkReply::QCNetworkReply(TestOnlyKey,
@@ -139,6 +143,13 @@ QCNetworkReply::QCNetworkReply(TestOnlyKey,
                      parent)
 {}
 #endif
+
+bool QCNetworkReply::isReceiveIdleTimeout() const noexcept
+{
+    Q_D(const QCNetworkReply);
+    Q_ASSERT(QThread::currentThread() == thread());
+    return d->transferState->lifecycle.isReceiveIdleTimeout();
+}
 
 QCNetworkReply::~QCNetworkReply()
 {

@@ -2,6 +2,22 @@
 
 记录当前 `2.1.1` 候选的变化与历史版本说明。`2.1.0` 是本线首版条目，2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
+## 接收空闲超时（未发布，版本归属未定）
+
+- Core 增加可选 `QCNetworkTimeoutConfig::receiveIdleTimeout()` / `setReceiveIdleTimeout()`，
+  以及 reply 最终来源查询 `isReceiveIdleTimeout()`；连接后等待首字节和每次真实接收活动
+  使用完整时限，保持显式 total/low-speed 的独立语义。
+- 默认、空值和零禁用；负值及超过 2,147,483,647ms 的值发送前拒绝。共同配置首错在
+  connect、total 之后检查 receive-idle，Blocking 仅拒绝生效正值且不发送请求。
+- TestSupport capture 增加可选毫秒值查询/设置，保留原始配置意图。mock 接收等待可触发
+  高层 timeout，但没有原生完成结果时诊断码仍为 0；重试或缓存回退成功不保留失败来源。
+- 修复使用 libcurl CMake 配置包构建 shared 库时，将具体 `CURL::libcurl_shared` target
+  泄漏到安装导出的问题；运行库依赖仍由原生链接记录，static 的显式依赖保持不变。
+
+使用边界见[接收空闲配置](docs/user/configuration.md#接收空闲超时)。新增能力优先进入下一
+minor；当前开发版本号及 SONAME 不代表已决定发行版本。若选择同线 patch，仍须满足全部
+已发布 Public 组件（包括 Preview、TestSupport 及旧静态 consumer）的兼容合同。
+
 ## 请求策略收敛（未发布，版本归属未定）
 
 Core async 与 Blocking Extras 共用内部请求策略，保持两个执行器和现有 public API。下表按修改前的正式配置合同及实际实现分类；本地 `v2.1.0`/`v2.1.1` tag 和开发版本号不能证明正式分发状态，也不自动确定这些变化可以进入 2.1 patch。

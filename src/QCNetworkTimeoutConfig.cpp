@@ -8,16 +8,16 @@ namespace QCurl {
 class QCNetworkTimeoutConfigData : public QSharedData
 {
 public:
-    std::optional<std::chrono::milliseconds> connectTimeout = std::nullopt;
-    std::optional<std::chrono::milliseconds> totalTimeout   = std::nullopt;
-    std::optional<std::chrono::seconds> lowSpeedTime        = std::nullopt;
-    std::optional<long> lowSpeedLimit                       = std::nullopt;
+    std::optional<std::chrono::milliseconds> connectTimeout     = std::nullopt;
+    std::optional<std::chrono::milliseconds> totalTimeout       = std::nullopt;
+    std::optional<std::chrono::milliseconds> receiveIdleTimeout = std::nullopt;
+    std::optional<std::chrono::seconds> lowSpeedTime            = std::nullopt;
+    std::optional<long> lowSpeedLimit                           = std::nullopt;
 };
 
 QCNetworkTimeoutConfig::QCNetworkTimeoutConfig()
     : d(new QCNetworkTimeoutConfigData)
-{
-}
+{}
 
 QCNetworkTimeoutConfig::QCNetworkTimeoutConfig(const QCNetworkTimeoutConfig &other) = default;
 
@@ -25,11 +25,10 @@ QCNetworkTimeoutConfig::QCNetworkTimeoutConfig(QCNetworkTimeoutConfig &&other) =
 
 QCNetworkTimeoutConfig::~QCNetworkTimeoutConfig() = default;
 
-QCNetworkTimeoutConfig &QCNetworkTimeoutConfig::operator=(const QCNetworkTimeoutConfig &other)
-    = default;
+QCNetworkTimeoutConfig &QCNetworkTimeoutConfig::operator=(
+    const QCNetworkTimeoutConfig &other) = default;
 
-QCNetworkTimeoutConfig &QCNetworkTimeoutConfig::operator=(QCNetworkTimeoutConfig &&other)
-    = default;
+QCNetworkTimeoutConfig &QCNetworkTimeoutConfig::operator=(QCNetworkTimeoutConfig &&other) = default;
 
 std::optional<std::chrono::milliseconds> QCNetworkTimeoutConfig::connectTimeout() const
 {
@@ -42,13 +41,22 @@ void QCNetworkTimeoutConfig::setConnectTimeout(
     d->connectTimeout = timeout;
 }
 
+std::optional<std::chrono::milliseconds> QCNetworkTimeoutConfig::receiveIdleTimeout() const
+{
+    return d->receiveIdleTimeout;
+}
+
+void QCNetworkTimeoutConfig::setReceiveIdleTimeout(std::optional<std::chrono::milliseconds> timeout)
+{
+    d->receiveIdleTimeout = timeout;
+}
+
 std::optional<std::chrono::milliseconds> QCNetworkTimeoutConfig::totalTimeout() const
 {
     return d->totalTimeout;
 }
 
-void QCNetworkTimeoutConfig::setTotalTimeout(
-    const std::optional<std::chrono::milliseconds> &timeout)
+void QCNetworkTimeoutConfig::setTotalTimeout(const std::optional<std::chrono::milliseconds> &timeout)
 {
     d->totalTimeout = timeout;
 }

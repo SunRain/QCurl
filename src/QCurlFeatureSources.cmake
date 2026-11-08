@@ -7,6 +7,9 @@ set(QCURL_FEATURE_SOURCES
     private/QCNetworkRequestPolicy.cpp
     private/QCNetworkReplyBodySource.cpp
     private/QCNetworkReplyCallbacks.cpp
+    private/QCNetworkReceiveIdleTimeout.cpp
+    private/QCNetworkReplyReceiveIdleExecution.cpp
+    private/QCCurlMultiTransferReceiveIdle.cpp
     private/QCNetworkReplyTrace.cpp
     private/QCNetworkReplyTraceTargets.cpp
     private/QCNetworkTraceCallback.cpp
@@ -119,6 +122,8 @@ set(QCURL_FEATURE_HEADERS
     private/QCMultipartHeaderEncoding_p.h
     private/QCNetworkReplyBodySource_p.h
     private/QCNetworkReplyCallbacks_p.h
+    private/QCNetworkReceiveIdleTimeout_p.h
+    private/QCNetworkReceiveIdleExecution_p.h
     private/QCNetworkReplyTrace_p.h
     private/QCNetworkTraceCallback_p.h
     private/QCNetworkReplyExecution_p.h

@@ -34,6 +34,7 @@ SignalEmissionResult activateBackpressureIfNeeded(QCNetworkReplyTransferState *s
     const auto change = state->flow.afterReadyRead(handle,
                                                    state->response.bytesAvailable(),
                                                    state->lifecycle.isTerminal());
+    state->receiveIdle.setReceivePaused((state->flow.desiredMask() & CURLPAUSE_RECV) != 0);
     if (change.error != CURLE_OK) {
         qWarning() << "QCCurlMultiTransferRecord: curl_easy_pause failed:"
                    << curl_easy_strerror(change.error) << "desiredMask=" << change.nativeMask;
@@ -56,7 +57,11 @@ size_t writeAsyncReplyBody(QCNetworkReplyTransferState *state,
                            size_t totalSize)
 {
     if (state->flow.pauseWriteIfRequested()) {
+        state->receiveIdle.setReceivePaused(true);
         return CURL_WRITEFUNC_PAUSE;
+    }
+    if (totalSize > 0) {
+        state->receiveIdle.receivedBytes();
     }
 
     state->response.appendBody(QByteArrayView(ptr, static_cast<qsizetype>(totalSize)));
@@ -121,6 +126,9 @@ size_t headerReplyCurlCallback(char *ptr,
     }
     const size_t totalSize = size * nmemb;
     if (!state->lifecycle.isTerminal()) {
+        if (totalSize > 0) {
+            state->receiveIdle.receivedBytes();
+        }
         state->response.appendHeaders(QByteArrayView(ptr, static_cast<qsizetype>(totalSize)));
     }
     return totalSize;
@@ -206,6 +214,10 @@ int progressReplyCurlCallback(QCNetworkReplyTransferState *state,
         return 1;
     }
 
+    state->receiveIdle.synchronizeConnection(state->activeEasyHandle);
+    if (state->receiveIdle.expired()) {
+        return 1;
+    }
     state->lifecycle.observeNetworkProgress(static_cast<qint64>(dltotal),
                                             static_cast<qint64>(dlnow),
                                             static_cast<qint64>(ultotal),

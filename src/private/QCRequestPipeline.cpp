@@ -179,6 +179,10 @@ QByteArray buildCurlPlanDigestForTest(const CurlPlan &plan)
     if (timeout.connectTimeout().has_value()) {
         parts << QStringLiteral("connect_timeout_ms=%1").arg(timeout.connectTimeout()->count());
     }
+    if (timeout.receiveIdleTimeout().has_value()) {
+        parts << QStringLiteral("receive_idle_timeout_ms=%1")
+                     .arg(timeout.receiveIdleTimeout()->count());
+    }
     if (timeout.totalTimeout().has_value()) {
         parts << QStringLiteral("total_timeout_ms=%1").arg(timeout.totalTimeout()->count());
     }

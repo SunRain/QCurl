@@ -88,6 +88,7 @@ void resetReplyForRetry(QCNetworkReplyPrivate *d, bool setIdleState)
     // 回放只清观察事实；重试才允许回到 Idle，跨 attempt 的时钟和 warning 不清零。
     holder->trace.stop();
     if (setIdleState) {
+        holder->receiveIdle.reset();
         holder->lifecycle.resetForRetry();
     } else {
         holder->lifecycle.resetReplayObservations();

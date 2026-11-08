@@ -22,6 +22,11 @@ multi transfer record 在 detach 前持有 handle、callback userdata 和 backin
 
 ## 4. 有证伪能力的验证
 
+启用 receive-idle 时，用户接收暂停或背压使接收计时停止；最后一个接收暂停原因清除后，
+从恢复时刻重新获得完整时限。发送暂停或上传 source-not-ready 不影响接收预算。
+恢复过程中同步交付的缓存字节不代表新的网络活动；adapter 必须在原生恢复返回后重查
+当前原因位、对象存活和终态，再更新 timer，不能让旧恢复事件覆盖新的暂停或取消。
+
 相关位置：[ReplyFlowControl](../../../src/private/QCNetworkReplyFlowControl.cpp)、[ReplyCallbacks](../../../src/private/QCNetworkReplyCallbacks.cpp)、[multi manager](../../../src/QCCurlMultiManager.cpp)。修改时不仅检查最终完成，还要观察：
 
 1. 暂停发生在允许的 callback/owner-thread 边界。

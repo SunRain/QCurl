@@ -61,6 +61,7 @@ struct MockChaosReplayState
     int nextChunkIndex = 0;
     bool initialized   = false;
     bool actionFired   = false;
+    quint64 generation = 0;
 };
 
 [[nodiscard]] quint32 fnv1a32(const QByteArray &bytes)
@@ -206,18 +207,27 @@ void scheduleReplayStep(const std::shared_ptr<MockChaosReplayState> &state, int 
     }
 
     state->replyPrivate->transferState->flow.pauseReplay(PauseMode::Recv);
+    state->replyPrivate->transferState->receiveIdle.setReceivePaused(true);
     if (state->replyPrivate->setState(ReplyState::Paused) == SignalEmissionResult::Destroyed) {
         return true;
     }
     if (reply->state() == ReplyState::Paused && state->config.resumeDelayMs > 0) {
         QPointer<QCNetworkReply> safeReply(reply);
-        auto *replyPrivate = state->replyPrivate;
-        QTimer::singleShot(state->config.resumeDelayMs, reply, [safeReply, replyPrivate]() {
-            if (safeReply && replyPrivate->transferState->lifecycle.state() == ReplyState::Paused) {
-                replyPrivate->transferState->flow.resumeReplay();
-                Q_UNUSED(replyPrivate->setState(ReplyState::Running));
-            }
-        });
+        auto *replyPrivate    = state->replyPrivate;
+        const auto generation = state->generation;
+        QTimer::singleShot(state->config.resumeDelayMs,
+                           reply,
+                           [safeReply, replyPrivate, generation]() {
+                               if (safeReply
+                                   && replyPrivate->transferState->receiveIdle.generation()
+                                          == generation
+                                   && replyPrivate->transferState->lifecycle.state()
+                                          == ReplyState::Paused) {
+                                   replyPrivate->transferState->flow.resumeReplay();
+                                   replyPrivate->transferState->receiveIdle.setReceivePaused(false);
+                                   Q_UNUSED(replyPrivate->setState(ReplyState::Running));
+                               }
+                           });
     }
     return reply->state() == ReplyState::Paused;
 }
@@ -231,6 +241,10 @@ void initializeReplay(const std::shared_ptr<MockChaosReplayState> &state)
     state->replyPrivate->transferState->lifecycle.beginReplay(state->totalBytes);
     state->replyPrivate->transferState->response.applyReplayHeaders(state->mockData.headers,
                                                                     state->mockData.rawHeaderData);
+    if (!state->mockData.headers.isEmpty()
+        || (state->mockData.rawHeaderData && !state->mockData.rawHeaderData->isEmpty())) {
+        state->replyPrivate->transferState->receiveIdle.receivedBytes();
+    }
     state->initialized = true;
 }
 
@@ -244,6 +258,7 @@ SignalEmissionResult emitNextChunk(const std::shared_ptr<MockChaosReplayState> &
         return SignalEmissionResult::Alive;
     }
 
+    state->replyPrivate->transferState->receiveIdle.receivedBytes();
     state->replyPrivate->transferState->response.appendBody(chunk);
     state->replyPrivate->transferState->lifecycle.observeBodyChunk(chunk.size());
     const QPointer<QCNetworkReply> observer = state->reply;
@@ -264,12 +279,15 @@ void finishReplay(const std::shared_ptr<MockChaosReplayState> &state)
     if (lifecycle.isTerminal()) {
         return;
     }
+    state->replyPrivate->transferState->receiveIdle.stop();
     state->replyPrivate->transferState->response.commitStatus(state->mockData.statusCode);
-    const auto info
-        = lifecycle.classifyMockResult(state->mockData.isError,
-                                       state->mockData.error,
-                                       state->mockData.statusCode,
-                                       state->replyPrivate->transferState->bodySource.failure());
+    const auto info = lifecycle.classifyMockResult(
+        state->mockData.isError || state->replyPrivate->transferState->receiveIdle.expired(),
+        state->replyPrivate->transferState->receiveIdle.expired() ? NetworkError::ConnectionTimeout
+                                                                  : state->mockData.error,
+        state->mockData.statusCode,
+        state->replyPrivate->transferState->bodySource.failure(),
+        state->replyPrivate->transferState->receiveIdle.expired());
     if (info.error == NetworkError::NoError) {
         Q_UNUSED(state->replyPrivate->setState(ReplyState::Finished));
         return;
@@ -284,13 +302,17 @@ void finishReplay(const std::shared_ptr<MockChaosReplayState> &state)
         scheduleAsyncReplyRetry(state->reply, state->replyPrivate, retry.delay.value());
         return;
     }
-    state->replyPrivate->setError(info.error, info.message);
+    lifecycle.recordError(info.error, info.message, info.receiveIdleTimeout);
     Q_UNUSED(state->replyPrivate->setState(ReplyState::Error));
 }
 
 void runReplayStep(const std::shared_ptr<MockChaosReplayState> &state)
 {
     if (!state || !state->reply || !state->replyPrivate) {
+        return;
+    }
+    const auto &idle = state->replyPrivate->transferState->receiveIdle;
+    if (idle.expired() || idle.generation() != state->generation) {
         return;
     }
     const ReplyState current = state->replyPrivate->transferState->lifecycle.state();
@@ -361,6 +383,7 @@ bool startMockChaosReplay(QCNetworkReply *reply,
     state->replyPrivate = replyPrivate;
     state->mockData     = mockData;
     state->config       = config.value();
+    state->generation   = replyPrivate->transferState->receiveIdle.generation();
     state->totalBytes   = mockData.response.size();
     state->chunks       = buildDeterministicChunks(mockData.response, state->config, method, url);
     scheduleReplayStep(state, 0);

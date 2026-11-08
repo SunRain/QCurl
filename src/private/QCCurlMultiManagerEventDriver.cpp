@@ -1,6 +1,8 @@
 #include "QCCurlMultiManager.h"
 #include "private/QCCurlMultiDomain_p.h"
+#include "private/QCCurlMultiTransferRecord_p.h"
 #include "private/QCCurlOptionAdapter_p.h"
+#include "private/QCNetworkReplyCallbacks_p.h"
 #include "private/QCurlRuntimeState_p.h"
 
 #include <QDebug>
@@ -107,10 +109,12 @@ void QCCurlMultiManager::handleSocketAction(QCCurlMultiDomain *domain,
     ++m_testSocketActionCount;
 #endif
     int runningHandles = 0;
-    CURLMcode ret      = curl_multi_socket_action(domain->multi,
-                                                  socketfd,
-                                                  eventsBitmask,
-                                                  &runningHandles);
+    CURLMcode ret;
+    {
+        // socket/timer/debug 回调也属于 libcurl 栈，嵌套事件循环不得在此移除 handle。
+        Internal::ReplyCurlCallbackScope callbackScope;
+        ret = curl_multi_socket_action(domain->multi, socketfd, eventsBitmask, &runningHandles);
+    }
 
     if (ret != CURLM_OK) {
         qWarning() << "QCCurlMultiManager::handleSocketAction: curl_multi_socket_action failed:"

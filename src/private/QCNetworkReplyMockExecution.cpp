@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Implements offline mock capture and asynchronous reply replay.
+ * @brief 实现离线请求捕获与按接收阶段计时的异步回放。
  */
 
 #include "QCNetworkAccessManager.h"
@@ -42,6 +42,9 @@ void captureMockRequest(const QCNetworkMockProvider &provider,
     if (timeouts.connectTimeout().has_value()) {
         captured.connectTimeoutMs = timeouts.connectTimeout()->count();
     }
+    if (timeouts.receiveIdleTimeout()) {
+        captured.receiveIdleTimeoutMs = timeouts.receiveIdleTimeout()->count();
+    }
     if (timeouts.totalTimeout().has_value()) {
         captured.totalTimeoutMs = timeouts.totalTimeout()->count();
     }
@@ -69,6 +72,11 @@ SignalEmissionResult applyMockPayload(const QPointer<QCNetworkReply> &reply,
     resetReplyForRetry(replyPrivate, false);
     auto &response = replyPrivate->transferState->response;
     response.applyReplayHeaders(mockData.headers, mockData.rawHeaderData);
+    if (!mockData.headers.isEmpty()
+        || (mockData.rawHeaderData && !mockData.rawHeaderData->isEmpty())
+        || !mockData.response.isEmpty()) {
+        replyPrivate->transferState->receiveIdle.receivedBytes();
+    }
     if (!mockData.response.isEmpty()) {
         response.appendBody(mockData.response);
         replyPrivate->transferState->lifecycle.observeReplayedBody(mockData.response.size());
@@ -88,11 +96,15 @@ void finishMockAttempt(const QPointer<QCNetworkReply> &reply,
     if (lifecycle.isTerminal()) {
         return;
     }
+    replyPrivate->transferState->receiveIdle.stop();
     replyPrivate->transferState->response.commitStatus(mockData.statusCode);
-    const auto info = lifecycle.classifyMockResult(mockData.isError,
-                                                   mockData.error,
+    const bool expired = replyPrivate->transferState->receiveIdle.expired();
+    const auto info = lifecycle.classifyMockResult(mockData.isError || expired,
+                                                   expired ? NetworkError::ConnectionTimeout
+                                                           : mockData.error,
                                                    mockData.statusCode,
-                                                   replyPrivate->transferState->bodySource.failure());
+                                                   replyPrivate->transferState->bodySource.failure(),
+                                                   expired);
     if (info.error == NetworkError::NoError) {
         Q_UNUSED(replyPrivate->setState(ReplyState::Finished));
         return;
@@ -105,7 +117,7 @@ void finishMockAttempt(const QPointer<QCNetworkReply> &reply,
         scheduleAsyncReplyRetry(reply, replyPrivate, retry.delay.value());
         return;
     }
-    replyPrivate->setError(info.error, info.message);
+    lifecycle.recordError(info.error, info.message, info.receiveIdleTimeout);
     Q_UNUSED(replyPrivate->setState(ReplyState::Error));
 }
 
@@ -168,13 +180,19 @@ bool QCNetworkReplyExecution::dispatchMock(QCNetworkReply *reply, QCNetworkAcces
     if (d->setState(ReplyState::Running) == SignalEmissionResult::Destroyed) {
         return true;
     }
+    // Mock 无真实连接阶段：在 Running 后明确进入已连接、等待首响应的阶段。
+    d->transferState->receiveIdle.beginRequest(nullptr);
     QPointer<QCNetworkReply> safeReply(reply);
     const HttpMethod method = normalized.method;
     const QUrl url          = normalized.request.url();
+    const auto generation   = d->transferState->receiveIdle.generation();
     QTimer::singleShot(qMax(0, provider->globalDelay(handler)),
                        reply,
-                       [safeReply, d, method, url]() {
-                           replayMockResponse(safeReply, d, method, url);
+                       [safeReply, d, method, url, generation]() {
+                           if (safeReply && !d->transferState->receiveIdle.expired()
+                               && generation == d->transferState->receiveIdle.generation()) {
+                               replayMockResponse(safeReply, d, method, url);
+                           }
                        });
     return true;
 }

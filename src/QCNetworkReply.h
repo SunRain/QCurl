@@ -242,6 +242,14 @@ public:
      * 复制出的整数在 reply 销毁后仍有效，但本接口不保证跨线程访问 reply 安全。
      */
     [[nodiscard]] int diagnosticCurlCode() const noexcept;
+    /**
+     * @brief 仅在最终错误由接收空闲时限导致时为真。
+     *
+     * 非终态、取消、显式 total/low-speed 超时及其他失败均为假；重试或缓存回退成功
+     * 不继承早前尝试的来源。首次终态通知前冻结；只能在 reply 所属线程读取。
+     * 来源独立于 diagnosticCurlCode()，没有实际原生结果时不会构造 libcurl 超时码。
+     */
+    [[nodiscard]] bool isReceiveIdleTimeout() const noexcept;
     /// 返回 reply 是否已进入终态。
     [[nodiscard]] bool isFinished() const noexcept;
     /// 返回 reply 是否处于 Running。

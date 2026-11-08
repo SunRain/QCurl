@@ -154,6 +154,8 @@ public:
      * @note 必须在 Reply 线程执行；调用方应保证在解锁 multi manager 后再投递回调。
      */
     void onCurlMultiFinished(CURLcode curlCode, long httpStatusCode);
+    /// 网络或本地到期分类后的共同收敛入口，保留既有重试与缓存回退。
+    void finishAttempt(const Internal::ReplyAttemptErrorInfo &info);
 
     // Curl 静态回调函数（C 接口）
 

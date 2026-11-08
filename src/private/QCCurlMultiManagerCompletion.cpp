@@ -61,6 +61,9 @@ std::optional<QCCurlMultiManager::FinishedTransfer> QCCurlMultiManager::takeFini
         transfer.httpStatusCode       = responseCode;
         return transfer;
     }
+    if (const auto &state = record->transferState()) {
+        state->lifecycle.observeNativeResult(message->data.result);
+    }
     QPointer<QCNetworkReply> safeReply = record->observer();
     long responseCode                  = 0;
     curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &responseCode);

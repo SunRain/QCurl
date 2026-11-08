@@ -10,6 +10,7 @@ session，使 `pytest tests/` 这类混合运行完全无法进行。
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +77,43 @@ def test_missing_environment_fails_before_testenv_import_errors() -> None:
     assert "libcurl consistency 环境无效:" in combined, combined
     assert "缺少必需环境变量 `CURL_BUILD_DIR`" in combined, combined
     assert "ModuleNotFoundError: No module named 'testenv'" not in combined, combined
+
+
+def test_docs_fixture_runs_only_for_marked_items(tmp_path: Path) -> None:
+    """真实 pytest setup 必须执行资源准备，未标记项不能触发它。"""
+    (tmp_path / "conftest.py").write_text(
+        "from tests.libcurl_consistency.conftest import _seed_consistency_docs\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "test_seed.py").write_text(
+        "import pytest\n"
+        "prepared = []\n"
+        "@pytest.fixture\n"
+        "def lc_seed_http_docs():\n"
+        "    prepared.append(True)\n"
+        "def test_unit():\n"
+        "    assert prepared == []\n"
+        "@pytest.mark.needs_testenv\n"
+        "def test_integration():\n"
+        "    assert prepared == [True]\n"
+        "def test_unit_after():\n"
+        "    assert prepared == [True]\n",
+        encoding="utf-8",
+    )
+    environment = dict(os.environ, PYTHONPATH=str(_REPO_ROOT))
+    for name in ("CURL_BUILD_DIR", "CURL", "CURLINFO", "QCURL_QTTEST", "QCURL_BUILD_DIR",
+                 "QCURL_LC_CAPABILITY_MANIFEST", "PYTEST_ADDOPTS"):
+        environment.pop(name, None)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(tmp_path)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "3 passed" in result.stdout
 
 
 def test_conftest_declares_its_scope_boundary() -> None:
