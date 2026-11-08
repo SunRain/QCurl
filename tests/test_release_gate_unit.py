@@ -146,7 +146,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
         repo
         / ".helloagents/plans/202609021948_qcurl_overdesign_compat_cleanup_remediation"
     )
-    authority = [repo / "docs/dev/release/2.1.1-release-contract.md"]
+    authority = [repo / "docs/dev/release/2.2.0-release-contract.md"]
     local_files = [
         package / name for name in ("requirements.md", "plan.md", "contract.json", "tasks.md")
     ]
@@ -178,7 +178,7 @@ def _prepare_manifest_authority_repo(tmp_path: Path) -> tuple[Path, list[Path]]:
     exclude = repo / ".git/info/exclude"
     exclude.write_text(
         exclude.read_text(encoding="utf-8")
-        + "\n.helloagents/\ndocs/dev/archive/reviews/\ndocs/dev/release/2.1.1-release-contract.md\n",
+        + "\n.helloagents/\ndocs/dev/archive/reviews/\ndocs/dev/release/2.2.0-release-contract.md\n",
         encoding="utf-8",
     )
     return repo, authority
@@ -196,7 +196,7 @@ def test_default_authority_paths_bind_versioned_release_contract(
     ]
 
     assert relative_paths == [
-        "docs/dev/release/2.1.1-release-contract.md",
+        "docs/dev/release/2.2.0-release-contract.md",
     ]
 
 
@@ -1309,7 +1309,7 @@ def _sanitizer_fixture_report(path: Path, build_dir: Path, repo: Path) -> str:
 
 def _full_manifest_fixture(tmp_path: Path, *, repo: Path | None = None, historical: tuple[Path, Path] | None = None):
     repo = _init_identity_repo(tmp_path) if repo is None else repo
-    authority = repo / "docs/dev/release/2.1.1-release-contract.md"
+    authority = repo / "docs/dev/release/2.2.0-release-contract.md"
     authority.parent.mkdir(parents=True)
     authority.write_text("release authority fixture\n", encoding="utf-8")
     trees = {

@@ -1,6 +1,6 @@
 # QCurl examples
 
-This directory contains examples for the current QCurl 2.1.1 development candidate. Build and run them against the same candidate; an example build does not establish release qualification.
+This directory contains examples for the current QCurl 2.2.0 development candidate. Build and run them against the same candidate; an example build does not establish release qualification.
 
 ## Surface labels
 

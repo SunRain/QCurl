@@ -2,7 +2,7 @@
 
 从 **2.1.0** 起，QCurl 以 `major.minor` 为兼容版本线。后续 patch 必须向后兼容本线所有较早正式 patch 的公共源码、受支持 shared ABI、安装消费和公开行为。改变 major 或 minor 后不承诺兼容，升级前须查阅迁移说明并重建下游。
 
-这是项目自定义版本政策，**不是 SemVer 的 minor 兼容规则**；不能从 major 相同推导兼容。历史 2.0 的合同与 tag 保留原义，不追溯适用本政策。当前发布输入和资格条件见唯一 [2.1 发布合同](2.1.1-release-contract.md)，执行命令见[发布操作](release-procedure.md)。
+这是项目自定义版本政策，**不是 SemVer 的 minor 兼容规则**；不能从 major 相同推导兼容。历史 2.0 的合同与 tag 保留原义，不追溯适用本政策。当前发布输入和资格条件见唯一 [2.2.0 发布合同](2.2.0-release-contract.md)，执行命令见[发布操作](release-procedure.md)。
 
 ## 1. 版本数字与方向
 
@@ -66,18 +66,18 @@ Clang、ASan/UBSan/LSan 和 static 继续承担产品验证职责，不据此承
 CMake 使用 `SameMinorVersion`：候选 major/minor 与请求一致，且不得低于请求的最低 patch。下游写明所需最低 patch：
 
 ```cmake
-find_package(QCurl 2.1.0 CONFIG REQUIRED)
+find_package(QCurl 2.2.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE QCurl::QCurl)
 ```
 
-若使用后续 patch 新增接口，应把 `2.1.0` 提高到首次提供该接口的 patch。`EXACT` 会禁止兼容更新，不是通常的消费方式；不推荐用跨 minor 的 CMake 版本区间替代版本线规则。
+若使用后续 patch 新增接口，应把 `2.2.0` 提高到首次提供该接口的 patch。`EXACT` 会禁止兼容更新，不是通常的消费方式；不推荐用跨 minor 的 CMake 版本区间替代版本线规则。
 
-假定安装候选为 2.1.2，请求 2.1.0、2.1.1、2.1.2 应接受，2.0.0、2.2.0、2.1.3 应拒绝；这说明匹配规则，不表示这些 patch 都已发布。无版本请求只选择安装包及默认组件，不能表达所需版本线。
+假定安装候选为 2.2.2，请求 2.2.0、2.2.1、2.2.2 应接受，2.1.0、2.3.0、2.2.3 应拒绝；这说明匹配规则，不表示这些 patch 都已发布。无版本请求只选择安装包及默认组件，不能表达所需版本线。
 
 pkg-config 自身没有 CMake 的版本线规则，调用方须明确两个约束：
 
 ```bash
-pkg-config --exists 'qcurl >= 2.1.0' 'qcurl < 2.2.0'
+pkg-config --exists 'qcurl >= 2.2.0' 'qcurl < 2.3.0'
 ```
 
 Other Extras 使用同样的 `qcurl-other-extras` 区间；包内 `.pc` 对 Core 保持精确同版依赖，避免混装。组件 opt-in、静态传递依赖与初始化见[快速开始](../../user/quickstart.md)。

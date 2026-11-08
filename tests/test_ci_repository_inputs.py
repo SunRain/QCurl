@@ -13,7 +13,7 @@ from scripts.validate_policy_violations_dictionary import _scan_targets
 
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[1]
-_RELEASE_CONTRACT = "docs/dev/release/2.1.1-release-contract.md"
+_RELEASE_CONTRACT = "docs/dev/release/2.2.0-release-contract.md"
 _DICTIONARIES = (
     "docs/dev/uce/policy_violations_dictionary.json",
     "docs/dev/uce/policy_violations_dictionary.md",
@@ -110,9 +110,15 @@ def test_dictionary_rejects_missing_repository_input(ci_checkout: Path, relative
     assert relative in result.stderr
 
 
-def test_release_and_uce_reject_missing_formal_contract(ci_checkout: Path) -> None:
+@pytest.mark.parametrize("obsolete_path", [
+    "docs/arch/2.0.0-hard-break-release-contract.md",
+    "docs/dev/release/2.1.1-release-contract.md",
+])
+def test_release_and_uce_reject_missing_formal_contract(
+    ci_checkout: Path, obsolete_path: str,
+) -> None:
     """新 authority 缺失时，即使旧位置有原文也不能回退。"""
-    obsolete = ci_checkout / "docs/arch/2.0.0-hard-break-release-contract.md"
+    obsolete = ci_checkout / obsolete_path
     obsolete.parent.mkdir(parents=True, exist_ok=True)
     (ci_checkout / _RELEASE_CONTRACT).rename(obsolete)
     with pytest.raises(RuntimeError, match="权威文件"):

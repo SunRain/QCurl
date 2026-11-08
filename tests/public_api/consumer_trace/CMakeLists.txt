@@ -12,7 +12,7 @@ find_package(CURL 8.14.1 REQUIRED)
 if(NOT UNIX)
     message(FATAL_ERROR "trace consumer 需要 dl_iterate_phdr 验证 stage 加载来源")
 endif()
-find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS OtherExtras
+find_package(QCurl 2.2.0 CONFIG REQUIRED COMPONENTS OtherExtras
     PATHS "${QCURL_STAGE_PREFIX}" NO_DEFAULT_PATH)
 
 add_executable(qcurl_trace_consumer main.cpp trace_requests.cpp trace_verification.cpp trace_contract.h

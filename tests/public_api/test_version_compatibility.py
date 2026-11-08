@@ -8,7 +8,7 @@ import pytest
 CONSUMER = Path(__file__).resolve().parent / "consumer_version"
 
 
-@pytest.fixture(params=["2.1.0", "2.1.2", "2.1.3"])
+@pytest.fixture(params=["2.1.0", "2.1.2", "2.1.3", "2.2.0"])
 def package_version_fixture(tmp_path: Path, request) -> tuple[Path, str]:
     """Use CMake's standard generator, without claiming synthetic versions were released."""
 
@@ -33,15 +33,18 @@ def package_version_fixture(tmp_path: Path, request) -> tuple[Path, str]:
 
 
 @pytest.mark.parametrize(
-    "minimum", ["2.1.0", "2.1.2", "2.1.3", "2.0.0", "2.2.0", "3.0.0"]
+    "minimum", ["2.1.0", "2.1.2", "2.1.3", "2.0.0", "2.2.0", "2.2.1", "2.3.0", "3.0.0"]
 )
 def test_cmake_minimum_request_stays_in_same_major_minor(
     tmp_path: Path, package_version_fixture: tuple[Path, str], minimum: str
 ) -> None:
     prefix, candidate = package_version_fixture
-    expected = minimum.startswith("2.1.") and tuple(
-        map(int, candidate.split("."))
-    ) >= tuple(map(int, minimum.split(".")))
+    requested_version = tuple(map(int, minimum.split(".")))
+    installed_version = tuple(map(int, candidate.split(".")))
+    expected = (
+        requested_version[:2] == installed_version[:2]
+        and installed_version >= requested_version
+    )
     result = subprocess.run(
         [
             "cmake",
@@ -61,13 +64,14 @@ def test_cmake_minimum_request_stays_in_same_major_minor(
         assert "not compatible" in result.stderr
 
 
-@pytest.mark.parametrize(
-    "candidate,accepted",
-    [("2.0.9", False), ("2.1.0", True), ("2.1.3", True), ("2.2.0", False)],
-)
+@pytest.mark.parametrize("line", ["2.1", "2.2"])
+@pytest.mark.parametrize("minor_offset,patch", [(-1, 9), (0, 0), (0, 3), (1, 0)])
 def test_pkg_config_requires_explicit_lower_and_upper_bounds(
-    tmp_path: Path, monkeypatch, candidate: str, accepted: bool
+    tmp_path: Path, monkeypatch, line: str, minor_offset: int, patch: int
 ) -> None:
+    major, minor = map(int, line.split("."))
+    candidate = f"{major}.{minor + minor_offset}.{patch}"
+    accepted = minor_offset == 0
     (tmp_path / "qcurl.pc").write_text(
         f"Name: qcurl\nDescription: matching rule fixture\nVersion: {candidate}\n",
         encoding="utf-8",
@@ -75,7 +79,7 @@ def test_pkg_config_requires_explicit_lower_and_upper_bounds(
     monkeypatch.setenv("PKG_CONFIG_LIBDIR", str(tmp_path))
     monkeypatch.delenv("PKG_CONFIG_PATH", raising=False)
     result = subprocess.run(
-        ["pkg-config", "--exists", "qcurl >= 2.1.0", "qcurl < 2.2.0"]
+        ["pkg-config", "--exists", f"qcurl >= {line}.0", f"qcurl < {major}.{minor + 1}.0"]
     )
     assert (result.returncode == 0) is accepted
 

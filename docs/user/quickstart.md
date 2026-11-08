@@ -4,7 +4,7 @@
 
 Arch Linux 用户也可从当前工作区生成由 pacman 管理的完整开发包，见 [Arch Linux 本地开发包](archlinux-packaging.md)。安装包后直接从第 2 节开始消费，无需再次源码安装。
 
-当前候选为 2.1.1；从 2.1 起，同 `major.minor` 的后续 patch 保护全部 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费与行为。跨 minor 须核对迁移并重建；二进制支持环境与版本语义见[版本与兼容政策](../dev/release/versioning-and-compatibility.md)。本教程运行成功不代表候选已经取得正式发布资格。
+当前候选为 2.2.0（2.2 线首版）；从 2.1 起，同 `major.minor` 的后续 patch 保护全部 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费与行为。跨 minor 须核对迁移并重建；二进制支持环境与版本语义见[版本与兼容政策](../dev/release/versioning-and-compatibility.md)。本教程运行成功不代表候选已经取得正式发布资格。
 
 ## 1. 准备与安装
 
@@ -40,7 +40,7 @@ project(qcurl_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-find_package(QCurl 2.1.0 CONFIG REQUIRED)
+find_package(QCurl 2.2.0 CONFIG REQUIRED)
 add_executable(qcurl_consumer main.cpp)
 target_link_libraries(qcurl_consumer PRIVATE QCurl::QCurl)
 ```
@@ -122,7 +122,7 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory build-core/doc-fixture
 在 consumer 的 CMakeLists 中选择实际使用的组件：
 
 ```cmake
-find_package(QCurl 2.1.0 CONFIG REQUIRED COMPONENTS BlockingExtras)
+find_package(QCurl 2.2.0 CONFIG REQUIRED COMPONENTS BlockingExtras)
 target_link_libraries(your_app PRIVATE QCurl::BlockingExtras)
 ```
 
@@ -161,7 +161,7 @@ shared 加载时通常已注册公共 Qt 元类型；static consumer 若只使�
 
 ```bash
 export PKG_CONFIG_PATH="$QCURL_STAGE/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-pkg-config --exists 'qcurl >= 2.1.0' 'qcurl < 2.2.0'
+pkg-config --exists 'qcurl >= 2.2.0' 'qcurl < 2.3.0'
 c++ -std=c++17 -fPIC consumer/main.cpp $(pkg-config --cflags --libs qcurl) \
   -Wl,-rpath,"$QCURL_STAGE/lib" -o consumer-build/qcurl_consumer-pc
 ./consumer-build/qcurl_consumer-pc http://127.0.0.1:18080/response.txt
@@ -169,6 +169,6 @@ c++ -std=c++17 -fPIC consumer/main.cpp $(pkg-config --cflags --libs qcurl) \
 
 此处为 Linux GCC/Clang 命令；`-fPIC` 避免手工编译触发 Qt protected data symbol 的 copy relocation（CMake target 会携带适用的 Qt 编译选项）。rpath 用于本地 shared staging 运行；部署时按目标平台的动态加载规则处理。static 前缀改用 `pkg-config --cflags --libs --static qcurl` 以携带必要的传递链接依赖，且遵循上面的显式初始化约束。
 
-若使用后续 patch 新增接口，CMake 和 pkg-config 的最低 patch 也应提高。Linux 2.1 线 shared SONAME 为 `.so.2.1`，不提供历史 `.so.2` 的兼容链接；完整包升级时保持 Core 与 Other Extras 同版。
+若使用后续 patch 新增接口，CMake 和 pkg-config 的最低 patch 也应提高。Linux 2.2 线 shared SONAME 为 `.so.2.2`，不提供历史 `.so.2.1` / `.so.2` 的兼容链接；完整包升级时保持 Core 与 Other Extras 同版。
 
-继续阅读：[配置](configuration.md) · [调度](lane-scheduler.md) · [流控](flow-control.md) · [从 2.0 迁移](migration-2.1.md)。
+继续阅读：[配置](configuration.md) · [调度](lane-scheduler.md) · [流控](flow-control.md) · [从 2.1 迁移](migration-2.2.md)。

@@ -1,6 +1,6 @@
 # Http3Demo
 
-Http3Demo demonstrates QCurl HTTP/3 capability on the `1.0.0 first stable` line.
+Http3Demo demonstrates QCurl HTTP/3 capability on the 2.2.0 development candidate.
 HTTP/3 is a Core capability when the runtime libcurl and target server support it.
 
 ## Build
@@ -39,4 +39,4 @@ Performance output is local evidence for the current environment only. Do not co
 ## Related docs
 
 - [HTTP 版本配置](../../docs/user/configuration.md#http-version)
-- [当前发布合同](../../docs/dev/release/2.1.1-release-contract.md)
+- [当前发布合同](../../docs/dev/release/2.2.0-release-contract.md)

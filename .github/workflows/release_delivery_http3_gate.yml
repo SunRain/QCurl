@@ -215,9 +215,9 @@ jobs:
             --producer-build-dir build-package \
             --build-dir build-package/evidence/version-contract
           (cd build-package && cpack -G TGZ)
-          test -f build-package/QCurl-2.1.1-Linux.tar.gz
+          test -f build-package/QCurl-2.2.0-Linux.tar.gz
           (cd build-package && cpack -G DEB)
-          test -f build-package/QCurl-2.1.1-Linux.deb
+          test -f build-package/QCurl-2.2.0-Linux.deb
 
       - name: Upload gate reports
         if: always()
@@ -235,8 +235,8 @@ jobs:
         with:
           name: release-debian12-packages-${{ github.sha }}
           path: |
-            build-package/QCurl-2.1.1-Linux.deb
-            build-package/QCurl-2.1.1-Linux.tar.gz
+            build-package/QCurl-2.2.0-Linux.deb
+            build-package/QCurl-2.2.0-Linux.tar.gz
           retention-days: 14
 
       - name: Upload service logs (on failure)
@@ -439,7 +439,7 @@ jobs:
             --producer-build-dir build-package \
             --build-dir build-package/evidence/version-contract
           (cd build-package && cpack -G TGZ)
-          test -f build-package/QCurl-2.1.1-Linux.tar.gz
+          test -f build-package/QCurl-2.2.0-Linux.tar.gz
 
       - name: Upload gate reports
         if: always()
@@ -457,7 +457,7 @@ jobs:
         with:
           name: release-arch-packages-${{ github.sha }}
           path: |
-            build-package/QCurl-2.1.1-Linux.tar.gz
+            build-package/QCurl-2.2.0-Linux.tar.gz
           retention-days: 14
 
       - name: Upload Arch environment trace

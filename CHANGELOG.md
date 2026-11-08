@@ -1,8 +1,19 @@
 # QCurl Changelog
 
-记录当前 `2.1.1` 候选的变化与历史版本说明。`2.1.0` 是本线首版条目，2.0 / 1.0 条目保留当时合同，不代表当前兼容政策；旧日期流水、RC 草稿和审查证据只从[维护者历史索引](docs/dev/archive/README.md)查阅。
+记录当前 `2.2.0` 新线首版候选及历史版本。2.1 / 2.0 / 1.0 条目保留当时合同，不把历史 tag、参考或局部测试结果当作当前发布资格；旧审查证据从[维护者历史索引](docs/dev/archive/README.md)查阅。
 
-## 接收空闲超时（未发布，版本归属未定）
+<a id="current-release"></a>
+## [2.2.0] - Unreleased
+
+2.2.0 将 `v2.1.1` tag 之后的请求策略、传输生命周期和接收空闲超时作为新兼容线交付。**跨 2.1 → 2.2 不保证源码、ABI、安装消费或公开行为兼容，下游须核对迁移并重建。** 本条目不是 tag、Release 或正式验收通过证明。
+
+### 版本与交付
+
+- `PROJECT_VERSION=2.2.0`；两个运行库使用 `SOVERSION 2.2` / `VERSION 2.2.0`，实体为 `libQCurl.so.2.2.0` 和 `libQCurlOtherExtras.so.2.2.0`，不提供 `.so.2.1` / `.so.2` 兼容链接。
+- 安装包继续使用 `SameMinorVersion`，consumer 请求最低 `2.2.0`；Arch 完整开发包为 `qcurl 2.2.0-1`。四逻辑组件、三物理库及 Qt 6.10.3 / libcurl 8.14.1 下限保持不变。
+- 唯一当前 authority 为 [2.2.0 发布合同](docs/dev/release/2.2.0-release-contract.md)。首版使用 `snapshot` 捕获参考及独立 round-trip，不以 2.1 first/latest 作为本线历史输入。
+
+### 新增能力：接收空闲超时
 
 - Core 增加可选 `QCNetworkTimeoutConfig::receiveIdleTimeout()` / `setReceiveIdleTimeout()`，
   以及 reply 最终来源查询 `isReceiveIdleTimeout()`；连接后等待首字节和每次真实接收活动
@@ -14,13 +25,11 @@
 - 修复使用 libcurl CMake 配置包构建 shared 库时，将具体 `CURL::libcurl_shared` target
   泄漏到安装导出的问题；运行库依赖仍由原生链接记录，static 的显式依赖保持不变。
 
-使用边界见[接收空闲配置](docs/user/configuration.md#接收空闲超时)。新增能力优先进入下一
-minor；当前开发版本号及 SONAME 不代表已决定发行版本。若选择同线 patch，仍须满足全部
-已发布 Public 组件（包括 Preview、TestSupport 及旧静态 consumer）的兼容合同。
+使用边界见[接收空闲配置](docs/user/configuration.md#接收空闲超时)。该能力默认关闭，独立于 connect/total/low-speed；新增接口本身不作为已完成 ABI 分析的证明。
 
-## 请求策略收敛（未发布，版本归属未定）
+### 请求策略与行为变化
 
-Core async 与 Blocking Extras 共用内部请求策略，保持两个执行器和现有 public API。下表按修改前的正式配置合同及实际实现分类；本地 `v2.1.0`/`v2.1.1` tag 和开发版本号不能证明正式分发状态，也不自动确定这些变化可以进入 2.1 patch。
+Core async 与 Blocking Extras 共用内部请求策略，保持两个执行器和既有 public API。以下同时包含既有合同缺陷修复与有意的默认/失败语义变化；整体随 2.2 新线发布，不宣称 2.1 patch 兼容。
 
 | 可观察变化 | 分类与依据 |
 | --- | --- |
@@ -33,12 +42,23 @@ Core async 与 Blocking Extras 共用内部请求策略，保持两个执行器�
 | 关闭重定向时不校验/设置 redirect-only 字段；raw header 含空值覆盖；敏感集合含 Set-Cookie | 生效性与授权条件集中；Set-Cookie/Proxy-Authorization 分类不构成通用敏感头过滤承诺。 |
 | middleware 后非法快照不能被 cache/mock 命中掩盖；Blocking backing 覆盖 easy cleanup | 执行一致性与借用寿命修复，保留异步返回后单终态和调用线程合同。 |
 
-正式行为见[用户配置](docs/user/configuration.md)，内部边界见[binding 合同](docs/dev/architecture/libcurl-binding-contract.md#共同请求策略)。发行前按[版本政策](docs/dev/release/versioning-and-compatibility.md)核实已发布合法行为；需要新线时另行调整版本、SONAME 和包元数据。本次内部实现、当前 ABI 前后比较与局部验收均不构成历史 patch 兼容或发布资格结论。
+### 生命周期与内部实现
 
-<a id="current-release"></a>
-## [2.1.1] - Unreleased
+- HTTP admission 使用 token 与 detached handle 管理传输所有权；transfer record 在 detach 前保活 easy handle、callback target 和 backing storage，避免取消、重入或 reply 销毁提前释放原生借用。
+- Share/Cookie 状态和退出规则集中管理，TLS 配置独立封装；reply 按配置、生命周期、响应、body、flow、retry/cache 等职责编排，保持单次终态通知和调用线程合同。
+- Blocking backing storage 保活到 easy cleanup 完成后，清理阶段仍可安全读取请求借用的数据。
 
-2.1.1 是 2.1 线的首个 patch 候选，以 `v2.1.0` 首版参考为兼容输入。`v2.1.0` 只有 tag 与首版参考，没有正式发布资产，因此本候选吸收 2.1.0 tag 之后的诊断行为调整；一旦 2.1.0 被正式分发，这类默认行为改变不能再进入同线 patch。发布资格以[2.1 正式合同](docs/dev/release/2.1.1-release-contract.md)绑定的真实机器证据为准；本条目不表示 tag、Release 或资产已经发布。
+正式行为见[用户配置](docs/user/configuration.md)，调用方调整见[迁移到 2.2](docs/user/migration-2.2.md)，内部边界见[binding 合同](docs/dev/architecture/libcurl-binding-contract.md#共同请求策略)。
+
+### 发布证据边界
+
+- 正式资格仍要求 clean C1 的 fresh 五树 full/final、独立 verifier、最低依赖实测和真实资产回验；本条目不记录 PASS。
+- 首版 round-trip 成功只表示 `REFERENCE_VALIDATED` / `patchCompatibility=false`。后续 2.2 patch 才使用 `current` 比较本线首版及最近正式 patch 的源码、两库 ABI、旧二进制和公开行为。
+
+<a id="2.1.1-release"></a>
+## [2.1.1]
+
+以下保留 2.1.1 tag 对应的候选说明；tag 存在不等于正式发布资产或验收已经完成。本线首版参考为 `v2.1.0`，以下“本候选”均指历史 2.1.1，不定义当前 2.2.0 的发布输入。历史资格以[2.1 合同](docs/dev/release/2.1.1-release-contract.md)及当时真实机器证据为准。
 
 ### 版本与交付
 

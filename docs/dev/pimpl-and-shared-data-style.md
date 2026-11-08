@@ -71,7 +71,7 @@ private:
 
 两种模式都只在公共头保留表达合同所需的最小 include；libcurl easy/multi/share handle 属于源文件或私有实现，不能泄漏到安装面。禁止泄漏项和完整安装头边界只在[公共头与安装边界](architecture/public-header-boundary.md)维护。
 
-Retry/TLS/Proxy/Timeout accessor 在 v1.0.0 已存在，不把旧 public-field 教程重新列为新增能力。当前调用方变化见[迁移到 2.1](../user/migration-2.1.md)，本页只定义现行实现规范。
+Retry/TLS/Proxy/Timeout accessor 在 v1.0.0 已存在，不把旧 public-field 教程重新列为新增能力。当前调用方变化见[迁移到 2.2](../user/migration-2.2.md)，本页只定义现行实现规范。
 
 ## 5. 验证与人工评审分工
 

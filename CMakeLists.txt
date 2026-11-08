@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QCurl VERSION 2.1.1 LANGUAGES CXX)
+project(QCurl VERSION 2.2.0 LANGUAGES CXX)
 set(QCURL_ABI_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 
 include(GNUInstallDirs)

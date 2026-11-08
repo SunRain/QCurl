@@ -1,6 +1,6 @@
 # QCurl 文档
 
-本文档对应当前 **2.1.1 开发候选**；`v2.1.0` 是本线首版 tag，没有正式发布资产。从 2.1 起，同 `major.minor` 的后续 patch 保护全部已发布 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为；跨 minor 不保证兼容。版本语义和环境边界见[版本与兼容政策](dev/release/versioning-and-compatibility.md)，候选文档不是发布通过证明。
+本文档对应当前 **2.2.0 开发候选**，即 2.2 兼容线首版；历史 tag 不作为本候选的发布证明。从 2.1 起，同 `major.minor` 的后续 patch 保护全部已发布 Public 组件（含 Preview）的源码、受支持 shared ABI、安装消费和公开行为；跨 minor 不保证兼容。版本语义和环境边界见[版本与兼容政策](dev/release/versioning-and-compatibility.md)，候选文档不是发布通过证明。
 
 ## 用户
 
@@ -11,7 +11,8 @@
 | 请求、HTTP 版本、代理、TLS、重试、缓存和上传 | [常见配置](user/configuration.md) |
 | lane、优先级、reservation、取消与通知 | [Lane scheduler](user/lane-scheduler.md) |
 | 传输暂停、下载背压与上传源暂停 | [流控](user/flow-control.md) |
-| 从 2.0 升级当前 API/包 | [迁移到 2.1](user/migration-2.1.md) |
+| 从 2.1 升级当前 API/包 | [迁移到 2.2](user/migration-2.2.md) |
+| 从 2.0 升级历史 2.1 API/包 | [迁移到 2.1](user/migration-2.1.md) |
 | 追溯 1.0 → 2.0 的迁移 | [历史迁移到 2.0](user/migration-2.0.md) |
 
 用户可见变化见 [CHANGELOG](../CHANGELOG.md)，完整程序见[示例集合](../examples/README.md)。API 细节以安装头的注释为准，浏览文档的生成方式见下方维护者入口。
@@ -38,7 +39,7 @@
 ### 发布与证据
 
 - [版本与兼容政策](dev/release/versioning-and-compatibility.md)：版本线、Public/Preview、ABI 环境和消费规则。
-- [正式 2.1 发布合同](dev/release/2.1.1-release-contract.md)：唯一当前 release identity authority，当前候选 2.1.1。
+- [正式 2.2.0 发布合同](dev/release/2.2.0-release-contract.md)：唯一当前 release identity authority，首版使用 snapshot。
 - [发布操作](dev/release/release-procedure.md)：五树、阶段、候选验证、打包与远端动作。
 - [UCE 使用与证据](dev/uce/README.md)：启动、tier、schema 入口与归档判据。
 - [供应链安全](dev/release/supply-chain.md)。

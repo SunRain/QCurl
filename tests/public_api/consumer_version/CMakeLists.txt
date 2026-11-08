@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(qcurl_installed_version_contract LANGUAGES CXX)
 add_compile_definitions(QT_NO_KEYWORDS)
 
-set(QCURL_REQUEST_VERSION "2.1.0" CACHE STRING "Minimum QCurl version")
+set(QCURL_REQUEST_VERSION "2.2.0" CACHE STRING "Minimum QCurl version")
 set(_exact)
 if(QCURL_REQUEST_EXACT)
     set(_exact EXACT)

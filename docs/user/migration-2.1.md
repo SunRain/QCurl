@@ -1,5 +1,7 @@
 # 从 2.0 迁移到 2.1
 
+> 历史迁移步骤：本页定义 2.0 → 2.1 的变化。当前升级还须继续阅读[从 2.1 迁移到 2.2](migration-2.2.md)。
+
 2.1.0 是新的兼容版本线，**不保证与 2.0.x 的源码、ABI、安装消费或行为兼容**。先按下文修改源码并重新编译、链接全部下游，再整体部署 2.1 包。不能让旧 `.so.2` 程序通过手工链接加载 `.so.2.1`。
 
 本页按 `v2.0.0` 公共头、安装面和实现与当前候选的差异整理；它是迁移说明，不表示候选已经通过 release gate 或已经发布。从 1.0 升级时还需阅读[迁移到 2.0](migration-2.0.md)。
@@ -25,7 +27,7 @@ pkg-config --exists 'qcurl >= 2.1.0' 'qcurl < 2.2.0'
 
 Other Extras 对应 `qcurl-other-extras`。其包内 Core 依赖保持精确同版，完整包内的 Core、Other Extras、TestSupport 不应任意混装。
 
-Linux 两个 shared 库的 SONAME 从 `.so.2` 变为 `.so.2.1`，实体文件随 patch 变化（2.1.0 为 `libQCurl.so.2.1.0`，本次 2.1.1 候选为 `libQCurl.so.2.1.1`；Other Extras 同理）；不提供旧 SONAME 兼容链接。跨线重建与本线后续 patch 的旧二进制保护是两个不同要求。
+Linux 两个 shared 库的 SONAME 从 `.so.2` 变为 `.so.2.1`，实体文件随 patch 变化（2.1.0 为 `libQCurl.so.2.1.0`，历史 2.1.1 tag 为 `libQCurl.so.2.1.1`；Other Extras 同理）；不提供旧 SONAME 兼容链接。跨线重建与本线后续 patch 的旧二进制保护是两个不同要求。
 
 ## 2. 真正需要调整的源码与行为
 
@@ -85,4 +87,4 @@ if (result != QCurl::QCNetworkConfigUpdateResult::Applied) {
 
 在正式支持的 Linux x86_64 GCC/libstdc++ C++17、Release shared、未插桩、相同 Qt/标准库 ABI 与功能配置中，旧 shared consumer 使用后续兼容 patch 无须重编译。static 仍需重建才能获得更新；不同 tuple、降级、任意组件混装不在此承诺内。跨 2.2 等新线须重新核对迁移并重建。
 
-这是自定义版本线政策，不承诺整个 2.x 兼容，也不追溯改变 2.0 历史合同。v2.1.0 首版捕获参考并自测可用，不能由此声称一次真实 patch 升级已经验证；2.1.1 是首个同线 patch 候选，资格和已验证边界以[当前发布合同](../dev/release/2.1.1-release-contract.md)绑定的真实机器证据为准。
+这是自定义版本线政策，不承诺整个 2.x 兼容，也不追溯改变 2.0 历史合同。v2.1.0 首版捕获参考并自测可用，不能由此声称一次真实 patch 升级已经验证；2.1.1 是该线首个 patch tag，其历史资格以[2.1 发布合同](../dev/release/2.1.1-release-contract.md)绑定的真实机器证据为准；tag 本身不证明正式资产或验收已完成。

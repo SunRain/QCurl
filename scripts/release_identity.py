@@ -20,7 +20,7 @@ SCHEMA = "qa-manifest@v1"
 MANIFEST_PAYLOAD_DIGEST_FIELD = "manifestPayloadSha256"
 
 AUTHORITY_RELATIVE_PATHS = (
-    "docs/dev/release/2.1.1-release-contract.md",
+    "docs/dev/release/2.2.0-release-contract.md",
 )
 
 

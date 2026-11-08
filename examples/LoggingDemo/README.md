@@ -1,6 +1,6 @@
 # LoggingDemo
 
-LoggingDemo shows the QCurl Core / Stable logger surface in `QCurl 1.0.0 first stable`.
+LoggingDemo shows the QCurl Core / Stable logger surface in the QCurl 2.2.0 development candidate.
 
 ## Build and run
 
@@ -35,5 +35,5 @@ QCNetworkLogger::log(const NetworkLogEntry &entry)` contract.
 
 ## Related docs
 
-- [当前发布合同](../../docs/dev/release/2.1.1-release-contract.md)
+- [当前发布合同](../../docs/dev/release/2.2.0-release-contract.md)
 - `docs/dev/api-docs.md`

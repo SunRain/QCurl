@@ -1,6 +1,6 @@
 # NetworkFeaturesDemo
 
-NetworkFeaturesDemo shows selected QCurl network capabilities on the current `1.0.0 first stable` line.
+NetworkFeaturesDemo shows selected QCurl network capabilities on the current 2.2.0 development candidate.
 
 ## Surface labels
 
@@ -39,5 +39,5 @@ cmake --build build --target NetworkFeaturesDemo
 ## Related docs
 
 - [HTTP 版本配置](../../docs/user/configuration.md#http-version)
-- [当前发布合同](../../docs/dev/release/2.1.1-release-contract.md)
+- [当前发布合同](../../docs/dev/release/2.2.0-release-contract.md)
 - [当前版本变化](../../CHANGELOG.md#current-release)

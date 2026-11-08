@@ -82,12 +82,12 @@ from tests.public_api import run_public_api_checks as public_api
             "removed QCNetworkReply callback setter call",
         ),
         (
-            "docs/dev/release/2.1.1-release-contract.md",
+            "docs/dev/release/2.2.0-release-contract.md",
             "manager.scheduler();",
             "removed manager scheduler workflow",
         ),
         (
-            "docs/dev/release/2.1.1-release-contract.md",
+            "docs/dev/release/2.2.0-release-contract.md",
             "cmake -S . -B build-static -DBUILD_TESTING=ON -DQCURL_BUILD_SHARED_LIBS=OFF",
             "unsupported static testing command",
         ),
@@ -116,7 +116,7 @@ def test_relocated_docs_reject_previous_contract_violations(
         "docs/user/migration-2.0.md",
         "docs/dev/architecture/libcurl-binding-contract.md",
         "docs/dev/architecture/overview.md",
-        "docs/dev/release/2.1.1-release-contract.md",
+        "docs/dev/release/2.2.0-release-contract.md",
     ],
 )
 def test_relocated_current_documentation_passes_without_old_copies(

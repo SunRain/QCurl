@@ -89,6 +89,10 @@ def _arguments(
 @pytest.mark.parametrize(
     ("version", "mode", "first", "latest", "message"),
     [
+        ("2.2.0", "current", True, True, "first release requires snapshot"),
+        ("2.2.0", "snapshot", True, False, "rejects historical"),
+        ("2.2.0", "snapshot", False, True, "rejects historical"),
+        ("2.2.0", "none", False, False, "requires snapshot or current"),
         ("2.1.0", "none", False, False, "requires snapshot or current"),
         ("2.1.0", "current", True, True, "first release requires snapshot"),
         ("2.1.0", "snapshot", True, False, "rejects historical"),
@@ -120,7 +124,7 @@ def test_final_version_line_modes_reject_bypass(
 
 
 @pytest.mark.parametrize(
-    ("version", "mode"), [("2.1.0", "snapshot"), ("2.1.1", "current")]
+    ("version", "mode"), [("2.1.0", "snapshot"), ("2.1.1", "current"), ("2.2.0", "snapshot")]
 )
 def test_final_accepts_only_the_candidate_version_mode(
     tmp_path: Path, version: str, mode: str
@@ -282,6 +286,29 @@ def _assert_comparison_artifacts(step, role: str) -> None:
             "other_extras_comparison",
         )
     }
+
+
+def test_new_line_snapshot_uses_only_its_own_reference(tmp_path: Path) -> None:
+    """A new minor captures and validates itself even when older-line tags exist."""
+    repo = _repo(tmp_path)
+    _commit(repo, "2.1.0")
+    _commit(repo, "2.1.1")
+    _commit(repo, "2.2.0", tag=False)
+    args = _arguments(repo, "snapshot")
+    policy.validate_abi_arguments(args, repo)
+    steps = {step.name: step for step in compatibility_steps(args)}
+    assert set(steps) == {
+        "compatibility_reference_capture",
+        "compatibility_reference_roundtrip",
+    }
+    assert set(steps["compatibility_reference_capture"].required_artifact_ids) == {
+        "compatibility_reference", "compatibility_reference_validation",
+        "abi_core_snapshot", "abi_other_extras_snapshot",
+    }
+    roundtrip = steps["compatibility_reference_roundtrip"]
+    assert "--require-history" not in roundtrip.command
+    _assert_comparison_artifacts(roundtrip, "roundtrip")
+    assert all(step.producer_tree_id == "release-shared" for step in steps.values())
 
 
 def test_patch_steps_cover_both_abis_snapshots_old_binary_and_old_source(
